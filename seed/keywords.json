@@ -1,0 +1,21 @@
+{
+  "seed_version": "1.0.0",
+  "items": {
+    "hair": ["hair", "hairstyle", "bangs", "ponytail", "braid", "braided", "locs", "afro", "updo", "bun", "bob", "curls", "curly", "pigtails"],
+    "clothing": ["top", "shirt", "jacket", "dress", "jeans", "skirt", "shoes", "pants", "coat", "sweater", "blouse", "shorts", "hoodie", "cardigan", "bodysuit", "heels", "boots", "sneakers", "swimsuit"],
+    "makeup": ["lipstick", "lip gloss", "gloss", "blush", "eyeliner", "eyeshadow", "makeup", "highlight", "contour", "mascara", "liner"],
+    "skin": ["skin", "skin overlay", "overlay", "freckles", "moles", "birthmark", "skin detail", "skin details", "skindetail", "skindetails", "skinblend"],
+    "build_buy": ["sofa", "chair", "table", "desk", "dresser", "lamp", "rug", "counter", "decor", "plant", "shelf", "wall", "floor", "door", "window", "clutter", "bookcase", "cabinet", "couch", "armchair", "bench", "frame", "bathroom", "kitchen", "bedroom", "living", "dining", "fridge", "stove", "sink", "toilet", "bathtub", "shower", "tile", "wallpaper"],
+    "gameplay": ["trait", "traits", "career", "aspiration", "school", "relationship", "autonomy", "pregnancy", "business", "system", "social", "npc", "healthcare", "education", "childbirth", "romance", "family", "taxes", "banking", "milestones", "redux", "overhaul"],
+    "override_keywords": ["default", "defaults", "override", "replacement", "replacements", "lighting", "map replacement", "mapreplacement"],
+    "pose": ["pose", "pose pack", "posepack", "poses", "animation", "cas pose", "caspose", "ingame pose", "ingamepose", "pose player"],
+    "preset": ["preset", "slider", "facial preset", "facialpreset", "body preset", "bodypreset", "nose preset", "nosepreset", "lip preset", "lippreset", "eye preset", "eyepreset", "jaw preset", "jawpreset", "chin preset", "chinpreset"],
+    "eyes": ["eye", "eyes", "contact", "contacts", "iris", "heterochromia"],
+    "eyebrows": ["eyebrow", "eyebrows", "brow", "brows"],
+    "eyelashes": ["eyelash", "eyelashes", "lash", "lashes"],
+    "facial_hair": ["beard", "mustache", "moustache", "goatee", "stubble"],
+    "accessories": ["accessory", "accessories", "earrings", "necklace", "ring", "bracelet", "glasses", "hat", "cap"],
+    "tattoos": ["tattoo", "tattoos"],
+    "utilities": ["script", "scripts", "utility", "ui", "menu", "exceptions", "command center", "commandcenter", "better exceptions", "betterexceptions", "tool", "injector", "xml injector", "xmlinjector", "core", "library", "config", "checker"]
+  }
+}

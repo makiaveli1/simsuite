@@ -1,0 +1,19 @@
+{
+  "seed_version": "1.0.0",
+  "kinds": [
+    "CAS",
+    "BuildBuy",
+    "Gameplay",
+    "ScriptMods",
+    "OverridesAndDefaults",
+    "PosesAndAnimation",
+    "PresetsAndSliders",
+    "Unknown"
+  ],
+  "tray_kinds": [
+    "TrayHousehold",
+    "TrayLot",
+    "TrayRoom",
+    "TrayItem"
+  ]
+}

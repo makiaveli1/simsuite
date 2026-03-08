@@ -1,0 +1,14 @@
+pub mod ai_classifier;
+pub mod bundle_detector;
+pub mod category_audit;
+pub mod creator_audit;
+pub mod downloads_watcher;
+pub mod duplicate_detector;
+pub mod file_inspector;
+pub mod filename_parser;
+pub mod library_index;
+pub mod move_engine;
+pub mod rule_engine;
+pub mod scanner;
+pub mod snapshot_manager;
+pub mod validator;

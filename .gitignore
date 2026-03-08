@@ -1,0 +1,13 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.tmp-tauri-template/
+*.log
+.DS_Store
+Thumbs.db
+.playwright-cli/
+.kilocode/
+output/
+user_data/
+SimSuite_*_Part_*.md

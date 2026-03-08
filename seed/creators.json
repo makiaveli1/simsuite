@@ -1,0 +1,439 @@
+{
+  "seed_version": "1.0.0",
+  "items": [
+    {
+      "canonical_name": "Simstrouble",
+      "aliases": ["simstrouble", "simstroublecc"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Frequently associated with CAS hair releases."
+    },
+    {
+      "canonical_name": "Greenllamas",
+      "aliases": ["greenllamas", "greenllama"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Primarily known for hair and CAS sets."
+    },
+    {
+      "canonical_name": "Sentate",
+      "aliases": ["sentate"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Clothing"],
+      "notes": "Frequently associated with fashion-focused CAS content."
+    },
+    {
+      "canonical_name": "Serenity",
+      "aliases": ["serenity", "serenitycc"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Clothing"],
+      "notes": "Often appears on CAS clothing and mixed fashion sets."
+    },
+    {
+      "canonical_name": "Miiko",
+      "aliases": ["miiko"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Commonly associated with CAS hair and makeup content."
+    },
+    {
+      "canonical_name": "JohnnySims",
+      "aliases": ["johnnysims", "johnny sims"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Frequently associated with Maxis Match hair."
+    },
+    {
+      "canonical_name": "Trillyke",
+      "aliases": ["trillyke"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Clothing"],
+      "notes": "Commonly associated with clothing and accessory releases."
+    },
+    {
+      "canonical_name": "Joliebean",
+      "aliases": ["joliebean", "jolie bean"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Clothing"],
+      "notes": "Often associated with fashion sets and collabs."
+    },
+    {
+      "canonical_name": "Jius",
+      "aliases": ["jius"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Shoes"],
+      "notes": "Frequently associated with footwear releases."
+    },
+    {
+      "canonical_name": "Madlen",
+      "aliases": ["madlen"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Shoes"],
+      "notes": "Often associated with shoes and accessory content."
+    },
+    {
+      "canonical_name": "Pyxis",
+      "aliases": ["pyxis"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Skin"],
+      "notes": "Known for skin details, eyes, and fantasy-style CAS content."
+    },
+    {
+      "canonical_name": "Luumia",
+      "aliases": ["luumia"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Skin"],
+      "notes": "Known for skins, body hair, and detailed CAS assets."
+    },
+    {
+      "canonical_name": "Peacemaker",
+      "aliases": ["peacemaker", "peacemakeric", "peacemaker-ic"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Common Build/Buy creator with furniture-heavy sets."
+    },
+    {
+      "canonical_name": "Harrie",
+      "aliases": ["harrie", "harriecc"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Commonly associated with modern Build/Buy sets."
+    },
+    {
+      "canonical_name": "Felixandre",
+      "aliases": ["felixandre", "felixandrecc"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Frequently appears on premium Build/Buy collections."
+    },
+    {
+      "canonical_name": "House of Harlix",
+      "aliases": ["houseofharlix", "harlix"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Joint Harrie and Felixandre Build/Buy releases."
+    },
+    {
+      "canonical_name": "Pierisim",
+      "aliases": ["pierisim"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Often associated with themed Build/Buy collections."
+    },
+    {
+      "canonical_name": "SixamCC",
+      "aliases": ["sixamcc", "sixam"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Mixed creator, but many filenames are Build/Buy furniture sets."
+    },
+    {
+      "canonical_name": "Myshunosun",
+      "aliases": ["myshunosun", "myshuno", "myshunosuncc"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Often used on clean modern Build/Buy collections."
+    },
+    {
+      "canonical_name": "Charly Pancakes",
+      "aliases": ["charlypancakes", "charly pancakes"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Usually associated with furniture and decor sets."
+    },
+    {
+      "canonical_name": "Cowbuild",
+      "aliases": ["cowbuild"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Frequently associated with Build/Buy furniture collections."
+    },
+    {
+      "canonical_name": "Ravasheen",
+      "aliases": ["ravasheen"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Functional Objects"],
+      "notes": "Often associated with functional Build/Buy objects and utilities."
+    },
+    {
+      "canonical_name": "Syboulette",
+      "aliases": ["syboulette"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Commonly associated with themed furniture and object sets."
+    },
+    {
+      "canonical_name": "awingedllama",
+      "aliases": ["awingedllama", "wingedllama"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Decor"],
+      "notes": "Commonly appears on Build/Buy and decor content."
+    },
+    {
+      "canonical_name": "Lumpinou",
+      "aliases": ["lumpinou", "lumpinoumods"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Relationship Systems"],
+      "notes": "Known for gameplay overhauls and relationship systems."
+    },
+    {
+      "canonical_name": "LittleMsSam",
+      "aliases": ["littlemssam", "lms"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Common gameplay and utility mod creator."
+    },
+    {
+      "canonical_name": "Deaderpool",
+      "aliases": ["deaderpool", "mccc", "mccommandcenter"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Best known for MC Command Center and related script content."
+    },
+    {
+      "canonical_name": "adeepindigo",
+      "aliases": ["adeepindigo", "a deep indigo"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Gameplay systems creator with large overhaul-style mods."
+    },
+    {
+      "canonical_name": "Sacrificial",
+      "aliases": ["sacrificial", "sacrificialmods"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Frequently associated with dramatic gameplay and script-heavy mods."
+    },
+    {
+      "canonical_name": "SimRealist",
+      "aliases": ["simrealist"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Business"],
+      "notes": "Frequently associated with systems such as bills, banking, and healthcare."
+    },
+    {
+      "canonical_name": "Kuttoe",
+      "aliases": ["kuttoe"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Often appears on gameplay tuning and neighborhood behavior mods."
+    },
+    {
+      "canonical_name": "Bienchen",
+      "aliases": ["bienchen", "bienchen83"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Common gameplay tuning creator with many small packages."
+    },
+    {
+      "canonical_name": "Basemental",
+      "aliases": ["basemental", "basementalcc", "basementalmods"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Script-heavy gameplay creator."
+    },
+    {
+      "canonical_name": "roBurky",
+      "aliases": ["roburky", "ro burky"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Core Systems"],
+      "notes": "Often associated with gameplay overhauls and utility mods."
+    },
+    {
+      "canonical_name": "Zero",
+      "aliases": ["zer0", "zero", "zero sims 4 mods"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Often associated with gameplay and occult-related tuning mods."
+    },
+    {
+      "canonical_name": "Lot51",
+      "aliases": ["lot51"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Frequently associated with core script and utility frameworks."
+    },
+    {
+      "canonical_name": "Chingyu",
+      "aliases": ["chingyu", "chingyu1023", "chingyu 1023"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Traits"],
+      "notes": "Frequently associated with traits and gameplay tuning."
+    },
+    {
+      "canonical_name": "Scarlet",
+      "aliases": ["scarlet", "scarletsmods", "scarlet mods"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Common gameplay creator and community fixer."
+    },
+    {
+      "canonical_name": "Frankk",
+      "aliases": ["frankk", "frankkmods", "frankk mods"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Frequently associated with utility and scripting frameworks."
+    },
+    {
+      "canonical_name": "Icemunmun",
+      "aliases": ["icemunmun", "ice munmun"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Cooking"],
+      "notes": "Frequently associated with harvestables, recipes, and cooking gameplay."
+    },
+    {
+      "canonical_name": "Scumbumbo",
+      "aliases": ["scumbumbo"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Historic creator of utility frameworks such as XML Injector."
+    },
+    {
+      "canonical_name": "Carl's Guides",
+      "aliases": ["carlsguides", "carl's guides", "carlsguide", "carl"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Core Systems"],
+      "notes": "Common gameplay and overhaul creator."
+    },
+    {
+      "canonical_name": "MizoreYukii",
+      "aliases": ["mizoreyukii", "mizore yukii"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Often associated with utility and framework-related mods."
+    },
+    {
+      "canonical_name": "PandaSama",
+      "aliases": ["pandasama", "panda sama"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Pregnancy"],
+      "notes": "Frequently associated with childbirth and family gameplay."
+    },
+    {
+      "canonical_name": "TURBODRIVER",
+      "aliases": ["turbodriver", "turbo driver"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Script-heavy gameplay creator."
+    },
+    {
+      "canonical_name": "Aharris00britney",
+      "aliases": ["aharris00britney", "ah00b", "aharris"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Often associated with CAS hair and clothing."
+    },
+    {
+      "canonical_name": "Clumsyalien",
+      "aliases": ["clumsyalien"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Frequently associated with hair and clothing sets."
+    },
+    {
+      "canonical_name": "Arethabee",
+      "aliases": ["arethabee"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Clothing"],
+      "notes": "Primarily associated with fashion-forward CAS content."
+    },
+    {
+      "canonical_name": "TwistedCat",
+      "aliases": ["twistedcat", "twistedcatcc"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Makeup"],
+      "notes": "Commonly associated with detailed CAS overlays and makeup."
+    },
+    {
+      "canonical_name": "GorillaX3",
+      "aliases": ["gorillax3", "gorilla x3", "gorillagorillagorilla"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Often associated with alpha-style hair, clothing, and other detailed CAS releases."
+    },
+    {
+      "canonical_name": "Northern Siberia Winds",
+      "aliases": ["northernsiberiawinds", "nsw"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Skin"],
+      "notes": "Often associated with skin overlays and skin details."
+    },
+    {
+      "canonical_name": "TwistedMexi",
+      "aliases": ["twistedmexi", "tmex"],
+      "likely_kinds": ["Gameplay"],
+      "likely_subtypes": ["Gameplay"],
+      "notes": "Utility and gameplay framework creator."
+    },
+    {
+      "canonical_name": "weerbesu",
+      "aliases": ["weerbesu"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Often associated with UI and utility script mods."
+    },
+    {
+      "canonical_name": "thepancake1",
+      "aliases": ["thepancake1", "pancake1", "the pancake1"],
+      "likely_kinds": ["ScriptMods"],
+      "likely_subtypes": ["Utilities"],
+      "notes": "Frequently associated with UI and script utility mods."
+    },
+    {
+      "canonical_name": "Kijiko",
+      "aliases": ["kijiko"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Eyelashes"],
+      "notes": "Common source for lashes and face detail content."
+    },
+    {
+      "canonical_name": "Obscurus",
+      "aliases": ["obscurus"],
+      "likely_kinds": ["PresetsAndSliders"],
+      "likely_subtypes": ["Presets"],
+      "notes": "Often associated with sliders, presets, and facial detail content."
+    },
+    {
+      "canonical_name": "Pralinesims",
+      "aliases": ["pralinesims", "praline sims"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Makeup"],
+      "notes": "Frequently associated with makeup, skin details, and eyebrows."
+    },
+    {
+      "canonical_name": "RemusSirion",
+      "aliases": ["remussirion", "remus sirion"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Skin"],
+      "notes": "Frequently associated with skins, overlays, and facial details."
+    },
+    {
+      "canonical_name": "GoppolsMe",
+      "aliases": ["goppolsme", "goppols me"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Often associated with alpha-style hair and eyelashes."
+    },
+    {
+      "canonical_name": "Max20",
+      "aliases": ["max20", "maxsus", "max20maxis"],
+      "likely_kinds": ["BuildBuy"],
+      "likely_subtypes": ["Furniture"],
+      "notes": "Frequently associated with modern Build/Buy furniture and clutter sets."
+    },
+    {
+      "canonical_name": "MMSIMS",
+      "aliases": ["mmsims", "mm sims"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Often associated with hair, accessories, and detailed CAS content."
+    },
+    {
+      "canonical_name": "S-Club",
+      "aliases": ["sclub", "s-club"],
+      "likely_kinds": ["CAS"],
+      "likely_subtypes": ["Hair"],
+      "notes": "Long-running CAS creator associated with hair and accessories."
+    }
+  ]
+}

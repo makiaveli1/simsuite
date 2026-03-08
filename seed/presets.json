@@ -1,0 +1,25 @@
+{
+  "seed_version": "1.0.0",
+  "items": [
+    {
+      "name": "Category First",
+      "template": "CAS/{subtype}/{creator}",
+      "priority": 100
+    },
+    {
+      "name": "Creator First",
+      "template": "Creators/{creator}/{kind}/{subtype}",
+      "priority": 200
+    },
+    {
+      "name": "Hybrid",
+      "template": "{kind}/{creator}/{subtype}",
+      "priority": 300
+    },
+    {
+      "name": "Minimal Safe",
+      "template": "ScriptMods/{creator}",
+      "priority": 400
+    }
+  ]
+}

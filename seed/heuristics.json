@@ -1,0 +1,7 @@
+{
+  "seed_version": "1.0.0",
+  "mod_extensions": [".package", ".ts4script"],
+  "tray_extensions": [".trayitem", ".blueprint", ".bpi", ".householdbinary", ".hhi", ".sgi", ".room", ".rmi"],
+  "version_tokens": ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "final", "fixed", "updated", "update", "hotfix", "2023", "2024", "2025", "2026", "2027", "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may", "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september", "oct", "october", "nov", "november", "dec", "december"],
+  "support_tokens": ["recolor", "recolour", "mesh", "requires mesh", "requiresmesh", "bgc", "hq", "female", "male", "feminine", "masculine", "infant", "toddler", "child", "kid", "teen", "adult", "elder", "all ages", "allages", "base game", "basegame", "addon", "add on", "merged", "merge", "patreon", "public", "early access", "earlyaccess", "preview", "sample", "standalone"]
+}

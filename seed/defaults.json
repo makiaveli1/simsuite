@@ -1,0 +1,13 @@
+{
+  "seed_version": "1.0.0",
+  "settings": {
+    "mods_path": "",
+    "tray_path": "",
+    "theme": "evergreen-dawn",
+    "first_launch_mode": "observe",
+    "script_depth_limit": "1",
+    "package_depth_limit": "5",
+    "review_threshold": "0.55",
+    "ai_enabled": "0"
+  }
+}
