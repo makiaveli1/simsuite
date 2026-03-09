@@ -14,6 +14,10 @@ import type {
   CreatorAuditQuery,
   CreatorAuditResponse,
   CreatorLearningInfo,
+  DownloadInboxDetail,
+  DownloadsInboxQuery,
+  DownloadsInboxResponse,
+  DownloadsWatcherStatus,
   DetectedLibraryPaths,
   DuplicateOverview,
   DuplicatePair,
@@ -41,10 +45,12 @@ const DEFAULT_MODS_PATH =
   "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods";
 const DEFAULT_TRAY_PATH =
   "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Tray";
+const DEFAULT_DOWNLOADS_PATH = "C:\\Users\\Player\\Downloads";
 
 let mockSettings: LibrarySettings = {
   modsPath: DEFAULT_MODS_PATH,
   trayPath: DEFAULT_TRAY_PATH,
+  downloadsPath: DEFAULT_DOWNLOADS_PATH,
 };
 
 let mockLastScanAt = "2026-03-08T03:48:00.000Z";
@@ -63,6 +69,21 @@ let mockScanStatus: ScanStatus = {
 };
 const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
 const mockStatusListeners = new Set<(status: ScanStatus) => void>();
+const mockDownloadsStatusListeners = new Set<
+  (status: DownloadsWatcherStatus) => void
+>();
+let mockDownloadsWatcherStatus: DownloadsWatcherStatus = {
+  state: "watching",
+  watchedPath: DEFAULT_DOWNLOADS_PATH,
+  configured: true,
+  currentItem: null,
+  lastRunAt: "2026-03-08T04:12:00.000Z",
+  lastChangeAt: "2026-03-08T04:11:00.000Z",
+  lastError: null,
+  readyItems: 2,
+  needsReviewItems: 1,
+  activeItems: 3,
+};
 const emptyInsights = {
   format: null,
   resourceSummary: [],
@@ -334,6 +355,70 @@ const mockReviewQueue: ReviewQueueItem[] = [
     suggestedPath: "Mods\\Gameplay\\Review\\UnknownCreator_misc.package",
     safetyNotes: ["Needs manual review before safe placement."],
     sourceLocation: "downloads",
+  },
+];
+
+let mockDownloadsItems = [
+  {
+    id: 41,
+    displayName: "SpringRefreshPack.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\SpringRefreshPack.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
+    status: "partial",
+    sourceSize: 42_884_096,
+    detectedFileCount: 14,
+    activeFileCount: 14,
+    appliedFileCount: 0,
+    reviewFileCount: 3,
+    firstSeenAt: "2026-03-08T04:02:00.000Z",
+    lastSeenAt: "2026-03-08T04:05:00.000Z",
+    updatedAt: "2026-03-08T04:06:00.000Z",
+    errorMessage: null,
+    notes: ["Ignored 6 unsupported archive entries."],
+    sampleFiles: [
+      "CharlyPancakes_SunroomSofa.package",
+      "CharlyPancakes_SunroomChair.package",
+      "CharlyPancakes_SunroomLamp.package",
+    ],
+  },
+  {
+    id: 42,
+    displayName: "TwistedMexi_BetterExceptions.ts4script",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
+    sourceKind: "file",
+    archiveFormat: null,
+    status: "ready",
+    sourceSize: 482_304,
+    detectedFileCount: 1,
+    activeFileCount: 1,
+    appliedFileCount: 0,
+    reviewFileCount: 0,
+    firstSeenAt: "2026-03-08T03:58:00.000Z",
+    lastSeenAt: "2026-03-08T03:58:00.000Z",
+    updatedAt: "2026-03-08T03:59:00.000Z",
+    errorMessage: null,
+    notes: [],
+    sampleFiles: ["TwistedMexi_BetterExceptions.ts4script"],
+  },
+  {
+    id: 43,
+    displayName: "UnknownCreator_misc.package",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\UnknownCreator_misc.package`,
+    sourceKind: "file",
+    archiveFormat: null,
+    status: "needs_review",
+    sourceSize: 7_544_832,
+    detectedFileCount: 1,
+    activeFileCount: 1,
+    appliedFileCount: 0,
+    reviewFileCount: 1,
+    firstSeenAt: "2026-03-08T02:10:00.000Z",
+    lastSeenAt: "2026-03-08T02:10:00.000Z",
+    updatedAt: "2026-03-08T02:11:00.000Z",
+    errorMessage: null,
+    notes: ["Needs a human check before it moves."],
+    sampleFiles: ["UnknownCreator_misc.package"],
   },
 ];
 
@@ -893,6 +978,10 @@ function createMockOverview(): HomeOverview {
     totalFiles: 1_834,
     modsCount: 1_622,
     trayCount: 84,
+    downloadsCount: mockDownloadsItems.reduce(
+      (count, item) => count + item.activeFileCount,
+      0,
+    ),
     scriptModsCount: 43,
     creatorCount: 67,
     bundlesCount: 31,
@@ -902,6 +991,132 @@ function createMockOverview(): HomeOverview {
     lastScanAt: mockLastScanAt,
     readOnlyMode: true,
   };
+}
+
+function createMockDownloadsOverview() {
+  return {
+    totalItems: mockDownloadsItems.length,
+    readyItems: mockDownloadsItems.filter((item) =>
+      ["ready", "partial"].includes(item.status),
+    ).length,
+    needsReviewItems: mockDownloadsItems.filter(
+      (item) => item.status === "needs_review",
+    ).length,
+    appliedItems: mockDownloadsItems.filter((item) => item.status === "applied")
+      .length,
+    errorItems: mockDownloadsItems.filter((item) => item.status === "error").length,
+    activeFiles: mockDownloadsItems.reduce(
+      (count, item) => count + item.activeFileCount,
+      0,
+    ),
+    watchedPath: mockSettings.downloadsPath,
+  };
+}
+
+function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
+  const item = mockDownloadsItems.find((entry) => entry.id === itemId);
+  if (!item) {
+    return null;
+  }
+
+  if (itemId === 41) {
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 8,
+          filename: "UnknownCreator_misc.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\SpringRefreshPack\\UnknownCreator_misc.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\SpringRefreshPack.zip`,
+          archiveMemberPath: "Gameplay/UnknownCreator_misc.package",
+          kind: "Gameplay",
+          subtype: "Misc",
+          creator: null,
+          confidence: 0.46,
+          size: 7_544_832,
+          sourceLocation: "downloads",
+          safetyNotes: ["Needs manual review before safe placement."],
+        },
+        {
+          fileId: 1,
+          filename: "AHarris00_CozyKitchen.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\SpringRefreshPack\\AHarris00_CozyKitchen.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\SpringRefreshPack.zip`,
+          archiveMemberPath: "BuildBuy/AHarris00_CozyKitchen.package",
+          kind: "BuildBuy",
+          subtype: "Kitchen",
+          creator: "AHarris00",
+          confidence: 0.94,
+          size: 15_728_640,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 7,
+          filename: "Miiko_Eyebrows.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\SpringRefreshPack\\Miiko_Eyebrows.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\SpringRefreshPack.zip`,
+          archiveMemberPath: "CAS/Miiko_Eyebrows.package",
+          kind: "CAS",
+          subtype: "Eyebrows",
+          creator: "Miiko",
+          confidence: 0.86,
+          size: 2_093_056,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 42) {
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 2,
+          filename: "TwistedMexi_BetterExceptions.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
+          archiveMemberPath: null,
+          kind: "ScriptMods",
+          subtype: "Utility",
+          creator: "TwistedMexi",
+          confidence: 0.99,
+          size: 482_304,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+      ],
+    };
+  }
+
+  return {
+    item: structuredClone(item),
+    files: [
+      {
+        fileId: 8,
+        filename: "UnknownCreator_misc.package",
+        currentPath: `${DEFAULT_DOWNLOADS_PATH}\\UnknownCreator_misc.package`,
+        originPath: `${DEFAULT_DOWNLOADS_PATH}\\UnknownCreator_misc.package`,
+        archiveMemberPath: null,
+        kind: "Gameplay",
+        subtype: "Misc",
+        creator: null,
+        confidence: 0.46,
+        size: 7_544_832,
+        sourceLocation: "downloads",
+        safetyNotes: ["Needs manual review before safe placement."],
+      },
+    ],
+  };
+}
+
+function emitMockDownloadsStatus(status: DownloadsWatcherStatus) {
+  mockDownloadsWatcherStatus = status;
+  for (const listener of mockDownloadsStatusListeners) {
+    listener(status);
+  }
 }
 
 function emitMockProgress(progress: ScanProgress) {
@@ -1192,6 +1407,7 @@ async function mockInvoke<T>(
       return {
         modsPath: DEFAULT_MODS_PATH,
         trayPath: DEFAULT_TRAY_PATH,
+        downloadsPath: DEFAULT_DOWNLOADS_PATH,
       } as T;
     case "pick_folder":
       return null as T;
@@ -1220,6 +1436,64 @@ async function mockInvoke<T>(
       return structuredClone(mockScanStatus) as T;
     case "get_scan_status":
       return structuredClone(mockScanStatus) as T;
+    case "get_downloads_watcher_status":
+      return structuredClone(mockDownloadsWatcherStatus) as T;
+    case "refresh_downloads_inbox":
+      emitMockDownloadsStatus({
+        ...mockDownloadsWatcherStatus,
+        state: "processing",
+        currentItem: "Manual inbox refresh",
+        lastRunAt: new Date().toISOString(),
+      });
+      globalThis.setTimeout(() => {
+        emitMockDownloadsStatus({
+          ...mockDownloadsWatcherStatus,
+          state: "watching",
+          currentItem: null,
+          lastRunAt: new Date().toISOString(),
+          lastChangeAt: new Date().toISOString(),
+        });
+      }, 180);
+      return structuredClone(mockDownloadsWatcherStatus) as T;
+    case "get_downloads_inbox": {
+      const query = (payload?.query as DownloadsInboxQuery | undefined) ?? {};
+      const search = query.search?.trim().toLowerCase() ?? "";
+      const status = query.status?.trim() ?? "";
+      const limit = query.limit ?? 120;
+      const items = mockDownloadsItems.filter((item) => {
+        const matchesSearch =
+          !search ||
+          [item.displayName, item.sourcePath, ...item.sampleFiles].some((value) =>
+            value.toLowerCase().includes(search),
+          );
+        const matchesStatus = !status || item.status === status;
+        return matchesSearch && matchesStatus;
+      });
+
+      return {
+        overview: createMockDownloadsOverview(),
+        items: structuredClone(items.slice(0, limit)),
+      } as T;
+    }
+    case "get_download_item_detail":
+      return structuredClone(
+        buildMockDownloadDetail(payload?.itemId as number),
+      ) as T;
+    case "preview_download_item": {
+      const itemId = payload?.itemId as number;
+      const detail = buildMockDownloadDetail(itemId);
+      const suggestions = mockSuggestions.filter((item) =>
+        detail?.files.some((file) => file.fileId === item.fileId),
+      );
+      return {
+        presetName: (payload?.presetName as string | undefined) ?? "Category First",
+        detectedStructure: "Downloads inbox batch ready for a safe hand-off.",
+        totalConsidered: suggestions.length,
+        correctedCount: suggestions.filter((item) => item.corrected).length,
+        reviewCount: suggestions.filter((item) => item.reviewRequired).length,
+        suggestions: structuredClone(suggestions),
+      } as T;
+    }
     case "get_library_facets":
       return {
         creators: Array.from(
@@ -1340,6 +1614,47 @@ async function mockInvoke<T>(
         restoredCount: 5,
         skippedCount: 0,
       } as T;
+    case "apply_download_item": {
+      const itemId = payload?.itemId as number;
+      mockDownloadsItems = mockDownloadsItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              status: item.reviewFileCount > 0 ? "needs_review" : "applied",
+              appliedFileCount: item.detectedFileCount - item.reviewFileCount,
+              activeFileCount: item.reviewFileCount,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      );
+      return {
+        snapshotId: mockSnapshotId++,
+        movedCount:
+          buildMockDownloadDetail(itemId)?.files.filter(
+            (file) =>
+              !file.safetyNotes.length &&
+              file.creator !== null,
+          ).length ?? 0,
+        deferredReviewCount:
+          mockDownloadsItems.find((item) => item.id === itemId)?.reviewFileCount ?? 0,
+        skippedCount: 0,
+        snapshotName: `downloads_batch_${mockSnapshotId - 1}`,
+      } as T;
+    }
+    case "ignore_download_item": {
+      const itemId = payload?.itemId as number;
+      mockDownloadsItems = mockDownloadsItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              status: "ignored",
+              activeFileCount: 0,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      );
+      return true as T;
+    }
     case "list_library_files": {
       const query = (payload?.query as LibraryQuery | undefined) ?? {};
       return filterMockFiles(query) as T;
@@ -1629,6 +1944,21 @@ function listenToScanStatus(handler: (status: ScanStatus) => void) {
   });
 }
 
+function listenToDownloadsStatus(
+  handler: (status: DownloadsWatcherStatus) => void,
+) {
+  if (hasTauriRuntime) {
+    return tauriListen<DownloadsWatcherStatus>("downloads-status", (event) =>
+      handler(event.payload),
+    );
+  }
+
+  mockDownloadsStatusListeners.add(handler);
+  return Promise.resolve(() => {
+    mockDownloadsStatusListeners.delete(handler);
+  });
+}
+
 export const api = {
   getLibrarySettings: () => invoke<LibrarySettings>("get_library_settings"),
   saveLibraryPaths: (settings: LibrarySettings) =>
@@ -1641,8 +1971,19 @@ export const api = {
   scanLibrary: () => invoke<ScanSummary>("scan_library"),
   startScan: () => invoke<ScanStatus>("start_scan"),
   getScanStatus: () => invoke<ScanStatus>("get_scan_status"),
+  getDownloadsWatcherStatus: () =>
+    invoke<DownloadsWatcherStatus>("get_downloads_watcher_status"),
+  refreshDownloadsInbox: () =>
+    invoke<DownloadsWatcherStatus>("refresh_downloads_inbox"),
   listenToScanProgress,
   listenToScanStatus,
+  listenToDownloadsStatus,
+  getDownloadsInbox: (query?: DownloadsInboxQuery) =>
+    invoke<DownloadsInboxResponse>("get_downloads_inbox", { query }),
+  getDownloadItemDetail: (itemId: number) =>
+    invoke<DownloadInboxDetail | null>("get_download_item_detail", { itemId }),
+  previewDownloadItem: (itemId: number, presetName?: string) =>
+    invoke<OrganizationPreview>("preview_download_item", { itemId, presetName }),
   getLibraryFacets: () => invoke<LibraryFacets>("get_library_facets"),
   getDuplicateOverview: () => invoke<DuplicateOverview>("get_duplicate_overview"),
   listDuplicatePairs: (duplicateType?: string, limit?: number) =>
@@ -1674,6 +2015,18 @@ export const api = {
     }),
   restoreSnapshot: (snapshotId: number, approved = false) =>
     invoke<RestoreSnapshotResult>("restore_snapshot", { snapshotId, approved }),
+  applyDownloadItem: (
+    itemId: number,
+    presetName?: string,
+    approved = false,
+  ) =>
+    invoke<ApplyPreviewResult>("apply_download_item", {
+      itemId,
+      presetName,
+      approved,
+    }),
+  ignoreDownloadItem: (itemId: number) =>
+    invoke<boolean>("ignore_download_item", { itemId }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
   getFileDetail: (fileId: number) =>

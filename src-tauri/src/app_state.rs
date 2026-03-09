@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, Mutex},
     time::Duration,
 };
 
@@ -11,15 +11,22 @@ use tauri::{AppHandle, Manager};
 use crate::{
     database,
     error::{AppError, AppResult},
-    models::ScanStatus,
+    models::{DownloadsWatcherStatus, ScanStatus},
     seed::{self, SeedPack},
 };
+
+#[derive(Default)]
+pub struct DownloadsWatcherControl {
+    pub stop_sender: Option<mpsc::Sender<()>>,
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub database_path: PathBuf,
     pub seed_pack: Arc<SeedPack>,
     pub scan_status: Arc<Mutex<ScanStatus>>,
+    pub downloads_status: Arc<Mutex<DownloadsWatcherStatus>>,
+    pub downloads_watcher_control: Arc<Mutex<DownloadsWatcherControl>>,
     #[allow(dead_code)]
     pub app_data_dir: PathBuf,
 }
@@ -45,6 +52,8 @@ impl AppState {
             database_path,
             seed_pack: Arc::new(seed_pack),
             scan_status: Arc::new(Mutex::new(ScanStatus::default())),
+            downloads_status: Arc::new(Mutex::new(DownloadsWatcherStatus::default())),
+            downloads_watcher_control: Arc::new(Mutex::new(DownloadsWatcherControl::default())),
             app_data_dir,
         })
     }
@@ -59,6 +68,14 @@ impl AppState {
 
     pub fn scan_status(&self) -> Arc<Mutex<ScanStatus>> {
         Arc::clone(&self.scan_status)
+    }
+
+    pub fn downloads_status(&self) -> Arc<Mutex<DownloadsWatcherStatus>> {
+        Arc::clone(&self.downloads_status)
+    }
+
+    pub fn downloads_watcher_control(&self) -> Arc<Mutex<DownloadsWatcherControl>> {
+        Arc::clone(&self.downloads_watcher_control)
     }
 }
 

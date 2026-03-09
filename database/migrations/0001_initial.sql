@@ -75,6 +75,9 @@ CREATE TABLE IF NOT EXISTS files (
   subtype TEXT,
   confidence REAL NOT NULL DEFAULT 0,
   source_location TEXT NOT NULL CHECK (source_location IN ('mods', 'tray', 'downloads', 'unknown')),
+  download_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
+  source_origin_path TEXT,
+  archive_member_path TEXT,
   scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
   relative_depth INTEGER NOT NULL DEFAULT 0,
   safety_notes TEXT NOT NULL DEFAULT '[]',
@@ -89,6 +92,27 @@ CREATE INDEX IF NOT EXISTS idx_files_creator_id ON files (creator_id);
 CREATE INDEX IF NOT EXISTS idx_files_bundle_id ON files (bundle_id);
 CREATE INDEX IF NOT EXISTS idx_files_kind ON files (kind);
 CREATE INDEX IF NOT EXISTS idx_files_source_location ON files (source_location);
+CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
+
+CREATE TABLE IF NOT EXISTS download_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_path TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('file', 'archive')),
+  archive_format TEXT,
+  staging_path TEXT,
+  source_size INTEGER NOT NULL DEFAULT 0,
+  source_modified_at TEXT,
+  detected_file_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'error')),
+  error_message TEXT,
+  notes TEXT NOT NULL DEFAULT '[]',
+  first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_download_items_status ON download_items (status);
 
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

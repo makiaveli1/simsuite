@@ -17,7 +17,14 @@ pub struct UserCategoryOverride {
 }
 
 pub fn initialize(connection: &mut Connection) -> AppResult<()> {
-    connection.execute_batch(schema::INITIAL_SCHEMA_SQL)?;
+    let has_files_table = table_exists(connection, "files")?;
+
+    if !has_files_table {
+        connection.execute_batch(schema::INITIAL_SCHEMA_SQL)?;
+    } else {
+        ensure_migration_table(connection)?;
+    }
+
     ensure_schema(connection)?;
 
     let version_exists: Option<i64> = connection
@@ -34,6 +41,34 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
             params![1_i64, "initial_schema"],
         )?;
     }
+
+    Ok(())
+}
+
+fn table_exists(connection: &Connection, table_name: &str) -> AppResult<bool> {
+    let exists = connection
+        .query_row(
+            "SELECT 1
+             FROM sqlite_master
+             WHERE type = 'table' AND name = ?1
+             LIMIT 1",
+            params![table_name],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .is_some();
+
+    Ok(exists)
+}
+
+fn ensure_migration_table(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );",
+    )?;
 
     Ok(())
 }
@@ -460,6 +495,7 @@ pub fn get_library_settings(connection: &Connection) -> AppResult<LibrarySetting
     Ok(LibrarySettings {
         mods_path: get_app_setting(connection, "mods_path")?,
         tray_path: get_app_setting(connection, "tray_path")?,
+        downloads_path: get_app_setting(connection, "downloads_path")?,
     })
 }
 
@@ -470,6 +506,11 @@ pub fn save_library_paths(
     let transaction = connection.transaction()?;
     upsert_setting(&transaction, "mods_path", settings.mods_path.as_deref())?;
     upsert_setting(&transaction, "tray_path", settings.tray_path.as_deref())?;
+    upsert_setting(
+        &transaction,
+        "downloads_path",
+        settings.downloads_path.as_deref(),
+    )?;
     transaction.commit()?;
     Ok(())
 }
@@ -545,6 +586,9 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "insights",
         "TEXT NOT NULL DEFAULT '{}'",
     )?;
+    ensure_column(connection, "files", "download_item_id", "INTEGER")?;
+    ensure_column(connection, "files", "source_origin_path", "TEXT")?;
+    ensure_column(connection, "files", "archive_member_path", "TEXT")?;
 
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS user_creator_aliases (
@@ -563,7 +607,26 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        CREATE INDEX IF NOT EXISTS idx_user_category_overrides_kind ON user_category_overrides (kind);",
+        CREATE INDEX IF NOT EXISTS idx_user_category_overrides_kind ON user_category_overrides (kind);
+        CREATE TABLE IF NOT EXISTS download_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_path TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            source_kind TEXT NOT NULL CHECK (source_kind IN ('file', 'archive')),
+            archive_format TEXT,
+            staging_path TEXT,
+            source_size INTEGER NOT NULL DEFAULT 0,
+            source_modified_at TEXT,
+            detected_file_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'error')),
+            error_message TEXT,
+            notes TEXT NOT NULL DEFAULT '[]',
+            first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_download_items_status ON download_items (status);
+        CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);",
     )?;
 
     Ok(())
@@ -878,6 +941,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
+                downloads_path: None,
             },
             file_id,
             "CustomMaker",
@@ -1049,5 +1113,68 @@ mod tests {
         assert_eq!(old_count, 0);
         assert_eq!(new_row.0, "CAS");
         assert_eq!(new_row.1.as_deref(), Some("Hair"));
+    }
+
+    #[test]
+    fn initialize_upgrades_existing_files_table_before_creating_download_index() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        connection
+            .execute_batch(
+                "CREATE TABLE files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL UNIQUE,
+                    filename TEXT NOT NULL,
+                    extension TEXT NOT NULL,
+                    hash TEXT,
+                    size INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT,
+                    modified_at TEXT,
+                    bundle_id INTEGER,
+                    creator_id INTEGER,
+                    kind TEXT NOT NULL DEFAULT 'Unknown',
+                    subtype TEXT,
+                    confidence REAL NOT NULL DEFAULT 0,
+                    source_location TEXT NOT NULL,
+                    scan_session_id INTEGER,
+                    relative_depth INTEGER NOT NULL DEFAULT 0,
+                    safety_notes TEXT NOT NULL DEFAULT '[]',
+                    parser_warnings TEXT NOT NULL DEFAULT '[]',
+                    indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'seed',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("legacy schema");
+
+        initialize(&mut connection).expect("upgrade schema");
+
+        let columns = connection
+            .prepare("PRAGMA table_info(files)")
+            .expect("pragma")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("column rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("columns");
+
+        assert!(columns.contains(&"download_item_id".to_owned()));
+        assert!(columns.contains(&"source_origin_path".to_owned()));
+        assert!(columns.contains(&"archive_member_path".to_owned()));
+        assert!(columns.contains(&"insights".to_owned()));
+
+        let index_exists: Option<String> = connection
+            .query_row(
+                "SELECT name
+                 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_files_download_item_id'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("index lookup");
+        assert_eq!(index_exists.as_deref(), Some("idx_files_download_item_id"));
     }
 }

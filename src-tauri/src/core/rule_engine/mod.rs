@@ -60,11 +60,31 @@ pub fn build_preview(
 ) -> AppResult<OrganizationPreview> {
     let preset_name = normalize_preset_name(preset_name);
     let candidates = load_candidates(connection, None, limit)?;
+    build_preview_from_candidates(connection, settings, &preset_name, candidates)
+}
+
+pub fn build_preview_for_files(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    preset_name: Option<String>,
+    file_ids: &[i64],
+) -> AppResult<OrganizationPreview> {
+    let preset_name = normalize_preset_name(preset_name);
+    let candidates = load_candidates(connection, Some(file_ids), file_ids.len() as i64)?;
+    build_preview_from_candidates(connection, settings, &preset_name, candidates)
+}
+
+fn build_preview_from_candidates(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    preset_name: &str,
+    candidates: Vec<PreviewCandidate>,
+) -> AppResult<OrganizationPreview> {
     let detected_structure = detect_structure_label(connection, settings)?;
-    let suggestions = suggest_for_candidates(connection, settings, &preset_name, candidates)?;
+    let suggestions = suggest_for_candidates(connection, settings, preset_name, candidates)?;
 
     Ok(OrganizationPreview {
-        preset_name,
+        preset_name: preset_name.to_owned(),
         detected_structure,
         total_considered: suggestions.len() as i64,
         corrected_count: suggestions.iter().filter(|item| item.corrected).count() as i64,
@@ -626,6 +646,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
             },
             Some("Category First".to_owned()),
             20,
@@ -682,6 +703,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
             },
             Some("Category First".to_owned()),
             20,

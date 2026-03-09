@@ -7,6 +7,7 @@ mod models;
 mod seed;
 
 use app_state::AppState;
+use core::downloads_watcher;
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
@@ -23,6 +24,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let state = AppState::initialise(app.handle())?;
+            downloads_watcher::restart_watcher(app.handle(), &state)?;
             app.manage(state);
             Ok(())
         })
@@ -35,6 +37,11 @@ pub fn run() {
             commands::scan_library,
             commands::start_scan,
             commands::get_scan_status,
+            commands::get_downloads_watcher_status,
+            commands::refresh_downloads_inbox,
+            commands::get_downloads_inbox,
+            commands::get_download_item_detail,
+            commands::preview_download_item,
             commands::get_library_facets,
             commands::get_duplicate_overview,
             commands::list_duplicate_pairs,
@@ -44,6 +51,8 @@ pub fn run() {
             commands::list_snapshots,
             commands::apply_preview_organization,
             commands::restore_snapshot,
+            commands::apply_download_item,
+            commands::ignore_download_item,
             commands::list_library_files,
             commands::get_creator_audit,
             commands::get_category_audit,

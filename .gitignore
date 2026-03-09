@@ -9,5 +9,6 @@ Thumbs.db
 .playwright-cli/
 .kilocode/
 output/
+test-results/
 user_data/
 SimSuite_*_Part_*.md

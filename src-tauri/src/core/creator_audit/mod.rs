@@ -784,6 +784,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
+                downloads_path: None,
             },
             &seed,
             crate::models::CreatorAuditQuery::default(),

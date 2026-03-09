@@ -1,10 +1,13 @@
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
-import { Fingerprint, RefreshCw, ShieldAlert } from "lucide-react";
+import { m } from "motion/react";
+import { Fingerprint, RefreshCw, SearchX, ShieldAlert, Sparkles } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
+import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
 import type {
   CreatorAuditFile,
   CreatorAuditResponse,
@@ -381,16 +384,19 @@ export function CreatorAuditScreen({
 
       <div className="learning-flow-strip">
         <LearningStep
+          index={0}
           step="1"
           title="Pick a group"
           detail="SimSuite groups files that look like they came from the same creator."
         />
         <LearningStep
+          index={1}
           step="2"
           title="Check examples"
           detail="Look over a few filenames before you save anything."
         />
         <LearningStep
+          index={2}
           step="3"
           title="Save once"
           detail="Your saved name will be reused on future scans. No files move here."
@@ -477,8 +483,8 @@ export function CreatorAuditScreen({
 
             <div className="audit-group-list">
               {audit?.groups.length ? (
-                audit.groups.map((group) => (
-                  <button
+                audit.groups.map((group, index) => (
+                  <m.button
                     key={group.id}
                     type="button"
                     className={`audit-group-row ${
@@ -489,6 +495,9 @@ export function CreatorAuditScreen({
                       setSelectedGroupId(group.id);
                     }}
                     title={`${group.itemCount} files`}
+                    whileHover={rowHover}
+                    whileTap={rowPress}
+                    {...stagedListItem(index)}
                   >
                     <div className="audit-group-main">
                       <strong>{group.suggestedCreator}</strong>
@@ -509,15 +518,20 @@ export function CreatorAuditScreen({
                         {confidenceLabel(group.confidence)}
                       </span>
                     </div>
-                  </button>
+                  </m.button>
                 ))
               ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">
-                    {userView === "beginner" ? "Creator names" : "Creator audit"}
-                  </p>
-                  <h2>No clusters match</h2>
-                </div>
+                <StatePanel
+                  eyebrow={userView === "beginner" ? "Creator names" : "Creator audit"}
+                  title="No clusters match"
+                  body={
+                    userView === "beginner"
+                      ? "Try a broader search or lower the minimum size if you want SimSuite to show smaller creator-name groups."
+                      : "Clear the search or reduce the minimum group size to surface weaker creator clusters."
+                  }
+                  icon={SearchX}
+                  compact
+                />
               )}
             </div>
           </div>
@@ -570,15 +584,27 @@ export function CreatorAuditScreen({
 
             {selectedGroup ? (
               <div className="audit-file-list">
-                {visibleGroupFiles.map((file) => (
-                  <AuditFileRow key={file.id} file={file} userView={userView} />
+                {visibleGroupFiles.map((file, index) => (
+                  <AuditFileRow
+                    key={file.id}
+                    index={index}
+                    file={file}
+                    userView={userView}
+                  />
                 ))}
               </div>
             ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">Samples</p>
-                  <h2>{userView === "beginner" ? "Select a group" : "Select a cluster"}</h2>
-                </div>
+                <StatePanel
+                  eyebrow="Samples"
+                  title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+                  body={
+                    userView === "beginner"
+                      ? "Pick one creator group from the left to preview a few matching filenames before you save anything."
+                      : "Choose a creator cluster to inspect the sample files and decide whether the shared clues are trustworthy."
+                  }
+                  icon={Fingerprint}
+                  compact
+                />
             )}
           </div>
 
@@ -595,8 +621,13 @@ export function CreatorAuditScreen({
 
             <div className="audit-unresolved-list">
               {audit?.unresolvedSamples.length ? (
-                audit.unresolvedSamples.map((file) => (
-                  <div key={file.id} className="audit-unresolved-row audit-unresolved-row-low">
+                audit.unresolvedSamples.map((file, index) => (
+                  <m.div
+                    key={file.id}
+                    className="audit-unresolved-row audit-unresolved-row-low"
+                    whileHover={rowHover}
+                    {...stagedListItem(index)}
+                  >
                     <div className="audit-group-main">
                       <strong>{file.filename}</strong>
                       <span>
@@ -613,13 +644,25 @@ export function CreatorAuditScreen({
                         {Math.round(file.confidence * 100)}%
                       </span>
                     </div>
-                  </div>
+                  </m.div>
                 ))
               ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">Unresolved</p>
-                  <h2>{userView === "beginner" ? "No extra leftovers" : "No leftover samples"}</h2>
-                </div>
+                <StatePanel
+                  eyebrow="Unresolved"
+                  title={
+                    userView === "beginner"
+                      ? "No extra leftovers"
+                      : "No leftover samples"
+                  }
+                  body={
+                    userView === "beginner"
+                      ? "This means the sampled backlog is clustering cleanly right now."
+                      : "The sampled backlog does not currently have extra edge cases outside the grouped clusters."
+                  }
+                  icon={Sparkles}
+                  tone="good"
+                  compact
+                />
               )}
             </div>
           </div>
@@ -649,12 +692,17 @@ export function CreatorAuditScreen({
               />
             </>
           ) : (
-            <div className="detail-empty">
-              <p className="eyebrow">
-                {userView === "beginner" ? "Creator names" : "Creator audit"}
-              </p>
-              <h2>{userView === "beginner" ? "Select a group" : "Select a cluster"}</h2>
-            </div>
+            <StatePanel
+              eyebrow={userView === "beginner" ? "Creator names" : "Creator audit"}
+              title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+              body={
+                userView === "beginner"
+                  ? "The right panel will explain the group and save one creator name across the full batch when you confirm it."
+                  : "The inspector holds the shared clues, aliases, and batch teaching controls for the selected creator cluster."
+              }
+              icon={Fingerprint}
+              meta={["Applies to future scans", "Does not move files"]}
+            />
           )}
         </ResizableDetailPanel>
       </div>
@@ -663,34 +711,46 @@ export function CreatorAuditScreen({
 }
 
 function LearningStep({
+  index,
   step,
   title,
   detail,
 }: {
+  index: number;
   step: string;
   title: string;
   detail: string;
 }) {
   return (
-    <div className="learning-step">
+    <m.div
+      className="learning-step"
+      whileHover={hoverLift}
+      {...stagedListItem(index)}
+    >
       <span className="learning-step-index">{step}</span>
       <div className="learning-step-copy">
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
-    </div>
+    </m.div>
   );
 }
 
 function AuditFileRow({
+  index,
   file,
   userView,
 }: {
+  index: number;
   file: CreatorAuditFile;
   userView: UserView;
 }) {
   return (
-    <div className="audit-file-row audit-file-row-sample">
+    <m.div
+      className="audit-file-row audit-file-row-sample"
+      whileHover={rowHover}
+      {...stagedListItem(index)}
+    >
       <div className="audit-group-main">
         <strong>{file.filename}</strong>
         <span>
@@ -713,7 +773,7 @@ function AuditFileRow({
           ))}
         </div>
       ) : null}
-    </div>
+    </m.div>
   );
 }
 

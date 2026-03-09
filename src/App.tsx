@@ -1,17 +1,22 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { AnimatePresence, domAnimation, LazyMotion, m, MotionConfig } from "motion/react";
 import { HomeScreen } from "./screens/HomeScreen";
+import { DownloadsScreen } from "./screens/DownloadsScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { CreatorAuditScreen } from "./screens/CreatorAuditScreen";
 import { CategoryAuditScreen } from "./screens/CategoryAuditScreen";
 import { OrganizeScreen } from "./screens/OrganizeScreen";
 import { ReviewScreen } from "./screens/ReviewScreen";
 import { DuplicatesScreen } from "./screens/DuplicatesScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { Sidebar } from "./components/layout/Sidebar";
 import { FieldGuide } from "./components/FieldGuide";
 import { ScannerOverlay } from "./components/ScannerOverlay";
+import { ThemeBackdrop } from "./components/ThemeBackdrop";
+import { useUiPreferences, UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
-import { UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { api } from "./lib/api";
+import { getScreenFrameMotion } from "./lib/motion";
 import type {
   LibrarySettings,
   ScanProgress,
@@ -29,16 +34,40 @@ function resolveInitialUserView(): UserView {
   return "standard";
 }
 
+function resolveInitialScreen(): Screen {
+  const value = new URLSearchParams(globalThis.location?.search ?? "").get("screen");
+  if (
+    value === "home" ||
+    value === "downloads" ||
+    value === "library" ||
+    value === "creatorAudit" ||
+    value === "categoryAudit" ||
+    value === "duplicates" ||
+    value === "organize" ||
+    value === "review" ||
+    value === "settings"
+  ) {
+    return value;
+  }
+
+  return "home";
+}
+
 export default function App() {
   return (
     <UiPreferencesProvider>
-      <AppShell />
+      <LazyMotion features={domAnimation}>
+        <MotionConfig reducedMotion="user">
+          <AppShell />
+        </MotionConfig>
+      </LazyMotion>
     </UiPreferencesProvider>
   );
 }
 
 function AppShell() {
-  const [screen, setScreen] = useState<Screen>("home");
+  const { theme } = useUiPreferences();
+  const [screen, setScreen] = useState<Screen>(resolveInitialScreen);
   const [settings, setSettings] = useState<LibrarySettings | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
@@ -206,8 +235,72 @@ function AppShell() {
     }
   }
 
+  const currentScreen =
+    screen === "home" ? (
+      <HomeScreen
+        refreshVersion={refreshVersion}
+        settings={settings}
+        onSettingsChange={saveLibraryPaths}
+        onNavigate={setScreen}
+        onScan={startScan}
+        isScanning={isScanning}
+        userView={userView}
+      />
+    ) : screen === "downloads" ? (
+      <DownloadsScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        userView={userView}
+      />
+    ) : screen === "library" ? (
+      <LibraryScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        userView={userView}
+      />
+    ) : screen === "creatorAudit" ? (
+      <CreatorAuditScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        userView={userView}
+      />
+    ) : screen === "categoryAudit" ? (
+      <CategoryAuditScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        userView={userView}
+      />
+    ) : screen === "duplicates" ? (
+      <DuplicatesScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        userView={userView}
+      />
+    ) : screen === "organize" ? (
+      <OrganizeScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        userView={userView}
+      />
+    ) : screen === "settings" ? (
+      <SettingsScreen userView={userView} onUserViewChange={setUserView} />
+    ) : (
+      <ReviewScreen
+        refreshVersion={refreshVersion}
+        onNavigate={setScreen}
+        userView={userView}
+      />
+    );
+
+  const screenFrameMotion = getScreenFrameMotion(theme, screen);
+
   return (
     <div className="app-shell">
+      <ThemeBackdrop theme={theme} screen={screen} />
       <Sidebar
         currentScreen={screen}
         userView={userView}
@@ -218,61 +311,30 @@ function AppShell() {
       />
 
       <main className="main-shell">
-        <WorkspaceToolbar userView={userView} onChange={setUserView} />
-
-        {screen === "home" ? (
-          <HomeScreen
-            refreshVersion={refreshVersion}
-            settings={settings}
-            onSettingsChange={saveLibraryPaths}
-            onNavigate={setScreen}
-            onScan={startScan}
-            isScanning={isScanning}
-            userView={userView}
-          />
-        ) : screen === "library" ? (
-          <LibraryScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            userView={userView}
-          />
-        ) : screen === "creatorAudit" ? (
-          <CreatorAuditScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            onDataChanged={() => setRefreshVersion((current) => current + 1)}
-            userView={userView}
-          />
-        ) : screen === "categoryAudit" ? (
-          <CategoryAuditScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            onDataChanged={() => setRefreshVersion((current) => current + 1)}
-            userView={userView}
-          />
-        ) : screen === "duplicates" ? (
-          <DuplicatesScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            userView={userView}
-          />
-        ) : screen === "organize" ? (
-          <OrganizeScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            onDataChanged={() => setRefreshVersion((current) => current + 1)}
-            userView={userView}
-          />
-        ) : (
-          <ReviewScreen
-            refreshVersion={refreshVersion}
-            onNavigate={setScreen}
-            userView={userView}
-          />
-        )}
+        <WorkspaceToolbar
+          userView={userView}
+          currentScreen={screen}
+          onOpenSettings={() => setScreen("settings")}
+        />
+        <AnimatePresence mode="wait" initial={false}>
+          <m.div
+            key={screen}
+            className="screen-frame"
+            initial={screenFrameMotion.initial}
+            animate={screenFrameMotion.animate}
+            exit={screenFrameMotion.exit}
+            transition={screenFrameMotion.transition}
+          >
+            {currentScreen}
+          </m.div>
+        </AnimatePresence>
       </main>
 
-      {isScanning ? <ScannerOverlay progress={scanProgress} userView={userView} /> : null}
+      <AnimatePresence>
+        {isScanning ? (
+          <ScannerOverlay progress={scanProgress} userView={userView} />
+        ) : null}
+      </AnimatePresence>
       <FieldGuide
         open={isGuideOpen}
         screen={screen}

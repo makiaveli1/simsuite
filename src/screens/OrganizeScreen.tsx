@@ -1,10 +1,12 @@
 import { startTransition, useEffect, useState } from "react";
+import { m } from "motion/react";
 import { RefreshCw, ShieldAlert, Workflow } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { hoverLift, rowHover, rowPress, stagedListItem, tapPress } from "../lib/motion";
 import type {
   OrganizationPreview,
   PreviewSuggestion,
@@ -273,8 +275,8 @@ export function OrganizeScreen({
             </div>
 
             <div className="preset-list">
-              {presets.map((preset) => (
-                <button
+              {presets.map((preset, index) => (
+                <m.button
                   key={preset.name}
                   type="button"
                   className={`preset-card ${
@@ -285,13 +287,16 @@ export function OrganizeScreen({
                     setStatusMessage(null);
                     setSelectedPreset(preset.name);
                   }}
+                  whileHover={hoverLift}
+                  whileTap={tapPress}
+                  {...stagedListItem(index)}
                 >
                   <div className="preset-topline">
                     <strong>{preset.name}</strong>
                     <span className="ghost-chip">P{preset.priority}</span>
                   </div>
                   <code>{preset.template}</code>
-                </button>
+                </m.button>
               ))}
             </div>
           </div>
@@ -321,7 +326,7 @@ export function OrganizeScreen({
 
               <div className="preview-list">
                 {preview?.suggestions.length ? (
-                  preview.suggestions.map((item) => {
+                  preview.suggestions.map((item, index) => {
                     const state =
                       item.reviewRequired
                         ? "review"
@@ -330,7 +335,7 @@ export function OrganizeScreen({
                           : "safe";
 
                     return (
-                      <button
+                      <m.button
                         key={item.fileId}
                         type="button"
                         className={`preview-row ${
@@ -338,6 +343,9 @@ export function OrganizeScreen({
                         } preview-row-state-${state}`}
                         onClick={() => setSelectedFileId(item.fileId)}
                         title={item.ruleLabel}
+                        whileHover={rowHover}
+                        whileTap={rowPress}
+                        {...stagedListItem(index)}
                       >
                         <div className="preview-row-main">
                           <strong>{item.filename}</strong>
@@ -359,7 +367,7 @@ export function OrganizeScreen({
                             {stateLabel(state)}
                           </span>
                         </div>
-                      </button>
+                      </m.button>
                     );
                   })
                 ) : (
@@ -383,11 +391,13 @@ export function OrganizeScreen({
 
               <div className="snapshot-list organize-snapshot-list">
                 {snapshots.length ? (
-                  snapshots.map((snapshot) => (
-                    <div
+                  snapshots.map((snapshot, index) => (
+                    <m.div
                       key={snapshot.id}
                       className="snapshot-row"
                       title={snapshot.description ?? "Approved organization batch"}
+                      whileHover={rowHover}
+                      {...stagedListItem(index)}
                     >
                       <div className="snapshot-main">
                         <strong>{snapshot.snapshotName}</strong>
@@ -405,10 +415,10 @@ export function OrganizeScreen({
                             ? "Restoring..."
                             : userView === "beginner"
                               ? "Undo"
-                              : "Restore"}
+                            : "Restore"}
                         </button>
                       </div>
-                    </div>
+                    </m.div>
                   ))
                 ) : (
                   <div className="detail-empty compact-empty">

@@ -40,16 +40,16 @@ struct ScanRoot {
 }
 
 #[derive(Debug, Clone)]
-struct DiscoveredFile {
-    root_path: PathBuf,
-    source_location: String,
-    path: PathBuf,
-    filename: String,
-    extension: String,
-    size: i64,
-    created_at: Option<String>,
-    modified_at: Option<String>,
-    relative_depth: i64,
+pub(crate) struct DiscoveredFile {
+    pub(crate) root_path: PathBuf,
+    pub(crate) source_location: String,
+    pub(crate) path: PathBuf,
+    pub(crate) filename: String,
+    pub(crate) extension: String,
+    pub(crate) size: i64,
+    pub(crate) created_at: Option<String>,
+    pub(crate) modified_at: Option<String>,
+    pub(crate) relative_depth: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -270,7 +270,7 @@ where
                 &category_overrides,
                 &mut file_insert,
                 &mut review_insert,
-                session_id,
+                Some(session_id),
                 file,
                 hashes.get(&index).cloned(),
             )?;
@@ -847,14 +847,14 @@ fn insert_cached_file(
     )
 }
 
-fn insert_parsed_file(
+pub(crate) fn insert_parsed_file(
     transaction: &Transaction<'_>,
     creator_cache: &mut HashMap<String, i64>,
     seed_pack: &crate::seed::SeedPack,
     category_overrides: &HashMap<String, database::UserCategoryOverride>,
     file_insert: &mut rusqlite::Statement<'_>,
     review_insert: &mut rusqlite::Statement<'_>,
-    session_id: i64,
+    session_id: Option<i64>,
     file: &DiscoveredFile,
     hash: Option<String>,
 ) -> AppResult<usize> {
@@ -1132,7 +1132,7 @@ fn queue_review_items(
     Ok(created)
 }
 
-fn hash_file(path: &Path) -> AppResult<String> {
+pub(crate) fn hash_file(path: &Path) -> AppResult<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 8 * 1024];
@@ -1265,6 +1265,12 @@ mod tests {
             database_path,
             seed_pack: Arc::new(seed_pack),
             scan_status: Arc::new(Mutex::new(crate::models::ScanStatus::default())),
+            downloads_status: Arc::new(Mutex::new(
+                crate::models::DownloadsWatcherStatus::default(),
+            )),
+            downloads_watcher_control: Arc::new(Mutex::new(
+                crate::app_state::DownloadsWatcherControl::default(),
+            )),
             app_data_dir: temp.path().to_path_buf(),
         }
     }
@@ -1370,6 +1376,7 @@ mod tests {
                 &crate::models::LibrarySettings {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: Some(tray.to_string_lossy().to_string()),
+                    downloads_path: None,
                 },
             )
             .expect("save settings");
@@ -1402,6 +1409,7 @@ mod tests {
                 &crate::models::LibrarySettings {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
+                    downloads_path: None,
                 },
             )
             .expect("save settings");
@@ -1444,6 +1452,7 @@ mod tests {
                 &crate::models::LibrarySettings {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
+                    downloads_path: None,
                 },
             )
             .expect("save settings");
@@ -1476,6 +1485,7 @@ mod tests {
                 &crate::models::LibrarySettings {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
+                    downloads_path: None,
                 },
             )
             .expect("save settings");
@@ -1504,6 +1514,7 @@ mod tests {
                 &crate::models::LibrarySettings {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
+                    downloads_path: None,
                 },
             )
             .expect("save settings");

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { m } from "motion/react";
 import type { LucideIcon } from "lucide-react";
 import {
+  Download,
   FolderCog,
   FolderOpen,
   FolderTree,
@@ -14,6 +16,7 @@ import {
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import type {
   DetectedLibraryPaths,
   HomeOverview,
@@ -61,11 +64,13 @@ export function HomeScreen({
     void api.detectDefaultLibraryPaths().then(setDetectedPaths);
   }, []);
 
-  async function chooseFolder(kind: "modsPath" | "trayPath") {
+  async function chooseFolder(kind: "modsPath" | "trayPath" | "downloadsPath") {
     const title =
       kind === "modsPath"
         ? "Choose your Sims Mods folder"
-        : "Choose your Sims Tray folder";
+        : kind === "trayPath"
+          ? "Choose your Sims Tray folder"
+          : "Choose your Downloads folder";
     const picked = await api.pickFolder(title);
     if (!picked || !settings) {
       return;
@@ -89,6 +94,7 @@ export function HomeScreen({
       await onSettingsChange({
         modsPath: detectedPaths.modsPath ?? settings.modsPath,
         trayPath: detectedPaths.trayPath ?? settings.trayPath,
+        downloadsPath: detectedPaths.downloadsPath ?? settings.downloadsPath,
       });
     } finally {
       setIsSaving(false);
@@ -96,7 +102,10 @@ export function HomeScreen({
   }
 
   const canScan = Boolean(settings?.modsPath || settings?.trayPath);
-  const sourceCount = Number(Boolean(settings?.modsPath)) + Number(Boolean(settings?.trayPath));
+  const sourceCount =
+    Number(Boolean(settings?.modsPath)) +
+    Number(Boolean(settings?.trayPath)) +
+    Number(Boolean(settings?.downloadsPath));
   const metricItems =
     userView === "beginner"
       ? [
@@ -106,18 +115,17 @@ export function HomeScreen({
             icon: FolderTree,
           },
           {
+            label: "Inbox",
+            value: overview?.downloadsCount ?? 0,
+            icon: Download,
+            onClick: () => onNavigate("downloads"),
+          },
+          {
             label: "Needs help",
             value: overview?.reviewCount ?? 0,
             icon: ShieldAlert,
             tone: "warn" as const,
             onClick: () => onNavigate("review"),
-          },
-          {
-            label: "Safety flags",
-            value: overview?.unsafeCount ?? 0,
-            icon: TriangleAlert,
-            tone: "danger" as const,
-            onClick: () => onNavigate("library"),
           },
           {
             label: "CC & Mods",
@@ -140,6 +148,12 @@ export function HomeScreen({
             label: "Tray",
             value: overview?.trayCount ?? 0,
             icon: House,
+          },
+          {
+            label: "Inbox",
+            value: overview?.downloadsCount ?? 0,
+            icon: Download,
+            onClick: () => onNavigate("downloads"),
           },
           {
             label: "Review",
@@ -188,7 +202,7 @@ export function HomeScreen({
               ? new Date(overview.lastScanAt).toLocaleString()
               : "Not scanned",
           },
-          { label: "Folders ready", value: `${sourceCount} / 2` },
+          { label: "Folders ready", value: `${sourceCount} / 3` },
         ]
       : [
           { label: "Mode", value: "Approval-first" },
@@ -199,7 +213,7 @@ export function HomeScreen({
               ? new Date(overview.lastScanAt).toLocaleString()
               : "Not scanned",
           },
-          { label: "Roots online", value: `${sourceCount} / 2` },
+          { label: "Roots online", value: `${sourceCount} / 3` },
           ...(userView === "power"
             ? [
                 {
@@ -251,9 +265,10 @@ export function HomeScreen({
       </div>
 
       <div className="metrics-grid">
-        {metricItems.map((item) => (
+        {metricItems.map((item, index) => (
           <MetricCard
             key={item.label}
+            index={index}
             label={item.label}
             value={item.value}
             icon={item.icon}
@@ -290,7 +305,7 @@ export function HomeScreen({
               <p className="eyebrow">Roots</p>
               <h2>{userView === "beginner" ? "Game folders" : "Library folders"}</h2>
             </div>
-            <span className="ghost-chip">{sourceCount}/2 set</span>
+            <span className="ghost-chip">{sourceCount}/3 set</span>
           </div>
 
           <div className="folder-list">
@@ -306,6 +321,12 @@ export function HomeScreen({
               onBrowse={() => void chooseFolder("trayPath")}
               busy={isSaving}
             />
+            <FolderRow
+              label="Downloads"
+              value={settings?.downloadsPath}
+              onBrowse={() => void chooseFolder("downloadsPath")}
+              busy={isSaving}
+            />
           </div>
         </div>
 
@@ -319,12 +340,21 @@ export function HomeScreen({
 
           <div className="action-grid">
             <ActionCard
+              index={0}
               icon={LibraryBig}
               label={userView === "beginner" ? "My CC" : "Library"}
               title="Open the indexed file explorer"
               onClick={() => onNavigate("library")}
             />
             <ActionCard
+              index={1}
+              icon={Download}
+              label={userView === "beginner" ? "Inbox" : "Downloads"}
+              title="Open the downloads intake workspace"
+              onClick={() => onNavigate("downloads")}
+            />
+            <ActionCard
+              index={2}
               icon={ShieldAlert}
               label={userView === "beginner" ? "Needs help" : "Review"}
               title="Open the review queue"
@@ -332,6 +362,7 @@ export function HomeScreen({
             />
             {userView !== "beginner" ? (
               <ActionCard
+                index={3}
                 icon={Workflow}
                 label="Organize"
                 title="Open rule previews and snapshots"
@@ -339,6 +370,7 @@ export function HomeScreen({
               />
             ) : null}
             <ActionCard
+              index={userView !== "beginner" ? 4 : 3}
               icon={ScanSearch}
               label={
                 isScanning
@@ -375,12 +407,14 @@ export function HomeScreen({
 }
 
 function MetricCard({
+  index,
   label,
   value,
   icon: Icon,
   tone,
   onClick,
 }: {
+  index: number;
   label: string;
   value: number;
   icon: LucideIcon;
@@ -388,7 +422,7 @@ function MetricCard({
   onClick?: () => void;
 }) {
   return (
-    <button
+    <m.button
       type="button"
       className={`metric-card ${tone ? `metric-card-${tone}` : ""} ${
         onClick ? "is-clickable" : ""
@@ -396,13 +430,16 @@ function MetricCard({
       onClick={onClick}
       disabled={!onClick}
       title={label}
+      whileHover={onClick ? hoverLift : undefined}
+      whileTap={onClick ? tapPress : undefined}
+      {...stagedListItem(index)}
     >
       <span className="metric-card-head">
         <Icon size={14} strokeWidth={2} />
         <span className="metric-label">{label}</span>
       </span>
       <strong className="metric-value">{value.toLocaleString()}</strong>
-    </button>
+    </m.button>
   );
 }
 
@@ -439,6 +476,7 @@ function FolderRow({
 }
 
 function ActionCard({
+  index,
   icon: Icon,
   label,
   title,
@@ -446,6 +484,7 @@ function ActionCard({
   disabled,
   accent,
 }: {
+  index: number;
   icon: LucideIcon;
   label: string;
   title: string;
@@ -454,16 +493,19 @@ function ActionCard({
   accent?: boolean;
 }) {
   return (
-    <button
+    <m.button
       type="button"
       className={`action-card ${accent ? "action-card-accent" : ""}`}
       onClick={onClick}
       disabled={disabled}
       title={title}
+      whileHover={!disabled ? hoverLift : undefined}
+      whileTap={!disabled ? tapPress : undefined}
+      {...stagedListItem(index)}
     >
       <Icon size={16} strokeWidth={2} />
       <strong>{label}</strong>
-    </button>
+    </m.button>
   );
 }
 

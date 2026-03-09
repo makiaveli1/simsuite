@@ -1,10 +1,13 @@
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
-import { RefreshCw, Shapes, ShieldAlert } from "lucide-react";
+import { m } from "motion/react";
+import { RefreshCw, SearchX, Shapes, ShieldAlert, Sparkles } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
+import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
 import type {
   CategoryAuditFile,
   CategoryAuditResponse,
@@ -358,16 +361,19 @@ export function CategoryAuditScreen({
 
       <div className="learning-flow-strip">
         <LearningStep
+          index={0}
           step="1"
           title="Pick a group"
           detail="SimSuite groups files that look like the same kind of CC or mod."
         />
         <LearningStep
+          index={1}
           step="2"
           title="Check examples"
           detail="Use the middle column to make sure the files really belong together."
         />
         <LearningStep
+          index={2}
           step="3"
           title="Save the type"
           detail="Your saved type will be reused on future scans. No files move here."
@@ -447,8 +453,8 @@ export function CategoryAuditScreen({
 
             <div className="audit-group-list">
               {audit?.groups.length ? (
-                audit.groups.map((group) => (
-                  <button
+                audit.groups.map((group, index) => (
+                  <m.button
                     key={group.id}
                     type="button"
                     className={`audit-group-row ${
@@ -459,6 +465,9 @@ export function CategoryAuditScreen({
                       setSelectedGroupId(group.id);
                     }}
                     title={`${group.itemCount} files`}
+                    whileHover={rowHover}
+                    whileTap={rowPress}
+                    {...stagedListItem(index)}
                   >
                     <div className="audit-group-main">
                       <strong>
@@ -477,15 +486,20 @@ export function CategoryAuditScreen({
                         {confidenceLabel(group.confidence)}
                       </span>
                     </div>
-                  </button>
+                  </m.button>
                 ))
               ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">
-                    {userView === "beginner" ? "Mod types" : "Category audit"}
-                  </p>
-                  <h2>No clusters match</h2>
-                </div>
+                <StatePanel
+                  eyebrow={userView === "beginner" ? "Mod types" : "Category audit"}
+                  title="No clusters match"
+                  body={
+                    userView === "beginner"
+                      ? "Try a broader search or lower the minimum size to show smaller mod-type groups."
+                      : "Clear the search or reduce the minimum group size to surface weaker category clusters."
+                  }
+                  icon={SearchX}
+                  compact
+                />
               )}
             </div>
           </div>
@@ -538,9 +552,10 @@ export function CategoryAuditScreen({
 
             {selectedGroup ? (
               <div className="audit-file-list">
-                {visibleGroupFiles.map((file) => (
+                {visibleGroupFiles.map((file, index) => (
                   <CategoryAuditFileRow
                     key={file.id}
+                    index={index}
                     file={file}
                     suggestedKind={selectedGroup.suggestedKind}
                     suggestedSubtype={selectedGroup.suggestedSubtype}
@@ -549,10 +564,17 @@ export function CategoryAuditScreen({
                 ))}
               </div>
             ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">Samples</p>
-                  <h2>{userView === "beginner" ? "Select a group" : "Select a cluster"}</h2>
-                </div>
+                <StatePanel
+                  eyebrow="Samples"
+                  title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+                  body={
+                    userView === "beginner"
+                      ? "Pick one mod-type group from the left to preview a few example files before you save the type."
+                      : "Choose a category cluster to inspect the sample files and confirm the kind/subtype before applying it."
+                  }
+                  icon={Shapes}
+                  compact
+                />
             )}
           </div>
 
@@ -569,8 +591,13 @@ export function CategoryAuditScreen({
 
             <div className="audit-unresolved-list">
               {audit?.unresolvedSamples.length ? (
-                audit.unresolvedSamples.map((file) => (
-                  <div key={file.id} className="audit-unresolved-row audit-unresolved-row-low">
+                audit.unresolvedSamples.map((file, index) => (
+                  <m.div
+                    key={file.id}
+                    className="audit-unresolved-row audit-unresolved-row-low"
+                    whileHover={rowHover}
+                    {...stagedListItem(index)}
+                  >
                     <div className="audit-group-main">
                       <strong>{file.filename}</strong>
                       <span>
@@ -585,13 +612,25 @@ export function CategoryAuditScreen({
                         {Math.round(file.confidence * 100)}%
                       </span>
                     </div>
-                  </div>
+                  </m.div>
                 ))
               ) : (
-                <div className="detail-empty compact-empty">
-                  <p className="eyebrow">Unresolved</p>
-                  <h2>{userView === "beginner" ? "No extra leftovers" : "No leftover samples"}</h2>
-                </div>
+                <StatePanel
+                  eyebrow="Unresolved"
+                  title={
+                    userView === "beginner"
+                      ? "No extra leftovers"
+                      : "No leftover samples"
+                  }
+                  body={
+                    userView === "beginner"
+                      ? "That means the sampled backlog is grouping cleanly right now."
+                      : "The sampled backlog does not currently have extra unmatched files outside the shown clusters."
+                  }
+                  icon={Sparkles}
+                  tone="good"
+                  compact
+                />
               )}
             </div>
           </div>
@@ -626,12 +665,17 @@ export function CategoryAuditScreen({
               />
             </>
           ) : (
-            <div className="detail-empty">
-              <p className="eyebrow">
-                {userView === "beginner" ? "Mod types" : "Category audit"}
-              </p>
-              <h2>{userView === "beginner" ? "Select a group" : "Select a cluster"}</h2>
-            </div>
+            <StatePanel
+              eyebrow={userView === "beginner" ? "Mod types" : "Category audit"}
+              title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+              body={
+                userView === "beginner"
+                  ? "The right panel will explain the group and save one shared type across the full batch when you confirm it."
+                  : "The inspector holds the grouped clues and batch controls for teaching a kind and subtype to the selected cluster."
+              }
+              icon={Shapes}
+              meta={["Applies to future scans", "Does not move files"]}
+            />
           )}
         </ResizableDetailPanel>
       </div>
@@ -640,38 +684,50 @@ export function CategoryAuditScreen({
 }
 
 function LearningStep({
+  index,
   step,
   title,
   detail,
 }: {
+  index: number;
   step: string;
   title: string;
   detail: string;
 }) {
   return (
-    <div className="learning-step">
+    <m.div
+      className="learning-step"
+      whileHover={hoverLift}
+      {...stagedListItem(index)}
+    >
       <span className="learning-step-index">{step}</span>
       <div className="learning-step-copy">
         <strong>{title}</strong>
         <span>{detail}</span>
       </div>
-    </div>
+    </m.div>
   );
 }
 
 function CategoryAuditFileRow({
+  index,
   file,
   suggestedKind,
   suggestedSubtype,
   userView,
 }: {
+  index: number;
   file: CategoryAuditFile;
   suggestedKind: string;
   suggestedSubtype: string | null;
   userView: UserView;
 }) {
   return (
-    <div className="audit-file-row audit-file-row-sample">
+    <m.div
+      className="audit-file-row audit-file-row-sample"
+      whileHover={rowHover}
+      {...stagedListItem(index)}
+    >
       <div className="audit-group-main">
         <strong>{file.filename}</strong>
         <span>
@@ -699,7 +755,7 @@ function CategoryAuditFileRow({
           ))}
         </div>
       ) : null}
-    </div>
+    </m.div>
   );
 }
 

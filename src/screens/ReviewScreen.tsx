@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
-import { Fingerprint, RefreshCw, Shapes, ShieldAlert, Workflow } from "lucide-react";
+import { m } from "motion/react";
+import {
+  Fingerprint,
+  RefreshCw,
+  SearchX,
+  Shapes,
+  ShieldAlert,
+  ShieldCheck,
+  Workflow,
+} from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { LayoutPresetBar } from "../components/LayoutPresetBar";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
+import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import type {
   ReviewLayoutPreset,
   ReviewQueueItem,
@@ -245,13 +256,16 @@ export function ReviewScreen({
 
             <div className="vertical-dock queue-dock">
               <div className="queue-list review-queue-list">
-                {items.map((item) => (
-                  <button
+                {items.map((item, index) => (
+                  <m.button
                     key={item.id}
                     type="button"
                     className={`queue-row ${selectedId === item.id ? "is-selected" : ""}`}
                     onClick={() => setSelectedId(item.id)}
                     title={item.reason}
+                    whileHover={rowHover}
+                    whileTap={rowPress}
+                    {...stagedListItem(index)}
                   >
                     <div className="queue-main">
                       <strong>{item.filename}</strong>
@@ -275,7 +289,7 @@ export function ReviewScreen({
                         {Math.round(item.confidence * 100)}%
                       </span>
                     </div>
-                  </button>
+                  </m.button>
                 ))}
               </div>
               <ResizableEdgeHandle
@@ -321,20 +335,47 @@ export function ReviewScreen({
                 />
               </>
             ) : (
-              <div className="detail-empty">
-                <p className="eyebrow">
-                  {userView === "beginner" ? "Selected file" : "Review"}
-                </p>
-                <h2>Select an item</h2>
-              </div>
+              <StatePanel
+                eyebrow={userView === "beginner" ? "Selected file" : "Review"}
+                title="Select an item"
+                body={
+                  userView === "beginner"
+                    ? "Pick one file from the queue to see why SimSuite paused it and what safer place it expects."
+                    : "Choose a queued file to inspect the stop reason, confidence, and suggested validated path."
+                }
+                icon={SearchX}
+                meta={["Nothing moves from Review", "Use Creator Names or Mod Types for batch fixes"]}
+              />
             )}
           </ResizableDetailPanel>
         </div>
       ) : (
-        <div className="panel-card detail-empty">
-          <p className="eyebrow">{userView === "beginner" ? "Needs Attention" : "Review"}</p>
-          <h2>{userView === "beginner" ? "Nothing needs your help right now" : "The queue is clear"}</h2>
-        </div>
+        <StatePanel
+          eyebrow={userView === "beginner" ? "Needs Attention" : "Review"}
+          title={
+            userView === "beginner"
+              ? "Nothing needs your help right now"
+              : "The queue is clear"
+          }
+          body={
+            userView === "beginner"
+              ? "That means the current scan did not find any files that need a manual decision."
+              : "The current library pass does not have any unresolved files waiting for review."
+          }
+          icon={ShieldCheck}
+          tone="good"
+          actions={
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => onNavigate("organize")}
+            >
+              <Workflow size={14} strokeWidth={2} />
+              {userView === "beginner" ? "Open Tidy Up" : "Open Organize"}
+            </button>
+          }
+          meta={["Scans stay read-only", "Queue updates after each scan"]}
+        />
       )}
     </section>
   );

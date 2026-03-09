@@ -1,4 +1,5 @@
 import { useDeferredValue, useEffect, useState } from "react";
+import { m } from "motion/react";
 import { CornerUpLeft, LibraryBig } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { LayoutPresetBar } from "../components/LayoutPresetBar";
@@ -6,6 +7,7 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import type {
   CategoryOverrideInfo,
   CreatorLearningInfo,
@@ -686,11 +688,22 @@ export function LibraryScreen({
                 </thead>
                 <tbody>
                   {rows?.items.length ? (
-                    rows.items.map((row) => (
-                      <tr
+                    rows.items.map((row, index) => (
+                      <m.tr
                         key={row.id}
                         className={selected?.id === row.id ? "is-selected" : ""}
                         onClick={() => void openFile(row)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void openFile(row);
+                          }
+                        }}
+                        whileHover={rowHover}
+                        whileTap={rowPress}
+                        {...stagedListItem(index)}
                       >
                         <td>
                           <div className="file-title">{row.filename}</div>
@@ -719,7 +732,7 @@ export function LibraryScreen({
                             {Math.round(row.confidence * 100)}%
                           </span>
                         </td>
-                      </tr>
+                      </m.tr>
                     ))
                   ) : (
                     <tr>

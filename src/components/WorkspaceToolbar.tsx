@@ -1,157 +1,79 @@
-import { LayoutPanelLeft, Palette, SlidersHorizontal } from "lucide-react";
-import type { UiDensity, UiTheme, UserView } from "../lib/types";
+import { m } from "motion/react";
+import { LayoutPanelLeft, SlidersHorizontal } from "lucide-react";
+import type { Screen, UiDensity, UserView } from "../lib/types";
+import { hoverLift, tapPress } from "../lib/motion";
+import { getThemeDefinition } from "../lib/themeMeta";
 import { useUiPreferences } from "./UiPreferencesContext";
 
-const USER_VIEWS: Array<{
-  id: UserView;
-  label: string;
-  hint: string;
-}> = [
-  {
-    id: "beginner",
-    label: "Easy",
-    hint: "Shows the basics first and keeps the screen calmer.",
-  },
-  {
-    id: "standard",
-    label: "Standard",
-    hint: "Balanced detail for everyday CC sorting.",
-  },
-  {
-    id: "power",
-    label: "Power",
-    hint: "Shows raw paths, deeper filters, and rule detail.",
-  },
-];
+const USER_VIEW_LABELS: Record<UserView, string> = {
+  beginner: "Easy",
+  standard: "Standard",
+  power: "Power",
+};
 
-const THEMES: Array<{
-  id: UiTheme;
-  label: string;
-  hint: string;
-}> = [
-  {
-    id: "plumbob",
-    label: "Plumbob",
-    hint: "Classic SimSuite green with calm dark chrome.",
-  },
-  {
-    id: "buildbuy",
-    label: "Build/Buy",
-    hint: "Warm catalog brass with workshop-style contrast.",
-  },
-  {
-    id: "cas",
-    label: "CAS",
-    hint: "Cool studio blue for hair, skin, and outfit work.",
-  },
-  {
-    id: "neighborhood",
-    label: "Neighborhood",
-    hint: "Dusk map colors with coral signals and teal glass.",
-  },
-  {
-    id: "debuggrid",
-    label: "Debug Grid",
-    hint: "Industrial slate and safety orange for power sorting.",
-  },
-  {
-    id: "sunroom",
-    label: "Sunroom",
-    hint: "Bright parchment panels with teal controls and softer glare.",
-  },
-];
+const DENSITY_LABELS: Record<UiDensity, string> = {
+  compact: "Snug",
+  balanced: "Normal",
+  roomy: "Roomy",
+};
 
-const DENSITIES: Array<{
-  id: UiDensity;
-  label: string;
-}> = [
-  { id: "compact", label: "Snug" },
-  { id: "balanced", label: "Normal" },
-  { id: "roomy", label: "Roomy" },
-];
+const SCREEN_LABELS: Record<Screen, string> = {
+  home: "Home",
+  downloads: "New files",
+  library: "My CC",
+  creatorAudit: "Creator names",
+  categoryAudit: "Mod types",
+  duplicates: "Same file?",
+  organize: "Tidy up",
+  review: "Needs help",
+  settings: "Settings",
+};
 
 interface WorkspaceToolbarProps {
   userView: UserView;
-  onChange: (view: UserView) => void;
+  currentScreen: Screen;
+  onOpenSettings: () => void;
 }
 
 export function WorkspaceToolbar({
   userView,
-  onChange,
+  currentScreen,
+  onOpenSettings,
 }: WorkspaceToolbarProps) {
-  const active = USER_VIEWS.find((item) => item.id === userView) ?? USER_VIEWS[1];
-  const { theme, density, setTheme, setDensity, resetPanelSizes } =
-    useUiPreferences();
-  const activeTheme = THEMES.find((item) => item.id === theme) ?? THEMES[0];
+  const { theme, density } = useUiPreferences();
+  const activeTheme = getThemeDefinition(theme);
+  const viewLabel = USER_VIEW_LABELS[userView];
+  const densityLabel = DENSITY_LABELS[density];
 
   return (
     <div className="workspace-toolbar">
-      <div className="workspace-toolbar-group workspace-toolbar-primary">
-        <span className="section-label">View mode</span>
-        <div className="segmented-control" role="tablist" aria-label="User view">
-          {USER_VIEWS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`segment-button ${userView === item.id ? "is-active" : ""}`}
-              onClick={() => onChange(item.id)}
-              title={item.hint}
-            >
-              {item.label}
-            </button>
-          ))}
+      <div className="workspace-toolbar-status">
+        <div className="workspace-toolbar-heading">
+          <span className="section-label">
+            <LayoutPanelLeft size={14} strokeWidth={2} />
+            {SCREEN_LABELS[currentScreen]}
+          </span>
+          <div className="workspace-toolbar-meta" aria-label="Current workspace preferences">
+            <span className="workspace-toolbar-meta-item">{viewLabel}</span>
+            <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
+            <span className="workspace-toolbar-meta-item">{densityLabel}</span>
+            <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
+            <span className="workspace-toolbar-meta-item">{activeTheme.label}</span>
+          </div>
         </div>
       </div>
 
-      <div className="workspace-toolbar-group workspace-toolbar-settings">
-        <label className="toolbar-select">
-          <span className="toolbar-select-label">
-            <Palette size={14} strokeWidth={2} />
-            Theme
-          </span>
-          <select
-            value={theme}
-            onChange={(event) => setTheme(event.target.value as UiTheme)}
-          >
-            {THEMES.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="toolbar-select">
-          <span className="toolbar-select-label">
-            <SlidersHorizontal size={14} strokeWidth={2} />
-            Size
-          </span>
-          <select
-            value={density}
-            onChange={(event) => setDensity(event.target.value as UiDensity)}
-          >
-            {DENSITIES.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          type="button"
-          className="secondary-action toolbar-reset"
-          onClick={resetPanelSizes}
-          title="Reset saved panel sizes and workspace layouts"
-        >
-          <LayoutPanelLeft size={14} strokeWidth={2} />
-          Reset panels
-        </button>
-      </div>
-
-      <p className="workspace-toolbar-copy">
-        {active.hint} Skin: {activeTheme.hint}
-      </p>
+      <m.button
+        type="button"
+        className="secondary-action workspace-toolbar-settings-link"
+        onClick={onOpenSettings}
+        disabled={currentScreen === "settings"}
+        whileHover={currentScreen === "settings" ? undefined : hoverLift}
+        whileTap={currentScreen === "settings" ? undefined : tapPress}
+      >
+        <SlidersHorizontal size={16} strokeWidth={2} />
+        {currentScreen === "settings" ? "Settings" : "Open settings"}
+      </m.button>
     </div>
   );
 }

@@ -10,8 +10,9 @@ import type {
   LibraryLayoutPreset,
   ReviewLayoutPreset,
   UiDensity,
-  UiTheme,
 } from "../lib/types";
+import type { UiTheme } from "../lib/types";
+import { UI_THEME_IDS } from "../lib/themeMeta";
 
 const STORAGE_KEYS = {
   theme: "simsuite:theme",
@@ -26,6 +27,8 @@ const STORAGE_KEYS = {
   auditStageHeight: "simsuite:audit-stage-height",
   organizeRailWidth: "simsuite:organize-rail-width",
   organizePreviewHeight: "simsuite:organize-preview-height",
+  downloadsDetailWidth: "simsuite:downloads-detail-width",
+  downloadsQueueHeight: "simsuite:downloads-queue-height",
   libraryDetailWidth: "simsuite:library-detail-width",
   libraryTableHeight: "simsuite:library-table-height",
   reviewDetailWidth: "simsuite:review-detail-width",
@@ -53,12 +56,14 @@ const DEFAULT_SIDEBAR_WIDTH = 96;
 const DEFAULT_HOME_PRIMARY_WIDTH = 360;
 const DEFAULT_HOME_SECONDARY_WIDTH = 320;
 const DEFAULT_INSPECTOR_WIDTH = 380;
-const DEFAULT_GUIDE_WIDTH = 396;
+const DEFAULT_GUIDE_WIDTH = 820;
 const DEFAULT_SCANNER_WIDTH = 560;
 const DEFAULT_AUDIT_GROUP_WIDTH = 316;
 const DEFAULT_AUDIT_STAGE_HEIGHT = 330;
 const DEFAULT_ORGANIZE_RAIL_WIDTH = 304;
 const DEFAULT_ORGANIZE_PREVIEW_HEIGHT = 414;
+const DEFAULT_DOWNLOADS_DETAIL_WIDTH = 420;
+const DEFAULT_DOWNLOADS_QUEUE_HEIGHT = 320;
 const DEFAULT_LIBRARY_DETAIL_WIDTH = 392;
 const DEFAULT_LIBRARY_TABLE_HEIGHT = 510;
 const DEFAULT_REVIEW_DETAIL_WIDTH = 404;
@@ -68,14 +73,7 @@ const DEFAULT_DUPLICATES_QUEUE_HEIGHT = 520;
 const DEFAULT_LIBRARY_LAYOUT_PRESET: LibraryLayoutPreset = "browse";
 const DEFAULT_REVIEW_LAYOUT_PRESET: ReviewLayoutPreset = "balanced";
 const DEFAULT_DUPLICATES_LAYOUT_PRESET: DuplicatesLayoutPreset = "balanced";
-const VALID_THEMES: UiTheme[] = [
-  "plumbob",
-  "buildbuy",
-  "cas",
-  "neighborhood",
-  "debuggrid",
-  "sunroom",
-];
+const VALID_THEMES: UiTheme[] = [...UI_THEME_IDS];
 const VALID_LIBRARY_LAYOUT_PRESETS: LibraryLayoutPreset[] = [
   "browse",
   "inspect",
@@ -108,6 +106,8 @@ interface UiPreferencesContextValue {
   auditStageHeight: number;
   organizeRailWidth: number;
   organizePreviewHeight: number;
+  downloadsDetailWidth: number;
+  downloadsQueueHeight: number;
   libraryDetailWidth: number;
   libraryTableHeight: number;
   reviewDetailWidth: number;
@@ -143,6 +143,8 @@ interface UiPreferencesContextValue {
   setAuditStageHeight: (height: number) => void;
   setOrganizeRailWidth: (width: number) => void;
   setOrganizePreviewHeight: (height: number) => void;
+  setDownloadsDetailWidth: (width: number) => void;
+  setDownloadsQueueHeight: (height: number) => void;
   setLibraryDetailWidth: (width: number) => void;
   setLibraryTableHeight: (height: number) => void;
   setReviewDetailWidth: (width: number) => void;
@@ -313,7 +315,7 @@ export function UiPreferencesProvider({
     readStoredSize(STORAGE_KEYS.inspectorWidth, DEFAULT_INSPECTOR_WIDTH, 300, 720),
   );
   const [guideWidth, setGuideWidth] = useState(() =>
-    readStoredSize(STORAGE_KEYS.guideWidth, DEFAULT_GUIDE_WIDTH, 320, 620),
+    readStoredSize(STORAGE_KEYS.guideWidth, DEFAULT_GUIDE_WIDTH, 460, 1040),
   );
   const [scannerWidth, setScannerWidth] = useState(() =>
     readStoredSize(STORAGE_KEYS.scannerWidth, DEFAULT_SCANNER_WIDTH, 420, 860),
@@ -347,6 +349,22 @@ export function UiPreferencesProvider({
       STORAGE_KEYS.organizePreviewHeight,
       DEFAULT_ORGANIZE_PREVIEW_HEIGHT,
       280,
+      720,
+    ),
+  );
+  const [downloadsDetailWidth, setDownloadsDetailWidthState] = useState(() =>
+    readStoredSize(
+      STORAGE_KEYS.downloadsDetailWidth,
+      DEFAULT_DOWNLOADS_DETAIL_WIDTH,
+      320,
+      780,
+    ),
+  );
+  const [downloadsQueueHeight, setDownloadsQueueHeightState] = useState(() =>
+    readStoredSize(
+      STORAGE_KEYS.downloadsQueueHeight,
+      DEFAULT_DOWNLOADS_QUEUE_HEIGHT,
+      220,
       720,
     ),
   );
@@ -489,6 +507,14 @@ export function UiPreferencesProvider({
     setLibraryLayoutPresetState("custom");
   }
 
+  function setDownloadsDetailWidth(width: number) {
+    setDownloadsDetailWidthState(clamp(width, 320, 780));
+  }
+
+  function setDownloadsQueueHeight(height: number) {
+    setDownloadsQueueHeightState(clamp(height, 220, 720));
+  }
+
   function setLibraryTableHeight(height: number) {
     setLibraryTableHeightState(clamp(height, 260, 860));
     setLibraryLayoutPresetState("custom");
@@ -595,6 +621,14 @@ export function UiPreferencesProvider({
       "--organize-preview-height",
       `${organizePreviewHeight}px`,
     );
+    root.style.setProperty(
+      "--downloads-detail-width",
+      `${downloadsDetailWidth}px`,
+    );
+    root.style.setProperty(
+      "--downloads-queue-height",
+      `${downloadsQueueHeight}px`,
+    );
     root.style.setProperty("--library-detail-width", `${libraryDetailWidth}px`);
     root.style.setProperty("--library-table-height", `${libraryTableHeight}px`);
     root.style.setProperty("--review-detail-width", `${reviewDetailWidth}px`);
@@ -646,6 +680,14 @@ export function UiPreferencesProvider({
     globalThis.localStorage?.setItem(
       STORAGE_KEYS.organizePreviewHeight,
       String(organizePreviewHeight),
+    );
+    globalThis.localStorage?.setItem(
+      STORAGE_KEYS.downloadsDetailWidth,
+      String(downloadsDetailWidth),
+    );
+    globalThis.localStorage?.setItem(
+      STORAGE_KEYS.downloadsQueueHeight,
+      String(downloadsQueueHeight),
     );
     globalThis.localStorage?.setItem(
       STORAGE_KEYS.libraryDetailWidth,
@@ -708,6 +750,8 @@ export function UiPreferencesProvider({
     auditStageHeight,
     organizeRailWidth,
     organizePreviewHeight,
+    downloadsDetailWidth,
+    downloadsQueueHeight,
     libraryDetailWidth,
     libraryTableHeight,
     reviewDetailWidth,
@@ -737,6 +781,8 @@ export function UiPreferencesProvider({
         auditStageHeight,
         organizeRailWidth,
         organizePreviewHeight,
+        downloadsDetailWidth,
+        downloadsQueueHeight,
         libraryDetailWidth,
         libraryTableHeight,
         reviewDetailWidth,
@@ -764,6 +810,8 @@ export function UiPreferencesProvider({
         setAuditStageHeight,
         setOrganizeRailWidth,
         setOrganizePreviewHeight,
+        setDownloadsDetailWidth,
+        setDownloadsQueueHeight,
         setLibraryDetailWidth,
         setLibraryTableHeight,
         setReviewDetailWidth,
@@ -786,6 +834,8 @@ export function UiPreferencesProvider({
           setAuditStageHeight(DEFAULT_AUDIT_STAGE_HEIGHT);
           setOrganizeRailWidth(DEFAULT_ORGANIZE_RAIL_WIDTH);
           setOrganizePreviewHeight(DEFAULT_ORGANIZE_PREVIEW_HEIGHT);
+          setDownloadsDetailWidthState(DEFAULT_DOWNLOADS_DETAIL_WIDTH);
+          setDownloadsQueueHeightState(DEFAULT_DOWNLOADS_QUEUE_HEIGHT);
           setLibraryDetailWidthState(DEFAULT_LIBRARY_DETAIL_WIDTH);
           setLibraryTableHeightState(DEFAULT_LIBRARY_TABLE_HEIGHT);
           setReviewDetailWidthState(DEFAULT_REVIEW_DETAIL_WIDTH);

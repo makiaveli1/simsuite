@@ -52,6 +52,7 @@ Implemented:
 
 - Mods scanning
 - Tray scanning
+- downloads watcher-backed intake indexing for supported direct files and extracted archive contents
 - metadata extraction
 - folder-based creator hinting
 - internal inspection of `.ts4script` namespaces and `.package` DBPF resources, including compressed resource decoding for common Sims package formats
@@ -64,7 +65,6 @@ Implemented:
 
 Missing:
 
-- downloads folder scanning
 - deeper scan prioritization / scheduling controls
 
 ### Duplicate detection
@@ -102,6 +102,7 @@ Missing:
 Implemented:
 
 - Home
+- Downloads
 - Library
 - Duplicates
 - Organize
@@ -138,15 +139,19 @@ Missing:
 
 ### Downloads watcher and archive intake
 
-Current state:
+Implemented:
 
-- module exists as a placeholder only
+- downloads folder monitoring
+- inbox indexing for supported direct downloads
+- archive detection for `.zip`, `.7z`, and `.rar`
+- staged archive extraction into app-managed intake folders
+- downloads watcher status events
+- Downloads screen with queue, safe preview, apply, and ignore flows
 
 Missing:
 
-- downloads monitoring
-- archive detection
-- archive extraction and intake pipeline
+- deeper archive-content heuristics for unsupported/edge archive layouts
+- dedicated settings surface for watcher controls
 
 ### Patch recovery
 
@@ -172,21 +177,20 @@ Missing:
 - Manual category overrides are stored separately from seed data and are intended to outrank both heuristics now and AI fallback later.
 - The Category Audit workflow now works from the indexed database instead of the raw filesystem, so batch category cleanup stays fast even on large libraries.
 - The Library screen now exposes inspection metadata such as detected format, script namespaces, creator hints, resource summaries, and embedded names for Standard and Power views.
-- The current backend now materially covers the planned work through Phase 6 and the scan-performance parts of Phase 7.
+- The current backend now materially covers the planned work through Phase 7, including downloads intake and inbox review.
 - The previous `docs/ARCHITECTURE.md` statement that moves were still disabled was outdated and has been corrected.
 
 ## Recommended next effort
 
-The highest-value next step is to finish Phase 7 properly before moving on:
-
-1. downloads watcher
-2. archive intake
-3. downloads/inbox workflow
-
-After Phase 7 is complete, the next effort should be the remaining safe duplicate actions and then Phase 8:
+The highest-value next step is to finish the next safe-action surfaces before moving on to AI:
 
 1. snapshot-backed duplicate cleanup actions
-2. local AI classification integration
-3. AI schema validation tests
+2. full Mirror Mode / Assisted Migration / Fresh Setup workflows
+3. editable rule templates and presets in the UI
+
+After those are complete, the next effort should be Phase 8:
+
+1. local AI classification integration
+2. AI schema validation tests
 
 Patch recovery should stay after those phases, consistent with the planned development order.

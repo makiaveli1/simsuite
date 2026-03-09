@@ -1,3 +1,5 @@
+import { m } from "motion/react";
+import { overlayTransition, panelSpring } from "../lib/motion";
 import { ResizableEdgeHandle } from "./ResizableEdgeHandle";
 import { useUiPreferences } from "./UiPreferencesContext";
 import type { ScanProgress, UserView } from "../lib/types";
@@ -31,8 +33,22 @@ export function ScannerOverlay({ progress, userView }: ScannerOverlayProps) {
   const secondaryLabel = isCollecting ? "current step" : "in scan";
 
   return (
-    <div className="scanner-overlay" role="status" aria-live="polite">
-      <div className="scanner-card">
+    <m.div
+      className="scanner-overlay"
+      role="status"
+      aria-live="polite"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={overlayTransition}
+    >
+      <m.div
+        className="scanner-card"
+        initial={{ opacity: 0, y: 18, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.99 }}
+        transition={panelSpring}
+      >
         <ResizableEdgeHandle
           label="Resize scan window"
           value={scannerWidth}
@@ -70,7 +86,7 @@ export function ScannerOverlay({ progress, userView }: ScannerOverlayProps) {
         <div className="scanner-current">
           {progress?.currentItem || "Getting ready to read the first file..."}
         </div>
-      </div>
-    </div>
+      </m.div>
+    </m.div>
   );
 }

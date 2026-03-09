@@ -21,13 +21,50 @@ pub fn apply_preview_moves(
     limit: i64,
     approved: bool,
 ) -> AppResult<ApplyPreviewResult> {
+    apply_preview_moves_internal(connection, settings, preset_name, Some(limit), None, approved)
+}
+
+pub fn apply_preview_moves_for_files(
+    connection: &mut Connection,
+    settings: &LibrarySettings,
+    preset_name: Option<String>,
+    file_ids: &[i64],
+    approved: bool,
+) -> AppResult<ApplyPreviewResult> {
+    apply_preview_moves_internal(
+        connection,
+        settings,
+        preset_name,
+        None,
+        Some(file_ids),
+        approved,
+    )
+}
+
+fn apply_preview_moves_internal(
+    connection: &mut Connection,
+    settings: &LibrarySettings,
+    preset_name: Option<String>,
+    limit: Option<i64>,
+    file_ids: Option<&[i64]>,
+    approved: bool,
+) -> AppResult<ApplyPreviewResult> {
     if !approved {
         return Err(AppError::Message(
             "Apply was blocked because approval was not confirmed.".to_owned(),
         ));
     }
 
-    let preview = rule_engine::build_preview(connection, settings, preset_name.clone(), limit)?;
+    let preview = if let Some(file_ids) = file_ids {
+        rule_engine::build_preview_for_files(connection, settings, preset_name.clone(), file_ids)?
+    } else {
+        rule_engine::build_preview(
+            connection,
+            settings,
+            preset_name.clone(),
+            limit.unwrap_or(80),
+        )?
+    };
     let actionable = preview
         .suggestions
         .into_iter()
@@ -268,16 +305,18 @@ fn update_file_record_on_restore(
         params![file_id],
         |row| row.get(0),
     )?;
-    let source_location = if is_tray_path(restored_path) {
+    let (kind, has_download_item): (String, Option<i64>) = connection.query_row(
+        "SELECT kind, download_item_id FROM files WHERE id = ?1",
+        params![file_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let source_location = if has_download_item.is_some() {
+        "downloads"
+    } else if is_tray_path(restored_path) {
         "tray"
     } else {
         "mods"
     };
-    let kind: String = connection.query_row(
-        "SELECT kind FROM files WHERE id = ?1",
-        params![file_id],
-        |row| row.get(0),
-    )?;
 
     connection.execute(
         "UPDATE files
@@ -328,7 +367,15 @@ fn file_hash(path: &Path) -> AppResult<String> {
 }
 
 fn relative_depth(settings: &LibrarySettings, path: &Path, kind: &str) -> i64 {
-    let root = if kind.starts_with("Tray") || is_tray_path(path) {
+    let root = if let Some(downloads_root) = settings.downloads_path.as_deref() {
+        if path.starts_with(downloads_root) {
+            Some(downloads_root)
+        } else if kind.starts_with("Tray") || is_tray_path(path) {
+            settings.tray_path.as_deref()
+        } else {
+            settings.mods_path.as_deref()
+        }
+    } else if kind.starts_with("Tray") || is_tray_path(path) {
         settings.tray_path.as_deref()
     } else {
         settings.mods_path.as_deref()
@@ -407,6 +454,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
+                downloads_path: None,
             },
         )
         .expect("settings");
@@ -441,6 +489,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
+                downloads_path: None,
             },
             Some("Category First".to_owned()),
             20,

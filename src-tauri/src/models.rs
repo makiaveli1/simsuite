@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct LibrarySettings {
     pub mods_path: Option<String>,
     pub tray_path: Option<String>,
+    pub downloads_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -12,6 +13,7 @@ pub struct LibrarySettings {
 pub struct DetectedLibraryPaths {
     pub mods_path: Option<String>,
     pub tray_path: Option<String>,
+    pub downloads_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -20,6 +22,7 @@ pub struct HomeOverview {
     pub total_files: i64,
     pub mods_count: i64,
     pub tray_count: i64,
+    pub downloads_count: i64,
     pub script_mods_count: i64,
     pub creator_count: i64,
     pub bundles_count: i64,
@@ -28,6 +31,47 @@ pub struct HomeOverview {
     pub unsafe_count: i64,
     pub last_scan_at: Option<String>,
     pub read_only_mode: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadsWatcherState {
+    Idle,
+    Watching,
+    Processing,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsWatcherStatus {
+    pub state: DownloadsWatcherState,
+    pub watched_path: Option<String>,
+    pub configured: bool,
+    pub current_item: Option<String>,
+    pub last_run_at: Option<String>,
+    pub last_change_at: Option<String>,
+    pub last_error: Option<String>,
+    pub ready_items: i64,
+    pub needs_review_items: i64,
+    pub active_items: i64,
+}
+
+impl Default for DownloadsWatcherStatus {
+    fn default() -> Self {
+        Self {
+            state: DownloadsWatcherState::Idle,
+            watched_path: None,
+            configured: false,
+            current_item: None,
+            last_run_at: None,
+            last_change_at: None,
+            last_error: None,
+            ready_items: 0,
+            needs_review_items: 0,
+            active_items: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -450,4 +494,77 @@ pub struct ApplyCategoryAuditResult {
     pub subtype: Option<String>,
     pub updated_count: i64,
     pub cleared_review_count: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsInboxQuery {
+    pub search: Option<String>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsInboxItem {
+    pub id: i64,
+    pub display_name: String,
+    pub source_path: String,
+    pub source_kind: String,
+    pub archive_format: Option<String>,
+    pub status: String,
+    pub source_size: i64,
+    pub detected_file_count: i64,
+    pub active_file_count: i64,
+    pub applied_file_count: i64,
+    pub review_file_count: i64,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+    pub updated_at: String,
+    pub error_message: Option<String>,
+    pub sample_files: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsInboxOverview {
+    pub total_items: i64,
+    pub ready_items: i64,
+    pub needs_review_items: i64,
+    pub applied_items: i64,
+    pub error_items: i64,
+    pub active_files: i64,
+    pub watched_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsInboxResponse {
+    pub overview: DownloadsInboxOverview,
+    pub items: Vec<DownloadsInboxItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadInboxFile {
+    pub file_id: i64,
+    pub filename: String,
+    pub current_path: String,
+    pub origin_path: String,
+    pub archive_member_path: Option<String>,
+    pub kind: String,
+    pub subtype: Option<String>,
+    pub creator: Option<String>,
+    pub confidence: f64,
+    pub size: i64,
+    pub source_location: String,
+    pub safety_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadInboxDetail {
+    pub item: DownloadsInboxItem,
+    pub files: Vec<DownloadInboxFile>,
 }

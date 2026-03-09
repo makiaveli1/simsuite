@@ -220,6 +220,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
             },
             &ValidationRequest {
                 file_id: 1,
@@ -276,6 +277,7 @@ mod tests {
             &LibrarySettings {
                 mods_path: Some(mods_root.to_string_lossy().to_string()),
                 tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
             },
             &ValidationRequest {
                 file_id: 2,

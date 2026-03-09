@@ -19,6 +19,10 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
         connection,
         "SELECT COUNT(*) FROM files WHERE kind LIKE 'Tray%'",
     )?;
+    let downloads_count = scalar(
+        connection,
+        "SELECT COUNT(*) FROM files WHERE source_location = 'downloads'",
+    )?;
     let script_mods_count = scalar(
         connection,
         "SELECT COUNT(*) FROM files WHERE kind = 'ScriptMods'",
@@ -50,6 +54,7 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
         total_files,
         mods_count,
         tray_count,
+        downloads_count,
         script_mods_count,
         creator_count,
         bundles_count,

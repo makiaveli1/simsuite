@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { AnimatePresence, m } from "motion/react";
 import { ArrowDown, ArrowUp, ChevronDown, RotateCcw } from "lucide-react";
+import { hoverLift, panelSpring, tapPress } from "../lib/motion";
 import { useUiPreferences } from "./UiPreferencesContext";
 
 export interface DockSectionDefinition<T extends string = string> {
@@ -59,15 +61,17 @@ export function DockSectionStack<T extends string = string>({
       {intro ? (
         <div className="dock-stack-toolbar">
           <p className="dock-stack-copy">{intro}</p>
-          <button
+          <m.button
             type="button"
             className="dock-stack-reset"
             onClick={() => resetDockSectionLayout(layoutId)}
             title={resetLabel}
+            whileHover={hoverLift}
+            whileTap={tapPress}
           >
             <RotateCcw size={13} strokeWidth={2} />
             Reset
-          </button>
+          </m.button>
         </div>
       ) : null}
 
@@ -75,12 +79,14 @@ export function DockSectionStack<T extends string = string>({
         const collapsed = layout.collapsed[section.id] ?? false;
 
         return (
-          <section
+          <m.section
             key={section.id}
             className={`dock-section${collapsed ? " is-collapsed" : ""}`}
+            layout
+            transition={panelSpring}
           >
             <div className="dock-section-header">
-              <button
+              <m.button
                 type="button"
                 className="dock-section-toggle"
                 onClick={() =>
@@ -88,6 +94,8 @@ export function DockSectionStack<T extends string = string>({
                 }
                 aria-expanded={!collapsed}
                 title={collapsed ? `Open ${section.label}` : `Collapse ${section.label}`}
+                whileHover={hoverLift}
+                whileTap={tapPress}
               >
                 <ChevronDown
                   size={14}
@@ -98,39 +106,56 @@ export function DockSectionStack<T extends string = string>({
                   <strong>{section.label}</strong>
                   {section.hint ? <span>{section.hint}</span> : null}
                 </span>
-              </button>
+              </m.button>
 
               <div className="dock-section-tools">
                 {section.badge ? (
                   <span className="ghost-chip dock-section-badge">{section.badge}</span>
                 ) : null}
-                <button
+                <m.button
                   type="button"
                   className="dock-tool-button"
                   onClick={() => moveSection(section.id, -1)}
                   disabled={index === 0}
                   title={`Move ${section.label} up`}
+                  whileHover={index === 0 ? undefined : hoverLift}
+                  whileTap={index === 0 ? undefined : tapPress}
                 >
                   <ArrowUp size={13} strokeWidth={2} />
-                </button>
-                <button
+                </m.button>
+                <m.button
                   type="button"
                   className="dock-tool-button"
                   onClick={() => moveSection(section.id, 1)}
                   disabled={index === orderedSections.length - 1}
                   title={`Move ${section.label} down`}
+                  whileHover={
+                    index === orderedSections.length - 1 ? undefined : hoverLift
+                  }
+                  whileTap={
+                    index === orderedSections.length - 1 ? undefined : tapPress
+                  }
                 >
                   <ArrowDown size={13} strokeWidth={2} />
-                </button>
+                </m.button>
               </div>
             </div>
 
-            {!collapsed ? (
-              <div className="dock-section-body-shell">
-                <div className="dock-section-body">{section.children}</div>
-              </div>
-            ) : null}
-          </section>
+            <AnimatePresence initial={false}>
+              {!collapsed ? (
+                <m.div
+                  key="body"
+                  className="dock-section-body-shell"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={panelSpring}
+                >
+                  <div className="dock-section-body">{section.children}</div>
+                </m.div>
+              ) : null}
+            </AnimatePresence>
+          </m.section>
         );
       })}
     </div>

@@ -7,18 +7,19 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        category_audit, creator_audit, library_index, move_engine, rule_engine, scanner,
-        snapshot_manager,
+        category_audit, creator_audit, downloads_watcher, library_index, move_engine,
+        rule_engine, scanner, snapshot_manager,
     },
     database,
     error::AppError,
     models::{
         ApplyCategoryAuditResult, ApplyCreatorAuditResult, ApplyPreviewResult, CategoryAuditQuery,
         CategoryAuditFile, CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery,
-        CreatorAuditResponse, DetectedLibraryPaths, DuplicateOverview, DuplicatePair, FileDetail,
-        HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        OrganizationPreview, RestoreSnapshotResult, ReviewQueueItem, RulePreset, ScanPhase,
-        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary,
+        CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail, DownloadsInboxQuery,
+        DownloadsInboxResponse, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair,
+        FileDetail, HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery,
+        LibrarySettings, OrganizationPreview, RestoreSnapshotResult, ReviewQueueItem,
+        RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary,
     },
 };
 
@@ -34,17 +35,22 @@ pub fn get_library_settings(state: State<'_, AppState>) -> Result<LibrarySetting
 
 #[tauri::command]
 pub fn save_library_paths(
+    app: AppHandle,
     settings: LibrarySettings,
     state: State<'_, AppState>,
 ) -> Result<LibrarySettings, String> {
     let mut connection = state.connection().map_err(map_error)?;
     database::save_library_paths(&mut connection, &settings).map_err(map_error)?;
+    downloads_watcher::restart_watcher(&app, state.inner()).map_err(map_error)?;
     database::get_library_settings(&connection).map_err(map_error)
 }
 
 #[tauri::command]
 pub fn detect_default_library_paths() -> DetectedLibraryPaths {
     let sims_root = document_dir().map(|dir| dir.join("Electronic Arts").join("The Sims 4"));
+    let downloads_path = dirs::download_dir()
+        .filter(|path| path.exists())
+        .map(path_to_string);
 
     let mods_path = sims_root
         .as_ref()
@@ -61,6 +67,7 @@ pub fn detect_default_library_paths() -> DetectedLibraryPaths {
     DetectedLibraryPaths {
         mods_path,
         tray_path,
+        downloads_path,
     }
 }
 
@@ -188,6 +195,57 @@ pub fn get_scan_status(state: State<'_, AppState>) -> Result<ScanStatus, String>
 }
 
 #[tauri::command]
+pub fn get_downloads_watcher_status(
+    state: State<'_, AppState>,
+) -> Result<DownloadsWatcherStatus, String> {
+    state
+        .downloads_status()
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "Downloads status lock poisoned".to_owned())
+}
+
+#[tauri::command]
+pub fn refresh_downloads_inbox(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DownloadsWatcherStatus, String> {
+    downloads_watcher::refresh_inbox(&app, state.inner()).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_downloads_inbox(
+    query: Option<DownloadsInboxQuery>,
+    state: State<'_, AppState>,
+) -> Result<DownloadsInboxResponse, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    downloads_watcher::list_download_items(&connection, &settings, query.unwrap_or_default())
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_download_item_detail(
+    item_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<DownloadInboxDetail>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    downloads_watcher::get_download_item_detail(&connection, item_id).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn preview_download_item(
+    item_id: i64,
+    preset_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<OrganizationPreview, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    downloads_watcher::preview_download_item(&connection, &settings, item_id, preset_name)
+        .map_err(map_error)
+}
+
+#[tauri::command]
 pub fn get_library_facets(state: State<'_, AppState>) -> Result<LibraryFacets, String> {
     let connection = state.connection().map_err(map_error)?;
     let seed_pack = state.seed_pack();
@@ -281,6 +339,38 @@ pub fn restore_snapshot(
 ) -> Result<RestoreSnapshotResult, String> {
     let mut connection = state.connection().map_err(map_error)?;
     move_engine::restore_snapshot(&mut connection, snapshot_id, approved).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn apply_download_item(
+    item_id: i64,
+    preset_name: Option<String>,
+    approved: bool,
+    state: State<'_, AppState>,
+) -> Result<ApplyPreviewResult, String> {
+    let mut connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let file_ids = downloads_watcher::load_active_file_ids(&connection, item_id).map_err(map_error)?;
+    let result = move_engine::apply_preview_moves_for_files(
+        &mut connection,
+        &settings,
+        preset_name,
+        &file_ids,
+        approved,
+    )
+    .map_err(map_error)?;
+    downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn ignore_download_item(
+    item_id: i64,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let mut connection = state.connection().map_err(map_error)?;
+    downloads_watcher::ignore_download_item(&mut connection, item_id).map_err(map_error)?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -478,6 +568,14 @@ pub fn emit_scan_progress(
 
 pub fn emit_scan_status(app: &AppHandle, status: &crate::models::ScanStatus) -> Result<(), String> {
     app.emit("scan-status", status)
+        .map_err(|error| error.to_string())
+}
+
+pub fn emit_downloads_status(
+    app: &AppHandle,
+    status: &crate::models::DownloadsWatcherStatus,
+) -> Result<(), String> {
+    app.emit("downloads-status", status)
         .map_err(|error| error.to_string())
 }
 

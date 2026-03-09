@@ -17,6 +17,7 @@ Implemented modules:
 - `filename_parser`
 - `bundle_detector`
 - `duplicate_detector`
+- `downloads_watcher`
 - `rule_engine`
 - `validator`
 - `library_index`
@@ -26,7 +27,6 @@ Implemented modules:
 Planned placeholders still present:
 
 - `ai_classifier`
-- `downloads_watcher`
 
 ## Active safety pipeline
 
@@ -47,13 +47,16 @@ Snapshots are created before approved batch moves, and rollback is exposed throu
 Implemented screens:
 
 - Home
+- Downloads
 - Library
+- Creator Audit
+- Category Audit
+- Duplicates
 - Organize
 - Review
 
 Not yet implemented:
 
-- Duplicates
 - Tray
 - Patch Recovery
 - Tools
@@ -61,9 +64,9 @@ Not yet implemented:
 
 ## Known gaps versus the full product plan
 
-- scanner is full-scan only today; incremental scan support is not implemented
-- duplicate detection is exact-hash only; filename/version duplicate logic is still missing
+- scanner is incremental and backgrounded now, but deeper prioritization and scheduling controls are still missing
+- duplicate detection covers exact, filename, and version cases, but safe duplicate cleanup actions are still missing
 - tray bundles are grouped; broader mod-set bundle detection is not implemented
 - AI classification is not wired to Ollama or llama.cpp yet
-- downloads watcher, archive intake, and patch recovery tooling are still pending
-- background worker orchestration is still minimal
+- patch recovery tooling is still pending
+- user-facing Settings, Tools, and Tray surfaces are still missing

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, RefreshCw, Search } from "lucide-react";
+import { m } from "motion/react";
+import { Copy, RefreshCw, Search, SearchX } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { LayoutPresetBar } from "../components/LayoutPresetBar";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
+import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import type {
   DuplicatesLayoutPreset,
   DuplicateOverview,
@@ -297,13 +300,16 @@ export function DuplicatesScreen({
 
             <div className="vertical-dock queue-dock">
               <div className="queue-list duplicates-queue-list">
-                {filteredPairs.map((pair) => (
-                  <button
+                {filteredPairs.map((pair, index) => (
+                  <m.button
                     key={pair.id}
                     type="button"
                     className={`queue-row ${selectedId === pair.id ? "is-selected" : ""}`}
                     onClick={() => setSelectedId(pair.id)}
                     title={`${pair.primaryFilename} and ${pair.secondaryFilename}`}
+                    whileHover={rowHover}
+                    whileTap={rowPress}
+                    {...stagedListItem(index)}
                   >
                     <div className="queue-main">
                       <strong>{pair.primaryFilename}</strong>
@@ -318,7 +324,7 @@ export function DuplicatesScreen({
                       <span className="ghost-chip">{pair.duplicateType}</span>
                       <span className="ghost-chip">{pair.detectionMethod}</span>
                     </div>
-                  </button>
+                  </m.button>
                 ))}
               </div>
               <ResizableEdgeHandle
@@ -363,24 +369,37 @@ export function DuplicatesScreen({
                 />
               </>
             ) : (
-              <div className="detail-empty">
-                <p className="eyebrow">
-                  {userView === "beginner" ? "Same Mod Twice?" : "Duplicates"}
-                </p>
-                <h2>{userView === "beginner" ? "Select a match" : "Select a pair"}</h2>
-              </div>
+              <StatePanel
+                eyebrow={userView === "beginner" ? "Same Mod Twice?" : "Duplicates"}
+                title={userView === "beginner" ? "Select a match" : "Select a pair"}
+                body={
+                  userView === "beginner"
+                    ? "Choose one possible repeat from the left to compare both file paths and see how SimSuite matched them."
+                    : "Select a duplicate pair to inspect the path comparison, detection method, and exact hash details when available."
+                }
+                icon={SearchX}
+                meta={["Read-only for now", "Cleanup actions come later"]}
+              />
             )}
           </ResizableDetailPanel>
         </div>
       ) : (
-        <div className="panel-card detail-empty">
-          <p className="eyebrow">{userView === "beginner" ? "Same Mod Twice?" : "Duplicates"}</p>
-          <h2>
-            {userView === "beginner"
+        <StatePanel
+          eyebrow={userView === "beginner" ? "Same Mod Twice?" : "Duplicates"}
+          title={
+            userView === "beginner"
               ? "No repeated files match this filter"
-              : "No pairs match the current filter"}
-          </h2>
-        </div>
+              : "No pairs match the current filter"
+          }
+          body={
+            userView === "beginner"
+              ? "Try clearing the search or switching the match type if you want to look for broader possible repeats."
+              : "Clear the search or broaden the duplicate type filter to see more of the indexed overlap set."
+          }
+          icon={Copy}
+          tone="info"
+          meta={["Exact, filename, and version views available"]}
+        />
       )}
     </section>
   );

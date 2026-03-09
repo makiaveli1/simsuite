@@ -1,11 +1,13 @@
 export type Screen =
   | "home"
+  | "downloads"
   | "library"
   | "creatorAudit"
   | "categoryAudit"
   | "organize"
   | "review"
-  | "duplicates";
+  | "duplicates"
+  | "settings";
 export type UserView = "beginner" | "standard" | "power";
 export type UiTheme =
   | "plumbob"
@@ -13,7 +15,9 @@ export type UiTheme =
   | "cas"
   | "neighborhood"
   | "debuggrid"
-  | "sunroom";
+  | "sunroom"
+  | "patchday"
+  | "nightmarket";
 export type UiDensity = "compact" | "balanced" | "roomy";
 export type LibraryLayoutPreset = "browse" | "inspect" | "catalog" | "custom";
 export type ReviewLayoutPreset = "queue" | "balanced" | "focus" | "custom";
@@ -26,17 +30,20 @@ export type DuplicatesLayoutPreset =
 export interface LibrarySettings {
   modsPath: string | null;
   trayPath: string | null;
+  downloadsPath: string | null;
 }
 
 export interface DetectedLibraryPaths {
   modsPath: string | null;
   trayPath: string | null;
+  downloadsPath: string | null;
 }
 
 export interface HomeOverview {
   totalFiles: number;
   modsCount: number;
   trayCount: number;
+  downloadsCount: number;
   scriptModsCount: number;
   creatorCount: number;
   bundlesCount: number;
@@ -45,6 +52,21 @@ export interface HomeOverview {
   unsafeCount: number;
   lastScanAt: string | null;
   readOnlyMode: boolean;
+}
+
+export type DownloadsWatcherState = "idle" | "watching" | "processing" | "error";
+
+export interface DownloadsWatcherStatus {
+  state: DownloadsWatcherState;
+  watchedPath: string | null;
+  configured: boolean;
+  currentItem: string | null;
+  lastRunAt: string | null;
+  lastChangeAt: string | null;
+  lastError: string | null;
+  readyItems: number;
+  needsReviewItems: number;
+  activeItems: number;
 }
 
 export type ScanMode = "full" | "incremental";
@@ -359,4 +381,65 @@ export interface ApplyCategoryAuditResult {
   subtype: string | null;
   updatedCount: number;
   clearedReviewCount: number;
+}
+
+export interface DownloadsInboxQuery {
+  search?: string;
+  status?: string;
+  limit?: number;
+}
+
+export interface DownloadsInboxItem {
+  id: number;
+  displayName: string;
+  sourcePath: string;
+  sourceKind: string;
+  archiveFormat: string | null;
+  status: string;
+  sourceSize: number;
+  detectedFileCount: number;
+  activeFileCount: number;
+  appliedFileCount: number;
+  reviewFileCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  updatedAt: string;
+  errorMessage: string | null;
+  sampleFiles: string[];
+  notes: string[];
+}
+
+export interface DownloadsInboxOverview {
+  totalItems: number;
+  readyItems: number;
+  needsReviewItems: number;
+  appliedItems: number;
+  errorItems: number;
+  activeFiles: number;
+  watchedPath: string | null;
+}
+
+export interface DownloadsInboxResponse {
+  overview: DownloadsInboxOverview;
+  items: DownloadsInboxItem[];
+}
+
+export interface DownloadInboxFile {
+  fileId: number;
+  filename: string;
+  currentPath: string;
+  originPath: string;
+  archiveMemberPath: string | null;
+  kind: string;
+  subtype: string | null;
+  creator: string | null;
+  confidence: number;
+  size: number;
+  sourceLocation: string;
+  safetyNotes: string[];
+}
+
+export interface DownloadInboxDetail {
+  item: DownloadsInboxItem;
+  files: DownloadInboxFile[];
 }
