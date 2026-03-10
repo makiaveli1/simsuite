@@ -2,23 +2,26 @@ import { m } from "motion/react";
 import { overlayTransition, panelSpring } from "../lib/motion";
 import { ResizableEdgeHandle } from "./ResizableEdgeHandle";
 import { useUiPreferences } from "./UiPreferencesContext";
-import type { ScanProgress, UserView } from "../lib/types";
+import type { ExperienceMode, ScanProgress } from "../lib/types";
 
 interface ScannerOverlayProps {
   progress: ScanProgress | null;
-  userView: UserView;
+  experienceMode: ExperienceMode;
 }
 
 const PHASE_LABELS: Record<ScanProgress["phase"], string> = {
   collecting: "Looking through your Mods and Tray folders",
   hashing: "Checking files for exact copies",
-  classifying: "Working out creator names and mod types",
+  classifying: "Working out creators and types",
   bundling: "Keeping Tray files together",
   duplicates: "Looking for duplicate files",
   done: "Scan finished",
 };
 
-export function ScannerOverlay({ progress, userView }: ScannerOverlayProps) {
+export function ScannerOverlay({
+  progress,
+  experienceMode,
+}: ScannerOverlayProps) {
   const { scannerWidth, setScannerWidth } = useUiPreferences();
   const total = progress?.totalFiles ?? 0;
   const processed = progress?.processedFiles ?? 0;
@@ -61,7 +64,11 @@ export function ScannerOverlay({ progress, userView }: ScannerOverlayProps) {
         <div className="scanner-heading">
           <div>
             <p className="eyebrow">
-              {userView === "beginner" ? "Checking your CC" : "Library scan in progress"}
+              {experienceMode === "casual"
+                ? "Checking your CC"
+                : experienceMode === "creator"
+                  ? "Deep scan running"
+                  : "Library scan in progress"}
             </p>
             <h2>{progress ? PHASE_LABELS[progress.phase] : "Preparing scan"}</h2>
           </div>

@@ -1,4 +1,8 @@
-import type { Screen, UserView } from "./types";
+import type { ExperienceMode, Screen, UserView } from "./types";
+import {
+  experienceModeToLegacyView,
+  normalizeExperienceMode,
+} from "./experienceMode";
 
 const SCREEN_LABELS: Record<
   Screen,
@@ -35,9 +39,19 @@ const TYPE_LABELS: Record<string, string> = {
   Unknown: "Unknown",
 };
 
-export function screenLabel(screen: Screen, userView: UserView) {
+function normalizeUserView(userView: UserView | ExperienceMode): UserView {
+  const mode = normalizeExperienceMode(userView);
+  if (!mode) {
+    return userView as UserView;
+  }
+
+  return experienceModeToLegacyView(mode);
+}
+
+export function screenLabel(screen: Screen, userView: UserView | ExperienceMode) {
   const labels = SCREEN_LABELS[screen];
-  return labels[userView] ?? labels.default;
+  const legacyView = normalizeUserView(userView);
+  return labels[legacyView] ?? labels.default;
 }
 
 export function backdropScreenLabel(screen: Screen) {
@@ -55,16 +69,18 @@ export function friendlyTypeLabel(kind: string) {
     .trim();
 }
 
-export function reviewLabel(userView: UserView) {
-  return userView === "beginner" ? "Needs review" : "Review";
+export function reviewLabel(userView: UserView | ExperienceMode) {
+  return normalizeUserView(userView) === "beginner" ? "Needs review" : "Review";
 }
 
-export function reviewStateLabel(userView: UserView) {
-  return userView === "beginner" ? "Needs review" : "Review";
+export function reviewStateLabel(userView: UserView | ExperienceMode) {
+  return normalizeUserView(userView) === "beginner" ? "Needs review" : "Review";
 }
 
-export function unknownCreatorLabel(userView: UserView) {
-  return userView === "beginner" ? "Unknown creator" : "Unknown creator";
+export function unknownCreatorLabel(userView: UserView | ExperienceMode) {
+  return normalizeUserView(userView) === "beginner"
+    ? "Unknown creator"
+    : "Unknown creator";
 }
 
 export function intakeModeLabel(mode: string) {
@@ -91,14 +107,15 @@ export function riskLevelLabel(level: string) {
   }
 }
 
-export function viewModeLabel(userView: UserView) {
-  switch (userView) {
-    case "beginner":
-      return "Beginner";
-    case "power":
-      return "Pro";
+export function viewModeLabel(userView: UserView | ExperienceMode) {
+  const mode = normalizeExperienceMode(userView);
+  switch (mode) {
+    case "casual":
+      return "Casual";
+    case "creator":
+      return "Creator";
     default:
-      return "Standard";
+      return "Seasoned";
   }
 }
 
@@ -147,7 +164,11 @@ export function simsFlavorLine(
   return lines[key];
 }
 
-export function screenHelperLine(screen: Screen, userView: UserView) {
+export function screenHelperLine(
+  screen: Screen,
+  userView: UserView | ExperienceMode,
+) {
+  const legacyView = normalizeUserView(userView);
   const copy: Record<Screen, Record<UserView, string>> = {
     home: {
       beginner: "Set your folders, run a scan, and follow the big next step cards.",
@@ -196,5 +217,5 @@ export function screenHelperLine(screen: Screen, userView: UserView) {
     },
   };
 
-  return copy[screen][userView];
+  return copy[screen][legacyView];
 }

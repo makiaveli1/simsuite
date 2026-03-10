@@ -1,15 +1,11 @@
 import { m } from "motion/react";
 import { LayoutPanelLeft, SlidersHorizontal } from "lucide-react";
-import type { Screen, UiDensity, UserView } from "../lib/types";
+import type { ExperienceMode, Screen, UiDensity } from "../lib/types";
+import { getExperienceModeProfile } from "../lib/experienceMode";
 import { hoverLift, tapPress } from "../lib/motion";
 import { getThemeDefinition } from "../lib/themeMeta";
 import { useUiPreferences } from "./UiPreferencesContext";
-
-const USER_VIEW_LABELS: Record<UserView, string> = {
-  beginner: "Easy",
-  standard: "Standard",
-  power: "Power",
-};
+import { screenLabel, viewModeLabel } from "../lib/uiLanguage";
 
 const DENSITY_LABELS: Record<UiDensity, string> = {
   compact: "Snug",
@@ -17,32 +13,21 @@ const DENSITY_LABELS: Record<UiDensity, string> = {
   roomy: "Roomy",
 };
 
-const SCREEN_LABELS: Record<Screen, string> = {
-  home: "Home",
-  downloads: "New files",
-  library: "My CC",
-  creatorAudit: "Creator names",
-  categoryAudit: "Mod types",
-  duplicates: "Same file?",
-  organize: "Tidy up",
-  review: "Needs help",
-  settings: "Settings",
-};
-
 interface WorkspaceToolbarProps {
-  userView: UserView;
+  experienceMode: ExperienceMode;
   currentScreen: Screen;
   onOpenSettings: () => void;
 }
 
 export function WorkspaceToolbar({
-  userView,
+  experienceMode,
   currentScreen,
   onOpenSettings,
 }: WorkspaceToolbarProps) {
   const { theme, density } = useUiPreferences();
   const activeTheme = getThemeDefinition(theme);
-  const viewLabel = USER_VIEW_LABELS[userView];
+  const modeProfile = getExperienceModeProfile(experienceMode);
+  const viewLabel = viewModeLabel(experienceMode);
   const densityLabel = DENSITY_LABELS[density];
 
   return (
@@ -51,10 +36,13 @@ export function WorkspaceToolbar({
         <div className="workspace-toolbar-heading">
           <span className="section-label">
             <LayoutPanelLeft size={14} strokeWidth={2} />
-            {SCREEN_LABELS[currentScreen]}
+            {screenLabel(currentScreen, experienceMode)}
           </span>
+          <p className="workspace-toolbar-copy">{modeProfile.workspaceSummary}</p>
           <div className="workspace-toolbar-meta" aria-label="Current workspace preferences">
             <span className="workspace-toolbar-meta-item">{viewLabel}</span>
+            <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
+            <span className="workspace-toolbar-meta-item">{modeProfile.badge}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
             <span className="workspace-toolbar-meta-item">{densityLabel}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />

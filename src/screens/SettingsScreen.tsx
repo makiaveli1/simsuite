@@ -7,56 +7,51 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useUiPreferences } from "../components/UiPreferencesContext";
+import {
+  EXPERIENCE_MODE_ORDER,
+  EXPERIENCE_MODE_PROFILES,
+} from "../lib/experienceMode";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
-import type { UiDensity, UserView } from "../lib/types";
+import type { ExperienceMode, UiDensity } from "../lib/types";
 import { screenHelperLine } from "../lib/uiLanguage";
 
-const USER_VIEWS: Array<{
-  id: UserView;
-  label: string;
-  badge: string;
-  headline: string;
-  hint: string;
-  traits: string[];
-}> = [
+const EXPERIENCE_CARDS: Record<
+  ExperienceMode,
   {
-    id: "beginner",
-    label: "Beginner",
-    badge: "Guided",
-    headline: "One big next move, fewer rabbit holes",
-    hint: "Keeps the app calmer, puts the safest next button up front, and uses friendlier Sims-style wording.",
+    headline: string;
+    hint: string;
+    traits: string[];
+  }
+> = {
+  casual: {
+    headline: "Simple, steady, and easy to follow",
+    hint: "Keeps the app calmer, pushes the safest next move up front, and tucks heavier tools into a Tools shelf.",
     traits: [
-      "Shows the clearest next step first",
-      "Starts previews in example mode",
-      "Keeps the wording extra cozy",
+      "Home, Inbox, and Tidy Up stay front and center",
+      "The app keeps the chatter lighter",
+      "Great for everyday play sessions",
     ],
   },
-  {
-    id: "standard",
-    label: "Standard",
-    badge: "Balanced",
-    headline: "Enough clues to stay confident without the wall of receipts",
-    hint: "Keeps the main next step easy to find, but leaves more clues open while you sort.",
+  seasoned: {
+    headline: "Balanced enough for regular mod wrangling",
+    hint: "Keeps the workbench feel, leaves useful proof open, and still makes the next move easy to spot.",
     traits: [
-      "Balances guidance and detail",
-      "Keeps samples open by default",
-      "Leaves more proof visible while you sort",
+      "Full rail stays visible",
+      "Guidance and proof stay in balance",
+      "Best for regular cleanup and updates",
     ],
   },
-  {
-    id: "power",
-    label: "Pro",
-    badge: "Full receipts",
-    headline: "Dense, direct, and ready for deep CC gremlin work",
-    hint: "Opens the full receipts: raw paths, denser details, and deeper checks for fine control.",
+  creator: {
+    headline: "Dense, tool-forward, and ready for receipts",
+    hint: "Shows more system state, keeps heavier tools closer, and opens the deeper details you need for big cleanup or author work.",
     traits: [
-      "Opens fuller file lists by default",
-      "Shows denser path and evidence detail",
-      "Best for deep cleanup marathons",
+      "Audit tools move higher in the flow",
+      "More evidence stays open by default",
+      "Best for creators and deep CC marathons",
     ],
   },
-];
+};
 
 const DENSITIES: Array<{
   id: UiDensity;
@@ -81,18 +76,21 @@ const DENSITIES: Array<{
 ];
 
 interface SettingsScreenProps {
-  userView: UserView;
-  onUserViewChange: (view: UserView) => void;
+  experienceMode: ExperienceMode;
+  onExperienceModeChange: (view: ExperienceMode) => void;
 }
 
 export function SettingsScreen({
-  userView,
-  onUserViewChange,
+  experienceMode,
+  onExperienceModeChange,
 }: SettingsScreenProps) {
   const { theme, density, setTheme, setDensity, resetPanelSizes } =
     useUiPreferences();
   const activeTheme = getThemeDefinition(theme);
-  const activeView = USER_VIEWS.find((item) => item.id === userView) ?? USER_VIEWS[1];
+  const activeView = {
+    ...EXPERIENCE_MODE_PROFILES[experienceMode],
+    ...EXPERIENCE_CARDS[experienceMode],
+  };
   const activeDensity =
     DENSITIES.find((item) => item.id === density) ?? DENSITIES[1];
 
@@ -107,13 +105,13 @@ export function SettingsScreen({
           <div>
             <h1>Settings</h1>
             <p className="workspace-toolbar-copy">
-              {screenHelperLine("settings", userView)}
+              {screenHelperLine("settings", experienceMode)}
             </p>
           </div>
         </div>
 
         <div className="workspace-toolbar-chip-group settings-header-chips">
-          <span className="workspace-status-chip">{activeView.label} view</span>
+          <span className="workspace-status-chip">{activeView.label} mode</span>
           <span className="workspace-status-chip">{activeDensity.label} size</span>
           <span className="workspace-status-chip">{activeTheme.label}</span>
         </div>
@@ -136,37 +134,44 @@ export function SettingsScreen({
             </div>
 
             <div className="settings-view-grid" role="tablist" aria-label="User view">
-              {USER_VIEWS.map((item) => (
+              {EXPERIENCE_MODE_ORDER.map((mode) => {
+                const profile = EXPERIENCE_MODE_PROFILES[mode];
+                const card = EXPERIENCE_CARDS[mode];
+                return (
                 <m.button
-                  key={item.id}
+                  key={mode}
                   type="button"
-                  className={`settings-view-card ${userView === item.id ? "is-active" : ""}`}
-                  onClick={() => onUserViewChange(item.id)}
-                  title={item.hint}
+                  className={`settings-view-card ${experienceMode === mode ? "is-active" : ""}`}
+                  onClick={() => onExperienceModeChange(mode)}
+                  title={card.hint}
                   whileHover={hoverLift}
                   whileTap={tapPress}
                 >
                   <div className="settings-view-card-topline">
-                    <strong>{item.label}</strong>
-                    <span className="ghost-chip">{item.badge}</span>
+                    <strong>{profile.label}</strong>
+                    <span className="ghost-chip">{profile.badge}</span>
                   </div>
-                  <span className="settings-view-headline">{item.headline}</span>
-                  <p className="workspace-toolbar-copy">{item.hint}</p>
+                  <span className="settings-view-headline">{card.headline}</span>
+                  <p className="workspace-toolbar-copy">{card.hint}</p>
                   <div className="settings-view-traits">
-                    {item.traits.map((trait) => (
+                    {card.traits.map((trait) => (
                       <span key={trait} className="settings-view-trait">
                         {trait}
                       </span>
                     ))}
                   </div>
                 </m.button>
-              ))}
+                );
+              })}
             </div>
 
             <div className="settings-summary-card">
               <span className="section-label">Current fit</span>
-              <strong>{activeView.label} view</strong>
+              <strong>{activeView.label} mode</strong>
               <p className="workspace-toolbar-copy">{activeView.hint}</p>
+              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                {activeView.workspaceSummary}
+              </p>
             </div>
           </m.section>
 
@@ -315,7 +320,7 @@ export function SettingsScreen({
 
             <div className="summary-matrix">
               <div className="summary-stat">
-                <span>View</span>
+                <span>Mode</span>
                 <strong>{activeView.label}</strong>
               </div>
               <div className="summary-stat">

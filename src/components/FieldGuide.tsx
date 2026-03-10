@@ -17,13 +17,18 @@ import {
 } from "lucide-react";
 import { ResizableEdgeHandle } from "./ResizableEdgeHandle";
 import { useUiPreferences } from "./UiPreferencesContext";
-import type { Screen, UserView } from "../lib/types";
+import type { ExperienceMode, Screen, UserView } from "../lib/types";
+import {
+  experienceModeToLegacyView,
+  getExperienceModeProfile,
+} from "../lib/experienceMode";
 import { overlayTransition, panelSpring } from "../lib/motion";
+import { viewModeLabel } from "../lib/uiLanguage";
 
 interface FieldGuideProps {
   open: boolean;
   screen: Screen;
-  userView: UserView;
+  experienceMode: ExperienceMode;
   onClose: () => void;
 }
 
@@ -53,16 +58,10 @@ interface GuideTopic {
   facts: GuideFact[];
 }
 
-const VIEW_LABELS: Record<UserView, string> = {
-  beginner: "Easy view",
-  standard: "Standard view",
-  power: "Power view",
-};
-
 const VIEW_SUMMARIES: Record<UserView, string> = {
-  beginner: "Shows plain language, safest next steps, and fewer advanced details.",
-  standard: "Balances clear help with the important mechanics behind each workspace.",
-  power: "Shows the fuller workflow so you can verify rules, previews, and edge cases.",
+  beginner: "Keeps the next safe step up front, hides the extra clutter, and uses friendlier Sims-style help.",
+  standard: "Keeps the main action easy to spot, while leaving the important clues open as you sort.",
+  power: "Opens the full receipts: raw paths, deeper evidence, and denser checks when you want them.",
 };
 
 const TOPIC_ORDER: GuideTopicId[] = [
@@ -280,15 +279,15 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "Inspect indexed files, warnings, bundle clues, and saved learning data.",
       viewCopy(userView, {
         beginner: "Use Library when you want to check one file without moving anything.",
-        standard: "Use Library to inspect file details before teaching creator names or types.",
+        standard: "Use Library to inspect file details before saving creators or types.",
         power: "Use Library for the full indexed view, source paths, confidence, and metadata hints.",
       }),
       "Inspect files",
       "If the name or type is wrong, save a creator or type fix here or jump to a batch audit.",
       [
         section("What the details panel is for", [
-          "Fix creator names one file at a time.",
-          "Correct mod types without moving the file.",
+          "Fix creators one file at a time.",
+          "Correct types without moving the file.",
           "Inspect parser warnings, internal file hints, and full paths.",
         ]),
         section("What the tags mean", [
@@ -299,22 +298,22 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       ],
       [
         { label: "Moves allowed", value: "No" },
-        { label: "Best use", value: "Inspect and teach" },
-        { label: "Related screens", value: "Creator names, Mod types" },
+        { label: "Best use", value: "Inspect and save" },
+        { label: "Related screens", value: "Creators, Types" },
       ],
     ),
     creatorAudit: makeScreenTopic(
       "creatorAudit",
       Fingerprint,
-      "Creator Names",
-      "Fix repeated unknown creator names in batches instead of one file at a time.",
+      "Creators",
+      "Fix repeated unknown creators in batches instead of one file at a time.",
       viewCopy(userView, {
         beginner: "Use this when many files clearly look like they came from the same creator.",
-        standard: "Use grouped clues like prefixes, tags, and folder patterns to batch-save creator names.",
-        power: "Use this to batch-teach creator identity across unresolved clusters without touching file placement.",
+        standard: "Use grouped clues like prefixes, tags, and folder patterns to batch-save creators.",
+        power: "Use this to batch-save creator names across unresolved groups without touching file placement.",
       }),
-      "Batch teaching",
-      "Run another scan later and SimSuite should reuse the creator you taught here.",
+      "Batch saving",
+      "Run another scan later and SimSuite should reuse the creator you saved here.",
       [
         section("Strong groups", [
           "Bracket tags like [creator] often group well.",
@@ -322,13 +321,13 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           "Leave weak one-file cases alone if the match looks off.",
         ]),
         section("What saving changes", [
-          "Future scans remember the creator name.",
+          "Future scans remember the creator.",
           "Review items tied to missing creator identity can clear out.",
           "Nothing moves from this screen.",
         ]),
       ],
       [
-        { label: "Batch action", value: "Save creator name" },
+        { label: "Batch action", value: "Save creator" },
         { label: "Affects", value: "Future scans and previews" },
         { label: "Moves allowed", value: "No" },
       ],
@@ -336,14 +335,14 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
     categoryAudit: makeScreenTopic(
       "categoryAudit",
       Shapes,
-      "Mod Types",
+      "Types",
       "Fix repeated type guesses in batches when files obviously belong together.",
       viewCopy(userView, {
-        beginner: "Use this when several files are clearly the same kind of CC or mod.",
+        beginner: "Use this when several files are clearly the same type of CC or mod.",
         standard: "Use grouped keyword and folder clues to save a shared type once.",
-        power: "Use this to batch-lock kind and subtype decisions over heuristic guesses.",
+        power: "Use this to batch-lock type and subtype decisions over heuristic guesses.",
       }),
-      "Batch teaching",
+      "Batch saving",
       "Rescan later and SimSuite should keep using the saved type instead of the old guess.",
       [
         section("Useful clues", [
@@ -352,7 +351,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           "Mixed groups are better left for later than forced into the wrong type.",
         ]),
         section("What saving changes", [
-          "The saved kind and subtype override the automatic label later.",
+          "The saved type and subtype override the automatic label later.",
           "Review items tied to weak category detection can clear out.",
           "This still does not move files.",
         ]),
@@ -429,11 +428,11 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "Review",
       "Handle files that still need a person because a name, type, or safety rule is not settled yet.",
       viewCopy(userView, {
-        beginner: "Use this when SimSuite says a file needs help or needs attention.",
+        beginner: "Use this when SimSuite says a file needs review.",
         standard: "Use this queue to see why a file was blocked and where it would safely go.",
         power: "Use this as the hold queue for low confidence, validator conflicts, and path-risk cases.",
       }),
-      "Needs attention",
+      "Needs review",
       "Go back to Tidy Up only after the queue is under control.",
       [
         section("Common reasons", [
@@ -443,7 +442,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         ]),
         section("Good next moves", [
           "Use Library for one-file fixes.",
-          "Use Creator Names or Mod Types for batch fixes.",
+          "Use Creators or Types for batch fixes.",
           "Rescan after changing the file info or the folder layout.",
         ]),
       ],
@@ -489,7 +488,14 @@ function section(
   return { label, items, tone };
 }
 
-export function FieldGuide({ open, screen, userView, onClose }: FieldGuideProps) {
+export function FieldGuide({
+  open,
+  screen,
+  experienceMode,
+  onClose,
+}: FieldGuideProps) {
+  const userView = experienceModeToLegacyView(experienceMode);
+  const modeProfile = getExperienceModeProfile(experienceMode);
   const topics = useMemo(() => buildGuideTopics(userView), [userView]);
   const [activeTopicId, setActiveTopicId] = useState<GuideTopicId>(screen);
   const { guideWidth, setGuideWidth } = useUiPreferences();
@@ -555,9 +561,10 @@ export function FieldGuide({ open, screen, userView, onClose }: FieldGuideProps)
                 <p className="eyebrow">Field guide</p>
                 <h2>{activeTopic.title}</h2>
                 <p className="guide-intro">{activeTopic.intro}</p>
+                <p className="workspace-toolbar-copy">{modeProfile.workspaceSummary}</p>
               </div>
               <div className="guide-header-actions">
-                <span className="ghost-chip">{VIEW_LABELS[userView]}</span>
+                <span className="ghost-chip">{viewModeLabel(experienceMode)} mode</span>
                 <button type="button" className="secondary-action" onClick={onClose}>
                   Close
                 </button>
@@ -569,6 +576,7 @@ export function FieldGuide({ open, screen, userView, onClose }: FieldGuideProps)
                 <div className="guide-nav-summary">
                   <strong>Guide mode</strong>
                   <span>{VIEW_SUMMARIES[userView]}</span>
+                  <span>{modeProfile.summary}</span>
                 </div>
 
                 <div className="guide-topic-list" aria-label="Guide topics">

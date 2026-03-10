@@ -18,7 +18,12 @@ import { BrandMark } from "./BrandMark";
 import { ResizableEdgeHandle } from "../ResizableEdgeHandle";
 import { useUiPreferences } from "../UiPreferencesContext";
 import { hoverLift, tapPress } from "../../lib/motion";
-import type { Screen, UserView } from "../../lib/types";
+import type { ExperienceMode, Screen } from "../../lib/types";
+import {
+  experienceModeToLegacyView,
+  getExperienceModeProfile,
+} from "../../lib/experienceMode";
+import { reviewLabel, screenLabel } from "../../lib/uiLanguage";
 
 const NAV_ITEMS: Array<{
   id: Screen;
@@ -29,7 +34,7 @@ const NAV_ITEMS: Array<{
   { id: "downloads", label: "Inbox", icon: Inbox },
   { id: "library", label: "Library", icon: FolderTree },
   { id: "creatorAudit", label: "Creators", icon: Fingerprint },
-  { id: "categoryAudit", label: "Categories", icon: Shapes },
+  { id: "categoryAudit", label: "Types", icon: Shapes },
   { id: "duplicates", label: "Duplicates", icon: Copy },
   { id: "organize", label: "Organize", icon: Workflow },
   { id: "review", label: "Review", icon: ShieldAlert },
@@ -38,48 +43,31 @@ const NAV_ITEMS: Array<{
 
 interface SidebarProps {
   currentScreen: Screen;
-  userView: UserView;
+  experienceMode: ExperienceMode;
   onNavigate: (screen: Screen) => void;
   onScan: () => void;
   isScanning: boolean;
   onOpenGuide: () => void;
 }
 
-const VIEW_LABELS: Record<Screen, Partial<Record<UserView, string>>> = {
-  home: {},
-  downloads: {
-    beginner: "New files",
-  },
-  library: {
-    beginner: "My CC",
-  },
-  creatorAudit: {
-    beginner: "Creator names",
-  },
-  categoryAudit: {
-    beginner: "Mod types",
-  },
-  duplicates: {
-    beginner: "Same file?",
-  },
-  organize: {
-    beginner: "Tidy up",
-  },
-  review: {
-    beginner: "Needs help",
-  },
-  settings: {},
-};
-
 export function Sidebar({
   currentScreen,
-  userView,
+  experienceMode,
   onNavigate,
   onScan,
   isScanning,
   onOpenGuide,
 }: SidebarProps) {
   const { sidebarWidth, setSidebarWidth } = useUiPreferences();
+  const userView = experienceModeToLegacyView(experienceMode);
+  const modeProfile = getExperienceModeProfile(experienceMode);
+  const navById = new Map(NAV_ITEMS.map((item) => [item.id, item]));
+  const primaryItems = modeProfile.primaryScreens
+    .map((id) => navById.get(id))
+    .filter((item): item is (typeof NAV_ITEMS)[number] => Boolean(item));
+  const toolItems = modeProfile.toolScreens
+    .map((id) => navById.get(id))
+    .filter((item): item is (typeof NAV_ITEMS)[number] => Boolean(item));
 
   return (
     <aside className="sidebar-shell">
@@ -118,7 +106,13 @@ export function Sidebar({
         >
           <ScanSearch size={16} strokeWidth={2} />
           <span>
-            {isScanning ? "Scanning..." : userView === "beginner" ? "Scan CC" : "Scan"}
+            {isScanning
+              ? "Scanning..."
+              : experienceMode === "casual"
+                ? "Scan my CC"
+                : experienceMode === "creator"
+                  ? "Run scan"
+                  : "Scan"}
           </span>
         </m.button>
 
@@ -136,13 +130,13 @@ export function Sidebar({
       </div>
 
       <nav className="nav-stack" aria-label="Primary">
-        {NAV_ITEMS.map((item) => (
+        {primaryItems.map((item) => (
           <m.button
             key={item.id}
             type="button"
             className={`rail-nav ${currentScreen === item.id ? "is-active" : ""}`}
             onClick={() => onNavigate(item.id)}
-            title={VIEW_LABELS[item.id][userView] ?? item.label}
+            title={item.id === "review" ? reviewLabel(userView) : screenLabel(item.id, userView)}
             whileHover={hoverLift}
             whileTap={tapPress}
           >
@@ -154,17 +148,63 @@ export function Sidebar({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.18 }}
+                    transition={{ duration: 0.18 }}
                 />
               ) : null}
             </AnimatePresence>
             <item.icon size={18} strokeWidth={2} />
-            <span>{VIEW_LABELS[item.id][userView] ?? item.label}</span>
+            <span>
+              {item.id === "review"
+                ? reviewLabel(userView)
+                : screenLabel(item.id, userView)}
+            </span>
           </m.button>
         ))}
       </nav>
 
+      {toolItems.length > 0 ? (
+        <div className="sidebar-nav-group">
+          <span className="sidebar-group-label">Tools</span>
+          <nav className="nav-stack nav-stack-secondary" aria-label="Tools">
+            {toolItems.map((item) => (
+              <m.button
+                key={item.id}
+                type="button"
+                className={`rail-nav rail-nav-secondary ${currentScreen === item.id ? "is-active" : ""}`}
+                onClick={() => onNavigate(item.id)}
+                title={
+                  item.id === "review"
+                    ? reviewLabel(userView)
+                    : screenLabel(item.id, userView)
+                }
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                <AnimatePresence>
+                  {currentScreen === item.id ? (
+                    <m.span
+                      layoutId="sidebar-active-panel"
+                      className="rail-nav-active-indicator"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18 }}
+                    />
+                  ) : null}
+                </AnimatePresence>
+                <item.icon size={18} strokeWidth={2} />
+                <span>{screenLabel(item.id, userView)}</span>
+              </m.button>
+            ))}
+          </nav>
+        </div>
+      ) : null}
+
       <div className="sidebar-footer">
+        <div className="sidebar-mode-note">
+          <span className="section-label">{modeProfile.label}</span>
+          <p>{modeProfile.workspaceSummary}</p>
+        </div>
         <div className="sidebar-footer-row">
           <ShieldCheck size={14} strokeWidth={2} />
           <span>Validated moves</span>

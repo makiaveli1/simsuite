@@ -40,6 +40,7 @@ import type {
   DependencyStatus,
   DownloadInboxDetail,
   DownloadIntakeMode,
+  DownloadQueueLane,
   DownloadsInboxItem,
   DownloadsInboxResponse,
   DownloadsWatcherStatus,
@@ -528,6 +529,7 @@ export function DownloadsScreen({
         userView,
       })
     : [];
+  const groupedItems = groupDownloadItems(inbox?.items ?? []);
 
   return (
     <section className="screen-shell">
@@ -574,17 +576,30 @@ export function DownloadsScreen({
         />
         <SummaryStat
           label={userView === "beginner" ? "Ready now" : "Ready"}
-          value={overview?.readyItems ?? 0}
+          value={overview?.readyNowItems ?? overview?.readyItems ?? 0}
           tone="good"
         />
-        <SummaryStat label="Needs review" value={overview?.needsReviewItems ?? 0} tone="low" />
         <SummaryStat
-          label={userView === "beginner" ? "Already moved" : "Applied"}
-          value={overview?.appliedItems ?? 0}
+          label={userView === "beginner" ? "Special setup" : "Special setup"}
+          value={overview?.specialSetupItems ?? 0}
           tone="neutral"
         />
+        <SummaryStat
+          label={userView === "beginner" ? "Waiting on you" : "Waiting"}
+          value={overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0}
+          tone="low"
+        />
+        <SummaryStat
+          label="Blocked"
+          value={overview?.blockedItems ?? overview?.errorItems ?? 0}
+          tone="low"
+        />
         {userView !== "beginner" ? (
-          <SummaryStat label="Errors" value={overview?.errorItems ?? 0} tone="low" />
+          <SummaryStat
+            label="Done"
+            value={overview?.doneItems ?? overview?.appliedItems ?? 0}
+            tone="neutral"
+          />
         ) : null}
       </div>
 
@@ -710,53 +725,77 @@ export function DownloadsScreen({
                 <div className="vertical-dock downloads-queue-dock">
                   <div className="queue-list downloads-queue-list">
                     {inbox?.items.length ? (
-                      inbox.items.map((item, index) => (
-                        <m.button
-                          key={item.id}
-                          type="button"
-                          className={`downloads-item-row ${
-                            selectedItemId === item.id ? "is-selected" : ""
-                          } downloads-item-row-${itemStatusTone(item.status)}`}
-                          onClick={() => {
-                            setStatusMessage(null);
-                            setSelectedItemId(item.id);
-                          }}
-                          title={item.sourcePath}
-                          whileHover={rowHover}
-                          whileTap={rowPress}
-                          {...stagedListItem(index)}
-                        >
-                          <div className="downloads-item-main">
-                            <strong>{item.displayName}</strong>
-                            <span>
-                              {item.sourceKind === "archive" ? "Archive" : "Direct file"} ·{" "}
-                              {item.detectedFileCount.toLocaleString()} file(s)
-                              {userView === "power" && item.archiveFormat
-                                ? ` · ${item.archiveFormat.toUpperCase()}`
-                                : ""}
-                            </span>
-                            {item.sampleFiles.length ? (
-                              <div className="downloads-item-samples">
-                                {item.sampleFiles.slice(0, 3).join(" · ")}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="downloads-item-meta">
-                            {findAutoRecheckNote(item.notes) ? (
-                              <span className="ghost-chip">Rechecked</span>
-                            ) : null}
-                            <span
-                              className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}
-                            >
-                              {intakeModeLabel(item.intakeMode)}
-                            </span>
-                            <span
-                              className={`confidence-badge ${itemStatusTone(item.status)}`}
-                            >
-                              {friendlyItemStatus(item.status)}
+                      groupedItems.map((group) => (
+                        <div key={group.lane} className="downloads-lane-group">
+                          <div className="downloads-lane-header">
+                            <div>
+                              <strong>{queueLaneLabel(group.lane, userView)}</strong>
+                              <span>{queueLaneHint(group.lane, userView)}</span>
+                            </div>
+                            <span className="ghost-chip">
+                              {group.items.length.toLocaleString()}
                             </span>
                           </div>
-                        </m.button>
+
+                          <div className="downloads-lane-list">
+                            {group.items.map((item, index) => (
+                              <m.button
+                                key={item.id}
+                                type="button"
+                                className={`downloads-item-row ${
+                                  selectedItemId === item.id ? "is-selected" : ""
+                                } downloads-item-row-${itemStatusTone(item.status)}`}
+                                onClick={() => {
+                                  setStatusMessage(null);
+                                  setSelectedItemId(item.id);
+                                }}
+                                title={item.sourcePath}
+                                whileHover={rowHover}
+                                whileTap={rowPress}
+                                {...stagedListItem(index)}
+                              >
+                                <div className="downloads-item-main">
+                                  <strong>{item.displayName}</strong>
+                                  <span>
+                                    {item.sourceKind === "archive" ? "Archive" : "Direct file"} ·{" "}
+                                    {item.detectedFileCount.toLocaleString()} file(s)
+                                    {userView === "power" && item.archiveFormat
+                                      ? ` · ${item.archiveFormat.toUpperCase()}`
+                                      : ""}
+                                  </span>
+                                  <div className="downloads-item-samples">
+                                    {item.queueSummary ?? fallbackQueueSummary(item)}
+                                  </div>
+                                  {item.sampleFiles.length ? (
+                                    <div className="downloads-item-samples downloads-item-samples-muted">
+                                      {item.sampleFiles.slice(0, 3).join(" · ")}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div className="downloads-item-meta">
+                                  {findAutoRecheckNote(item.notes) ? (
+                                    <span className="ghost-chip">Rechecked</span>
+                                  ) : null}
+                                  {item.relatedItemIds?.length ? (
+                                    <span className="ghost-chip">
+                                      Linked {item.relatedItemIds.length + 1}
+                                    </span>
+                                  ) : null}
+                                  <span
+                                    className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}
+                                  >
+                                    {intakeModeLabel(item.intakeMode)}
+                                  </span>
+                                  <span
+                                    className={`confidence-badge ${itemStatusTone(item.status)}`}
+                                  >
+                                    {friendlyItemStatus(item.status)}
+                                  </span>
+                                </div>
+                              </m.button>
+                            ))}
+                          </div>
+                        </div>
                       ))
                     ) : (
                       <StatePanel
@@ -916,8 +955,14 @@ export function DownloadsScreen({
                       {userView === "beginner" ? "Selected batch" : "Selected inbox item"}
                     </p>
                     <h2>{selectedItem.displayName}</h2>
+                    <p className="workspace-toolbar-copy">
+                      {selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+                    </p>
                   </div>
                   <div className="downloads-detail-badges">
+                    <span className="ghost-chip">
+                      {queueLaneLabel(selectedItem.queueLane ?? deriveQueueLane(selectedItem), userView)}
+                    </span>
                     <span className={`confidence-badge ${intakeModeTone(selectedItem.intakeMode)}`}>
                       {intakeModeLabel(selectedItem.intakeMode)}
                     </span>
@@ -951,6 +996,16 @@ export function DownloadsScreen({
                   <div className="downloads-trigger-note downloads-trigger-note-refresh">
                     <strong>Rechecked with newer rules.</strong>
                     <span>{selectedAutoRecheckNote}</span>
+                  </div>
+                ) : null}
+
+                {selectedItem.relatedItemIds?.length ? (
+                  <div className="downloads-trigger-note downloads-trigger-note-refresh">
+                    <strong>Linked setup family.</strong>
+                    <span>
+                      {selectedItem.relatedItemIds.length + 1} related Inbox item(s) belong to
+                      this setup chain.
+                    </span>
                   </div>
                 ) : null}
 
@@ -1704,6 +1759,13 @@ function buildInspectorSections({
   unchangedCount: number;
   userView: UserView;
 }): DockSectionDefinition[] {
+  const sharedSections = [
+    buildQueueSection(selectedItem, userView),
+    buildSourceSection(selectedItem),
+    buildTimelineSection(selectedItem),
+    buildFilesSection(selectedFiles, userView),
+  ];
+
   if (selectedItem.intakeMode === "guided" && selectedGuidedPlan) {
     return [
       {
@@ -1814,6 +1876,7 @@ function buildInspectorSections({
           </div>
         ),
       },
+      ...sharedSections,
     ];
   }
 
@@ -1929,8 +1992,7 @@ function buildInspectorSections({
           </div>
         ),
       },
-      buildSourceSection(selectedItem),
-      buildFilesSection(selectedFiles, userView),
+      ...sharedSections,
     ];
   }
 
@@ -2004,9 +2066,39 @@ function buildInspectorSections({
         </div>
       ),
     },
-    buildSourceSection(selectedItem),
-    buildFilesSection(selectedFiles, userView),
+    ...sharedSections,
   ];
+}
+
+function buildQueueSection(
+  selectedItem: DownloadsInboxItem,
+  userView: UserView,
+): DockSectionDefinition {
+  const lane = selectedItem.queueLane ?? deriveQueueLane(selectedItem);
+
+  return {
+    id: "queue",
+    label: userView === "beginner" ? "Inbox lane" : "Queue lane",
+    hint:
+      userView === "beginner"
+        ? "Why this batch is sitting where it is in the Inbox."
+        : "Lane, linked setup group, and the best quick summary.",
+    children: (
+      <div className="detail-list">
+        <DetailRow label="Lane" value={queueLaneLabel(lane, userView)} />
+        <DetailRow
+          label="Summary"
+          value={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+        />
+        <DetailRow
+          label="Linked items"
+          value={(selectedItem.relatedItemIds?.length ?? 0) > 0
+            ? `${(selectedItem.relatedItemIds?.length ?? 0) + 1} items in this setup chain`
+            : "This batch is standing on its own"}
+        />
+      </div>
+    ),
+  };
 }
 
 function buildSourceSection(selectedItem: DownloadsInboxItem): DockSectionDefinition {
@@ -2034,6 +2126,34 @@ function buildSourceSection(selectedItem: DownloadsInboxItem): DockSectionDefini
             {selectedItem.errorMessage}
           </div>
         ) : null}
+      </div>
+    ),
+  };
+}
+
+function buildTimelineSection(selectedItem: DownloadsInboxItem): DockSectionDefinition {
+  const timelineEntries = selectedItem.timeline ?? [];
+
+  return {
+    id: "timeline",
+    label: "Timeline",
+    hint: "A quick look at what happened to this batch inside the Inbox.",
+    defaultCollapsed: false,
+    children: (
+      <div className="downloads-timeline">
+        {timelineEntries.length ? (
+          timelineEntries.map((entry, index) => (
+            <div key={`${entry.label}-${entry.at ?? index}`} className="downloads-timeline-row">
+              <strong>{entry.label}</strong>
+              <span>{entry.detail ?? "No extra detail saved."}</span>
+              {entry.at ? (
+                <span className="downloads-timeline-time">{formatDate(entry.at)}</span>
+              ) : null}
+            </div>
+          ))
+        ) : (
+          <div className="downloads-evidence-row">No inbox timeline yet.</div>
+        )}
       </div>
     ),
   };
@@ -2107,6 +2227,122 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+const DOWNLOAD_LANE_ORDER: DownloadQueueLane[] = [
+  "ready_now",
+  "special_setup",
+  "waiting_on_you",
+  "blocked",
+  "done",
+];
+
+function groupDownloadItems(items: DownloadsInboxItem[]) {
+  const grouped = new Map<DownloadQueueLane, DownloadsInboxItem[]>();
+
+  for (const lane of DOWNLOAD_LANE_ORDER) {
+    grouped.set(lane, []);
+  }
+
+  for (const item of items) {
+    const lane = item.queueLane ?? deriveQueueLane(item);
+    grouped.get(lane)?.push(item);
+  }
+
+  return DOWNLOAD_LANE_ORDER
+    .map((lane) => ({ lane, items: grouped.get(lane) ?? [] }))
+    .filter((group) => group.items.length > 0);
+}
+
+function deriveQueueLane(item: DownloadsInboxItem): DownloadQueueLane {
+  if (item.status === "applied" || item.status === "ignored") {
+    return "done";
+  }
+
+  if (item.status === "error" || item.intakeMode === "blocked") {
+    return "blocked";
+  }
+
+  if (item.intakeMode === "guided") {
+    return "special_setup";
+  }
+
+  if (item.intakeMode === "needs_review" || item.status === "needs_review") {
+    return "waiting_on_you";
+  }
+
+  return "ready_now";
+}
+
+function fallbackQueueSummary(item: DownloadsInboxItem) {
+  const lane = item.queueLane ?? deriveQueueLane(item);
+
+  switch (lane) {
+    case "special_setup":
+      if (item.existingInstallDetected) {
+        return "SimSuite found an older special setup and can guide the fix.";
+      }
+      return "SimSuite recognized a supported special mod and has a guided next step.";
+    case "waiting_on_you":
+      if (item.missingDependencies.length) {
+        return `Waiting on ${item.missingDependencies[0]} before anything moves.`;
+      }
+      return "This batch needs one more choice from you before it can move.";
+    case "blocked":
+      return item.errorMessage ?? "SimSuite stopped this batch to avoid a risky move.";
+    case "done":
+      return item.appliedFileCount > 0
+        ? "This batch already handed off its safe files."
+        : "This batch is hidden from the active Inbox.";
+    default:
+      return item.reviewFileCount > 0
+        ? "Safe files are ready, and the unsure ones will stay behind for review."
+        : "This batch is ready for a safe hand-off.";
+  }
+}
+
+function queueLaneLabel(lane: DownloadQueueLane, userView: UserView) {
+  switch (lane) {
+    case "ready_now":
+      return userView === "beginner" ? "Ready now" : "Ready now";
+    case "special_setup":
+      return "Special setup";
+    case "waiting_on_you":
+      return userView === "beginner" ? "Waiting on you" : "Waiting on you";
+    case "blocked":
+      return "Blocked";
+    case "done":
+      return userView === "beginner" ? "Done" : "Done";
+    default:
+      return "Inbox";
+  }
+}
+
+function queueLaneHint(lane: DownloadQueueLane, userView: UserView) {
+  switch (lane) {
+    case "ready_now":
+      return userView === "beginner"
+        ? "Safe files can move from here."
+        : "Normal batches ready for a safe hand-off.";
+    case "special_setup":
+      return userView === "beginner"
+        ? "Supported mods with their own install rules."
+        : "Supported special mods that need the guided install path.";
+    case "waiting_on_you":
+      return userView === "beginner"
+        ? "These need one more choice from you first."
+        : "Dependencies, missing files, or a small decision are still in the way.";
+    case "blocked":
+      return userView === "beginner"
+        ? "SimSuite stopped these to stay safe."
+        : "Unsafe or incomplete items that cannot move yet.";
+    case "done":
+      return userView === "beginner"
+        ? "Already handled or tucked away."
+        : "Applied or hidden batches.";
+    default:
+      return "";
+  }
 }
 
 function SummaryStat({

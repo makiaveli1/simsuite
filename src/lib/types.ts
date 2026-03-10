@@ -8,6 +8,7 @@ export type Screen =
   | "review"
   | "duplicates"
   | "settings";
+export type ExperienceMode = "casual" | "seasoned" | "creator";
 export type UserView = "beginner" | "standard" | "power";
 export type UiTheme =
   | "plumbob"
@@ -434,6 +435,24 @@ export interface DownloadsInboxItem {
   catalogSource: CatalogSourceInfo | null;
   existingInstallDetected: boolean;
   guidedInstallAvailable: boolean;
+  queueLane?: DownloadQueueLane;
+  queueSummary?: string;
+  familyKey?: string | null;
+  relatedItemIds?: number[];
+  timeline?: DownloadsTimelineEntry[];
+}
+
+export type DownloadQueueLane =
+  | "ready_now"
+  | "special_setup"
+  | "waiting_on_you"
+  | "blocked"
+  | "done";
+
+export interface DownloadsTimelineEntry {
+  label: string;
+  detail: string | null;
+  at: string | null;
 }
 
 export interface DownloadsInboxOverview {
@@ -444,6 +463,11 @@ export interface DownloadsInboxOverview {
   errorItems: number;
   activeFiles: number;
   watchedPath: string | null;
+  readyNowItems?: number;
+  specialSetupItems?: number;
+  waitingOnYouItems?: number;
+  blockedItems?: number;
+  doneItems?: number;
 }
 
 export interface DownloadsInboxResponse {

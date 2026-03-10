@@ -24,9 +24,10 @@ use crate::{
     error::{AppError, AppResult},
     models::{
         CatalogSourceInfo, DownloadInboxDetail, DownloadInboxFile, DownloadIntakeMode,
-        DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview, DownloadsInboxQuery,
-        DownloadsInboxResponse, DownloadsWatcherState, DownloadsWatcherStatus,
-        GuidedInstallPlan, LibrarySettings, OrganizationPreview, SpecialReviewPlan,
+        DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
+        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsTimelineEntry,
+        DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan, LibrarySettings,
+        OrganizationPreview, SpecialReviewPlan,
     },
 };
 
@@ -327,6 +328,11 @@ pub fn list_download_items(
                 applied_file_count: row.get(32)?,
                 review_file_count: row.get(33)?,
                 sample_files: Vec::new(),
+                queue_lane: DownloadQueueLane::ReadyNow,
+                queue_summary: String::new(),
+                family_key: None,
+                related_item_ids: Vec::new(),
+                timeline: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -337,7 +343,302 @@ pub fn list_download_items(
         items.push(item);
     }
 
+    enrich_download_items(&mut items);
+
     Ok(DownloadsInboxResponse { overview, items })
+}
+
+fn enrich_download_items(items: &mut [DownloadsInboxItem]) {
+    for item in items.iter_mut() {
+        hydrate_download_item(item);
+    }
+
+    let mut family_members: HashMap<String, Vec<i64>> = HashMap::new();
+    for item in items.iter() {
+        if let Some(family_key) = item.family_key.as_ref() {
+            family_members
+                .entry(family_key.clone())
+                .or_default()
+                .push(item.id);
+        }
+    }
+
+    for item in items.iter_mut() {
+        item.related_item_ids = item
+            .family_key
+            .as_ref()
+            .and_then(|family_key| family_members.get(family_key))
+            .map(|ids| {
+                ids.iter()
+                    .copied()
+                    .filter(|related_id| *related_id != item.id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        item.timeline = build_download_timeline(item);
+    }
+}
+
+fn enrich_download_item(connection: &Connection, item: &mut DownloadsInboxItem) -> AppResult<()> {
+    hydrate_download_item(item);
+    item.related_item_ids = load_related_item_ids(connection, item)?;
+    item.timeline = build_download_timeline(item);
+    Ok(())
+}
+
+fn hydrate_download_item(item: &mut DownloadsInboxItem) {
+    item.queue_lane = derive_queue_lane(item);
+    item.queue_summary = build_queue_summary(item);
+    item.family_key = build_family_key(item);
+}
+
+fn derive_queue_lane(item: &DownloadsInboxItem) -> DownloadQueueLane {
+    if matches!(item.status.as_str(), "applied" | "ignored") {
+        return DownloadQueueLane::Done;
+    }
+
+    if item.status == "error" || item.intake_mode == DownloadIntakeMode::Blocked {
+        return DownloadQueueLane::Blocked;
+    }
+
+    if item.intake_mode == DownloadIntakeMode::Guided {
+        return DownloadQueueLane::SpecialSetup;
+    }
+
+    if item.intake_mode == DownloadIntakeMode::NeedsReview || item.status == "needs_review" {
+        return DownloadQueueLane::WaitingOnYou;
+    }
+
+    DownloadQueueLane::ReadyNow
+}
+
+fn build_queue_summary(item: &DownloadsInboxItem) -> String {
+    match derive_queue_lane(item) {
+        DownloadQueueLane::ReadyNow => {
+            if item.review_file_count > 0 {
+                "Safe files are ready to move, while the unsure ones stay visible for review."
+                    .to_owned()
+            } else {
+                "This batch is ready for a safe hand-off into your library.".to_owned()
+            }
+        }
+        DownloadQueueLane::SpecialSetup => {
+            if !item.missing_dependencies.is_empty() {
+                format!(
+                    "Special setup found. {} needs to be handled first.",
+                    item.missing_dependencies[0]
+                )
+            } else if item.existing_install_detected {
+                "SimSuite found an older setup and can repair it before continuing."
+                    .to_owned()
+            } else if item.guided_install_available {
+                "SimSuite recognized a supported special mod and has a safe install plan ready."
+                    .to_owned()
+            } else {
+                "Supported special setup found. Open the side panel for the safest next step."
+                    .to_owned()
+            }
+        }
+        DownloadQueueLane::WaitingOnYou => {
+            if !item.inbox_dependencies.is_empty() {
+                format!(
+                    "Another Inbox item needs your attention first: {}.",
+                    item.inbox_dependencies[0]
+                )
+            } else if !item.missing_dependencies.is_empty() {
+                format!(
+                    "This setup is waiting on a required helper: {}.",
+                    item.missing_dependencies[0]
+                )
+            } else if item
+                .catalog_source
+                .as_ref()
+                .and_then(|source| source.official_download_url.as_ref())
+                .is_some()
+            {
+                "Important files are missing, but SimSuite can fetch the trusted official pack into the Inbox first."
+                    .to_owned()
+            } else {
+                "This batch needs one more choice from you before anything moves.".to_owned()
+            }
+        }
+        DownloadQueueLane::Blocked => item
+            .error_message
+            .clone()
+            .or_else(|| item.incompatibility_warnings.first().cloned())
+            .unwrap_or_else(|| "SimSuite stopped this batch to avoid a risky move.".to_owned()),
+        DownloadQueueLane::Done => {
+            if item.applied_file_count > 0 {
+                "This batch already handed off its safe files.".to_owned()
+            } else {
+                "This batch is hidden from the active Inbox.".to_owned()
+            }
+        }
+    }
+}
+
+fn build_family_key(item: &DownloadsInboxItem) -> Option<String> {
+    if let Some(value) = item
+        .special_family
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("family:{}", normalize_family_token(value)));
+    }
+
+    if let Some(value) = item
+        .matched_profile_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("profile:{}", normalize_family_token(value)));
+    }
+
+    if item.intake_mode != DownloadIntakeMode::Standard {
+        if let Some(value) = item
+            .matched_profile_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Some(format!("profile-name:{}", normalize_family_token(value)));
+        }
+    }
+
+    None
+}
+
+fn normalize_family_token(value: &str) -> String {
+    let mut token = String::with_capacity(value.len());
+    let mut last_was_dash = false;
+
+    for ch in value.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            last_was_dash = false;
+            Some(ch.to_ascii_lowercase())
+        } else if last_was_dash {
+            None
+        } else {
+            last_was_dash = true;
+            Some('-')
+        };
+
+        if let Some(character) = mapped {
+            token.push(character);
+        }
+    }
+
+    token.trim_matches('-').to_owned()
+}
+
+fn load_related_item_ids(
+    connection: &Connection,
+    item: &DownloadsInboxItem,
+) -> AppResult<Vec<i64>> {
+    let query = if let Some(value) = item
+        .special_family
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(("special_family", value.to_owned()))
+    } else if let Some(value) = item
+        .matched_profile_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(("matched_profile_key", value.to_owned()))
+    } else {
+        item.matched_profile_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| ("matched_profile_name", value.to_owned()))
+    };
+
+    let Some((column, value)) = query else {
+        return Ok(Vec::new());
+    };
+
+    let sql = format!(
+        "SELECT id
+         FROM download_items
+         WHERE id <> ?1
+           AND {column} = ?2
+           AND status <> 'ignored'
+         ORDER BY updated_at DESC, id DESC"
+    );
+
+    let mut statement = connection.prepare(&sql)?;
+    let ids = statement
+        .query_map(params![item.id, value], |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(ids)
+}
+
+fn build_download_timeline(item: &DownloadsInboxItem) -> Vec<DownloadsTimelineEntry> {
+    let mut timeline = vec![DownloadsTimelineEntry {
+        label: "Added to Inbox".to_owned(),
+        detail: Some(
+            if item.source_kind == "archive" {
+                format!(
+                    "Archive staged and {} file(s) were detected inside.",
+                    item.detected_file_count
+                )
+            } else {
+                "Direct download staged for a safe check.".to_owned()
+            },
+        ),
+        at: Some(item.first_seen_at.clone()),
+    }];
+
+    if let Some(note) = item
+        .notes
+        .iter()
+        .find(|note| note.starts_with(AUTO_RECHECK_NOTE_PREFIX))
+        .cloned()
+    {
+        timeline.push(DownloadsTimelineEntry {
+            label: "Rechecked".to_owned(),
+            detail: Some(note),
+            at: Some(item.updated_at.clone()),
+        });
+    }
+
+    if item.existing_install_detected {
+        timeline.push(DownloadsTimelineEntry {
+            label: "Existing setup found".to_owned(),
+            detail: Some(
+                "SimSuite found matching files in your Mods folder and compared them before suggesting the next step."
+                    .to_owned(),
+            ),
+            at: Some(item.updated_at.clone()),
+        });
+    }
+
+    timeline.push(DownloadsTimelineEntry {
+        label: match item.queue_lane {
+            DownloadQueueLane::ReadyNow => "Ready now",
+            DownloadQueueLane::SpecialSetup => "Special setup",
+            DownloadQueueLane::WaitingOnYou => "Waiting on you",
+            DownloadQueueLane::Blocked => "Blocked for safety",
+            DownloadQueueLane::Done => {
+                if item.applied_file_count > 0 {
+                    "Installed safely"
+                } else {
+                    "Done"
+                }
+            }
+        }
+        .to_owned(),
+        detail: Some(item.queue_summary.clone()),
+        at: Some(item.updated_at.clone()),
+    });
+
+    timeline
 }
 
 pub fn get_download_item_detail(
@@ -1578,7 +1879,24 @@ fn load_overview(
     connection: &Connection,
     settings: &LibrarySettings,
 ) -> AppResult<DownloadsInboxOverview> {
-    let (total_items, ready_items, needs_review_items, applied_items, error_items, active_files): (
+    let (
+        total_items,
+        ready_items,
+        needs_review_items,
+        applied_items,
+        error_items,
+        active_files,
+        ready_now_items,
+        special_setup_items,
+        waiting_on_you_items,
+        blocked_items,
+        done_items,
+    ): (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
         i64,
         i64,
         i64,
@@ -1596,7 +1914,44 @@ fn load_overview(
                 SELECT COUNT(*)
                 FROM files
                 WHERE source_location = 'downloads'
-            )
+            ),
+            SUM(
+                CASE
+                    WHEN status NOT IN ('applied', 'ignored')
+                     AND intake_mode = 'standard'
+                     AND status IN ('ready', 'partial')
+                    THEN 1
+                    ELSE 0
+                END
+            ),
+            SUM(
+                CASE
+                    WHEN status NOT IN ('applied', 'ignored')
+                     AND intake_mode = 'guided'
+                    THEN 1
+                    ELSE 0
+                END
+            ),
+            SUM(
+                CASE
+                    WHEN status NOT IN ('applied', 'ignored')
+                     AND (intake_mode = 'needs_review' OR status = 'needs_review')
+                    THEN 1
+                    ELSE 0
+                END
+            ),
+            SUM(
+                CASE
+                    WHEN status = 'error'
+                      OR (
+                        status NOT IN ('applied', 'ignored')
+                        AND intake_mode = 'blocked'
+                      )
+                    THEN 1
+                    ELSE 0
+                END
+            ),
+            SUM(CASE WHEN status IN ('applied', 'ignored') THEN 1 ELSE 0 END)
          FROM download_items",
         [],
         |row| {
@@ -1607,6 +1962,11 @@ fn load_overview(
                 row.get::<_, Option<i64>>(3)?.unwrap_or_default(),
                 row.get::<_, Option<i64>>(4)?.unwrap_or_default(),
                 row.get::<_, i64>(5)?,
+                row.get::<_, Option<i64>>(6)?.unwrap_or_default(),
+                row.get::<_, Option<i64>>(7)?.unwrap_or_default(),
+                row.get::<_, Option<i64>>(8)?.unwrap_or_default(),
+                row.get::<_, Option<i64>>(9)?.unwrap_or_default(),
+                row.get::<_, Option<i64>>(10)?.unwrap_or_default(),
             ))
         },
     )?;
@@ -1619,6 +1979,11 @@ fn load_overview(
         error_items,
         active_files,
         watched_path: settings.downloads_path.clone(),
+        ready_now_items,
+        special_setup_items,
+        waiting_on_you_items,
+        blocked_items,
+        done_items,
     })
 }
 
@@ -1718,6 +2083,11 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
                     applied_file_count: row.get(32)?,
                     review_file_count: row.get(33)?,
                     sample_files: Vec::new(),
+                    queue_lane: DownloadQueueLane::ReadyNow,
+                    queue_summary: String::new(),
+                    family_key: None,
+                    related_item_ids: Vec::new(),
+                    timeline: Vec::new(),
                 })
             },
         )
@@ -1726,6 +2096,7 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
         .and_then(|item| {
             if let Some(mut item) = item {
                 item.sample_files = load_item_sample_names(connection, item.id)?;
+                enrich_download_item(connection, &mut item)?;
                 Ok(Some(item))
             } else {
                 Ok(None)

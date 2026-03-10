@@ -7,11 +7,13 @@ import {
 } from "react";
 import type {
   DuplicatesLayoutPreset,
+  ExperienceMode,
   LibraryLayoutPreset,
   ReviewLayoutPreset,
   UiDensity,
 } from "../lib/types";
 import type { UiTheme } from "../lib/types";
+import { getExperienceModeProfile } from "../lib/experienceMode";
 import { UI_THEME_IDS } from "../lib/themeMeta";
 
 const STORAGE_KEYS = {
@@ -93,7 +95,41 @@ const VALID_DUPLICATES_LAYOUT_PRESETS: DuplicatesLayoutPreset[] = [
   "custom",
 ];
 
+function getLibraryPresetDefaults(preset: LibraryLayoutPreset) {
+  switch (preset) {
+    case "inspect":
+      return { detailWidth: 520, tableHeight: 430 };
+    case "catalog":
+      return { detailWidth: 320, tableHeight: 640 };
+    default:
+      return { detailWidth: 392, tableHeight: 510 };
+  }
+}
+
+function getReviewPresetDefaults(preset: ReviewLayoutPreset) {
+  switch (preset) {
+    case "queue":
+      return { detailWidth: 340, queueHeight: 620 };
+    case "focus":
+      return { detailWidth: 540, queueHeight: 400 };
+    default:
+      return { detailWidth: 404, queueHeight: 520 };
+  }
+}
+
+function getDuplicatesPresetDefaults(preset: DuplicatesLayoutPreset) {
+  switch (preset) {
+    case "sweep":
+      return { detailWidth: 360, queueHeight: 620 };
+    case "compare":
+      return { detailWidth: 560, queueHeight: 400 };
+    default:
+      return { detailWidth: 430, queueHeight: 520 };
+  }
+}
+
 interface UiPreferencesContextValue {
+  mode: ExperienceMode;
   theme: UiTheme;
   density: UiDensity;
   sidebarWidth: number;
@@ -198,6 +234,28 @@ function readStoredSize(key: string, fallback: number, min: number, max: number)
   return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
 }
 
+function modeScopedKey(mode: ExperienceMode, key: string) {
+  return `${key}:${mode}`;
+}
+
+function readModeStoredBoolean(
+  mode: ExperienceMode,
+  key: string,
+  fallback: boolean,
+) {
+  return readStoredBoolean(modeScopedKey(mode, key), fallback);
+}
+
+function readModeStoredSize(
+  mode: ExperienceMode,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  return readStoredSize(modeScopedKey(mode, key), fallback, min, max);
+}
+
 function readStoredLibraryLayoutPreset(): LibraryLayoutPreset {
   const stored = globalThis.localStorage?.getItem(STORAGE_KEYS.libraryLayoutPreset);
   return VALID_LIBRARY_LAYOUT_PRESETS.includes(stored as LibraryLayoutPreset)
@@ -205,11 +263,31 @@ function readStoredLibraryLayoutPreset(): LibraryLayoutPreset {
     : DEFAULT_LIBRARY_LAYOUT_PRESET;
 }
 
+function readModeStoredLibraryLayoutPreset(mode: ExperienceMode) {
+  const stored = globalThis.localStorage?.getItem(
+    modeScopedKey(mode, STORAGE_KEYS.libraryLayoutPreset),
+  );
+  const fallback = getExperienceModeProfile(mode).defaults.libraryLayoutPreset;
+  return VALID_LIBRARY_LAYOUT_PRESETS.includes(stored as LibraryLayoutPreset)
+    ? (stored as LibraryLayoutPreset)
+    : fallback;
+}
+
 function readStoredReviewLayoutPreset(): ReviewLayoutPreset {
   const stored = globalThis.localStorage?.getItem(STORAGE_KEYS.reviewLayoutPreset);
   return VALID_REVIEW_LAYOUT_PRESETS.includes(stored as ReviewLayoutPreset)
     ? (stored as ReviewLayoutPreset)
     : DEFAULT_REVIEW_LAYOUT_PRESET;
+}
+
+function readModeStoredReviewLayoutPreset(mode: ExperienceMode) {
+  const stored = globalThis.localStorage?.getItem(
+    modeScopedKey(mode, STORAGE_KEYS.reviewLayoutPreset),
+  );
+  const fallback = getExperienceModeProfile(mode).defaults.reviewLayoutPreset;
+  return VALID_REVIEW_LAYOUT_PRESETS.includes(stored as ReviewLayoutPreset)
+    ? (stored as ReviewLayoutPreset)
+    : fallback;
 }
 
 function readStoredDuplicatesLayoutPreset(): DuplicatesLayoutPreset {
@@ -223,8 +301,64 @@ function readStoredDuplicatesLayoutPreset(): DuplicatesLayoutPreset {
     : DEFAULT_DUPLICATES_LAYOUT_PRESET;
 }
 
+function readModeStoredDuplicatesLayoutPreset(mode: ExperienceMode) {
+  const stored = globalThis.localStorage?.getItem(
+    modeScopedKey(mode, STORAGE_KEYS.duplicatesLayoutPreset),
+  );
+  const fallback = getExperienceModeProfile(mode).defaults.duplicatesLayoutPreset;
+  return VALID_DUPLICATES_LAYOUT_PRESETS.includes(
+    stored as DuplicatesLayoutPreset,
+  )
+    ? (stored as DuplicatesLayoutPreset)
+    : fallback;
+}
+
 function readStoredDockLayouts(): DockLayoutStore {
   const raw = globalThis.localStorage?.getItem(STORAGE_KEYS.dockLayouts);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as DockLayoutStore;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const cleaned: DockLayoutStore = {};
+
+    for (const [layoutId, layout] of Object.entries(parsed)) {
+      if (
+        !layout ||
+        typeof layout !== "object" ||
+        !Array.isArray(layout.order) ||
+        !layout.collapsed ||
+        typeof layout.collapsed !== "object"
+      ) {
+        continue;
+      }
+
+      cleaned[layoutId] = {
+        order: layout.order.filter((value): value is string => typeof value === "string"),
+        collapsed: Object.fromEntries(
+          Object.entries(layout.collapsed).filter(
+            (entry): entry is [string, boolean] =>
+              typeof entry[0] === "string" && typeof entry[1] === "boolean",
+          ),
+        ),
+      };
+    }
+
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function readModeStoredDockLayouts(mode: ExperienceMode): DockLayoutStore {
+  const raw = globalThis.localStorage?.getItem(
+    modeScopedKey(mode, STORAGE_KEYS.dockLayouts),
+  );
   if (!raw) {
     return {};
   }
@@ -287,16 +421,29 @@ function normalizeDockSectionLayout(
 
 export function UiPreferencesProvider({
   children,
+  mode,
 }: {
   children: ReactNode;
+  mode: ExperienceMode;
 }) {
+  const modeProfile = getExperienceModeProfile(mode);
+  const libraryPresetDefaults = getLibraryPresetDefaults(
+    modeProfile.defaults.libraryLayoutPreset,
+  );
+  const reviewPresetDefaults = getReviewPresetDefaults(
+    modeProfile.defaults.reviewLayoutPreset,
+  );
+  const duplicatesPresetDefaults = getDuplicatesPresetDefaults(
+    modeProfile.defaults.duplicatesLayoutPreset,
+  );
   const [theme, setTheme] = useState<UiTheme>(readStoredTheme);
   const [density, setDensity] = useState<UiDensity>(readStoredDensity);
   const [sidebarWidth, setSidebarWidth] = useState(() =>
-    readStoredSize(STORAGE_KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH, 84, 180),
+    readModeStoredSize(mode, STORAGE_KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH, 84, 180),
   );
   const [homePrimaryWidth, setHomePrimaryWidth] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.homePrimaryWidth,
       DEFAULT_HOME_PRIMARY_WIDTH,
       280,
@@ -304,7 +451,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [homeSecondaryWidth, setHomeSecondaryWidth] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.homeSecondaryWidth,
       DEFAULT_HOME_SECONDARY_WIDTH,
       240,
@@ -312,16 +460,23 @@ export function UiPreferencesProvider({
     ),
   );
   const [inspectorWidth, setInspectorWidth] = useState(() =>
-    readStoredSize(STORAGE_KEYS.inspectorWidth, DEFAULT_INSPECTOR_WIDTH, 300, 720),
+    readModeStoredSize(
+      mode,
+      STORAGE_KEYS.inspectorWidth,
+      DEFAULT_INSPECTOR_WIDTH,
+      300,
+      720,
+    ),
   );
   const [guideWidth, setGuideWidth] = useState(() =>
-    readStoredSize(STORAGE_KEYS.guideWidth, DEFAULT_GUIDE_WIDTH, 460, 1040),
+    readModeStoredSize(mode, STORAGE_KEYS.guideWidth, DEFAULT_GUIDE_WIDTH, 460, 1040),
   );
   const [scannerWidth, setScannerWidth] = useState(() =>
-    readStoredSize(STORAGE_KEYS.scannerWidth, DEFAULT_SCANNER_WIDTH, 420, 860),
+    readModeStoredSize(mode, STORAGE_KEYS.scannerWidth, DEFAULT_SCANNER_WIDTH, 420, 860),
   );
   const [auditGroupWidth, setAuditGroupWidth] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.auditGroupWidth,
       DEFAULT_AUDIT_GROUP_WIDTH,
       240,
@@ -329,7 +484,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [auditStageHeight, setAuditStageHeight] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.auditStageHeight,
       DEFAULT_AUDIT_STAGE_HEIGHT,
       220,
@@ -337,7 +493,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [organizeRailWidth, setOrganizeRailWidth] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.organizeRailWidth,
       DEFAULT_ORGANIZE_RAIL_WIDTH,
       240,
@@ -345,7 +502,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [organizePreviewHeight, setOrganizePreviewHeight] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.organizePreviewHeight,
       DEFAULT_ORGANIZE_PREVIEW_HEIGHT,
       280,
@@ -353,7 +511,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [downloadsDetailWidth, setDownloadsDetailWidthState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.downloadsDetailWidth,
       DEFAULT_DOWNLOADS_DETAIL_WIDTH,
       320,
@@ -361,7 +520,8 @@ export function UiPreferencesProvider({
     ),
   );
   const [downloadsQueueHeight, setDownloadsQueueHeightState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.downloadsQueueHeight,
       DEFAULT_DOWNLOADS_QUEUE_HEIGHT,
       220,
@@ -369,69 +529,259 @@ export function UiPreferencesProvider({
     ),
   );
   const [libraryDetailWidth, setLibraryDetailWidthState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.libraryDetailWidth,
-      DEFAULT_LIBRARY_DETAIL_WIDTH,
+      libraryPresetDefaults.detailWidth,
       300,
       760,
     ),
   );
   const [libraryTableHeight, setLibraryTableHeightState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.libraryTableHeight,
-      DEFAULT_LIBRARY_TABLE_HEIGHT,
+      libraryPresetDefaults.tableHeight,
       260,
       860,
     ),
   );
   const [reviewDetailWidth, setReviewDetailWidthState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.reviewDetailWidth,
-      DEFAULT_REVIEW_DETAIL_WIDTH,
+      reviewPresetDefaults.detailWidth,
       300,
       760,
     ),
   );
   const [reviewQueueHeight, setReviewQueueHeightState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.reviewQueueHeight,
-      DEFAULT_REVIEW_QUEUE_HEIGHT,
+      reviewPresetDefaults.queueHeight,
       260,
       860,
     ),
   );
   const [duplicatesDetailWidth, setDuplicatesDetailWidthState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.duplicatesDetailWidth,
-      DEFAULT_DUPLICATES_DETAIL_WIDTH,
+      duplicatesPresetDefaults.detailWidth,
       320,
       780,
     ),
   );
   const [duplicatesQueueHeight, setDuplicatesQueueHeightState] = useState(() =>
-    readStoredSize(
+    readModeStoredSize(
+      mode,
       STORAGE_KEYS.duplicatesQueueHeight,
-      DEFAULT_DUPLICATES_QUEUE_HEIGHT,
+      duplicatesPresetDefaults.queueHeight,
       260,
       860,
     ),
   );
   const [libraryFiltersCollapsed, setLibraryFiltersCollapsedState] = useState(() =>
-    readStoredBoolean(STORAGE_KEYS.libraryFiltersCollapsed, false),
+    readModeStoredBoolean(
+      mode,
+      STORAGE_KEYS.libraryFiltersCollapsed,
+      modeProfile.defaults.libraryFiltersCollapsed,
+    ),
   );
   const [duplicatesFiltersCollapsed, setDuplicatesFiltersCollapsedState] =
     useState(() =>
-      readStoredBoolean(STORAGE_KEYS.duplicatesFiltersCollapsed, false),
+      readModeStoredBoolean(
+        mode,
+        STORAGE_KEYS.duplicatesFiltersCollapsed,
+        modeProfile.defaults.duplicatesFiltersCollapsed,
+      ),
     );
   const [libraryLayoutPreset, setLibraryLayoutPresetState] =
-    useState<LibraryLayoutPreset>(readStoredLibraryLayoutPreset);
+    useState<LibraryLayoutPreset>(() => readModeStoredLibraryLayoutPreset(mode));
   const [reviewLayoutPreset, setReviewLayoutPresetState] =
-    useState<ReviewLayoutPreset>(readStoredReviewLayoutPreset);
+    useState<ReviewLayoutPreset>(() => readModeStoredReviewLayoutPreset(mode));
   const [duplicatesLayoutPreset, setDuplicatesLayoutPresetState] =
-    useState<DuplicatesLayoutPreset>(readStoredDuplicatesLayoutPreset);
-  const [dockLayouts, setDockLayouts] = useState<DockLayoutStore>(
-    readStoredDockLayouts,
+    useState<DuplicatesLayoutPreset>(() => readModeStoredDuplicatesLayoutPreset(mode));
+  const [dockLayouts, setDockLayouts] = useState<DockLayoutStore>(() =>
+    readModeStoredDockLayouts(mode),
   );
+
+  useEffect(() => {
+    const nextProfile = getExperienceModeProfile(mode);
+    const nextLibraryDefaults = getLibraryPresetDefaults(
+      nextProfile.defaults.libraryLayoutPreset,
+    );
+    const nextReviewDefaults = getReviewPresetDefaults(
+      nextProfile.defaults.reviewLayoutPreset,
+    );
+    const nextDuplicatesDefaults = getDuplicatesPresetDefaults(
+      nextProfile.defaults.duplicatesLayoutPreset,
+    );
+
+    setSidebarWidth(
+      readModeStoredSize(mode, STORAGE_KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH, 84, 180),
+    );
+    setHomePrimaryWidth(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.homePrimaryWidth,
+        DEFAULT_HOME_PRIMARY_WIDTH,
+        280,
+        520,
+      ),
+    );
+    setHomeSecondaryWidth(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.homeSecondaryWidth,
+        DEFAULT_HOME_SECONDARY_WIDTH,
+        240,
+        460,
+      ),
+    );
+    setInspectorWidth(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.inspectorWidth,
+        DEFAULT_INSPECTOR_WIDTH,
+        300,
+        720,
+      ),
+    );
+    setGuideWidth(
+      readModeStoredSize(mode, STORAGE_KEYS.guideWidth, DEFAULT_GUIDE_WIDTH, 460, 1040),
+    );
+    setScannerWidth(
+      readModeStoredSize(mode, STORAGE_KEYS.scannerWidth, DEFAULT_SCANNER_WIDTH, 420, 860),
+    );
+    setAuditGroupWidth(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.auditGroupWidth,
+        DEFAULT_AUDIT_GROUP_WIDTH,
+        240,
+        520,
+      ),
+    );
+    setAuditStageHeight(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.auditStageHeight,
+        DEFAULT_AUDIT_STAGE_HEIGHT,
+        220,
+        620,
+      ),
+    );
+    setOrganizeRailWidth(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.organizeRailWidth,
+        DEFAULT_ORGANIZE_RAIL_WIDTH,
+        240,
+        480,
+      ),
+    );
+    setOrganizePreviewHeight(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.organizePreviewHeight,
+        DEFAULT_ORGANIZE_PREVIEW_HEIGHT,
+        280,
+        720,
+      ),
+    );
+    setDownloadsDetailWidthState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.downloadsDetailWidth,
+        DEFAULT_DOWNLOADS_DETAIL_WIDTH,
+        320,
+        780,
+      ),
+    );
+    setDownloadsQueueHeightState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.downloadsQueueHeight,
+        DEFAULT_DOWNLOADS_QUEUE_HEIGHT,
+        220,
+        720,
+      ),
+    );
+    setLibraryDetailWidthState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.libraryDetailWidth,
+        nextLibraryDefaults.detailWidth,
+        300,
+        760,
+      ),
+    );
+    setLibraryTableHeightState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.libraryTableHeight,
+        nextLibraryDefaults.tableHeight,
+        260,
+        860,
+      ),
+    );
+    setReviewDetailWidthState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.reviewDetailWidth,
+        nextReviewDefaults.detailWidth,
+        300,
+        760,
+      ),
+    );
+    setReviewQueueHeightState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.reviewQueueHeight,
+        nextReviewDefaults.queueHeight,
+        260,
+        860,
+      ),
+    );
+    setDuplicatesDetailWidthState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.duplicatesDetailWidth,
+        nextDuplicatesDefaults.detailWidth,
+        320,
+        780,
+      ),
+    );
+    setDuplicatesQueueHeightState(
+      readModeStoredSize(
+        mode,
+        STORAGE_KEYS.duplicatesQueueHeight,
+        nextDuplicatesDefaults.queueHeight,
+        260,
+        860,
+      ),
+    );
+    setLibraryFiltersCollapsedState(
+      readModeStoredBoolean(
+        mode,
+        STORAGE_KEYS.libraryFiltersCollapsed,
+        nextProfile.defaults.libraryFiltersCollapsed,
+      ),
+    );
+    setDuplicatesFiltersCollapsedState(
+      readModeStoredBoolean(
+        mode,
+        STORAGE_KEYS.duplicatesFiltersCollapsed,
+        nextProfile.defaults.duplicatesFiltersCollapsed,
+      ),
+    );
+    setLibraryLayoutPresetState(readModeStoredLibraryLayoutPreset(mode));
+    setReviewLayoutPresetState(readModeStoredReviewLayoutPreset(mode));
+    setDuplicatesLayoutPresetState(readModeStoredDuplicatesLayoutPreset(mode));
+    setDockLayouts(readModeStoredDockLayouts(mode));
+  }, [mode]);
 
   function applyLibraryLayoutPreset(preset: LibraryLayoutPreset) {
     setLibraryLayoutPresetState(preset);
@@ -608,6 +958,7 @@ export function UiPreferencesProvider({
 
     root.dataset.theme = theme;
     root.dataset.density = density;
+    root.dataset.userView = mode;
     root.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
     root.style.setProperty("--home-primary-width", `${homePrimaryWidth}px`);
     root.style.setProperty("--home-secondary-width", `${homeSecondaryWidth}px`);
@@ -645,99 +996,103 @@ export function UiPreferencesProvider({
     globalThis.localStorage?.setItem(STORAGE_KEYS.theme, theme);
     globalThis.localStorage?.setItem(STORAGE_KEYS.density, density);
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.sidebarWidth,
+      modeScopedKey(mode, STORAGE_KEYS.sidebarWidth),
       String(sidebarWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.homePrimaryWidth,
+      modeScopedKey(mode, STORAGE_KEYS.homePrimaryWidth),
       String(homePrimaryWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.homeSecondaryWidth,
+      modeScopedKey(mode, STORAGE_KEYS.homeSecondaryWidth),
       String(homeSecondaryWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.inspectorWidth,
+      modeScopedKey(mode, STORAGE_KEYS.inspectorWidth),
       String(inspectorWidth),
     );
-    globalThis.localStorage?.setItem(STORAGE_KEYS.guideWidth, String(guideWidth));
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.scannerWidth,
+      modeScopedKey(mode, STORAGE_KEYS.guideWidth),
+      String(guideWidth),
+    );
+    globalThis.localStorage?.setItem(
+      modeScopedKey(mode, STORAGE_KEYS.scannerWidth),
       String(scannerWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.auditGroupWidth,
+      modeScopedKey(mode, STORAGE_KEYS.auditGroupWidth),
       String(auditGroupWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.auditStageHeight,
+      modeScopedKey(mode, STORAGE_KEYS.auditStageHeight),
       String(auditStageHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.organizeRailWidth,
+      modeScopedKey(mode, STORAGE_KEYS.organizeRailWidth),
       String(organizeRailWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.organizePreviewHeight,
+      modeScopedKey(mode, STORAGE_KEYS.organizePreviewHeight),
       String(organizePreviewHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.downloadsDetailWidth,
+      modeScopedKey(mode, STORAGE_KEYS.downloadsDetailWidth),
       String(downloadsDetailWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.downloadsQueueHeight,
+      modeScopedKey(mode, STORAGE_KEYS.downloadsQueueHeight),
       String(downloadsQueueHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.libraryDetailWidth,
+      modeScopedKey(mode, STORAGE_KEYS.libraryDetailWidth),
       String(libraryDetailWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.libraryTableHeight,
+      modeScopedKey(mode, STORAGE_KEYS.libraryTableHeight),
       String(libraryTableHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.reviewDetailWidth,
+      modeScopedKey(mode, STORAGE_KEYS.reviewDetailWidth),
       String(reviewDetailWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.reviewQueueHeight,
+      modeScopedKey(mode, STORAGE_KEYS.reviewQueueHeight),
       String(reviewQueueHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.duplicatesDetailWidth,
+      modeScopedKey(mode, STORAGE_KEYS.duplicatesDetailWidth),
       String(duplicatesDetailWidth),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.duplicatesQueueHeight,
+      modeScopedKey(mode, STORAGE_KEYS.duplicatesQueueHeight),
       String(duplicatesQueueHeight),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.libraryFiltersCollapsed,
+      modeScopedKey(mode, STORAGE_KEYS.libraryFiltersCollapsed),
       String(libraryFiltersCollapsed),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.duplicatesFiltersCollapsed,
+      modeScopedKey(mode, STORAGE_KEYS.duplicatesFiltersCollapsed),
       String(duplicatesFiltersCollapsed),
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.libraryLayoutPreset,
+      modeScopedKey(mode, STORAGE_KEYS.libraryLayoutPreset),
       libraryLayoutPreset,
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.reviewLayoutPreset,
+      modeScopedKey(mode, STORAGE_KEYS.reviewLayoutPreset),
       reviewLayoutPreset,
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.duplicatesLayoutPreset,
+      modeScopedKey(mode, STORAGE_KEYS.duplicatesLayoutPreset),
       duplicatesLayoutPreset,
     );
     globalThis.localStorage?.setItem(
-      STORAGE_KEYS.dockLayouts,
+      modeScopedKey(mode, STORAGE_KEYS.dockLayouts),
       JSON.stringify(dockLayouts),
     );
   }, [
+    mode,
     theme,
     density,
     sidebarWidth,
@@ -769,6 +1124,7 @@ export function UiPreferencesProvider({
   return (
     <UiPreferencesContext.Provider
       value={{
+        mode,
         theme,
         density,
         sidebarWidth,
@@ -824,6 +1180,12 @@ export function UiPreferencesProvider({
         applyReviewLayoutPreset,
         applyDuplicatesLayoutPreset,
         resetPanelSizes: () => {
+          const defaults = getExperienceModeProfile(mode).defaults;
+          const libraryDefaults = getLibraryPresetDefaults(defaults.libraryLayoutPreset);
+          const reviewDefaults = getReviewPresetDefaults(defaults.reviewLayoutPreset);
+          const duplicatesDefaults = getDuplicatesPresetDefaults(
+            defaults.duplicatesLayoutPreset,
+          );
           setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
           setHomePrimaryWidth(DEFAULT_HOME_PRIMARY_WIDTH);
           setHomeSecondaryWidth(DEFAULT_HOME_SECONDARY_WIDTH);
@@ -836,17 +1198,17 @@ export function UiPreferencesProvider({
           setOrganizePreviewHeight(DEFAULT_ORGANIZE_PREVIEW_HEIGHT);
           setDownloadsDetailWidthState(DEFAULT_DOWNLOADS_DETAIL_WIDTH);
           setDownloadsQueueHeightState(DEFAULT_DOWNLOADS_QUEUE_HEIGHT);
-          setLibraryDetailWidthState(DEFAULT_LIBRARY_DETAIL_WIDTH);
-          setLibraryTableHeightState(DEFAULT_LIBRARY_TABLE_HEIGHT);
-          setReviewDetailWidthState(DEFAULT_REVIEW_DETAIL_WIDTH);
-          setReviewQueueHeightState(DEFAULT_REVIEW_QUEUE_HEIGHT);
-          setDuplicatesDetailWidthState(DEFAULT_DUPLICATES_DETAIL_WIDTH);
-          setDuplicatesQueueHeightState(DEFAULT_DUPLICATES_QUEUE_HEIGHT);
-          setLibraryFiltersCollapsedState(false);
-          setDuplicatesFiltersCollapsedState(false);
-          setLibraryLayoutPresetState(DEFAULT_LIBRARY_LAYOUT_PRESET);
-          setReviewLayoutPresetState(DEFAULT_REVIEW_LAYOUT_PRESET);
-          setDuplicatesLayoutPresetState(DEFAULT_DUPLICATES_LAYOUT_PRESET);
+          setLibraryDetailWidthState(libraryDefaults.detailWidth);
+          setLibraryTableHeightState(libraryDefaults.tableHeight);
+          setReviewDetailWidthState(reviewDefaults.detailWidth);
+          setReviewQueueHeightState(reviewDefaults.queueHeight);
+          setDuplicatesDetailWidthState(duplicatesDefaults.detailWidth);
+          setDuplicatesQueueHeightState(duplicatesDefaults.queueHeight);
+          setLibraryFiltersCollapsedState(defaults.libraryFiltersCollapsed);
+          setDuplicatesFiltersCollapsedState(defaults.duplicatesFiltersCollapsed);
+          setLibraryLayoutPresetState(defaults.libraryLayoutPreset);
+          setReviewLayoutPresetState(defaults.reviewLayoutPreset);
+          setDuplicatesLayoutPresetState(defaults.duplicatesLayoutPreset);
           setDockLayouts({});
         },
       }}

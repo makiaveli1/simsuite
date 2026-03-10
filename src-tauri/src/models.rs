@@ -592,6 +592,24 @@ pub struct DependencyStatus {
     pub inbox_item_guided_install_available: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadQueueLane {
+    ReadyNow,
+    SpecialSetup,
+    WaitingOnYou,
+    Blocked,
+    Done,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsTimelineEntry {
+    pub label: String,
+    pub detail: Option<String>,
+    pub at: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadsInboxItem {
@@ -627,6 +645,11 @@ pub struct DownloadsInboxItem {
     pub catalog_source: Option<CatalogSourceInfo>,
     pub existing_install_detected: bool,
     pub guided_install_available: bool,
+    pub queue_lane: DownloadQueueLane,
+    pub queue_summary: String,
+    pub family_key: Option<String>,
+    pub related_item_ids: Vec<i64>,
+    pub timeline: Vec<DownloadsTimelineEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -639,6 +662,11 @@ pub struct DownloadsInboxOverview {
     pub error_items: i64,
     pub active_files: i64,
     pub watched_path: Option<String>,
+    pub ready_now_items: i64,
+    pub special_setup_items: i64,
+    pub waiting_on_you_items: i64,
+    pub blocked_items: i64,
+    pub done_items: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

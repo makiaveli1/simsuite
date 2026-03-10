@@ -16,8 +16,13 @@ import { ThemeBackdrop } from "./components/ThemeBackdrop";
 import { useUiPreferences, UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { api } from "./lib/api";
+import {
+  experienceModeToLegacyView,
+  normalizeExperienceMode,
+} from "./lib/experienceMode";
 import { getScreenFrameMotion } from "./lib/motion";
 import type {
+  ExperienceMode,
   LibrarySettings,
   ScanProgress,
   ScanStatus,
@@ -25,13 +30,9 @@ import type {
   UserView,
 } from "./lib/types";
 
-function resolveInitialUserView(): UserView {
+function resolveInitialExperienceMode(): ExperienceMode {
   const stored = globalThis.localStorage?.getItem("simsuite:user-view");
-  if (stored === "beginner" || stored === "standard" || stored === "power") {
-    return stored;
-  }
-
-  return "standard";
+  return normalizeExperienceMode(stored) ?? "seasoned";
 }
 
 function resolveInitialScreen(): Screen {
@@ -54,18 +55,31 @@ function resolveInitialScreen(): Screen {
 }
 
 export default function App() {
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>(
+    resolveInitialExperienceMode,
+  );
+
   return (
-    <UiPreferencesProvider>
+    <UiPreferencesProvider mode={experienceMode}>
       <LazyMotion features={domAnimation}>
         <MotionConfig reducedMotion="user">
-          <AppShell />
+          <AppShell
+            experienceMode={experienceMode}
+            onExperienceModeChange={setExperienceMode}
+          />
         </MotionConfig>
       </LazyMotion>
     </UiPreferencesProvider>
   );
 }
 
-function AppShell() {
+function AppShell({
+  experienceMode,
+  onExperienceModeChange,
+}: {
+  experienceMode: ExperienceMode;
+  onExperienceModeChange: (mode: ExperienceMode) => void;
+}) {
   const { theme } = useUiPreferences();
   const [screen, setScreen] = useState<Screen>(resolveInitialScreen);
   const [settings, setSettings] = useState<LibrarySettings | null>(null);
@@ -73,8 +87,8 @@ function AppShell() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
-  const [userView, setUserView] = useState<UserView>(resolveInitialUserView);
   const lastTerminalScanKey = useRef<string | null>(null);
+  const userView: UserView = experienceModeToLegacyView(experienceMode);
 
   useEffect(() => {
     void api.getLibrarySettings().then(setSettings);
@@ -105,8 +119,9 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    globalThis.localStorage?.setItem("simsuite:user-view", userView);
-  }, [userView]);
+    globalThis.localStorage?.setItem("simsuite:user-view", experienceMode);
+    document.documentElement.dataset.userView = experienceMode;
+  }, [experienceMode]);
 
   const handleScanEvent = useEffectEvent((progress: ScanProgress) => {
     setScanProgress(progress);
@@ -287,7 +302,10 @@ function AppShell() {
         userView={userView}
       />
     ) : screen === "settings" ? (
-      <SettingsScreen userView={userView} onUserViewChange={setUserView} />
+      <SettingsScreen
+        experienceMode={experienceMode}
+        onExperienceModeChange={onExperienceModeChange}
+      />
     ) : (
       <ReviewScreen
         refreshVersion={refreshVersion}
@@ -303,7 +321,7 @@ function AppShell() {
       <ThemeBackdrop theme={theme} screen={screen} />
       <Sidebar
         currentScreen={screen}
-        userView={userView}
+        experienceMode={experienceMode}
         onNavigate={setScreen}
         onScan={() => void startScan()}
         isScanning={isScanning}
@@ -312,7 +330,7 @@ function AppShell() {
 
       <main className="main-shell">
         <WorkspaceToolbar
-          userView={userView}
+          experienceMode={experienceMode}
           currentScreen={screen}
           onOpenSettings={() => setScreen("settings")}
         />
@@ -332,13 +350,13 @@ function AppShell() {
 
       <AnimatePresence>
         {isScanning ? (
-          <ScannerOverlay progress={scanProgress} userView={userView} />
+          <ScannerOverlay progress={scanProgress} experienceMode={experienceMode} />
         ) : null}
       </AnimatePresence>
       <FieldGuide
         open={isGuideOpen}
         screen={screen}
-        userView={userView}
+        experienceMode={experienceMode}
         onClose={() => setIsGuideOpen(false)}
       />
     </div>
