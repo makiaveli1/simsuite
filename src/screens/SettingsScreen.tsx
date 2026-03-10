@@ -10,26 +10,51 @@ import { useUiPreferences } from "../components/UiPreferencesContext";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type { UiDensity, UserView } from "../lib/types";
+import { screenHelperLine } from "../lib/uiLanguage";
 
 const USER_VIEWS: Array<{
   id: UserView;
   label: string;
+  badge: string;
+  headline: string;
   hint: string;
+  traits: string[];
 }> = [
   {
     id: "beginner",
-    label: "Easy",
-    hint: "Keeps the app calmer, uses familiar Sims language, and focuses on the safest next step.",
+    label: "Beginner",
+    badge: "Guided",
+    headline: "One big next move, fewer rabbit holes",
+    hint: "Keeps the app calmer, puts the safest next button up front, and uses friendlier Sims-style wording.",
+    traits: [
+      "Shows the clearest next step first",
+      "Starts previews in example mode",
+      "Keeps the wording extra cozy",
+    ],
   },
   {
     id: "standard",
     label: "Standard",
-    hint: "Shows the usual detail most players need while keeping the workspace tidy.",
+    badge: "Balanced",
+    headline: "Enough clues to stay confident without the wall of receipts",
+    hint: "Keeps the main next step easy to find, but leaves more clues open while you sort.",
+    traits: [
+      "Balances guidance and detail",
+      "Keeps samples open by default",
+      "Leaves more proof visible while you sort",
+    ],
   },
   {
     id: "power",
-    label: "Power",
-    hint: "Shows raw paths, denser metadata, and more rule detail for granular cleanup.",
+    label: "Pro",
+    badge: "Full receipts",
+    headline: "Dense, direct, and ready for deep CC gremlin work",
+    hint: "Opens the full receipts: raw paths, denser details, and deeper checks for fine control.",
+    traits: [
+      "Opens fuller file lists by default",
+      "Shows denser path and evidence detail",
+      "Best for deep cleanup marathons",
+    ],
   },
 ];
 
@@ -82,8 +107,7 @@ export function SettingsScreen({
           <div>
             <h1>Settings</h1>
             <p className="workspace-toolbar-copy">
-              Choose how much detail SimSuite shows, pick a skin, and reset saved
-              panel layouts when a workspace needs a clean slate.
+              {screenHelperLine("settings", userView)}
             </p>
           </div>
         </div>
@@ -104,25 +128,37 @@ export function SettingsScreen({
                   <Sparkles size={14} strokeWidth={2} />
                   Experience
                 </span>
-                <h2>How much guidance you want</h2>
+                <h2>Pick your household vibe</h2>
               </div>
               <p className="workspace-toolbar-copy">
-                This changes the language and amount of detail across the whole app.
+                Each view changes how loud or quiet the app feels while you sort.
               </p>
             </div>
 
-            <div className="segmented-control" role="tablist" aria-label="User view">
+            <div className="settings-view-grid" role="tablist" aria-label="User view">
               {USER_VIEWS.map((item) => (
                 <m.button
                   key={item.id}
                   type="button"
-                  className={`segment-button ${userView === item.id ? "is-active" : ""}`}
+                  className={`settings-view-card ${userView === item.id ? "is-active" : ""}`}
                   onClick={() => onUserViewChange(item.id)}
                   title={item.hint}
                   whileHover={hoverLift}
                   whileTap={tapPress}
                 >
-                  {item.label}
+                  <div className="settings-view-card-topline">
+                    <strong>{item.label}</strong>
+                    <span className="ghost-chip">{item.badge}</span>
+                  </div>
+                  <span className="settings-view-headline">{item.headline}</span>
+                  <p className="workspace-toolbar-copy">{item.hint}</p>
+                  <div className="settings-view-traits">
+                    {item.traits.map((trait) => (
+                      <span key={trait} className="settings-view-trait">
+                        {trait}
+                      </span>
+                    ))}
+                  </div>
                 </m.button>
               ))}
             </div>

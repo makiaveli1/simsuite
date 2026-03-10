@@ -1,9 +1,13 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import type {
+  ApplyReviewPlanActionResult,
   ApplyCategoryAuditResult,
   ApplyCreatorAuditResult,
+  ApplyGuidedDownloadResult,
   ApplyPreviewResult,
+  ApplySpecialReviewFixResult,
+  CatalogSourceInfo,
   CategoryAuditFile,
   CategoryAuditGroup,
   CategoryAuditQuery,
@@ -14,7 +18,9 @@ import type {
   CreatorAuditQuery,
   CreatorAuditResponse,
   CreatorLearningInfo,
+  DependencyStatus,
   DownloadInboxDetail,
+  DownloadsInboxItem,
   DownloadsInboxQuery,
   DownloadsInboxResponse,
   DownloadsWatcherStatus,
@@ -22,6 +28,7 @@ import type {
   DuplicateOverview,
   DuplicatePair,
   FileDetail,
+  GuidedInstallPlan,
   HomeOverview,
   OrganizationPreview,
   LibraryFacets,
@@ -29,11 +36,13 @@ import type {
   LibraryQuery,
   LibrarySettings,
   RestoreSnapshotResult,
+  ReviewPlanAction,
   ReviewQueueItem,
   RulePreset,
   ScanProgress,
   ScanStatus,
   ScanSummary,
+  SpecialReviewPlan,
   SnapshotSummary,
 } from "./types";
 
@@ -101,6 +110,83 @@ const emptyCategoryOverride = (): CategoryOverrideInfo => ({
   kind: null,
   subtype: null,
 });
+const buildMockCatalogSource = (
+  officialSourceUrl: string | null,
+  officialDownloadUrl: string | null,
+  referenceSource: string[],
+  reviewedAt: string | null,
+): CatalogSourceInfo => ({
+  officialSourceUrl,
+  officialDownloadUrl,
+  referenceSource,
+  reviewedAt,
+});
+
+const buildMockDependencyStatus = (
+  key: string,
+  displayName: string,
+  status: string,
+  summary: string,
+): DependencyStatus => ({
+  key,
+  displayName,
+  status,
+  summary,
+  inboxItemId: null,
+  inboxItemName: null,
+  inboxItemIntakeMode: null,
+  inboxItemGuidedInstallAvailable: false,
+});
+
+const mockMcccCatalogSource = buildMockCatalogSource(
+  "https://deaderpool-mccc.com/installation.html",
+  "https://drive.google.com/uc?export=download&id=1vK5Xp0Qi72wf0jgrf4HfQiyfM-bEdjQ8",
+  ["official_docs", "mod_hound_reference"],
+  "2026-03-09",
+);
+
+const mockXmlInjectorCatalogSource = buildMockCatalogSource(
+  "https://www.curseforge.com/sims4/mods/xml-injector",
+  null,
+  ["official_docs", "mod_hound_reference"],
+  "2026-03-09",
+);
+
+const buildMockReviewAction = (
+  kind: ReviewPlanAction["kind"],
+  label: string,
+  description: string,
+  priority: number,
+  relatedItemId: number | null = null,
+  relatedItemName: string | null = null,
+  url: string | null = null,
+): ReviewPlanAction => ({
+  kind,
+  label,
+  description,
+  priority,
+  relatedItemId,
+  relatedItemName,
+  url,
+});
+
+function syncMockDownloadsWatcherStatus() {
+  const activeItems = mockDownloadsItems.filter((item) => item.status !== "ignored").length;
+  const needsReviewItems = mockDownloadsItems.filter((item) =>
+    ["needs_review", "error"].includes(item.status),
+  ).length;
+  const readyItems = mockDownloadsItems.filter((item) =>
+    ["ready", "partial"].includes(item.status),
+  ).length;
+
+  mockDownloadsWatcherStatus = {
+    ...mockDownloadsWatcherStatus,
+    activeItems,
+    needsReviewItems,
+    readyItems,
+    lastRunAt: new Date().toISOString(),
+  };
+}
 
 const mockFiles = ([
   {
@@ -358,7 +444,7 @@ const mockReviewQueue: ReviewQueueItem[] = [
   },
 ];
 
-let mockDownloadsItems = [
+let mockDownloadsItems: DownloadsInboxItem[] = [
   {
     id: 41,
     displayName: "SpringRefreshPack.zip",
@@ -376,6 +462,21 @@ let mockDownloadsItems = [
     updatedAt: "2026-03-08T04:06:00.000Z",
     errorMessage: null,
     notes: ["Ignored 6 unsupported archive entries."],
+    intakeMode: "standard",
+    riskLevel: "low",
+    matchedProfileKey: null,
+    matchedProfileName: null,
+    specialFamily: null,
+    assessmentReasons: ["No special setup rules were matched."],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [],
+    evidenceSummary: ["This looks like a normal download, so it can use the standard safe hand-off preview."],
+    catalogSource: null,
+    existingInstallDetected: false,
+    guidedInstallAvailable: false,
     sampleFiles: [
       "CharlyPancakes_SunroomSofa.package",
       "CharlyPancakes_SunroomChair.package",
@@ -384,31 +485,61 @@ let mockDownloadsItems = [
   },
   {
     id: 42,
-    displayName: "TwistedMexi_BetterExceptions.ts4script",
-    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
-    sourceKind: "file",
-    archiveFormat: null,
+    displayName: "MC_Command_Center_2026.3.0.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_2026.3.0.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
     status: "ready",
-    sourceSize: 482_304,
-    detectedFileCount: 1,
-    activeFileCount: 1,
+    sourceSize: 5_282_304,
+    detectedFileCount: 4,
+    activeFileCount: 4,
     appliedFileCount: 0,
     reviewFileCount: 0,
     firstSeenAt: "2026-03-08T03:58:00.000Z",
     lastSeenAt: "2026-03-08T03:58:00.000Z",
     updatedAt: "2026-03-08T03:59:00.000Z",
     errorMessage: null,
-    notes: [],
-    sampleFiles: ["TwistedMexi_BetterExceptions.ts4script"],
+    notes: ["Install notes were read from the archive."],
+    intakeMode: "guided",
+    riskLevel: "medium",
+    matchedProfileKey: "mccc",
+    matchedProfileName: "MC Command Center",
+    specialFamily: "Script suite",
+    assessmentReasons: [
+      "Download name matches the MC Command Center profile.",
+      "4 supported files match the MC Command Center file pattern.",
+      "Readme or text notes mention MC Command Center clues.",
+      "Existing MC Command Center package/script files were found and can be updated safely.",
+    ],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Keep the MCCC script and package files together in one shallow Mods folder.",
+      "Restart The Sims 4 after updating script mods.",
+    ],
+    evidenceSummary: [
+      "SimSuite found a complete MCCC set and a safe update path.",
+      "An older MCCC install is already present and can be replaced without touching settings files.",
+    ],
+    catalogSource: mockMcccCatalogSource,
+    existingInstallDetected: true,
+    guidedInstallAvailable: true,
+    sampleFiles: [
+      "mc_cmd_center.ts4script",
+      "mc_cmd_center.package",
+      "mc_woohoo.package",
+    ],
   },
   {
     id: 43,
-    displayName: "UnknownCreator_misc.package",
-    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\UnknownCreator_misc.package`,
-    sourceKind: "file",
-    archiveFormat: null,
+    displayName: "MC_Command_Center_partial.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_partial.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
     status: "needs_review",
-    sourceSize: 7_544_832,
+    sourceSize: 1_544_832,
     detectedFileCount: 1,
     activeFileCount: 1,
     appliedFileCount: 0,
@@ -417,29 +548,240 @@ let mockDownloadsItems = [
     lastSeenAt: "2026-03-08T02:10:00.000Z",
     updatedAt: "2026-03-08T02:11:00.000Z",
     errorMessage: null,
-    notes: ["Needs a human check before it moves."],
-    sampleFiles: ["UnknownCreator_misc.package"],
+    notes: ["SimSuite stopped because the MCCC core script is missing from this download."],
+    intakeMode: "blocked",
+    riskLevel: "high",
+    matchedProfileKey: "mccc",
+    matchedProfileName: "MC Command Center",
+    specialFamily: "Script suite",
+    assessmentReasons: [
+      "SimSuite found MC Command Center clues, but the required core script file was not found.",
+    ],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "MCCC needs its core script file before SimSuite can install it safely.",
+    ],
+    evidenceSummary: [
+      "This looks like part of an MCCC set, but the core script file is missing.",
+    ],
+    catalogSource: mockMcccCatalogSource,
+    existingInstallDetected: false,
+    guidedInstallAvailable: false,
+    sampleFiles: ["mc_woohoo.package"],
+  },
+  {
+    id: 44,
+    displayName: "MCCC_mixed_folder.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
+    status: "needs_review",
+    sourceSize: 6_144_000,
+    detectedFileCount: 6,
+    activeFileCount: 6,
+    appliedFileCount: 0,
+    reviewFileCount: 6,
+    firstSeenAt: "2026-03-08T01:45:00.000Z",
+    lastSeenAt: "2026-03-08T01:45:00.000Z",
+    updatedAt: "2026-03-08T01:46:00.000Z",
+    errorMessage: "The download mixes a full MCCC set with extra script files that do not belong to it.",
+    notes: ["SimSuite can split the clean MCCC files out before anything moves."],
+    intakeMode: "blocked",
+    riskLevel: "high",
+    matchedProfileKey: "mccc",
+    matchedProfileName: "MC Command Center",
+    specialFamily: "Script suite",
+    assessmentReasons: [
+      "A full MCCC set was found inside this download.",
+      "Extra script files that do not belong to MCCC were also found in the same archive.",
+      "SimSuite stopped so it can split the clean supported set from the extra files first.",
+    ],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Split mixed special-mod archives into clean sets before installing them.",
+    ],
+    evidenceSummary: [
+      "SimSuite found a usable MCCC set mixed with unrelated files, so it queued a safe split action.",
+    ],
+    catalogSource: mockMcccCatalogSource,
+    existingInstallDetected: false,
+    guidedInstallAvailable: false,
+    sampleFiles: [
+      "mc_cmd_center.ts4script",
+      "mc_cmd_center.package",
+      "mc_woohoo.package",
+    ],
+  },
+  {
+    id: 45,
+    displayName: "Adeepindigo_Healthcare_Redux_Addon.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\Adeepindigo_Healthcare_Redux_Addon.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
+    status: "needs_review",
+    sourceSize: 2_412_544,
+    detectedFileCount: 2,
+    activeFileCount: 2,
+    appliedFileCount: 0,
+    reviewFileCount: 2,
+    firstSeenAt: "2026-03-09T09:10:00.000Z",
+    lastSeenAt: "2026-03-09T09:10:00.000Z",
+    updatedAt: "2026-03-09T09:12:00.000Z",
+    errorMessage: null,
+    notes: ["A required support library is already waiting in the Inbox."],
+    intakeMode: "needs_review",
+    riskLevel: "medium",
+    matchedProfileKey: null,
+    matchedProfileName: null,
+    specialFamily: "Dependency check",
+    assessmentReasons: [
+      "This download mentions XML Injector as a required library.",
+      "XML Injector is also waiting in the Inbox.",
+    ],
+    dependencySummary: ["XML Injector is also waiting in the Inbox."],
+    missingDependencies: [],
+    inboxDependencies: ["XML Injector"],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Install XML Injector before moving mods that depend on it.",
+    ],
+    evidenceSummary: [
+      "SimSuite found a required-library note and matched XML Injector in the Inbox.",
+    ],
+    catalogSource: mockXmlInjectorCatalogSource,
+    existingInstallDetected: false,
+    guidedInstallAvailable: false,
+    sampleFiles: ["HealthcareRedux_Addon.package", "README_requires_xml_injector.txt"],
+  },
+  {
+    id: 46,
+    displayName: "XML_Injector_v4.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\XML_Injector_v4.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
+    status: "ready",
+    sourceSize: 1_128_448,
+    detectedFileCount: 2,
+    activeFileCount: 2,
+    appliedFileCount: 0,
+    reviewFileCount: 0,
+    firstSeenAt: "2026-03-09T09:08:00.000Z",
+    lastSeenAt: "2026-03-09T09:08:00.000Z",
+    updatedAt: "2026-03-09T09:09:00.000Z",
+    errorMessage: null,
+    notes: ["Required library detected and ready for guided setup."],
+    intakeMode: "guided",
+    riskLevel: "medium",
+    matchedProfileKey: "xml_injector",
+    matchedProfileName: "XML Injector",
+    specialFamily: "Support library",
+    assessmentReasons: [
+      "Download name matches the XML Injector profile.",
+      "The core XML Injector script was found.",
+    ],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Keep one current XML Injector install in a shallow Mods folder.",
+    ],
+    evidenceSummary: [
+      "SimSuite found a full XML Injector set and a safe install path.",
+    ],
+    catalogSource: mockXmlInjectorCatalogSource,
+    existingInstallDetected: false,
+    guidedInstallAvailable: true,
+    sampleFiles: ["XmlInjector_Script_v4.ts4script", "XMLInjector_Test.package"],
+  },
+  {
+    id: 47,
+    displayName: "McCmdCenter_AllModules_2026_1_1.zip",
+    sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\McCmdCenter_AllModules_2026_1_1.zip`,
+    sourceKind: "archive",
+    archiveFormat: "zip",
+    status: "needs_review",
+    sourceSize: 5_644_288,
+    detectedFileCount: 14,
+    activeFileCount: 14,
+    appliedFileCount: 0,
+    reviewFileCount: 14,
+    firstSeenAt: "2026-03-10T11:24:00.000Z",
+    lastSeenAt: "2026-03-10T11:24:00.000Z",
+    updatedAt: "2026-03-10T11:30:00.000Z",
+    errorMessage: "Older MC Command Center files are spread around Mods and need a safe repair first.",
+    notes: [
+      "Rechecked with newer SimSuite rules on Mar 10, 2026.",
+      "SimSuite found a safe repair path for the older MC Command Center setup.",
+    ],
+    intakeMode: "blocked",
+    riskLevel: "high",
+    matchedProfileKey: "mccc",
+    matchedProfileName: "MC Command Center",
+    specialFamily: "Script suite",
+    assessmentReasons: [
+      "The new archive looks like a full MC Command Center set.",
+      "Older MC Command Center files were found loose in Mods instead of one safe folder.",
+      "SimSuite can fix that layout before the update runs.",
+    ],
+    dependencySummary: [],
+    missingDependencies: [],
+    inboxDependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Keep every MCCC script and package file together in one shallow MCCC folder.",
+      "Keep .cfg settings files when you update MCCC.",
+    ],
+    evidenceSummary: [
+      "SimSuite found a valid MC Command Center update and a repairable old setup.",
+    ],
+    catalogSource: mockMcccCatalogSource,
+    existingInstallDetected: true,
+    guidedInstallAvailable: false,
+    sampleFiles: [
+      "mc_cmd_center.ts4script",
+      "mc_cmd_center.package",
+      "mc_settings.cfg",
+    ],
   },
 ];
 
 const mockRulePresets: RulePreset[] = [
   {
     name: "Category First",
-    template: "Mods/{kind}/{creator}/{filename}",
-    priority: 1,
-    description: "Sort by category, then creator when recognized.",
-  },
-  {
-    name: "Creator First",
-    template: "Mods/{creator}/{kind}/{filename}",
-    priority: 2,
-    description: "Keep creator work grouped before category.",
+    template: "{kind}/{subtype}/{creator}",
+    priority: 100,
+    description: "Puts content type first, then narrows down by subtype and creator.",
   },
   {
     name: "Mirror Mode",
-    template: "Mirror current structure when already safe",
-    priority: 3,
-    description: "Respect the present library shape unless validation intervenes.",
+    template: "keep-current-safe-shape",
+    priority: 150,
+    description: "Keeps safe folders that already make sense and only fixes risky paths.",
+  },
+  {
+    name: "Creator First",
+    template: "Creators/{creator}/{kind}/{subtype}",
+    priority: 200,
+    description: "Keeps each creator together before splitting by content type.",
+  },
+  {
+    name: "Hybrid",
+    template: "{kind}/{creator}/{subtype}",
+    priority: 300,
+    description: "Balances type-first sorting with creator grouping underneath.",
+  },
+  {
+    name: "Minimal Safe",
+    template: "ScriptMods/{creator}",
+    priority: 400,
+    description: "Uses a conservative layout that focuses on safe folder depth first.",
   },
 ];
 
@@ -488,7 +830,7 @@ const mockSuggestions: OrganizationPreview["suggestions"] = [
     finalRelativePath: "Mods\\Script Mods\\Deaderpool\\MCCC_MCCommandCenter.ts4script",
     finalAbsolutePath: `${DEFAULT_MODS_PATH}\\Script Mods\\Deaderpool\\MCCC_MCCommandCenter.ts4script`,
     ruleLabel: "Category First",
-    validatorNotes: ["Script depth corrected to one subfolder."],
+    validatorNotes: ["validator_flattened_script_depth"],
     reviewRequired: false,
     corrected: true,
     confidence: 0.96,
@@ -506,7 +848,10 @@ const mockSuggestions: OrganizationPreview["suggestions"] = [
     finalRelativePath: "Tray\\LooseBlueprint.blueprint",
     finalAbsolutePath: `${DEFAULT_TRAY_PATH}\\LooseBlueprint.blueprint`,
     ruleLabel: "Category First",
-    validatorNotes: ["Tray content rerouted to the Tray root."],
+    validatorNotes: [
+      "tray_file_will_be_relocated_from_mods",
+      "validator_routed_tray_content_to_tray_root",
+    ],
     reviewRequired: true,
     corrected: true,
     confidence: 0.58,
@@ -542,7 +887,7 @@ const mockSuggestions: OrganizationPreview["suggestions"] = [
     finalRelativePath: "Mods\\Gameplay\\Review\\UnknownCreator_misc.package",
     finalAbsolutePath: `${DEFAULT_MODS_PATH}\\Gameplay\\Review\\UnknownCreator_misc.package`,
     ruleLabel: "Category First",
-    validatorNotes: ["Low confidence classification requires review."],
+    validatorNotes: ["low_confidence_requires_review"],
     reviewRequired: true,
     corrected: true,
     confidence: 0.46,
@@ -552,6 +897,146 @@ const mockSuggestions: OrganizationPreview["suggestions"] = [
     bundleName: null,
   },
 ];
+
+function previewStateFromSuggestion(
+  suggestion: OrganizationPreview["suggestions"][number],
+) {
+  if (suggestion.reviewRequired) {
+    return "review";
+  }
+
+  if (suggestion.finalAbsolutePath === suggestion.currentPath) {
+    return "aligned";
+  }
+
+  return "safe";
+}
+
+function buildMockPreviewIssueSummary(
+  suggestions: OrganizationPreview["suggestions"],
+): OrganizationPreview["issueSummary"] {
+  const counts = new Map<string, number>();
+
+  for (const suggestion of suggestions) {
+    const seen = new Set<string>();
+    for (const note of suggestion.validatorNotes) {
+      if (!seen.has(note)) {
+        seen.add(note);
+        counts.set(note, (counts.get(note) ?? 0) + 1);
+      }
+    }
+  }
+
+  const priority = [
+    "low_confidence_requires_review",
+    "unknown_kind_requires_review",
+    "existing_path_collision_detected",
+    "preview_path_collision_detected",
+    "tray_file_will_be_relocated_from_mods",
+    "validator_routed_tray_content_to_tray_root",
+    "validator_flattened_script_depth",
+    "validator_limited_package_depth",
+    "missing_target_root",
+  ];
+
+  const summary: OrganizationPreview["issueSummary"] = [];
+  for (const code of priority) {
+    const count = counts.get(code);
+    if (!count) {
+      continue;
+    }
+    summary.push(mockPreviewIssueEntry(code, count));
+    counts.delete(code);
+  }
+
+  for (const [code, count] of counts) {
+    summary.push(mockPreviewIssueEntry(code, count));
+  }
+
+  return summary;
+}
+
+function mockPreviewIssueEntry(code: string, count: number) {
+  const labels: Record<string, { label: string; tone: string }> = {
+    low_confidence_requires_review: {
+      label: "Names or types still look uncertain",
+      tone: "review",
+    },
+    unknown_kind_requires_review: {
+      label: "Some files still have an unknown type",
+      tone: "review",
+    },
+    existing_path_collision_detected: {
+      label: "A destination is already occupied",
+      tone: "review",
+    },
+    preview_path_collision_detected: {
+      label: "Two files want the same destination",
+      tone: "review",
+    },
+    tray_file_will_be_relocated_from_mods: {
+      label: "Tray files were found inside Mods",
+      tone: "warn",
+    },
+    validator_routed_tray_content_to_tray_root: {
+      label: "Tray files were rerouted back to Tray",
+      tone: "warn",
+    },
+    validator_flattened_script_depth: {
+      label: "Script mods were flattened to a safe depth",
+      tone: "warn",
+    },
+    validator_limited_package_depth: {
+      label: "Deep folder paths were shortened",
+      tone: "warn",
+    },
+    missing_target_root: {
+      label: "A required root folder is missing",
+      tone: "review",
+    },
+  };
+
+  return {
+    code,
+    label: labels[code]?.label ?? "Extra checks were raised in this pass",
+    tone: labels[code]?.tone ?? "neutral",
+    count,
+  };
+}
+
+function buildMockOrganizationPreview({
+  presetName,
+  suggestions,
+  totalConsidered,
+  detectedStructure,
+  recommendedPreset,
+  recommendedReason,
+}: {
+  presetName: string;
+  suggestions: OrganizationPreview["suggestions"];
+  totalConsidered?: number;
+  detectedStructure: string;
+  recommendedPreset: string;
+  recommendedReason: string;
+}): OrganizationPreview {
+  return {
+    presetName,
+    detectedStructure,
+    totalConsidered: totalConsidered ?? suggestions.length,
+    safeCount: suggestions.filter(
+      (item) => previewStateFromSuggestion(item) === "safe",
+    ).length,
+    alignedCount: suggestions.filter(
+      (item) => previewStateFromSuggestion(item) === "aligned",
+    ).length,
+    correctedCount: suggestions.filter((item) => item.corrected).length,
+    reviewCount: suggestions.filter((item) => item.reviewRequired).length,
+    recommendedPreset,
+    recommendedReason,
+    issueSummary: buildMockPreviewIssueSummary(suggestions),
+    suggestions: structuredClone(suggestions),
+  };
+}
 
 const mockDuplicatePairs: DuplicatePair[] = [
   {
@@ -1074,18 +1559,442 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
       item: structuredClone(item),
       files: [
         {
-          fileId: 2,
-          filename: "TwistedMexi_BetterExceptions.ts4script",
-          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
-          originPath: `${DEFAULT_DOWNLOADS_PATH}\\TwistedMexi_BetterExceptions.ts4script`,
-          archiveMemberPath: null,
+          fileId: 4201,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center\\mc_cmd_center.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_2026.3.0.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
           kind: "ScriptMods",
-          subtype: "Utility",
-          creator: "TwistedMexi",
+          subtype: "Core",
+          creator: "Deaderpool",
           confidence: 0.99,
-          size: 482_304,
+          size: 1_275_904,
           sourceLocation: "downloads",
           safetyNotes: [],
+        },
+        {
+          fileId: 4202,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center\\mc_cmd_center.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_2026.3.0.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          confidence: 0.97,
+          size: 1_942_528,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4203,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center\\mc_woohoo.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_2026.3.0.zip`,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          confidence: 0.97,
+          size: 1_183_744,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4204,
+          filename: "mc_tuner.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center\\mc_tuner.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_2026.3.0.zip`,
+          archiveMemberPath: "MCCC/mc_tuner.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          confidence: 0.95,
+          size: 879_488,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 43) {
+    if (item.intakeMode === "guided") {
+      return {
+        item: structuredClone(item),
+        files: [
+          {
+            fileId: 4301,
+            filename: "mc_cmd_center.ts4script",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center_partial\\mc_cmd_center.ts4script`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_partial.zip`,
+            archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            confidence: 0.99,
+            size: 1_275_904,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+          {
+            fileId: 4302,
+            filename: "mc_cmd_center.package",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center_partial\\mc_cmd_center.package`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_partial.zip`,
+            archiveMemberPath: "MCCC/mc_cmd_center.package",
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            confidence: 0.97,
+            size: 1_942_528,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+          {
+            fileId: 4303,
+            filename: "mc_woohoo.package",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center_partial\\mc_woohoo.package`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_partial.zip`,
+            archiveMemberPath: "MCCC/mc_woohoo.package",
+            kind: "ScriptMods",
+            subtype: "Module",
+            creator: "Deaderpool",
+            confidence: 0.96,
+            size: 1_183_744,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+        ],
+      };
+    }
+
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4301,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center_partial\\mc_woohoo.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MC_Command_Center_partial.zip`,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          confidence: 0.83,
+          size: 1_183_744,
+          sourceLocation: "downloads",
+          safetyNotes: [
+            "Special setup needs review because the core script file is missing.",
+          ],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 44) {
+    if (item.intakeMode === "guided") {
+      return {
+        item: structuredClone(item),
+        files: [
+          {
+            fileId: 4401,
+            filename: "mc_cmd_center.ts4script",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder_clean\\mc_cmd_center.ts4script`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+            archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            confidence: 0.95,
+            size: 1_275_904,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+          {
+            fileId: 4403,
+            filename: "mc_cmd_center.package",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder_clean\\mc_cmd_center.package`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+            archiveMemberPath: "MCCC/mc_cmd_center.package",
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            confidence: 0.96,
+            size: 1_942_528,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+          {
+            fileId: 4404,
+            filename: "mc_woohoo.package",
+            currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder_clean\\mc_woohoo.package`,
+            originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+            archiveMemberPath: "MCCC/mc_woohoo.package",
+            kind: "ScriptMods",
+            subtype: "Module",
+            creator: "Deaderpool",
+            confidence: 0.94,
+            size: 1_183_744,
+            sourceLocation: "downloads",
+            safetyNotes: [],
+          },
+        ],
+      };
+    }
+
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4401,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_cmd_center.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          confidence: 0.95,
+          size: 1_275_904,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4403,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_cmd_center.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          confidence: 0.96,
+          size: 1_942_528,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4404,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_woohoo.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          confidence: 0.94,
+          size: 1_183_744,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4402,
+          filename: "othermod.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\othermod.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "Other/othermod.ts4script",
+          kind: "ScriptMods",
+          subtype: "Utility",
+          creator: null,
+          confidence: 0.51,
+          size: 544_128,
+          sourceLocation: "downloads",
+          safetyNotes: [
+            "This file does not fit the guided MC Command Center install set.",
+          ],
+        },
+        {
+          fileId: 4405,
+          filename: "notes.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\notes.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "Bonus/notes.package",
+          kind: "Gameplay",
+          subtype: "Utility",
+          creator: null,
+          confidence: 0.42,
+          size: 64_512,
+          sourceLocation: "downloads",
+          safetyNotes: [
+            "This extra file should stay out of the clean MCCC batch.",
+          ],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 45) {
+    const dependencyResolved = item.intakeMode === "standard";
+
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4501,
+          filename: "HealthcareRedux_Addon.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\Healthcare_Redux_Addon\\HealthcareRedux_Addon.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\Adeepindigo_Healthcare_Redux_Addon.zip`,
+          archiveMemberPath: "HealthcareRedux/HealthcareRedux_Addon.package",
+          kind: "Gameplay",
+          subtype: "Utility",
+          creator: "adeepindigo",
+          confidence: 0.9,
+          size: 1_842_112,
+          sourceLocation: "downloads",
+          safetyNotes: dependencyResolved
+            ? ["XML Injector was installed first, so this file can use the normal safe hand-off."]
+            : ["This batch is waiting on XML Injector before it can move safely."],
+        },
+        {
+          fileId: 4502,
+          filename: "README_requires_xml_injector.txt",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\Healthcare_Redux_Addon\\README_requires_xml_injector.txt`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\Adeepindigo_Healthcare_Redux_Addon.zip`,
+          archiveMemberPath: "HealthcareRedux/README_requires_xml_injector.txt",
+          kind: "Gameplay",
+          subtype: "Readme",
+          creator: "adeepindigo",
+          confidence: 0.72,
+          size: 4_096,
+          sourceLocation: "downloads",
+          safetyNotes: ["This note says XML Injector is required."],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 46) {
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4601,
+          filename: "XmlInjector_Script_v4.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\XML_Injector\\XmlInjector_Script_v4.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\XML_Injector_v4.zip`,
+          archiveMemberPath: "XML Injector/XmlInjector_Script_v4.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Scumbumbo / Triplis",
+          confidence: 0.98,
+          size: 684_032,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+        {
+          fileId: 4602,
+          filename: "XMLInjector_Test.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\XML_Injector\\XMLInjector_Test.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\XML_Injector_v4.zip`,
+          archiveMemberPath: "XML Injector/XMLInjector_Test.package",
+          kind: "ScriptMods",
+          subtype: "Support",
+          creator: "Scumbumbo / Triplis",
+          confidence: 0.91,
+          size: 442_368,
+          sourceLocation: "downloads",
+          safetyNotes: [],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 47) {
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4701,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\McCmdCenter_AllModules_2026_1_1.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          confidence: 0.99,
+          size: 1_275_904,
+          sourceLocation: "downloads",
+          safetyNotes: ["This is the core MCCC script file."],
+        },
+        {
+          fileId: 4702,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\McCmdCenter_AllModules_2026_1_1.zip`,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          confidence: 0.97,
+          size: 1_942_528,
+          sourceLocation: "downloads",
+          safetyNotes: ["This is part of the main MCCC suite."],
+        },
+        {
+          fileId: 4703,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_woohoo.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\McCmdCenter_AllModules_2026_1_1.zip`,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          confidence: 0.97,
+          size: 1_183_744,
+          sourceLocation: "downloads",
+          safetyNotes: ["This module should stay with the main MCCC files."],
+        },
+        {
+          fileId: 4704,
+          filename: "mc_settings.cfg",
+          currentPath: `${DEFAULT_MODS_PATH}\\mc_settings.cfg`,
+          originPath: `${DEFAULT_MODS_PATH}\\mc_settings.cfg`,
+          archiveMemberPath: null,
+          kind: "ScriptMods",
+          subtype: "Settings",
+          creator: "Deaderpool",
+          confidence: 0.94,
+          size: 12_288,
+          sourceLocation: "mods",
+          safetyNotes: ["This settings file should be kept during the repair."],
+        },
+      ],
+    };
+  }
+
+  if (itemId === 48) {
+    return {
+      item: structuredClone(item),
+      files: [
+        {
+          fileId: 4801,
+          filename: "othermod.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder_extras\\othermod.ts4script`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "Other/othermod.ts4script",
+          kind: "ScriptMods",
+          subtype: "Utility",
+          creator: null,
+          confidence: 0.51,
+          size: 544_128,
+          sourceLocation: "downloads",
+          safetyNotes: ["This leftover file still needs its own review."],
+        },
+        {
+          fileId: 4802,
+          filename: "notes.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder_extras\\notes.package`,
+          originPath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          archiveMemberPath: "Bonus/notes.package",
+          kind: "Gameplay",
+          subtype: "Utility",
+          creator: null,
+          confidence: 0.42,
+          size: 64_512,
+          sourceLocation: "downloads",
+          safetyNotes: ["This extra package was kept separate from the clean MCCC batch."],
         },
       ],
     };
@@ -1110,6 +2019,608 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
       },
     ],
   };
+}
+
+function buildMockGuidedPlan(itemId: number): GuidedInstallPlan | null {
+  const item = mockDownloadsItems.find((entry) => entry.id === itemId);
+  if (!item) {
+    return null;
+  }
+
+  if (itemId === 46) {
+    return {
+      itemId: 46,
+      profileKey: "xml_injector",
+      profileName: "XML Injector",
+      specialFamily: "Support library",
+      installTargetFolder: `${DEFAULT_MODS_PATH}\\XML Injector`,
+      installFiles: [
+        {
+          fileId: 4601,
+          filename: "XmlInjector_Script_v4.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\XML_Injector\\XmlInjector_Script_v4.ts4script`,
+          targetPath: `${DEFAULT_MODS_PATH}\\XML Injector\\XmlInjector_Script_v4.ts4script`,
+          archiveMemberPath: "XML Injector/XmlInjector_Script_v4.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Scumbumbo / Triplis",
+          notes: [],
+        },
+        {
+          fileId: 4602,
+          filename: "XMLInjector_Test.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\XML_Injector\\XMLInjector_Test.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\XML Injector\\XMLInjector_Test.package`,
+          archiveMemberPath: "XML Injector/XMLInjector_Test.package",
+          kind: "ScriptMods",
+          subtype: "Support",
+          creator: "Scumbumbo / Triplis",
+          notes: [],
+        },
+      ],
+      replaceFiles: [],
+      preserveFiles: [],
+      reviewFiles: [],
+      dependencies: [],
+      incompatibilityWarnings: [],
+      postInstallNotes: [
+        "Keep one current XML Injector install in one shallow folder.",
+        "After the library is installed, refresh any waiting mods that depend on it.",
+      ],
+      existingLayoutFindings: [],
+      warnings: [],
+      explanation:
+        "XML Injector is a support library, so SimSuite keeps it together in one shallow Mods folder and installs it before dependent mods.",
+      evidence: [
+        "Download name matches the XML Injector profile.",
+        "The XML Injector script file was found.",
+      ],
+      catalogSource: mockXmlInjectorCatalogSource,
+      existingInstallDetected: false,
+      applyReady: true,
+    };
+  }
+
+  if (
+    itemId !== 42 &&
+    itemId !== 43 &&
+    itemId !== 44 &&
+    itemId !== 47
+  ) {
+    return null;
+  }
+
+  if (item.intakeMode !== "guided") {
+    return null;
+  }
+
+  const isRepairFollowUp = itemId === 47;
+  const isFreshInstall = itemId === 43 || itemId === 44;
+  const baseInboxFolder = isRepairFollowUp
+    ? "McCmdCenter_AllModules"
+    : itemId === 43
+      ? "MC_Command_Center_partial"
+      : itemId === 44
+        ? "MCCC_mixed_folder_clean"
+        : "MC_Command_Center";
+  const baseOriginName = isRepairFollowUp
+    ? "McCmdCenter_AllModules_2026_1_1.zip"
+    : itemId === 43
+      ? "MC_Command_Center_partial.zip"
+      : itemId === 44
+        ? "MCCC_mixed_folder.zip"
+        : "MC_Command_Center_2026.3.0.zip";
+
+  return {
+    itemId,
+    profileKey: "mccc",
+    profileName: "MC Command Center",
+    specialFamily: "Script suite",
+    installTargetFolder: `${DEFAULT_MODS_PATH}\\MCCC`,
+    installFiles: [
+      {
+        fileId: isRepairFollowUp ? 4701 : itemId === 43 ? 4301 : 4401,
+        filename: "mc_cmd_center.ts4script",
+        currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\${baseInboxFolder}\\mc_cmd_center.ts4script`,
+        targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.ts4script`,
+        archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+        kind: "ScriptMods",
+        subtype: "Core",
+        creator: "Deaderpool",
+        notes: [],
+      },
+      {
+        fileId: isRepairFollowUp ? 4702 : itemId === 43 ? 4302 : 4403,
+        filename: "mc_cmd_center.package",
+        currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\${baseInboxFolder}\\mc_cmd_center.package`,
+        targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+        archiveMemberPath: "MCCC/mc_cmd_center.package",
+        kind: "ScriptMods",
+        subtype: "Core",
+        creator: "Deaderpool",
+        notes: [],
+      },
+      {
+        fileId: isRepairFollowUp ? 4703 : itemId === 43 ? 4303 : 4404,
+        filename: "mc_woohoo.package",
+        currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\${baseInboxFolder}\\mc_woohoo.package`,
+        targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_woohoo.package`,
+        archiveMemberPath: "MCCC/mc_woohoo.package",
+        kind: "ScriptMods",
+        subtype: "Module",
+        creator: "Deaderpool",
+        notes: [],
+      },
+    ],
+    replaceFiles: isFreshInstall
+      ? []
+      : [
+          {
+            fileId: 44021,
+            filename: "mc_cmd_center.ts4script",
+            currentPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.ts4script`,
+            targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.ts4script`,
+            archiveMemberPath: null,
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            notes: ["Old MC Command Center package or script file that will be replaced."],
+          },
+          {
+            fileId: 44022,
+            filename: "mc_cmd_center.package",
+            currentPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+            targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+            archiveMemberPath: null,
+            kind: "ScriptMods",
+            subtype: "Core",
+            creator: "Deaderpool",
+            notes: ["Old MC Command Center package or script file that will be replaced."],
+          },
+          {
+            fileId: 44023,
+            filename: "mc_woohoo.package",
+            currentPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_woohoo.package`,
+            targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_woohoo.package`,
+            archiveMemberPath: null,
+            kind: "ScriptMods",
+            subtype: "Module",
+            creator: "Deaderpool",
+            notes: ["Old MC Command Center package or script file that will be replaced."],
+          },
+        ],
+    preserveFiles: isFreshInstall
+      ? []
+      : [
+          {
+            fileId: null,
+            filename: "mc_settings.cfg",
+            currentPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_settings.cfg`,
+            targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_settings.cfg`,
+            archiveMemberPath: null,
+            kind: "Config",
+            subtype: null,
+            creator: "Deaderpool",
+            notes: ["Settings file that will be kept during the update."],
+          },
+        ],
+    reviewFiles: [],
+    dependencies: [],
+    incompatibilityWarnings: [],
+    postInstallNotes: [
+      "Keep every MCCC package and script file together in the same folder.",
+      "Restart The Sims 4 after updating script mods.",
+    ],
+    existingLayoutFindings: isFreshInstall
+      ? []
+      : [
+          "A matching MCCC install was found in Mods\\MCCC.",
+          "Settings files already in that folder will stay in place.",
+        ],
+    warnings: isFreshInstall
+      ? []
+      : ["Existing MC Command Center settings files will stay in place."],
+    explanation:
+      "MC Command Center is a script suite, so SimSuite keeps the main script and module files together in one safe folder under Mods.",
+    evidence: [
+      isRepairFollowUp
+        ? "The repaired batch still matches the MC Command Center profile."
+        : isFreshInstall
+          ? `The staged ${baseOriginName} batch now matches the MC Command Center profile.`
+          : "Download name matches the MC Command Center profile.",
+      isRepairFollowUp
+        ? "The repaired install now points to one safe MCCC folder."
+        : isFreshInstall
+          ? "The clean staged batch now contains the supported core-and-module MCCC files."
+          : "4 supported files match the MC Command Center file pattern.",
+      isFreshInstall
+        ? "This batch is ready to install as a clean special-mod set."
+        : "Existing MC Command Center package/script files were found and will be replaced.",
+    ],
+    catalogSource: mockMcccCatalogSource,
+    existingInstallDetected: !isFreshInstall,
+    applyReady: true,
+  };
+}
+
+function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
+  if (itemId === 45) {
+    return {
+      itemId: 45,
+      mode: "needs_review",
+      profileKey: null,
+      profileName: null,
+      specialFamily: "Dependency check",
+      explanation:
+        "This download looks safe, but it says XML Injector is required first. SimSuite found XML Injector in the Inbox and can set it up before checking this download again.",
+      recommendedNextStep:
+        "Install XML Injector first, then let SimSuite re-check this download.",
+      dependencies: [
+        {
+          key: "xml_injector",
+          displayName: "XML Injector",
+          status: "inbox",
+          summary:
+            "XML Injector is in the Inbox and ready for safe setup as XML_Injector_v4.zip.",
+          inboxItemId: 46,
+          inboxItemName: "XML_Injector_v4.zip",
+          inboxItemIntakeMode: "guided",
+          inboxItemGuidedInstallAvailable: true,
+        },
+      ],
+      incompatibilityWarnings: [],
+      reviewFiles: [
+        {
+          fileId: 4501,
+          filename: "HealthcareRedux_Addon.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\Healthcare_Redux_Addon\\HealthcareRedux_Addon.package`,
+          targetPath: null,
+          archiveMemberPath: "HealthcareRedux/HealthcareRedux_Addon.package",
+          kind: "Gameplay",
+          subtype: "Utility",
+          creator: "adeepindigo",
+          notes: ["This mod is waiting for XML Injector."],
+        },
+      ],
+      evidence: [
+        "The included readme says XML Injector is required.",
+        "SimSuite matched an XML Injector archive already waiting in the Inbox.",
+      ],
+      existingLayoutFindings: [],
+      postInstallNotes: [
+        "After XML Injector is installed, refresh this batch so SimSuite can continue.",
+      ],
+      catalogSource: mockXmlInjectorCatalogSource,
+      availableActions: [
+        buildMockReviewAction(
+          "install_dependency",
+          "Install XML Injector first",
+          "SimSuite can set up XML Injector from the Inbox, then re-check this waiting mod.",
+          100,
+          46,
+          "XML Injector",
+        ),
+      ],
+      repairPlanAvailable: false,
+      repairActionLabel: null,
+      repairReason: null,
+      repairTargetFolder: null,
+      repairMoveFiles: [],
+      repairReplaceFiles: [],
+      repairKeepFiles: [],
+      repairWarnings: [],
+      repairCanContinueInstall: false,
+    };
+  }
+
+  if (itemId === 43) {
+    return {
+      itemId: 43,
+      mode: "blocked",
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      explanation:
+        "This looks like part of an MC Command Center update, but the core script file is missing, so SimSuite will not guess how to install it.",
+      recommendedNextStep:
+        "Download the missing official MCCC files, then let SimSuite re-check the full set.",
+      dependencies: [],
+      incompatibilityWarnings: [],
+      reviewFiles: [
+        {
+          fileId: 4301,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MC_Command_Center_partial\\mc_woohoo.package`,
+          targetPath: null,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          notes: ["The core script file is missing from this set."],
+        },
+      ],
+      evidence: [
+        "The archive contains MC Command Center module files.",
+        "The required core script file mc_cmd_center.ts4script was not found.",
+      ],
+      existingLayoutFindings: [],
+      postInstallNotes: [
+        "MCCC needs its core script file before SimSuite can install it safely.",
+      ],
+      catalogSource: mockMcccCatalogSource,
+      availableActions: [
+        buildMockReviewAction(
+          "download_missing_files",
+          "Download missing MCCC files",
+          "SimSuite can grab the trusted official MCCC archive, stage it in the Inbox, and re-check the full set.",
+          100,
+          null,
+          "MC Command Center",
+          mockMcccCatalogSource.officialDownloadUrl,
+        ),
+      ],
+      repairPlanAvailable: false,
+      repairActionLabel: null,
+      repairReason: null,
+      repairTargetFolder: null,
+      repairMoveFiles: [],
+      repairReplaceFiles: [],
+      repairKeepFiles: [],
+      repairWarnings: [],
+      repairCanContinueInstall: false,
+    };
+  }
+
+  if (itemId === 44) {
+    return {
+      itemId: 44,
+      mode: "blocked",
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      explanation:
+        "This archive mixes MC Command Center files with unrelated script content, so SimSuite blocked it instead of moving a risky batch.",
+      recommendedNextStep:
+        "Let SimSuite split the clean MCCC set away from the extra files, then continue with the MCCC recipe.",
+      dependencies: [],
+      incompatibilityWarnings: [
+        "Mixed special-mod archives can overwrite the wrong files if they are installed together.",
+      ],
+      reviewFiles: [
+        {
+          fileId: 4401,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_cmd_center.ts4script`,
+          targetPath: null,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["This file looks like MCCC."],
+        },
+        {
+          fileId: 4403,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_cmd_center.package`,
+          targetPath: null,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["This file belongs with the main MCCC set."],
+        },
+        {
+          fileId: 4404,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\mc_woohoo.package`,
+          targetPath: null,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          notes: ["This module can stay with the clean MCCC set after the split."],
+        },
+        {
+          fileId: 4402,
+          filename: "othermod.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\othermod.ts4script`,
+          targetPath: null,
+          archiveMemberPath: "Other/othermod.ts4script",
+          kind: "ScriptMods",
+          subtype: "Utility",
+          creator: null,
+          notes: ["This file does not belong to the MCCC suite."],
+        },
+        {
+          fileId: 4405,
+          filename: "notes.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\MCCC_mixed_folder\\notes.package`,
+          targetPath: null,
+          archiveMemberPath: "Bonus/notes.package",
+          kind: "Gameplay",
+          subtype: "Utility",
+          creator: null,
+          notes: ["This extra file should stay behind for its own review."],
+        },
+      ],
+      evidence: [
+        "The archive contains a complete MCCC core-and-module set.",
+        "The archive also contains unrelated script content.",
+        "SimSuite can split the supported MCCC files into a clean batch first.",
+      ],
+      existingLayoutFindings: [],
+      postInstallNotes: [
+        "Keep special script suites in separate clean downloads whenever possible.",
+      ],
+      catalogSource: mockMcccCatalogSource,
+      availableActions: [
+        buildMockReviewAction(
+          "separate_supported_files",
+          "Separate the MCCC files",
+          "SimSuite can pull the clean MCCC files into their own batch and leave the extras behind for review.",
+          100,
+          null,
+          "MC Command Center",
+        ),
+      ],
+      repairPlanAvailable: false,
+      repairActionLabel: null,
+      repairReason: null,
+      repairTargetFolder: null,
+      repairMoveFiles: [],
+      repairReplaceFiles: [],
+      repairKeepFiles: [],
+      repairWarnings: [],
+      repairCanContinueInstall: false,
+    };
+  }
+
+  if (itemId === 47) {
+    return {
+      itemId: 47,
+      mode: "blocked",
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      explanation:
+        "SimSuite found a full MC Command Center update, but your older MCCC files are still spread around Mods. The safe fix is to gather that old setup into one MCCC folder before the update runs.",
+      recommendedNextStep:
+        "Fix the old MCCC setup first, then let SimSuite finish the update in the same safe run.",
+      dependencies: [],
+      incompatibilityWarnings: [],
+      reviewFiles: [
+        {
+          fileId: 4701,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.ts4script`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.ts4script`,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["The new core script is ready, but the older MCCC layout needs a quick tidy first."],
+        },
+        {
+          fileId: 4702,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["This will replace the older main MCCC package after the repair."],
+        },
+      ],
+      evidence: [
+        "The download name and staged files match the MC Command Center profile.",
+        "The required core script file mc_cmd_center.ts4script was found in the new download.",
+        "Older MCCC files were found loose in Mods instead of one shallow MCCC folder.",
+      ],
+      existingLayoutFindings: [
+        "Older MCCC files were found in the Mods root.",
+        "A matching mc_settings.cfg settings file was found and can be kept.",
+      ],
+      postInstallNotes: [
+        "MCCC works best when the script and package files stay together in one MCCC folder.",
+        "Your .cfg settings file will stay in place during the repair.",
+      ],
+      catalogSource: mockMcccCatalogSource,
+      availableActions: [
+        buildMockReviewAction(
+          "repair_special",
+          "Fix old MCCC setup",
+          "SimSuite can gather the older MCCC files into one safe folder, keep your settings, and finish the update.",
+          100,
+          null,
+          "MC Command Center",
+        ),
+      ],
+      repairPlanAvailable: true,
+      repairActionLabel: "Fix old MCCC setup",
+      repairReason:
+        "SimSuite can gather the older MCCC files into one safe folder, keep your settings, and then finish the update.",
+      repairTargetFolder: `${DEFAULT_MODS_PATH}\\MCCC`,
+      repairMoveFiles: [
+        {
+          fileId: 47041,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_MODS_PATH}\\mc_cmd_center.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+          archiveMemberPath: null,
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["The older package will be tucked into the safe MCCC folder before replacement."],
+        },
+        {
+          fileId: 47042,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_MODS_PATH}\\mc_woohoo.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_woohoo.package`,
+          archiveMemberPath: null,
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          notes: ["This older module belongs in the same MCCC folder."],
+        },
+      ],
+      repairReplaceFiles: [
+        {
+          fileId: 4701,
+          filename: "mc_cmd_center.ts4script",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.ts4script`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.ts4script`,
+          archiveMemberPath: "MCCC/mc_cmd_center.ts4script",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["The new core script will replace the older one."],
+        },
+        {
+          fileId: 4702,
+          filename: "mc_cmd_center.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_cmd_center.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_cmd_center.package`,
+          archiveMemberPath: "MCCC/mc_cmd_center.package",
+          kind: "ScriptMods",
+          subtype: "Core",
+          creator: "Deaderpool",
+          notes: ["The new main package will replace the older one."],
+        },
+        {
+          fileId: 4703,
+          filename: "mc_woohoo.package",
+          currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\McCmdCenter_AllModules\\mc_woohoo.package`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_woohoo.package`,
+          archiveMemberPath: "MCCC/mc_woohoo.package",
+          kind: "ScriptMods",
+          subtype: "Module",
+          creator: "Deaderpool",
+          notes: ["The new module will replace the older one."],
+        },
+      ],
+      repairKeepFiles: [
+        {
+          fileId: 47043,
+          filename: "mc_settings.cfg",
+          currentPath: `${DEFAULT_MODS_PATH}\\mc_settings.cfg`,
+          targetPath: `${DEFAULT_MODS_PATH}\\MCCC\\mc_settings.cfg`,
+          archiveMemberPath: null,
+          kind: "ScriptMods",
+          subtype: "Settings",
+          creator: "Deaderpool",
+          notes: ["Settings stay safe and move into the repaired MCCC folder."],
+        },
+      ],
+      repairWarnings: [
+        "Only the files that clearly belong to MC Command Center are part of this repair.",
+      ],
+      repairCanContinueInstall: true,
+    };
+  }
+
+  return null;
 }
 
 function emitMockDownloadsStatus(status: DownloadsWatcherStatus) {
@@ -1437,8 +2948,10 @@ async function mockInvoke<T>(
     case "get_scan_status":
       return structuredClone(mockScanStatus) as T;
     case "get_downloads_watcher_status":
+      syncMockDownloadsWatcherStatus();
       return structuredClone(mockDownloadsWatcherStatus) as T;
     case "refresh_downloads_inbox":
+      syncMockDownloadsWatcherStatus();
       emitMockDownloadsStatus({
         ...mockDownloadsWatcherStatus,
         state: "processing",
@@ -1482,18 +2995,60 @@ async function mockInvoke<T>(
     case "preview_download_item": {
       const itemId = payload?.itemId as number;
       const detail = buildMockDownloadDetail(itemId);
-      const suggestions = mockSuggestions.filter((item) =>
-        detail?.files.some((file) => file.fileId === item.fileId),
-      );
-      return {
+      if (detail?.item.intakeMode !== "standard") {
+        throw new Error(
+          "This inbox item needs a guided special setup flow instead of the normal hand-off preview.",
+        );
+      }
+      const suggestions =
+        itemId === 45
+          ? [
+              {
+                fileId: 4501,
+                filename: "HealthcareRedux_Addon.package",
+                currentPath: `${DEFAULT_DOWNLOADS_PATH}\\Inbox\\Healthcare_Redux_Addon\\HealthcareRedux_Addon.package`,
+                suggestedRelativePath:
+                  "Mods\\Gameplay\\Utility\\adeepindigo\\HealthcareRedux_Addon.package",
+                suggestedAbsolutePath: `${DEFAULT_MODS_PATH}\\Gameplay\\Utility\\adeepindigo\\HealthcareRedux_Addon.package`,
+                finalRelativePath:
+                  "Mods\\Gameplay\\Utility\\adeepindigo\\HealthcareRedux_Addon.package",
+                finalAbsolutePath: `${DEFAULT_MODS_PATH}\\Gameplay\\Utility\\adeepindigo\\HealthcareRedux_Addon.package`,
+                ruleLabel:
+                  (payload?.presetName as string | undefined) ?? "Category First",
+                validatorNotes: [],
+                reviewRequired: false,
+                corrected: false,
+                confidence: 0.9,
+                kind: "Gameplay",
+                creator: "adeepindigo",
+                sourceLocation: "downloads",
+                bundleName: null,
+              },
+            ]
+          : mockSuggestions.filter((item) =>
+              detail?.files.some((file) => file.fileId === item.fileId),
+            );
+      return buildMockOrganizationPreview({
         presetName: (payload?.presetName as string | undefined) ?? "Category First",
-        detectedStructure: "Downloads inbox batch ready for a safe hand-off.",
+        detectedStructure:
+          itemId === 45
+            ? "Dependency resolved. This batch can now use the normal safe hand-off."
+            : "Downloads inbox batch ready for a safe hand-off.",
         totalConsidered: suggestions.length,
-        correctedCount: suggestions.filter((item) => item.corrected).length,
-        reviewCount: suggestions.filter((item) => item.reviewRequired).length,
-        suggestions: structuredClone(suggestions),
-      } as T;
+        recommendedPreset: "Minimal Safe",
+        recommendedReason:
+          "Start with the safest cleanup style when files are arriving from Downloads.",
+        suggestions,
+      }) as T;
     }
+    case "get_download_item_guided_plan":
+      return structuredClone(
+        buildMockGuidedPlan(payload?.itemId as number),
+      ) as T;
+    case "get_download_item_review_plan":
+      return structuredClone(
+        buildMockReviewPlan(payload?.itemId as number),
+      ) as T;
     case "get_library_facets":
       return {
         creators: Array.from(
@@ -1544,17 +3099,20 @@ async function mockInvoke<T>(
     case "list_rule_presets":
       return structuredClone(mockRulePresets) as T;
     case "preview_organization":
-      return {
+      const previewLimit = payload?.limit as number | undefined;
+      return buildMockOrganizationPreview({
         presetName: (payload?.presetName as string | undefined) ?? "Category First",
-        detectedStructure: "Mixed creator/category tree with script depth issues.",
+        detectedStructure:
+          "Current library looks mixed, so a conservative pass is safest.",
         totalConsidered: 412,
-        correctedCount: mockSuggestions.filter((item) => item.corrected).length,
-        reviewCount: mockSuggestions.filter((item) => item.reviewRequired).length,
-        suggestions: structuredClone(mockSuggestions).slice(
-          0,
-          (payload?.limit as number | undefined) ?? mockSuggestions.length,
-        ),
-      } as T;
+        recommendedPreset: "Minimal Safe",
+        recommendedReason:
+          "Minimal Safe is the easiest first cleanup when the current folder shape is inconsistent.",
+        suggestions:
+          previewLimit != null && previewLimit > 0
+            ? structuredClone(mockSuggestions).slice(0, previewLimit)
+            : structuredClone(mockSuggestions),
+      }) as T;
     case "get_review_queue":
       return structuredClone(mockReviewQueue).slice(
         0,
@@ -1616,6 +3174,12 @@ async function mockInvoke<T>(
       } as T;
     case "apply_download_item": {
       const itemId = payload?.itemId as number;
+      const selectedItem = mockDownloadsItems.find((item) => item.id === itemId);
+      if (selectedItem?.intakeMode !== "standard") {
+        throw new Error(
+          "This inbox item uses a special setup flow. Open its guided preview instead.",
+        );
+      }
       mockDownloadsItems = mockDownloadsItems.map((item) =>
         item.id === itemId
           ? {
@@ -1627,6 +3191,7 @@ async function mockInvoke<T>(
             }
           : item,
       );
+      syncMockDownloadsWatcherStatus();
       return {
         snapshotId: mockSnapshotId++,
         movedCount:
@@ -1641,6 +3206,368 @@ async function mockInvoke<T>(
         snapshotName: `downloads_batch_${mockSnapshotId - 1}`,
       } as T;
     }
+    case "apply_guided_download_item": {
+      const itemId = payload?.itemId as number;
+      const plan = buildMockGuidedPlan(itemId);
+      if (!plan) {
+        throw new Error(
+          "This inbox item does not have a guided special setup plan.",
+        );
+      }
+
+      const snapshotName = `guided_${plan.profileKey}_${mockSnapshotId}`;
+      mockSnapshots = [
+        {
+          id: mockSnapshotId,
+          snapshotName,
+          description: `Guided ${plan.profileName} install`,
+          createdAt: new Date().toISOString(),
+          itemCount: plan.installFiles.length + plan.replaceFiles.length,
+        },
+        ...mockSnapshots,
+      ];
+        mockDownloadsItems = mockDownloadsItems.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                status: "applied",
+              activeFileCount: 0,
+              appliedFileCount: plan.installFiles.length,
+              reviewFileCount: plan.reviewFiles.length,
+              updatedAt: new Date().toISOString(),
+              }
+            : item,
+        );
+
+        if (itemId === 46) {
+          mockDownloadsItems = mockDownloadsItems.map((item) =>
+            item.id === 45
+              ? {
+                  ...item,
+                  status: "ready",
+                  intakeMode: "standard",
+                  riskLevel: "low",
+                  matchedProfileKey: null,
+                  matchedProfileName: null,
+                  specialFamily: null,
+                  assessmentReasons: ["XML Injector was installed first, so this batch can use the normal safe hand-off."],
+                  dependencySummary: [],
+                  missingDependencies: [],
+                  inboxDependencies: [],
+                  reviewFileCount: 0,
+                  notes: ["Dependency resolved. This batch is ready for a normal safe hand-off."],
+                  postInstallNotes: [],
+                  evidenceSummary: ["The required XML Injector library was installed from the Inbox."],
+                  catalogSource: null,
+                  updatedAt: new Date().toISOString(),
+                }
+              : item,
+          );
+        }
+
+        syncMockDownloadsWatcherStatus();
+        mockSnapshotId += 1;
+      return {
+        snapshotId: mockSnapshotId - 1,
+        installedCount: plan.installFiles.length,
+        replacedCount: plan.replaceFiles.length,
+        preservedCount: plan.preserveFiles.length,
+        deferredReviewCount: plan.reviewFiles.length,
+        snapshotName,
+      } as T;
+    }
+    case "apply_special_review_fix": {
+      const itemId = payload?.itemId as number;
+      const plan = buildMockReviewPlan(itemId);
+      if (!plan?.repairPlanAvailable) {
+        throw new Error("This inbox item does not have a safe repair plan.");
+      }
+
+      const repairedCount = plan.repairMoveFiles.length;
+      const installedCount = plan.repairReplaceFiles.length;
+      const preservedCount = plan.repairKeepFiles.length;
+      const snapshotName = `repair_${plan.profileKey ?? "special"}_${mockSnapshotId}`;
+
+      mockSnapshots = [
+        {
+          id: mockSnapshotId,
+          snapshotName,
+          description: `Repair ${plan.profileName ?? "special mod"} layout`,
+          createdAt: new Date().toISOString(),
+          itemCount: repairedCount + installedCount + preservedCount,
+        },
+        ...mockSnapshots,
+      ];
+
+      mockDownloadsItems = mockDownloadsItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              intakeMode: "guided",
+              status: "ready",
+              riskLevel: "medium",
+              reviewFileCount: 0,
+              activeFileCount: 3,
+              detectedFileCount: 3,
+              errorMessage: null,
+              notes: [
+                "Rechecked with newer SimSuite rules on Mar 10, 2026.",
+                "Old MC Command Center files were gathered into one safe folder.",
+                "This batch is now ready for guided special setup.",
+              ],
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      );
+
+      syncMockDownloadsWatcherStatus();
+      mockSnapshotId += 1;
+      return {
+        snapshotId: mockSnapshotId - 1,
+        repairedCount,
+        installedCount,
+        replacedCount: installedCount,
+        preservedCount,
+        deferredReviewCount: 0,
+        snapshotName,
+      } as T;
+    }
+    case "apply_review_plan_action": {
+      const itemId = payload?.itemId as number;
+      const actionKind = payload?.actionKind as ReviewPlanAction["kind"];
+      const relatedItemId = (payload?.relatedItemId as number | null | undefined) ?? null;
+      const url = (payload?.url as string | null | undefined) ?? null;
+      const approved = Boolean(payload?.approved);
+      const reviewPlan = buildMockReviewPlan(itemId);
+      const action = reviewPlan?.availableActions.find(
+        (candidate) =>
+          candidate.kind === actionKind &&
+          candidate.relatedItemId === relatedItemId &&
+          (url == null || candidate.url === url),
+      );
+
+      if (!reviewPlan || !action) {
+        throw new Error("This review action is no longer available for the selected inbox item.");
+      }
+
+      if (action.kind === "repair_special") {
+        if (!approved) {
+          throw new Error("Repair was blocked because approval was not confirmed.");
+        }
+        const result = await mockInvoke<ApplySpecialReviewFixResult>(
+          "apply_special_review_fix",
+          { itemId, approved: true },
+        );
+        return {
+          actionKind: action.kind,
+          focusItemId: itemId,
+          createdItemId: null,
+          openedUrl: null,
+          snapshotId: result.snapshotId,
+          repairedCount: result.repairedCount,
+          installedCount: result.installedCount,
+          replacedCount: result.replacedCount,
+          preservedCount: result.preservedCount,
+          deferredReviewCount: result.deferredReviewCount,
+          snapshotName: result.snapshotName,
+          message:
+            "Old MCCC setup fixed. SimSuite kept your settings safe and queued the guided update.",
+        } as T;
+      }
+
+      if (action.kind === "install_dependency") {
+        if (!approved || action.relatedItemId == null) {
+          throw new Error("Dependency install was blocked because approval was not confirmed.");
+        }
+        const result = await mockInvoke<ApplyGuidedDownloadResult>(
+          "apply_guided_download_item",
+          { itemId: action.relatedItemId, approved: true },
+        );
+        syncMockDownloadsWatcherStatus();
+        return {
+          actionKind: action.kind,
+          focusItemId: itemId,
+          createdItemId: null,
+          openedUrl: null,
+          snapshotId: result.snapshotId,
+          repairedCount: 0,
+          installedCount: result.installedCount,
+          replacedCount: result.replacedCount,
+          preservedCount: result.preservedCount,
+          deferredReviewCount: result.deferredReviewCount,
+          snapshotName: result.snapshotName,
+          message:
+            "Dependency installed first. SimSuite re-checked the waiting mod and moved it onto the safer path.",
+        } as T;
+      }
+
+      if (action.kind === "open_dependency") {
+        return {
+          actionKind: action.kind,
+          focusItemId: action.relatedItemId ?? itemId,
+          createdItemId: null,
+          openedUrl: null,
+          snapshotId: null,
+          repairedCount: 0,
+          installedCount: 0,
+          replacedCount: 0,
+          preservedCount: 0,
+          deferredReviewCount: 0,
+          snapshotName: null,
+          message: `Opened ${action.relatedItemName ?? "the dependency"} in the Inbox.`,
+        } as T;
+      }
+
+      if (action.kind === "open_official_source") {
+        return {
+          actionKind: action.kind,
+          focusItemId: itemId,
+          createdItemId: null,
+          openedUrl: action.url,
+          snapshotId: null,
+          repairedCount: 0,
+          installedCount: 0,
+          replacedCount: 0,
+          preservedCount: 0,
+          deferredReviewCount: 0,
+          snapshotName: null,
+          message: `Opened the official ${action.relatedItemName ?? "download"} page.`,
+        } as T;
+      }
+
+      if (action.kind === "download_missing_files") {
+        if (!approved) {
+          throw new Error("Download was blocked because approval was not confirmed.");
+        }
+        mockDownloadsItems = mockDownloadsItems.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                displayName: "MC_Command_Center_2026.3.0.zip",
+                status: "ready",
+                intakeMode: "guided",
+                riskLevel: "medium",
+                detectedFileCount: 3,
+                activeFileCount: 3,
+                reviewFileCount: 0,
+                notes: [
+                  "Rechecked with newer SimSuite rules on Mar 10, 2026.",
+                  "Trusted official MCCC files were staged into the Inbox.",
+                  "This batch is now ready for guided special setup.",
+                ],
+                guidedInstallAvailable: true,
+                updatedAt: new Date().toISOString(),
+                sampleFiles: [
+                  "mc_cmd_center.ts4script",
+                  "mc_cmd_center.package",
+                  "mc_woohoo.package",
+                ],
+              }
+            : item,
+        );
+        syncMockDownloadsWatcherStatus();
+        return {
+          actionKind: action.kind,
+          focusItemId: itemId,
+          createdItemId: null,
+          openedUrl: null,
+          snapshotId: null,
+          repairedCount: 0,
+          installedCount: 0,
+          replacedCount: 0,
+          preservedCount: 0,
+          deferredReviewCount: 0,
+          snapshotName: null,
+          message:
+            "Trusted MCCC files were downloaded into the Inbox and the batch is ready for guided setup.",
+        } as T;
+      }
+
+      if (action.kind === "separate_supported_files") {
+        if (!approved) {
+          throw new Error("Split was blocked because approval was not confirmed.");
+        }
+        mockDownloadsItems = mockDownloadsItems.filter((item) => item.id !== 48);
+        mockDownloadsItems = mockDownloadsItems.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                status: "ready",
+                intakeMode: "guided",
+                riskLevel: "medium",
+                detectedFileCount: 3,
+                activeFileCount: 3,
+                reviewFileCount: 0,
+                errorMessage: null,
+                notes: [
+                  "Rechecked with newer SimSuite rules on Mar 10, 2026.",
+                  "Clean MCCC files were split out of the mixed archive.",
+                  "This batch is now ready for guided special setup.",
+                ],
+                guidedInstallAvailable: true,
+                updatedAt: new Date().toISOString(),
+                sampleFiles: [
+                  "mc_cmd_center.ts4script",
+                  "mc_cmd_center.package",
+                  "mc_woohoo.package",
+                ],
+              }
+            : item,
+        );
+        mockDownloadsItems.push({
+          id: 48,
+          displayName: "MCCC_mixed_folder_extras.zip",
+          sourcePath: `${DEFAULT_DOWNLOADS_PATH}\\MCCC_mixed_folder.zip`,
+          sourceKind: "archive",
+          archiveFormat: "zip",
+          status: "needs_review",
+          sourceSize: 608_640,
+          detectedFileCount: 2,
+          activeFileCount: 2,
+          appliedFileCount: 0,
+          reviewFileCount: 2,
+          firstSeenAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          errorMessage: null,
+          notes: ["These are the leftover files from the split MCCC batch."],
+          intakeMode: "standard",
+          riskLevel: "medium",
+          matchedProfileKey: null,
+          matchedProfileName: null,
+          specialFamily: null,
+          assessmentReasons: ["These files were separated from the MCCC set and still need their own check."],
+          dependencySummary: [],
+          missingDependencies: [],
+          inboxDependencies: [],
+          incompatibilityWarnings: [],
+          postInstallNotes: [],
+          evidenceSummary: ["Leftover files were kept separate so the clean MCCC set could continue safely."],
+          catalogSource: null,
+          existingInstallDetected: false,
+          guidedInstallAvailable: false,
+          sampleFiles: ["othermod.ts4script", "notes.package"],
+        });
+        syncMockDownloadsWatcherStatus();
+        return {
+          actionKind: action.kind,
+          focusItemId: itemId,
+          createdItemId: 48,
+          openedUrl: null,
+          snapshotId: null,
+          repairedCount: 0,
+          installedCount: 0,
+          replacedCount: 0,
+          preservedCount: 0,
+          deferredReviewCount: 0,
+          snapshotName: null,
+          message:
+            "The clean MCCC files were split into their own batch and the extras stayed behind for review.",
+        } as T;
+      }
+
+      throw new Error("This mock review action is not implemented yet.");
+    }
     case "ignore_download_item": {
       const itemId = payload?.itemId as number;
       mockDownloadsItems = mockDownloadsItems.map((item) =>
@@ -1653,6 +3580,7 @@ async function mockInvoke<T>(
             }
           : item,
       );
+      syncMockDownloadsWatcherStatus();
       return true as T;
     }
     case "list_library_files": {
@@ -1982,6 +3910,10 @@ export const api = {
     invoke<DownloadsInboxResponse>("get_downloads_inbox", { query }),
   getDownloadItemDetail: (itemId: number) =>
     invoke<DownloadInboxDetail | null>("get_download_item_detail", { itemId }),
+  getDownloadItemGuidedPlan: (itemId: number) =>
+    invoke<GuidedInstallPlan | null>("get_download_item_guided_plan", { itemId }),
+  getDownloadItemReviewPlan: (itemId: number) =>
+    invoke<SpecialReviewPlan | null>("get_download_item_review_plan", { itemId }),
   previewDownloadItem: (itemId: number, presetName?: string) =>
     invoke<OrganizationPreview>("preview_download_item", { itemId, presetName }),
   getLibraryFacets: () => invoke<LibraryFacets>("get_library_facets"),
@@ -2023,6 +3955,30 @@ export const api = {
     invoke<ApplyPreviewResult>("apply_download_item", {
       itemId,
       presetName,
+      approved,
+    }),
+  applyGuidedDownloadItem: (itemId: number, approved = false) =>
+    invoke<ApplyGuidedDownloadResult>("apply_guided_download_item", {
+      itemId,
+      approved,
+    }),
+  applySpecialReviewFix: (itemId: number, approved = false) =>
+    invoke<ApplySpecialReviewFixResult>("apply_special_review_fix", {
+      itemId,
+      approved,
+    }),
+  applyReviewPlanAction: (
+    itemId: number,
+    actionKind: ReviewPlanAction["kind"],
+    relatedItemId?: number | null,
+    url?: string | null,
+    approved = false,
+  ) =>
+    invoke<ApplyReviewPlanActionResult>("apply_review_plan_action", {
+      itemId,
+      actionKind,
+      relatedItemId: relatedItemId ?? null,
+      url: url ?? null,
       approved,
     }),
   ignoreDownloadItem: (itemId: number) =>

@@ -239,12 +239,24 @@ export interface PreviewSuggestion {
   bundleName: string | null;
 }
 
+export interface PreviewIssueSummary {
+  code: string;
+  label: string;
+  count: number;
+  tone: string;
+}
+
 export interface OrganizationPreview {
   presetName: string;
   detectedStructure: string;
   totalConsidered: number;
+  safeCount: number;
+  alignedCount: number;
   correctedCount: number;
   reviewCount: number;
+  recommendedPreset: string;
+  recommendedReason: string;
+  issueSummary: PreviewIssueSummary[];
   suggestions: PreviewSuggestion[];
 }
 
@@ -407,6 +419,21 @@ export interface DownloadsInboxItem {
   errorMessage: string | null;
   sampleFiles: string[];
   notes: string[];
+  intakeMode: DownloadIntakeMode;
+  riskLevel: DownloadRiskLevel;
+  matchedProfileKey: string | null;
+  matchedProfileName: string | null;
+  specialFamily: string | null;
+  assessmentReasons: string[];
+  dependencySummary: string[];
+  missingDependencies: string[];
+  inboxDependencies: string[];
+  incompatibilityWarnings: string[];
+  postInstallNotes: string[];
+  evidenceSummary: string[];
+  catalogSource: CatalogSourceInfo | null;
+  existingInstallDetected: boolean;
+  guidedInstallAvailable: boolean;
 }
 
 export interface DownloadsInboxOverview {
@@ -442,4 +469,143 @@ export interface DownloadInboxFile {
 export interface DownloadInboxDetail {
   item: DownloadsInboxItem;
   files: DownloadInboxFile[];
+}
+
+export type DownloadIntakeMode =
+  | "standard"
+  | "guided"
+  | "needs_review"
+  | "blocked";
+
+export type DownloadRiskLevel = "low" | "medium" | "high";
+
+export interface CatalogSourceInfo {
+  officialSourceUrl: string | null;
+  officialDownloadUrl: string | null;
+  referenceSource: string[];
+  reviewedAt: string | null;
+}
+
+export type ReviewPlanActionKind =
+  | "repair_special"
+  | "install_dependency"
+  | "open_dependency"
+  | "download_missing_files"
+  | "open_official_source"
+  | "separate_supported_files";
+
+export interface ReviewPlanAction {
+  kind: ReviewPlanActionKind;
+  label: string;
+  description: string;
+  priority: number;
+  relatedItemId: number | null;
+  relatedItemName: string | null;
+  url: string | null;
+}
+
+export interface DependencyStatus {
+  key: string;
+  displayName: string;
+  status: string;
+  summary: string;
+  inboxItemId: number | null;
+  inboxItemName: string | null;
+  inboxItemIntakeMode: DownloadIntakeMode | null;
+  inboxItemGuidedInstallAvailable: boolean;
+}
+
+export interface GuidedInstallFileEntry {
+  fileId: number | null;
+  filename: string;
+  currentPath: string;
+  targetPath: string | null;
+  archiveMemberPath: string | null;
+  kind: string;
+  subtype: string | null;
+  creator: string | null;
+  notes: string[];
+}
+
+export interface GuidedInstallPlan {
+  itemId: number;
+  profileKey: string;
+  profileName: string;
+  specialFamily: string | null;
+  installTargetFolder: string;
+  installFiles: GuidedInstallFileEntry[];
+  replaceFiles: GuidedInstallFileEntry[];
+  preserveFiles: GuidedInstallFileEntry[];
+  reviewFiles: GuidedInstallFileEntry[];
+  dependencies: DependencyStatus[];
+  incompatibilityWarnings: string[];
+  postInstallNotes: string[];
+  existingLayoutFindings: string[];
+  warnings: string[];
+  explanation: string;
+  evidence: string[];
+  catalogSource: CatalogSourceInfo | null;
+  existingInstallDetected: boolean;
+  applyReady: boolean;
+}
+
+export interface SpecialReviewPlan {
+  itemId: number;
+  mode: DownloadIntakeMode;
+  profileKey: string | null;
+  profileName: string | null;
+  specialFamily: string | null;
+  explanation: string;
+  recommendedNextStep: string;
+  dependencies: DependencyStatus[];
+  incompatibilityWarnings: string[];
+  reviewFiles: GuidedInstallFileEntry[];
+  evidence: string[];
+  existingLayoutFindings: string[];
+  postInstallNotes: string[];
+  catalogSource: CatalogSourceInfo | null;
+  availableActions: ReviewPlanAction[];
+  repairPlanAvailable: boolean;
+  repairActionLabel: string | null;
+  repairReason: string | null;
+  repairTargetFolder: string | null;
+  repairMoveFiles: GuidedInstallFileEntry[];
+  repairReplaceFiles: GuidedInstallFileEntry[];
+  repairKeepFiles: GuidedInstallFileEntry[];
+  repairWarnings: string[];
+  repairCanContinueInstall: boolean;
+}
+
+export interface ApplyGuidedDownloadResult {
+  snapshotId: number;
+  installedCount: number;
+  replacedCount: number;
+  preservedCount: number;
+  deferredReviewCount: number;
+  snapshotName: string;
+}
+
+export interface ApplySpecialReviewFixResult {
+  snapshotId: number;
+  repairedCount: number;
+  installedCount: number;
+  replacedCount: number;
+  preservedCount: number;
+  deferredReviewCount: number;
+  snapshotName: string;
+}
+
+export interface ApplyReviewPlanActionResult {
+  actionKind: ReviewPlanActionKind;
+  focusItemId: number;
+  createdItemId: number | null;
+  openedUrl: string | null;
+  snapshotId: number | null;
+  repairedCount: number;
+  installedCount: number;
+  replacedCount: number;
+  preservedCount: number;
+  deferredReviewCount: number;
+  snapshotName: string | null;
+  message: string;
 }

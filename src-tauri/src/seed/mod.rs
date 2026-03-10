@@ -10,6 +10,7 @@ const HEURISTICS_JSON: &str = include_str!("../../../seed/heuristics.json");
 const PRESETS_JSON: &str = include_str!("../../../seed/presets.json");
 const TAXONOMY_JSON: &str = include_str!("../../../seed/taxonomy.json");
 const DEFAULTS_JSON: &str = include_str!("../../../seed/defaults.json");
+const INSTALL_PROFILES_JSON: &str = include_str!("../../../seed/install_profiles.json");
 
 #[derive(Debug, Clone)]
 pub struct SeedPack {
@@ -28,6 +29,7 @@ pub struct SeedPack {
     #[allow(dead_code)]
     pub taxonomy: TaxonomySeed,
     pub defaults: DefaultsSeed,
+    pub install_catalog: InstallCatalogSeed,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -120,6 +122,121 @@ pub struct DefaultsSeed {
     pub settings: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstallCatalogSeed {
+    #[allow(dead_code)]
+    pub seed_version: String,
+    #[serde(default)]
+    pub guided_profiles: Vec<GuidedInstallProfileSeed>,
+    #[serde(default)]
+    pub dependency_rules: Vec<DependencyRuleSeed>,
+    #[serde(default)]
+    pub incompatibility_rules: Vec<IncompatibilityRuleSeed>,
+    #[serde(default)]
+    pub review_only_patterns: Vec<ReviewOnlyPatternSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GuidedInstallProfileSeed {
+    pub key: String,
+    pub display_name: String,
+    pub creator: Option<String>,
+    pub family: String,
+    pub official_source_url: String,
+    #[serde(default)]
+    pub official_download_url: Option<String>,
+    #[serde(default)]
+    pub reference_source: Vec<String>,
+    pub reviewed_at: String,
+    #[serde(default)]
+    pub sample_filenames: Vec<String>,
+    pub help_summary: String,
+    #[serde(default)]
+    pub post_install_notes: Vec<String>,
+    pub required_name_clues: Vec<String>,
+    pub script_prefixes: Vec<String>,
+    pub package_prefixes: Vec<String>,
+    pub name_clues: Vec<String>,
+    pub text_clues: Vec<String>,
+    #[serde(default)]
+    pub archive_path_clues: Vec<String>,
+    pub install_folder_name: String,
+    pub preserve_extensions: Vec<String>,
+    pub preserve_prefixes: Vec<String>,
+    #[serde(default)]
+    pub dependency_keys: Vec<String>,
+    #[serde(default)]
+    pub incompatibility_keys: Vec<String>,
+    #[serde(default)]
+    pub review_reasons: Vec<String>,
+    #[serde(default)]
+    pub block_reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DependencyRuleSeed {
+    pub key: String,
+    pub display_name: String,
+    pub creator: Option<String>,
+    pub family: String,
+    pub official_source_url: String,
+    #[serde(default)]
+    pub official_download_url: Option<String>,
+    #[serde(default)]
+    pub reference_source: Vec<String>,
+    pub reviewed_at: String,
+    #[serde(default)]
+    pub sample_filenames: Vec<String>,
+    pub dependency_key: String,
+    pub help_summary: String,
+    #[serde(default)]
+    pub name_clues: Vec<String>,
+    #[serde(default)]
+    pub text_clues: Vec<String>,
+    #[serde(default)]
+    pub archive_path_clues: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IncompatibilityRuleSeed {
+    pub key: String,
+    pub display_name: String,
+    pub official_source_url: String,
+    #[serde(default)]
+    pub reference_source: Vec<String>,
+    pub reviewed_at: String,
+    #[serde(default)]
+    pub sample_filenames: Vec<String>,
+    pub installed_profile_key: String,
+    #[serde(default)]
+    pub name_clues: Vec<String>,
+    #[serde(default)]
+    pub text_clues: Vec<String>,
+    #[serde(default)]
+    pub archive_path_clues: Vec<String>,
+    pub warning_message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewOnlyPatternSeed {
+    pub key: String,
+    pub display_name: String,
+    pub official_source_url: Option<String>,
+    #[serde(default)]
+    pub reference_source: Vec<String>,
+    pub reviewed_at: String,
+    #[serde(default)]
+    pub sample_filenames: Vec<String>,
+    pub help_summary: String,
+    #[serde(default)]
+    pub name_clues: Vec<String>,
+    #[serde(default)]
+    pub text_clues: Vec<String>,
+    #[serde(default)]
+    pub archive_path_clues: Vec<String>,
+    pub review_reason: String,
+}
+
 pub fn load_seed_pack() -> AppResult<SeedPack> {
     let creators_file: Versioned<Vec<SeedCreator>> = serde_json::from_str(CREATORS_JSON)?;
     let keywords_file: Versioned<KeywordSeed> = serde_json::from_str(KEYWORDS_JSON)?;
@@ -127,6 +244,7 @@ pub fn load_seed_pack() -> AppResult<SeedPack> {
     let presets_file: Versioned<Vec<RulePreset>> = serde_json::from_str(PRESETS_JSON)?;
     let taxonomy: TaxonomySeed = serde_json::from_str(TAXONOMY_JSON)?;
     let defaults: DefaultsSeed = serde_json::from_str(DEFAULTS_JSON)?;
+    let install_catalog: InstallCatalogSeed = serde_json::from_str(INSTALL_PROFILES_JSON)?;
 
     validate_creators(&creators_file.items)?;
 
@@ -167,6 +285,7 @@ pub fn load_seed_pack() -> AppResult<SeedPack> {
         presets: presets_file.items,
         taxonomy,
         defaults,
+        install_catalog,
     })
 }
 

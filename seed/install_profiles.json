@@ -1,0 +1,380 @@
+{
+  "seed_version": "2.0.0",
+  "guided_profiles": [
+    {
+      "key": "mccc",
+      "display_name": "MC Command Center",
+      "creator": "Deaderpool",
+      "family": "Gameplay Suites",
+      "official_source_url": "https://deaderpool-mccc.com/installation.html",
+      "official_download_url": "https://drive.google.com/uc?export=download&id=1vK5Xp0Qi72wf0jgrf4HfQiyfM-bEdjQ8",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "mc_cmd_center.ts4script",
+        "mc_cmd_center.package",
+        "mc_woohoo.package"
+      ],
+      "help_summary": "MC Command Center is a script suite. Its script and package files need to stay together in one shallow folder under Mods, and existing .cfg settings files should be kept during updates.",
+      "post_install_notes": [
+        "Keep the main script and module files in the same MCCC folder.",
+        "If you are updating, keep your existing MCCC .cfg settings files."
+      ],
+      "required_name_clues": ["mc_cmd_center", "mccommandcenter"],
+      "script_prefixes": ["mc_", "mccc_"],
+      "package_prefixes": ["mc_"],
+      "name_clues": ["mccc", "mc command center", "deaderpool"],
+      "text_clues": ["mc command center", "deaderpool", "mc_cmd_center", "installation"],
+      "archive_path_clues": ["mccc", "mc command center"],
+      "install_folder_name": "MCCC",
+      "preserve_extensions": [".cfg"],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found MC Command Center clues, but not enough matching files to prove this is a complete safe set.",
+        "This does not look like a full MC Command Center update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required MC Command Center core script file is missing.",
+        "Incoming files do not look like one clean MC Command Center suite.",
+        "Existing MC Command Center files are scattered across an unsafe layout."
+      ]
+    },
+    {
+      "key": "xml_injector",
+      "display_name": "XML Injector",
+      "creator": "Scumbumbo / Triplis",
+      "family": "Support Libraries",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/xml-injector",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "XmlInjector_Script_v4.ts4script",
+        "XmlInjector_Test.ts4script"
+      ],
+      "help_summary": "XML Injector is a support library. Keep one current copy in one shallow folder under Mods so other mods can find it cleanly.",
+      "post_install_notes": [
+        "Keep only one current XML Injector install.",
+        "If another mod says it needs XML Injector, install XML Injector first."
+      ],
+      "required_name_clues": ["xmlinjector"],
+      "script_prefixes": ["xmlinjector", "xml_injector"],
+      "package_prefixes": [],
+      "name_clues": ["xml injector", "xmlinjector", "xml injector script"],
+      "text_clues": ["xml injector", "xmlinjector", "xml injector script"],
+      "archive_path_clues": ["xml injector", "xmlinjector"],
+      "install_folder_name": "XML Injector",
+      "preserve_extensions": [],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found XML Injector clues, but not enough matching files to prove this is a complete safe library set.",
+        "This does not look like a full XML Injector update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required XML Injector script file is missing.",
+        "Incoming files do not look like one clean XML Injector set.",
+        "Existing XML Injector files are scattered across an unsafe layout."
+      ]
+    },
+    {
+      "key": "lot51_core_library",
+      "display_name": "Lot 51 Core Library",
+      "creator": "Lot 51",
+      "family": "Support Libraries",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/core-library",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "Lot51_CoreLibrary.ts4script",
+        "lot51_core_library.package"
+      ],
+      "help_summary": "Lot 51 Core Library is a shared support library. Keep it together in one shallow folder so dependent mods can update cleanly.",
+      "post_install_notes": [
+        "Keep one current Lot 51 Core Library install.",
+        "If another mod says it needs Core Library, update the library first."
+      ],
+      "required_name_clues": ["corelibrary", "lot51corelibrary", "lot51core"],
+      "script_prefixes": ["lot51_core", "lot51core"],
+      "package_prefixes": ["lot51_core", "lot51core"],
+      "name_clues": ["lot 51 core library", "lot51 core library", "lot51 core"],
+      "text_clues": ["lot 51 core library", "lot51 core library", "lot51 core"],
+      "archive_path_clues": ["lot51 core", "lot51_core"],
+      "install_folder_name": "Lot51 Core Library",
+      "preserve_extensions": [],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found Lot 51 Core Library clues, but not enough matching files to prove this is a complete safe library set.",
+        "This does not look like a full Lot 51 Core Library update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required Lot 51 Core Library core file is missing.",
+        "Incoming files do not look like one clean Lot 51 Core Library set.",
+        "Existing Lot 51 Core Library files are scattered across an unsafe layout."
+      ]
+    },
+    {
+      "key": "sims_4_community_library",
+      "display_name": "Sims 4 Community Library",
+      "creator": "ColonolNutty",
+      "family": "Support Libraries",
+      "official_source_url": "https://github.com/ColonolNutty/Sims4CommunityLibrary",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "Sims4CommunityLibrary.ts4script",
+        "S4CL.ts4script"
+      ],
+      "help_summary": "Sims 4 Community Library is a shared support library. Keep it in one shallow folder so it stays easy to update and validate.",
+      "post_install_notes": [
+        "Keep one current Sims 4 Community Library install.",
+        "If another mod depends on S4CL, update this library first."
+      ],
+      "required_name_clues": ["sims4communitylibrary", "s4cl"],
+      "script_prefixes": ["s4cl", "sims4communitylibrary"],
+      "package_prefixes": ["s4cl"],
+      "name_clues": ["sims 4 community library", "s4cl", "sims4communitylibrary"],
+      "text_clues": ["sims 4 community library", "s4cl", "sims4communitylibrary"],
+      "archive_path_clues": ["s4cl", "sims4communitylibrary"],
+      "install_folder_name": "S4CL",
+      "preserve_extensions": [],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found Sims 4 Community Library clues, but not enough matching files to prove this is a complete safe library set.",
+        "This does not look like a full Sims 4 Community Library update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required Sims 4 Community Library core file is missing.",
+        "Incoming files do not look like one clean Sims 4 Community Library set.",
+        "Existing Sims 4 Community Library files are scattered across an unsafe layout."
+      ]
+    },
+    {
+      "key": "lumpinou_toolbox",
+      "display_name": "Lumpinou Toolbox",
+      "creator": "Lumpinou",
+      "family": "Support Libraries",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/toolbox",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "Lumpinou_Toolbox.package",
+        "lumpinou_toolbox.ts4script"
+      ],
+      "help_summary": "Lumpinou Toolbox is a shared support set. Keep it together in one shallow folder so dependent mods stay easy to update and troubleshoot.",
+      "post_install_notes": [
+        "Keep one current Lumpinou Toolbox install.",
+        "If another Lumpinou mod says it needs Toolbox, update Toolbox first."
+      ],
+      "required_name_clues": ["lumpinoutoolbox", "toolbox"],
+      "script_prefixes": ["lumpinou_toolbox", "toolbox_"],
+      "package_prefixes": ["lumpinou_toolbox", "toolbox_"],
+      "name_clues": ["lumpinou toolbox", "lumpinou_toolbox"],
+      "text_clues": ["lumpinou toolbox", "lumpinou_toolbox"],
+      "archive_path_clues": ["lumpinou toolbox", "lumpinou_toolbox"],
+      "install_folder_name": "Lumpinou Toolbox",
+      "preserve_extensions": [],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found Lumpinou Toolbox clues, but not enough matching files to prove this is a complete safe support set.",
+        "This does not look like a full Lumpinou Toolbox update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required Lumpinou Toolbox core file is missing.",
+        "Incoming files do not look like one clean Lumpinou Toolbox set.",
+        "Existing Lumpinou Toolbox files are scattered across an unsafe layout."
+      ]
+    },
+    {
+      "key": "smart_core_script",
+      "display_name": "Smart Core Script",
+      "creator": "Andirz",
+      "family": "Support Libraries",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/smart-core-script",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": [
+        "Andirz_SmartCoreScript_v2.9.0.ts4script",
+        "SmartCoreScript.ts4script"
+      ],
+      "help_summary": "Smart Core Script is a support library. Keep it in one shallow folder so dependent mods can find the current version cleanly.",
+      "post_install_notes": [
+        "Keep one current Smart Core Script install.",
+        "If another mod says it needs Smart Core Script, update the core first."
+      ],
+      "required_name_clues": ["smartcorescript", "smartcorescript", "smartcore"],
+      "script_prefixes": ["smartcorescript", "smart_core_script", "smart_core"],
+      "package_prefixes": ["smartcorescript", "smart_core_script", "smart_core"],
+      "name_clues": ["smart core script", "smartcorescript", "smart core"],
+      "text_clues": ["smart core script", "smartcorescript", "smart core"],
+      "archive_path_clues": ["smart core", "smartcorescript", "smart_core_script"],
+      "install_folder_name": "Smart Core Script",
+      "preserve_extensions": [],
+      "preserve_prefixes": [],
+      "dependency_keys": [],
+      "incompatibility_keys": [],
+      "review_reasons": [
+        "SimSuite found Smart Core Script clues, but not enough matching files to prove this is a complete safe support set.",
+        "This does not look like a full Smart Core Script update, so SimSuite is holding it for review."
+      ],
+      "block_reasons": [
+        "Required Smart Core Script core file is missing.",
+        "Incoming files do not look like one clean Smart Core Script set.",
+        "Existing Smart Core Script files are scattered across an unsafe layout."
+      ]
+    }
+  ],
+  "dependency_rules": [
+    {
+      "key": "requires_xml_injector",
+      "display_name": "Requires XML Injector",
+      "creator": null,
+      "family": "Dependencies",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/xml-injector",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_requires_xml_injector.txt"],
+      "dependency_key": "xml_injector",
+      "help_summary": "This download mentions XML Injector as a required library.",
+      "name_clues": ["requires xml injector", "needs xml injector"],
+      "text_clues": ["requires xml injector", "needs xml injector", "xml injector is required"],
+      "archive_path_clues": []
+    },
+    {
+      "key": "requires_lot51_core_library",
+      "display_name": "Requires Lot 51 Core Library",
+      "creator": null,
+      "family": "Dependencies",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/core-library",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_requires_core_library.txt"],
+      "dependency_key": "lot51_core_library",
+      "help_summary": "This download mentions Lot 51 Core Library as a required library.",
+      "name_clues": ["requires core library", "requires lot 51 core library"],
+      "text_clues": [
+        "requires lot 51 core library",
+        "requires core library",
+        "lot 51 core library is required"
+      ],
+      "archive_path_clues": []
+    },
+    {
+      "key": "requires_s4cl",
+      "display_name": "Requires Sims 4 Community Library",
+      "creator": null,
+      "family": "Dependencies",
+      "official_source_url": "https://github.com/ColonolNutty/Sims4CommunityLibrary",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_requires_s4cl.txt"],
+      "dependency_key": "sims_4_community_library",
+      "help_summary": "This download mentions Sims 4 Community Library as a required library.",
+      "name_clues": ["requires s4cl", "requires sims 4 community library"],
+      "text_clues": [
+        "requires s4cl",
+        "requires sims 4 community library",
+        "s4cl is required"
+      ],
+      "archive_path_clues": []
+    },
+    {
+      "key": "requires_lumpinou_toolbox",
+      "display_name": "Requires Lumpinou Toolbox",
+      "creator": null,
+      "family": "Dependencies",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/toolbox",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_requires_toolbox.txt"],
+      "dependency_key": "lumpinou_toolbox",
+      "help_summary": "This download mentions Lumpinou Toolbox as a required support set.",
+      "name_clues": ["requires toolbox", "requires lumpinou toolbox"],
+      "text_clues": [
+        "requires lumpinou toolbox",
+        "needs lumpinou toolbox",
+        "toolbox is required"
+      ],
+      "archive_path_clues": []
+    },
+    {
+      "key": "requires_smart_core_script",
+      "display_name": "Requires Smart Core Script",
+      "creator": null,
+      "family": "Dependencies",
+      "official_source_url": "https://www.curseforge.com/sims4/mods/smart-core-script",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_requires_smart_core.txt"],
+      "dependency_key": "smart_core_script",
+      "help_summary": "This download mentions Smart Core Script as a required support library.",
+      "name_clues": ["requires smart core script", "requires smartcore"],
+      "text_clues": [
+        "requires smart core script",
+        "smart core script is required",
+        "needs smartcore"
+      ],
+      "archive_path_clues": []
+    }
+  ],
+  "incompatibility_rules": [
+    {
+      "key": "not_compatible_with_mccc",
+      "display_name": "Conflicts with MC Command Center",
+      "official_source_url": "https://deaderpool-mccc.com/installation.html",
+      "reference_source": ["official_docs", "mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_not_compatible_with_mccc.txt"],
+      "installed_profile_key": "mccc",
+      "name_clues": ["not compatible with mccc"],
+      "text_clues": [
+        "not compatible with mccc",
+        "not compatible with mc command center",
+        "incompatible with mc command center"
+      ],
+      "archive_path_clues": [],
+      "warning_message": "This download says it is not compatible with MC Command Center. Review the conflict before installing either mod."
+    }
+  ],
+  "review_only_patterns": [
+    {
+      "key": "choose_one_pack",
+      "display_name": "Choose-one option pack",
+      "official_source_url": null,
+      "reference_source": ["mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["Pick One/Option A.package", "Choose One/Option B.package"],
+      "help_summary": "This archive contains multiple install choices, and SimSuite will not pick one for you.",
+      "name_clues": ["choose one", "pick one", "one of these", "optional files"],
+      "text_clues": ["choose one", "pick one", "install only one", "only use one version"],
+      "archive_path_clues": ["choose one", "pick one", "optional", "alternatives"],
+      "review_reason": "This archive contains multiple install options. SimSuite will keep it in review so you can choose the right variant yourself."
+    },
+    {
+      "key": "manual_steps_required",
+      "display_name": "Manual install steps required",
+      "official_source_url": null,
+      "reference_source": ["mod_hound_reference"],
+      "reviewed_at": "2026-03-09",
+      "sample_filenames": ["README_manual_steps.txt"],
+      "help_summary": "This archive includes manual install instructions that SimSuite cannot safely automate yet.",
+      "name_clues": ["manual install", "manual steps", "do this manually"],
+      "text_clues": [
+        "manual install",
+        "follow the manual steps",
+        "delete the old files yourself",
+        "place this in a custom folder"
+      ],
+      "archive_path_clues": [],
+      "review_reason": "This archive includes manual install steps. SimSuite will not guess at those steps, so it is staying in review."
+    }
+  ]
+}

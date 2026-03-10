@@ -580,16 +580,6 @@ fn normalize_key(value: &str) -> String {
 }
 
 fn ensure_schema(connection: &Connection) -> AppResult<()> {
-    ensure_column(
-        connection,
-        "files",
-        "insights",
-        "TEXT NOT NULL DEFAULT '{}'",
-    )?;
-    ensure_column(connection, "files", "download_item_id", "INTEGER")?;
-    ensure_column(connection, "files", "source_origin_path", "TEXT")?;
-    ensure_column(connection, "files", "archive_member_path", "TEXT")?;
-
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS user_creator_aliases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,6 +609,24 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             source_modified_at TEXT,
             detected_file_count INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'error')),
+            intake_mode TEXT NOT NULL DEFAULT 'standard' CHECK (intake_mode IN ('standard', 'guided', 'needs_review', 'blocked')),
+            risk_level TEXT NOT NULL DEFAULT 'low' CHECK (risk_level IN ('low', 'medium', 'high')),
+            matched_profile_key TEXT,
+            matched_profile_name TEXT,
+            special_family TEXT,
+            assessment_reasons TEXT NOT NULL DEFAULT '[]',
+            dependency_summary TEXT NOT NULL DEFAULT '[]',
+            missing_dependencies TEXT NOT NULL DEFAULT '[]',
+            inbox_dependencies TEXT NOT NULL DEFAULT '[]',
+            incompatibility_warnings TEXT NOT NULL DEFAULT '[]',
+            post_install_notes TEXT NOT NULL DEFAULT '[]',
+            evidence_summary TEXT NOT NULL DEFAULT '[]',
+            catalog_source_url TEXT,
+            catalog_download_url TEXT,
+            catalog_reference_source TEXT NOT NULL DEFAULT '[]',
+            catalog_reviewed_at TEXT,
+            existing_install_detected INTEGER NOT NULL DEFAULT 0 CHECK (existing_install_detected IN (0, 1)),
+            guided_install_available INTEGER NOT NULL DEFAULT 0 CHECK (guided_install_available IN (0, 1)),
             error_message TEXT,
             notes TEXT NOT NULL DEFAULT '[]',
             first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -626,7 +634,113 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_download_items_status ON download_items (status);
-        CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);",
+        CREATE INDEX IF NOT EXISTS idx_download_items_intake_mode ON download_items (intake_mode);
+        CREATE TABLE IF NOT EXISTS snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS snapshot_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_id INTEGER NOT NULL REFERENCES snapshots (id) ON DELETE CASCADE,
+            file_id INTEGER REFERENCES files (id) ON DELETE SET NULL,
+            original_path TEXT NOT NULL,
+            original_hash TEXT,
+            backup_path TEXT
+        );",
+    )?;
+
+    ensure_column(
+        connection,
+        "files",
+        "insights",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(connection, "files", "download_item_id", "INTEGER")?;
+    ensure_column(connection, "files", "source_origin_path", "TEXT")?;
+    ensure_column(connection, "files", "archive_member_path", "TEXT")?;
+    ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
+    ensure_column(
+        connection,
+        "download_items",
+        "intake_mode",
+        "TEXT NOT NULL DEFAULT 'standard'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "risk_level",
+        "TEXT NOT NULL DEFAULT 'low'",
+    )?;
+    ensure_column(connection, "download_items", "matched_profile_key", "TEXT")?;
+    ensure_column(connection, "download_items", "matched_profile_name", "TEXT")?;
+    ensure_column(connection, "download_items", "special_family", "TEXT")?;
+    ensure_column(
+        connection,
+        "download_items",
+        "assessment_reasons",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "dependency_summary",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "missing_dependencies",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "inbox_dependencies",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "incompatibility_warnings",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "post_install_notes",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "evidence_summary",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(connection, "download_items", "catalog_source_url", "TEXT")?;
+    ensure_column(connection, "download_items", "catalog_download_url", "TEXT")?;
+    ensure_column(
+        connection,
+        "download_items",
+        "catalog_reference_source",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(connection, "download_items", "catalog_reviewed_at", "TEXT")?;
+    ensure_column(
+        connection,
+        "download_items",
+        "existing_install_detected",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "guided_install_available",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);",
     )?;
 
     Ok(())

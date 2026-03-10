@@ -324,12 +324,26 @@ pub struct PreviewSuggestion {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PreviewIssueSummary {
+    pub code: String,
+    pub label: String,
+    pub count: i64,
+    pub tone: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrganizationPreview {
     pub preset_name: String,
     pub detected_structure: String,
     pub total_considered: i64,
+    pub safe_count: i64,
+    pub aligned_count: i64,
     pub corrected_count: i64,
     pub review_count: i64,
+    pub recommended_preset: String,
+    pub recommended_reason: String,
+    pub issue_summary: Vec<PreviewIssueSummary>,
     pub suggestions: Vec<PreviewSuggestion>,
 }
 
@@ -504,6 +518,80 @@ pub struct DownloadsInboxQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadIntakeMode {
+    Standard,
+    Guided,
+    NeedsReview,
+    Blocked,
+}
+
+impl Default for DownloadIntakeMode {
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadRiskLevel {
+    Low,
+    Medium,
+    High,
+}
+
+impl Default for DownloadRiskLevel {
+    fn default() -> Self {
+        Self::Low
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogSourceInfo {
+    pub official_source_url: Option<String>,
+    pub official_download_url: Option<String>,
+    pub reference_source: Vec<String>,
+    pub reviewed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewPlanActionKind {
+    RepairSpecial,
+    InstallDependency,
+    OpenDependency,
+    DownloadMissingFiles,
+    OpenOfficialSource,
+    SeparateSupportedFiles,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewPlanAction {
+    pub kind: ReviewPlanActionKind,
+    pub label: String,
+    pub description: String,
+    pub priority: i64,
+    pub related_item_id: Option<i64>,
+    pub related_item_name: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyStatus {
+    pub key: String,
+    pub display_name: String,
+    pub status: String,
+    pub summary: String,
+    pub inbox_item_id: Option<i64>,
+    pub inbox_item_name: Option<String>,
+    pub inbox_item_intake_mode: Option<DownloadIntakeMode>,
+    pub inbox_item_guided_install_available: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadsInboxItem {
@@ -524,6 +612,21 @@ pub struct DownloadsInboxItem {
     pub error_message: Option<String>,
     pub sample_files: Vec<String>,
     pub notes: Vec<String>,
+    pub intake_mode: DownloadIntakeMode,
+    pub risk_level: DownloadRiskLevel,
+    pub matched_profile_key: Option<String>,
+    pub matched_profile_name: Option<String>,
+    pub special_family: Option<String>,
+    pub assessment_reasons: Vec<String>,
+    pub dependency_summary: Vec<String>,
+    pub missing_dependencies: Vec<String>,
+    pub inbox_dependencies: Vec<String>,
+    pub incompatibility_warnings: Vec<String>,
+    pub post_install_notes: Vec<String>,
+    pub evidence_summary: Vec<String>,
+    pub catalog_source: Option<CatalogSourceInfo>,
+    pub existing_install_detected: bool,
+    pub guided_install_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -564,7 +667,114 @@ pub struct DownloadInboxFile {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GuidedInstallFileEntry {
+    pub file_id: Option<i64>,
+    pub filename: String,
+    pub current_path: String,
+    pub target_path: Option<String>,
+    pub archive_member_path: Option<String>,
+    pub kind: String,
+    pub subtype: Option<String>,
+    pub creator: Option<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuidedInstallPlan {
+    pub item_id: i64,
+    pub profile_key: String,
+    pub profile_name: String,
+    pub special_family: Option<String>,
+    pub install_target_folder: String,
+    pub install_files: Vec<GuidedInstallFileEntry>,
+    pub replace_files: Vec<GuidedInstallFileEntry>,
+    pub preserve_files: Vec<GuidedInstallFileEntry>,
+    pub review_files: Vec<GuidedInstallFileEntry>,
+    pub dependencies: Vec<DependencyStatus>,
+    pub incompatibility_warnings: Vec<String>,
+    pub post_install_notes: Vec<String>,
+    pub existing_layout_findings: Vec<String>,
+    pub warnings: Vec<String>,
+    pub explanation: String,
+    pub evidence: Vec<String>,
+    pub catalog_source: Option<CatalogSourceInfo>,
+    pub existing_install_detected: bool,
+    pub apply_ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecialReviewPlan {
+    pub item_id: i64,
+    pub mode: DownloadIntakeMode,
+    pub profile_key: Option<String>,
+    pub profile_name: Option<String>,
+    pub special_family: Option<String>,
+    pub explanation: String,
+    pub recommended_next_step: String,
+    pub dependencies: Vec<DependencyStatus>,
+    pub incompatibility_warnings: Vec<String>,
+    pub review_files: Vec<GuidedInstallFileEntry>,
+    pub evidence: Vec<String>,
+    pub existing_layout_findings: Vec<String>,
+    pub post_install_notes: Vec<String>,
+    pub catalog_source: Option<CatalogSourceInfo>,
+    pub available_actions: Vec<ReviewPlanAction>,
+    pub repair_plan_available: bool,
+    pub repair_action_label: Option<String>,
+    pub repair_reason: Option<String>,
+    pub repair_target_folder: Option<String>,
+    pub repair_move_files: Vec<GuidedInstallFileEntry>,
+    pub repair_replace_files: Vec<GuidedInstallFileEntry>,
+    pub repair_keep_files: Vec<GuidedInstallFileEntry>,
+    pub repair_warnings: Vec<String>,
+    pub repair_can_continue_install: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadInboxDetail {
     pub item: DownloadsInboxItem,
     pub files: Vec<DownloadInboxFile>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyGuidedDownloadResult {
+    pub snapshot_id: i64,
+    pub installed_count: i64,
+    pub replaced_count: i64,
+    pub preserved_count: i64,
+    pub deferred_review_count: i64,
+    pub snapshot_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplySpecialReviewFixResult {
+    pub snapshot_id: i64,
+    pub repaired_count: i64,
+    pub installed_count: i64,
+    pub replaced_count: i64,
+    pub preserved_count: i64,
+    pub deferred_review_count: i64,
+    pub snapshot_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyReviewPlanActionResult {
+    pub action_kind: ReviewPlanActionKind,
+    pub focus_item_id: i64,
+    pub created_item_id: Option<i64>,
+    pub opened_url: Option<String>,
+    pub snapshot_id: Option<i64>,
+    pub repaired_count: i64,
+    pub installed_count: i64,
+    pub replaced_count: i64,
+    pub preserved_count: i64,
+    pub deferred_review_count: i64,
+    pub snapshot_name: Option<String>,
+    pub message: String,
 }

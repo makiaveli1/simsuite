@@ -17,19 +17,22 @@ use crate::{
     app_state::AppState,
     commands::emit_downloads_status,
     core::{
-        bundle_detector, duplicate_detector, rule_engine,
+        bundle_detector, duplicate_detector, install_profile_engine, rule_engine,
         scanner::{self, DiscoveredFile},
     },
     database,
     error::{AppError, AppResult},
     models::{
-        DownloadInboxDetail, DownloadInboxFile, DownloadsInboxItem, DownloadsInboxOverview,
-        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsWatcherState,
-        DownloadsWatcherStatus, LibrarySettings, OrganizationPreview,
+        CatalogSourceInfo, DownloadInboxDetail, DownloadInboxFile, DownloadIntakeMode,
+        DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview, DownloadsInboxQuery,
+        DownloadsInboxResponse, DownloadsWatcherState, DownloadsWatcherStatus,
+        GuidedInstallPlan, LibrarySettings, OrganizationPreview, SpecialReviewPlan,
     },
 };
 
 const WATCHER_DEBOUNCE_MS: u64 = 900;
+const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v1";
+const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
 
 #[derive(Debug, Clone)]
 struct ObservedSource {
@@ -50,6 +53,18 @@ struct ExistingDownloadItem {
     status: String,
     source_kind: String,
     active_file_count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct DownloadItemSourceRecord {
+    pub id: i64,
+    pub display_name: String,
+    pub source_path: String,
+    pub source_kind: String,
+    pub archive_format: Option<String>,
+    pub source_size: i64,
+    pub source_modified_at: Option<String>,
+    pub staging_path: Option<String>,
 }
 
 pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
@@ -101,12 +116,79 @@ pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
 }
 
 pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWatcherStatus> {
-    process_downloads_once(
-        app,
-        state,
-        Some("Manual inbox refresh".to_owned()),
-        true,
-    )
+    let current_status = state
+        .downloads_status()
+        .lock()
+        .map_err(|_| AppError::Message("Downloads status lock poisoned".to_owned()))?
+        .clone();
+
+    if current_status.state == DownloadsWatcherState::Processing {
+        return Ok(current_status);
+    }
+
+    let connection = state.connection()?;
+    let settings = database::get_library_settings(&connection)?;
+    let watched_path = settings
+        .downloads_path
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_owned());
+
+    if watched_path.is_none() {
+        return process_downloads_once(
+            app,
+            state,
+            Some("Manual inbox refresh".to_owned()),
+            true,
+        );
+    }
+
+    let starting_status = DownloadsWatcherStatus {
+        state: DownloadsWatcherState::Processing,
+        watched_path,
+        configured: true,
+        current_item: Some("Manual inbox refresh".to_owned()),
+        last_run_at: current_status.last_run_at.clone(),
+        last_change_at: current_status.last_change_at.clone(),
+        last_error: None,
+        ready_items: current_status.ready_items,
+        needs_review_items: current_status.needs_review_items,
+        active_items: current_status.active_items,
+    };
+
+    store_status(state, app, starting_status.clone())?;
+
+    let thread_app = app.clone();
+    let thread_state = state.clone();
+    std::thread::spawn(move || {
+        if let Err(error) = process_downloads_once(
+            &thread_app,
+            &thread_state,
+            Some("Manual inbox refresh".to_owned()),
+            true,
+        ) {
+            let fallback = thread_state
+                .downloads_status()
+                .lock()
+                .map(|status| DownloadsWatcherStatus {
+                    state: DownloadsWatcherState::Error,
+                    watched_path: status.watched_path.clone(),
+                    configured: status.configured,
+                    current_item: Some("Manual inbox refresh".to_owned()),
+                    last_run_at: status.last_run_at.clone(),
+                    last_change_at: status.last_change_at.clone(),
+                    last_error: Some(error.to_string()),
+                    ready_items: status.ready_items,
+                    needs_review_items: status.needs_review_items,
+                    active_items: status.active_items,
+                })
+                .unwrap_or_default();
+            let _ = store_status(&thread_state, &thread_app, fallback);
+        }
+    });
+
+    Ok(starting_status)
 }
 
 pub fn list_download_items(
@@ -125,6 +207,24 @@ pub fn list_download_items(
             di.status,
             di.source_size,
             di.detected_file_count,
+            di.intake_mode,
+            di.risk_level,
+            di.matched_profile_key,
+            di.matched_profile_name,
+            di.special_family,
+            di.assessment_reasons,
+            di.dependency_summary,
+            di.missing_dependencies,
+            di.inbox_dependencies,
+            di.incompatibility_warnings,
+            di.post_install_notes,
+            di.evidence_summary,
+            di.catalog_source_url,
+            di.catalog_download_url,
+            di.catalog_reference_source,
+            di.catalog_reviewed_at,
+            di.existing_install_detected,
+            di.guided_install_available,
             di.first_seen_at,
             di.last_seen_at,
             di.updated_at,
@@ -198,14 +298,34 @@ pub fn list_download_items(
                 status: row.get(5)?,
                 source_size: row.get(6)?,
                 detected_file_count: row.get(7)?,
-                first_seen_at: row.get(8)?,
-                last_seen_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                error_message: row.get(11)?,
-                notes: parse_string_array(row.get::<_, String>(12)?),
-                active_file_count: row.get(13)?,
-                applied_file_count: row.get(14)?,
-                review_file_count: row.get(15)?,
+                intake_mode: parse_intake_mode(row.get::<_, String>(8)?),
+                risk_level: parse_risk_level(row.get::<_, String>(9)?),
+                matched_profile_key: row.get(10)?,
+                matched_profile_name: row.get(11)?,
+                special_family: row.get(12)?,
+                assessment_reasons: parse_string_array(row.get::<_, String>(13)?),
+                dependency_summary: parse_string_array(row.get::<_, String>(14)?),
+                missing_dependencies: parse_string_array(row.get::<_, String>(15)?),
+                inbox_dependencies: parse_string_array(row.get::<_, String>(16)?),
+                incompatibility_warnings: parse_string_array(row.get::<_, String>(17)?),
+                post_install_notes: parse_string_array(row.get::<_, String>(18)?),
+                evidence_summary: parse_string_array(row.get::<_, String>(19)?),
+                catalog_source: parse_catalog_source(
+                    row.get(20)?,
+                    row.get(21)?,
+                    row.get::<_, String>(22)?,
+                    row.get(23)?,
+                ),
+                existing_install_detected: row.get::<_, i64>(24)? != 0,
+                guided_install_available: row.get::<_, i64>(25)? != 0,
+                first_seen_at: row.get(26)?,
+                last_seen_at: row.get(27)?,
+                updated_at: row.get(28)?,
+                error_message: row.get(29)?,
+                notes: parse_string_array(row.get::<_, String>(30)?),
+                active_file_count: row.get(31)?,
+                applied_file_count: row.get(32)?,
+                review_file_count: row.get(33)?,
                 sample_files: Vec::new(),
             })
         })?
@@ -277,6 +397,16 @@ pub fn preview_download_item(
     item_id: i64,
     preset_name: Option<String>,
 ) -> AppResult<OrganizationPreview> {
+    let Some(item) = load_item_by_id(connection, item_id)? else {
+        return Err(AppError::Message("Inbox item was not found.".to_owned()));
+    };
+    if item.intake_mode != DownloadIntakeMode::Standard {
+        return Err(AppError::Message(
+            "This inbox item needs a guided special setup flow instead of the normal hand-off preview."
+                .to_owned(),
+        ));
+    }
+
     let file_ids = load_active_file_ids(connection, item_id)?;
     if file_ids.is_empty() {
         return Err(AppError::Message(
@@ -285,6 +415,24 @@ pub fn preview_download_item(
     }
 
     rule_engine::build_preview_for_files(connection, settings, preset_name, &file_ids)
+}
+
+pub fn get_download_item_guided_plan(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+) -> AppResult<Option<GuidedInstallPlan>> {
+    install_profile_engine::build_guided_plan(connection, settings, seed_pack, item_id)
+}
+
+pub fn get_download_item_review_plan(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+) -> AppResult<Option<SpecialReviewPlan>> {
+    install_profile_engine::build_review_plan(connection, settings, seed_pack, item_id)
 }
 
 pub fn ignore_download_item(connection: &mut Connection, item_id: i64) -> AppResult<()> {
@@ -332,6 +480,105 @@ pub fn refresh_download_item_status(connection: &Connection, item_id: i64) -> Ap
         params![item_id, status, Utc::now().to_rfc3339()],
     )?;
     Ok(())
+}
+
+pub fn get_download_item_source(
+    connection: &Connection,
+    item_id: i64,
+) -> AppResult<Option<DownloadItemSourceRecord>> {
+    connection
+        .query_row(
+            "SELECT id, display_name, source_path, source_kind, archive_format, source_size, source_modified_at, staging_path
+             FROM download_items
+             WHERE id = ?1",
+            params![item_id],
+            |row| {
+                Ok(DownloadItemSourceRecord {
+                    id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    source_path: row.get(2)?,
+                    source_kind: row.get(3)?,
+                    archive_format: row.get(4)?,
+                    source_size: row.get(5)?,
+                    source_modified_at: row.get(6)?,
+                    staging_path: row.get(7)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+pub fn import_download_source(
+    connection: &mut Connection,
+    state: &AppState,
+    source_path: &Path,
+    display_name: Option<String>,
+    existing_item_id: Option<i64>,
+) -> AppResult<i64> {
+    let category_overrides = database::list_category_overrides(connection)?
+        .into_iter()
+        .map(|item| (normalize_path_key(&item.match_path), item))
+        .collect::<HashMap<_, _>>();
+    let source = build_observed_source_from_path(source_path, display_name)?;
+    let watched_root = source_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let existing_item = match existing_item_id {
+        Some(item_id) => load_existing_download_item(connection, item_id)?,
+        None => None,
+    };
+
+    process_source(
+        connection,
+        state,
+        &watched_root,
+        &state.seed_pack,
+        &category_overrides,
+        &source,
+        existing_item.as_ref(),
+    )
+}
+
+pub fn import_staged_batch(
+    connection: &mut Connection,
+    state: &AppState,
+    source: &DownloadItemSourceRecord,
+    staging_root: &Path,
+    display_name: String,
+    existing_item_id: Option<i64>,
+    notes: Vec<String>,
+) -> AppResult<i64> {
+    let category_overrides = database::list_category_overrides(connection)?
+        .into_iter()
+        .map(|item| (normalize_path_key(&item.match_path), item))
+        .collect::<HashMap<_, _>>();
+    let discovered = WalkDir::new(staging_root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| build_discovered_file(staging_root, entry.path()))
+        .collect::<AppResult<Vec<_>>>()?;
+    let observed = ObservedSource {
+        path: PathBuf::from(&source.source_path),
+        display_name,
+        source_kind: source.source_kind.clone(),
+        archive_format: source.archive_format.clone(),
+        source_size: source.source_size,
+        source_modified_at: source.source_modified_at.clone(),
+    };
+
+    ingest_processed_source(
+        connection,
+        &state.seed_pack,
+        &category_overrides,
+        &observed,
+        existing_item_id,
+        discovered,
+        Some(staging_root),
+        &notes,
+    )
 }
 
 pub fn load_active_file_ids(connection: &Connection, item_id: i64) -> AppResult<Vec<i64>> {
@@ -456,6 +703,11 @@ fn process_downloads_once(
     current_item: Option<String>,
     manual: bool,
 ) -> AppResult<DownloadsWatcherStatus> {
+    let processing_lock = state.downloads_processing_lock();
+    let _processing_guard = processing_lock
+        .lock()
+        .map_err(|_| AppError::Message("Downloads processing lock poisoned".to_owned()))?;
+
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
     let Some(downloads_path) = settings.downloads_path.clone().filter(|value| !value.trim().is_empty()) else {
@@ -500,6 +752,11 @@ fn process_downloads_once(
     )?;
 
     let base_seed = state.seed_pack();
+    let assessment_version = current_downloads_assessment_version(base_seed.as_ref());
+    let assessment_version_changed =
+        database::get_app_setting(&connection, "downloads_assessment_version")?
+            .as_deref()
+            != Some(assessment_version.as_str());
     let runtime_seed_pack = database::load_runtime_seed_pack(&connection, base_seed.as_ref())?;
     let category_overrides = database::list_category_overrides(&connection)?
         .into_iter()
@@ -508,6 +765,8 @@ fn process_downloads_once(
     let observed = collect_observed_sources(&watched_root)?;
     let existing = load_existing_items(&connection)?;
     let mut changed = false;
+    let mut reassessed_existing = false;
+    let should_reassess_unchanged = manual || assessment_version_changed;
 
     for source in &observed {
         let key = normalize_path_key(&source.path.to_string_lossy());
@@ -520,7 +779,20 @@ fn process_downloads_once(
         });
 
         if unchanged {
-            update_last_seen(&connection, existing_item.expect("existing item").id)?;
+            let existing_item = existing_item.expect("existing item");
+            update_last_seen(&connection, existing_item.id)?;
+            if should_reassess_unchanged {
+                reassess_existing_item(
+                    &connection,
+                    &settings,
+                    &runtime_seed_pack,
+                    existing_item.id,
+                )?;
+                if assessment_version_changed {
+                    mark_item_rechecked_with_new_rules(&connection, existing_item.id)?;
+                }
+                reassessed_existing = true;
+            }
             continue;
         }
 
@@ -538,15 +810,30 @@ fn process_downloads_once(
 
     mark_missing_direct_sources(&connection, &existing, &observed)?;
 
-    if changed || manual {
+    if changed {
         bundle_detector::rebuild_bundles(&mut connection)?;
         duplicate_detector::rebuild_duplicates(&mut connection)?;
     }
 
     recompute_item_statuses(&connection)?;
+    if changed || reassessed_existing || assessment_version_changed {
+        database::save_app_setting(
+            &mut connection,
+            "downloads_assessment_version",
+            Some(&assessment_version),
+            "seed",
+        )?;
+    }
     let status = summarize_status(&connection, Some(watched_root.to_string_lossy().to_string()))?;
     store_status(state, app, status.clone())?;
     Ok(status)
+}
+
+fn current_downloads_assessment_version(seed_pack: &crate::seed::SeedPack) -> String {
+    format!(
+        "{DOWNLOADS_ASSESSMENT_VERSION_PREFIX}:{}:{}",
+        seed_pack.seed_version, seed_pack.install_catalog.seed_version
+    )
 }
 
 fn process_source(
@@ -557,8 +844,49 @@ fn process_source(
     category_overrides: &HashMap<String, database::UserCategoryOverride>,
     source: &ObservedSource,
     existing: Option<&ExistingDownloadItem>,
-) -> AppResult<()> {
-    let item_id = upsert_download_item(connection, source, existing.map(|item| item.id))?;
+) -> AppResult<i64> {
+    let mut notes = Vec::new();
+    let mut staged_root = None;
+    let discovered = if source.source_kind == "file" {
+        vec![build_discovered_file(watched_root, &source.path)?]
+    } else {
+        let next_root = state
+            .app_data_dir
+            .join("downloads_inbox")
+            .join(
+                existing
+                    .map(|item| item.id.to_string())
+                    .unwrap_or_else(|| "new".to_owned()),
+            )
+            .join(Utc::now().format("%Y%m%d%H%M%S").to_string());
+        let extracted = extract_archive(source, &next_root, &mut notes)?;
+        staged_root = Some(next_root);
+        extracted
+    };
+
+    ingest_processed_source(
+        connection,
+        seed_pack,
+        category_overrides,
+        source,
+        existing.map(|item| item.id),
+        discovered,
+        staged_root.as_deref(),
+        &notes,
+    )
+}
+
+fn ingest_processed_source(
+    connection: &mut Connection,
+    seed_pack: &crate::seed::SeedPack,
+    category_overrides: &HashMap<String, database::UserCategoryOverride>,
+    source: &ObservedSource,
+    existing_item_id: Option<i64>,
+    discovered: Vec<DiscoveredFile>,
+    staged_root: Option<&Path>,
+    notes: &[String],
+) -> AppResult<i64> {
+    let item_id = upsert_download_item(connection, source, existing_item_id)?;
 
     connection.execute(
         "UPDATE files
@@ -574,21 +902,6 @@ fn process_source(
         params![item_id],
     )?;
 
-    let mut notes = Vec::new();
-    let mut staged_root = None;
-    let discovered = if source.source_kind == "file" {
-        vec![build_discovered_file(watched_root, &source.path)?]
-    } else {
-        let next_root = state
-            .app_data_dir
-            .join("downloads_inbox")
-            .join(item_id.to_string())
-            .join(Utc::now().format("%Y%m%d%H%M%S").to_string());
-        let extracted = extract_archive(source, &next_root, &mut notes)?;
-        staged_root = Some(next_root);
-        extracted
-    };
-
     if discovered.is_empty() {
         connection.execute(
             "UPDATE download_items
@@ -603,12 +916,12 @@ fn process_source(
             params![
                 item_id,
                 "No supported Sims files were found in this download.",
-                serde_json::to_string(&notes)?,
+                serde_json::to_string(notes)?,
                 staged_root.map(|value| value.to_string_lossy().to_string()),
                 Utc::now().to_rfc3339()
             ],
         )?;
-        return Ok(());
+        return Ok(item_id);
     }
 
     let transaction = connection.transaction()?;
@@ -679,9 +992,60 @@ fn process_source(
             item_id,
             staged_root.map(|value| value.to_string_lossy().to_string()),
             discovered.len() as i64,
-            serde_json::to_string(&notes)?,
+            serde_json::to_string(notes)?,
             Utc::now().to_rfc3339()
         ],
+    )?;
+
+    let assessment = install_profile_engine::assess_download_item(
+        connection,
+        &database::get_library_settings(connection)?,
+        seed_pack,
+        item_id,
+    )?;
+    install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
+
+    Ok(item_id)
+}
+
+fn reassess_existing_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+) -> AppResult<()> {
+    let assessment =
+        install_profile_engine::assess_download_item(connection, settings, seed_pack, item_id)?;
+    install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
+    Ok(())
+}
+
+fn mark_item_rechecked_with_new_rules(connection: &Connection, item_id: i64) -> AppResult<()> {
+    let existing_notes = connection
+        .query_row(
+            "SELECT notes FROM download_items WHERE id = ?1",
+            params![item_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+    let Some(existing_notes) = existing_notes else {
+        return Ok(());
+    };
+
+    let mut notes = parse_string_array(existing_notes);
+    notes.retain(|note| !note.starts_with(AUTO_RECHECK_NOTE_PREFIX));
+    notes.push(format!(
+        "{AUTO_RECHECK_NOTE_PREFIX} on {}.",
+        Utc::now().format("%b %-d, %Y")
+    ));
+
+    connection.execute(
+        "UPDATE download_items
+         SET notes = ?2,
+             updated_at = ?3
+         WHERE id = ?1",
+        params![item_id, serde_json::to_string(&notes)?, Utc::now().to_rfc3339()],
     )?;
 
     Ok(())
@@ -790,6 +1154,31 @@ fn collect_observed_sources(root: &Path) -> AppResult<Vec<ObservedSource>> {
     Ok(observed)
 }
 
+fn build_observed_source_from_path(
+    source_path: &Path,
+    display_name: Option<String>,
+) -> AppResult<ObservedSource> {
+    let metadata = source_path.metadata()?;
+    let extension = normalize_extension(source_path);
+    Ok(ObservedSource {
+        path: source_path.to_path_buf(),
+        display_name: display_name.unwrap_or_else(|| {
+            source_path
+                .file_name()
+                .map(|value| value.to_string_lossy().to_string())
+                .unwrap_or_else(|| source_path.to_string_lossy().to_string())
+        }),
+        source_kind: if is_archive_extension(&extension) {
+            "archive".to_owned()
+        } else {
+            "file".to_owned()
+        },
+        archive_format: archive_format_for_extension(&extension),
+        source_size: metadata.len() as i64,
+        source_modified_at: metadata.modified().ok().map(system_time_to_rfc3339),
+    })
+}
+
 fn load_existing_items(connection: &Connection) -> AppResult<HashMap<String, ExistingDownloadItem>> {
     let mut statement = connection.prepare(
         "SELECT
@@ -825,6 +1214,44 @@ fn load_existing_items(connection: &Connection) -> AppResult<HashMap<String, Exi
         .into_iter()
         .map(|item| (normalize_path_key(&item.source_path), item))
         .collect())
+}
+
+fn load_existing_download_item(
+    connection: &Connection,
+    item_id: i64,
+) -> AppResult<Option<ExistingDownloadItem>> {
+    connection
+        .query_row(
+            "SELECT
+                di.id,
+                di.source_path,
+                di.source_size,
+                di.source_modified_at,
+                di.status,
+                di.source_kind,
+                (
+                    SELECT COUNT(*)
+                    FROM files f
+                    WHERE f.download_item_id = di.id
+                      AND f.source_location = 'downloads'
+                ) AS active_file_count
+             FROM download_items di
+             WHERE di.id = ?1",
+            params![item_id],
+            |row| {
+                Ok(ExistingDownloadItem {
+                    id: row.get(0)?,
+                    source_path: row.get(1)?,
+                    source_size: row.get(2)?,
+                    source_modified_at: row.get(3)?,
+                    status: row.get(4)?,
+                    source_kind: row.get(5)?,
+                    active_file_count: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
 }
 
 fn build_discovered_file(root_path: &Path, path: &Path) -> AppResult<DiscoveredFile> {
@@ -932,7 +1359,7 @@ fn extract_zip_archive(
         }
 
         let extension = normalize_extension(&enclosed);
-        if !is_supported_content_extension(&extension) {
+        if !should_extract_archive_entry(&extension) {
             ignored_entries += 1;
             continue;
         }
@@ -1008,7 +1435,13 @@ fn recompute_item_statuses(connection: &Connection) -> AppResult<()> {
 }
 
 fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String> {
-    let (active_file_count, applied_file_count, review_file_count): (i64, i64, i64) =
+    let (
+        active_file_count,
+        applied_file_count,
+        review_file_count,
+        intake_mode,
+        guided_install_available,
+    ): (i64, i64, i64, String, i64) =
         connection.query_row(
             "SELECT
                 (
@@ -1029,13 +1462,25 @@ fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String
                     JOIN files f ON f.id = rq.file_id
                     WHERE f.download_item_id = ?1
                       AND f.source_location = 'downloads'
-                )",
+                ),
+                COALESCE(di.intake_mode, 'standard'),
+                COALESCE(di.guided_install_available, 0)
+             FROM download_items di
+             WHERE di.id = ?1",
             params![item_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )?;
 
     if active_file_count == 0 && applied_file_count > 0 {
         return Ok("applied".to_owned());
+    }
+
+    if intake_mode == "blocked" {
+        return Ok("needs_review".to_owned());
+    }
+
+    if intake_mode == "needs_review" && active_file_count > 0 {
+        return Ok("needs_review".to_owned());
     }
 
     if review_file_count > 0 && review_file_count < active_file_count {
@@ -1044,6 +1489,10 @@ fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String
 
     if review_file_count > 0 {
         return Ok("needs_review".to_owned());
+    }
+
+    if intake_mode == "guided" && guided_install_available != 0 && active_file_count > 0 {
+        return Ok("ready".to_owned());
     }
 
     if active_file_count > 0 {
@@ -1185,6 +1634,24 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
                 di.status,
                 di.source_size,
                 di.detected_file_count,
+                di.intake_mode,
+                di.risk_level,
+                di.matched_profile_key,
+                di.matched_profile_name,
+                di.special_family,
+                di.assessment_reasons,
+                di.dependency_summary,
+                di.missing_dependencies,
+                di.inbox_dependencies,
+                di.incompatibility_warnings,
+                di.post_install_notes,
+                di.evidence_summary,
+                di.catalog_source_url,
+                di.catalog_download_url,
+                di.catalog_reference_source,
+                di.catalog_reviewed_at,
+                di.existing_install_detected,
+                di.guided_install_available,
                 di.first_seen_at,
                 di.last_seen_at,
                 di.updated_at,
@@ -1222,14 +1689,34 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
                     status: row.get(5)?,
                     source_size: row.get(6)?,
                     detected_file_count: row.get(7)?,
-                    first_seen_at: row.get(8)?,
-                    last_seen_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                    error_message: row.get(11)?,
-                    notes: parse_string_array(row.get::<_, String>(12)?),
-                    active_file_count: row.get(13)?,
-                    applied_file_count: row.get(14)?,
-                    review_file_count: row.get(15)?,
+                    intake_mode: parse_intake_mode(row.get::<_, String>(8)?),
+                    risk_level: parse_risk_level(row.get::<_, String>(9)?),
+                    matched_profile_key: row.get(10)?,
+                    matched_profile_name: row.get(11)?,
+                    special_family: row.get(12)?,
+                    assessment_reasons: parse_string_array(row.get::<_, String>(13)?),
+                    dependency_summary: parse_string_array(row.get::<_, String>(14)?),
+                    missing_dependencies: parse_string_array(row.get::<_, String>(15)?),
+                    inbox_dependencies: parse_string_array(row.get::<_, String>(16)?),
+                    incompatibility_warnings: parse_string_array(row.get::<_, String>(17)?),
+                    post_install_notes: parse_string_array(row.get::<_, String>(18)?),
+                    evidence_summary: parse_string_array(row.get::<_, String>(19)?),
+                    catalog_source: parse_catalog_source(
+                        row.get(20)?,
+                        row.get(21)?,
+                        row.get::<_, String>(22)?,
+                        row.get(23)?,
+                    ),
+                    existing_install_detected: row.get::<_, i64>(24)? != 0,
+                    guided_install_available: row.get::<_, i64>(25)? != 0,
+                    first_seen_at: row.get(26)?,
+                    last_seen_at: row.get(27)?,
+                    updated_at: row.get(28)?,
+                    error_message: row.get(29)?,
+                    notes: parse_string_array(row.get::<_, String>(30)?),
+                    active_file_count: row.get(31)?,
+                    applied_file_count: row.get(32)?,
+                    review_file_count: row.get(33)?,
                     sample_files: Vec::new(),
                 })
             },
@@ -1300,8 +1787,59 @@ fn is_observable_download_extension(extension: &str) -> bool {
     is_supported_content_extension(extension) || is_archive_extension(extension)
 }
 
+fn should_extract_archive_entry(extension: &str) -> bool {
+    is_supported_content_extension(extension)
+        || matches!(extension, ".txt" | ".md" | ".rtf")
+}
+
 fn parse_string_array(value: String) -> Vec<String> {
     serde_json::from_str(&value).unwrap_or_default()
+}
+
+fn parse_catalog_source(
+    official_source_url: Option<String>,
+    official_download_url: Option<String>,
+    reference_source: String,
+    reviewed_at: Option<String>,
+) -> Option<CatalogSourceInfo> {
+    let reference_source = parse_string_array(reference_source);
+    if official_source_url.is_none()
+        && official_download_url.is_none()
+        && reference_source.is_empty()
+        && reviewed_at.is_none()
+    {
+        None
+    } else {
+        Some(CatalogSourceInfo {
+            official_source_url,
+            official_download_url,
+            reference_source,
+            reviewed_at,
+        })
+    }
+}
+
+fn parse_intake_mode(value: String) -> DownloadIntakeMode {
+    match value.as_str() {
+        "guided" => DownloadIntakeMode::Guided,
+        "needs_review" => DownloadIntakeMode::NeedsReview,
+        "blocked" => DownloadIntakeMode::Blocked,
+        _ => DownloadIntakeMode::Standard,
+    }
+}
+
+fn parse_risk_level(value: String) -> DownloadRiskLevel {
+    match value.as_str() {
+        "medium" => DownloadRiskLevel::Medium,
+        "high" => DownloadRiskLevel::High,
+        _ => DownloadRiskLevel::Low,
+    }
+}
+
+#[cfg(test)]
+fn has_auto_recheck_note(notes: &[String]) -> bool {
+    notes.iter()
+        .any(|note| note.starts_with(AUTO_RECHECK_NOTE_PREFIX))
 }
 
 fn normalize_path_key(value: &str) -> String {
@@ -1315,8 +1853,14 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_item_status, summarize_status};
+    use super::{
+        derive_item_status, get_download_item_guided_plan, has_auto_recheck_note,
+        mark_item_rechecked_with_new_rules, parse_string_array, preview_download_item,
+        reassess_existing_item, summarize_status,
+    };
     use crate::database::initialize;
+    use crate::models::LibrarySettings;
+    use crate::seed;
     use rusqlite::{params, Connection};
 
     fn setup_connection() -> Connection {
@@ -1339,6 +1883,30 @@ mod tests {
                 ],
             )
             .expect("insert download item");
+    }
+
+    fn insert_download_item_with_mode(
+        connection: &Connection,
+        item_id: i64,
+        status: &str,
+        intake_mode: &str,
+        guided_install_available: i64,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id, source_path, display_name, source_kind, status, intake_mode, guided_install_available
+                 ) VALUES (?1, ?2, ?3, 'file', ?4, ?5, ?6)",
+                params![
+                    item_id,
+                    format!("C:/Downloads/item-{item_id}.package"),
+                    format!("item-{item_id}.package"),
+                    status,
+                    intake_mode,
+                    guided_install_available
+                ],
+            )
+            .expect("insert download item with mode");
     }
 
     fn insert_file(
@@ -1367,6 +1935,39 @@ mod tests {
                 ],
             )
             .expect("insert file");
+        connection.last_insert_rowid()
+    }
+
+    fn insert_file_with_shape(
+        connection: &Connection,
+        item_id: i64,
+        source_location: &str,
+        filename: &str,
+        extension: &str,
+        kind: &str,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    download_item_id,
+                    parser_warnings
+                 ) VALUES (?1, ?2, ?3, ?4, 0.92, ?5, ?6, '[]')",
+                params![
+                    format!("C:/Library/{source_location}/{item_id}-{filename}"),
+                    filename,
+                    extension,
+                    kind,
+                    source_location,
+                    item_id
+                ],
+            )
+            .expect("insert shaped file");
         connection.last_insert_rowid()
     }
 
@@ -1455,5 +2056,128 @@ mod tests {
             summary.watched_path.as_deref(),
             Some("C:/Users/Test/Downloads")
         );
+    }
+
+    #[test]
+    fn preview_download_item_rejects_guided_inbox_items() {
+        let connection = setup_connection();
+        insert_download_item_with_mode(&connection, 20, "ready", "guided", 1);
+        insert_file(&connection, 20, "downloads", "mc_cmd_center.ts4script");
+
+        let error = preview_download_item(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:/Mods".to_owned()),
+                tray_path: None,
+                downloads_path: Some("C:/Downloads".to_owned()),
+            },
+            20,
+            Some("Category First".to_owned()),
+        )
+        .expect_err("guided items should not use normal preview");
+
+        assert!(error
+            .to_string()
+            .contains("guided special setup flow"));
+    }
+
+    #[test]
+    fn blocked_items_do_not_return_guided_plans() {
+        let connection = setup_connection();
+        insert_download_item_with_mode(&connection, 21, "needs_review", "blocked", 0);
+        let seed_pack = seed::load_seed_pack().expect("seed");
+
+        let plan = get_download_item_guided_plan(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:/Mods".to_owned()),
+                tray_path: None,
+                downloads_path: Some("C:/Downloads".to_owned()),
+            },
+            &seed_pack,
+            21,
+        )
+        .expect("guided plan query");
+
+        assert!(plan.is_none());
+    }
+
+    #[test]
+    fn manual_reassessment_updates_unchanged_special_items() {
+        let connection = setup_connection();
+        insert_download_item_with_mode(&connection, 22, "partial", "standard", 0);
+        insert_file_with_shape(
+            &connection,
+            22,
+            "downloads",
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+            "ScriptMods",
+        );
+        insert_file_with_shape(
+            &connection,
+            22,
+            "downloads",
+            "mc_cmd_center.package",
+            ".package",
+            "Unknown",
+        );
+        insert_file_with_shape(
+            &connection,
+            22,
+            "downloads",
+            "mc_woohoo.ts4script",
+            ".ts4script",
+            "ScriptMods",
+        );
+
+        let seed_pack = seed::load_seed_pack().expect("seed");
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Downloads".to_owned()),
+        };
+
+        reassess_existing_item(&connection, &settings, &seed_pack, 22)
+            .expect("reassess special item");
+
+        let (intake_mode, matched_profile_name, guided_install_available): (
+            String,
+            Option<String>,
+            i64,
+        ) = connection
+            .query_row(
+                "SELECT intake_mode, matched_profile_name, guided_install_available
+                 FROM download_items
+                 WHERE id = ?1",
+                params![22],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("load refreshed item");
+
+        assert_eq!(intake_mode, "guided");
+        assert_eq!(matched_profile_name.as_deref(), Some("MC Command Center"));
+        assert_eq!(guided_install_available, 1);
+    }
+
+    #[test]
+    fn auto_recheck_note_is_deduplicated_and_visible() {
+        let connection = setup_connection();
+        insert_download_item(&connection, 23, "ready");
+
+        mark_item_rechecked_with_new_rules(&connection, 23).expect("first note");
+        mark_item_rechecked_with_new_rules(&connection, 23).expect("replace note");
+
+        let notes_json: String = connection
+            .query_row(
+                "SELECT notes FROM download_items WHERE id = ?1",
+                params![23],
+                |row| row.get(0),
+            )
+            .expect("load notes");
+        let notes = parse_string_array(notes_json);
+
+        assert_eq!(notes.len(), 1);
+        assert!(has_auto_recheck_note(&notes));
     }
 }
