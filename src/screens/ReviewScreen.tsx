@@ -17,6 +17,12 @@ import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import {
+  friendlyTypeLabel,
+  reviewLabel,
+  screenHelperLine,
+  unknownCreatorLabel,
+} from "../lib/uiLanguage";
 import type {
   ReviewLayoutPreset,
   ReviewQueueItem,
@@ -98,11 +104,11 @@ export function ReviewScreen({
     ? [
         {
           id: "summary",
-          label: userView === "beginner" ? "Why this file stopped" : "Review summary",
+          label: userView === "beginner" ? "Why this file stopped" : "Summary",
           hint:
             userView === "beginner"
-              ? "Why SimSuite paused this file and how sure it is."
-              : "Reason, classification, and confidence details.",
+              ? "Why SimSuite sent this file to review and how sure it is."
+              : "Reason, type, and confidence.",
           children: (
             <div className="detail-list">
               <DetailRow
@@ -110,15 +116,15 @@ export function ReviewScreen({
                 value={humanize(selected.reason)}
               />
               <DetailRow
-                label={userView === "beginner" ? "Type" : "Kind"}
-                value={selected.kind}
+                label="Type"
+                value={friendlyTypeLabel(selected.kind)}
               />
               {userView !== "beginner" ? (
                 <DetailRow label="Subtype" value={selected.subtype ?? "Unspecified"} />
               ) : null}
               <DetailRow
-                label={userView === "beginner" ? "Maker" : "Creator"}
-                value={selected.creator ?? "Not known yet"}
+                label="Creator"
+                value={selected.creator ?? unknownCreatorLabel(userView)}
               />
               {userView === "power" ? (
                 <DetailRow label="Root" value={selected.sourceLocation} />
@@ -128,7 +134,7 @@ export function ReviewScreen({
         },
         {
           id: "paths",
-          label: userView === "beginner" ? "Where it is and where it should go" : "Path check",
+          label: userView === "beginner" ? "Where it is and where it should go" : "Path",
           hint:
             userView === "beginner"
               ? "Compares the current location with the safer suggestion."
@@ -157,7 +163,7 @@ export function ReviewScreen({
           ? [
               {
                 id: "notes",
-                label: "Safety notes",
+                label: "Notes",
                 hint: "Validator and placement notes for this review item.",
                 defaultCollapsed: false,
                 badge: selected.safetyNotes.length
@@ -187,8 +193,9 @@ export function ReviewScreen({
           <p className="eyebrow">{userView === "beginner" ? "Check these" : "Queue"}</p>
           <div className="screen-title-row">
             <ShieldAlert size={18} strokeWidth={2} />
-            <h1>{userView === "beginner" ? "Needs Attention" : "Review"}</h1>
+            <h1>{reviewLabel(userView)}</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("review", userView)}</p>
         </div>
         <div className="header-actions">
           <button
@@ -206,7 +213,7 @@ export function ReviewScreen({
             onClick={() => onNavigate("creatorAudit")}
           >
             <Fingerprint size={14} strokeWidth={2} />
-            {userView === "beginner" ? "Creator names" : "Creators"}
+            Creators
           </button>
           <button
             type="button"
@@ -214,7 +221,7 @@ export function ReviewScreen({
             onClick={() => onNavigate("categoryAudit")}
           >
             <Shapes size={14} strokeWidth={2} />
-            {userView === "beginner" ? "Mod types" : "Categories"}
+            Types
           </button>
           <button
             type="button"
@@ -228,13 +235,15 @@ export function ReviewScreen({
       </div>
 
       <LayoutPresetBar
-        title={userView === "beginner" ? "Workspace" : "Review layout"}
+        title={userView === "beginner" ? "Quick view" : "Review layout"}
         summary={
           userView === "beginner"
-            ? "Choose whether you want more room for the queue or the selected file details."
-            : "Saved queue/detail presets for triage and deeper file review."
+            ? "Keep the queue and the selected file easy to read while you work through the hold list."
+            : userView === "power"
+              ? "Saved queue and inspector presets for denser review passes."
+              : "Saved queue and detail presets for triage and deeper file review."
         }
-        presets={REVIEW_LAYOUT_PRESETS}
+        presets={userView === "beginner" ? [] : REVIEW_LAYOUT_PRESETS}
         activePreset={reviewLayoutPreset}
         onApplyPreset={(preset) =>
           applyReviewLayoutPreset(preset as ReviewLayoutPreset)
@@ -268,9 +277,9 @@ export function ReviewScreen({
                     {...stagedListItem(index)}
                   >
                     <div className="queue-main">
-                      <strong>{item.filename}</strong>
-                      <span>
-                        {item.creator ?? "Not known yet"} · {item.kind}
+                        <strong>{item.filename}</strong>
+                        <span>
+                        {item.creator ?? unknownCreatorLabel(userView)} · {friendlyTypeLabel(item.kind)}
                         {userView === "power" && item.subtype
                           ? ` · ${item.subtype}`
                           : ""}
@@ -327,11 +336,7 @@ export function ReviewScreen({
                 <DockSectionStack
                   layoutId="reviewInspector"
                   sections={reviewInspectorSections}
-                  intro={
-                    userView === "beginner"
-                      ? "Keep the parts you need open and move the panels into the order you like."
-                      : "Reorder or collapse review sections to match your triage workflow."
-                  }
+                  intro="Reset this side panel"
                 />
               </>
             ) : (
@@ -340,18 +345,18 @@ export function ReviewScreen({
                 title="Select an item"
                 body={
                   userView === "beginner"
-                    ? "Pick one file from the queue to see why SimSuite paused it and what safer place it expects."
+                    ? "Pick one file from the queue to see why SimSuite sent it to review and what safer place it expects."
                     : "Choose a queued file to inspect the stop reason, confidence, and suggested validated path."
                 }
                 icon={SearchX}
-                meta={["Nothing moves from Review", "Use Creator Names or Mod Types for batch fixes"]}
+                meta={["Nothing moves from Review", "Use Creators or Types for batch fixes"]}
               />
             )}
           </ResizableDetailPanel>
         </div>
       ) : (
         <StatePanel
-          eyebrow={userView === "beginner" ? "Needs Attention" : "Review"}
+          eyebrow={reviewLabel(userView)}
           title={
             userView === "beginner"
               ? "Nothing needs your help right now"

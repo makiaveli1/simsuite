@@ -19,6 +19,8 @@ interface DockSectionStackProps<T extends string = string> {
   intro?: string;
   resetLabel?: string;
   className?: string;
+  showHints?: boolean;
+  showIntroCopy?: boolean;
 }
 
 export function DockSectionStack<T extends string = string>({
@@ -27,6 +29,8 @@ export function DockSectionStack<T extends string = string>({
   intro,
   resetLabel = "Reset panel order",
   className,
+  showHints = false,
+  showIntroCopy = false,
 }: DockSectionStackProps<T>) {
   const {
     getDockSectionLayout,
@@ -59,8 +63,10 @@ export function DockSectionStack<T extends string = string>({
   return (
     <div className={`dock-stack${className ? ` ${className}` : ""}`}>
       {intro ? (
-        <div className="dock-stack-toolbar">
-          <p className="dock-stack-copy">{intro}</p>
+        <div
+          className={`dock-stack-toolbar${showIntroCopy ? "" : " is-compact"}`}
+        >
+          {showIntroCopy ? <p className="dock-stack-copy">{intro}</p> : null}
           <m.button
             type="button"
             className="dock-stack-reset"
@@ -104,7 +110,7 @@ export function DockSectionStack<T extends string = string>({
                 />
                 <span className="dock-section-copy">
                   <strong>{section.label}</strong>
-                  {section.hint ? <span>{section.hint}</span> : null}
+                  {showHints && section.hint ? <span>{section.hint}</span> : null}
                 </span>
               </m.button>
 

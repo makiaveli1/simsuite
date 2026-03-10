@@ -26,7 +26,7 @@ const EXPERIENCE_CARDS: Record<
 > = {
   casual: {
     headline: "Simple, steady, and easy to follow",
-    hint: "Keeps the app calmer, pushes the safest next move up front, and tucks heavier tools into a Tools shelf.",
+    hint: "Keeps the app calmer, pushes the safest next move up front, and tucks heavier tools behind one More button.",
     traits: [
       "Home, Inbox, and Tidy Up stay front and center",
       "The app keeps the chatter lighter",

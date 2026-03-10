@@ -1182,6 +1182,29 @@ h2,
   gap: 0.35rem;
 }
 
+.sidebar-tools-compact {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.sidebar-tools-drawer {
+  display: grid;
+  gap: 0.35rem;
+  overflow: hidden;
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.rail-nav-tools-toggle {
+  min-height: 52px;
+  gap: 0.18rem;
+}
+
+.rail-nav-tools-chevron {
+  color: var(--text-dim);
+}
+
 .sidebar-group-label {
   padding-inline: 0.18rem;
   color: var(--text-dim);
@@ -2049,15 +2072,23 @@ h2,
   align-items: center;
   justify-content: space-between;
   gap: 0.55rem;
-  padding: 0.48rem 0.56rem;
+  padding: 0.38rem 0.5rem;
   border: 1px solid var(--line);
   background: var(--surface-4);
 }
 
+.dock-stack-toolbar.is-compact {
+  justify-content: flex-end;
+  padding: 0 0 0.12rem;
+  border: 0;
+  background: none;
+}
+
 .dock-stack-copy {
   margin: 0;
-  color: var(--text-soft);
-  font-size: 0.74rem;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .dock-stack-reset,
@@ -2077,7 +2108,8 @@ h2,
   transition:
     background 180ms var(--ease-swift),
     border-color 180ms var(--ease-swift),
-    color 180ms var(--ease-swift);
+    color 180ms var(--ease-swift),
+    opacity 180ms var(--ease-swift);
 }
 
 .dock-stack-reset:hover,
@@ -2089,11 +2121,17 @@ h2,
 .dock-tool-button {
   width: 28px;
   padding: 0;
+  opacity: 0.42;
 }
 
 .dock-tool-button:disabled {
   opacity: 0.38;
   cursor: default;
+}
+
+.dock-section:hover .dock-tool-button:not(:disabled),
+.dock-section:focus-within .dock-tool-button:not(:disabled) {
+  opacity: 1;
 }
 
 .dock-section {
@@ -2108,7 +2146,7 @@ h2,
 .dock-section-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 0.45rem;
   min-width: 0;
 }
@@ -2138,22 +2176,28 @@ h2,
 
 .dock-section-copy {
   display: grid;
-  gap: 0.08rem;
+  gap: 0.04rem;
   min-width: 0;
 }
 
 .dock-section-copy strong {
-  font-size: 0.79rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
 }
 
 .dock-section-copy span {
-  color: var(--text-soft);
-  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .dock-section-tools {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.28rem;
   padding-right: 0.56rem;
 }
@@ -2986,7 +3030,7 @@ h2,
   display: grid;
   grid-template-columns:
     minmax(0, 1fr)
-    minmax(320px, min(var(--downloads-detail-width), 29vw));
+    minmax(360px, min(var(--downloads-detail-width), 32vw));
   gap: var(--panel-gap);
   align-items: stretch;
   min-width: 0;
@@ -3035,6 +3079,12 @@ h2,
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.downloads-stage-split {
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+  grid-template-rows: minmax(560px, calc(100vh - 260px));
+  height: clamp(560px, calc(100vh - 260px), 920px);
 }
 
 .downloads-stage > * {
@@ -3163,6 +3213,60 @@ h2,
   justify-content: flex-end;
 }
 
+.downloads-signal-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.downloads-signal-card {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.54rem 0.58rem;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.downloads-signal-card strong {
+  font-size: 0.8rem;
+}
+
+.downloads-signal-card span {
+  color: var(--text-soft);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.downloads-signal-card-guided {
+  border-color: var(--mint-line);
+  background:
+    linear-gradient(140deg, var(--mint-soft), transparent 72%),
+    var(--surface-4);
+}
+
+.downloads-signal-card-review {
+  border-color: var(--amber-line);
+  background:
+    linear-gradient(140deg, var(--amber-soft), transparent 72%),
+    var(--surface-4);
+}
+
+.downloads-signal-card-refresh {
+  border-color: var(--accent-line);
+  background:
+    linear-gradient(140deg, var(--accent-soft), transparent 72%),
+    var(--surface-4);
+}
+
+.downloads-signal-label {
+  color: var(--text-dim);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .downloads-lane-group {
   display: grid;
   gap: 0.4rem;
@@ -3262,19 +3366,29 @@ h2,
 
 .downloads-next-step-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.7rem;
-  align-items: center;
+  gap: 0.52rem;
   margin-bottom: 0.55rem;
-  padding: 0.58rem 0.62rem;
+  padding: 0.66rem;
   border: 1px solid var(--line);
   background: var(--surface-4);
 }
 
 .downloads-next-step-copy {
   display: grid;
-  gap: 0.16rem;
+  gap: 0.2rem;
   min-width: 0;
+}
+
+.downloads-next-step-title {
+  font-size: 0.98rem;
+  line-height: 1.15;
+}
+
+.downloads-next-step-description {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.79rem;
+  line-height: 1.45;
 }
 
 :root[data-user-view="casual"] .downloads-next-step-card {
@@ -3294,20 +3408,27 @@ h2,
 }
 
 .downloads-inspector-actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.downloads-next-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
 }
 
 .downloads-inspector-note {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 0.6rem;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.5rem 0.6rem;
   border: 1px solid var(--danger-line);
   background:
     linear-gradient(120deg, var(--danger-soft), transparent 78%),
     var(--surface-4);
   color: var(--text-soft);
   font-size: 0.76rem;
+  line-height: 1.4;
 }
 
 .downloads-detail-badges .ghost-chip {
@@ -3861,6 +3982,22 @@ h2,
   }
 
   .settings-view-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1440px) {
+  .downloads-stage-split {
+    grid-template-columns: 1fr;
+    grid-template-rows:
+      minmax(220px, var(--downloads-queue-height))
+      minmax(220px, 1fr);
+    height: clamp(560px, calc(100vh - 260px), 920px);
+  }
+}
+
+@media (max-width: 1280px) {
+  .downloads-layout {
     grid-template-columns: 1fr;
   }
 }

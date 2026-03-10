@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
 import {
   BookOpen,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Fingerprint,
   FolderTree,
@@ -68,6 +71,19 @@ export function Sidebar({
   const toolItems = modeProfile.toolScreens
     .map((id) => navById.get(id))
     .filter((item): item is (typeof NAV_ITEMS)[number] => Boolean(item));
+  const isToolScreenActive = toolItems.some((item) => item.id === currentScreen);
+  const [showToolsDrawer, setShowToolsDrawer] = useState(isToolScreenActive);
+
+  useEffect(() => {
+    if (experienceMode !== "casual") {
+      setShowToolsDrawer(false);
+      return;
+    }
+
+    if (isToolScreenActive) {
+      setShowToolsDrawer(true);
+    }
+  }, [experienceMode, isToolScreenActive]);
 
   return (
     <aside className="sidebar-shell">
@@ -162,7 +178,70 @@ export function Sidebar({
         ))}
       </nav>
 
-      {toolItems.length > 0 ? (
+      {toolItems.length > 0 && experienceMode === "casual" ? (
+        <div className={`sidebar-tools-compact${showToolsDrawer ? " is-open" : ""}`}>
+          <m.button
+            type="button"
+            className={`rail-nav rail-nav-tools-toggle ${isToolScreenActive ? "is-active" : ""}`}
+            onClick={() => setShowToolsDrawer((current) => !current)}
+            title={showToolsDrawer ? "Hide extra tools" : "Show extra tools"}
+            whileHover={hoverLift}
+            whileTap={tapPress}
+          >
+            <Workflow size={18} strokeWidth={2} />
+            <span>More</span>
+            <span className="rail-nav-tools-chevron" aria-hidden="true">
+              {showToolsDrawer ? (
+                <ChevronUp size={12} strokeWidth={2} />
+              ) : (
+                <ChevronDown size={12} strokeWidth={2} />
+              )}
+            </span>
+          </m.button>
+
+          <AnimatePresence initial={false}>
+            {showToolsDrawer ? (
+              <m.div
+                className="sidebar-tools-drawer"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                <span className="sidebar-group-label">More tools</span>
+                <nav className="nav-stack nav-stack-secondary" aria-label="More tools">
+                  {toolItems.map((item) => (
+                    <m.button
+                      key={item.id}
+                      type="button"
+                      className={`rail-nav rail-nav-secondary ${currentScreen === item.id ? "is-active" : ""}`}
+                      onClick={() => onNavigate(item.id)}
+                      title={screenLabel(item.id, userView)}
+                      whileHover={hoverLift}
+                      whileTap={tapPress}
+                    >
+                      <AnimatePresence>
+                        {currentScreen === item.id ? (
+                          <m.span
+                            layoutId="sidebar-active-panel"
+                            className="rail-nav-active-indicator"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18 }}
+                          />
+                        ) : null}
+                      </AnimatePresence>
+                      <item.icon size={18} strokeWidth={2} />
+                      <span>{screenLabel(item.id, userView)}</span>
+                    </m.button>
+                  ))}
+                </nav>
+              </m.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : toolItems.length > 0 ? (
         <div className="sidebar-nav-group">
           <span className="sidebar-group-label">Tools</span>
           <nav className="nav-stack nav-stack-secondary" aria-label="Tools">

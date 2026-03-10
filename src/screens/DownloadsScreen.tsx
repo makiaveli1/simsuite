@@ -530,6 +530,14 @@ export function DownloadsScreen({
       })
     : [];
   const groupedItems = groupDownloadItems(inbox?.items ?? []);
+  const splitStage = userView !== "beginner";
+  const inspectorSignals = selectedItem
+    ? buildDownloadInspectorSignals(
+        selectedItem,
+        selectedReviewPlan,
+        selectedAutoRecheckNote,
+      )
+    : [];
 
   return (
     <section className="screen-shell">
@@ -710,7 +718,7 @@ export function DownloadsScreen({
               </div>
             </div>
 
-            <div className="downloads-stage">
+            <div className={`downloads-stage${splitStage ? " downloads-stage-split" : ""}`}>
               <div className="panel-card downloads-queue-panel">
                 <div className="panel-heading">
                   <div>
@@ -730,7 +738,9 @@ export function DownloadsScreen({
                           <div className="downloads-lane-header">
                             <div>
                               <strong>{queueLaneLabel(group.lane, userView)}</strong>
-                              <span>{queueLaneHint(group.lane, userView)}</span>
+                              {userView === "beginner" ? (
+                                <span>{queueLaneHint(group.lane, userView)}</span>
+                              ) : null}
                             </div>
                             <span className="ghost-chip">
                               {group.items.length.toLocaleString()}
@@ -818,15 +828,17 @@ export function DownloadsScreen({
                     )}
                   </div>
 
-                  <ResizableEdgeHandle
-                    label="Resize download queue height"
-                    value={downloadsQueueHeight}
-                    min={220}
-                    max={720}
-                    onChange={setDownloadsQueueHeight}
-                    side="bottom"
-                    className="dock-resize-handle downloads-queue-height-handle"
-                  />
+                  {splitStage ? null : (
+                    <ResizableEdgeHandle
+                      label="Resize download queue height"
+                      value={downloadsQueueHeight}
+                      min={220}
+                      max={720}
+                      onChange={setDownloadsQueueHeight}
+                      side="bottom"
+                      className="dock-resize-handle downloads-queue-height-handle"
+                    />
+                  )}
                 </div>
               </div>
               <div className="panel-card downloads-preview-panel">
@@ -972,52 +984,30 @@ export function DownloadsScreen({
                   </div>
                 </div>
 
-                {selectedItem.intakeMode === "guided" ? (
-                  <div className="downloads-trigger-note downloads-trigger-note-guided">
-                    <strong>Special setup detected.</strong>
-                    <span>
-                      SimSuite recognized this as a known mod and built a guided install plan.
-                    </span>
-                  </div>
-                ) : selectedItem.matchedProfileName &&
-                  (selectedItem.intakeMode === "needs_review" ||
-                    selectedItem.intakeMode === "blocked") ? (
-                  <div className="downloads-trigger-note downloads-trigger-note-review">
-                    <strong>Special setup clues were found.</strong>
-                    <span>
-                      {selectedReviewPlan?.repairPlanAvailable
-                        ? `${selectedItem.matchedProfileName} can be fixed and updated safely from here.`
-                        : `${selectedItem.matchedProfileName} needs one more check before anything can move.`}
-                    </span>
-                  </div>
-                ) : null}
-
-                {selectedAutoRecheckNote ? (
-                  <div className="downloads-trigger-note downloads-trigger-note-refresh">
-                    <strong>Rechecked with newer rules.</strong>
-                    <span>{selectedAutoRecheckNote}</span>
-                  </div>
-                ) : null}
-
-                {selectedItem.relatedItemIds?.length ? (
-                  <div className="downloads-trigger-note downloads-trigger-note-refresh">
-                    <strong>Linked setup family.</strong>
-                    <span>
-                      {selectedItem.relatedItemIds.length + 1} related Inbox item(s) belong to
-                      this setup chain.
-                    </span>
+                {inspectorSignals.length ? (
+                  <div className="downloads-signal-strip">
+                    {inspectorSignals.map((signal) => (
+                      <div
+                        key={signal.id}
+                        className={`downloads-signal-card downloads-signal-card-${signal.tone}`}
+                      >
+                        <span className="downloads-signal-label">{signal.label}</span>
+                        <strong>{signal.title}</strong>
+                        <span>{signal.body}</span>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
 
                 <div className="downloads-next-step-card">
                   <div className="downloads-next-step-copy">
                     <p className="eyebrow">
-                      {userView === "beginner" ? "Safe next step" : "Next action"}
+                      {userView === "beginner" ? "Safe next step" : "Next move"}
                     </p>
-                    <strong>{nextStepTitle}</strong>
-                    <span>{nextStepDescription}</span>
+                    <strong className="downloads-next-step-title">{nextStepTitle}</strong>
+                    <p className="downloads-next-step-description">{nextStepDescription}</p>
                   </div>
-                  <div className="downloads-inspector-actions">
+                  <div className="downloads-next-step-actions">
                     {showPrimaryAction ? (
                       <button
                         type="button"
@@ -1034,16 +1024,7 @@ export function DownloadsScreen({
                         <Workflow size={14} strokeWidth={2} />
                         {applyLabel}
                       </button>
-                    ) : (
-                      <span className="downloads-inspector-note">
-                        {downloadsInspectorIdleNote(
-                          selectedItem.intakeMode,
-                          userView,
-                          safeCount,
-                          selectedReviewPlan,
-                        )}
-                      </span>
-                    )}
+                    ) : null}
                     <button
                       type="button"
                       className="secondary-action"
@@ -1054,16 +1035,22 @@ export function DownloadsScreen({
                       {isIgnoring ? "Ignoring..." : "Ignore"}
                     </button>
                   </div>
+                  {!showPrimaryAction ? (
+                    <div className="downloads-inspector-note">
+                      {downloadsInspectorIdleNote(
+                        selectedItem.intakeMode,
+                        userView,
+                        safeCount,
+                        selectedReviewPlan,
+                      )}
+                    </div>
+                  ) : null}
                 </div>
 
                 <DockSectionStack
                   layoutId="downloadsInspector"
                   sections={inspectorSections}
-                  intro={
-                    userView === "beginner"
-                      ? "Open the parts you need and hide the rest while you sort new downloads."
-                      : "Reorder or collapse inbox sections to fit fast intake sweeps or deeper setup checks."
-                  }
+                  intro="Reset this side panel"
                 />
               </>
             ) : (
@@ -1759,123 +1746,132 @@ function buildInspectorSections({
   unchangedCount: number;
   userView: UserView;
 }): DockSectionDefinition[] {
-  const sharedSections = [
-    buildQueueSection(selectedItem, userView),
-    buildSourceSection(selectedItem),
-    buildTimelineSection(selectedItem),
-    buildFilesSection(selectedFiles, userView),
-  ];
+  const queueSection = buildQueueSection(selectedItem, userView);
+  const sourceSection = buildSourceSection(selectedItem);
+  const timelineSection = buildTimelineSection(selectedItem);
+  const filesSection = buildFilesSection(selectedFiles, userView);
+  const sharedSections =
+    userView === "beginner"
+      ? [filesSection]
+      : userView === "standard"
+        ? [sourceSection, filesSection]
+        : [queueSection, sourceSection, timelineSection, filesSection];
 
   if (selectedItem.intakeMode === "guided" && selectedGuidedPlan) {
+    const guidedSummarySection: DockSectionDefinition = {
+      id: "guidedSummary",
+      label: userView === "beginner" ? "What this mod is" : "Setup",
+      hint:
+        userView === "beginner"
+          ? "Why this download needs a guided install."
+          : "Profile, care level, and readiness.",
+      children: (
+        <div className="detail-list">
+          <DetailRow label="Setup type" value="Special setup" />
+          <DetailRow label="Profile" value={selectedGuidedPlan.profileName} />
+          <DetailRow
+            label="Dependency"
+            value={summarizeDependencies(selectedGuidedPlan.dependencies)}
+          />
+          <DetailRow label="Care level" value={riskLevelLabel(selectedItem.riskLevel)} />
+          <DetailRow
+            label="Existing install"
+            value={selectedGuidedPlan.existingInstallDetected ? "Found" : "Not found"}
+          />
+        </div>
+      ),
+    };
+    const guidedOutcomeSection: DockSectionDefinition = {
+      id: "guidedOutcome",
+      label: userView === "beginner" ? "What will happen" : "Outcome",
+      hint:
+        userView === "beginner"
+          ? "What will move, what will be replaced, and what will stay."
+          : "Install, replace, keep, and review counts.",
+      children: (
+        <>
+          <div className="summary-matrix">
+            <SummaryStat label="Install" value={selectedGuidedPlan.installFiles.length} tone="good" />
+            <SummaryStat label="Replace" value={selectedGuidedPlan.replaceFiles.length} tone="neutral" />
+            <SummaryStat label="Keep" value={selectedGuidedPlan.preserveFiles.length} tone="neutral" />
+            <SummaryStat label="Needs review" value={selectedGuidedPlan.reviewFiles.length} tone="low" />
+          </div>
+          <div className="audit-what-card">
+            <strong>Safe install path</strong>
+            <span>
+              SimSuite keeps the suite together, stays inside a safe script depth, and makes a restore point before anything moves.
+            </span>
+          </div>
+        </>
+      ),
+    };
+    const guidedTargetSection: DockSectionDefinition = {
+      id: "guidedTarget",
+      label: userView === "beginner" ? "Where it will go" : "Destination",
+      hint:
+        userView === "beginner"
+          ? "The folder SimSuite will use."
+          : "Final target folder.",
+      children: <div className="path-card">{selectedGuidedPlan.installTargetFolder}</div>,
+    };
+    const guidedKeepSection: DockSectionDefinition = {
+      id: "guidedKeep",
+      label: userView === "beginner" ? "What stays" : "Keep + notes",
+      hint:
+        userView === "beginner"
+          ? "What SimSuite will keep and what to remember after install."
+          : "Preserved files and reminders.",
+      defaultCollapsed: userView === "beginner",
+      children: (
+        <div className="downloads-evidence-list">
+          {selectedGuidedPlan.preserveFiles.map((file) => (
+            <div
+              key={`${file.filename}-${file.currentPath}`}
+              className="downloads-evidence-row"
+            >
+              Keep {file.filename}
+            </div>
+          ))}
+          {selectedGuidedPlan.postInstallNotes.map((note) => (
+            <div key={note} className="downloads-evidence-row">
+              {note}
+            </div>
+          ))}
+        </div>
+      ),
+    };
+    const guidedEvidenceSection: DockSectionDefinition = {
+      id: "guidedEvidence",
+      label: userView === "beginner" ? "Why SimSuite is confident" : "Evidence",
+      hint:
+        userView === "beginner"
+          ? "The clues SimSuite used."
+          : "Matched clues and existing layout findings.",
+      defaultCollapsed: userView === "beginner",
+      children: (
+        <div className="downloads-evidence-list">
+          {selectedItem.assessmentReasons.map((reason) => (
+            <div key={reason} className="downloads-evidence-row">
+              {reason}
+            </div>
+          ))}
+          {userView === "power"
+            ? selectedGuidedPlan.existingLayoutFindings.map((finding) => (
+                <div key={finding} className="downloads-evidence-row">
+                  {finding}
+                </div>
+              ))
+            : null}
+        </div>
+      ),
+    };
+
     return [
-      {
-        id: "guidedSummary",
-        label: userView === "beginner" ? "What this mod is" : "Special setup summary",
-        hint:
-          userView === "beginner"
-            ? "Why this download needs a guided install."
-            : "Profile, care level, and install readiness.",
-        children: (
-          <div className="detail-list">
-            <DetailRow label="Setup type" value="Special setup" />
-            <DetailRow label="Profile" value={selectedGuidedPlan.profileName} />
-            <DetailRow
-              label="Dependency"
-              value={summarizeDependencies(selectedGuidedPlan.dependencies)}
-            />
-            <DetailRow label="Care level" value={riskLevelLabel(selectedItem.riskLevel)} />
-            <DetailRow
-              label="Existing install"
-              value={selectedGuidedPlan.existingInstallDetected ? "Found" : "Not found"}
-            />
-          </div>
-        ),
-      },
-      {
-        id: "guidedOutcome",
-        label: userView === "beginner" ? "What will happen" : "Guided outcome",
-        hint:
-          userView === "beginner"
-            ? "What will move, what will be replaced, and what will stay."
-            : "Install, replace, keep, and review counts.",
-        children: (
-          <>
-            <div className="summary-matrix">
-              <SummaryStat label="Install" value={selectedGuidedPlan.installFiles.length} tone="good" />
-              <SummaryStat label="Replace" value={selectedGuidedPlan.replaceFiles.length} tone="neutral" />
-              <SummaryStat label="Keep" value={selectedGuidedPlan.preserveFiles.length} tone="neutral" />
-              <SummaryStat label="Needs review" value={selectedGuidedPlan.reviewFiles.length} tone="low" />
-            </div>
-            <div className="audit-what-card">
-              <strong>Safe install path</strong>
-              <span>
-                SimSuite keeps the suite together, stays inside a safe script depth, and makes a restore point before anything moves.
-              </span>
-            </div>
-          </>
-        ),
-      },
-      {
-        id: "guidedTarget",
-        label: userView === "beginner" ? "Where it will go" : "Install target",
-        hint:
-          userView === "beginner"
-            ? "The folder SimSuite will use."
-            : "Final target folder for the guided install.",
-        children: <div className="path-card">{selectedGuidedPlan.installTargetFolder}</div>,
-      },
-      {
-        id: "guidedKeep",
-        label: userView === "beginner" ? "What stays" : "Keep and notes",
-        hint:
-          userView === "beginner"
-            ? "What SimSuite will keep and what to remember after install."
-            : "Preserved files, dependencies, and post-install reminders.",
-        defaultCollapsed: userView === "beginner",
-        children: (
-          <div className="downloads-evidence-list">
-            {selectedGuidedPlan.preserveFiles.map((file) => (
-              <div
-                key={`${file.filename}-${file.currentPath}`}
-                className="downloads-evidence-row"
-              >
-                Keep {file.filename}
-              </div>
-            ))}
-            {selectedGuidedPlan.postInstallNotes.map((note) => (
-              <div key={note} className="downloads-evidence-row">
-                {note}
-              </div>
-            ))}
-          </div>
-        ),
-      },
-      {
-        id: "guidedEvidence",
-        label:
-          userView === "beginner" ? "Why SimSuite is confident" : "Matched evidence",
-        hint:
-          userView === "beginner"
-            ? "The clues SimSuite used."
-            : "Assessment reasons and matched profile evidence.",
-        defaultCollapsed: userView === "beginner",
-        children: (
-          <div className="downloads-evidence-list">
-            {selectedItem.assessmentReasons.map((reason) => (
-              <div key={reason} className="downloads-evidence-row">
-                {reason}
-              </div>
-            ))}
-            {userView === "power"
-              ? selectedGuidedPlan.existingLayoutFindings.map((finding) => (
-                  <div key={finding} className="downloads-evidence-row">
-                    {finding}
-                  </div>
-                ))
-              : null}
-          </div>
-        ),
-      },
+      guidedSummarySection,
+      guidedOutcomeSection,
+      guidedTargetSection,
+      ...(userView === "beginner" ? [] : [guidedKeepSection]),
+      ...(userView === "power" ? [guidedEvidenceSection] : []),
       ...sharedSections,
     ];
   }
@@ -1888,11 +1884,11 @@ function buildInspectorSections({
     return [
       {
         id: "reviewSummary",
-        label: userView === "beginner" ? "What this is" : "Decision summary",
+        label: userView === "beginner" ? "What this is" : "Summary",
         hint:
           userView === "beginner"
             ? "What SimSuite found and why it stopped here."
-            : "Assessment mode, care level, and current state.",
+            : "Mode, profile, and current state.",
         children: (
           <div className="detail-list">
             <DetailRow label="Mode" value={intakeModeLabel(selectedItem.intakeMode)} />
@@ -1914,11 +1910,11 @@ function buildInspectorSections({
       },
       {
         id: "reviewNextStep",
-        label: userView === "beginner" ? "Safe next step" : "Recommended next step",
+        label: userView === "beginner" ? "Safe next step" : "Next move",
         hint:
           userView === "beginner"
             ? "What to do before this download can move."
-            : "The safest next action for this special item.",
+            : "Safest action from here.",
         children: (
           <div className="audit-what-card">
             <strong>{intakeModeLabel(selectedItem.intakeMode)}</strong>
@@ -1926,13 +1922,16 @@ function buildInspectorSections({
           </div>
         ),
       },
-      {
+      ...(selectedReviewPlan.dependencies.length ||
+      selectedReviewPlan.incompatibilityWarnings.length ||
+      selectedReviewPlan.postInstallNotes.length
+        ? [{
         id: "reviewDependency",
-        label: userView === "beginner" ? "What it depends on" : "Dependencies and warnings",
+        label: userView === "beginner" ? "What it depends on" : "Deps + warnings",
         hint:
           userView === "beginner"
             ? "Anything else this mod needs first."
-            : "Dependencies, conflicts, and post-install notes.",
+            : "Required helpers, conflicts, and notes.",
         defaultCollapsed: userView === "beginner",
         children: (
           <div className="downloads-evidence-list">
@@ -1966,15 +1965,13 @@ function buildInspectorSections({
             ))}
           </div>
         ),
-      },
-      {
+      }] : []),
+      ...(userView === "power"
+        ? [{
         id: "reviewEvidence",
-        label: userView === "beginner" ? "Why SimSuite decided this" : "Evidence",
-        hint:
-          userView === "beginner"
-            ? "The clues that made SimSuite stop."
-            : "Matched evidence, tracked findings, and catalog notes.",
-        defaultCollapsed: userView === "beginner",
+        label: "Evidence",
+        hint: "Matched evidence, tracked findings, and catalog notes.",
+        defaultCollapsed: false,
         children: (
           <div className="downloads-evidence-list">
             {selectedReviewPlan.evidence.map((reason) => (
@@ -1988,10 +1985,10 @@ function buildInspectorSections({
                     {finding}
                   </div>
                 ))
-              : null}
+            : null}
           </div>
         ),
-      },
+      }] : []),
       ...sharedSections,
     ];
   }
@@ -1999,7 +1996,7 @@ function buildInspectorSections({
   return [
     {
       id: "summary",
-      label: userView === "beginner" ? "What this batch is" : "Inbox summary",
+      label: userView === "beginner" ? "What this batch is" : "Summary",
       hint:
         userView === "beginner"
           ? "How many files are here and what kind of batch this is."
@@ -2024,7 +2021,7 @@ function buildInspectorSections({
     },
     {
       id: "handoff",
-      label: userView === "beginner" ? "What move does" : "Safe hand-off",
+      label: userView === "beginner" ? "What move does" : "Hand-off",
       hint:
         userView === "beginner"
           ? "Only safe files move from here. Review files stay visible."
@@ -2045,13 +2042,12 @@ function buildInspectorSections({
         </>
       ),
     },
-    {
+    ...(userView === "beginner"
+      ? []
+      : [{
       id: "preset",
-      label: userView === "beginner" ? "Tidy style" : "Rule set",
-      hint:
-        userView === "beginner"
-          ? "The tidy style used to build the normal preview."
-          : "Current rule set for normal hand-off items.",
+      label: "Rule set",
+      hint: "Current rule set for normal hand-off items.",
       children: (
         <div className="detail-list">
           <DetailRow label="Preset" value={selectedPreview?.presetName ?? "Not loaded"} />
@@ -2065,7 +2061,7 @@ function buildInspectorSections({
           />
         </div>
       ),
-    },
+    }]),
     ...sharedSections,
   ];
 }
@@ -2078,7 +2074,7 @@ function buildQueueSection(
 
   return {
     id: "queue",
-    label: userView === "beginner" ? "Inbox lane" : "Queue lane",
+    label: userView === "beginner" ? "Inbox lane" : "Lane",
     hint:
       userView === "beginner"
         ? "Why this batch is sitting where it is in the Inbox."
@@ -2086,10 +2082,6 @@ function buildQueueSection(
     children: (
       <div className="detail-list">
         <DetailRow label="Lane" value={queueLaneLabel(lane, userView)} />
-        <DetailRow
-          label="Summary"
-          value={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
-        />
         <DetailRow
           label="Linked items"
           value={(selectedItem.relatedItemIds?.length ?? 0) > 0
@@ -2104,8 +2096,8 @@ function buildQueueSection(
 function buildSourceSection(selectedItem: DownloadsInboxItem): DockSectionDefinition {
   return {
     id: "source",
-    label: "Source pack",
-    hint: "Original download path, notes, and any intake errors.",
+    label: "Source",
+    hint: "Download path, notes, and any intake errors.",
     children: (
       <div className="path-grid">
         <div className="detail-block">
@@ -2137,7 +2129,7 @@ function buildTimelineSection(selectedItem: DownloadsInboxItem): DockSectionDefi
   return {
     id: "timeline",
     label: "Timeline",
-    hint: "A quick look at what happened to this batch inside the Inbox.",
+    hint: "What happened in the Inbox.",
     defaultCollapsed: false,
     children: (
       <div className="downloads-timeline">
@@ -2165,11 +2157,11 @@ function buildFilesSection(
 ): DockSectionDefinition {
   return {
     id: "files",
-    label: userView === "beginner" ? "Included files" : "Tracked files",
+    label: userView === "beginner" ? "Included files" : "Files",
     hint:
       userView === "beginner"
         ? "A few files are shown first so you can skim the batch quickly."
-        : "Tracked files for the selected inbox item.",
+        : "Files inside this inbox item.",
     badge: `${selectedFiles.length}`,
     defaultCollapsed: userView !== "power",
     children: selectedFiles.length ? (
@@ -2178,6 +2170,65 @@ function buildFilesSection(
       <p>No tracked files are active for this inbox item.</p>
     ),
   };
+}
+
+function buildDownloadInspectorSignals(
+  item: DownloadsInboxItem,
+  reviewPlan: SpecialReviewPlan | null,
+  autoRecheckNote: string | null,
+) {
+  const signals: Array<{
+    id: string;
+    tone: "guided" | "review" | "refresh";
+    label: string;
+    title: string;
+    body: string;
+  }> = [];
+
+  if (item.intakeMode === "guided") {
+    signals.push({
+      id: "guided",
+      tone: "guided",
+      label: "Setup",
+      title: "Special setup spotted",
+      body: "SimSuite matched this mod and built a guided install path.",
+    });
+  } else if (
+    item.matchedProfileName &&
+    (item.intakeMode === "needs_review" || item.intakeMode === "blocked")
+  ) {
+    signals.push({
+      id: "review",
+      tone: "review",
+      label: "Setup clue",
+      title: item.matchedProfileName,
+      body: reviewPlan?.repairPlanAvailable
+        ? "A safe repair path is ready from this panel."
+        : "It still needs one more check before anything can move.",
+    });
+  }
+
+  if (autoRecheckNote) {
+    signals.push({
+      id: "recheck",
+      tone: "refresh",
+      label: "Rules refresh",
+      title: "Checked again",
+      body: autoRecheckNote.replace(`${AUTO_RECHECK_NOTE_PREFIX}. `, ""),
+    });
+  }
+
+  if ((item.relatedItemIds?.length ?? 0) > 0) {
+    signals.push({
+      id: "family",
+      tone: "refresh",
+      label: "Linked family",
+      title: `${(item.relatedItemIds?.length ?? 0) + 1} linked item(s)`,
+      body: "This batch belongs to the same setup chain.",
+    });
+  }
+
+  return signals;
 }
 
 function TrackedFilesSampleList({
