@@ -92,11 +92,8 @@ pub fn apply_guided_download_plan(
         .replace_files
         .iter()
         .map(|file| {
-            let file_id = file.file_id.ok_or_else(|| {
-                AppError::Message("Existing replacement file is missing its file id.".to_owned())
-            })?;
             Ok(ReplacementMove {
-                file_id,
+                file_id: file.file_id,
                 original_path: PathBuf::from(&file.current_path),
                 backup_path: guided_backup_path(app_data_dir, plan.item_id, &file.filename),
             })
@@ -339,11 +336,8 @@ pub fn apply_special_review_fix(
         .replace_files
         .iter()
         .map(|file| {
-            let file_id = file.file_id.ok_or_else(|| {
-                AppError::Message("Existing replacement file is missing its file id.".to_owned())
-            })?;
             Ok(ReplacementMove {
-                file_id,
+                file_id: file.file_id,
                 original_path: PathBuf::from(&file.current_path),
                 backup_path: guided_backup_path(app_data_dir, item_id, &file.filename),
             })
@@ -736,16 +730,22 @@ fn rollback_guided_changes(
             move_single_file(&item.backup_path, &item.original_path)?;
         }
 
-        let existing_record = connection
-            .query_row(
-                "SELECT id FROM files WHERE id = ?1",
-                params![item.file_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()?;
+        let existing_record = item
+            .file_id
+            .map(|file_id| {
+                connection
+                    .query_row(
+                        "SELECT id FROM files WHERE id = ?1",
+                        params![file_id],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .optional()
+            })
+            .transpose()?
+            .flatten();
 
-        if existing_record.is_some() {
-            update_file_record_on_restore(connection, settings, item.file_id, &item.original_path)?;
+        if let Some(file_id) = existing_record {
+            update_file_record_on_restore(connection, settings, file_id, &item.original_path)?;
         } else if item.original_path.exists() {
             restore_deleted_file_record(connection, settings, seed_pack, &item.original_path)?;
         }
@@ -847,9 +847,12 @@ fn preflight_special_review_replacements(replacements: &[ReplacementMove]) -> Ap
 
 fn update_file_record_on_backup(
     connection: &Connection,
-    file_id: i64,
+    file_id: Option<i64>,
     backup_path: &Path,
 ) -> AppResult<()> {
+    let Some(file_id) = file_id else {
+        return Ok(());
+    };
     connection.execute(
         "UPDATE files
          SET path = ?1,
@@ -933,7 +936,10 @@ fn update_file_record_on_restore(
     Ok(())
 }
 
-fn delete_file_record(connection: &Connection, file_id: i64) -> AppResult<()> {
+fn delete_file_record(connection: &Connection, file_id: Option<i64>) -> AppResult<()> {
+    let Some(file_id) = file_id else {
+        return Ok(());
+    };
     connection.execute("DELETE FROM files WHERE id = ?1", params![file_id])?;
     Ok(())
 }
@@ -1156,7 +1162,7 @@ struct PlannedMove {
 
 #[derive(Debug, Clone)]
 struct ReplacementMove {
-    file_id: i64,
+    file_id: Option<i64>,
     original_path: PathBuf,
     backup_path: PathBuf,
 }
@@ -1626,5 +1632,63 @@ mod tests {
         assert!(new_package.exists());
         assert!(new_module.exists());
         assert!(!target.join("mc_woohoo.package").exists());
+    }
+
+    #[test]
+    fn guided_mccc_update_allows_disk_only_existing_replacements() {
+        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) = setup_guided_env();
+        let app_data_dir = temp.path().join("AppData");
+        fs::create_dir_all(&app_data_dir).expect("app data");
+
+        let target = mods.join("MCCC");
+        fs::create_dir_all(&target).expect("target");
+        let old_script = target.join("mc_cmd_center.ts4script");
+        let old_package = target.join("mc_cmd_center.package");
+        write_ts4script_archive(&old_script, "mc_cmd_center/__init__.py", b"old-core-script");
+        fs::write(&old_package, b"old-core-package").expect("old package");
+
+        let staging = downloads.join("Inbox").join("MCCC_DiskOnly_Update");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_guided_download_item(&connection, 203, "MC_Command_Center_2026.4.0.zip", &staging);
+
+        let new_script = staging.join("mc_cmd_center.ts4script");
+        let new_package = staging.join("mc_cmd_center.package");
+        write_ts4script_archive(&new_script, "mc_cmd_center/__init__.py", b"new-core-script");
+        fs::write(&new_package, b"new-core-package").expect("new package");
+        insert_download_file(&connection, 203, 20301, &new_script, "mc_cmd_center.ts4script", ".ts4script");
+        insert_download_file(&connection, 203, 20302, &new_package, "mc_cmd_center.package", ".package");
+
+        let assessment = crate::core::install_profile_engine::assess_download_item(
+            &connection,
+            &settings,
+            &seed_pack,
+            203,
+        )
+        .expect("assessment");
+        store_download_item_assessment(&connection, 203, &assessment).expect("stored");
+        let plan = build_guided_plan(&connection, &settings, &seed_pack, 203)
+            .expect("plan")
+            .expect("guided plan");
+
+        assert!(plan
+            .replace_files
+            .iter()
+            .all(|file| file.file_id.is_none()));
+
+        let apply_result = apply_guided_download_plan(
+            &mut connection,
+            &settings,
+            &seed_pack,
+            &app_data_dir,
+            &plan,
+            true,
+        )
+        .expect("guided apply");
+
+        assert_eq!(apply_result.installed_count, 2);
+        assert_eq!(apply_result.replaced_count, 2);
+        assert_eq!(fs::read(&old_package).expect("installed package"), b"new-core-package");
+        assert!(!new_script.exists());
+        assert!(!new_package.exists());
     }
 }
