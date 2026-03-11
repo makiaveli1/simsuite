@@ -562,6 +562,7 @@ pub enum ReviewPlanActionKind {
     RepairSpecial,
     InstallDependency,
     OpenDependency,
+    OpenRelatedItem,
     DownloadMissingFiles,
     OpenOfficialSource,
     SeparateSupportedFiles,
@@ -592,6 +593,46 @@ pub struct DependencyStatus {
     pub inbox_item_guided_install_available: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecialDecisionState {
+    GuidedReady,
+    RepairBeforeUpdate,
+    InstallDependencyFirst,
+    OpenDependencyItem,
+    OpenRelatedItem,
+    DownloadMissingFiles,
+    OpenOfficialSource,
+    SeparateSupportedFiles,
+    ReviewManually,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecialLocalPackState {
+    Complete,
+    Partial,
+    Mixed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecialExistingInstallState {
+    NotInstalled,
+    Clean,
+    Repairable,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecialFamilyRole {
+    Primary,
+    Related,
+    Superseded,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadQueueLane {
@@ -608,6 +649,30 @@ pub struct DownloadsTimelineEntry {
     pub label: String,
     pub detail: Option<String>,
     pub at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecialModDecision {
+    pub item_id: i64,
+    pub profile_key: String,
+    pub profile_name: String,
+    pub special_family: String,
+    pub state: SpecialDecisionState,
+    pub local_pack_state: SpecialLocalPackState,
+    pub existing_install_state: SpecialExistingInstallState,
+    pub family_role: SpecialFamilyRole,
+    pub family_key: String,
+    pub primary_family_item_id: Option<i64>,
+    pub primary_family_item_name: Option<String>,
+    pub sibling_item_ids: Vec<i64>,
+    pub queue_lane: DownloadQueueLane,
+    pub queue_summary: String,
+    pub explanation: String,
+    pub recommended_next_step: String,
+    pub apply_ready: bool,
+    pub available_actions: Vec<ReviewPlanAction>,
+    pub primary_action: Option<ReviewPlanAction>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -650,6 +715,7 @@ pub struct DownloadsInboxItem {
     pub family_key: Option<String>,
     pub related_item_ids: Vec<i64>,
     pub timeline: Vec<DownloadsTimelineEntry>,
+    pub special_decision: Option<SpecialModDecision>,
 }
 
 #[derive(Debug, Clone, Serialize)]

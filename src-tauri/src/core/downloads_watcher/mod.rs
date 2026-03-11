@@ -195,6 +195,7 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
 pub fn list_download_items(
     connection: &Connection,
     settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
     query: DownloadsInboxQuery,
 ) -> AppResult<DownloadsInboxResponse> {
     let overview = load_overview(connection, settings)?;
@@ -333,6 +334,7 @@ pub fn list_download_items(
                 family_key: None,
                 related_item_ids: Vec::new(),
                 timeline: Vec::new(),
+                special_decision: None,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -343,14 +345,19 @@ pub fn list_download_items(
         items.push(item);
     }
 
-    enrich_download_items(&mut items);
+    enrich_download_items(connection, settings, seed_pack, &mut items)?;
 
     Ok(DownloadsInboxResponse { overview, items })
 }
 
-fn enrich_download_items(items: &mut [DownloadsInboxItem]) {
+fn enrich_download_items(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    items: &mut [DownloadsInboxItem],
+) -> AppResult<()> {
     for item in items.iter_mut() {
-        hydrate_download_item(item);
+        hydrate_download_item(connection, settings, seed_pack, item)?;
     }
 
     let mut family_members: HashMap<String, Vec<i64>> = HashMap::new();
@@ -365,31 +372,59 @@ fn enrich_download_items(items: &mut [DownloadsInboxItem]) {
 
     for item in items.iter_mut() {
         item.related_item_ids = item
-            .family_key
+            .special_decision
             .as_ref()
-            .and_then(|family_key| family_members.get(family_key))
-            .map(|ids| {
-                ids.iter()
-                    .copied()
-                    .filter(|related_id| *related_id != item.id)
-                    .collect::<Vec<_>>()
+            .map(|decision| decision.sibling_item_ids.clone())
+            .or_else(|| {
+                item.family_key
+                    .as_ref()
+                    .and_then(|family_key| family_members.get(family_key))
+                    .map(|ids| {
+                        ids.iter()
+                            .copied()
+                            .filter(|related_id| *related_id != item.id)
+                            .collect::<Vec<_>>()
+                    })
             })
             .unwrap_or_default();
         item.timeline = build_download_timeline(item);
     }
+
+    Ok(())
 }
 
-fn enrich_download_item(connection: &Connection, item: &mut DownloadsInboxItem) -> AppResult<()> {
-    hydrate_download_item(item);
+fn enrich_download_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item: &mut DownloadsInboxItem,
+) -> AppResult<()> {
+    hydrate_download_item(connection, settings, seed_pack, item)?;
     item.related_item_ids = load_related_item_ids(connection, item)?;
     item.timeline = build_download_timeline(item);
     Ok(())
 }
 
-fn hydrate_download_item(item: &mut DownloadsInboxItem) {
+fn hydrate_download_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item: &mut DownloadsInboxItem,
+) -> AppResult<()> {
+    item.special_decision =
+        install_profile_engine::build_special_mod_decision(connection, settings, seed_pack, item.id)?;
+    if let Some(decision) = item.special_decision.as_ref() {
+        item.queue_lane = decision.queue_lane.clone();
+        item.queue_summary = decision.queue_summary.clone();
+        item.family_key = Some(decision.family_key.clone());
+        return Ok(());
+    }
+
     item.queue_lane = derive_queue_lane(item);
     item.queue_summary = build_queue_summary(item);
     item.family_key = build_family_key(item);
+
+    Ok(())
 }
 
 fn derive_queue_lane(item: &DownloadsInboxItem) -> DownloadQueueLane {
@@ -648,9 +683,11 @@ fn build_download_timeline(item: &DownloadsInboxItem) -> Vec<DownloadsTimelineEn
 
 pub fn get_download_item_detail(
     connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
     item_id: i64,
 ) -> AppResult<Option<DownloadInboxDetail>> {
-    let Some(item) = load_item_by_id(connection, item_id)? else {
+    let Some(item) = load_item_by_id(connection, settings, seed_pack, item_id)? else {
         return Ok(None);
     };
 
@@ -700,10 +737,11 @@ pub fn get_download_item_detail(
 pub fn preview_download_item(
     connection: &Connection,
     settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
     item_id: i64,
     preset_name: Option<String>,
 ) -> AppResult<OrganizationPreview> {
-    let Some(item) = load_item_by_id(connection, item_id)? else {
+    let Some(item) = load_item_by_id(connection, settings, seed_pack, item_id)? else {
         return Err(AppError::Message("Inbox item was not found.".to_owned()));
     };
     if item.intake_mode != DownloadIntakeMode::Standard {
@@ -1992,7 +2030,12 @@ fn load_overview(
     })
 }
 
-fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<DownloadsInboxItem>> {
+fn load_item_by_id(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+) -> AppResult<Option<DownloadsInboxItem>> {
     connection
         .query_row(
             "SELECT
@@ -2093,6 +2136,7 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
                     family_key: None,
                     related_item_ids: Vec::new(),
                     timeline: Vec::new(),
+                    special_decision: None,
                 })
             },
         )
@@ -2101,7 +2145,7 @@ fn load_item_by_id(connection: &Connection, item_id: i64) -> AppResult<Option<Do
         .and_then(|item| {
             if let Some(mut item) = item {
                 item.sample_files = load_item_sample_names(connection, item.id)?;
-                enrich_download_item(connection, &mut item)?;
+                enrich_download_item(connection, settings, seed_pack, &mut item)?;
                 Ok(Some(item))
             } else {
                 Ok(None)
@@ -2469,6 +2513,7 @@ mod tests {
     #[test]
     fn preview_download_item_rejects_guided_inbox_items() {
         let connection = setup_connection();
+        let seed_pack = crate::seed::load_seed_pack().expect("seed pack");
         insert_download_item_with_mode(&connection, 20, "ready", "guided", 1);
         insert_file(&connection, 20, "downloads", "mc_cmd_center.ts4script");
 
@@ -2479,6 +2524,7 @@ mod tests {
                 tray_path: None,
                 downloads_path: Some("C:/Downloads".to_owned()),
             },
+            &seed_pack,
             20,
             Some("Category First".to_owned()),
         )

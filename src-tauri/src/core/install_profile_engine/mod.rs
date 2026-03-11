@@ -11,9 +11,11 @@ use crate::{
     core::validator::{self, ValidationRequest},
     error::{AppError, AppResult},
     models::{
-        CatalogSourceInfo, DependencyStatus, DownloadIntakeMode, DownloadRiskLevel, FileInsights,
-        GuidedInstallFileEntry, GuidedInstallPlan, LibrarySettings, ReviewPlanAction,
-        ReviewPlanActionKind, SpecialReviewPlan,
+        CatalogSourceInfo, DependencyStatus, DownloadIntakeMode, DownloadQueueLane,
+        DownloadRiskLevel, FileInsights, GuidedInstallFileEntry, GuidedInstallPlan,
+        LibrarySettings, ReviewPlanAction, ReviewPlanActionKind, SpecialDecisionState,
+        SpecialExistingInstallState, SpecialFamilyRole, SpecialLocalPackState, SpecialModDecision,
+        SpecialReviewPlan,
     },
     seed::{
         DependencyRuleSeed, GuidedInstallProfileSeed, IncompatibilityRuleSeed,
@@ -99,8 +101,11 @@ struct InboxDependencyItem {
 struct ProfileEvidence {
     reasons: Vec<String>,
     matched_files: i64,
+    matched_script_files: i64,
+    matched_package_files: i64,
     unmatched_supported_files: i64,
     required_core_present: bool,
+    required_exact_filenames_found: i64,
     name_match: bool,
     text_matches: Vec<String>,
     archive_matches: Vec<String>,
@@ -114,16 +119,38 @@ impl ProfileEvidence {
             || !self.archive_matches.is_empty()
     }
 
-    fn strong_match(&self) -> bool {
-        self.matched_files > 0 && self.required_core_present
+    fn required_exact_filenames_complete(&self, profile: &GuidedInstallProfileSeed) -> bool {
+        self.required_exact_filenames_found as usize >= profile.required_all_filenames.len()
     }
 
-    fn score(&self) -> i64 {
+    fn strong_match(&self, profile: &GuidedInstallProfileSeed) -> bool {
+        self.required_core_present
+            && self.matched_files >= profile.minimum_profile_files as i64
+            && self.matched_script_files >= profile.minimum_script_files as i64
+            && self.required_exact_filenames_complete(profile)
+    }
+
+    fn local_pack_state(&self, profile: &GuidedInstallProfileSeed) -> SpecialLocalPackState {
+        if self.strong_match(profile) && self.unmatched_supported_files == 0 {
+            SpecialLocalPackState::Complete
+        } else if self.strong_match(profile) && self.unmatched_supported_files > 0 {
+            SpecialLocalPackState::Mixed
+        } else if self.has_any_signal() {
+            SpecialLocalPackState::Partial
+        } else {
+            SpecialLocalPackState::Unknown
+        }
+    }
+
+    fn score(&self, profile: &GuidedInstallProfileSeed) -> i64 {
         (self.matched_files * 100)
-            + if self.required_core_present { 50 } else { 0 }
+            + (self.matched_script_files * 30)
+            + (self.required_exact_filenames_found * 40)
+            + if self.required_core_present { 120 } else { 0 }
             + if self.name_match { 20 } else { 0 }
             + (self.text_matches.len() as i64 * 5)
             + (self.archive_matches.len() as i64 * 5)
+            + if self.strong_match(profile) { 250 } else { 0 }
             - (self.unmatched_supported_files * 30)
     }
 }
@@ -139,10 +166,22 @@ struct EvaluationResult {
     assessment: DownloadItemAssessment,
     matched_profile: Option<GuidedInstallProfileSeed>,
     matched_pattern: Option<ReviewOnlyPatternSeed>,
+    matched_evidence: Option<ProfileEvidence>,
     dependencies: Vec<DependencyStatus>,
     existing_layout_findings: Vec<String>,
     explanation: String,
     recommended_next_step: String,
+}
+
+#[derive(Debug, Clone)]
+struct FamilySiblingRecord {
+    id: i64,
+    display_name: String,
+    intake_mode: DownloadIntakeMode,
+    guided_install_available: bool,
+    active_file_count: i64,
+    review_file_count: i64,
+    updated_at: String,
 }
 
 pub fn assess_download_item(
@@ -299,6 +338,7 @@ fn build_guided_plan_internal(
     let mut reserved_targets = HashSet::new();
 
     for file in incoming {
+        let validation_kind = guided_validation_kind(file, &profile);
         let validation = validator::validate_suggestion(
             connection,
             settings,
@@ -306,7 +346,7 @@ fn build_guided_plan_internal(
                 file_id: file.file_id,
                 filename: file.filename.clone(),
                 extension: file.extension.clone(),
-                kind: file.kind.clone(),
+                kind: validation_kind.clone(),
                 subtype: file.subtype.clone(),
                 creator: file.creator.clone().or_else(|| profile.creator.clone()),
                 bundle_name: None,
@@ -332,7 +372,7 @@ fn build_guided_plan_internal(
             current_path: file.path.clone(),
             target_path: validation.final_absolute_path.clone(),
             archive_member_path: file.archive_member_path.clone(),
-            kind: file.kind.clone(),
+            kind: validation_kind,
             subtype: file.subtype.clone(),
             creator: file.creator.clone().or_else(|| profile.creator.clone()),
             notes: validation.notes.clone(),
@@ -485,9 +525,15 @@ pub fn build_review_plan(
     } else {
         None
     };
+    let special_decision = if evaluation.matched_profile.is_some() {
+        build_special_mod_decision(connection, settings, seed_pack, item_id)?
+    } else {
+        None
+    };
 
     if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided
         && guided_plan.as_ref().is_none_or(|plan| plan.apply_ready)
+        && special_decision.as_ref().is_none_or(|decision| decision.apply_ready)
     {
         return Ok(None);
     }
@@ -620,33 +666,47 @@ pub fn build_review_plan(
         )
     };
 
-    let available_actions =
-        build_available_review_actions(seed_pack, &evaluation, &files, repair_layout.as_ref());
-    let recommended_next_step = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
-        available_actions
-            .iter()
-            .max_by_key(|action| action.priority)
-            .map(|action| action.description.clone())
-            .unwrap_or_else(|| {
-                "Review the held files and remove anything that does not fit the safe guided install."
-                    .to_owned()
-            })
-    } else {
-        evaluation.recommended_next_step.clone()
-    };
-    let explanation = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
-        let profile_name = evaluation
-            .assessment
-            .matched_profile_name
-            .clone()
-            .unwrap_or_else(|| "special mod".to_owned());
-        format!(
-            "SimSuite recognized this as {}, but the guided install still has file checks to clear before anything can move.",
-            profile_name
-        )
-    } else {
-        evaluation.explanation.clone()
-    };
+    let available_actions = special_decision
+        .as_ref()
+        .map(|decision| decision.available_actions.clone())
+        .unwrap_or_else(|| {
+            build_available_review_actions(seed_pack, &evaluation, &files, repair_layout.as_ref())
+        });
+    let recommended_next_step = special_decision
+        .as_ref()
+        .map(|decision| decision.recommended_next_step.clone())
+        .unwrap_or_else(|| {
+            if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
+                available_actions
+                    .iter()
+                    .max_by_key(|action| action.priority)
+                    .map(|action| action.description.clone())
+                    .unwrap_or_else(|| {
+                        "Review the held files and remove anything that does not fit the safe guided install."
+                            .to_owned()
+                    })
+            } else {
+                evaluation.recommended_next_step.clone()
+            }
+        });
+    let explanation = special_decision
+        .as_ref()
+        .map(|decision| decision.explanation.clone())
+        .unwrap_or_else(|| {
+            if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
+                let profile_name = evaluation
+                    .assessment
+                    .matched_profile_name
+                    .clone()
+                    .unwrap_or_else(|| "special mod".to_owned());
+                format!(
+                    "SimSuite recognized this as {}, but the guided install still has file checks to clear before anything can move.",
+                    profile_name
+                )
+            } else {
+                evaluation.explanation.clone()
+            }
+        });
 
     Ok(Some(SpecialReviewPlan {
         item_id,
@@ -673,6 +733,136 @@ pub fn build_review_plan(
         repair_keep_files,
         repair_warnings,
         repair_can_continue_install,
+    }))
+}
+
+pub fn build_special_mod_decision(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+) -> AppResult<Option<SpecialModDecision>> {
+    let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    let Some(profile) = evaluation.matched_profile.clone() else {
+        return Ok(None);
+    };
+    let evidence = evaluation
+        .matched_evidence
+        .clone()
+        .unwrap_or_else(|| collect_profile_evidence(&profile, &empty_item_record(), &[], &[], &[]));
+    let files = load_profile_files(connection, item_id, true)?;
+    let guided_plan = build_guided_plan_internal(connection, settings, seed_pack, item_id, false)?;
+    let layout = detect_existing_layout(connection, settings, &profile)?;
+    let family_key = format!("special:{}", profile.key);
+    let siblings = load_family_siblings(connection, item_id, &profile.key)?;
+    let primary_family = select_primary_family_item(item_id, &siblings);
+    let sibling_item_ids = siblings
+        .iter()
+        .map(|sibling| sibling.id)
+        .filter(|sibling_id| *sibling_id != item_id)
+        .collect::<Vec<_>>();
+    let primary_family_item_id = primary_family.as_ref().map(|item| item.id);
+    let primary_family_item_name = primary_family.as_ref().map(|item| item.display_name.clone());
+    let family_role = match primary_family_item_id {
+        Some(primary_id) if primary_id != item_id => SpecialFamilyRole::Superseded,
+        Some(_) | None => SpecialFamilyRole::Primary,
+    };
+
+    let mut available_actions = if guided_plan.as_ref().is_some_and(|plan| plan.apply_ready)
+        && family_role == SpecialFamilyRole::Primary
+    {
+        Vec::new()
+    } else {
+        build_available_review_actions(seed_pack, &evaluation, &files, Some(&layout))
+    };
+
+    if family_role == SpecialFamilyRole::Superseded {
+        if let (Some(primary_id), Some(primary_name)) =
+            (primary_family_item_id, primary_family_item_name.clone())
+        {
+            available_actions.insert(
+                0,
+                ReviewPlanAction {
+                    kind: ReviewPlanActionKind::OpenRelatedItem,
+                    label: format!("Use {}", primary_name),
+                    description: format!(
+                        "Open the fuller {} Inbox item first so SimSuite can use the best local pack you already downloaded.",
+                        profile.display_name
+                    ),
+                    priority: 110,
+                    related_item_id: Some(primary_id),
+                    related_item_name: Some(primary_name),
+                    url: None,
+                },
+            );
+        }
+    }
+
+    available_actions.sort_by(|left, right| right.priority.cmp(&left.priority));
+    let primary_action = available_actions.first().cloned();
+    let apply_ready = guided_plan.as_ref().is_some_and(|plan| plan.apply_ready)
+        && family_role == SpecialFamilyRole::Primary;
+    let local_pack_state = evidence.local_pack_state(&profile);
+    let existing_install_state = if !layout.existing_install_detected {
+        SpecialExistingInstallState::NotInstalled
+    } else if layout.repair_plan_available {
+        SpecialExistingInstallState::Repairable
+    } else if layout.safe_to_update {
+        SpecialExistingInstallState::Clean
+    } else {
+        SpecialExistingInstallState::Blocked
+    };
+    let state = if apply_ready {
+        SpecialDecisionState::GuidedReady
+    } else if let Some(action) = primary_action.as_ref() {
+        special_decision_state_for_action(&action.kind)
+    } else {
+        SpecialDecisionState::ReviewManually
+    };
+    let queue_lane = special_decision_queue_lane(&state, &evaluation.assessment.intake_mode);
+    let explanation = if family_role == SpecialFamilyRole::Superseded {
+        format!(
+            "SimSuite found more than one {} download in the Inbox and picked the fuller local pack to lead with.",
+            profile.display_name
+        )
+    } else if apply_ready {
+        profile.help_summary.clone()
+    } else {
+        evaluation.explanation.clone()
+    };
+    let recommended_next_step = primary_action
+        .as_ref()
+        .map(|action| action.description.clone())
+        .unwrap_or_else(|| evaluation.recommended_next_step.clone());
+    let queue_summary = build_special_queue_summary(
+        &profile,
+        &state,
+        &local_pack_state,
+        family_role.clone(),
+        primary_family_item_name.clone(),
+        &evaluation,
+    );
+
+    Ok(Some(SpecialModDecision {
+        item_id,
+        profile_key: profile.key.clone(),
+        profile_name: profile.display_name.clone(),
+        special_family: profile.family.clone(),
+        state,
+        local_pack_state,
+        existing_install_state,
+        family_role,
+        family_key,
+        primary_family_item_id,
+        primary_family_item_name,
+        sibling_item_ids,
+        queue_lane,
+        queue_summary,
+        explanation,
+        recommended_next_step,
+        apply_ready,
+        available_actions,
+        primary_action,
     }))
 }
 
@@ -714,6 +904,206 @@ pub fn collect_supported_subset_file_ids(
     Ok(Some((supported_ids, leftover_ids)))
 }
 
+fn special_decision_state_for_action(kind: &ReviewPlanActionKind) -> SpecialDecisionState {
+    match kind {
+        ReviewPlanActionKind::RepairSpecial => SpecialDecisionState::RepairBeforeUpdate,
+        ReviewPlanActionKind::InstallDependency => SpecialDecisionState::InstallDependencyFirst,
+        ReviewPlanActionKind::OpenDependency => SpecialDecisionState::OpenDependencyItem,
+        ReviewPlanActionKind::OpenRelatedItem => SpecialDecisionState::OpenRelatedItem,
+        ReviewPlanActionKind::DownloadMissingFiles => SpecialDecisionState::DownloadMissingFiles,
+        ReviewPlanActionKind::OpenOfficialSource => SpecialDecisionState::OpenOfficialSource,
+        ReviewPlanActionKind::SeparateSupportedFiles => {
+            SpecialDecisionState::SeparateSupportedFiles
+        }
+    }
+}
+
+fn special_decision_queue_lane(
+    state: &SpecialDecisionState,
+    fallback_mode: &DownloadIntakeMode,
+) -> DownloadQueueLane {
+    match state {
+        SpecialDecisionState::GuidedReady
+        | SpecialDecisionState::RepairBeforeUpdate
+        | SpecialDecisionState::SeparateSupportedFiles => DownloadQueueLane::SpecialSetup,
+        SpecialDecisionState::InstallDependencyFirst
+        | SpecialDecisionState::OpenDependencyItem
+        | SpecialDecisionState::OpenRelatedItem
+        | SpecialDecisionState::DownloadMissingFiles
+        | SpecialDecisionState::OpenOfficialSource => DownloadQueueLane::WaitingOnYou,
+        SpecialDecisionState::ReviewManually => {
+            if *fallback_mode == DownloadIntakeMode::Blocked {
+                DownloadQueueLane::Blocked
+            } else {
+                DownloadQueueLane::WaitingOnYou
+            }
+        }
+    }
+}
+
+fn build_special_queue_summary(
+    profile: &GuidedInstallProfileSeed,
+    state: &SpecialDecisionState,
+    local_pack_state: &SpecialLocalPackState,
+    family_role: SpecialFamilyRole,
+    primary_family_item_name: Option<String>,
+    evaluation: &EvaluationResult,
+) -> String {
+    if family_role == SpecialFamilyRole::Superseded {
+        return format!(
+            "A fuller {} pack is already in Inbox as {}.",
+            profile.display_name,
+            primary_family_item_name.unwrap_or_else(|| "another download".to_owned())
+        );
+    }
+
+    match state {
+        SpecialDecisionState::GuidedReady => {
+            if evaluation.assessment.existing_install_detected {
+                format!(
+                    "SimSuite has a safe {} update plan ready with your local download.",
+                    profile.display_name
+                )
+            } else {
+                format!(
+                    "SimSuite recognized a full {} pack and has a safe install plan ready.",
+                    profile.display_name
+                )
+            }
+        }
+        SpecialDecisionState::RepairBeforeUpdate => format!(
+            "SimSuite found a full {} pack and can fix the older setup before updating.",
+            profile.display_name
+        ),
+        SpecialDecisionState::InstallDependencyFirst => format!(
+            "{} is ready, but one required helper needs to be installed first.",
+            profile.display_name
+        ),
+        SpecialDecisionState::OpenDependencyItem => format!(
+            "{} is waiting on another Inbox item first.",
+            profile.display_name
+        ),
+        SpecialDecisionState::OpenRelatedItem => format!(
+            "Use the fuller {} pack that is already waiting in Inbox.",
+            profile.display_name
+        ),
+        SpecialDecisionState::DownloadMissingFiles => format!(
+            "This {} download is incomplete, but SimSuite can fetch the trusted official pack first.",
+            profile.display_name
+        ),
+        SpecialDecisionState::OpenOfficialSource => format!(
+            "This {} download is incomplete and still needs the official full pack.",
+            profile.display_name
+        ),
+        SpecialDecisionState::SeparateSupportedFiles => format!(
+            "This batch contains a full {} set plus extra files. Separate it first.",
+            profile.display_name
+        ),
+        SpecialDecisionState::ReviewManually => match local_pack_state {
+            SpecialLocalPackState::Partial => format!(
+                "SimSuite found part of {} but still needs a safer complete set.",
+                profile.display_name
+            ),
+            SpecialLocalPackState::Mixed => format!(
+                "SimSuite found {} inside this batch, but the extra files still need review.",
+                profile.display_name
+            ),
+            _ => "This special setup still needs a careful manual check.".to_owned(),
+        },
+    }
+}
+
+fn load_family_siblings(
+    connection: &Connection,
+    item_id: i64,
+    profile_key: &str,
+) -> AppResult<Vec<FamilySiblingRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT
+            di.id,
+            di.display_name,
+            di.intake_mode,
+            COALESCE(di.guided_install_available, 0),
+            (
+                SELECT COUNT(*)
+                FROM files f
+                WHERE f.download_item_id = di.id
+                  AND f.source_location = 'downloads'
+            ) AS active_file_count,
+            (
+                SELECT COUNT(DISTINCT rq.file_id)
+                FROM review_queue rq
+                JOIN files f ON f.id = rq.file_id
+                WHERE f.download_item_id = di.id
+                  AND f.source_location = 'downloads'
+            ) AS review_file_count,
+            di.updated_at
+         FROM download_items di
+         WHERE di.matched_profile_key = ?1
+           AND di.status NOT IN ('applied', 'ignored', 'error')
+         ORDER BY di.updated_at DESC, di.id DESC",
+    )?;
+
+    let rows = statement
+        .query_map(params![profile_key], |row| {
+            Ok(FamilySiblingRecord {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                intake_mode: parse_download_intake_mode(row.get::<_, String>(2)?),
+                guided_install_available: row.get::<_, i64>(3)? != 0,
+                active_file_count: row.get(4)?,
+                review_file_count: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if rows.iter().all(|row| row.id != item_id) {
+        return Ok(rows);
+    }
+
+    Ok(rows)
+}
+
+fn select_primary_family_item(
+    item_id: i64,
+    siblings: &[FamilySiblingRecord],
+) -> Option<FamilySiblingRecord> {
+    siblings
+        .iter()
+        .cloned()
+        .max_by(|left, right| {
+            let left_score = family_item_score(left);
+            let right_score = family_item_score(right);
+            left_score
+                .cmp(&right_score)
+                .then_with(|| left.updated_at.cmp(&right.updated_at))
+                .then_with(|| left.id.cmp(&right.id))
+        })
+        .or_else(|| siblings.iter().find(|sibling| sibling.id == item_id).cloned())
+}
+
+fn family_item_score(item: &FamilySiblingRecord) -> i64 {
+    let guided_bonus = if item.guided_install_available { 4000 } else { 0 };
+    let intake_bonus = match item.intake_mode {
+        DownloadIntakeMode::Guided => 1500,
+        DownloadIntakeMode::NeedsReview => 900,
+        DownloadIntakeMode::Blocked => 500,
+        DownloadIntakeMode::Standard => 100,
+    };
+
+    guided_bonus + intake_bonus + (item.active_file_count * 25) - (item.review_file_count * 60)
+}
+
+fn parse_download_intake_mode(value: String) -> DownloadIntakeMode {
+    match value.as_str() {
+        "guided" => DownloadIntakeMode::Guided,
+        "needs_review" => DownloadIntakeMode::NeedsReview,
+        "blocked" => DownloadIntakeMode::Blocked,
+        _ => DownloadIntakeMode::Standard,
+    }
+}
+
 fn evaluate_download_item(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -734,7 +1124,7 @@ fn evaluate_download_item(
         collect_guided_candidates(seed_pack, &item, &files, &text_clues, &archive_path_clues);
     let strong_candidates = candidates
         .iter()
-        .filter(|candidate| candidate.evidence.strong_match())
+        .filter(|candidate| candidate.evidence.strong_match(&candidate.profile))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -768,6 +1158,7 @@ fn evaluate_download_item(
             },
             matched_profile: None,
             matched_pattern: None,
+            matched_evidence: None,
             dependencies: Vec::new(),
             existing_layout_findings: Vec::new(),
             explanation:
@@ -781,7 +1172,7 @@ fn evaluate_download_item(
 
     let best_candidate = candidates
         .into_iter()
-        .max_by_key(|candidate| candidate.evidence.score());
+        .max_by_key(|candidate| candidate.evidence.score(&candidate.profile));
     let matched_dependency_rules =
         collect_dependency_matches(seed_pack, &item, &files, &text_clues, &archive_path_clues);
     let matched_incompatibility_rules = collect_incompatibility_rule_matches(
@@ -822,6 +1213,7 @@ fn evaluate_download_item(
         let mut reasons = candidate.evidence.reasons.clone();
         let mut evidence_summary = build_evidence_summary(&candidate.evidence);
         let catalog_source = Some(profile_catalog_source(&candidate.profile));
+        let matched_evidence = Some(candidate.evidence.clone());
 
         if !layout.warnings.is_empty() {
             evidence_summary.extend(layout.warnings.iter().cloned());
@@ -853,6 +1245,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: profile_block_reason(
@@ -892,6 +1285,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: format!(
@@ -931,6 +1325,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: profile_block_reason(
@@ -944,7 +1339,7 @@ fn evaluate_download_item(
             });
         }
 
-        if !candidate.evidence.strong_match() {
+        if !candidate.evidence.strong_match(&candidate.profile) {
             reasons.push(profile_review_message(&candidate.profile));
             return Ok(EvaluationResult {
                 assessment: DownloadItemAssessment {
@@ -966,6 +1361,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: candidate.profile.help_summary.clone(),
@@ -997,6 +1393,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: Some(pattern.clone()),
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: pattern.help_summary.clone(),
@@ -1038,6 +1435,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation: format!(
@@ -1092,6 +1490,7 @@ fn evaluate_download_item(
                 },
                 matched_profile: Some(candidate.profile.clone()),
                 matched_pattern: None,
+                matched_evidence,
                 dependencies,
                 existing_layout_findings: layout.warnings,
                 explanation,
@@ -1121,6 +1520,7 @@ fn evaluate_download_item(
             },
             matched_profile: Some(candidate.profile.clone()),
             matched_pattern: None,
+            matched_evidence,
             dependencies,
             existing_layout_findings: layout.warnings,
             explanation: candidate.profile.help_summary.clone(),
@@ -1174,6 +1574,7 @@ fn evaluate_download_item(
             },
             matched_profile: None,
             matched_pattern: Some(pattern.clone()),
+            matched_evidence: None,
             dependencies,
             existing_layout_findings: Vec::new(),
             explanation: pattern.help_summary.clone(),
@@ -1223,6 +1624,7 @@ fn evaluate_download_item(
             },
             matched_profile: None,
             matched_pattern: None,
+            matched_evidence: None,
             dependencies,
             existing_layout_findings: Vec::new(),
             explanation,
@@ -1252,6 +1654,7 @@ fn evaluate_download_item(
         },
         matched_profile: None,
         matched_pattern: None,
+        matched_evidence: None,
         dependencies,
         existing_layout_findings: Vec::new(),
         explanation:
@@ -1306,6 +1709,21 @@ fn collect_profile_evidence(
         .iter()
         .filter(|file| is_profile_content_file(file, profile))
         .count() as i64;
+    let matched_script_files = files
+        .iter()
+        .filter(|file| file.extension == ".ts4script" && is_profile_content_file(file, profile))
+        .count() as i64;
+    let matched_package_files = files
+        .iter()
+        .filter(|file| file.extension == ".package" && is_profile_content_file(file, profile))
+        .count() as i64;
+    let required_exact_filenames_found = profile
+        .required_all_filenames
+        .iter()
+        .filter(|required_filename| {
+            files.iter().any(|file| normalized(&file.filename) == normalized(required_filename))
+        })
+        .count() as i64;
     let unmatched_supported_files = files
         .iter()
         .filter(|file| is_supported_special_extension(&file.extension))
@@ -1326,6 +1744,18 @@ fn collect_profile_evidence(
         reasons.push(format!(
             "Required core files for {} were found.",
             profile.display_name
+        ));
+    }
+    if matched_script_files > 0 {
+        reasons.push(format!(
+            "{} matching script file(s) fit {}.",
+            matched_script_files, profile.display_name
+        ));
+    }
+    if !profile.required_all_filenames.is_empty() && required_exact_filenames_found > 0 {
+        reasons.push(format!(
+            "{} required exact file name(s) for {} were found.",
+            required_exact_filenames_found, profile.display_name
         ));
     }
     if !text_matches.is_empty() {
@@ -1350,8 +1780,11 @@ fn collect_profile_evidence(
     ProfileEvidence {
         reasons,
         matched_files,
+        matched_script_files,
+        matched_package_files,
         unmatched_supported_files,
         required_core_present,
+        required_exact_filenames_found,
         name_match,
         text_matches,
         archive_matches,
@@ -1800,7 +2233,11 @@ fn select_existing_target_folder(
         let Ok(relative) = parent.strip_prefix(mods_root) else {
             return default_target_folder.to_path_buf();
         };
-        if relative.components().count() > 1 {
+        let relative_depth = relative.components().count();
+        if relative_depth > profile.max_install_depth {
+            return default_target_folder.to_path_buf();
+        }
+        if relative_depth == 0 && !profile.allow_root_install {
             return default_target_folder.to_path_buf();
         }
 
@@ -1961,6 +2398,11 @@ fn has_required_core(files: &[ProfileFile], profile: &GuidedInstallProfileSeed) 
     })
 }
 
+fn profile_pack_is_complete(files: &[ProfileFile], profile: &GuidedInstallProfileSeed) -> bool {
+    let evidence = collect_profile_evidence(profile, &empty_item_record(), files, &[], &[]);
+    evidence.strong_match(profile)
+}
+
 fn collect_extra_supported_files<'a>(
     files: &'a [ProfileFile],
     profile: &GuidedInstallProfileSeed,
@@ -1976,7 +2418,7 @@ fn has_supported_subset_to_separate(
     profile: &GuidedInstallProfileSeed,
 ) -> bool {
     files.iter().any(|file| is_profile_content_file(file, profile))
-        && has_required_core(files, profile)
+        && profile_pack_is_complete(files, profile)
         && !collect_extra_supported_files(files, profile).is_empty()
 }
 
@@ -2024,6 +2466,24 @@ fn is_profile_content_name(
     };
 
     prefix_match || name_matches_profile(filename, profile)
+}
+
+fn guided_validation_kind(file: &ProfileFile, profile: &GuidedInstallProfileSeed) -> String {
+    let original_kind = file.kind.trim();
+    if !original_kind.is_empty() && original_kind != "Unknown" {
+        return file.kind.clone();
+    }
+
+    if is_profile_content_file(file, profile) {
+        if file.extension == ".ts4script" {
+            return "Script Mods".to_owned();
+        }
+        if file.extension == ".package" {
+            return "Mods".to_owned();
+        }
+    }
+
+    file.kind.clone()
 }
 
 fn file_matches_profile_prefix(filename: &str, profile: &GuidedInstallProfileSeed) -> bool {
@@ -2106,6 +2566,15 @@ fn collect_item_inputs(item: &DownloadItemRecord, files: &[ProfileFile]) -> Vec<
     inputs
 }
 
+fn empty_item_record() -> DownloadItemRecord {
+    DownloadItemRecord {
+        id: 0,
+        display_name: String::new(),
+        source_path: String::new(),
+        staging_path: None,
+    }
+}
+
 fn build_evidence_summary(evidence: &ProfileEvidence) -> Vec<String> {
     let mut summary = Vec::new();
     if evidence.matched_files > 0 {
@@ -2114,8 +2583,26 @@ fn build_evidence_summary(evidence: &ProfileEvidence) -> Vec<String> {
             evidence.matched_files
         ));
     }
+    if evidence.matched_script_files > 0 {
+        summary.push(format!(
+            "{} matching script file(s) were detected.",
+            evidence.matched_script_files
+        ));
+    }
+    if evidence.matched_package_files > 0 {
+        summary.push(format!(
+            "{} matching package file(s) were detected.",
+            evidence.matched_package_files
+        ));
+    }
     if evidence.required_core_present {
         summary.push("Required core files were found.".to_owned());
+    }
+    if evidence.required_exact_filenames_found > 0 {
+        summary.push(format!(
+            "{} exact required file name(s) were found.",
+            evidence.required_exact_filenames_found
+        ));
     }
     if !evidence.text_matches.is_empty() {
         summary.push(format!(
@@ -2350,7 +2837,7 @@ fn scan_preserve_files(
     }
 
     for entry in WalkDir::new(target_folder)
-        .max_depth(3)
+        .max_depth(profile.max_install_depth + 1)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
@@ -2379,7 +2866,7 @@ fn scan_foreign_target_files(
 
     let mut foreign = Vec::new();
     for entry in WalkDir::new(target_folder)
-        .max_depth(3)
+        .max_depth(profile.max_install_depth + 1)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
@@ -2532,11 +3019,13 @@ fn risk_level_label(level: &DownloadRiskLevel) -> &'static str {
 mod tests {
     use super::{
         assess_download_item, build_evidence_summary, build_guided_plan, build_review_plan,
-        normalized, store_download_item_assessment,
+        build_special_mod_decision, normalized, store_download_item_assessment,
     };
     use crate::{
         database::{initialize, save_library_paths, seed_database},
-        models::{DownloadIntakeMode, LibrarySettings, ReviewPlanActionKind},
+        models::{
+            DownloadIntakeMode, LibrarySettings, ReviewPlanActionKind, SpecialFamilyRole,
+        },
         seed::{load_seed_pack, GuidedInstallProfileSeed, SeedPack},
     };
     use rusqlite::{params, Connection};
@@ -3184,7 +3673,7 @@ mod tests {
     }
 
     #[test]
-    fn guided_items_with_held_files_return_a_review_plan() {
+    fn partial_special_mods_still_return_review_actions() {
         let (_temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
         let staging = staging_root.join("mccc_guided_hold");
@@ -3204,23 +3693,23 @@ mod tests {
 
         let assessment =
             assess_download_item(&connection, &settings, &seed_pack, 231).expect("assessment");
-        assert_eq!(assessment.intake_mode, DownloadIntakeMode::Guided);
-
-        let guided_plan = build_guided_plan(&connection, &settings, &seed_pack, 231)
-            .expect("guided plan")
-            .expect("guided");
-        assert!(!guided_plan.apply_ready);
-        assert_eq!(guided_plan.review_files.len(), 1);
+        assert_eq!(assessment.intake_mode, DownloadIntakeMode::NeedsReview);
 
         let review_plan = build_review_plan(&connection, &settings, &seed_pack, 231)
             .expect("review plan")
             .expect("review");
-        assert_eq!(review_plan.mode, DownloadIntakeMode::Guided);
+        assert_eq!(review_plan.mode, DownloadIntakeMode::NeedsReview);
         assert_eq!(review_plan.review_files.len(), 1);
         assert!(review_plan
             .available_actions
             .iter()
-            .any(|action| action.kind == ReviewPlanActionKind::OpenOfficialSource));
+            .any(|action| {
+                matches!(
+                    action.kind,
+                    ReviewPlanActionKind::DownloadMissingFiles
+                        | ReviewPlanActionKind::OpenOfficialSource
+                )
+            }));
     }
 
     #[test]
@@ -3296,6 +3785,56 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_special_mod_family_prefers_the_fuller_local_pack() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+
+        let partial_staging = staging_root.join("mccc_partial_family");
+        fs::create_dir_all(&partial_staging).expect("partial staging");
+        insert_download_item(&connection, 240, "MCCC_partial_old.zip", &partial_staging);
+        let partial_file = partial_staging.join("mc_cmd_center.ts4script");
+        fs::write(&partial_file, b"core").expect("partial file");
+        insert_download_file(
+            &connection,
+            240,
+            24001,
+            &partial_file,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        let partial_assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 240).expect("partial");
+        store_download_item_assessment(&connection, 240, &partial_assessment).expect("store partial");
+
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        build_sample_download(&staging_root, &connection, 241, profile);
+        let full_assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 241).expect("full");
+        store_download_item_assessment(&connection, 241, &full_assessment).expect("store full");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 240)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.family_role, SpecialFamilyRole::Superseded);
+        assert_eq!(decision.primary_family_item_id, Some(241));
+        assert!(decision
+            .primary_action
+            .as_ref()
+            .is_some_and(|action| action.kind == ReviewPlanActionKind::OpenRelatedItem));
+
+        let primary_decision = build_special_mod_decision(&connection, &settings, &seed_pack, 241)
+            .expect("primary decision")
+            .expect("primary special decision");
+        assert_eq!(primary_decision.family_role, SpecialFamilyRole::Primary);
+        assert!(primary_decision.apply_ready);
+    }
+
+    #[test]
     fn stale_indexed_special_files_do_not_block_fresh_guided_install() {
         let (temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
@@ -3340,8 +3879,11 @@ mod tests {
         let summary = build_evidence_summary(&super::ProfileEvidence {
             reasons: Vec::new(),
             matched_files: 2,
+            matched_script_files: 1,
+            matched_package_files: 1,
             unmatched_supported_files: 1,
             required_core_present: true,
+            required_exact_filenames_found: 1,
             name_match: false,
             text_matches: vec!["xml injector".to_owned()],
             archive_matches: vec!["pick one".to_owned()],

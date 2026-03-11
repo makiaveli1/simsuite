@@ -440,6 +440,7 @@ export interface DownloadsInboxItem {
   familyKey?: string | null;
   relatedItemIds?: number[];
   timeline?: DownloadsTimelineEntry[];
+  specialDecision?: SpecialModDecision | null;
 }
 
 export type DownloadQueueLane =
@@ -514,6 +515,7 @@ export type ReviewPlanActionKind =
   | "repair_special"
   | "install_dependency"
   | "open_dependency"
+  | "open_related_item"
   | "download_missing_files"
   | "open_official_source"
   | "separate_supported_files";
@@ -537,6 +539,49 @@ export interface DependencyStatus {
   inboxItemName: string | null;
   inboxItemIntakeMode: DownloadIntakeMode | null;
   inboxItemGuidedInstallAvailable: boolean;
+}
+
+export type SpecialDecisionState =
+  | "guided_ready"
+  | "repair_before_update"
+  | "install_dependency_first"
+  | "open_dependency_item"
+  | "open_related_item"
+  | "download_missing_files"
+  | "open_official_source"
+  | "separate_supported_files"
+  | "review_manually";
+
+export type SpecialLocalPackState = "complete" | "partial" | "mixed" | "unknown";
+
+export type SpecialExistingInstallState =
+  | "not_installed"
+  | "clean"
+  | "repairable"
+  | "blocked";
+
+export type SpecialFamilyRole = "primary" | "related" | "superseded";
+
+export interface SpecialModDecision {
+  itemId: number;
+  profileKey: string;
+  profileName: string;
+  specialFamily: string;
+  state: SpecialDecisionState;
+  localPackState: SpecialLocalPackState;
+  existingInstallState: SpecialExistingInstallState;
+  familyRole: SpecialFamilyRole;
+  familyKey: string;
+  primaryFamilyItemId: number | null;
+  primaryFamilyItemName: string | null;
+  siblingItemIds: number[];
+  queueLane: DownloadQueueLane;
+  queueSummary: string;
+  explanation: string;
+  recommendedNextStep: string;
+  applyReady: boolean;
+  availableActions: ReviewPlanAction[];
+  primaryAction: ReviewPlanAction | null;
 }
 
 export interface GuidedInstallFileEntry {

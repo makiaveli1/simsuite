@@ -161,6 +161,16 @@ pub struct GuidedInstallProfileSeed {
     #[serde(default)]
     pub archive_path_clues: Vec<String>,
     pub install_folder_name: String,
+    #[serde(default = "default_true")]
+    pub allow_root_install: bool,
+    #[serde(default = "default_max_install_depth")]
+    pub max_install_depth: usize,
+    #[serde(default = "default_minimum_profile_files")]
+    pub minimum_profile_files: usize,
+    #[serde(default)]
+    pub minimum_script_files: usize,
+    #[serde(default)]
+    pub required_all_filenames: Vec<String>,
     pub preserve_extensions: Vec<String>,
     pub preserve_prefixes: Vec<String>,
     #[serde(default)]
@@ -247,6 +257,7 @@ pub fn load_seed_pack() -> AppResult<SeedPack> {
     let install_catalog: InstallCatalogSeed = serde_json::from_str(INSTALL_PROFILES_JSON)?;
 
     validate_creators(&creators_file.items)?;
+    validate_install_catalog(&install_catalog)?;
 
     let mut creator_lookup = HashMap::new();
     let mut creator_profiles = HashMap::new();
@@ -289,6 +300,18 @@ pub fn load_seed_pack() -> AppResult<SeedPack> {
     })
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_install_depth() -> usize {
+    1
+}
+
+fn default_minimum_profile_files() -> usize {
+    1
+}
+
 pub fn normalize_key(value: &str) -> String {
     value
         .to_lowercase()
@@ -304,6 +327,56 @@ fn validate_creators(creators: &[SeedCreator]) -> AppResult<()> {
             return Err(AppError::Message(format!(
                 "Duplicate canonical creator in seed data: {}",
                 creator.canonical_name
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_install_catalog(catalog: &InstallCatalogSeed) -> AppResult<()> {
+    let mut keys = HashSet::new();
+
+    for profile in &catalog.guided_profiles {
+        if !keys.insert(normalize_key(&profile.key)) {
+            return Err(AppError::Message(format!(
+                "Duplicate guided special-mod profile key: {}",
+                profile.key
+            )));
+        }
+
+        if profile.required_name_clues.is_empty() {
+            return Err(AppError::Message(format!(
+                "Guided special-mod profile {} is missing required core clues.",
+                profile.key
+            )));
+        }
+
+        if profile.minimum_profile_files == 0 {
+            return Err(AppError::Message(format!(
+                "Guided special-mod profile {} must require at least one matching file.",
+                profile.key
+            )));
+        }
+
+        if profile.max_install_depth > 1 {
+            return Err(AppError::Message(format!(
+                "Guided special-mod profile {} allows an unsafe install depth. Only root or one folder deep is supported right now.",
+                profile.key
+            )));
+        }
+
+        if profile.minimum_script_files > profile.minimum_profile_files {
+            return Err(AppError::Message(format!(
+                "Guided special-mod profile {} cannot require more script files than total matching files.",
+                profile.key
+            )));
+        }
+
+        if profile.script_prefixes.is_empty() && profile.package_prefixes.is_empty() {
+            return Err(AppError::Message(format!(
+                "Guided special-mod profile {} needs at least one script or package prefix.",
+                profile.key
             )));
         }
     }
@@ -385,4 +458,61 @@ fn build_parser_lexicon(
 struct Versioned<T> {
     seed_version: String,
     items: T,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_guided_profile() -> GuidedInstallProfileSeed {
+        GuidedInstallProfileSeed {
+            key: "sample_profile".to_owned(),
+            display_name: "Sample Profile".to_owned(),
+            creator: Some("Creator".to_owned()),
+            family: "Support Libraries".to_owned(),
+            official_source_url: "https://example.com".to_owned(),
+            official_download_url: None,
+            reference_source: vec!["official_docs".to_owned()],
+            reviewed_at: "2026-03-11".to_owned(),
+            sample_filenames: vec!["sample.ts4script".to_owned()],
+            help_summary: "Sample".to_owned(),
+            post_install_notes: Vec::new(),
+            required_name_clues: vec!["sample".to_owned()],
+            script_prefixes: vec!["sample".to_owned()],
+            package_prefixes: Vec::new(),
+            name_clues: vec!["sample".to_owned()],
+            text_clues: Vec::new(),
+            archive_path_clues: Vec::new(),
+            install_folder_name: "Sample".to_owned(),
+            allow_root_install: true,
+            max_install_depth: 1,
+            minimum_profile_files: 1,
+            minimum_script_files: 1,
+            required_all_filenames: Vec::new(),
+            preserve_extensions: Vec::new(),
+            preserve_prefixes: Vec::new(),
+            dependency_keys: Vec::new(),
+            incompatibility_keys: Vec::new(),
+            review_reasons: Vec::new(),
+            block_reasons: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn validate_install_catalog_rejects_unsafe_install_depth() {
+        let mut profile = sample_guided_profile();
+        profile.max_install_depth = 2;
+        let catalog = InstallCatalogSeed {
+            seed_version: "test".to_owned(),
+            guided_profiles: vec![profile],
+            dependency_rules: Vec::new(),
+            incompatibility_rules: Vec::new(),
+            review_only_patterns: Vec::new(),
+        };
+
+        let error = validate_install_catalog(&catalog).expect_err("catalog should fail");
+        assert!(error
+            .to_string()
+            .contains("unsafe install depth"));
+    }
 }

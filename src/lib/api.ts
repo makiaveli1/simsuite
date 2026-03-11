@@ -3418,6 +3418,23 @@ async function mockInvoke<T>(
         } as T;
       }
 
+      if (action.kind === "open_related_item") {
+        return {
+          actionKind: action.kind,
+          focusItemId: action.relatedItemId ?? itemId,
+          createdItemId: null,
+          openedUrl: null,
+          snapshotId: null,
+          repairedCount: 0,
+          installedCount: 0,
+          replacedCount: 0,
+          preservedCount: 0,
+          deferredReviewCount: 0,
+          snapshotName: null,
+          message: `Opened ${action.relatedItemName ?? "the fuller special-mod pack"} in the Inbox.`,
+        } as T;
+      }
+
       if (action.kind === "open_official_source") {
         return {
           actionKind: action.kind,

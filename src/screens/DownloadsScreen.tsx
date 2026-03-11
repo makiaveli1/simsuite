@@ -50,6 +50,7 @@ import type {
   ReviewPlanAction,
   RulePreset,
   Screen,
+  SpecialModDecision,
   SpecialReviewPlan,
   UserView,
 } from "../lib/types";
@@ -464,29 +465,36 @@ export function DownloadsScreen({
 
   const overview = inbox?.overview ?? null;
   const selectedFiles = selectedDetail?.files ?? [];
+  const selectedSpecialDecision =
+    selectedItem?.specialDecision ?? selectedDetail?.item.specialDecision ?? null;
   const previewSuggestions = selectedPreview?.suggestions ?? [];
   const safeCount = actionableCount(selectedPreview);
   const reviewCount =
     selectedItem?.intakeMode === "guided"
-      ? selectedGuidedPlan?.reviewFiles.length ?? selectedItem?.reviewFileCount ?? 0
+      ? selectedGuidedPlan?.reviewFiles.length ??
+        selectedReviewPlan?.reviewFiles.length ??
+        selectedItem?.reviewFileCount ??
+        0
       : selectedItem?.intakeMode === "needs_review" ||
           selectedItem?.intakeMode === "blocked"
         ? selectedReviewPlan?.reviewFiles.length ?? selectedItem?.reviewFileCount ?? 0
       : selectedPreview?.reviewCount ?? selectedItem?.reviewFileCount ?? 0;
   const unchangedCount = alignedCount(selectedPreview);
-  const reviewActions =
-    selectedReviewPlan
+  const reviewActions = selectedSpecialDecision
+    ? buildDecisionActions(selectedSpecialDecision, selectedReviewPlan)
+    : selectedReviewPlan
       ? buildReviewActions(selectedReviewPlan)
       : [];
-  const primaryReviewAction = reviewActions[0] ?? null;
+  const primaryReviewAction =
+    selectedSpecialDecision?.primaryAction ?? reviewActions[0] ?? null;
   const guidedNeedsReview = Boolean(
     selectedItem?.intakeMode === "guided" &&
-      selectedGuidedPlan &&
-      !selectedGuidedPlan.applyReady,
+      ((selectedSpecialDecision && !selectedSpecialDecision.applyReady) ||
+        (selectedGuidedPlan && !selectedGuidedPlan.applyReady)),
   );
   const canApply =
     selectedItem?.intakeMode === "guided"
-      ? Boolean(selectedGuidedPlan?.applyReady)
+      ? Boolean(selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady)
       : selectedItem?.intakeMode === "standard" && safeCount > 0;
   const showPrimaryAction =
     Boolean(selectedItem) && (canApply || Boolean(primaryReviewAction));
@@ -496,6 +504,7 @@ export function DownloadsScreen({
       : applyButtonLabel(
           selectedItem.intakeMode,
           selectedGuidedPlan,
+          selectedSpecialDecision,
           userView,
           isApplying,
           selectedReviewPlan,
@@ -510,12 +519,21 @@ export function DownloadsScreen({
     ? isApplying
     : !canApply || isApplying;
   const nextStepTitle = selectedItem
-    ? downloadsNextStepTitle(selectedItem, selectedGuidedPlan, primaryReviewAction, canApply, safeCount, userView)
+    ? downloadsNextStepTitle(
+        selectedItem,
+        selectedGuidedPlan,
+        selectedSpecialDecision,
+        primaryReviewAction,
+        canApply,
+        safeCount,
+        userView,
+      )
     : null;
   const nextStepDescription = selectedItem
     ? downloadsNextStepDescription(
         selectedItem,
         selectedGuidedPlan,
+        selectedSpecialDecision,
         primaryReviewAction,
         safeCount,
         userView,
@@ -1063,6 +1081,7 @@ export function DownloadsScreen({
                         userView,
                         safeCount,
                         selectedGuidedPlan,
+                        selectedSpecialDecision,
                         selectedReviewPlan,
                       )}
                     </div>
@@ -2598,6 +2617,16 @@ function buildReviewActions(reviewPlan: SpecialReviewPlan): ReviewPlanAction[] {
   return [...reviewPlan.availableActions].sort((left, right) => right.priority - left.priority);
 }
 
+function buildDecisionActions(
+  decision: SpecialModDecision,
+  reviewPlan: SpecialReviewPlan | null,
+): ReviewPlanAction[] {
+  const source = reviewPlan?.availableActions.length
+    ? reviewPlan.availableActions
+    : decision.availableActions;
+  return [...source].sort((left, right) => right.priority - left.priority);
+}
+
 function reviewActionLabel(
   action: ReviewPlanAction,
   userView: UserView,
@@ -2612,6 +2641,8 @@ function reviewActionLabel(
       return userView === "beginner" ? "Fixing old setup..." : "Repairing setup...";
     case "install_dependency":
       return userView === "beginner" ? "Installing helper..." : "Installing dependency...";
+    case "open_related_item":
+      return userView === "beginner" ? "Opening better pack..." : "Opening fuller pack...";
     case "download_missing_files":
       return userView === "beginner" ? "Downloading files..." : "Downloading missing files...";
     case "separate_supported_files":
@@ -2671,8 +2702,15 @@ function downloadsInspectorIdleNote(
   userView: UserView,
   safeCount: number,
   guidedPlan?: GuidedInstallPlan | null,
+  specialDecision?: SpecialModDecision | null,
   reviewPlan?: SpecialReviewPlan | null,
 ) {
+  if (specialDecision?.availableActions.length) {
+    return userView === "beginner"
+      ? "SimSuite already has the safest next move ready."
+      : "The backend already picked the safest next step for this special-mod batch.";
+  }
+
   if (intakeMode === "needs_review") {
     return reviewPlan?.availableActions.length
       ? userView === "beginner"
@@ -2721,6 +2759,7 @@ function downloadsInspectorIdleNote(
 function downloadsNextStepTitle(
   item: DownloadsInboxItem,
   guidedPlan: GuidedInstallPlan | null,
+  specialDecision: SpecialModDecision | null,
   reviewAction: ReviewPlanAction | null,
   canApply: boolean,
   safeCount: number,
@@ -2734,6 +2773,23 @@ function downloadsNextStepTitle(
 
   if (reviewAction) {
     return reviewAction.label;
+  }
+
+  if (specialDecision) {
+    if (specialDecision.applyReady && canApply) {
+      return guidedPlan?.existingInstallDetected ||
+        specialDecision.existingInstallState === "clean"
+        ? userView === "beginner"
+          ? "Update this special mod safely"
+          : "Guided update is ready"
+        : userView === "beginner"
+          ? "Install this special mod safely"
+          : "Guided install is ready";
+    }
+
+    return userView === "beginner"
+      ? "Follow the next safe setup step"
+      : "Use the safest next special-mod step";
   }
 
   if (item.intakeMode === "guided") {
@@ -2778,6 +2834,7 @@ function downloadsNextStepTitle(
 function downloadsNextStepDescription(
   item: DownloadsInboxItem,
   guidedPlan: GuidedInstallPlan | null,
+  specialDecision: SpecialModDecision | null,
   reviewAction: ReviewPlanAction | null,
   safeCount: number,
   userView: UserView,
@@ -2790,6 +2847,16 @@ function downloadsNextStepDescription(
 
   if (reviewAction) {
     return reviewActionDescription(reviewAction);
+  }
+
+  if (specialDecision) {
+    if (specialDecision.applyReady) {
+      return userView === "beginner"
+        ? "SimSuite has checked the files, the folder, and the update rules for this special mod."
+        : "The backend has a full safe install or update plan ready for this special mod.";
+    }
+
+    return specialDecision.recommendedNextStep;
   }
 
   if (item.intakeMode === "guided") {
@@ -2852,6 +2919,7 @@ function previewPanelTitle(
 function applyButtonLabel(
   intakeMode: DownloadIntakeMode,
   guidedPlan: GuidedInstallPlan | null,
+  specialDecision: SpecialModDecision | null,
   userView: UserView,
   isApplying: boolean,
   reviewPlan?: SpecialReviewPlan | null,
@@ -2864,11 +2932,15 @@ function applyButtonLabel(
   }
 
   if (intakeMode === "guided") {
+    const existingInstallDetected =
+      guidedPlan?.existingInstallDetected ??
+      (specialDecision?.existingInstallState === "clean" ||
+        specialDecision?.existingInstallState === "repairable");
     return userView === "beginner"
-      ? guidedPlan?.existingInstallDetected
+      ? existingInstallDetected
         ? "Update safely"
         : "Install safely"
-      : guidedPlan?.existingInstallDetected
+      : existingInstallDetected
         ? "Apply guided update"
         : "Apply guided install";
   }

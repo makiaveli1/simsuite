@@ -41,6 +41,7 @@ fn review_action_kind_matches(kind: &ReviewPlanActionKind, value: &str) -> bool 
         (ReviewPlanActionKind::RepairSpecial, "repair_special")
             | (ReviewPlanActionKind::InstallDependency, "install_dependency")
             | (ReviewPlanActionKind::OpenDependency, "open_dependency")
+            | (ReviewPlanActionKind::OpenRelatedItem, "open_related_item")
             | (ReviewPlanActionKind::DownloadMissingFiles, "download_missing_files")
             | (ReviewPlanActionKind::OpenOfficialSource, "open_official_source")
             | (ReviewPlanActionKind::SeparateSupportedFiles, "separate_supported_files")
@@ -356,8 +357,14 @@ pub fn get_downloads_inbox(
 ) -> Result<DownloadsInboxResponse, String> {
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    downloads_watcher::list_download_items(&connection, &settings, query.unwrap_or_default())
-        .map_err(map_error)
+    let seed_pack = state.seed_pack();
+    downloads_watcher::list_download_items(
+        &connection,
+        &settings,
+        &seed_pack,
+        query.unwrap_or_default(),
+    )
+    .map_err(map_error)
 }
 
 #[tauri::command]
@@ -366,7 +373,10 @@ pub fn get_download_item_detail(
     state: State<'_, AppState>,
 ) -> Result<Option<DownloadInboxDetail>, String> {
     let connection = state.connection().map_err(map_error)?;
-    downloads_watcher::get_download_item_detail(&connection, item_id).map_err(map_error)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    downloads_watcher::get_download_item_detail(&connection, &settings, &seed_pack, item_id)
+        .map_err(map_error)
 }
 
 #[tauri::command]
@@ -377,8 +387,15 @@ pub fn preview_download_item(
 ) -> Result<OrganizationPreview, String> {
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    downloads_watcher::preview_download_item(&connection, &settings, item_id, preset_name)
-        .map_err(map_error)
+    let seed_pack = state.seed_pack();
+    downloads_watcher::preview_download_item(
+        &connection,
+        &settings,
+        &seed_pack,
+        item_id,
+        preset_name,
+    )
+    .map_err(map_error)
 }
 
 #[tauri::command]
@@ -491,9 +508,16 @@ pub fn apply_download_item(
     state: State<'_, AppState>,
 ) -> Result<ApplyPreviewResult, String> {
     let mut connection = state.connection().map_err(map_error)?;
-    let Some(item) = downloads_watcher::get_download_item_detail(&connection, item_id)
-        .map_err(map_error)?
-        .map(|detail| detail.item)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    let Some(item) = downloads_watcher::get_download_item_detail(
+        &connection,
+        &settings,
+        &seed_pack,
+        item_id,
+    )
+    .map_err(map_error)?
+    .map(|detail| detail.item)
     else {
         return Err("Inbox item was not found.".to_owned());
     };
@@ -504,7 +528,6 @@ pub fn apply_download_item(
         );
     }
 
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let file_ids =
         downloads_watcher::load_active_file_ids(&connection, item_id).map_err(map_error)?;
     let result = move_engine::apply_preview_moves_for_files(
@@ -718,6 +741,25 @@ pub fn apply_review_plan_action(
                     .unwrap_or_else(|| "dependency".to_owned())
             ),
         }),
+        ReviewPlanActionKind::OpenRelatedItem => Ok(ApplyReviewPlanActionResult {
+            action_kind: action.kind,
+            focus_item_id: action.related_item_id.unwrap_or(item_id),
+            created_item_id: None,
+            opened_url: None,
+            snapshot_id: None,
+            repaired_count: 0,
+            installed_count: 0,
+            replaced_count: 0,
+            preserved_count: 0,
+            deferred_review_count: 0,
+            snapshot_name: None,
+            message: format!(
+                "Opened {} so you can use the fuller local pack first.",
+                action
+                    .related_item_name
+                    .unwrap_or_else(|| "the better Inbox item".to_owned())
+            ),
+        }),
         ReviewPlanActionKind::OpenOfficialSource => {
             let opened_url = action.url.clone().ok_or_else(|| {
                 "This official page is missing its website address, so SimSuite could not open it."
@@ -821,7 +863,12 @@ pub fn apply_review_plan_action(
             let source = downloads_watcher::get_download_item_source(&connection, item_id)
                 .map_err(map_error)?
                 .ok_or_else(|| "This inbox item could not be found.".to_owned())?;
-            let detail = downloads_watcher::get_download_item_detail(&connection, item_id)
+            let detail = downloads_watcher::get_download_item_detail(
+                &connection,
+                &settings,
+                &seed_pack,
+                item_id,
+            )
                 .map_err(map_error)?
                 .ok_or_else(|| "This inbox item could not be loaded.".to_owned())?;
             let split_root = state
