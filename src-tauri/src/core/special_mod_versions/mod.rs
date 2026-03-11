@@ -213,26 +213,28 @@ pub fn build_signature(entries: &[SignatureEntry]) -> Option<String> {
 pub fn extract_version_from_values(values: &[String]) -> Option<String> {
     values
         .iter()
-        .find_map(|value| extract_version_from_value(value))
+        .flat_map(|value| extract_ranked_version_candidates(value))
+        .max_by(|left, right| compare_ranked_candidates(left, right))
+        .map(|candidate| candidate.normalized)
 }
 
 pub fn extract_version_from_value(value: &str) -> Option<String> {
-    let version_with_prefix = Regex::new(r"(?i)\b(?:version|ver|v)[\s._-]*([0-9]+(?:[._-][0-9]+){0,3})\b")
-        .expect("version regex");
-    if let Some(captures) = version_with_prefix.captures(value) {
-        return captures
-            .get(1)
-            .map(|matched| normalize_version_token(matched.as_str()));
-    }
+    extract_ranked_version_candidates(value)
+        .into_iter()
+        .max_by(|left, right| compare_ranked_candidates(left, right))
+        .map(|candidate| candidate.normalized)
+}
 
-    let sequence = Regex::new(
-        r"(?i)(?:^|[^0-9])([0-9]{1,4}(?:[._-][0-9]{1,4}){1,3})(?:[^0-9]|$)",
-    )
-    .expect("sequence regex");
-    sequence
-        .captures(value)
-        .and_then(|captures| captures.get(1))
-        .map(|matched| normalize_version_token(matched.as_str()))
+pub fn extract_version_candidates_from_value(value: &str) -> Vec<String> {
+    let mut candidates = extract_ranked_version_candidates(value)
+        .into_iter()
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| compare_ranked_candidates(right, left));
+    candidates.dedup_by(|left, right| left.normalized == right.normalized);
+    candidates
+        .into_iter()
+        .map(|candidate| candidate.normalized)
+        .collect()
 }
 
 pub fn compare_versions(
@@ -255,7 +257,17 @@ pub fn compare_versions(
     match (installed_version.and_then(parse_version_parts), incoming_version.and_then(parse_version_parts)) {
         (Some(installed), Some(incoming)) => match incoming.cmp(&installed) {
             std::cmp::Ordering::Greater => SpecialVersionStatus::IncomingNewer,
-            std::cmp::Ordering::Equal => SpecialVersionStatus::SameVersion,
+            std::cmp::Ordering::Equal => {
+                if let (Some(left), Some(right)) = (installed_signature, incoming_signature) {
+                    if !left.is_empty() && !right.is_empty() && left != right {
+                        SpecialVersionStatus::Unknown
+                    } else {
+                        SpecialVersionStatus::SameVersion
+                    }
+                } else {
+                    SpecialVersionStatus::SameVersion
+                }
+            }
             std::cmp::Ordering::Less => SpecialVersionStatus::IncomingOlder,
         },
         _ => SpecialVersionStatus::Unknown,
@@ -546,6 +558,93 @@ fn normalize_version_token(value: &str) -> String {
         .replace(['_', '-'], ".")
 }
 
+#[derive(Debug, Clone)]
+struct RankedVersionCandidate {
+    normalized: String,
+    score: i64,
+    parts: Vec<i64>,
+}
+
+fn extract_ranked_version_candidates(value: &str) -> Vec<RankedVersionCandidate> {
+    let mut candidates = Vec::new();
+    let version_with_prefix =
+        Regex::new(r"(?i)\b(?:version|ver|v)[\s._-]*([0-9]+(?:[._-][0-9]+){0,3})\b")
+            .expect("version regex");
+    for captures in version_with_prefix.captures_iter(value) {
+        if let Some(matched) = captures.get(1) {
+            if let Some(candidate) = build_ranked_candidate(value, matched.as_str(), true) {
+                candidates.push(candidate);
+            }
+        }
+    }
+
+    let sequence = Regex::new(
+        r"(?i)(?:^|[^0-9])([0-9]{1,4}(?:[._-][0-9]{1,4}){1,3})(?:[^0-9]|$)",
+    )
+    .expect("sequence regex");
+    for captures in sequence.captures_iter(value) {
+        if let Some(matched) = captures.get(1) {
+            if let Some(candidate) = build_ranked_candidate(value, matched.as_str(), false) {
+                candidates.push(candidate);
+            }
+        }
+    }
+
+    candidates
+}
+
+fn build_ranked_candidate(
+    source: &str,
+    raw_value: &str,
+    prefixed: bool,
+) -> Option<RankedVersionCandidate> {
+    let normalized = normalize_version_token(raw_value);
+    let parts = parse_version_parts(&normalized)?;
+    Some(RankedVersionCandidate {
+        normalized,
+        score: score_version_candidate(source, &parts, prefixed),
+        parts,
+    })
+}
+
+fn score_version_candidate(source: &str, parts: &[i64], prefixed: bool) -> i64 {
+    let mut score = (parts.len() as i64) * 4;
+    let lowered = source.to_ascii_lowercase();
+    if prefixed || lowered.contains("version") {
+        score += 40;
+    }
+
+    let major = parts.first().copied().unwrap_or_default();
+    if (2000..=2100).contains(&major) {
+        score += 50;
+    }
+
+    if major <= 2
+        && parts.len() >= 3
+        && parts.get(1).copied().unwrap_or_default() >= 50
+        && parts.get(2).copied().unwrap_or_default() >= 50
+    {
+        // Sims game patch numbers like 1.113.277 should not beat actual mod releases.
+        score -= 40;
+    }
+
+    if major == 0 {
+        score -= 8;
+    }
+
+    score
+}
+
+fn compare_ranked_candidates(
+    left: &RankedVersionCandidate,
+    right: &RankedVersionCandidate,
+) -> std::cmp::Ordering {
+    left.score
+        .cmp(&right.score)
+        .then_with(|| left.parts.cmp(&right.parts))
+        .then_with(|| left.normalized.len().cmp(&right.normalized.len()))
+}
+
 fn parse_version_parts(value: &str) -> Option<Vec<i64>> {
     let normalized = normalize_version_token(value);
     let parts = normalized
@@ -583,7 +682,11 @@ pub fn signature_entries_from_paths(paths: &[&Path]) -> Vec<SignatureEntry> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_github_latest_url, parse_mccc_latest_html, unknown_latest};
+    use super::{
+        compare_versions, extract_version_candidates_from_value, extract_version_from_values,
+        parse_github_latest_url, parse_mccc_latest_html, unknown_latest,
+    };
+    use crate::models::SpecialVersionStatus;
     use crate::seed::load_seed_pack;
 
     #[test]
@@ -662,5 +765,34 @@ mod tests {
         assert_eq!(info.status, "unknown");
         assert!(info.latest_version.is_none());
         assert!(info.note.is_some());
+    }
+
+    #[test]
+    fn prefers_mod_release_versions_over_game_patch_numbers() {
+        let versions = extract_version_candidates_from_value(
+            "mc_cmd_version.pyc supports 1.113.277 and release 2026.1.1",
+        );
+
+        assert!(versions.iter().any(|value| value == "1.113.277"));
+        assert!(versions.iter().any(|value| value == "2026.1.1"));
+        assert_eq!(
+            extract_version_from_values(&[String::from(
+                "mc_cmd_version.pyc supports 1.113.277 and release 2026.1.1",
+            )]),
+            Some("2026.1.1".to_owned())
+        );
+    }
+
+    #[test]
+    fn different_signatures_do_not_mark_same_labeled_versions_as_current() {
+        let status = compare_versions(
+            true,
+            Some("2026.1.1"),
+            Some("installed-signature"),
+            Some("2026.1.1"),
+            Some("incoming-signature"),
+        );
+
+        assert_eq!(status, SpecialVersionStatus::Unknown);
     }
 }

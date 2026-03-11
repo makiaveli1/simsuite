@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 
 use crate::{
     core::{
+        file_inspector,
         special_mod_versions::{
             self, build_signature, build_version_comparison, extract_version_from_values,
             load_family_state, load_or_refresh_latest_info, save_family_state, SignatureEntry,
@@ -105,6 +106,116 @@ struct ExistingInstallLayout {
 struct VersionEvidence {
     value: Option<String>,
     source: Option<String>,
+}
+
+fn special_insights_need_refresh(extension: &str, insights: &FileInsights) -> bool {
+    matches!(extension, ".ts4script" | ".package")
+        && (insights.version_hints.is_empty() || insights.family_hints.is_empty())
+}
+
+fn merge_insight_values(existing: &[String], fresh: &[String]) -> Vec<String> {
+    let mut merged = existing.to_vec();
+    for value in fresh {
+        if !merged.contains(value) {
+            merged.push(value.clone());
+        }
+    }
+    merged
+}
+
+fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileInsights {
+    FileInsights {
+        format: fresh.format.clone().or_else(|| existing.format.clone()),
+        resource_summary: merge_insight_values(&existing.resource_summary, &fresh.resource_summary),
+        script_namespaces: merge_insight_values(
+            &existing.script_namespaces,
+            &fresh.script_namespaces,
+        ),
+        embedded_names: merge_insight_values(&existing.embedded_names, &fresh.embedded_names),
+        creator_hints: merge_insight_values(&existing.creator_hints, &fresh.creator_hints),
+        version_hints: merge_insight_values(&existing.version_hints, &fresh.version_hints),
+        family_hints: merge_insight_values(&existing.family_hints, &fresh.family_hints),
+    }
+}
+
+fn refresh_profile_file_insights_if_needed(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    file: &mut ProfileFile,
+) {
+    if !special_insights_need_refresh(&file.extension, &file.insights) {
+        return;
+    }
+
+    let path = Path::new(&file.path);
+    if !path.exists() {
+        return;
+    }
+
+    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack) else {
+        return;
+    };
+    let merged = merge_file_insights(&file.insights, &outcome.insights);
+    if merged.version_hints == file.insights.version_hints
+        && merged.family_hints == file.insights.family_hints
+        && merged.creator_hints == file.insights.creator_hints
+        && merged.script_namespaces == file.insights.script_namespaces
+        && merged.embedded_names == file.insights.embedded_names
+        && merged.resource_summary == file.insights.resource_summary
+        && merged.format == file.insights.format
+    {
+        return;
+    }
+
+    file.insights = merged.clone();
+    let _ = connection.execute(
+        "UPDATE files SET insights = ?2 WHERE id = ?1",
+        params![
+            file.file_id,
+            serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_owned())
+        ],
+    );
+}
+
+fn refresh_existing_install_file_insights_if_needed(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    file: &mut ExistingInstallFile,
+) {
+    if !special_insights_need_refresh(&file.extension, &file.insights) {
+        return;
+    }
+
+    let path = Path::new(&file.path);
+    if !path.exists() {
+        return;
+    }
+
+    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack) else {
+        return;
+    };
+    let merged = merge_file_insights(&file.insights, &outcome.insights);
+    if merged.version_hints == file.insights.version_hints
+        && merged.family_hints == file.insights.family_hints
+        && merged.creator_hints == file.insights.creator_hints
+        && merged.script_namespaces == file.insights.script_namespaces
+        && merged.embedded_names == file.insights.embedded_names
+        && merged.resource_summary == file.insights.resource_summary
+        && merged.format == file.insights.format
+    {
+        return;
+    }
+
+    file.insights = merged.clone();
+    if let Some(file_id) = file.file_id {
+        let _ = connection.execute(
+            "UPDATE files SET insights = ?2 WHERE id = ?1",
+            params![
+                file_id,
+                serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_owned())
+            ],
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -332,8 +443,8 @@ fn build_guided_plan_internal(
     let Some(item) = load_item_with_staging(connection, item_id)? else {
         return Ok(None);
     };
-    let active_files = load_profile_files(connection, item_id, true)?;
-    let layout = detect_existing_layout(connection, settings, &profile)?;
+    let active_files = load_profile_files(connection, seed_pack, item_id, true)?;
+    let layout = detect_existing_layout(connection, settings, seed_pack, &profile)?;
     let can_repair_layout = allow_repair_layout
         && layout.repair_plan_available
         && evaluation.assessment.missing_dependencies.is_empty()
@@ -574,12 +685,12 @@ pub fn build_review_plan(
         return Ok(None);
     }
 
-    let files = load_profile_files(connection, item_id, true)?;
+    let files = load_profile_files(connection, seed_pack, item_id, true)?;
     let repair_guided_plan = build_repair_guided_plan(connection, settings, seed_pack, item_id)?;
     let repair_layout = evaluation
         .matched_profile
         .as_ref()
-        .map(|profile| detect_existing_layout(connection, settings, profile))
+        .map(|profile| detect_existing_layout(connection, settings, seed_pack, profile))
         .transpose()?;
     let review_files = guided_plan
         .as_ref()
@@ -806,8 +917,8 @@ pub fn build_special_mod_decision_cached(
         .matched_evidence
         .clone()
         .unwrap_or_else(|| collect_profile_evidence(&profile, &empty_item_record(), &[], &[], &[]));
-    let files = load_profile_files(connection, item_id, true)?;
-    let layout = detect_existing_layout_cached(connection, settings, &profile, context)?;
+    let files = load_profile_files(connection, seed_pack, item_id, true)?;
+    let layout = detect_existing_layout_cached(connection, settings, seed_pack, &profile, context)?;
     let family_key = format!("special:{}", profile.key);
     let siblings = load_family_siblings_cached(connection, item_id, &profile.key, context)?;
     let primary_family = select_primary_family_item(item_id, &siblings);
@@ -1033,7 +1144,7 @@ pub fn collect_supported_subset_file_ids(
         return Ok(None);
     };
 
-    let files = load_profile_files(connection, item_id, true)?;
+    let files = load_profile_files(connection, seed_pack, item_id, true)?;
     if !has_supported_subset_to_separate(&files, profile) {
         return Ok(None);
     }
@@ -1074,13 +1185,14 @@ pub fn reconcile_special_mod_family(
     };
 
     let mut context = SpecialDecisionContext::default();
-    let layout = detect_existing_layout_cached(connection, settings, &profile, &mut context)?;
+    let layout =
+        detect_existing_layout_cached(connection, settings, seed_pack, &profile, &mut context)?;
     let existing_install_state = existing_install_state_from_layout(&layout);
     let install_path = layout
         .existing_install_detected
         .then(|| layout.target_folder.to_string_lossy().to_string());
     let item = load_item_with_staging(connection, applied_item_id)?.unwrap_or_else(empty_item_record);
-    let files = load_profile_files(connection, applied_item_id, false)?;
+    let files = load_profile_files(connection, seed_pack, applied_item_id, false)?;
     let mut family_state = load_family_state_cached(
         connection,
         &mut context,
@@ -1285,6 +1397,7 @@ fn build_special_queue_summary(
 fn detect_existing_layout_cached(
     connection: &Connection,
     settings: &LibrarySettings,
+    seed_pack: &SeedPack,
     profile: &GuidedInstallProfileSeed,
     context: &mut SpecialDecisionContext,
 ) -> AppResult<ExistingInstallLayout> {
@@ -1292,7 +1405,7 @@ fn detect_existing_layout_cached(
         return Ok(layout.clone());
     }
 
-    let layout = detect_existing_layout(connection, settings, profile)?;
+    let layout = detect_existing_layout(connection, settings, seed_pack, profile)?;
     context
         .layout_cache
         .insert(profile.key.clone(), layout.clone());
@@ -1568,7 +1681,7 @@ fn evaluate_download_item(
             "Inbox item was not found while building the special install plan.".to_owned(),
         )
     })?;
-    let files = load_profile_files(connection, item_id, true)?;
+    let files = load_profile_files(connection, seed_pack, item_id, true)?;
     let text_clues = read_text_clues(item.staging_path.as_deref(), &files)?;
     let archive_path_clues = collect_archive_path_clues(&files);
     let review_patterns =
@@ -1637,7 +1750,7 @@ fn evaluate_download_item(
     );
 
     if let Some(candidate) = best_candidate {
-        let layout = detect_existing_layout(connection, settings, &candidate.profile)?;
+        let layout = detect_existing_layout(connection, settings, seed_pack, &candidate.profile)?;
         let dependency_rules =
             collect_required_dependency_rules(seed_pack, &candidate.profile, &matched_dependency_rules);
         let dependencies =
@@ -2446,7 +2559,7 @@ fn dependency_is_installed(
         .iter()
         .find(|profile| profile.key == dependency_key)
     {
-        return detect_existing_layout(connection, settings, profile)
+        return detect_existing_layout(connection, settings, seed_pack, profile)
             .map(|layout| layout.existing_install_detected);
     }
 
@@ -2510,6 +2623,7 @@ fn dependency_in_inbox(
 fn detect_existing_layout(
     connection: &Connection,
     settings: &LibrarySettings,
+    seed_pack: &SeedPack,
     profile: &GuidedInstallProfileSeed,
 ) -> AppResult<ExistingInstallLayout> {
     let mods_root = settings
@@ -2584,6 +2698,13 @@ fn detect_existing_layout(
         &mut existing_candidates,
         &mut preserve_candidates,
     )?;
+
+    for file in &mut existing_candidates {
+        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file);
+    }
+    for file in &mut preserve_candidates {
+        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file);
+    }
 
     let target_folder = select_existing_target_folder(
         &mods_root,
@@ -2835,6 +2956,7 @@ fn load_item_with_staging(
 
 fn load_profile_files(
     connection: &Connection,
+    seed_pack: &SeedPack,
     item_id: i64,
     active_only: bool,
 ) -> AppResult<Vec<ProfileFile>> {
@@ -2865,7 +2987,7 @@ fn load_profile_files(
          ORDER BY f.filename COLLATE NOCASE"
     );
     let mut statement = connection.prepare(&sql)?;
-    let rows = statement
+    let mut rows = statement
         .query_map(params![item_id], |row| {
             Ok(ProfileFile {
                 file_id: row.get(0)?,
@@ -2885,6 +3007,9 @@ fn load_profile_files(
         })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
+    for file in &mut rows {
+        refresh_profile_file_insights_if_needed(connection, seed_pack, file);
+    }
     Ok(rows)
 }
 
@@ -3610,8 +3735,14 @@ mod tests {
     };
     use rusqlite::{params, Connection};
     use serde_json::to_string;
-    use std::{fs, path::{Path, PathBuf}};
+    use std::{
+        fs,
+        fs::File,
+        io::Write,
+        path::{Path, PathBuf},
+    };
     use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
 
     fn setup_env() -> (tempfile::TempDir, Connection, SeedPack, LibrarySettings) {
         let temp = tempdir().expect("tempdir");
@@ -3735,6 +3866,16 @@ mod tests {
                 params![path.to_string_lossy().to_string(), filename, extension, kind],
             )
             .expect("installed file");
+    }
+
+    fn write_script_archive(path: &Path, entry_name: &str, contents: &[u8]) {
+        let file = File::create(path).expect("archive file");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(entry_name, SimpleFileOptions::default())
+            .expect("start archive file");
+        writer.write_all(contents).expect("write archive file");
+        writer.finish().expect("finish archive file");
     }
 
     fn build_sample_download(
@@ -4502,12 +4643,22 @@ mod tests {
 
         let existing_root = temp.path().join("Mods").join("MCCC");
         fs::create_dir_all(&existing_root).expect("existing");
-        let current_script = existing_root.join("mc_cmd_center.ts4script");
-        let current_package = existing_root.join("mc_cmd_center.package");
-        fs::write(&current_script, b"installed").expect("script");
-        fs::write(&current_package, b"installed").expect("package");
-        insert_installed_file(&connection, &current_script, "Script Mods");
-        insert_installed_file(&connection, &current_package, "Mods");
+        for sample in &profile.sample_filenames {
+            let file_path = existing_root.join(sample);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).expect("existing parents");
+            }
+            fs::write(&file_path, b"sample").expect("installed sample");
+            insert_installed_file(
+                &connection,
+                &file_path,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
         insert_family_state(
             &connection,
             "mccc",
@@ -4556,12 +4707,23 @@ mod tests {
 
         let existing_root = temp.path().join("Mods").join("MCCC");
         fs::create_dir_all(&existing_root).expect("existing");
+        for sample in &profile.sample_filenames {
+            let file_path = existing_root.join(sample);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).expect("existing parents");
+            }
+            fs::write(&file_path, b"sample").expect("installed sample");
+            insert_installed_file(
+                &connection,
+                &file_path,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
         let current_script = existing_root.join("mc_cmd_center.ts4script");
-        let current_package = existing_root.join("mc_cmd_center.package");
-        fs::write(&current_script, b"installed").expect("script");
-        fs::write(&current_package, b"installed").expect("package");
-        insert_installed_file(&connection, &current_script, "Script Mods");
-        insert_installed_file(&connection, &current_package, "Mods");
         update_file_insights_by_path(
             &connection,
             &current_script,
@@ -4719,8 +4881,147 @@ mod tests {
             .expect("decision")
             .expect("special decision");
         assert_eq!(decision.installed_version_source.as_deref(), Some("saved family state"));
-        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
-        assert!(decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::Unknown);
+        assert!(!decision.same_version);
+    }
+
+    #[test]
+    fn stale_special_mod_insights_refresh_from_live_archive_contents() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+
+        build_sample_download(&staging_root, &connection, 264, profile);
+
+        let staging = staging_root.join("264");
+        let target_sample = profile
+            .sample_filenames
+            .iter()
+            .enumerate()
+            .find(|(_, sample)| sample.ends_with("mc_cmd_center.ts4script"))
+            .expect("mccc script");
+        let sample_path = staging.join(target_sample.1);
+        write_script_archive(
+            &sample_path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0supports patch 1.113.277 and version 2026_1_1",
+        );
+        update_file_insights_by_id(&connection, 26400 + target_sample.0 as i64 + 1, &FileInsights::default());
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 264).expect("assessment");
+        store_download_item_assessment(&connection, 264, &assessment).expect("stored");
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 264)
+            .expect("decision")
+            .expect("special decision");
+
+        assert_eq!(decision.incoming_version.as_deref(), Some("2026.1.1"));
+        assert_eq!(decision.incoming_version_source.as_deref(), Some("inside mod"));
+
+        let stored_insights: String = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![26400 + target_sample.0 as i64 + 1],
+                |row| row.get(0),
+            )
+            .expect("stored insights");
+        let stored: FileInsights = serde_json::from_str(&stored_insights).expect("insights json");
+        assert!(stored.version_hints.iter().any(|value| value == "2026.1.1"));
+    }
+
+    #[test]
+    fn matching_versions_with_different_file_sets_stay_installable() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id,
+                    source_path,
+                    display_name,
+                    source_kind,
+                    archive_format,
+                    staging_path,
+                    source_size,
+                    status,
+                    notes
+                 ) VALUES (?1, ?2, ?3, 'archive', 'zip', ?4, 100, 'pending', '[]')",
+                params![
+                    265_i64,
+                    "C:/Downloads/McCmdCenter_AllModules_2026_1_1.zip",
+                    "McCmdCenter_AllModules_2026_1_1.zip",
+                    staging_root.join("265").to_string_lossy().to_string()
+                ],
+            )
+            .expect("download item");
+        let staging = staging_root.join("265");
+        fs::create_dir_all(&staging).expect("staging");
+
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = staging.join(sample);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).expect("parents");
+            }
+            if sample.ends_with("mc_cmd_center.ts4script") || sample.ends_with("mc_career.ts4script")
+            {
+                let entry_name = if sample.ends_with("mc_cmd_center.ts4script") {
+                    "deaderpool/mccc/mc_cmd_version.pyc"
+                } else {
+                    "deaderpool/mccc/mc_career_version.pyc"
+                };
+                write_script_archive(
+                    &file_path,
+                    entry_name,
+                    b"\0supports patch 1.113.277 and version 2026_1_1",
+                );
+            } else {
+                fs::write(&file_path, b"sample").expect("sample");
+            }
+            insert_download_file(
+                &connection,
+                265,
+                26500 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let installed_root = temp.path().join("Mods");
+        let installed_script = installed_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &installed_script,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0supports patch 1.113.277 and version 2026_1_1",
+        );
+        insert_installed_file(&connection, &installed_script, "Script Mods");
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 265).expect("assessment");
+        store_download_item_assessment(&connection, 265, &assessment).expect("stored");
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 265)
+            .expect("decision")
+            .expect("special decision");
+
+        assert!(decision.apply_ready);
+        assert_eq!(decision.version_status, SpecialVersionStatus::Unknown);
+        assert!(!decision.same_version);
     }
 
     #[test]

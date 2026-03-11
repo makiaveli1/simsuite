@@ -10,7 +10,7 @@ use zip::ZipArchive;
 
 use crate::{
     core::filename_parser::detect_creator_hint,
-    core::special_mod_versions::extract_version_from_value,
+    core::special_mod_versions::extract_version_candidates_from_value,
     error::{AppError, AppResult},
     models::FileInsights,
     seed::SeedPack,
@@ -19,6 +19,8 @@ use crate::{
 const DBPF_HEADER_SIZE: usize = 68;
 const MAX_RESOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_ENTRIES: usize = 256;
+const MAX_SCRIPT_HINT_ENTRIES: usize = 16;
+const MAX_SCRIPT_HINT_BYTES: u64 = 128 * 1024;
 const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 
@@ -81,6 +83,8 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
 
     let mut namespaces = BTreeSet::new();
     let mut stems = BTreeSet::new();
+    let mut payload_values = Vec::new();
+    let mut payload_reads = 0usize;
 
     for index in 0..archive.len().min(MAX_SCRIPT_ENTRIES) {
         let entry = archive.by_index(index).map_err(|error| {
@@ -104,6 +108,21 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
                 stems.insert(stem.to_owned());
             }
         }
+
+        let entry_name_lower = entry_name.to_ascii_lowercase();
+        if payload_reads < MAX_SCRIPT_HINT_ENTRIES
+            && should_read_ts4script_payload_for_hints(&entry_name_lower)
+        {
+            let mut bytes = Vec::new();
+            entry
+                .take(MAX_SCRIPT_HINT_BYTES)
+                .read_to_end(&mut bytes)
+                .map_err(AppError::from)?;
+            if !bytes.is_empty() {
+                payload_values.push(String::from_utf8_lossy(&bytes).to_string());
+                payload_reads += 1;
+            }
+        }
     }
 
     let path_hint = path.to_string_lossy().to_string();
@@ -117,6 +136,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         raw_identity_values
             .iter()
             .copied()
+            .chain(payload_values.iter().map(String::as_str))
             .chain(std::iter::once(path_hint.as_str())),
     );
     let family_hints = collect_family_hints(raw_identity_values.iter().copied());
@@ -213,11 +233,19 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
 fn collect_version_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut hints = BTreeSet::new();
     for value in values {
-        if let Some(version) = extract_version_from_value(value) {
+        for version in extract_version_candidates_from_value(value) {
             hints.insert(version);
         }
     }
     hints.into_iter().take(MAX_DISPLAY_VALUES).collect()
+}
+
+fn should_read_ts4script_payload_for_hints(entry_name_lower: &str) -> bool {
+    entry_name_lower.contains("version")
+        || entry_name_lower.ends_with("readme.txt")
+        || entry_name_lower.ends_with("readme.md")
+        || entry_name_lower.ends_with("changelog.txt")
+        || entry_name_lower.ends_with("changelog.md")
 }
 
 fn collect_family_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -981,6 +1009,33 @@ mod tests {
             .family_hints
             .iter()
             .any(|value| value == "mccc"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn inspects_ts4script_payloads_for_internal_version_hints() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("McCmdCenter_AllModules.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("deaderpool/mccc/mc_cmd_version.pyc", options)
+            .expect("start");
+        writer
+            .write_all(b"\0release 1.113.277 and current version 2026_1_1")
+            .expect("write");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert!(outcome
+            .insights
+            .version_hints
+            .iter()
+            .any(|value| value == "2026.1.1"));
 
         fs::remove_file(filepath).expect("cleanup");
     }
