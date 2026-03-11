@@ -101,6 +101,12 @@ struct ExistingInstallLayout {
     repair_plan_available: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+struct VersionEvidence {
+    value: Option<String>,
+    source: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct InboxDependencyItem {
     id: i64,
@@ -828,10 +834,20 @@ pub fn build_special_mod_decision_cached(
         &existing_install_state,
         install_path.clone(),
     )?;
-    let incoming_version = incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_version_evidence =
+        incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_version = incoming_version_evidence.value.clone();
     let incoming_signature = incoming_signature_for_profile(&profile, &files);
-    let installed_version = installed_version_for_profile(&profile, &layout)
-        .or_else(|| family_state.installed.installed_version.clone());
+    let mut installed_version_evidence = installed_version_for_profile(&profile, &layout);
+    let installed_version = if installed_version_evidence.value.is_some() {
+        installed_version_evidence.value.clone()
+    } else {
+        let saved_version = family_state.installed.installed_version.clone();
+        if saved_version.is_some() && installed_version_evidence.source.is_none() {
+            installed_version_evidence.source = Some("saved family state".to_owned());
+        }
+        saved_version
+    };
     let installed_signature = installed_signature_for_profile(&profile, &layout)
         .or_else(|| family_state.installed.installed_signature.clone());
 
@@ -953,6 +969,22 @@ pub fn build_special_mod_decision_cached(
         &version_status,
         &evaluation,
     );
+    let comparison_source = if incoming_signature.is_some()
+        && family_state.installed.installed_signature.is_some()
+        && version_status == SpecialVersionStatus::SameVersion
+        && (incoming_version.is_none() || family_state.installed.installed_version.is_none())
+    {
+        Some("file signature".to_owned())
+    } else if incoming_version_evidence.source.as_deref() == Some("inside mod")
+        || installed_version_evidence.source.as_deref() == Some("inside mod")
+    {
+        Some("inside mod".to_owned())
+    } else if incoming_version_evidence.source.is_some() || installed_version_evidence.source.is_some()
+    {
+        Some("local file names".to_owned())
+    } else {
+        None
+    };
 
     Ok(Some(SpecialModDecision {
         item_id,
@@ -973,6 +1005,9 @@ pub fn build_special_mod_decision_cached(
         recommended_next_step,
         incoming_version,
         incoming_signature,
+        incoming_version_source: incoming_version_evidence.source,
+        installed_version_source: installed_version_evidence.source,
+        comparison_source,
         version_status,
         same_version,
         official_latest,
@@ -1054,14 +1089,16 @@ pub fn reconcile_special_mod_family(
         install_path.clone(),
     )?;
 
-    let incoming_version = incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_version =
+        incoming_version_for_profile(&profile, &item.display_name, &files).value;
     let incoming_signature = incoming_signature_for_profile(&profile, &files);
     family_state.installed.install_state = existing_install_state;
     family_state.installed.install_path = install_path;
-    family_state.installed.installed_version = incoming_version
-        .clone()
-        .or_else(|| installed_version_for_profile(&profile, &layout))
-        .or_else(|| family_state.installed.installed_version.clone());
+    family_state.installed.installed_version = incoming_version.clone().or_else(|| {
+        installed_version_for_profile(&profile, &layout)
+            .value
+            .or_else(|| family_state.installed.installed_version.clone())
+    });
     family_state.installed.installed_signature = incoming_signature
         .clone()
         .or_else(|| installed_signature_for_profile(&profile, &layout))
@@ -1319,11 +1356,30 @@ fn incoming_version_for_profile(
     profile: &GuidedInstallProfileSeed,
     display_name: &str,
     files: &[ProfileFile],
-) -> Option<String> {
+) -> VersionEvidence {
     let mut values = special_mod_versions::version_hints_from_profile(profile, display_name);
     values.extend(files.iter().map(|file| file.filename.clone()));
     values.extend(files.iter().filter_map(|file| file.archive_member_path.clone()));
-    extract_version_from_values(&values)
+    if let Some(version) = extract_version_from_values(&values) {
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("download name".to_owned()),
+        };
+    }
+
+    let inside_mod_values = files
+        .iter()
+        .filter(|file| is_profile_content_file(file, profile))
+        .flat_map(|file| file.insights.version_hints.iter().cloned())
+        .collect::<Vec<_>>();
+    if let Some(version) = extract_version_from_values(&inside_mod_values) {
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("inside mod".to_owned()),
+        };
+    }
+
+    VersionEvidence::default()
 }
 
 fn incoming_signature_for_profile(
@@ -1345,7 +1401,20 @@ fn incoming_signature_for_profile(
 fn installed_version_for_profile(
     profile: &GuidedInstallProfileSeed,
     layout: &ExistingInstallLayout,
-) -> Option<String> {
+) -> VersionEvidence {
+    let inside_mod_values = layout
+        .existing_files
+        .iter()
+        .chain(layout.preserve_files.iter())
+        .flat_map(|file| file.insights.version_hints.iter().cloned())
+        .collect::<Vec<_>>();
+    if let Some(version) = extract_version_from_values(&inside_mod_values) {
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("inside mod".to_owned()),
+        };
+    }
+
     let mut values = layout
         .existing_files
         .iter()
@@ -1358,7 +1427,14 @@ fn installed_version_for_profile(
             .map(|file| file.filename.clone()),
     );
     values.extend(profile.version_file_hints.iter().cloned());
-    extract_version_from_values(&values)
+    if let Some(version) = extract_version_from_values(&values) {
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("installed files".to_owned()),
+        };
+    }
+
+    VersionEvidence::default()
 }
 
 fn installed_signature_for_profile(
@@ -2824,6 +2900,8 @@ fn read_text_clues(staging_path: Option<&str>, files: &[ProfileFile]) -> AppResu
         clues.extend(file.insights.resource_summary.iter().map(|value| normalized(value)));
         clues.extend(file.insights.creator_hints.iter().map(|value| normalized(value)));
         clues.extend(file.insights.script_namespaces.iter().map(|value| normalized(value)));
+        clues.extend(file.insights.family_hints.iter().map(|value| normalized(value)));
+        clues.extend(file.insights.version_hints.iter().map(|value| normalized(value)));
     }
 
     if let Some(staging_path) = staging_path {
@@ -3525,12 +3603,13 @@ mod tests {
     use crate::{
         database::{initialize, save_library_paths, seed_database},
         models::{
-            DownloadIntakeMode, DownloadQueueLane, LibrarySettings, ReviewPlanActionKind,
-            SpecialDecisionState, SpecialFamilyRole, SpecialVersionStatus,
+            DownloadIntakeMode, DownloadQueueLane, FileInsights, LibrarySettings,
+            ReviewPlanActionKind, SpecialDecisionState, SpecialFamilyRole, SpecialVersionStatus,
         },
         seed::{load_seed_pack, GuidedInstallProfileSeed, SeedPack},
     };
     use rusqlite::{params, Connection};
+    use serde_json::to_string;
     use std::{fs, path::{Path, PathBuf}};
     use tempfile::tempdir;
 
@@ -3748,6 +3827,27 @@ mod tests {
                 ],
             )
             .expect("family state");
+    }
+
+    fn update_file_insights_by_id(connection: &Connection, file_id: i64, insights: &FileInsights) {
+        connection
+            .execute(
+                "UPDATE files SET insights = ?2 WHERE id = ?1",
+                params![file_id, to_string(insights).expect("insights json")],
+            )
+            .expect("update insights");
+    }
+
+    fn update_file_insights_by_path(connection: &Connection, path: &Path, insights: &FileInsights) {
+        connection
+            .execute(
+                "UPDATE files SET insights = ?2 WHERE path = ?1",
+                params![
+                    path.to_string_lossy().to_string(),
+                    to_string(insights).expect("insights json")
+                ],
+            )
+            .expect("update insights by path");
     }
 
     #[test]
@@ -4434,6 +4534,60 @@ mod tests {
     }
 
     #[test]
+    fn inside_mod_version_hints_drive_same_version_detection() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        build_sample_download(&staging_root, &connection, 262, profile);
+        update_file_insights_by_id(
+            &connection,
+            26201,
+            &FileInsights {
+                version_hints: vec!["2026.1.1".to_owned()],
+                family_hints: vec!["mccc".to_owned(), "mc cmd center".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("mc_cmd_center.ts4script");
+        let current_package = existing_root.join("mc_cmd_center.package");
+        fs::write(&current_script, b"installed").expect("script");
+        fs::write(&current_package, b"installed").expect("package");
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        insert_installed_file(&connection, &current_package, "Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec!["2026.1.1".to_owned()],
+                family_hints: vec!["mccc".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 262).expect("assessment");
+        store_download_item_assessment(&connection, 262, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 262)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.incoming_version.as_deref(), Some("2026.1.1"));
+        assert_eq!(decision.incoming_version_source.as_deref(), Some("inside mod"));
+        assert_eq!(decision.installed_version_source.as_deref(), Some("inside mod"));
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert!(decision.same_version);
+    }
+
+    #[test]
     fn older_mccc_download_is_not_treated_as_the_next_update() {
         let (temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
@@ -4501,6 +4655,72 @@ mod tests {
         assert!(decision
             .recommended_next_step
             .contains("older MC Command Center download"));
+    }
+
+    #[test]
+    fn saved_family_state_can_supply_installed_version_evidence() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        let staging = staging_root.join("mccc_saved_state_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(
+            &connection,
+            263,
+            "McCmdCenter_AllModules_2026_1_1.zip",
+            &staging,
+        );
+
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = staging.join(sample);
+            fs::write(&file_path, b"sample").expect("sample");
+            insert_download_file(
+                &connection,
+                263,
+                26300 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let existing_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("mc_cmd_center.ts4script");
+        let current_package = existing_root.join("mc_cmd_center.package");
+        fs::write(&current_script, b"installed").expect("script");
+        fs::write(&current_package, b"installed").expect("package");
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        insert_installed_file(&connection, &current_package, "Mods");
+        insert_family_state(
+            &connection,
+            "mccc",
+            "MC Command Center",
+            "clean",
+            Some(&existing_root),
+            Some("2026.1.1"),
+            None,
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 263).expect("assessment");
+        store_download_item_assessment(&connection, 263, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 263)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.installed_version_source.as_deref(), Some("saved family state"));
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert!(decision.same_version);
     }
 
     #[test]

@@ -191,6 +191,8 @@ export interface FileInsights {
   scriptNamespaces: string[];
   embeddedNames: string[];
   creatorHints: string[];
+  versionHints: string[];
+  familyHints: string[];
 }
 
 export interface CreatorLearningInfo {
@@ -612,6 +614,9 @@ export interface SpecialModDecision {
   recommendedNextStep: string;
   incomingVersion: string | null;
   incomingSignature: string | null;
+  incomingVersionSource: string | null;
+  installedVersionSource: string | null;
+  comparisonSource: string | null;
   versionStatus: SpecialVersionStatus;
   sameVersion: boolean;
   officialLatest: SpecialOfficialLatestInfo | null;

@@ -180,6 +180,8 @@ pub struct FileInsights {
     pub script_namespaces: Vec<String>,
     pub embedded_names: Vec<String>,
     pub creator_hints: Vec<String>,
+    pub version_hints: Vec<String>,
+    pub family_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -710,6 +712,9 @@ pub struct SpecialModDecision {
     pub recommended_next_step: String,
     pub incoming_version: Option<String>,
     pub incoming_signature: Option<String>,
+    pub incoming_version_source: Option<String>,
+    pub installed_version_source: Option<String>,
+    pub comparison_source: Option<String>,
     pub version_status: SpecialVersionStatus,
     pub same_version: bool,
     pub official_latest: Option<SpecialOfficialLatestInfo>,

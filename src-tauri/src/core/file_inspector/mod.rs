@@ -10,6 +10,7 @@ use zip::ZipArchive;
 
 use crate::{
     core::filename_parser::detect_creator_hint,
+    core::special_mod_versions::extract_version_from_value,
     error::{AppError, AppResult},
     models::FileInsights,
     seed::SeedPack,
@@ -105,10 +106,20 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         }
     }
 
-    let creator_hints = collect_creator_hints(
-        namespaces.iter().chain(stems.iter()).map(String::as_str),
-        seed_pack,
+    let path_hint = path.to_string_lossy().to_string();
+    let raw_identity_values = namespaces
+        .iter()
+        .chain(stems.iter())
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let creator_hints = collect_creator_hints(raw_identity_values.iter().copied(), seed_pack);
+    let version_hints = collect_version_hints(
+        raw_identity_values
+            .iter()
+            .copied()
+            .chain(std::iter::once(path_hint.as_str())),
     );
+    let family_hints = collect_family_hints(raw_identity_values.iter().copied());
 
     let mut script_namespaces = namespaces
         .into_iter()
@@ -130,6 +141,8 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             script_namespaces,
             embedded_names: stems.into_iter().take(MAX_DISPLAY_VALUES).collect(),
             creator_hints: creator_hints.clone(),
+            version_hints,
+            family_hints,
         },
         creator_hint: primary_creator,
         kind_hint: Some("ScriptMods".to_owned()),
@@ -164,6 +177,20 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
 
     let creator_hints = collect_creator_hints(embedded_names.iter().map(String::as_str), seed_pack);
     let resource_summary = build_resource_summary(&type_counts, &records);
+    let path_hint = path.to_string_lossy().to_string();
+    let version_hints = collect_version_hints(
+        embedded_names
+            .iter()
+            .map(String::as_str)
+            .chain(resource_summary.iter().map(String::as_str))
+            .chain(std::iter::once(path_hint.as_str())),
+    );
+    let family_hints = collect_family_hints(
+        embedded_names
+            .iter()
+            .map(String::as_str)
+            .chain(creator_hints.iter().map(String::as_str)),
+    );
     let (kind_hint, subtype_hint) = infer_kind_from_resources(&type_counts);
 
     Ok(InspectionOutcome {
@@ -173,12 +200,62 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             script_namespaces: Vec::new(),
             embedded_names,
             creator_hints: creator_hints.clone(),
+            version_hints,
+            family_hints,
         },
         creator_hint: creator_hints.first().cloned(),
         kind_hint,
         subtype_hint,
         confidence_boost: 0.12,
     })
+}
+
+fn collect_version_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut hints = BTreeSet::new();
+    for value in values {
+        if let Some(version) = extract_version_from_value(value) {
+            hints.insert(version);
+        }
+    }
+    hints.into_iter().take(MAX_DISPLAY_VALUES).collect()
+}
+
+fn collect_family_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut hints = BTreeSet::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let lowered = trimmed.to_ascii_lowercase();
+        if lowered.len() >= 3 {
+            hints.insert(lowered.clone());
+        }
+
+        let spaced = lowered
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    ' '
+                }
+            })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if spaced.len() >= 3 {
+            hints.insert(spaced.clone());
+        }
+
+        let compact = spaced.replace(' ', "");
+        if compact.len() >= 4 {
+            hints.insert(compact);
+        }
+    }
+    hints.into_iter().take(MAX_DISPLAY_VALUES).collect()
 }
 
 fn parse_dbpf_header(file: &mut File) -> AppResult<DbpfHeader> {
@@ -874,6 +951,36 @@ mod tests {
             .script_namespaces
             .iter()
             .any(|value| value == "twistedmexi"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn inspects_ts4script_archives_for_version_and_family_hints() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("McCmdCenter_AllModules_2026_1_1.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("deaderpool/mccc/mc_cmd_center.pyc", options)
+            .expect("start");
+        writer.write_all(b"pyc").expect("write");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert!(outcome
+            .insights
+            .version_hints
+            .iter()
+            .any(|value| value == "2026.1.1"));
+        assert!(outcome
+            .insights
+            .family_hints
+            .iter()
+            .any(|value| value == "mccc"));
 
         fs::remove_file(filepath).expect("cleanup");
     }

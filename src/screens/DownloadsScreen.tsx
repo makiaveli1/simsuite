@@ -2356,8 +2356,8 @@ function buildSpecialVersionSection(
     label: userView === "beginner" ? "Version check" : "Versions",
     hint:
       userView === "beginner"
-        ? "What is installed, what you downloaded, and whether SimSuite thinks it is newer."
-        : "Installed copy, incoming pack, and official latest guidance.",
+        ? "What is installed, what you downloaded, and what clue SimSuite trusted."
+        : "Installed copy, incoming pack, and the local evidence SimSuite used first.",
     defaultCollapsed: false,
     children: (
       <>
@@ -2376,6 +2376,27 @@ function buildSpecialVersionSection(
           <DetailRow
             label="Compare"
             value={specialVersionStatusLabel(specialDecision, userView)}
+          />
+          <DetailRow
+            label="Incoming clue"
+            value={formatEvidenceSourceValue(
+              specialDecision.incomingVersionSource,
+              Boolean(specialDecision.incomingVersion),
+            )}
+          />
+          <DetailRow
+            label="Installed clue"
+            value={formatEvidenceSourceValue(
+              specialDecision.installedVersionSource,
+              specialDecision.installedState.installState !== "not_installed",
+            )}
+          />
+          <DetailRow
+            label="Main check"
+            value={formatEvidenceSourceValue(
+              specialDecision.comparisonSource,
+              true,
+            )}
           />
           <DetailRow label="Official latest" value={officialVersion} />
         </div>
@@ -3183,6 +3204,34 @@ function formatVersionValue(version: string | null, isPresent: boolean) {
   }
 
   return isPresent ? "Found, but not labeled" : "Not installed";
+}
+
+function formatEvidenceSourceValue(
+  source: string | null | undefined,
+  hasComparableCopy: boolean,
+) {
+  if (!hasComparableCopy) {
+    return "Not available";
+  }
+
+  if (!source) {
+    return "No strong clue saved";
+  }
+
+  switch (source) {
+    case "download name":
+      return "Download name and file names";
+    case "inside mod":
+      return "Inside the mod files";
+    case "installed files":
+      return "Installed file names";
+    case "saved family state":
+      return "Last successful family record";
+    case "file signature":
+      return "Matching file fingerprint";
+    default:
+      return source;
+  }
 }
 
 function specialVersionStatusLabel(
