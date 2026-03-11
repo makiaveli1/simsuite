@@ -292,15 +292,11 @@ fn build_guided_plan_internal(
         .map(|path| path.to_path_buf())
         .unwrap_or_else(|_| PathBuf::from(&profile.install_folder_name));
 
-    let reserved_targets = incoming
-        .iter()
-        .map(|file| layout.target_folder.join(&file.filename).to_string_lossy().to_string())
-        .collect::<HashSet<_>>();
-
     let mut install_files = Vec::new();
     let mut review_files = Vec::new();
     let mut warnings = layout.warnings.clone();
     let mut evidence = evaluation.assessment.evidence_summary.clone();
+    let mut reserved_targets = HashSet::new();
 
     for file in incoming {
         let validation = validator::validate_suggestion(
@@ -325,6 +321,10 @@ fn build_guided_plan_internal(
             },
             &reserved_targets,
         )?;
+
+        if let Some(path) = validation.final_absolute_path.clone() {
+            reserved_targets.insert(path);
+        }
 
         let entry = GuidedInstallFileEntry {
             file_id: Some(file.file_id),
@@ -396,7 +396,8 @@ fn build_guided_plan_internal(
             notes: vec![if file.in_target_folder {
                 "Settings or sidecar file that will stay in place during the update.".to_owned()
             } else {
-                "Settings or sidecar file that SimSuite will gather into the safe folder before the update.".to_owned()
+                "Settings or sidecar file that SimSuite will keep safe during the update."
+                    .to_owned()
             }],
         })
         .collect::<Vec<_>>();
@@ -435,7 +436,7 @@ fn build_guided_plan_internal(
     }
     if can_repair_layout {
         warnings.push(format!(
-            "SimSuite will tidy the older {} setup into one safe folder before it installs this update.",
+            "SimSuite will clear the older {} setup out of the way before it installs this update.",
             profile.display_name
         ));
     }
@@ -588,7 +589,7 @@ pub fn build_review_plan(
             },
             if layout.repair_plan_available {
                 Some(format!(
-                    "SimSuite can gather the older {} files into one safe folder and then continue with the update.",
+                    "SimSuite can clear the older {} files out of the way, keep the settings safe, and then continue with the update.",
                     profile.display_name
                 ))
             } else {
@@ -2081,7 +2082,7 @@ fn build_available_review_actions(
                 kind: ReviewPlanActionKind::RepairSpecial,
                 label: format!("Fix old {} setup", profile.display_name),
                 description: format!(
-                    "Tuck the older {} files into one safe folder, keep the settings files safe, and continue the update.",
+                    "Move the older {} files out of the way, keep the settings files safe, and continue the update.",
                     profile.display_name
                 ),
                 priority: 100,
@@ -2679,6 +2680,16 @@ mod tests {
                 .expect("plan")
                 .expect("guided");
             assert!(
+                plan.apply_ready,
+                "expected a ready guided update plan for {}",
+                profile.key
+            );
+            assert!(
+                plan.review_files.is_empty(),
+                "expected no held files for {}",
+                profile.key
+            );
+            assert!(
                 !plan.replace_files.is_empty(),
                 "expected replace files for {}",
                 profile.key
@@ -3054,6 +3065,78 @@ mod tests {
             .available_actions
             .iter()
             .any(|action| action.kind == ReviewPlanActionKind::OpenOfficialSource));
+    }
+
+    #[test]
+    fn full_mccc_update_pack_stays_ready_for_guided_update() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("mccc_full_update");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(
+            &connection,
+            232,
+            "McCmdCenter_AllModules_2026_1_1.zip",
+            &staging,
+        );
+
+        let filenames = [
+            "mc_career.ts4script",
+            "mc_cas.ts4script",
+            "mc_cheats.ts4script",
+            "mc_cleaner.ts4script",
+            "mc_clubs.ts4script",
+            "mc_cmd_center.package",
+            "mc_cmd_center.ts4script",
+            "mc_control.ts4script",
+            "mc_dresser.ts4script",
+            "mc_gedcom.ts4script",
+            "mc_occult.ts4script",
+            "mc_population.ts4script",
+            "mc_pregnancy.ts4script",
+            "mc_tuner.ts4script",
+        ];
+
+        for (index, filename) in filenames.iter().enumerate() {
+            let file_path = staging.join(filename);
+            fs::write(&file_path, b"full-mccc").expect("file");
+            insert_download_file(
+                &connection,
+                232,
+                23200 + index as i64 + 1,
+                &file_path,
+                filename,
+                if filename.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let target = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&target).expect("target");
+        let old_script = target.join("mc_cmd_center.ts4script");
+        let old_package = target.join("mc_cmd_center.package");
+        let old_cfg = target.join("mc_settings.cfg");
+        fs::write(&old_script, b"old-script").expect("old script");
+        fs::write(&old_package, b"old-package").expect("old package");
+        fs::write(&old_cfg, b"settings").expect("cfg");
+        insert_installed_file(&connection, &old_script, "Script Mods");
+        insert_installed_file(&connection, &old_package, "Mods");
+
+        let plan = build_guided_plan(&connection, &settings, &seed_pack, 232)
+            .expect("plan")
+            .expect("guided");
+        assert!(plan.apply_ready);
+        assert!(plan.review_files.is_empty());
+        assert_eq!(plan.install_files.len(), filenames.len());
+        assert_eq!(plan.replace_files.len(), 2);
+        assert_eq!(plan.preserve_files.len(), 1);
+
+        let review_plan = build_review_plan(&connection, &settings, &seed_pack, 232)
+            .expect("review plan");
+        assert!(review_plan.is_none());
     }
 
     #[test]

@@ -46,7 +46,7 @@ import type {
   SnapshotSummary,
 } from "./types";
 
-const hasTauriRuntime =
+export const hasTauriRuntime =
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
@@ -2483,7 +2483,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       profileName: "MC Command Center",
       specialFamily: "Script suite",
       explanation:
-        "SimSuite found a full MC Command Center update, but your older MCCC files are still spread around Mods. The safe fix is to gather that old setup into one MCCC folder before the update runs.",
+        "SimSuite found a full MC Command Center update, but your older MCCC files are still spread around Mods. The safe fix is to clear that old setup out of the way before the update runs.",
       recommendedNextStep:
         "Fix the old MCCC setup first, then let SimSuite finish the update in the same safe run.",
       dependencies: [],
@@ -2530,7 +2530,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
         buildMockReviewAction(
           "repair_special",
           "Fix old MCCC setup",
-          "SimSuite can gather the older MCCC files into one safe folder, keep your settings, and finish the update.",
+          "SimSuite can move the older MCCC files out of the way, keep your settings, and finish the update.",
           100,
           null,
           "MC Command Center",
@@ -2539,7 +2539,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       repairPlanAvailable: true,
       repairActionLabel: "Fix old MCCC setup",
       repairReason:
-        "SimSuite can gather the older MCCC files into one safe folder, keep your settings, and then finish the update.",
+        "SimSuite can move the older MCCC files out of the way, keep your settings, and then finish the update.",
       repairTargetFolder: `${DEFAULT_MODS_PATH}\\MCCC`,
       repairMoveFiles: [
         {
@@ -2551,7 +2551,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
           kind: "ScriptMods",
           subtype: "Core",
           creator: "Deaderpool",
-          notes: ["The older package will be tucked into the safe MCCC folder before replacement."],
+          notes: ["The older package will be moved out of the way before replacement."],
         },
         {
           fileId: 47042,
@@ -3312,7 +3312,7 @@ async function mockInvoke<T>(
               errorMessage: null,
               notes: [
                 "Rechecked with newer SimSuite rules on Mar 10, 2026.",
-                "Old MC Command Center files were gathered into one safe folder.",
+                "Older MC Command Center files were cleared out of the way safely.",
                 "This batch is now ready for guided special setup.",
               ],
               updatedAt: new Date().toISOString(),
@@ -3371,7 +3371,7 @@ async function mockInvoke<T>(
           deferredReviewCount: result.deferredReviewCount,
           snapshotName: result.snapshotName,
           message:
-            "Old MCCC setup fixed. SimSuite kept your settings safe and queued the guided update.",
+            "Old MCCC setup fixed. SimSuite cleared the older files out of the way, kept your settings safe, and queued the guided update.",
         } as T;
       }
 
@@ -3431,7 +3431,7 @@ async function mockInvoke<T>(
           preservedCount: 0,
           deferredReviewCount: 0,
           snapshotName: null,
-          message: `Opened the official ${action.relatedItemName ?? "download"} page.`,
+          message: `Opened the official ${action.relatedItemName ?? "download"} page in your browser.`,
         } as T;
       }
 

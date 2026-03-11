@@ -718,25 +718,35 @@ pub fn apply_review_plan_action(
                     .unwrap_or_else(|| "dependency".to_owned())
             ),
         }),
-        ReviewPlanActionKind::OpenOfficialSource => Ok(ApplyReviewPlanActionResult {
-            action_kind: action.kind,
-            focus_item_id: item_id,
-            created_item_id: None,
-            opened_url: action.url.clone(),
-            snapshot_id: None,
-            repaired_count: 0,
-            installed_count: 0,
-            replaced_count: 0,
-            preserved_count: 0,
-            deferred_review_count: 0,
-            snapshot_name: None,
-            message: format!(
-                "Opened the official {} page.",
-                action
-                    .related_item_name
-                    .unwrap_or_else(|| "download".to_owned())
-            ),
-        }),
+        ReviewPlanActionKind::OpenOfficialSource => {
+            let opened_url = action.url.clone().ok_or_else(|| {
+                "This official page is missing its website address, so SimSuite could not open it."
+                    .to_owned()
+            })?;
+            webbrowser::open(&opened_url).map_err(|error| {
+                format!("SimSuite could not open the official page in your browser: {error}")
+            })?;
+
+            Ok(ApplyReviewPlanActionResult {
+                action_kind: action.kind,
+                focus_item_id: item_id,
+                created_item_id: None,
+                opened_url: Some(opened_url),
+                snapshot_id: None,
+                repaired_count: 0,
+                installed_count: 0,
+                replaced_count: 0,
+                preserved_count: 0,
+                deferred_review_count: 0,
+                snapshot_name: None,
+                message: format!(
+                    "Opened the official {} page in your browser.",
+                    action
+                        .related_item_name
+                        .unwrap_or_else(|| "download".to_owned())
+                ),
+            })
+        }
         ReviewPlanActionKind::DownloadMissingFiles => {
             if !approved {
                 return Err("Download was blocked because approval was not confirmed.".to_owned());

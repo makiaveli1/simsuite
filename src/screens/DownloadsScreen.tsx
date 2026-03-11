@@ -24,7 +24,7 @@ import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
-import { api } from "../lib/api";
+import { api, hasTauriRuntime } from "../lib/api";
 import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import {
   friendlyTypeLabel,
@@ -327,7 +327,7 @@ export function DownloadsScreen({
         needsApproval,
       );
 
-      if (result.openedUrl) {
+      if (result.openedUrl && !hasTauriRuntime) {
         globalThis.open?.(result.openedUrl, "_blank", "noopener,noreferrer");
       }
 
@@ -1399,11 +1399,11 @@ function SpecialReviewPanel({
     {
       key: "move",
       title:
-        userView === "power" ? "Gather into the safe folder" : "Older files to tidy",
+        userView === "power" ? "Older files to clear out" : "Older files to clear out",
       description:
         userView === "power"
-          ? "Older suite files that SimSuite will gather before the update."
-          : "Older suite files that will be tucked into one safe folder first.",
+          ? "Older suite files that SimSuite will move out of the way before the update."
+          : "Older suite files that SimSuite will clear out before the update.",
       badge: reviewPlan.repairMoveFiles.length.toString(),
       tone: "good" as const,
       files: reviewPlan.repairMoveFiles,
@@ -1436,9 +1436,9 @@ function SpecialReviewPanel({
   const repairSteps = [
     {
       key: "move",
-      title: "Gather the older suite",
+      title: "Clear out the older suite",
       count: reviewPlan.repairMoveFiles.length,
-      description: `${reviewPlan.repairMoveFiles.length.toLocaleString()} file(s) will be tucked into the safe folder before the update starts.`,
+      description: `${reviewPlan.repairMoveFiles.length.toLocaleString()} file(s) will be moved out of the way before the update starts.`,
     },
     {
       key: "keep",
@@ -1521,8 +1521,8 @@ function SpecialReviewPanel({
               <strong>{reviewPlan.repairReason ?? reviewActionDescription(repairAction)}</strong>
               <span>
                 {userView === "beginner"
-                  ? "SimSuite can clean up the older setup first, then continue with the update."
-                  : "SimSuite will tidy the older setup first so the update can continue safely."}
+                  ? "SimSuite can clear the older setup out of the way first, then continue with the update."
+                  : "SimSuite will clear the older setup out of the way first so the update can continue safely."}
               </span>
             </div>
             <button
@@ -1537,7 +1537,7 @@ function SpecialReviewPanel({
           </div>
           <div className="summary-matrix">
             <SummaryStat
-              label={userView === "beginner" ? "Gather old files" : "Repair moves"}
+              label={userView === "beginner" ? "Clear old files" : "Clear old files"}
               value={reviewPlan.repairMoveFiles.length}
               tone="good"
             />
@@ -2446,10 +2446,15 @@ function fallbackQueueSummary(item: DownloadsInboxItem) {
 
   switch (lane) {
     case "special_setup":
-      if (item.existingInstallDetected) {
-        return "SimSuite found an older special setup and can guide the fix.";
+      if (item.guidedInstallAvailable) {
+        return item.existingInstallDetected
+          ? "SimSuite found an older special setup and is ready to update it safely."
+          : "SimSuite recognized a supported special mod and has a guided next step ready.";
       }
-      return "SimSuite recognized a supported special mod and has a guided next step.";
+      if (item.existingInstallDetected) {
+        return "SimSuite found an older special setup and is still checking the safest update path.";
+      }
+      return "SimSuite recognized a supported special mod and is checking the safest next step.";
     case "waiting_on_you":
       if (item.missingDependencies.length) {
         return `Waiting on ${item.missingDependencies[0]} before anything moves.`;
@@ -2644,8 +2649,8 @@ function reviewActionConfirmation(
   switch (action.kind) {
     case "repair_special":
       return userView === "beginner"
-        ? `${action.label}? SimSuite will make a restore point, gather the older files into one safe folder, keep your settings files, and then continue the MCCC update.`
-        : `${action.label}? SimSuite will create a restore point, repair the old install layout, keep ${reviewPlan.repairKeepFiles.length} setting file(s), and continue the special update when it is safe.`;
+        ? `${action.label}? SimSuite will make a restore point, move the older files out of the way, keep your settings files, and then continue the MCCC update.`
+        : `${action.label}? SimSuite will create a restore point, clear the older install out of the way, keep ${reviewPlan.repairKeepFiles.length} setting file(s), and continue the special update when it is safe.`;
     case "install_dependency":
       return `${action.label}? SimSuite will safely set up ${action.relatedItemName ?? "the helper mod"} first, create a restore point, and then re-check ${itemName}.`;
     case "download_missing_files":
@@ -2779,8 +2784,8 @@ function downloadsNextStepDescription(
 ) {
   if (reviewAction?.kind === "repair_special") {
     return userView === "beginner"
-      ? "SimSuite can gather the older files into one safe folder, keep your settings, and then continue the update."
-      : "SimSuite found a safe repair path for the old install layout, so it can tidy the scattered files and continue the update after approval.";
+      ? "SimSuite can move the older files out of the way, keep your settings, and then continue the update."
+      : "SimSuite found a safe repair path for the old install layout, so it can clear the older files out of the way and continue the update after approval.";
   }
 
   if (reviewAction) {

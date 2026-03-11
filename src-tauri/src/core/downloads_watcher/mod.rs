@@ -428,11 +428,16 @@ fn build_queue_summary(item: &DownloadsInboxItem) -> String {
                     "Special setup found. {} needs to be handled first.",
                     item.missing_dependencies[0]
                 )
-            } else if item.existing_install_detected {
-                "SimSuite found an older setup and can repair it before continuing."
-                    .to_owned()
             } else if item.guided_install_available {
-                "SimSuite recognized a supported special mod and has a safe install plan ready."
+                if item.existing_install_detected {
+                    "SimSuite found an older setup and is ready to update it safely."
+                        .to_owned()
+                } else {
+                    "SimSuite recognized a supported special mod and has a safe install plan ready."
+                        .to_owned()
+                }
+            } else if item.existing_install_detected {
+                "SimSuite found an older setup and is still checking the safest update path."
                     .to_owned()
             } else {
                 "Supported special setup found. Open the side panel for the safest next step."
