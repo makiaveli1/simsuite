@@ -239,7 +239,9 @@ export function DownloadsScreen({
           ? api.getDownloadItemGuidedPlan(item.id)
           : Promise.resolve(null);
       const reviewPromise =
-        item.intakeMode === "needs_review" || item.intakeMode === "blocked"
+        item.intakeMode === "guided" ||
+        item.intakeMode === "needs_review" ||
+        item.intakeMode === "blocked"
           ? api.getDownloadItemReviewPlan(item.id)
           : Promise.resolve(null);
 
@@ -473,12 +475,15 @@ export function DownloadsScreen({
       : selectedPreview?.reviewCount ?? selectedItem?.reviewFileCount ?? 0;
   const unchangedCount = alignedCount(selectedPreview);
   const reviewActions =
-    (selectedItem?.intakeMode === "needs_review" ||
-      selectedItem?.intakeMode === "blocked") &&
     selectedReviewPlan
       ? buildReviewActions(selectedReviewPlan)
       : [];
   const primaryReviewAction = reviewActions[0] ?? null;
+  const guidedNeedsReview = Boolean(
+    selectedItem?.intakeMode === "guided" &&
+      selectedGuidedPlan &&
+      !selectedGuidedPlan.applyReady,
+  );
   const canApply =
     selectedItem?.intakeMode === "guided"
       ? Boolean(selectedGuidedPlan?.applyReady)
@@ -846,17 +851,21 @@ export function DownloadsScreen({
                   <div>
                     <p className="eyebrow">
                       {selectedItem?.intakeMode === "guided"
-                        ? "Special setup"
+                        ? guidedNeedsReview
+                          ? "Decision panel"
+                          : "Special setup"
                         : selectedItem?.intakeMode === "standard"
                           ? "Safe hand-off"
                           : "Decision panel"}
                     </p>
-                    <h2>{previewPanelTitle(selectedItem?.intakeMode, userView)}</h2>
+                    <h2>{previewPanelTitle(selectedItem?.intakeMode, userView, guidedNeedsReview)}</h2>
                   </div>
                   {selectedItem ? (
                     <span className="ghost-chip">
                       {selectedItem.intakeMode === "guided" && selectedGuidedPlan
-                        ? `${selectedGuidedPlan.installFiles.length.toLocaleString()} install`
+                        ? guidedNeedsReview && selectedReviewPlan
+                          ? `${selectedReviewPlan.reviewFiles.length.toLocaleString()} tracked`
+                          : `${selectedGuidedPlan.installFiles.length.toLocaleString()} install`
                         : (selectedItem.intakeMode === "needs_review" ||
                               selectedItem.intakeMode === "blocked") &&
                             selectedReviewPlan
@@ -881,7 +890,19 @@ export function DownloadsScreen({
                     />
                   ) : selectedItem?.intakeMode === "guided" ? (
                     selectedGuidedPlan ? (
+                      guidedNeedsReview && selectedReviewPlan ? (
+                        <SpecialReviewPanel
+                          item={selectedItem}
+                          reviewPlan={selectedReviewPlan}
+                          files={selectedFiles}
+                          userView={userView}
+                          reviewActions={reviewActions}
+                          onResolveAction={handleReviewAction}
+                          isApplying={isApplying}
+                        />
+                      ) : (
                       <GuidedPreviewPanel plan={selectedGuidedPlan} userView={userView} />
+                      )
                     ) : (
                       <StatePanel
                         eyebrow="Special setup"
@@ -1041,6 +1062,7 @@ export function DownloadsScreen({
                         selectedItem.intakeMode,
                         userView,
                         safeCount,
+                        selectedGuidedPlan,
                         selectedReviewPlan,
                       )}
                     </div>
@@ -1348,6 +1370,12 @@ function SpecialReviewPanel({
   onResolveAction: (action: ReviewPlanAction) => Promise<void>;
   isApplying: boolean;
 }) {
+  const modeEyebrow =
+    item.intakeMode === "guided"
+      ? "Special setup"
+      : item.intakeMode === "blocked"
+        ? "Blocked"
+        : "Needs review";
   const trackedFiles =
     reviewPlan.reviewFiles.length > 0
       ? reviewPlan.reviewFiles
@@ -1439,9 +1467,7 @@ function SpecialReviewPanel({
       <div className={`downloads-assessment-card downloads-assessment-${item.intakeMode}`}>
         <div className="downloads-guided-title">
           <div>
-            <p className="eyebrow">
-              {item.intakeMode === "blocked" ? "Blocked" : "Needs review"}
-            </p>
+            <p className="eyebrow">{modeEyebrow}</p>
             <h3>{reviewPlan.profileName ?? item.matchedProfileName ?? "Inbox item"}</h3>
           </div>
           <span className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}>
@@ -1842,7 +1868,11 @@ function buildInspectorSections({
         ? [sourceSection, filesSection]
         : [queueSection, sourceSection, timelineSection, filesSection];
 
-  if (selectedItem.intakeMode === "guided" && selectedGuidedPlan) {
+  if (
+    selectedItem.intakeMode === "guided" &&
+    selectedGuidedPlan &&
+    (selectedGuidedPlan.applyReady || !selectedReviewPlan)
+  ) {
     const guidedSummarySection: DockSectionDefinition = {
       id: "guidedSummary",
       label: userView === "beginner" ? "What this mod is" : "Setup",
@@ -1962,7 +1992,8 @@ function buildInspectorSections({
   }
 
   if (
-    (selectedItem.intakeMode === "needs_review" ||
+    (selectedItem.intakeMode === "guided" ||
+      selectedItem.intakeMode === "needs_review" ||
       selectedItem.intakeMode === "blocked") &&
     selectedReviewPlan
   ) {
@@ -2634,6 +2665,7 @@ function downloadsInspectorIdleNote(
   intakeMode: DownloadIntakeMode,
   userView: UserView,
   safeCount: number,
+  guidedPlan?: GuidedInstallPlan | null,
   reviewPlan?: SpecialReviewPlan | null,
 ) {
   if (intakeMode === "needs_review") {
@@ -2653,6 +2685,18 @@ function downloadsInspectorIdleNote(
   }
 
   if (intakeMode === "guided") {
+    if (reviewPlan?.availableActions.length) {
+      return userView === "beginner"
+        ? "SimSuite already has a safe next move for this special setup."
+        : "A backend-guided next step is ready for this special setup.";
+    }
+
+    if (guidedPlan?.reviewFiles.length) {
+      return userView === "beginner"
+        ? `SimSuite matched this special mod, but ${guidedPlan.reviewFiles.length.toLocaleString()} file(s) still need one more safety check.`
+        : `SimSuite recognized this special mod, but ${guidedPlan.reviewFiles.length.toLocaleString()} file(s) still need review before the guided install is safe.`;
+    }
+
     return userView === "beginner"
       ? "This special setup still needs a safe install plan."
       : "This special setup still needs a safe guided plan before anything can move.";
@@ -2781,8 +2825,14 @@ function downloadsNextStepDescription(
 function previewPanelTitle(
   intakeMode: DownloadIntakeMode | undefined,
   userView: UserView,
+  guidedNeedsReview = false,
 ) {
   if (intakeMode === "guided") {
+    if (guidedNeedsReview) {
+      return userView === "beginner"
+        ? "One more setup check is needed"
+        : "Guided setup needs review";
+    }
     return userView === "beginner" ? "How to install this safely" : "Guided install";
   }
   if (intakeMode === "blocked") {

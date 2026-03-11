@@ -475,8 +475,18 @@ pub fn build_review_plan(
     item_id: i64,
 ) -> AppResult<Option<SpecialReviewPlan>> {
     let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
-    if evaluation.assessment.intake_mode == DownloadIntakeMode::Standard
-        || evaluation.assessment.intake_mode == DownloadIntakeMode::Guided
+    if evaluation.assessment.intake_mode == DownloadIntakeMode::Standard {
+        return Ok(None);
+    }
+
+    let guided_plan = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
+        build_guided_plan(connection, settings, seed_pack, item_id)?
+    } else {
+        None
+    };
+
+    if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided
+        && guided_plan.as_ref().is_none_or(|plan| plan.apply_ready)
     {
         return Ok(None);
     }
@@ -488,20 +498,25 @@ pub fn build_review_plan(
         .as_ref()
         .map(|profile| detect_existing_layout(connection, settings, profile))
         .transpose()?;
-    let review_files = files
-        .iter()
-        .map(|file| GuidedInstallFileEntry {
-            file_id: Some(file.file_id),
-            filename: file.filename.clone(),
-            current_path: file.path.clone(),
-            target_path: None,
-            archive_member_path: file.archive_member_path.clone(),
-            kind: file.kind.clone(),
-            subtype: file.subtype.clone(),
-            creator: file.creator.clone(),
-            notes: Vec::new(),
-        })
-        .collect::<Vec<_>>();
+    let review_files = guided_plan
+        .as_ref()
+        .map(|plan| plan.review_files.clone())
+        .filter(|files| !files.is_empty())
+        .unwrap_or_else(|| {
+            files.iter()
+                .map(|file| GuidedInstallFileEntry {
+                    file_id: Some(file.file_id),
+                    filename: file.filename.clone(),
+                    current_path: file.path.clone(),
+                    target_path: None,
+                    archive_member_path: file.archive_member_path.clone(),
+                    kind: file.kind.clone(),
+                    subtype: file.subtype.clone(),
+                    creator: file.creator.clone(),
+                    notes: Vec::new(),
+                })
+                .collect::<Vec<_>>()
+        });
 
     let (repair_plan_available, repair_action_label, repair_reason, repair_target_folder,
         repair_move_files, repair_replace_files, repair_keep_files, repair_warnings,
@@ -606,6 +621,31 @@ pub fn build_review_plan(
 
     let available_actions =
         build_available_review_actions(seed_pack, &evaluation, &files, repair_layout.as_ref());
+    let recommended_next_step = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
+        available_actions
+            .iter()
+            .max_by_key(|action| action.priority)
+            .map(|action| action.description.clone())
+            .unwrap_or_else(|| {
+                "Review the held files and remove anything that does not fit the safe guided install."
+                    .to_owned()
+            })
+    } else {
+        evaluation.recommended_next_step.clone()
+    };
+    let explanation = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
+        let profile_name = evaluation
+            .assessment
+            .matched_profile_name
+            .clone()
+            .unwrap_or_else(|| "special mod".to_owned());
+        format!(
+            "SimSuite recognized this as {}, but the guided install still has file checks to clear before anything can move.",
+            profile_name
+        )
+    } else {
+        evaluation.explanation.clone()
+    };
 
     Ok(Some(SpecialReviewPlan {
         item_id,
@@ -613,8 +653,8 @@ pub fn build_review_plan(
         profile_key: evaluation.assessment.matched_profile_key.clone(),
         profile_name: evaluation.assessment.matched_profile_name.clone(),
         special_family: evaluation.assessment.special_family.clone(),
-        explanation: evaluation.explanation,
-        recommended_next_step: evaluation.recommended_next_step,
+        explanation,
+        recommended_next_step,
         dependencies: evaluation.dependencies,
         incompatibility_warnings: evaluation.assessment.incompatibility_warnings.clone(),
         review_files,
@@ -2974,6 +3014,46 @@ mod tests {
             .available_actions
             .iter()
             .any(|action| action.kind == ReviewPlanActionKind::SeparateSupportedFiles));
+    }
+
+    #[test]
+    fn guided_items_with_held_files_return_a_review_plan() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("mccc_guided_hold");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, 231, "MCCC_Guided_Hold.zip", &staging);
+
+        let file = staging.join("mc_cmd_center.ts4script");
+        fs::write(&file, b"core").expect("file");
+        insert_download_file(
+            &connection,
+            231,
+            23101,
+            &file,
+            "mc_cmd_center.ts4script",
+            "Unknown",
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 231).expect("assessment");
+        assert_eq!(assessment.intake_mode, DownloadIntakeMode::Guided);
+
+        let guided_plan = build_guided_plan(&connection, &settings, &seed_pack, 231)
+            .expect("guided plan")
+            .expect("guided");
+        assert!(!guided_plan.apply_ready);
+        assert_eq!(guided_plan.review_files.len(), 1);
+
+        let review_plan = build_review_plan(&connection, &settings, &seed_pack, 231)
+            .expect("review plan")
+            .expect("review");
+        assert_eq!(review_plan.mode, DownloadIntakeMode::Guided);
+        assert_eq!(review_plan.review_files.len(), 1);
+        assert!(review_plan
+            .available_actions
+            .iter()
+            .any(|action| action.kind == ReviewPlanActionKind::OpenOfficialSource));
     }
 
     #[test]
