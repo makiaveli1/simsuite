@@ -2,6 +2,7 @@ import {
   startTransition,
   useDeferredValue,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { m } from "motion/react";
@@ -102,6 +103,10 @@ export function DownloadsScreen({
   const [isLoadingSelection, setIsLoadingSelection] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
+  const inboxRetryTimer = useRef<number | null>(null);
+  const previousWatcherState = useRef<DownloadsWatcherStatus["state"] | null>(
+    null,
+  );
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -121,17 +126,39 @@ export function DownloadsScreen({
   }, []);
 
   useEffect(() => {
-    void api
-      .getDownloadsWatcherStatus()
-      .then(setWatcherStatus)
-      .catch((error) => setErrorMessage(toErrorMessage(error)));
-
+    let cancelled = false;
     const unlisten = api.listenToDownloadsStatus((status) => {
-      setWatcherStatus(status);
+      startTransition(() => {
+        setWatcherStatus(status);
+      });
     });
 
+    void api
+      .getDownloadsWatcherStatus()
+      .then((status) => {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setWatcherStatus(status);
+        });
+      })
+      .catch(() => {
+        // The bootstrap path handles first-load errors already.
+      });
+
     return () => {
+      cancelled = true;
       void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (inboxRetryTimer.current !== null) {
+        globalThis.clearTimeout(inboxRetryTimer.current);
+      }
     };
   }, []);
 
@@ -176,8 +203,38 @@ export function DownloadsScreen({
   }, [isRefreshing, userView, watcherStatus]);
 
   useEffect(() => {
-    void loadInbox();
+    void loadBootstrap();
   }, [refreshVersion, deferredSearch, statusFilter]);
+
+  useEffect(() => {
+    const lastState = previousWatcherState.current;
+    const nextState = watcherStatus?.state ?? null;
+    previousWatcherState.current = nextState;
+
+    if (!watcherStatus?.configured) {
+      return;
+    }
+
+    if (
+      watcherStatus.state === "processing" ||
+      watcherStatus.state === "error" ||
+      isLoadingInbox ||
+      isRefreshing
+    ) {
+      return;
+    }
+
+    const finishedInitialCheck = lastState === "processing";
+    if (finishedInitialCheck || inbox === null) {
+      void loadInbox();
+    }
+  }, [
+    inbox,
+    isLoadingInbox,
+    isRefreshing,
+    watcherStatus?.configured,
+    watcherStatus?.state,
+  ]);
 
   useEffect(() => {
     const items = inbox?.items ?? [];
@@ -206,19 +263,94 @@ export function DownloadsScreen({
     void loadSelectedItem(selectedItem);
   }, [selectedItem, selectedPreset]);
 
+  function clearScheduledInboxRetry() {
+    if (inboxRetryTimer.current !== null) {
+      globalThis.clearTimeout(inboxRetryTimer.current);
+      inboxRetryTimer.current = null;
+    }
+  }
+
+  function scheduleInboxRetry(callback: () => void, delayMs = 320) {
+    if (inboxRetryTimer.current !== null) {
+      return;
+    }
+
+    inboxRetryTimer.current = globalThis.setTimeout(() => {
+      inboxRetryTimer.current = null;
+      callback();
+    }, delayMs);
+  }
+
+  function handleLockedInboxRead(error: unknown, retry: () => void) {
+    const message = toErrorMessage(error);
+    if (!isLockedDatabaseError(message)) {
+      setErrorMessage(message);
+      return;
+    }
+
+    setErrorMessage(null);
+    setStatusMessage(
+      inbox?.items?.length
+        ? userView === "beginner"
+          ? "Inbox is still catching up. Trying again."
+          : "Inbox is still finishing another check. Trying again."
+        : userView === "beginner"
+          ? "Checking your Downloads inbox again."
+          : "Inbox is still checking your Downloads folder. Trying again.",
+    );
+    scheduleInboxRetry(retry);
+  }
+
+  async function loadBootstrap() {
+    setIsLoadingInbox(true);
+    setErrorMessage(null);
+
+    try {
+      clearScheduledInboxRetry();
+      const response = await api.getDownloadsBootstrap({
+        search: deferredSearch || undefined,
+        status: statusFilter || undefined,
+        limit: 120,
+      });
+
+      startTransition(() => {
+        setWatcherStatus(response.watcherStatus);
+        if (response.queue) {
+          setInbox(response.queue);
+          return;
+        }
+
+        if (!response.watcherStatus.configured) {
+          setInbox(null);
+        }
+      });
+    } catch (error) {
+      handleLockedInboxRead(error, () => {
+        void loadBootstrap();
+      });
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  }
+
   async function loadInbox() {
     setIsLoadingInbox(true);
     setErrorMessage(null);
 
     try {
+      clearScheduledInboxRetry();
       const response = await api.getDownloadsQueue({
         search: deferredSearch || undefined,
         status: statusFilter || undefined,
         limit: 120,
       });
-      startTransition(() => setInbox(response));
+      startTransition(() => {
+        setInbox(response);
+      });
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      handleLockedInboxRead(error, () => {
+        void loadInbox();
+      });
     } finally {
       setIsLoadingInbox(false);
     }
@@ -558,6 +690,25 @@ export function DownloadsScreen({
         selectedAutoRecheckNote,
       )
     : [];
+  const hasWatcherStatus = watcherStatus !== null;
+  const showWatcherSetup = hasWatcherStatus && !watcherStatus.configured;
+  const showWatcherBootstrap = !hasWatcherStatus
+    ? true
+    : watcherStatus.configured &&
+      watcherStatus.state === "processing" &&
+      inbox === null;
+  const activeWatcherStatus = watcherStatus ?? {
+    state: "idle",
+    watchedPath: null,
+    configured: false,
+    currentItem: null,
+    lastRunAt: null,
+    lastChangeAt: null,
+    lastError: null,
+    readyItems: 0,
+    needsReviewItems: 0,
+    activeItems: 0,
+  };
 
   return (
     <section className="screen-shell">
@@ -631,7 +782,31 @@ export function DownloadsScreen({
         ) : null}
       </div>
 
-      {!watcherStatus?.configured ? (
+      {showWatcherBootstrap ? (
+        <StatePanel
+          eyebrow="Downloads inbox"
+          title="Checking your Downloads inbox..."
+          body={
+            userView === "beginner"
+              ? "SimSuite is checking your Downloads folder and lining up the latest items."
+              : "SimSuite is checking the watcher state and loading the latest inbox queue."
+          }
+          icon={LoaderCircle}
+          tone="info"
+          actions={
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing || isLoadingInbox}
+            >
+              <RefreshCw size={14} strokeWidth={2} />
+              Check again
+            </button>
+          }
+          meta={["Inbox stays read-only until the first check finishes"]}
+        />
+      ) : showWatcherSetup ? (
         <StatePanel
           eyebrow="Downloads folder"
           title={
@@ -666,8 +841,8 @@ export function DownloadsScreen({
                   <p className="eyebrow">Watch folder</p>
                   <h2>{userView === "beginner" ? "Inbox station" : "Watcher status"}</h2>
                 </div>
-                <span className={`confidence-badge ${watcherTone(watcherStatus.state)}`}>
-                  {friendlyWatcherLabel(watcherStatus.state)}
+                <span className={`confidence-badge ${watcherTone(activeWatcherStatus.state)}`}>
+                  {friendlyWatcherLabel(activeWatcherStatus.state)}
                 </span>
               </div>
 
@@ -675,18 +850,18 @@ export function DownloadsScreen({
                 <div className="downloads-watch-card">
                   <div className="section-label">Watching</div>
                   <div className="path-card">
-                    {watcherStatus.watchedPath ?? "No downloads folder set"}
+                    {activeWatcherStatus.watchedPath ?? "No downloads folder set"}
                   </div>
                   <div className="downloads-watch-meta">
                     <span className="ghost-chip">
-                      {watcherStatus.activeItems.toLocaleString()} active item(s)
+                      {activeWatcherStatus.activeItems.toLocaleString()} active item(s)
                     </span>
-                    {watcherStatus.currentItem ? (
-                      <span className="ghost-chip">{watcherStatus.currentItem}</span>
+                    {activeWatcherStatus.currentItem ? (
+                      <span className="ghost-chip">{activeWatcherStatus.currentItem}</span>
                     ) : null}
-                    {watcherStatus.lastRunAt ? (
+                    {activeWatcherStatus.lastRunAt ? (
                       <span className="ghost-chip">
-                        Last check {formatDate(watcherStatus.lastRunAt)}
+                        Last check {formatDate(activeWatcherStatus.lastRunAt)}
                       </span>
                     ) : null}
                   </div>
@@ -3335,4 +3510,14 @@ function toErrorMessage(error: unknown) {
   }
 
   return String(error);
+}
+
+function isLockedDatabaseError(message: string) {
+  const lowered = message.toLowerCase();
+  return (
+    lowered.includes("database is locked") ||
+    lowered.includes("database table is locked") ||
+    lowered.includes("database schema is locked") ||
+    lowered.includes("database busy")
+  );
 }

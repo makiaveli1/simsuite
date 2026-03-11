@@ -28,9 +28,8 @@ use crate::{
         CatalogSourceInfo, DownloadInboxDetail, DownloadInboxFile, DownloadIntakeMode,
         DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
-        DownloadsTimelineEntry,
-        DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan, LibrarySettings,
-        OrganizationPreview, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
+        DownloadsTimelineEntry, DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan,
+        LibrarySettings, OrganizationPreview, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
     },
 };
 
@@ -46,6 +45,24 @@ fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usi
         if elapsed_ms >= SLOW_DOWNLOADS_LOG_THRESHOLD_MS {
             eprintln!("[perf] {operation} took {elapsed_ms}ms for {count} item(s)");
         }
+    }
+}
+
+fn checking_downloads_status(
+    watched_root: &Path,
+    current_item: Option<String>,
+) -> DownloadsWatcherStatus {
+    DownloadsWatcherStatus {
+        state: DownloadsWatcherState::Processing,
+        watched_path: Some(watched_root.to_string_lossy().to_string()),
+        configured: true,
+        current_item,
+        last_run_at: None,
+        last_change_at: None,
+        last_error: None,
+        ready_items: 0,
+        needs_review_items: 0,
+        active_items: 0,
     }
 }
 
@@ -87,7 +104,10 @@ pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
 
     let connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
-    let Some(downloads_path) = settings.downloads_path.filter(|value| !value.trim().is_empty()) else {
+    let Some(downloads_path) = settings
+        .downloads_path
+        .filter(|value| !value.trim().is_empty())
+    else {
         let status = DownloadsWatcherStatus::default();
         store_status(state, app, status)?;
         return Ok(());
@@ -113,6 +133,12 @@ pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
         )?;
         return Ok(());
     }
+
+    store_status(
+        state,
+        app,
+        checking_downloads_status(&watched_root, Some("Initial inbox refresh".to_owned())),
+    )?;
 
     let (stop_sender, stop_receiver) = mpsc::channel::<()>();
     {
@@ -151,12 +177,7 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
         .map(|value| value.to_owned());
 
     if watched_path.is_none() {
-        return process_downloads_once(
-            app,
-            state,
-            Some("Manual inbox refresh".to_owned()),
-            true,
-        );
+        return process_downloads_once(app, state, Some("Manual inbox refresh".to_owned()), true);
     }
 
     let starting_status = DownloadsWatcherStatus {
@@ -386,7 +407,13 @@ fn list_download_items_internal(
         item.sample_files = sample_names.get(&item.id).cloned().unwrap_or_default();
     }
 
-    enrich_download_items(connection, settings, seed_pack, &mut items, include_timelines)?;
+    enrich_download_items(
+        connection,
+        settings,
+        seed_pack,
+        &mut items,
+        include_timelines,
+    )?;
     log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
@@ -522,8 +549,7 @@ fn build_queue_summary(item: &DownloadsInboxItem) -> String {
                 )
             } else if item.guided_install_available {
                 if item.existing_install_detected {
-                    "SimSuite found an older setup and is ready to update it safely."
-                        .to_owned()
+                    "SimSuite found an older setup and is ready to update it safely.".to_owned()
                 } else {
                     "SimSuite recognized a supported special mod and has a safe install plan ready."
                         .to_owned()
@@ -682,16 +708,14 @@ fn build_download_timeline(
 ) -> Vec<DownloadsTimelineEntry> {
     let mut timeline = vec![DownloadsTimelineEntry {
         label: "Added to Inbox".to_owned(),
-        detail: Some(
-            if item.source_kind == "archive" {
-                format!(
-                    "Archive staged and {} file(s) were detected inside.",
-                    item.detected_file_count
-                )
-            } else {
-                "Direct download staged for a safe check.".to_owned()
-            },
-        ),
+        detail: Some(if item.source_kind == "archive" {
+            format!(
+                "Archive staged and {} file(s) were detected inside.",
+                item.detected_file_count
+            )
+        } else {
+            "Direct download staged for a safe check.".to_owned()
+        }),
         at: Some(item.first_seen_at.clone()),
     }];
 
@@ -814,7 +838,10 @@ pub fn get_download_item_selection(
 
     if let Some(detail_item) = detail.as_ref().map(|value| &value.item) {
         if detail_item.intake_mode == DownloadIntakeMode::Standard
-            && matches!(detail_item.status.as_str(), "ready" | "partial" | "needs_review")
+            && matches!(
+                detail_item.status.as_str(),
+                "ready" | "partial" | "needs_review"
+            )
         {
             preview = Some(preview_download_item(
                 connection,
@@ -826,8 +853,9 @@ pub fn get_download_item_selection(
         }
 
         if detail_item.intake_mode == DownloadIntakeMode::Guided {
-            guided_plan =
-                install_profile_engine::build_guided_plan(connection, settings, seed_pack, item_id)?;
+            guided_plan = install_profile_engine::build_guided_plan(
+                connection, settings, seed_pack, item_id,
+            )?;
         }
 
         let should_load_review_plan = matches!(
@@ -840,8 +868,9 @@ pub fn get_download_item_selection(
                 .is_some_and(|decision| decision.apply_ready));
 
         if should_load_review_plan {
-            review_plan =
-                install_profile_engine::build_review_plan(connection, settings, seed_pack, item_id)?;
+            review_plan = install_profile_engine::build_review_plan(
+                connection, settings, seed_pack, item_id,
+            )?;
         }
     }
 
@@ -1177,7 +1206,11 @@ fn process_downloads_once(
 
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
-    let Some(downloads_path) = settings.downloads_path.clone().filter(|value| !value.trim().is_empty()) else {
+    let Some(downloads_path) = settings
+        .downloads_path
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+    else {
         let status = DownloadsWatcherStatus::default();
         store_status(state, app, status.clone())?;
         return Ok(status);
@@ -1204,25 +1237,13 @@ fn process_downloads_once(
     store_status(
         state,
         app,
-        DownloadsWatcherStatus {
-            state: DownloadsWatcherState::Processing,
-            watched_path: Some(watched_root.to_string_lossy().to_string()),
-            configured: true,
-            current_item,
-            last_run_at: None,
-            last_change_at: None,
-            last_error: None,
-            ready_items: 0,
-            needs_review_items: 0,
-            active_items: 0,
-        },
+        checking_downloads_status(&watched_root, current_item.clone()),
     )?;
 
     let base_seed = state.seed_pack();
     let assessment_version = current_downloads_assessment_version(base_seed.as_ref());
     let assessment_version_changed =
-        database::get_app_setting(&connection, "downloads_assessment_version")?
-            .as_deref()
+        database::get_app_setting(&connection, "downloads_assessment_version")?.as_deref()
             != Some(assessment_version.as_str());
     let runtime_seed_pack = database::load_runtime_seed_pack(&connection, base_seed.as_ref())?;
     let category_overrides = database::list_category_overrides(&connection)?
@@ -1291,15 +1312,27 @@ fn process_downloads_once(
             "seed",
         )?;
     }
-    let status = summarize_status(&connection, Some(watched_root.to_string_lossy().to_string()))?;
+    let status = summarize_status(
+        &connection,
+        Some(watched_root.to_string_lossy().to_string()),
+    )?;
+    drop(connection);
     store_status(state, app, status.clone())?;
+    let _ = emit_workspace_change(
+        app,
+        &WorkspaceChange {
+            domains: vec![WorkspaceDomain::Downloads],
+            reason: "downloads-sync-finished".to_owned(),
+            item_ids: Vec::new(),
+            family_keys: Vec::new(),
+        },
+    );
     if changed || reassessed_existing || assessment_version_changed {
         let _ = emit_workspace_change(
             app,
             &WorkspaceChange {
                 domains: vec![
                     WorkspaceDomain::Home,
-                    WorkspaceDomain::Downloads,
                     WorkspaceDomain::Review,
                     WorkspaceDomain::Duplicates,
                 ],
@@ -1528,7 +1561,11 @@ fn mark_item_rechecked_with_new_rules(connection: &Connection, item_id: i64) -> 
          SET notes = ?2,
              updated_at = ?3
          WHERE id = ?1",
-        params![item_id, serde_json::to_string(&notes)?, Utc::now().to_rfc3339()],
+        params![
+            item_id,
+            serde_json::to_string(&notes)?,
+            Utc::now().to_rfc3339()
+        ],
     )?;
 
     Ok(())
@@ -1626,10 +1663,7 @@ fn collect_observed_sources(root: &Path) -> AppResult<Vec<ObservedSource>> {
             },
             archive_format: archive_format_for_extension(&extension),
             source_size: metadata.len() as i64,
-            source_modified_at: metadata
-                .modified()
-                .ok()
-                .map(system_time_to_rfc3339),
+            source_modified_at: metadata.modified().ok().map(system_time_to_rfc3339),
         });
     }
 
@@ -1662,7 +1696,9 @@ fn build_observed_source_from_path(
     })
 }
 
-fn load_existing_items(connection: &Connection) -> AppResult<HashMap<String, ExistingDownloadItem>> {
+fn load_existing_items(
+    connection: &Connection,
+) -> AppResult<HashMap<String, ExistingDownloadItem>> {
     let mut statement = connection.prepare(
         "SELECT
             di.id,
@@ -1780,12 +1816,10 @@ fn extract_archive(
                 &destination_root.to_string_lossy(),
                 "",
             )
-                .map_err(|error| AppError::Message(error.to_string()))?;
+            .map_err(|error| AppError::Message(error.to_string()))?;
         }
         _ => {
-            return Err(AppError::Message(
-                "Unsupported archive format.".to_owned(),
-            ));
+            return Err(AppError::Message("Unsupported archive format.".to_owned()));
         }
     }
 
@@ -1808,7 +1842,9 @@ fn extract_archive(
     }
 
     if ignored_entries > 0 {
-        notes.push(format!("Ignored {ignored_entries} unsupported archive entries."));
+        notes.push(format!(
+            "Ignored {ignored_entries} unsupported archive entries."
+        ));
     }
 
     Ok(discovered)
@@ -1856,7 +1892,9 @@ fn extract_zip_archive(
     }
 
     if ignored_entries > 0 {
-        notes.push(format!("Ignored {ignored_entries} unsupported zip entries."));
+        notes.push(format!(
+            "Ignored {ignored_entries} unsupported zip entries."
+        ));
     }
 
     Ok(())
@@ -1897,7 +1935,9 @@ fn mark_missing_direct_sources(
 fn recompute_item_statuses(connection: &Connection) -> AppResult<()> {
     let mut statement = connection.prepare("SELECT id, status FROM download_items")?;
     let rows = statement
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
 
     for (item_id, current_status) in rows {
@@ -1924,9 +1964,8 @@ fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String
         review_file_count,
         intake_mode,
         guided_install_available,
-    ): (i64, i64, i64, String, i64) =
-        connection.query_row(
-            "SELECT
+    ): (i64, i64, i64, String, i64) = connection.query_row(
+        "SELECT
                 (
                     SELECT COUNT(*)
                     FROM files
@@ -1950,9 +1989,17 @@ fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String
                 COALESCE(di.guided_install_available, 0)
              FROM download_items di
              WHERE di.id = ?1",
-            params![item_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-        )?;
+        params![item_id],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        },
+    )?;
 
     if active_file_count == 0 && applied_file_count > 0 {
         return Ok("applied".to_owned());
@@ -2073,19 +2120,7 @@ fn load_overview(
         waiting_on_you_items,
         blocked_items,
         done_items,
-    ): (
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-    ) = connection.query_row(
+    ): (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = connection.query_row(
         "SELECT
             COUNT(*),
             SUM(CASE WHEN status IN ('ready', 'partial') THEN 1 ELSE 0 END),
@@ -2388,8 +2423,7 @@ fn is_observable_download_extension(extension: &str) -> bool {
 }
 
 fn should_extract_archive_entry(extension: &str) -> bool {
-    is_supported_content_extension(extension)
-        || matches!(extension, ".txt" | ".md" | ".rtf")
+    is_supported_content_extension(extension) || matches!(extension, ".txt" | ".md" | ".rtf")
 }
 
 fn parse_string_array(value: String) -> Vec<String> {
@@ -2444,7 +2478,8 @@ fn parse_risk_level(value: String) -> DownloadRiskLevel {
 
 #[cfg(test)]
 fn has_auto_recheck_note(notes: &[String]) -> bool {
-    notes.iter()
+    notes
+        .iter()
         .any(|note| note.starts_with(AUTO_RECHECK_NOTE_PREFIX))
 }
 
@@ -2460,12 +2495,12 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_item_status, get_download_item_guided_plan, has_auto_recheck_note,
-        mark_item_rechecked_with_new_rules, parse_string_array, preview_download_item,
-        reassess_existing_item, summarize_status,
+        checking_downloads_status, derive_item_status, get_download_item_guided_plan,
+        has_auto_recheck_note, mark_item_rechecked_with_new_rules, parse_string_array,
+        preview_download_item, reassess_existing_item, summarize_status,
     };
     use crate::database::initialize;
-    use crate::models::LibrarySettings;
+    use crate::models::{DownloadsWatcherState, LibrarySettings};
     use crate::seed;
     use rusqlite::{params, Connection};
 
@@ -2473,6 +2508,25 @@ mod tests {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
         initialize(&mut connection).expect("schema");
         connection
+    }
+
+    #[test]
+    fn checking_status_marks_downloads_as_configured_and_processing() {
+        let status = checking_downloads_status(
+            std::path::Path::new("C:/Users/Test/Downloads"),
+            Some("Initial inbox refresh".to_owned()),
+        );
+
+        assert_eq!(status.state, DownloadsWatcherState::Processing);
+        assert!(status.configured);
+        assert_eq!(
+            status.watched_path.as_deref(),
+            Some("C:/Users/Test/Downloads")
+        );
+        assert_eq!(
+            status.current_item.as_deref(),
+            Some("Initial inbox refresh")
+        );
     }
 
     fn insert_download_item(connection: &Connection, item_id: i64, status: &str) {
@@ -2716,9 +2770,7 @@ mod tests {
         )
         .expect_err("guided items should not use normal preview");
 
-        assert!(error
-            .to_string()
-            .contains("guided special setup flow"));
+        assert!(error.to_string().contains("guided special setup flow"));
     }
 
     #[test]
