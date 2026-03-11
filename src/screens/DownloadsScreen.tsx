@@ -229,6 +229,10 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
+      const shouldLoadReviewPlan =
+        item.intakeMode === "needs_review" ||
+        item.intakeMode === "blocked" ||
+        (item.intakeMode === "guided" && !item.specialDecision?.applyReady);
       const detailPromise = api.getDownloadItemDetail(item.id);
       const previewPromise =
         item.intakeMode === "standard" &&
@@ -239,12 +243,9 @@ export function DownloadsScreen({
         item.intakeMode === "guided"
           ? api.getDownloadItemGuidedPlan(item.id)
           : Promise.resolve(null);
-      const reviewPromise =
-        item.intakeMode === "guided" ||
-        item.intakeMode === "needs_review" ||
-        item.intakeMode === "blocked"
-          ? api.getDownloadItemReviewPlan(item.id)
-          : Promise.resolve(null);
+      const reviewPromise = shouldLoadReviewPlan
+        ? api.getDownloadItemReviewPlan(item.id)
+        : Promise.resolve(null);
 
       const [detail, preview, guidedPlan, reviewPlan] = await Promise.all([
         detailPromise,
@@ -301,14 +302,19 @@ export function DownloadsScreen({
   }
 
   async function handleReviewAction(action: ReviewPlanAction) {
-    if (!selectedItem || !selectedReviewPlan) {
+    if (!selectedItem) {
       return;
     }
 
     const needsApproval = reviewActionNeedsApproval(action.kind);
     if (needsApproval) {
       const confirmed = globalThis.confirm(
-        reviewActionConfirmation(action, selectedItem.displayName, selectedReviewPlan, userView),
+        reviewActionConfirmation(
+          action,
+          selectedItem.displayName,
+          selectedReviewPlan,
+          userView,
+        ),
       );
       if (!confirmed) {
         return;
@@ -489,8 +495,9 @@ export function DownloadsScreen({
     selectedSpecialDecision?.primaryAction ?? reviewActions[0] ?? null;
   const guidedNeedsReview = Boolean(
     selectedItem?.intakeMode === "guided" &&
-      ((selectedSpecialDecision && !selectedSpecialDecision.applyReady) ||
-        (selectedGuidedPlan && !selectedGuidedPlan.applyReady)),
+      (selectedSpecialDecision
+        ? !selectedSpecialDecision.applyReady
+        : selectedGuidedPlan && !selectedGuidedPlan.applyReady),
   );
   const canApply =
     selectedItem?.intakeMode === "guided"
@@ -2621,9 +2628,13 @@ function buildDecisionActions(
   decision: SpecialModDecision,
   reviewPlan: SpecialReviewPlan | null,
 ): ReviewPlanAction[] {
-  const source = reviewPlan?.availableActions.length
-    ? reviewPlan.availableActions
-    : decision.availableActions;
+  const source = decision.availableActions.length
+    ? decision.availableActions
+    : decision.applyReady
+      ? []
+      : reviewPlan?.availableActions.length
+        ? reviewPlan.availableActions
+        : [];
   return [...source].sort((left, right) => right.priority - left.priority);
 }
 
@@ -2674,14 +2685,14 @@ function reviewActionNeedsApproval(kind: ReviewPlanAction["kind"]) {
 function reviewActionConfirmation(
   action: ReviewPlanAction,
   itemName: string,
-  reviewPlan: SpecialReviewPlan,
+  reviewPlan: SpecialReviewPlan | null,
   userView: UserView,
 ) {
   switch (action.kind) {
     case "repair_special":
       return userView === "beginner"
         ? `${action.label}? SimSuite will make a restore point, move the older files out of the way, keep your settings files, and then continue the MCCC update.`
-        : `${action.label}? SimSuite will create a restore point, clear the older install out of the way, keep ${reviewPlan.repairKeepFiles.length} setting file(s), and continue the special update when it is safe.`;
+        : `${action.label}? SimSuite will create a restore point, clear the older install out of the way, keep ${reviewPlan?.repairKeepFiles.length ?? 0} setting file(s), and continue the special update when it is safe.`;
     case "install_dependency":
       return `${action.label}? SimSuite will safely set up ${action.relatedItemName ?? "the helper mod"} first, create a restore point, and then re-check ${itemName}.`;
     case "download_missing_files":

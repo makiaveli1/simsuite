@@ -2121,6 +2121,13 @@ fn detect_existing_layout(
         }
     }
 
+    merge_disk_existing_candidates(
+        &mods_root,
+        profile,
+        &mut existing_candidates,
+        &mut preserve_candidates,
+    )?;
+
     let target_folder = select_existing_target_folder(
         &mods_root,
         &default_target_folder,
@@ -2211,6 +2218,83 @@ fn detect_existing_layout(
         safe_to_update,
         repair_plan_available,
     })
+}
+
+fn merge_disk_existing_candidates(
+    mods_root: &Path,
+    profile: &GuidedInstallProfileSeed,
+    existing_candidates: &mut Vec<ExistingInstallFile>,
+    preserve_candidates: &mut Vec<ExistingInstallFile>,
+) -> AppResult<()> {
+    let known_existing_paths = existing_candidates
+        .iter()
+        .map(|file| normalize_path_key(&file.path))
+        .collect::<HashSet<_>>();
+    let known_preserve_paths = preserve_candidates
+        .iter()
+        .map(|file| normalize_path_key(&file.path))
+        .collect::<HashSet<_>>();
+
+    for entry in WalkDir::new(mods_root)
+        .max_depth(profile.max_install_depth + 4)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let filename = entry.file_name().to_string_lossy().to_string();
+        let extension = normalize_extension(path);
+        if !matches!(extension.as_str(), ".ts4script" | ".package" | ".cfg") {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        let normalized_path = normalize_path_key(&path_string);
+
+        if is_existing_profile_filename(&filename, &extension, profile) {
+            if known_existing_paths.contains(&normalized_path) {
+                continue;
+            }
+
+            existing_candidates.push(ExistingInstallFile {
+                file_id: None,
+                filename,
+                path: path_string,
+                extension: extension.clone(),
+                kind: if extension == ".ts4script" {
+                    "Script Mods".to_owned()
+                } else {
+                    "Mods".to_owned()
+                },
+                subtype: None,
+                creator: profile.creator.clone(),
+                insights: FileInsights::default(),
+                in_target_folder: false,
+            });
+            continue;
+        }
+
+        if matches_preserve_rule(&filename, &extension, profile)
+            && !known_preserve_paths.contains(&normalized_path)
+        {
+            preserve_candidates.push(ExistingInstallFile {
+                file_id: None,
+                filename,
+                path: path_string,
+                extension,
+                kind: "Config".to_owned(),
+                subtype: None,
+                creator: profile.creator.clone(),
+                insights: FileInsights::default(),
+                in_target_folder: false,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn select_existing_target_folder(
@@ -2493,6 +2577,23 @@ fn file_matches_profile_prefix(filename: &str, profile: &GuidedInstallProfileSee
         .iter()
         .chain(profile.package_prefixes.iter())
         .any(|prefix| normalized_name.starts_with(&normalized(prefix)))
+}
+
+fn is_existing_profile_filename(
+    filename: &str,
+    extension: &str,
+    profile: &GuidedInstallProfileSeed,
+) -> bool {
+    if matches_preserve_rule(filename, extension, profile) {
+        return false;
+    }
+
+    matches_required_core(filename, extension, &profile.required_name_clues)
+        || file_matches_profile_prefix(filename, profile)
+        || profile
+            .required_all_filenames
+            .iter()
+            .any(|required| normalized(required) == normalized(filename))
 }
 
 fn name_matches_profile(filename: &str, profile: &GuidedInstallProfileSeed) -> bool {
@@ -3024,7 +3125,8 @@ mod tests {
     use crate::{
         database::{initialize, save_library_paths, seed_database},
         models::{
-            DownloadIntakeMode, LibrarySettings, ReviewPlanActionKind, SpecialFamilyRole,
+            DownloadIntakeMode, LibrarySettings, ReviewPlanActionKind, SpecialDecisionState,
+            SpecialFamilyRole,
         },
         seed::{load_seed_pack, GuidedInstallProfileSeed, SeedPack},
     };
@@ -3782,6 +3884,48 @@ mod tests {
         let review_plan = build_review_plan(&connection, &settings, &seed_pack, 232)
             .expect("review plan");
         assert!(review_plan.is_none());
+    }
+
+    #[test]
+    fn disk_only_root_level_mccc_install_still_builds_a_ready_update() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+
+        build_sample_download(&staging_root, &connection, 234, profile);
+
+        let mods_root = temp.path().join("Mods");
+        for sample in &profile.sample_filenames {
+            if sample == "mc_cmd_center.package" {
+                continue;
+            }
+
+            let path = mods_root.join(sample);
+            fs::write(&path, b"installed").expect("installed file");
+        }
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 234).expect("assessment");
+        assert_eq!(assessment.intake_mode, DownloadIntakeMode::Guided);
+        assert!(assessment.existing_install_detected);
+
+        let plan = build_guided_plan(&connection, &settings, &seed_pack, 234)
+            .expect("plan")
+            .expect("guided");
+        assert!(plan.apply_ready);
+        assert!(plan.existing_install_detected);
+        assert!(plan.review_files.is_empty());
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 234)
+            .expect("decision")
+            .expect("special decision");
+        assert!(decision.apply_ready);
+        assert_eq!(decision.state, SpecialDecisionState::GuidedReady);
     }
 
     #[test]
