@@ -146,10 +146,16 @@ pub struct GuidedInstallProfileSeed {
     #[serde(default)]
     pub official_download_url: Option<String>,
     #[serde(default)]
+    pub latest_check_strategy: Option<String>,
+    #[serde(default)]
+    pub latest_check_url: Option<String>,
+    #[serde(default)]
     pub reference_source: Vec<String>,
     pub reviewed_at: String,
     #[serde(default)]
     pub sample_filenames: Vec<String>,
+    #[serde(default)]
+    pub version_file_hints: Vec<String>,
     pub help_summary: String,
     #[serde(default)]
     pub post_install_notes: Vec<String>,
@@ -472,9 +478,12 @@ mod tests {
             family: "Support Libraries".to_owned(),
             official_source_url: "https://example.com".to_owned(),
             official_download_url: None,
+            latest_check_strategy: Some("manual".to_owned()),
+            latest_check_url: None,
             reference_source: vec!["official_docs".to_owned()],
             reviewed_at: "2026-03-11".to_owned(),
             sample_filenames: vec!["sample.ts4script".to_owned()],
+            version_file_hints: vec!["sample".to_owned()],
             help_summary: "Sample".to_owned(),
             post_install_notes: Vec::new(),
             required_name_clues: vec!["sample".to_owned()],

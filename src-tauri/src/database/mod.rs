@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
     error::{AppError, AppResult},
-    models::LibrarySettings,
+    models::{DownloadsTimelineEntry, LibrarySettings},
     seed::{SeedCreator, SeedPack},
 };
 
@@ -182,6 +182,50 @@ pub fn get_creator_learning_version(connection: &Connection) -> AppResult<Option
 
 pub fn get_category_override_version(connection: &Connection) -> AppResult<Option<String>> {
     get_app_setting(connection, "category_override_version")
+}
+
+pub fn record_download_item_event(
+    connection: &Connection,
+    item_id: i64,
+    event_kind: &str,
+    label: &str,
+    detail: Option<&str>,
+) -> AppResult<()> {
+    connection.execute(
+        "INSERT INTO download_item_events (
+            download_item_id,
+            event_kind,
+            label,
+            detail,
+            created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![item_id, event_kind, label, detail, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn load_download_item_events(
+    connection: &Connection,
+    item_id: i64,
+    limit: i64,
+) -> AppResult<Vec<DownloadsTimelineEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT label, detail, created_at
+         FROM download_item_events
+         WHERE download_item_id = ?1
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?2",
+    )?;
+    let entries = statement
+        .query_map(params![item_id, limit.max(1)], |row| {
+            Ok(DownloadsTimelineEntry {
+                label: row.get(0)?,
+                detail: row.get(1)?,
+                at: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(entries)
 }
 
 pub fn list_category_overrides(connection: &Connection) -> AppResult<Vec<UserCategoryOverride>> {
@@ -623,6 +667,8 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             evidence_summary TEXT NOT NULL DEFAULT '[]',
             catalog_source_url TEXT,
             catalog_download_url TEXT,
+            latest_check_url TEXT,
+            latest_check_strategy TEXT,
             catalog_reference_source TEXT NOT NULL DEFAULT '[]',
             catalog_reviewed_at TEXT,
             existing_install_detected INTEGER NOT NULL DEFAULT 0 CHECK (existing_install_detected IN (0, 1)),
@@ -635,6 +681,33 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_download_items_status ON download_items (status);
         CREATE INDEX IF NOT EXISTS idx_download_items_intake_mode ON download_items (intake_mode);
+        CREATE TABLE IF NOT EXISTS special_mod_family_state (
+            profile_key TEXT PRIMARY KEY,
+            profile_name TEXT NOT NULL,
+            install_state TEXT NOT NULL DEFAULT 'not_installed',
+            install_path TEXT,
+            installed_version TEXT,
+            installed_signature TEXT,
+            source_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
+            checked_at TEXT,
+            latest_source_url TEXT,
+            latest_download_url TEXT,
+            latest_version TEXT,
+            latest_checked_at TEXT,
+            latest_confidence REAL NOT NULL DEFAULT 0,
+            latest_status TEXT NOT NULL DEFAULT 'unknown',
+            latest_note TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS download_item_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            download_item_id INTEGER NOT NULL REFERENCES download_items (id) ON DELETE CASCADE,
+            event_kind TEXT NOT NULL,
+            label TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);
         CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             snapshot_name TEXT NOT NULL,
@@ -720,6 +793,8 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     )?;
     ensure_column(connection, "download_items", "catalog_source_url", "TEXT")?;
     ensure_column(connection, "download_items", "catalog_download_url", "TEXT")?;
+    ensure_column(connection, "download_items", "latest_check_url", "TEXT")?;
+    ensure_column(connection, "download_items", "latest_check_strategy", "TEXT")?;
     ensure_column(
         connection,
         "download_items",
@@ -740,7 +815,34 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     connection.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);",
+        "CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
+         CREATE TABLE IF NOT EXISTS special_mod_family_state (
+            profile_key TEXT PRIMARY KEY,
+            profile_name TEXT NOT NULL,
+            install_state TEXT NOT NULL DEFAULT 'not_installed',
+            install_path TEXT,
+            installed_version TEXT,
+            installed_signature TEXT,
+            source_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
+            checked_at TEXT,
+            latest_source_url TEXT,
+            latest_download_url TEXT,
+            latest_version TEXT,
+            latest_checked_at TEXT,
+            latest_confidence REAL NOT NULL DEFAULT 0,
+            latest_status TEXT NOT NULL DEFAULT 'unknown',
+            latest_note TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE IF NOT EXISTS download_item_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            download_item_id INTEGER NOT NULL REFERENCES download_items (id) ON DELETE CASCADE,
+            event_kind TEXT NOT NULL,
+            label TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);",
     )?;
 
     Ok(())

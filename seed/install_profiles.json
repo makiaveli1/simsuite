@@ -8,6 +8,8 @@
       "family": "Gameplay Suites",
       "official_source_url": "https://deaderpool-mccc.com/downloads.html",
       "official_download_url": "https://drive.google.com/uc?export=download&id=1J_yt-tu8vvHGPI2B6VMoMEjudoSfmHQt",
+      "latest_check_strategy": "mccc_downloads_page",
+      "latest_check_url": "https://deaderpool-mccc.com/downloads.html",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-11",
       "sample_filenames": [
@@ -15,6 +17,7 @@
         "mc_cmd_center.package",
         "mc_woohoo.package"
       ],
+      "version_file_hints": ["McCmdCenter_AllModules", "MC Command Center"],
       "help_summary": "MC Command Center is a script suite. Its script and package files need to stay together in one shallow folder under Mods, and existing .cfg settings files should be kept during updates.",
       "post_install_notes": [
         "Keep the main script and module files in the same MCCC folder.",
@@ -55,12 +58,15 @@
       "creator": "Scumbumbo / Triplis",
       "family": "Support Libraries",
       "official_source_url": "https://www.curseforge.com/sims4/mods/xml-injector",
+      "latest_check_strategy": "protected_page",
+      "latest_check_url": "https://www.curseforge.com/sims4/mods/xml-injector",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "XmlInjector_Script_v4.ts4script",
         "XmlInjector_Test.ts4script"
       ],
+      "version_file_hints": ["XmlInjector_Script", "XML Injector"],
       "help_summary": "XML Injector is a support library. Keep one current copy in one shallow folder under Mods so other mods can find it cleanly.",
       "post_install_notes": [
         "Keep only one current XML Injector install.",
@@ -98,12 +104,15 @@
       "creator": "Lot 51",
       "family": "Support Libraries",
       "official_source_url": "https://lot51.cc/mods/core-library",
+      "latest_check_strategy": "protected_page",
+      "latest_check_url": "https://lot51.cc/mods/core-library",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "Lot51_CoreLibrary.ts4script",
         "lot51_core_library.package"
       ],
+      "version_file_hints": ["Lot51_CoreLibrary", "Core Library"],
       "help_summary": "Lot 51 Core Library is a shared support library. Keep it together in one shallow folder so dependent mods can update cleanly.",
       "post_install_notes": [
         "Keep one current Lot 51 Core Library install.",
@@ -141,12 +150,15 @@
       "creator": "ColonolNutty",
       "family": "Support Libraries",
       "official_source_url": "https://github.com/ColonolNutty/Sims4CommunityLibrary",
+      "latest_check_strategy": "github_releases",
+      "latest_check_url": "https://github.com/ColonolNutty/Sims4CommunityLibrary/releases/latest",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "Sims4CommunityLibrary.ts4script",
         "S4CL.ts4script"
       ],
+      "version_file_hints": ["Sims4CommunityLibrary", "S4CL"],
       "help_summary": "Sims 4 Community Library is a shared support library. Keep it in one shallow folder so it stays easy to update and validate.",
       "post_install_notes": [
         "Keep one current Sims 4 Community Library install.",
@@ -184,12 +196,15 @@
       "creator": "Lumpinou",
       "family": "Support Libraries",
       "official_source_url": "https://www.curseforge.com/sims4/mods/lumpinous-toolbox-script-library",
+      "latest_check_strategy": "protected_page",
+      "latest_check_url": "https://www.curseforge.com/sims4/mods/lumpinous-toolbox-script-library",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "Lumpinou_Toolbox.package",
         "lumpinou_toolbox.ts4script"
       ],
+      "version_file_hints": ["Lumpinou_Toolbox", "Lumpinou Toolbox"],
       "help_summary": "Lumpinou Toolbox is a shared support set. Keep it together in one shallow folder so dependent mods stay easy to update and troubleshoot.",
       "post_install_notes": [
         "Keep one current Lumpinou Toolbox install.",
@@ -227,12 +242,15 @@
       "creator": "Andirz",
       "family": "Support Libraries",
       "official_source_url": "https://www.curseforge.com/sims4/mods/smart-core-script",
+      "latest_check_strategy": "protected_page",
+      "latest_check_url": "https://www.curseforge.com/sims4/mods/smart-core-script",
       "reference_source": ["official_docs", "mod_hound_reference"],
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "Andirz_SmartCoreScript_v2.9.0.ts4script",
         "SmartCoreScript.ts4script"
       ],
+      "version_file_hints": ["SmartCoreScript", "Smart Core Script"],
       "help_summary": "Smart Core Script is a support library. Keep it in one shallow folder so dependent mods can find the current version cleanly.",
       "post_install_notes": [
         "Keep one current Smart Core Script install.",

@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS download_items (
   source_modified_at TEXT,
   detected_file_count INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'error')),
+  intake_mode TEXT NOT NULL DEFAULT 'standard' CHECK (intake_mode IN ('standard', 'guided', 'needs_review', 'blocked')),
+  risk_level TEXT NOT NULL DEFAULT 'low' CHECK (risk_level IN ('low', 'medium', 'high')),
+  matched_profile_key TEXT,
+  matched_profile_name TEXT,
+  special_family TEXT,
+  assessment_reasons TEXT NOT NULL DEFAULT '[]',
+  dependency_summary TEXT NOT NULL DEFAULT '[]',
+  missing_dependencies TEXT NOT NULL DEFAULT '[]',
+  inbox_dependencies TEXT NOT NULL DEFAULT '[]',
+  incompatibility_warnings TEXT NOT NULL DEFAULT '[]',
+  post_install_notes TEXT NOT NULL DEFAULT '[]',
+  evidence_summary TEXT NOT NULL DEFAULT '[]',
+  catalog_source_url TEXT,
+  catalog_download_url TEXT,
+  latest_check_url TEXT,
+  latest_check_strategy TEXT,
+  catalog_reference_source TEXT NOT NULL DEFAULT '[]',
+  catalog_reviewed_at TEXT,
+  existing_install_detected INTEGER NOT NULL DEFAULT 0 CHECK (existing_install_detected IN (0, 1)),
+  guided_install_available INTEGER NOT NULL DEFAULT 0 CHECK (guided_install_available IN (0, 1)),
   error_message TEXT,
   notes TEXT NOT NULL DEFAULT '[]',
   first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -113,6 +133,37 @@ CREATE TABLE IF NOT EXISTS download_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_download_items_status ON download_items (status);
+CREATE INDEX IF NOT EXISTS idx_download_items_intake_mode ON download_items (intake_mode);
+
+CREATE TABLE IF NOT EXISTS special_mod_family_state (
+  profile_key TEXT PRIMARY KEY,
+  profile_name TEXT NOT NULL,
+  install_state TEXT NOT NULL DEFAULT 'not_installed',
+  install_path TEXT,
+  installed_version TEXT,
+  installed_signature TEXT,
+  source_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
+  checked_at TEXT,
+  latest_source_url TEXT,
+  latest_download_url TEXT,
+  latest_version TEXT,
+  latest_checked_at TEXT,
+  latest_confidence REAL NOT NULL DEFAULT 0,
+  latest_status TEXT NOT NULL DEFAULT 'unknown',
+  latest_note TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS download_item_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  download_item_id INTEGER NOT NULL REFERENCES download_items (id) ON DELETE CASCADE,
+  event_kind TEXT NOT NULL,
+  label TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,7 +205,8 @@ CREATE TABLE IF NOT EXISTS snapshot_items (
   snapshot_id INTEGER NOT NULL REFERENCES snapshots (id) ON DELETE CASCADE,
   file_id INTEGER REFERENCES files (id) ON DELETE SET NULL,
   original_path TEXT NOT NULL,
-  original_hash TEXT
+  original_hash TEXT,
+  backup_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (

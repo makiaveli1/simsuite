@@ -1,21 +1,29 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
 
+use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use walkdir::WalkDir;
 
 use crate::{
-    core::validator::{self, ValidationRequest},
+    core::{
+        special_mod_versions::{
+            self, build_signature, build_version_comparison, extract_version_from_values,
+            load_family_state, load_or_refresh_latest_info, save_family_state, SignatureEntry,
+            StoredSpecialModFamilyState,
+        },
+        validator::{self, ValidationRequest},
+    },
     error::{AppError, AppResult},
     models::{
         CatalogSourceInfo, DependencyStatus, DownloadIntakeMode, DownloadQueueLane,
         DownloadRiskLevel, FileInsights, GuidedInstallFileEntry, GuidedInstallPlan,
         LibrarySettings, ReviewPlanAction, ReviewPlanActionKind, SpecialDecisionState,
-        SpecialExistingInstallState, SpecialFamilyRole, SpecialLocalPackState, SpecialModDecision,
-        SpecialReviewPlan,
+        SpecialExistingInstallState, SpecialFamilyRole, SpecialLocalPackState,
+        SpecialModDecision, SpecialReviewPlan, SpecialVersionStatus,
     },
     seed::{
         DependencyRuleSeed, GuidedInstallProfileSeed, IncompatibilityRuleSeed,
@@ -62,6 +70,8 @@ struct ProfileFile {
     creator: Option<String>,
     confidence: f64,
     source_location: String,
+    size: i64,
+    hash: Option<String>,
     insights: FileInsights,
 }
 
@@ -74,6 +84,8 @@ struct ExistingInstallFile {
     kind: String,
     subtype: Option<String>,
     creator: Option<String>,
+    size: i64,
+    hash: Option<String>,
     insights: FileInsights,
     in_target_folder: bool,
 }
@@ -182,6 +194,14 @@ struct FamilySiblingRecord {
     active_file_count: i64,
     review_file_count: i64,
     updated_at: String,
+    status: String,
+}
+
+#[derive(Default)]
+pub struct SpecialDecisionContext {
+    layout_cache: HashMap<String, ExistingInstallLayout>,
+    sibling_cache: HashMap<String, Vec<FamilySiblingRecord>>,
+    family_state_cache: HashMap<String, StoredSpecialModFamilyState>,
 }
 
 pub fn assess_download_item(
@@ -214,10 +234,12 @@ pub fn store_download_item_assessment(
              evidence_summary = ?13,
              catalog_source_url = ?14,
              catalog_download_url = ?15,
-             catalog_reference_source = ?16,
-             catalog_reviewed_at = ?17,
-             existing_install_detected = ?18,
-             guided_install_available = ?19,
+             latest_check_url = ?16,
+             latest_check_strategy = ?17,
+             catalog_reference_source = ?18,
+             catalog_reviewed_at = ?19,
+             existing_install_detected = ?20,
+             guided_install_available = ?21,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?1",
         params![
@@ -242,6 +264,14 @@ pub fn store_download_item_assessment(
                 .catalog_source
                 .as_ref()
                 .and_then(|source| source.official_download_url.clone()),
+            assessment
+                .catalog_source
+                .as_ref()
+                .and_then(|source| source.latest_check_url.clone()),
+            assessment
+                .catalog_source
+                .as_ref()
+                .and_then(|source| source.latest_check_strategy.clone()),
             serde_json::to_string(
                 &assessment
                     .catalog_source
@@ -742,19 +772,38 @@ pub fn build_special_mod_decision(
     seed_pack: &SeedPack,
     item_id: i64,
 ) -> AppResult<Option<SpecialModDecision>> {
+    let mut context = SpecialDecisionContext::default();
+    build_special_mod_decision_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        &mut context,
+        false,
+    )
+}
+
+pub fn build_special_mod_decision_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+    allow_network_latest: bool,
+) -> AppResult<Option<SpecialModDecision>> {
     let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
     let Some(profile) = evaluation.matched_profile.clone() else {
         return Ok(None);
     };
+    let item = load_item_with_staging(connection, item_id)?.unwrap_or_else(empty_item_record);
     let evidence = evaluation
         .matched_evidence
         .clone()
         .unwrap_or_else(|| collect_profile_evidence(&profile, &empty_item_record(), &[], &[], &[]));
     let files = load_profile_files(connection, item_id, true)?;
-    let guided_plan = build_guided_plan_internal(connection, settings, seed_pack, item_id, false)?;
-    let layout = detect_existing_layout(connection, settings, &profile)?;
+    let layout = detect_existing_layout_cached(connection, settings, &profile, context)?;
     let family_key = format!("special:{}", profile.key);
-    let siblings = load_family_siblings(connection, item_id, &profile.key)?;
+    let siblings = load_family_siblings_cached(connection, item_id, &profile.key, context)?;
     let primary_family = select_primary_family_item(item_id, &siblings);
     let sibling_item_ids = siblings
         .iter()
@@ -767,10 +816,53 @@ pub fn build_special_mod_decision(
         Some(primary_id) if primary_id != item_id => SpecialFamilyRole::Superseded,
         Some(_) | None => SpecialFamilyRole::Primary,
     };
+    let local_pack_state = evidence.local_pack_state(&profile);
+    let existing_install_state = existing_install_state_from_layout(&layout);
+    let install_path = layout
+        .existing_install_detected
+        .then(|| layout.target_folder.to_string_lossy().to_string());
+    let mut family_state = load_family_state_cached(
+        connection,
+        context,
+        &profile,
+        &existing_install_state,
+        install_path.clone(),
+    )?;
+    let incoming_version = incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_signature = incoming_signature_for_profile(&profile, &files);
+    let installed_version = installed_version_for_profile(&profile, &layout)
+        .or_else(|| family_state.installed.installed_version.clone());
+    let installed_signature = installed_signature_for_profile(&profile, &layout)
+        .or_else(|| family_state.installed.installed_signature.clone());
 
-    let mut available_actions = if guided_plan.as_ref().is_some_and(|plan| plan.apply_ready)
-        && family_role == SpecialFamilyRole::Primary
-    {
+    family_state.installed.install_state = existing_install_state.clone();
+    family_state.installed.install_path = install_path;
+    family_state.installed.installed_version = installed_version;
+    family_state.installed.installed_signature = installed_signature;
+    family_state.installed.checked_at = Some(Utc::now().to_rfc3339());
+
+    let official_latest = load_or_refresh_latest_info(connection, &profile, allow_network_latest)?;
+    family_state.latest = official_latest.clone();
+    save_family_state(connection, &family_state)?;
+    context
+        .family_state_cache
+        .insert(profile.key.clone(), family_state.clone());
+
+    let version_comparison = build_version_comparison(
+        &family_state.installed,
+        incoming_version.clone(),
+        incoming_signature.clone(),
+    );
+    let version_status = version_comparison.version_status.clone();
+    let same_version = version_comparison.same_version;
+    let apply_ready = evaluation.assessment.guided_install_available
+        && family_role == SpecialFamilyRole::Primary;
+
+    let version_blocks_update = matches!(
+        version_status,
+        SpecialVersionStatus::SameVersion | SpecialVersionStatus::IncomingOlder
+    );
+    let mut available_actions = if apply_ready || version_blocks_update {
         Vec::new()
     } else {
         build_available_review_actions(seed_pack, &evaluation, &files, Some(&layout))
@@ -799,18 +891,10 @@ pub fn build_special_mod_decision(
     }
 
     available_actions.sort_by(|left, right| right.priority.cmp(&left.priority));
-    let primary_action = available_actions.first().cloned();
-    let apply_ready = guided_plan.as_ref().is_some_and(|plan| plan.apply_ready)
-        && family_role == SpecialFamilyRole::Primary;
-    let local_pack_state = evidence.local_pack_state(&profile);
-    let existing_install_state = if !layout.existing_install_detected {
-        SpecialExistingInstallState::NotInstalled
-    } else if layout.repair_plan_available {
-        SpecialExistingInstallState::Repairable
-    } else if layout.safe_to_update {
-        SpecialExistingInstallState::Clean
+    let primary_action = if version_blocks_update && family_role == SpecialFamilyRole::Primary {
+        None
     } else {
-        SpecialExistingInstallState::Blocked
+        available_actions.first().cloned()
     };
     let state = if apply_ready {
         SpecialDecisionState::GuidedReady
@@ -819,10 +903,24 @@ pub fn build_special_mod_decision(
     } else {
         SpecialDecisionState::ReviewManually
     };
-    let queue_lane = special_decision_queue_lane(&state, &evaluation.assessment.intake_mode);
+    let queue_lane = if version_blocks_update && family_role == SpecialFamilyRole::Primary {
+        DownloadQueueLane::Done
+    } else {
+        special_decision_queue_lane(&state, &evaluation.assessment.intake_mode)
+    };
     let explanation = if family_role == SpecialFamilyRole::Superseded {
         format!(
             "SimSuite found more than one {} download in the Inbox and picked the fuller local pack to lead with.",
+            profile.display_name
+        )
+    } else if same_version {
+        format!(
+            "This {} version already matches the copy that is installed.",
+            profile.display_name
+        )
+    } else if version_status == SpecialVersionStatus::IncomingOlder {
+        format!(
+            "This {} download looks older than the copy that is already installed.",
             profile.display_name
         )
     } else if apply_ready {
@@ -830,16 +928,29 @@ pub fn build_special_mod_decision(
     } else {
         evaluation.explanation.clone()
     };
-    let recommended_next_step = primary_action
-        .as_ref()
-        .map(|action| action.description.clone())
-        .unwrap_or_else(|| evaluation.recommended_next_step.clone());
+    let recommended_next_step = if same_version {
+        format!(
+            "{} is already current. Reinstall only if you want to replace a damaged copy.",
+            profile.display_name
+        )
+    } else if version_status == SpecialVersionStatus::IncomingOlder {
+        format!(
+            "Ignore this older {} download unless you want to roll back on purpose.",
+            profile.display_name
+        )
+    } else {
+        primary_action
+            .as_ref()
+            .map(|action| action.description.clone())
+            .unwrap_or_else(|| evaluation.recommended_next_step.clone())
+    };
     let queue_summary = build_special_queue_summary(
         &profile,
         &state,
         &local_pack_state,
         family_role.clone(),
         primary_family_item_name.clone(),
+        &version_status,
         &evaluation,
     );
 
@@ -860,9 +971,15 @@ pub fn build_special_mod_decision(
         queue_summary,
         explanation,
         recommended_next_step,
+        incoming_version,
+        incoming_signature,
+        version_status,
+        same_version,
+        official_latest,
         apply_ready,
         available_actions,
         primary_action,
+        installed_state: family_state.installed,
     }))
 }
 
@@ -902,6 +1019,106 @@ pub fn collect_supported_subset_file_ids(
     }
 
     Ok(Some((supported_ids, leftover_ids)))
+}
+
+pub fn reconcile_special_mod_family(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    profile_key: &str,
+    applied_item_id: i64,
+) -> AppResult<Vec<i64>> {
+    let Some(profile) = seed_pack
+        .install_catalog
+        .guided_profiles
+        .iter()
+        .find(|profile| profile.key == profile_key)
+        .cloned()
+    else {
+        return Ok(vec![applied_item_id]);
+    };
+
+    let mut context = SpecialDecisionContext::default();
+    let layout = detect_existing_layout_cached(connection, settings, &profile, &mut context)?;
+    let existing_install_state = existing_install_state_from_layout(&layout);
+    let install_path = layout
+        .existing_install_detected
+        .then(|| layout.target_folder.to_string_lossy().to_string());
+    let item = load_item_with_staging(connection, applied_item_id)?.unwrap_or_else(empty_item_record);
+    let files = load_profile_files(connection, applied_item_id, false)?;
+    let mut family_state = load_family_state_cached(
+        connection,
+        &mut context,
+        &profile,
+        &existing_install_state,
+        install_path.clone(),
+    )?;
+
+    let incoming_version = incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_signature = incoming_signature_for_profile(&profile, &files);
+    family_state.installed.install_state = existing_install_state;
+    family_state.installed.install_path = install_path;
+    family_state.installed.installed_version = incoming_version
+        .clone()
+        .or_else(|| installed_version_for_profile(&profile, &layout))
+        .or_else(|| family_state.installed.installed_version.clone());
+    family_state.installed.installed_signature = incoming_signature
+        .clone()
+        .or_else(|| installed_signature_for_profile(&profile, &layout))
+        .or_else(|| family_state.installed.installed_signature.clone());
+    family_state.installed.source_item_id = Some(applied_item_id);
+    family_state.installed.checked_at = Some(Utc::now().to_rfc3339());
+    if family_state.latest.is_none() {
+        family_state.latest = load_or_refresh_latest_info(connection, &profile, false)?;
+    }
+    save_family_state(connection, &family_state)?;
+
+    let mut statement = connection.prepare(
+        "SELECT
+            di.id,
+            (
+                SELECT COUNT(*)
+                FROM files f
+                WHERE f.download_item_id = di.id
+                  AND f.source_location = 'downloads'
+            ) AS active_file_count
+         FROM download_items di
+         WHERE di.matched_profile_key = ?1",
+    )?;
+    let family_rows = statement
+        .query_map(params![profile_key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    connection.execute(
+        "UPDATE files
+         SET download_item_id = NULL,
+             indexed_at = CURRENT_TIMESTAMP
+         WHERE source_location <> 'downloads'
+           AND download_item_id IN (
+                SELECT id
+                FROM download_items
+                WHERE matched_profile_key = ?1
+                  AND id <> ?2
+           )",
+        params![profile_key, applied_item_id],
+    )?;
+
+    for (item_id, active_file_count) in &family_rows {
+        if *item_id == applied_item_id || *active_file_count > 0 {
+            continue;
+        }
+
+        connection.execute(
+            "UPDATE download_items
+             SET status = 'ignored',
+                 updated_at = ?2
+             WHERE id = ?1
+               AND status NOT IN ('ignored', 'error')",
+            params![item_id, Utc::now().to_rfc3339()],
+        )?;
+    }
+
+    Ok(family_rows.into_iter().map(|(item_id, _)| item_id).collect())
 }
 
 fn special_decision_state_for_action(kind: &ReviewPlanActionKind) -> SpecialDecisionState {
@@ -947,6 +1164,7 @@ fn build_special_queue_summary(
     local_pack_state: &SpecialLocalPackState,
     family_role: SpecialFamilyRole,
     primary_family_item_name: Option<String>,
+    version_status: &SpecialVersionStatus,
     evaluation: &EvaluationResult,
 ) -> String {
     if family_role == SpecialFamilyRole::Superseded {
@@ -954,6 +1172,20 @@ fn build_special_queue_summary(
             "A fuller {} pack is already in Inbox as {}.",
             profile.display_name,
             primary_family_item_name.unwrap_or_else(|| "another download".to_owned())
+        );
+    }
+
+    if *version_status == SpecialVersionStatus::SameVersion {
+        return format!(
+            "This {} download matches the version that is already installed.",
+            profile.display_name
+        );
+    }
+
+    if *version_status == SpecialVersionStatus::IncomingOlder {
+        return format!(
+            "This {} download looks older than the version already installed.",
+            profile.display_name
         );
     }
 
@@ -1013,6 +1245,139 @@ fn build_special_queue_summary(
     }
 }
 
+fn detect_existing_layout_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    profile: &GuidedInstallProfileSeed,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<ExistingInstallLayout> {
+    if let Some(layout) = context.layout_cache.get(&profile.key) {
+        return Ok(layout.clone());
+    }
+
+    let layout = detect_existing_layout(connection, settings, profile)?;
+    context
+        .layout_cache
+        .insert(profile.key.clone(), layout.clone());
+    Ok(layout)
+}
+
+fn load_family_siblings_cached(
+    connection: &Connection,
+    item_id: i64,
+    profile_key: &str,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Vec<FamilySiblingRecord>> {
+    if let Some(rows) = context.sibling_cache.get(profile_key) {
+        return Ok(rows.clone());
+    }
+
+    let rows = load_family_siblings(connection, item_id, profile_key)?;
+    context
+        .sibling_cache
+        .insert(profile_key.to_owned(), rows.clone());
+    Ok(rows)
+}
+
+fn load_family_state_cached(
+    connection: &Connection,
+    context: &mut SpecialDecisionContext,
+    profile: &GuidedInstallProfileSeed,
+    existing_install_state: &SpecialExistingInstallState,
+    install_path: Option<String>,
+) -> AppResult<StoredSpecialModFamilyState> {
+    if let Some(state) = context.family_state_cache.get(&profile.key) {
+        return Ok(state.clone());
+    }
+
+    let state = load_family_state(
+        connection,
+        &profile.key,
+        &profile.display_name,
+        existing_install_state,
+        install_path,
+    )?;
+    context
+        .family_state_cache
+        .insert(profile.key.clone(), state.clone());
+    Ok(state)
+}
+
+fn existing_install_state_from_layout(layout: &ExistingInstallLayout) -> SpecialExistingInstallState {
+    if !layout.existing_install_detected {
+        SpecialExistingInstallState::NotInstalled
+    } else if layout.repair_plan_available {
+        SpecialExistingInstallState::Repairable
+    } else if layout.safe_to_update {
+        SpecialExistingInstallState::Clean
+    } else {
+        SpecialExistingInstallState::Blocked
+    }
+}
+
+fn incoming_version_for_profile(
+    profile: &GuidedInstallProfileSeed,
+    display_name: &str,
+    files: &[ProfileFile],
+) -> Option<String> {
+    let mut values = special_mod_versions::version_hints_from_profile(profile, display_name);
+    values.extend(files.iter().map(|file| file.filename.clone()));
+    values.extend(files.iter().filter_map(|file| file.archive_member_path.clone()));
+    extract_version_from_values(&values)
+}
+
+fn incoming_signature_for_profile(
+    profile: &GuidedInstallProfileSeed,
+    files: &[ProfileFile],
+) -> Option<String> {
+    let entries = files
+        .iter()
+        .filter(|file| is_profile_content_file(file, profile))
+        .map(|file| SignatureEntry {
+            filename: file.filename.clone(),
+            size: file.size,
+            hash: file.hash.clone(),
+        })
+        .collect::<Vec<_>>();
+    build_signature(&entries)
+}
+
+fn installed_version_for_profile(
+    profile: &GuidedInstallProfileSeed,
+    layout: &ExistingInstallLayout,
+) -> Option<String> {
+    let mut values = layout
+        .existing_files
+        .iter()
+        .map(|file| file.filename.clone())
+        .collect::<Vec<_>>();
+    values.extend(
+        layout
+            .preserve_files
+            .iter()
+            .map(|file| file.filename.clone()),
+    );
+    values.extend(profile.version_file_hints.iter().cloned());
+    extract_version_from_values(&values)
+}
+
+fn installed_signature_for_profile(
+    profile: &GuidedInstallProfileSeed,
+    layout: &ExistingInstallLayout,
+) -> Option<String> {
+    let entries = layout
+        .existing_files
+        .iter()
+        .filter(|file| is_existing_profile_filename(&file.filename, &file.extension, profile))
+        .map(|file| SignatureEntry {
+            filename: file.filename.clone(),
+            size: file.size,
+            hash: file.hash.clone(),
+        })
+        .collect::<Vec<_>>();
+    build_signature(&entries)
+}
+
 fn load_family_siblings(
     connection: &Connection,
     item_id: i64,
@@ -1037,7 +1402,8 @@ fn load_family_siblings(
                 WHERE f.download_item_id = di.id
                   AND f.source_location = 'downloads'
             ) AS review_file_count,
-            di.updated_at
+            di.updated_at,
+            di.status
          FROM download_items di
          WHERE di.matched_profile_key = ?1
            AND di.status NOT IN ('applied', 'ignored', 'error')
@@ -1054,6 +1420,7 @@ fn load_family_siblings(
                 active_file_count: row.get(4)?,
                 review_file_count: row.get(5)?,
                 updated_at: row.get(6)?,
+                status: row.get(7)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1085,6 +1452,12 @@ fn select_primary_family_item(
 
 fn family_item_score(item: &FamilySiblingRecord) -> i64 {
     let guided_bonus = if item.guided_install_available { 4000 } else { 0 };
+    let status_bonus = match item.status.as_str() {
+        "ready" => 350,
+        "partial" => 220,
+        "needs_review" => 120,
+        _ => 0,
+    };
     let intake_bonus = match item.intake_mode {
         DownloadIntakeMode::Guided => 1500,
         DownloadIntakeMode::NeedsReview => 900,
@@ -1092,7 +1465,11 @@ fn family_item_score(item: &FamilySiblingRecord) -> i64 {
         DownloadIntakeMode::Standard => 100,
     };
 
-    guided_bonus + intake_bonus + (item.active_file_count * 25) - (item.review_file_count * 60)
+    guided_bonus
+        + status_bonus
+        + intake_bonus
+        + (item.active_file_count * 25)
+        - (item.review_file_count * 60)
 }
 
 fn parse_download_intake_mode(value: String) -> DownloadIntakeMode {
@@ -2085,6 +2462,8 @@ fn detect_existing_layout(
             f.kind,
             f.subtype,
             c.canonical_name,
+            f.size,
+            f.hash,
             COALESCE(f.insights, '{}')
          FROM files f
          LEFT JOIN creators c ON c.id = f.creator_id
@@ -2101,7 +2480,9 @@ fn detect_existing_layout(
                 kind: row.get(4)?,
                 subtype: row.get(5)?,
                 creator: row.get(6)?,
-                insights: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
+                size: row.get(7)?,
+                hash: row.get(8)?,
+                insights: serde_json::from_str(&row.get::<_, String>(9)?).unwrap_or_default(),
                 in_target_folder: false,
             })
         })?
@@ -2185,6 +2566,8 @@ fn detect_existing_layout(
             kind: "Config".to_owned(),
             subtype: None,
             creator: profile.creator.clone(),
+            size: preserve_path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+            hash: None,
             insights: FileInsights::default(),
             in_target_folder: true,
         });
@@ -2271,6 +2654,8 @@ fn merge_disk_existing_candidates(
                 },
                 subtype: None,
                 creator: profile.creator.clone(),
+                size: path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+                hash: None,
                 insights: FileInsights::default(),
                 in_target_folder: false,
             });
@@ -2288,6 +2673,8 @@ fn merge_disk_existing_candidates(
                 kind: "Config".to_owned(),
                 subtype: None,
                 creator: profile.creator.clone(),
+                size: path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+                hash: None,
                 insights: FileInsights::default(),
                 in_target_folder: false,
             });
@@ -2392,6 +2779,8 @@ fn load_profile_files(
             c.canonical_name,
             f.confidence,
             f.source_location,
+            f.size,
+            f.hash,
             COALESCE(f.insights, '{{}}')
          FROM files f
          LEFT JOIN creators c ON c.id = f.creator_id
@@ -2413,7 +2802,9 @@ fn load_profile_files(
                 creator: row.get(7)?,
                 confidence: row.get(8)?,
                 source_location: row.get(9)?,
-                insights: serde_json::from_str(&row.get::<_, String>(10)?).unwrap_or_default(),
+                size: row.get(10)?,
+                hash: row.get(11)?,
+                insights: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
             })
         })?
         .collect::<Result<Vec<_>, _>>()
@@ -3008,6 +3399,8 @@ fn profile_catalog_source(profile: &GuidedInstallProfileSeed) -> CatalogSourceIn
     CatalogSourceInfo {
         official_source_url: Some(profile.official_source_url.clone()),
         official_download_url: profile.official_download_url.clone(),
+        latest_check_url: profile.latest_check_url.clone(),
+        latest_check_strategy: profile.latest_check_strategy.clone(),
         reference_source: profile.reference_source.clone(),
         reviewed_at: Some(profile.reviewed_at.clone()),
     }
@@ -3017,6 +3410,8 @@ fn pattern_catalog_source(pattern: &ReviewOnlyPatternSeed) -> CatalogSourceInfo 
     CatalogSourceInfo {
         official_source_url: pattern.official_source_url.clone(),
         official_download_url: None,
+        latest_check_url: None,
+        latest_check_strategy: None,
         reference_source: pattern.reference_source.clone(),
         reviewed_at: Some(pattern.reviewed_at.clone()),
     }
@@ -3026,6 +3421,8 @@ fn dependency_catalog_source(rule: &DependencyRuleSeed) -> CatalogSourceInfo {
     CatalogSourceInfo {
         official_source_url: Some(rule.official_source_url.clone()),
         official_download_url: rule.official_download_url.clone(),
+        latest_check_url: None,
+        latest_check_strategy: None,
         reference_source: rule.reference_source.clone(),
         reviewed_at: Some(rule.reviewed_at.clone()),
     }
@@ -3035,6 +3432,8 @@ fn incompatibility_catalog_source(rule: &IncompatibilityRuleSeed) -> CatalogSour
     CatalogSourceInfo {
         official_source_url: Some(rule.official_source_url.clone()),
         official_download_url: None,
+        latest_check_url: None,
+        latest_check_strategy: None,
         reference_source: rule.reference_source.clone(),
         reviewed_at: Some(rule.reviewed_at.clone()),
     }
@@ -3120,13 +3519,14 @@ fn risk_level_label(level: &DownloadRiskLevel) -> &'static str {
 mod tests {
     use super::{
         assess_download_item, build_evidence_summary, build_guided_plan, build_review_plan,
-        build_special_mod_decision, normalized, store_download_item_assessment,
+        build_special_mod_decision, normalized, reconcile_special_mod_family,
+        store_download_item_assessment,
     };
     use crate::{
         database::{initialize, save_library_paths, seed_database},
         models::{
-            DownloadIntakeMode, LibrarySettings, ReviewPlanActionKind, SpecialDecisionState,
-            SpecialFamilyRole,
+            DownloadIntakeMode, DownloadQueueLane, LibrarySettings, ReviewPlanActionKind,
+            SpecialDecisionState, SpecialFamilyRole, SpecialVersionStatus,
         },
         seed::{load_seed_pack, GuidedInstallProfileSeed, SeedPack},
     };
@@ -3312,6 +3712,42 @@ mod tests {
 
     fn install_target_for_profile(temp_root: &Path, profile: &GuidedInstallProfileSeed) -> PathBuf {
         temp_root.join("Mods").join(&profile.install_folder_name)
+    }
+
+    fn insert_family_state(
+        connection: &Connection,
+        profile_key: &str,
+        profile_name: &str,
+        install_state: &str,
+        install_path: Option<&Path>,
+        installed_version: Option<&str>,
+        source_item_id: Option<i64>,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO special_mod_family_state (
+                    profile_key,
+                    profile_name,
+                    install_state,
+                    install_path,
+                    installed_version,
+                    source_item_id,
+                    checked_at,
+                    latest_status,
+                    updated_at
+                 ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, 'unknown', CURRENT_TIMESTAMP
+                 )",
+                params![
+                    profile_key,
+                    profile_name,
+                    install_state,
+                    install_path.map(|value| value.to_string_lossy().to_string()),
+                    installed_version,
+                    source_item_id
+                ],
+            )
+            .expect("family state");
     }
 
     #[test]
@@ -3926,6 +4362,292 @@ mod tests {
             .expect("special decision");
         assert!(decision.apply_ready);
         assert_eq!(decision.state, SpecialDecisionState::GuidedReady);
+    }
+
+    #[test]
+    fn same_version_mccc_download_is_marked_as_already_current() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        let staging = staging_root.join("mccc_same_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(
+            &connection,
+            238,
+            "McCmdCenter_AllModules_2026_1_1.zip",
+            &staging,
+        );
+
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = staging.join(sample);
+            fs::write(&file_path, b"sample").expect("sample");
+            insert_download_file(
+                &connection,
+                238,
+                23800 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let existing_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("mc_cmd_center.ts4script");
+        let current_package = existing_root.join("mc_cmd_center.package");
+        fs::write(&current_script, b"installed").expect("script");
+        fs::write(&current_package, b"installed").expect("package");
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        insert_installed_file(&connection, &current_package, "Mods");
+        insert_family_state(
+            &connection,
+            "mccc",
+            "MC Command Center",
+            "clean",
+            Some(&existing_root),
+            Some("2026.1.1"),
+            None,
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 238).expect("assessment");
+        store_download_item_assessment(&connection, 238, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 238)
+            .expect("decision")
+            .expect("special decision");
+        assert!(decision.apply_ready);
+        assert!(decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert!(decision.primary_action.is_none());
+        assert!(decision.recommended_next_step.contains("already current"));
+    }
+
+    #[test]
+    fn older_mccc_download_is_not_treated_as_the_next_update() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        let staging = staging_root.join("mccc_older_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(
+            &connection,
+            239,
+            "McCmdCenter_AllModules_2025_4_0.zip",
+            &staging,
+        );
+
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = staging.join(sample);
+            fs::write(&file_path, b"sample").expect("sample");
+            insert_download_file(
+                &connection,
+                239,
+                23900 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let existing_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("mc_cmd_center.ts4script");
+        let current_package = existing_root.join("mc_cmd_center.package");
+        fs::write(&current_script, b"installed").expect("script");
+        fs::write(&current_package, b"installed").expect("package");
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        insert_installed_file(&connection, &current_package, "Mods");
+        insert_family_state(
+            &connection,
+            "mccc",
+            "MC Command Center",
+            "clean",
+            Some(&existing_root),
+            Some("2026.1.1"),
+            None,
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 239).expect("assessment");
+        store_download_item_assessment(&connection, 239, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 239)
+            .expect("decision")
+            .expect("special decision");
+        assert!(decision.apply_ready);
+        assert_eq!(decision.version_status, SpecialVersionStatus::IncomingOlder);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert!(decision.primary_action.is_none());
+        assert!(decision
+            .recommended_next_step
+            .contains("older MC Command Center download"));
+    }
+
+    #[test]
+    fn reconcile_clears_stale_special_mod_family_ownership() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id,
+                    source_path,
+                    display_name,
+                    source_kind,
+                    archive_format,
+                    staging_path,
+                    source_size,
+                    status,
+                    notes,
+                    intake_mode,
+                    matched_profile_key,
+                    matched_profile_name
+                 ) VALUES (
+                    260,
+                    'C:/Downloads/old_mccc.zip',
+                    'Old_MCCC.zip',
+                    'archive',
+                    'zip',
+                    ?1,
+                    100,
+                    'needs_review',
+                    '[]',
+                    'guided',
+                    'mccc',
+                    'MC Command Center'
+                 )",
+                params![staging_root.join("old_mccc").to_string_lossy().to_string()],
+            )
+            .expect("old item");
+
+        let stale_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&stale_root).expect("stale root");
+        let stale_script = stale_root.join("mc_cmd_center.ts4script");
+        let stale_package = stale_root.join("mc_cmd_center.package");
+        fs::write(&stale_script, b"stale").expect("stale script");
+        fs::write(&stale_package, b"stale").expect("stale package");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    download_item_id,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, 'mc_cmd_center.ts4script', '.ts4script', 'Script Mods', 0.95, 'mods', 260, '[]', '{}')",
+                params![stale_script.to_string_lossy().to_string()],
+            )
+            .expect("stale script row");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    download_item_id,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, 'mc_cmd_center.package', '.package', 'Mods', 0.95, 'mods', 260, '[]', '{}')",
+                params![stale_package.to_string_lossy().to_string()],
+            )
+            .expect("stale package row");
+
+        let applied_staging = staging_root.join("mccc_new_family");
+        fs::create_dir_all(&applied_staging).expect("applied staging");
+        insert_download_item(
+            &connection,
+            261,
+            "McCmdCenter_AllModules_2026_1_1.zip",
+            &applied_staging,
+        );
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = applied_staging.join(sample);
+            fs::write(&file_path, b"sample").expect("sample");
+            insert_download_file(
+                &connection,
+                261,
+                26100 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 261).expect("assessment");
+        store_download_item_assessment(&connection, 261, &assessment).expect("stored");
+
+        let affected =
+            reconcile_special_mod_family(&connection, &settings, &seed_pack, "mccc", 261)
+                .expect("reconcile");
+        assert!(affected.contains(&260));
+
+        let stale_owned: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM files WHERE download_item_id = 260 AND source_location != 'downloads'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stale ownership count");
+        assert_eq!(stale_owned, 0);
+
+        let old_status: String = connection
+            .query_row(
+                "SELECT status FROM download_items WHERE id = 260",
+                [],
+                |row| row.get(0),
+            )
+            .expect("old status");
+        assert_eq!(old_status, "ignored");
+
+        let (stored_version, stored_source_item_id): (Option<String>, Option<i64>) = connection
+            .query_row(
+                "SELECT installed_version, source_item_id
+                 FROM special_mod_family_state
+                 WHERE profile_key = 'mccc'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("family state");
+        assert_eq!(stored_version.as_deref(), Some("2026.1.1"));
+        assert_eq!(stored_source_item_id, Some(261));
     }
 
     #[test]

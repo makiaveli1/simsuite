@@ -586,15 +586,27 @@ pub fn apply_guided_download_item(
         return Err("This inbox item does not have a guided special setup plan.".to_owned());
     };
 
-    let result = move_engine::apply_guided_download_plan(
+    let result = match move_engine::apply_guided_download_plan(
         &mut connection,
         &settings,
         &seed_pack,
         &state.app_data_dir,
         &plan,
         approved,
-    )
-    .map_err(map_error)?;
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            let detail = error.to_string();
+            let _ = database::record_download_item_event(
+                &connection,
+                item_id,
+                "apply_failed",
+                "Guided install failed",
+                Some(&detail),
+            );
+            return Err(map_error(error));
+        }
+    };
     downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
     Ok(result)
 }
@@ -609,15 +621,27 @@ pub fn apply_special_review_fix(
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
 
-    let result = move_engine::apply_special_review_fix(
+    let result = match move_engine::apply_special_review_fix(
         &mut connection,
         &settings,
         &seed_pack,
         &state.app_data_dir,
         item_id,
         approved,
-    )
-    .map_err(map_error)?;
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            let detail = error.to_string();
+            let _ = database::record_download_item_event(
+                &connection,
+                item_id,
+                "apply_failed",
+                "Special repair failed",
+                Some(&detail),
+            );
+            return Err(map_error(error));
+        }
+    };
     downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
     Ok(result)
 }
@@ -648,15 +672,27 @@ pub fn apply_review_plan_action(
 
     match action.kind {
         ReviewPlanActionKind::RepairSpecial => {
-            let result = move_engine::apply_special_review_fix(
+            let result = match move_engine::apply_special_review_fix(
                 &mut connection,
                 &settings,
                 &seed_pack,
                 &state.app_data_dir,
                 item_id,
                 approved,
-            )
-            .map_err(map_error)?;
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    let detail = error.to_string();
+                    let _ = database::record_download_item_event(
+                        &connection,
+                        item_id,
+                        "apply_failed",
+                        "Special repair failed",
+                        Some(&detail),
+                    );
+                    return Err(map_error(error));
+                }
+            };
             downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
             Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
@@ -690,15 +726,27 @@ pub fn apply_review_plan_action(
             else {
                 return Err("This dependency no longer has a guided setup plan.".to_owned());
             };
-            let result = move_engine::apply_guided_download_plan(
+            let result = match move_engine::apply_guided_download_plan(
                 &mut connection,
                 &settings,
                 &seed_pack,
                 &state.app_data_dir,
                 &plan,
                 approved,
-            )
-            .map_err(map_error)?;
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    let detail = error.to_string();
+                    let _ = database::record_download_item_event(
+                        &connection,
+                        dependency_item_id,
+                        "apply_failed",
+                        "Dependency install failed",
+                        Some(&detail),
+                    );
+                    return Err(map_error(error));
+                }
+            };
             downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
                 .map_err(map_error)?;
             downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;

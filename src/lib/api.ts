@@ -115,9 +115,13 @@ const buildMockCatalogSource = (
   officialDownloadUrl: string | null,
   referenceSource: string[],
   reviewedAt: string | null,
+  latestCheckUrl: string | null = officialSourceUrl,
+  latestCheckStrategy: string | null = null,
 ): CatalogSourceInfo => ({
   officialSourceUrl,
   officialDownloadUrl,
+  latestCheckUrl,
+  latestCheckStrategy,
   referenceSource,
   reviewedAt,
 });

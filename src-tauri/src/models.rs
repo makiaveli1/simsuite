@@ -552,6 +552,8 @@ impl Default for DownloadRiskLevel {
 pub struct CatalogSourceInfo {
     pub official_source_url: Option<String>,
     pub official_download_url: Option<String>,
+    pub latest_check_url: Option<String>,
+    pub latest_check_strategy: Option<String>,
     pub reference_source: Vec<String>,
     pub reviewed_at: Option<String>,
 }
@@ -627,6 +629,16 @@ pub enum SpecialExistingInstallState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum SpecialVersionStatus {
+    NotInstalled,
+    IncomingNewer,
+    SameVersion,
+    IncomingOlder,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SpecialFamilyRole {
     Primary,
     Related,
@@ -653,6 +665,31 @@ pub struct DownloadsTimelineEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SpecialInstalledState {
+    pub profile_key: String,
+    pub profile_name: String,
+    pub install_state: SpecialExistingInstallState,
+    pub install_path: Option<String>,
+    pub installed_version: Option<String>,
+    pub installed_signature: Option<String>,
+    pub source_item_id: Option<i64>,
+    pub checked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecialOfficialLatestInfo {
+    pub source_url: Option<String>,
+    pub download_url: Option<String>,
+    pub latest_version: Option<String>,
+    pub checked_at: Option<String>,
+    pub confidence: f64,
+    pub status: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SpecialModDecision {
     pub item_id: i64,
     pub profile_key: String,
@@ -661,6 +698,7 @@ pub struct SpecialModDecision {
     pub state: SpecialDecisionState,
     pub local_pack_state: SpecialLocalPackState,
     pub existing_install_state: SpecialExistingInstallState,
+    pub installed_state: SpecialInstalledState,
     pub family_role: SpecialFamilyRole,
     pub family_key: String,
     pub primary_family_item_id: Option<i64>,
@@ -670,6 +708,11 @@ pub struct SpecialModDecision {
     pub queue_summary: String,
     pub explanation: String,
     pub recommended_next_step: String,
+    pub incoming_version: Option<String>,
+    pub incoming_signature: Option<String>,
+    pub version_status: SpecialVersionStatus,
+    pub same_version: bool,
+    pub official_latest: Option<SpecialOfficialLatestInfo>,
     pub apply_ready: bool,
     pub available_actions: Vec<ReviewPlanAction>,
     pub primary_action: Option<ReviewPlanAction>,

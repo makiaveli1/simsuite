@@ -507,6 +507,8 @@ export type DownloadRiskLevel = "low" | "medium" | "high";
 export interface CatalogSourceInfo {
   officialSourceUrl: string | null;
   officialDownloadUrl: string | null;
+  latestCheckUrl: string | null;
+  latestCheckStrategy: string | null;
   referenceSource: string[];
   reviewedAt: string | null;
 }
@@ -560,7 +562,35 @@ export type SpecialExistingInstallState =
   | "repairable"
   | "blocked";
 
+export type SpecialVersionStatus =
+  | "not_installed"
+  | "incoming_newer"
+  | "same_version"
+  | "incoming_older"
+  | "unknown";
+
 export type SpecialFamilyRole = "primary" | "related" | "superseded";
+
+export interface SpecialInstalledState {
+  profileKey: string;
+  profileName: string;
+  installState: SpecialExistingInstallState;
+  installPath: string | null;
+  installedVersion: string | null;
+  installedSignature: string | null;
+  sourceItemId: number | null;
+  checkedAt: string | null;
+}
+
+export interface SpecialOfficialLatestInfo {
+  sourceUrl: string | null;
+  downloadUrl: string | null;
+  latestVersion: string | null;
+  checkedAt: string | null;
+  confidence: number;
+  status: string;
+  note: string | null;
+}
 
 export interface SpecialModDecision {
   itemId: number;
@@ -570,6 +600,7 @@ export interface SpecialModDecision {
   state: SpecialDecisionState;
   localPackState: SpecialLocalPackState;
   existingInstallState: SpecialExistingInstallState;
+  installedState: SpecialInstalledState;
   familyRole: SpecialFamilyRole;
   familyKey: string;
   primaryFamilyItemId: number | null;
@@ -579,6 +610,11 @@ export interface SpecialModDecision {
   queueSummary: string;
   explanation: string;
   recommendedNextStep: string;
+  incomingVersion: string | null;
+  incomingSignature: string | null;
+  versionStatus: SpecialVersionStatus;
+  sameVersion: boolean;
+  officialLatest: SpecialOfficialLatestInfo | null;
   applyReady: boolean;
   availableActions: ReviewPlanAction[];
   primaryAction: ReviewPlanAction | null;

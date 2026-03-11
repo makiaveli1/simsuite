@@ -17,7 +17,9 @@ use crate::{
     app_state::AppState,
     commands::emit_downloads_status,
     core::{
-        bundle_detector, duplicate_detector, install_profile_engine, rule_engine,
+        bundle_detector, duplicate_detector,
+        install_profile_engine::{self, SpecialDecisionContext},
+        rule_engine,
         scanner::{self, DiscoveredFile},
     },
     database,
@@ -223,6 +225,8 @@ pub fn list_download_items(
             di.evidence_summary,
             di.catalog_source_url,
             di.catalog_download_url,
+            di.latest_check_url,
+            di.latest_check_strategy,
             di.catalog_reference_source,
             di.catalog_reviewed_at,
             di.existing_install_detected,
@@ -315,19 +319,21 @@ pub fn list_download_items(
                 catalog_source: parse_catalog_source(
                     row.get(20)?,
                     row.get(21)?,
-                    row.get::<_, String>(22)?,
+                    row.get(22)?,
                     row.get(23)?,
+                    row.get::<_, String>(24)?,
+                    row.get(25)?,
                 ),
-                existing_install_detected: row.get::<_, i64>(24)? != 0,
-                guided_install_available: row.get::<_, i64>(25)? != 0,
-                first_seen_at: row.get(26)?,
-                last_seen_at: row.get(27)?,
-                updated_at: row.get(28)?,
-                error_message: row.get(29)?,
-                notes: parse_string_array(row.get::<_, String>(30)?),
-                active_file_count: row.get(31)?,
-                applied_file_count: row.get(32)?,
-                review_file_count: row.get(33)?,
+                existing_install_detected: row.get::<_, i64>(26)? != 0,
+                guided_install_available: row.get::<_, i64>(27)? != 0,
+                first_seen_at: row.get(28)?,
+                last_seen_at: row.get(29)?,
+                updated_at: row.get(30)?,
+                error_message: row.get(31)?,
+                notes: parse_string_array(row.get::<_, String>(32)?),
+                active_file_count: row.get(33)?,
+                applied_file_count: row.get(34)?,
+                review_file_count: row.get(35)?,
                 sample_files: Vec::new(),
                 queue_lane: DownloadQueueLane::ReadyNow,
                 queue_summary: String::new(),
@@ -356,8 +362,9 @@ fn enrich_download_items(
     seed_pack: &crate::seed::SeedPack,
     items: &mut [DownloadsInboxItem],
 ) -> AppResult<()> {
+    let mut context = SpecialDecisionContext::default();
     for item in items.iter_mut() {
-        hydrate_download_item(connection, settings, seed_pack, item)?;
+        hydrate_download_item(connection, settings, seed_pack, item, &mut context, false)?;
     }
 
     let mut family_members: HashMap<String, Vec<i64>> = HashMap::new();
@@ -387,7 +394,7 @@ fn enrich_download_items(
                     })
             })
             .unwrap_or_default();
-        item.timeline = build_download_timeline(item);
+        item.timeline = build_download_timeline(connection, item);
     }
 
     Ok(())
@@ -399,9 +406,10 @@ fn enrich_download_item(
     seed_pack: &crate::seed::SeedPack,
     item: &mut DownloadsInboxItem,
 ) -> AppResult<()> {
-    hydrate_download_item(connection, settings, seed_pack, item)?;
+    let mut context = SpecialDecisionContext::default();
+    hydrate_download_item(connection, settings, seed_pack, item, &mut context, true)?;
     item.related_item_ids = load_related_item_ids(connection, item)?;
-    item.timeline = build_download_timeline(item);
+    item.timeline = build_download_timeline(connection, item);
     Ok(())
 }
 
@@ -410,9 +418,17 @@ fn hydrate_download_item(
     settings: &LibrarySettings,
     seed_pack: &crate::seed::SeedPack,
     item: &mut DownloadsInboxItem,
+    context: &mut SpecialDecisionContext,
+    allow_network_latest: bool,
 ) -> AppResult<()> {
-    item.special_decision =
-        install_profile_engine::build_special_mod_decision(connection, settings, seed_pack, item.id)?;
+    item.special_decision = install_profile_engine::build_special_mod_decision_cached(
+        connection,
+        settings,
+        seed_pack,
+        item.id,
+        context,
+        allow_network_latest,
+    )?;
     if let Some(decision) = item.special_decision.as_ref() {
         item.queue_lane = decision.queue_lane.clone();
         item.queue_summary = decision.queue_summary.clone();
@@ -619,7 +635,10 @@ fn load_related_item_ids(
     Ok(ids)
 }
 
-fn build_download_timeline(item: &DownloadsInboxItem) -> Vec<DownloadsTimelineEntry> {
+fn build_download_timeline(
+    connection: &Connection,
+    item: &DownloadsInboxItem,
+) -> Vec<DownloadsTimelineEntry> {
     let mut timeline = vec![DownloadsTimelineEntry {
         label: "Added to Inbox".to_owned(),
         detail: Some(
@@ -678,6 +697,11 @@ fn build_download_timeline(item: &DownloadsInboxItem) -> Vec<DownloadsTimelineEn
         at: Some(item.updated_at.clone()),
     });
 
+    if let Ok(mut events) = database::load_download_item_events(connection, item.id, 12) {
+        timeline.append(&mut events);
+    }
+
+    timeline.sort_by(|left, right| right.at.cmp(&left.at));
     timeline
 }
 
@@ -2061,6 +2085,8 @@ fn load_item_by_id(
                 di.evidence_summary,
                 di.catalog_source_url,
                 di.catalog_download_url,
+                di.latest_check_url,
+                di.latest_check_strategy,
                 di.catalog_reference_source,
                 di.catalog_reviewed_at,
                 di.existing_install_detected,
@@ -2117,19 +2143,21 @@ fn load_item_by_id(
                     catalog_source: parse_catalog_source(
                         row.get(20)?,
                         row.get(21)?,
-                        row.get::<_, String>(22)?,
+                        row.get(22)?,
                         row.get(23)?,
+                        row.get::<_, String>(24)?,
+                        row.get(25)?,
                     ),
-                    existing_install_detected: row.get::<_, i64>(24)? != 0,
-                    guided_install_available: row.get::<_, i64>(25)? != 0,
-                    first_seen_at: row.get(26)?,
-                    last_seen_at: row.get(27)?,
-                    updated_at: row.get(28)?,
-                    error_message: row.get(29)?,
-                    notes: parse_string_array(row.get::<_, String>(30)?),
-                    active_file_count: row.get(31)?,
-                    applied_file_count: row.get(32)?,
-                    review_file_count: row.get(33)?,
+                    existing_install_detected: row.get::<_, i64>(26)? != 0,
+                    guided_install_available: row.get::<_, i64>(27)? != 0,
+                    first_seen_at: row.get(28)?,
+                    last_seen_at: row.get(29)?,
+                    updated_at: row.get(30)?,
+                    error_message: row.get(31)?,
+                    notes: parse_string_array(row.get::<_, String>(32)?),
+                    active_file_count: row.get(33)?,
+                    applied_file_count: row.get(34)?,
+                    review_file_count: row.get(35)?,
                     sample_files: Vec::new(),
                     queue_lane: DownloadQueueLane::ReadyNow,
                     queue_summary: String::new(),
@@ -2219,12 +2247,16 @@ fn parse_string_array(value: String) -> Vec<String> {
 fn parse_catalog_source(
     official_source_url: Option<String>,
     official_download_url: Option<String>,
+    latest_check_url: Option<String>,
+    latest_check_strategy: Option<String>,
     reference_source: String,
     reviewed_at: Option<String>,
 ) -> Option<CatalogSourceInfo> {
     let reference_source = parse_string_array(reference_source);
     if official_source_url.is_none()
         && official_download_url.is_none()
+        && latest_check_url.is_none()
+        && latest_check_strategy.is_none()
         && reference_source.is_empty()
         && reviewed_at.is_none()
     {
@@ -2233,6 +2265,8 @@ fn parse_catalog_source(
         Some(CatalogSourceInfo {
             official_source_url,
             official_download_url,
+            latest_check_url,
+            latest_check_strategy,
             reference_source,
             reviewed_at,
         })

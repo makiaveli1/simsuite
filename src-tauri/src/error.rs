@@ -12,6 +12,8 @@ pub enum AppError {
     Io(#[from] io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Http(#[from] reqwest::Error),
 }
 
 pub type AppResult<T> = Result<T, AppError>;

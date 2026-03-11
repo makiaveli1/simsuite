@@ -373,12 +373,17 @@ export function DownloadsScreen({
     }
 
     if (selectedItem.intakeMode === "guided") {
-      if (!selectedGuidedPlan?.applyReady) {
+      const guidedApplyReady =
+        selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady ?? false;
+      if (!guidedApplyReady || !selectedGuidedPlan) {
         return;
       }
 
+      const isSameVersion = selectedSpecialDecision?.sameVersion ?? false;
       const confirmed = globalThis.confirm(
-        `Install ${selectedGuidedPlan.profileName} safely? SimSuite will replace ${selectedGuidedPlan.replaceFiles.length} old file(s), keep ${selectedGuidedPlan.preserveFiles.length} settings file(s), and create a restore point first.`,
+        isSameVersion
+          ? `Reinstall ${selectedGuidedPlan.profileName}? SimSuite checked this download against the installed copy and they match. It will only replace the current files, keep ${selectedGuidedPlan.preserveFiles.length} settings file(s), and create a restore point first.`
+          : `Install ${selectedGuidedPlan.profileName} safely? SimSuite will replace ${selectedGuidedPlan.replaceFiles.length} old file(s), keep ${selectedGuidedPlan.preserveFiles.length} settings file(s), and create a restore point first.`,
       );
       if (!confirmed) {
         return;
@@ -391,7 +396,9 @@ export function DownloadsScreen({
       try {
         const result = await api.applyGuidedDownloadItem(selectedItem.id, true);
         setStatusMessage(
-          `${selectedGuidedPlan.profileName} installed safely. ${result.installedCount} new file(s) moved, ${result.replacedCount} old file(s) replaced, and ${result.preservedCount} settings file(s) kept.`,
+          isSameVersion
+            ? `${selectedGuidedPlan.profileName} was reinstalled safely. ${result.replacedCount} current file(s) were refreshed and ${result.preservedCount} settings file(s) were kept.`
+            : `${selectedGuidedPlan.profileName} installed safely. ${result.installedCount} new file(s) moved, ${result.replacedCount} old file(s) replaced, and ${result.preservedCount} settings file(s) kept.`,
         );
         onDataChanged();
         await loadInbox();
@@ -499,12 +506,15 @@ export function DownloadsScreen({
         ? !selectedSpecialDecision.applyReady
         : selectedGuidedPlan && !selectedGuidedPlan.applyReady),
   );
+  const incomingOlder = selectedSpecialDecision?.versionStatus === "incoming_older";
   const canApply =
     selectedItem?.intakeMode === "guided"
       ? Boolean(selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady)
       : selectedItem?.intakeMode === "standard" && safeCount > 0;
   const showPrimaryAction =
-    Boolean(selectedItem) && (canApply || Boolean(primaryReviewAction));
+    Boolean(selectedItem) &&
+    !incomingOlder &&
+    (canApply || Boolean(primaryReviewAction));
   const applyLabel = selectedItem
     ? primaryReviewAction
       ? reviewActionLabel(primaryReviewAction, userView, isApplying)
@@ -552,6 +562,7 @@ export function DownloadsScreen({
         selectedFiles,
         selectedPreview,
         selectedGuidedPlan,
+        selectedSpecialDecision,
         selectedReviewPlan,
         safeCount,
         reviewCount,
@@ -564,6 +575,7 @@ export function DownloadsScreen({
   const inspectorSignals = selectedItem
     ? buildDownloadInspectorSignals(
         selectedItem,
+        selectedSpecialDecision,
         selectedReviewPlan,
         selectedAutoRecheckNote,
       )
@@ -1867,6 +1879,7 @@ function buildInspectorSections({
   selectedFiles,
   selectedPreview,
   selectedGuidedPlan,
+  selectedSpecialDecision,
   selectedReviewPlan,
   safeCount,
   reviewCount,
@@ -1877,6 +1890,7 @@ function buildInspectorSections({
   selectedFiles: DownloadInboxDetail["files"];
   selectedPreview: OrganizationPreview | null;
   selectedGuidedPlan: GuidedInstallPlan | null;
+  selectedSpecialDecision: SpecialModDecision | null;
   selectedReviewPlan: SpecialReviewPlan | null;
   safeCount: number;
   reviewCount: number;
@@ -1887,12 +1901,21 @@ function buildInspectorSections({
   const sourceSection = buildSourceSection(selectedItem);
   const timelineSection = buildTimelineSection(selectedItem);
   const filesSection = buildFilesSection(selectedFiles, userView);
+  const versionSection = selectedSpecialDecision
+    ? buildSpecialVersionSection(selectedSpecialDecision, userView)
+    : null;
   const sharedSections =
     userView === "beginner"
       ? [filesSection]
       : userView === "standard"
-        ? [sourceSection, filesSection]
-        : [queueSection, sourceSection, timelineSection, filesSection];
+        ? [sourceSection, ...(versionSection ? [versionSection] : []), filesSection]
+        : [
+            ...(versionSection ? [versionSection] : []),
+            queueSection,
+            sourceSection,
+            timelineSection,
+            filesSection,
+          ];
 
   if (
     selectedItem.intakeMode === "guided" &&
@@ -2013,6 +2036,7 @@ function buildInspectorSections({
       guidedTargetSection,
       ...(userView === "beginner" ? [] : [guidedKeepSection]),
       ...(userView === "power" ? [guidedEvidenceSection] : []),
+      ...(userView === "beginner" && versionSection ? [versionSection] : []),
       ...sharedSections,
     ];
   }
@@ -2050,6 +2074,7 @@ function buildInspectorSections({
           </div>
         ),
       },
+      ...(userView === "beginner" && versionSection ? [versionSection] : []),
       {
         id: "reviewNextStep",
         label: userView === "beginner" ? "Safe next step" : "Next move",
@@ -2314,8 +2339,61 @@ function buildFilesSection(
   };
 }
 
+function buildSpecialVersionSection(
+  specialDecision: SpecialModDecision,
+  userView: UserView,
+): DockSectionDefinition {
+  const officialLatest = specialDecision.officialLatest;
+  const officialVersion =
+    officialLatest?.status === "known"
+      ? officialLatest.latestVersion ?? "Known, but not labeled"
+      : officialLatest?.status === "unknown"
+        ? "Latest online version unknown"
+        : "Not checked yet";
+
+  return {
+    id: "version",
+    label: userView === "beginner" ? "Version check" : "Versions",
+    hint:
+      userView === "beginner"
+        ? "What is installed, what you downloaded, and whether SimSuite thinks it is newer."
+        : "Installed copy, incoming pack, and official latest guidance.",
+    defaultCollapsed: false,
+    children: (
+      <>
+        <div className="detail-list">
+          <DetailRow
+            label="Installed"
+            value={formatVersionValue(
+              specialDecision.installedState.installedVersion,
+              specialDecision.installedState.installState !== "not_installed",
+            )}
+          />
+          <DetailRow
+            label="Incoming"
+            value={formatVersionValue(specialDecision.incomingVersion, true)}
+          />
+          <DetailRow
+            label="Compare"
+            value={specialVersionStatusLabel(specialDecision, userView)}
+          />
+          <DetailRow label="Official latest" value={officialVersion} />
+        </div>
+        {specialDecision.officialLatest?.note ? (
+          <div className="downloads-evidence-list">
+            <div className="downloads-evidence-row">
+              {specialDecision.officialLatest.note}
+            </div>
+          </div>
+        ) : null}
+      </>
+    ),
+  };
+}
+
 function buildDownloadInspectorSignals(
   item: DownloadsInboxItem,
+  specialDecision: SpecialModDecision | null,
   reviewPlan: SpecialReviewPlan | null,
   autoRecheckNote: string | null,
 ) {
@@ -2367,6 +2445,32 @@ function buildDownloadInspectorSignals(
       label: "Linked family",
       title: `${(item.relatedItemIds?.length ?? 0) + 1} linked item(s)`,
       body: "This batch belongs to the same setup chain.",
+    });
+  }
+
+  if (specialDecision?.sameVersion) {
+    signals.push({
+      id: "version",
+      tone: "refresh",
+      label: "Version",
+      title: "Already current",
+      body: "The downloaded pack matches the version that is already installed.",
+    });
+  } else if (specialDecision?.versionStatus === "incoming_older") {
+    signals.push({
+      id: "version",
+      tone: "review",
+      label: "Version",
+      title: "Older than installed",
+      body: "This download looks older than the copy already in Mods.",
+    });
+  } else if (specialDecision?.officialLatest?.status === "known") {
+    signals.push({
+      id: "latest",
+      tone: "refresh",
+      label: "Latest",
+      title: `Official latest: ${specialDecision.officialLatest.latestVersion ?? "Known"}`,
+      body: "This is extra guidance from the official source and does not block a safe local update.",
     });
   }
 
@@ -2716,6 +2820,18 @@ function downloadsInspectorIdleNote(
   specialDecision?: SpecialModDecision | null,
   reviewPlan?: SpecialReviewPlan | null,
 ) {
+  if (specialDecision?.sameVersion) {
+    return userView === "beginner"
+      ? "This mod is already up to date. Reinstall only if you want to replace a damaged copy."
+      : "This special-mod family is already current. Reinstall only if you need to replace a damaged copy.";
+  }
+
+  if (specialDecision?.versionStatus === "incoming_older") {
+    return userView === "beginner"
+      ? "This download looks older than what is already installed, so SimSuite is holding it back."
+      : "This incoming pack looks older than the installed copy, so SimSuite is not treating it as the next update.";
+  }
+
   if (specialDecision?.availableActions.length) {
     return userView === "beginner"
       ? "SimSuite already has the safest next move ready."
@@ -2787,6 +2903,18 @@ function downloadsNextStepTitle(
   }
 
   if (specialDecision) {
+    if (specialDecision.sameVersion) {
+      return userView === "beginner"
+        ? "This special mod is already current"
+        : "Installed version already matches";
+    }
+
+    if (specialDecision.versionStatus === "incoming_older") {
+      return userView === "beginner"
+        ? "This download is older than your installed copy"
+        : "Incoming pack is older than installed";
+    }
+
     if (specialDecision.applyReady && canApply) {
       return guidedPlan?.existingInstallDetected ||
         specialDecision.existingInstallState === "clean"
@@ -2861,6 +2989,18 @@ function downloadsNextStepDescription(
   }
 
   if (specialDecision) {
+    if (specialDecision.sameVersion) {
+      return userView === "beginner"
+        ? "SimSuite checked the installed copy against this download and they match. Reinstall only if the current copy is damaged."
+        : "SimSuite compared the installed copy with this incoming pack and found the same version. Reinstall only if you want to replace a damaged setup.";
+    }
+
+    if (specialDecision.versionStatus === "incoming_older") {
+      return userView === "beginner"
+        ? "This download looks older than the copy already in Mods, so SimSuite is not treating it as the next update."
+        : "The installed special-mod family looks newer than this incoming pack, so SimSuite is holding the update action back.";
+    }
+
     if (specialDecision.applyReady) {
       return userView === "beginner"
         ? "SimSuite has checked the files, the folder, and the update rules for this special mod."
@@ -2939,10 +3079,21 @@ function applyButtonLabel(
     if (reviewPlan?.repairPlanAvailable && intakeMode !== "guided") {
       return userView === "beginner" ? "Fixing..." : "Repairing...";
     }
+    if (specialDecision?.sameVersion) {
+      return userView === "beginner" ? "Reinstalling..." : "Reinstalling...";
+    }
     return intakeMode === "guided" ? "Installing..." : "Applying...";
   }
 
   if (intakeMode === "guided") {
+    if (specialDecision?.sameVersion) {
+      return userView === "beginner" ? "Reinstall anyway" : "Reinstall guided copy";
+    }
+
+    if (specialDecision?.versionStatus === "incoming_older") {
+      return userView === "beginner" ? "Older version" : "Older than installed";
+    }
+
     const existingInstallDetected =
       guidedPlan?.existingInstallDetected ??
       (specialDecision?.existingInstallState === "clean" ||
@@ -3024,6 +3175,34 @@ function previewStateLabel(state: "safe" | "review" | "aligned") {
   }
 
   return "Already fine";
+}
+
+function formatVersionValue(version: string | null, isPresent: boolean) {
+  if (version) {
+    return version;
+  }
+
+  return isPresent ? "Found, but not labeled" : "Not installed";
+}
+
+function specialVersionStatusLabel(
+  decision: SpecialModDecision,
+  userView: UserView,
+) {
+  switch (decision.versionStatus) {
+    case "not_installed":
+      return userView === "beginner" ? "Fresh install" : "Nothing installed yet";
+    case "incoming_newer":
+      return userView === "beginner" ? "Newer download" : "Incoming pack is newer";
+    case "same_version":
+      return userView === "beginner" ? "Already current" : "Installed and incoming match";
+    case "incoming_older":
+      return userView === "beginner"
+        ? "Older than installed"
+        : "Incoming pack looks older";
+    default:
+      return userView === "beginner" ? "Version unclear" : "Version could not be compared";
+  }
 }
 
 function friendlyItemStatus(status: string) {
