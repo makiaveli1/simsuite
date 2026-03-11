@@ -3527,6 +3527,18 @@ h2,
   min-width: 0;
 }
 
+.downloads-guided-card-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.downloads-guided-card-copy span {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 .downloads-guided-card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3539,6 +3551,19 @@ h2,
 .downloads-guided-title h3 {
   margin: 0;
   font-size: 1.02rem;
+}
+
+.downloads-guided-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.42rem;
+}
+
+.downloads-guided-card-bucket {
+  align-content: start;
+  gap: 0.48rem;
 }
 
 .downloads-guided-card-good {
@@ -3579,6 +3604,97 @@ h2,
   background:
     linear-gradient(140deg, var(--mint-soft), transparent 72%),
     var(--surface-5);
+}
+
+.downloads-repair-plan-card {
+  gap: 0.7rem;
+}
+
+.downloads-repair-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: start;
+  padding: 0.62rem;
+  border: 1px solid var(--mint-line);
+  background:
+    linear-gradient(140deg, var(--mint-soft), transparent 72%),
+    var(--surface-5);
+}
+
+.downloads-repair-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.downloads-repair-copy strong {
+  font-size: 0.96rem;
+  line-height: 1.35;
+}
+
+.downloads-repair-copy span,
+.downloads-repair-step p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.42;
+}
+
+.downloads-repair-target {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.downloads-repair-target .path-card {
+  background: var(--surface-5);
+}
+
+.downloads-repair-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.45rem;
+}
+
+.downloads-repair-step {
+  display: grid;
+  gap: 0.24rem;
+  padding: 0.58rem;
+  border: 1px solid var(--line);
+  background: var(--surface-5);
+}
+
+.downloads-repair-step-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.downloads-repair-step-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  padding: 0 0.28rem;
+  border: 1px solid var(--mint-line);
+  color: var(--mint);
+  background: rgba(88, 213, 168, 0.08);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.downloads-repair-buckets {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.downloads-repair-buckets-beginner,
+.downloads-repair-buckets-standard {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.downloads-repair-buckets-power {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .downloads-review-action-copy {
@@ -3673,6 +3789,16 @@ h2,
 
 .summary-stat-neutral strong {
   color: var(--text-soft);
+}
+
+@media (max-width: 1080px) {
+  .downloads-repair-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .downloads-repair-buckets-power {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .learning-flow-strip {

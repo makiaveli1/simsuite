@@ -1367,6 +1367,72 @@ function SpecialReviewPanel({
   const secondaryActions = reviewActions.filter(
     (action) => action.kind !== "repair_special",
   );
+  const repairBuckets = [
+    {
+      key: "move",
+      title:
+        userView === "power" ? "Gather into the safe folder" : "Older files to tidy",
+      description:
+        userView === "power"
+          ? "Older suite files that SimSuite will gather before the update."
+          : "Older suite files that will be tucked into one safe folder first.",
+      badge: reviewPlan.repairMoveFiles.length.toString(),
+      tone: "good" as const,
+      files: reviewPlan.repairMoveFiles,
+    },
+    {
+      key: "replace",
+      title:
+        userView === "power" ? "Incoming replacement files" : "New files to swap in",
+      description:
+        userView === "power"
+          ? "Fresh files from the new download that will replace the old suite."
+          : "Fresh files from this download that will replace the older suite files.",
+      badge: reviewPlan.repairReplaceFiles.length.toString(),
+      tone: "medium" as const,
+      files: reviewPlan.repairReplaceFiles,
+    },
+    {
+      key: "keep",
+      title:
+        userView === "power" ? "Settings and sidecars to keep" : "Settings to keep",
+      description:
+        userView === "power"
+          ? "Saved settings and side files that stay safe during the repair."
+          : "Saved settings and side files that will stay safe during the repair.",
+      badge: reviewPlan.repairKeepFiles.length.toString(),
+      tone: "neutral" as const,
+      files: reviewPlan.repairKeepFiles,
+    },
+  ].filter((bucket) => bucket.files.length > 0);
+  const repairSteps = [
+    {
+      key: "move",
+      title: "Gather the older suite",
+      count: reviewPlan.repairMoveFiles.length,
+      description: `${reviewPlan.repairMoveFiles.length.toLocaleString()} file(s) will be tucked into the safe folder before the update starts.`,
+    },
+    {
+      key: "keep",
+      title: "Keep the saved settings",
+      count: reviewPlan.repairKeepFiles.length,
+      description: `${reviewPlan.repairKeepFiles.length.toLocaleString()} file(s) will stay safe so saved choices do not get lost.`,
+    },
+    {
+      key: "replace",
+      title: "Swap in the new files",
+      count: reviewPlan.repairReplaceFiles.length,
+      description: `${reviewPlan.repairReplaceFiles.length.toLocaleString()} incoming file(s) will replace the older suite files.`,
+    },
+    {
+      key: "recheck",
+      title: "Re-check the setup",
+      count: -1,
+      description: reviewPlan.repairCanContinueInstall
+        ? "If the incoming pack is complete, SimSuite can finish the update in the same approved run."
+        : "SimSuite repairs the old layout first, then checks the batch again.",
+    },
+  ].filter((step) => step.count !== 0);
 
   return (
     <div className="downloads-assessment-layout">
@@ -1401,7 +1467,7 @@ function SpecialReviewPanel({
       </div>
 
       {repairAction ? (
-        <div className="downloads-guided-card downloads-guided-card-good">
+        <div className="downloads-guided-card downloads-guided-card-good downloads-repair-plan-card">
           <div className="downloads-guided-card-header">
             <strong>
               {userView === "beginner"
@@ -1417,11 +1483,20 @@ function SpecialReviewPanel({
               files
             </span>
           </div>
-          <div className="downloads-review-action-card downloads-review-action-card-primary">
-            <div className="downloads-review-action-copy">
-              <strong>{reviewActionLabel(repairAction, userView, false)}</strong>
+          <div className="downloads-repair-hero">
+            <div className="downloads-repair-copy">
+              <div className="section-label">
+                {userView === "beginner"
+                  ? "Safe fix"
+                  : userView === "power"
+                    ? "Repair action"
+                    : "Next approved action"}
+              </div>
+              <strong>{reviewPlan.repairReason ?? reviewActionDescription(repairAction)}</strong>
               <span>
-                {reviewPlan.repairReason ?? reviewActionDescription(repairAction)}
+                {userView === "beginner"
+                  ? "SimSuite can clean up the older setup first, then continue with the update."
+                  : "SimSuite will tidy the older setup first so the update can continue safely."}
               </span>
             </div>
             <button
@@ -1452,36 +1527,45 @@ function SpecialReviewPanel({
             />
           </div>
           {reviewPlan.repairTargetFolder ? (
-            <div className="path-card">{reviewPlan.repairTargetFolder}</div>
+            <div className="downloads-repair-target">
+              <div className="section-label">Safe folder</div>
+              <div className="path-card">{reviewPlan.repairTargetFolder}</div>
+            </div>
           ) : null}
-          {userView === "power" ? (
-            <div className="downloads-evidence-list">
-              <div className="downloads-evidence-row">
-                <strong>1. Gather the older files</strong>
-                <span>
-                  {reviewPlan.repairMoveFiles.length.toLocaleString()} file(s) will be tucked into one safe folder.
-                </span>
+          <div className="downloads-repair-steps">
+            {repairSteps.map((step, index) => (
+              <div key={step.key} className="downloads-repair-step">
+                <div className="downloads-repair-step-topline">
+                  <span className="downloads-repair-step-number">{index + 1}</span>
+                  {step.count >= 0 ? (
+                    <span className="ghost-chip">
+                      {step.count.toLocaleString()} {step.count === 1 ? "file" : "files"}
+                    </span>
+                  ) : (
+                    <span className="ghost-chip">final check</span>
+                  )}
+                </div>
+                <strong>{step.title}</strong>
+                <p>{step.description}</p>
               </div>
-              <div className="downloads-evidence-row">
-                <strong>2. Keep the settings</strong>
-                <span>
-                  {reviewPlan.repairKeepFiles.length.toLocaleString()} file(s) will stay safe and keep their saved choices.
-                </span>
-              </div>
-              <div className="downloads-evidence-row">
-                <strong>3. Swap in the new files</strong>
-                <span>
-                  {reviewPlan.repairReplaceFiles.length.toLocaleString()} incoming file(s) will replace the older suite files.
-                </span>
-              </div>
-              <div className="downloads-evidence-row">
-                <strong>4. Re-check the setup</strong>
-                <span>
-                  {reviewPlan.repairCanContinueInstall
-                    ? "If the new pack is complete, SimSuite finishes the update in the same approved run."
-                    : "SimSuite repairs the old layout first, then checks the batch again."}
-                </span>
-              </div>
+            ))}
+          </div>
+          {userView !== "beginner" && repairBuckets.length ? (
+            <div className={`downloads-repair-buckets downloads-repair-buckets-${userView}`}>
+              {repairBuckets.map((bucket) => (
+                <GuidedListCard
+                  key={bucket.key}
+                  title={bucket.title}
+                  description={bucket.description}
+                  badge={bucket.badge}
+                  tone={bucket.tone}
+                  files={bucket.files}
+                  userView={userView}
+                  showPaths={userView === "power"}
+                  variant="bucket"
+                  hideWhenEmpty
+                />
+              ))}
             </div>
           ) : null}
         </div>
@@ -1517,35 +1601,6 @@ function SpecialReviewPanel({
               </div>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      {repairAction && userView !== "beginner" ? (
-        <div className="downloads-guided-columns">
-          <GuidedListCard
-            title={userView === "power" ? "Gather into the safe folder" : "Old files to tidy"}
-            badge={reviewPlan.repairMoveFiles.length.toString()}
-            tone="good"
-            files={reviewPlan.repairMoveFiles}
-            userView={userView}
-            showPaths={userView === "power"}
-          />
-          <GuidedListCard
-            title={userView === "power" ? "Incoming replacement files" : "New files to install"}
-            badge={reviewPlan.repairReplaceFiles.length.toString()}
-            tone="medium"
-            files={reviewPlan.repairReplaceFiles}
-            userView={userView}
-            showPaths={userView === "power"}
-          />
-          <GuidedListCard
-            title={userView === "power" ? "Settings and sidecars to keep" : "Files to keep"}
-            badge={reviewPlan.repairKeepFiles.length.toString()}
-            tone="neutral"
-            files={reviewPlan.repairKeepFiles}
-            userView={userView}
-            showPaths={userView === "power"}
-          />
         </div>
       ) : null}
 
@@ -1662,43 +1717,62 @@ function TrackedFilesPanel({
 
 function GuidedListCard({
   title,
+  description,
   badge,
   tone,
   files,
   userView,
   showPaths,
+  variant = "default",
+  hideWhenEmpty = false,
 }: {
   title: string;
+  description?: string;
   badge: string;
   tone: "good" | "medium" | "neutral";
   files: GuidedInstallFileEntry[];
   userView: UserView;
   showPaths: boolean;
+  variant?: "default" | "bucket";
+  hideWhenEmpty?: boolean;
 }) {
+  if (hideWhenEmpty && files.length === 0) {
+    return null;
+  }
+
   const [showingAll, setShowingAll] = useState(userView === "power");
   const visibleFiles = showingAll ? files : files.slice(0, 8);
+  const hasToggle = files.length > 0;
 
   return (
-    <div className={`downloads-guided-card downloads-guided-card-${tone}`}>
+    <div
+      className={`downloads-guided-card downloads-guided-card-${tone} ${
+        variant === "bucket" ? "downloads-guided-card-bucket" : ""
+      }`}
+    >
       <div className="downloads-guided-card-header">
-        <strong>{title}</strong>
-        <div className="downloads-guided-card-actions">
-          <button
-            type="button"
-            className="secondary-action compact-action"
-            onClick={() => setShowingAll((current) => !current)}
-            disabled={files.length === 0}
-          >
-            {sampleToggleLabel(showingAll)}
-          </button>
-          <span className="ghost-chip">{badge}</span>
+        <div className="downloads-guided-card-copy">
+          <strong>{title}</strong>
+          {description ? <span>{description}</span> : null}
         </div>
+        <span className="ghost-chip">{badge}</span>
       </div>
       {files.length ? (
         <>
-          <span className="downloads-preview-count">
-            {sampleCountLabel(visibleFiles.length, files.length, showingAll)}
-          </span>
+          <div className="downloads-guided-card-meta">
+            <span className="downloads-preview-count">
+              {sampleCountLabel(visibleFiles.length, files.length, showingAll)}
+            </span>
+            {hasToggle ? (
+              <button
+                type="button"
+                className="secondary-action compact-action"
+                onClick={() => setShowingAll((current) => !current)}
+              >
+                {sampleToggleLabel(showingAll)}
+              </button>
+            ) : null}
+          </div>
           <div className="downloads-guided-list">
             {visibleFiles.map((file) => (
             <div key={`${file.filename}-${file.currentPath}`} className="downloads-guided-row">
@@ -1719,7 +1793,18 @@ function GuidedListCard({
           </div>
         </>
       ) : (
-        <p className="empty-inline">Nothing in this group.</p>
+        <div className="downloads-guided-card-meta">
+          <span className="downloads-preview-count">No files in this group</span>
+          {hasToggle ? (
+            <button
+              type="button"
+              className="secondary-action compact-action"
+              onClick={() => setShowingAll((current) => !current)}
+            >
+              {sampleToggleLabel(showingAll)}
+            </button>
+          ) : null}
+        </div>
       )}
     </div>
   );
