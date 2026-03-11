@@ -159,6 +159,29 @@ impl Default for ScanStatus {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceDomain {
+    Home,
+    Downloads,
+    Library,
+    Organize,
+    Review,
+    Duplicates,
+    CreatorAudit,
+    CategoryAudit,
+    Snapshots,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceChange {
+    pub domains: Vec<WorkspaceDomain>,
+    pub reason: String,
+    pub item_ids: Vec<i64>,
+    pub family_keys: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryQuery {
@@ -788,6 +811,16 @@ pub struct DownloadsInboxOverview {
 pub struct DownloadsInboxResponse {
     pub overview: DownloadsInboxOverview,
     pub items: Vec<DownloadsInboxItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsSelectionResponse {
+    pub item_id: i64,
+    pub detail: Option<DownloadInboxDetail>,
+    pub preview: Option<OrganizationPreview>,
+    pub guided_plan: Option<GuidedInstallPlan>,
+    pub review_plan: Option<SpecialReviewPlan>,
 }
 
 #[derive(Debug, Clone, Serialize)]

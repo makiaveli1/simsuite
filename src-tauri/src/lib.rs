@@ -40,6 +40,8 @@ pub fn run() {
             commands::get_downloads_watcher_status,
             commands::refresh_downloads_inbox,
             commands::get_downloads_inbox,
+            commands::get_downloads_queue,
+            commands::get_downloads_selection,
             commands::get_download_item_detail,
             commands::preview_download_item,
             commands::get_download_item_guided_plan,

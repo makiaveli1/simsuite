@@ -23,6 +23,7 @@ import type {
   DownloadsInboxItem,
   DownloadsInboxQuery,
   DownloadsInboxResponse,
+  DownloadsSelectionResponse,
   DownloadsWatcherStatus,
   DetectedLibraryPaths,
   DuplicateOverview,
@@ -44,6 +45,7 @@ import type {
   ScanSummary,
   SpecialReviewPlan,
   SnapshotSummary,
+  WorkspaceChange,
 } from "./types";
 
 export const hasTauriRuntime =
@@ -80,6 +82,9 @@ const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
 const mockStatusListeners = new Set<(status: ScanStatus) => void>();
 const mockDownloadsStatusListeners = new Set<
   (status: DownloadsWatcherStatus) => void
+>();
+const mockWorkspaceChangeListeners = new Set<
+  (change: WorkspaceChange) => void
 >();
 let mockDownloadsWatcherStatus: DownloadsWatcherStatus = {
   state: "watching",
@@ -3908,6 +3913,76 @@ function listenToDownloadsStatus(
   });
 }
 
+function listenToWorkspaceChanges(
+  handler: (change: WorkspaceChange) => void,
+) {
+  if (hasTauriRuntime) {
+    return tauriListen<WorkspaceChange>("workspace-change", (event) =>
+      handler(event.payload),
+    );
+  }
+
+  mockWorkspaceChangeListeners.add(handler);
+  return Promise.resolve(() => {
+    mockWorkspaceChangeListeners.delete(handler);
+  });
+}
+
+function getDownloadsQueue(query?: DownloadsInboxQuery) {
+  if (hasTauriRuntime) {
+    return tauriInvoke<DownloadsInboxResponse>("get_downloads_queue", { query });
+  }
+
+  return invoke<DownloadsInboxResponse>("get_downloads_inbox", { query });
+}
+
+async function getDownloadsSelection(itemId: number, presetName?: string) {
+  if (hasTauriRuntime) {
+    return tauriInvoke<DownloadsSelectionResponse>("get_downloads_selection", {
+      itemId,
+      presetName,
+    });
+  }
+
+  const detail = await invoke<DownloadInboxDetail | null>("get_download_item_detail", {
+    itemId,
+  });
+  const item = detail?.item ?? null;
+  const shouldLoadPreview =
+    item?.intakeMode === "standard" &&
+    ["ready", "partial", "needs_review"].includes(item.status);
+  const shouldLoadGuidedPlan = item?.intakeMode === "guided";
+  const shouldLoadReviewPlan =
+    item?.intakeMode === "needs_review" ||
+    item?.intakeMode === "blocked" ||
+    (item?.intakeMode === "guided" && !item.specialDecision?.applyReady);
+
+  const preview = shouldLoadPreview
+    ? await invoke<OrganizationPreview>("preview_download_item", {
+        itemId,
+        presetName,
+      })
+    : null;
+  const guidedPlan = shouldLoadGuidedPlan
+    ? await invoke<GuidedInstallPlan | null>("get_download_item_guided_plan", {
+        itemId,
+      })
+    : null;
+  const reviewPlan = shouldLoadReviewPlan
+    ? await invoke<SpecialReviewPlan | null>("get_download_item_review_plan", {
+        itemId,
+      })
+    : null;
+
+  return {
+    itemId,
+    detail,
+    preview,
+    guidedPlan,
+    reviewPlan,
+  } satisfies DownloadsSelectionResponse;
+}
+
 export const api = {
   getLibrarySettings: () => invoke<LibrarySettings>("get_library_settings"),
   saveLibraryPaths: (settings: LibrarySettings) =>
@@ -3927,6 +4002,9 @@ export const api = {
   listenToScanProgress,
   listenToScanStatus,
   listenToDownloadsStatus,
+  listenToWorkspaceChanges,
+  getDownloadsQueue,
+  getDownloadsSelection,
   getDownloadsInbox: (query?: DownloadsInboxQuery) =>
     invoke<DownloadsInboxResponse>("get_downloads_inbox", { query }),
   getDownloadItemDetail: (itemId: number) =>

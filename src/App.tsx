@@ -1,21 +1,12 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnimatePresence, domAnimation, LazyMotion, m, MotionConfig } from "motion/react";
-import { HomeScreen } from "./screens/HomeScreen";
-import { DownloadsScreen } from "./screens/DownloadsScreen";
-import { LibraryScreen } from "./screens/LibraryScreen";
-import { CreatorAuditScreen } from "./screens/CreatorAuditScreen";
-import { CategoryAuditScreen } from "./screens/CategoryAuditScreen";
-import { OrganizeScreen } from "./screens/OrganizeScreen";
-import { ReviewScreen } from "./screens/ReviewScreen";
-import { DuplicatesScreen } from "./screens/DuplicatesScreen";
-import { SettingsScreen } from "./screens/SettingsScreen";
 import { Sidebar } from "./components/layout/Sidebar";
 import { FieldGuide } from "./components/FieldGuide";
 import { ScannerOverlay } from "./components/ScannerOverlay";
 import { ThemeBackdrop } from "./components/ThemeBackdrop";
 import { useUiPreferences, UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
-import { api } from "./lib/api";
+import { api, hasTauriRuntime } from "./lib/api";
 import {
   experienceModeToLegacyView,
   normalizeExperienceMode,
@@ -28,7 +19,77 @@ import type {
   ScanStatus,
   Screen,
   UserView,
+  WorkspaceChange,
+  WorkspaceDomain,
 } from "./lib/types";
+
+const WORKSPACE_DOMAINS: WorkspaceDomain[] = [
+  "home",
+  "downloads",
+  "library",
+  "organize",
+  "review",
+  "duplicates",
+  "creatorAudit",
+  "categoryAudit",
+  "snapshots",
+];
+
+const HomeScreen = lazy(async () => ({
+  default: (await import("./screens/HomeScreen")).HomeScreen,
+}));
+const DownloadsScreen = lazy(async () => ({
+  default: (await import("./screens/DownloadsScreen")).DownloadsScreen,
+}));
+const LibraryScreen = lazy(async () => ({
+  default: (await import("./screens/LibraryScreen")).LibraryScreen,
+}));
+const CreatorAuditScreen = lazy(async () => ({
+  default: (await import("./screens/CreatorAuditScreen")).CreatorAuditScreen,
+}));
+const CategoryAuditScreen = lazy(async () => ({
+  default: (await import("./screens/CategoryAuditScreen")).CategoryAuditScreen,
+}));
+const OrganizeScreen = lazy(async () => ({
+  default: (await import("./screens/OrganizeScreen")).OrganizeScreen,
+}));
+const ReviewScreen = lazy(async () => ({
+  default: (await import("./screens/ReviewScreen")).ReviewScreen,
+}));
+const DuplicatesScreen = lazy(async () => ({
+  default: (await import("./screens/DuplicatesScreen")).DuplicatesScreen,
+}));
+const SettingsScreen = lazy(async () => ({
+  default: (await import("./screens/SettingsScreen")).SettingsScreen,
+}));
+
+function createInitialWorkspaceVersions(): Record<WorkspaceDomain, number> {
+  return WORKSPACE_DOMAINS.reduce(
+    (versions, domain) => {
+      versions[domain] = 0;
+      return versions;
+    },
+    {} as Record<WorkspaceDomain, number>,
+  );
+}
+
+function bumpWorkspaceVersions(
+  current: Record<WorkspaceDomain, number>,
+  domains: WorkspaceDomain[],
+) {
+  const next = { ...current };
+  for (const domain of domains) {
+    next[domain] += 1;
+  }
+  return next;
+}
+
+function combineWorkspaceVersions(
+  versions: Record<WorkspaceDomain, number>,
+  domains: WorkspaceDomain[],
+) {
+  return domains.reduce((total, domain) => total + versions[domain], 0);
+}
 
 function resolveInitialExperienceMode(): ExperienceMode {
   const stored = globalThis.localStorage?.getItem("simsuite:user-view");
@@ -85,7 +146,9 @@ function AppShell({
   const [settings, setSettings] = useState<LibrarySettings | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [workspaceVersions, setWorkspaceVersions] = useState(
+    createInitialWorkspaceVersions,
+  );
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const lastTerminalScanKey = useRef<string | null>(null);
   const userView: UserView = experienceModeToLegacyView(experienceMode);
@@ -127,6 +190,18 @@ function AppShell({
     setScanProgress(progress);
   });
 
+  const applyWorkspaceChange = useEffectEvent((change: WorkspaceChange) => {
+    if (!change.domains.length) {
+      return;
+    }
+
+    setWorkspaceVersions((current) => bumpWorkspaceVersions(current, change.domains));
+  });
+
+  const bumpWorkspaceDomains = useEffectEvent((domains: WorkspaceDomain[]) => {
+    setWorkspaceVersions((current) => bumpWorkspaceVersions(current, domains));
+  });
+
   const handleScanStatus = useEffectEvent((status: ScanStatus) => {
     if (status.state === "running") {
       lastTerminalScanKey.current = null;
@@ -157,7 +232,18 @@ function AppShell({
         phase: status.phase ?? "done",
       });
       setIsScanning(false);
-      setRefreshVersion((current) => current + 1);
+      if (!hasTauriRuntime) {
+        bumpWorkspaceDomains([
+          "home",
+          "library",
+          "organize",
+          "review",
+          "duplicates",
+          "creatorAudit",
+          "categoryAudit",
+          "snapshots",
+        ]);
+      }
       return;
     }
 
@@ -183,12 +269,14 @@ function AppShell({
   useEffect(() => {
     const unlisten = api.listenToScanProgress(handleScanEvent);
     const unlistenStatus = api.listenToScanStatus(handleScanStatus);
+    const unlistenWorkspace = api.listenToWorkspaceChanges(applyWorkspaceChange);
 
     return () => {
       void unlisten.then((dispose) => dispose());
       void unlistenStatus.then((dispose) => dispose());
+      void unlistenWorkspace.then((dispose) => dispose());
     };
-  }, [handleScanEvent, handleScanStatus]);
+  }, [applyWorkspaceChange, handleScanEvent, handleScanStatus]);
 
   useEffect(() => {
     if (!isScanning) {
@@ -217,7 +305,18 @@ function AppShell({
   async function saveLibraryPaths(nextSettings: LibrarySettings) {
     const saved = await api.saveLibraryPaths(nextSettings);
     setSettings(saved);
-    setRefreshVersion((current) => current + 1);
+    if (!hasTauriRuntime) {
+      bumpWorkspaceDomains([
+        "home",
+        "downloads",
+        "library",
+        "organize",
+        "review",
+        "duplicates",
+        "creatorAudit",
+        "categoryAudit",
+      ]);
+    }
   }
 
   async function startScan() {
@@ -253,7 +352,7 @@ function AppShell({
   const currentScreen =
     screen === "home" ? (
       <HomeScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.home}
         settings={settings}
         onSettingsChange={saveLibraryPaths}
         onNavigate={setScreen}
@@ -263,42 +362,88 @@ function AppShell({
       />
     ) : screen === "downloads" ? (
       <DownloadsScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.downloads}
         onNavigate={setScreen}
-        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        onDataChanged={() => {
+          if (!hasTauriRuntime) {
+            bumpWorkspaceDomains([
+              "home",
+              "downloads",
+              "library",
+              "organize",
+              "review",
+              "duplicates",
+              "snapshots",
+            ]);
+          }
+        }}
         userView={userView}
       />
     ) : screen === "library" ? (
       <LibraryScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.library}
         onNavigate={setScreen}
         userView={userView}
       />
     ) : screen === "creatorAudit" ? (
       <CreatorAuditScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.creatorAudit}
         onNavigate={setScreen}
-        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        onDataChanged={() => {
+          if (!hasTauriRuntime) {
+            bumpWorkspaceDomains([
+              "home",
+              "library",
+              "organize",
+              "review",
+              "creatorAudit",
+            ]);
+          }
+        }}
         userView={userView}
       />
     ) : screen === "categoryAudit" ? (
       <CategoryAuditScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.categoryAudit}
         onNavigate={setScreen}
-        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        onDataChanged={() => {
+          if (!hasTauriRuntime) {
+            bumpWorkspaceDomains([
+              "home",
+              "library",
+              "organize",
+              "review",
+              "categoryAudit",
+            ]);
+          }
+        }}
         userView={userView}
       />
     ) : screen === "duplicates" ? (
       <DuplicatesScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.duplicates}
         onNavigate={setScreen}
         userView={userView}
       />
     ) : screen === "organize" ? (
       <OrganizeScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={combineWorkspaceVersions(workspaceVersions, [
+          "organize",
+          "snapshots",
+        ])}
         onNavigate={setScreen}
-        onDataChanged={() => setRefreshVersion((current) => current + 1)}
+        onDataChanged={() => {
+          if (!hasTauriRuntime) {
+            bumpWorkspaceDomains([
+              "home",
+              "library",
+              "organize",
+              "review",
+              "duplicates",
+              "snapshots",
+            ]);
+          }
+        }}
         userView={userView}
       />
     ) : screen === "settings" ? (
@@ -308,7 +453,7 @@ function AppShell({
       />
     ) : (
       <ReviewScreen
-        refreshVersion={refreshVersion}
+        refreshVersion={workspaceVersions.review}
         onNavigate={setScreen}
         userView={userView}
       />
@@ -343,7 +488,15 @@ function AppShell({
             exit={screenFrameMotion.exit}
             transition={screenFrameMotion.transition}
           >
-            {currentScreen}
+            <Suspense
+              fallback={
+                <div className="state-panel state-panel--loading">
+                  Loading workspace view...
+                </div>
+              }
+            >
+              {currentScreen}
+            </Suspense>
           </m.div>
         </AnimatePresence>
       </main>

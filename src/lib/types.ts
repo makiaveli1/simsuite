@@ -116,6 +116,24 @@ export interface ScanStatus {
   error: string | null;
 }
 
+export type WorkspaceDomain =
+  | "home"
+  | "downloads"
+  | "library"
+  | "organize"
+  | "review"
+  | "duplicates"
+  | "creatorAudit"
+  | "categoryAudit"
+  | "snapshots";
+
+export interface WorkspaceChange {
+  domains: WorkspaceDomain[];
+  reason: string;
+  itemIds: number[];
+  familyKeys: string[];
+}
+
 export interface LibraryQuery {
   search?: string;
   kind?: string;
@@ -476,6 +494,14 @@ export interface DownloadsInboxOverview {
 export interface DownloadsInboxResponse {
   overview: DownloadsInboxOverview;
   items: DownloadsInboxItem[];
+}
+
+export interface DownloadsSelectionResponse {
+  itemId: number;
+  detail: DownloadInboxDetail | null;
+  preview: OrganizationPreview | null;
+  guidedPlan: GuidedInstallPlan | null;
+  reviewPlan: SpecialReviewPlan | null;
 }
 
 export interface DownloadInboxFile {

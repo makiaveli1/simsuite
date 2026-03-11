@@ -3,6 +3,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use dirs::document_dir;
@@ -18,21 +19,57 @@ use crate::{
     database,
     error::AppError,
     models::{
-        ApplyReviewPlanActionResult,
         ApplyCategoryAuditResult, ApplyCreatorAuditResult, ApplyGuidedDownloadResult,
         ApplyPreviewResult, ApplySpecialReviewFixResult, CategoryAuditFile, CategoryAuditQuery,
         CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
         DetectedLibraryPaths, DownloadInboxDetail, DownloadsInboxQuery, DownloadsInboxResponse,
-        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
-        HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
-        ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan,
+        DownloadsSelectionResponse, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair,
+        FileDetail, GuidedInstallPlan, HomeOverview, LibraryFacets, LibraryListResponse,
+        LibraryQuery, LibrarySettings, OrganizationPreview, RestoreSnapshotResult,
+        ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset, ScanPhase,
+        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        WorkspaceChange, WorkspaceDomain, ApplyReviewPlanActionResult,
     },
 };
 
 fn map_error(error: AppError) -> String {
     error.to_string()
+}
+
+const SLOW_COMMAND_LOG_THRESHOLD_MS: u128 = 40;
+
+fn log_slow_command(command: &str, started_at: Instant, detail: impl FnOnce() -> String) {
+    #[cfg(debug_assertions)]
+    {
+        let elapsed_ms = started_at.elapsed().as_millis();
+        if elapsed_ms >= SLOW_COMMAND_LOG_THRESHOLD_MS {
+            eprintln!("[perf] {command} took {elapsed_ms}ms {}", detail());
+        }
+    }
+}
+
+fn workspace_change(
+    domains: Vec<WorkspaceDomain>,
+    reason: &str,
+    item_ids: Vec<i64>,
+    family_keys: Vec<String>,
+) -> WorkspaceChange {
+    WorkspaceChange {
+        domains,
+        reason: reason.to_owned(),
+        item_ids,
+        family_keys,
+    }
+}
+
+fn emit_workspace_domains(
+    app: &AppHandle,
+    domains: Vec<WorkspaceDomain>,
+    reason: &str,
+    item_ids: Vec<i64>,
+    family_keys: Vec<String>,
+) -> Result<(), String> {
+    emit_workspace_change(app, &workspace_change(domains, reason, item_ids, family_keys))
 }
 
 fn review_action_kind_matches(kind: &ReviewPlanActionKind, value: &str) -> bool {
@@ -179,6 +216,22 @@ pub fn save_library_paths(
     let mut connection = state.connection().map_err(map_error)?;
     database::save_library_paths(&mut connection, &settings).map_err(map_error)?;
     downloads_watcher::restart_watcher(&app, state.inner()).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::CreatorAudit,
+            WorkspaceDomain::CategoryAudit,
+        ],
+        "library-paths-saved",
+        Vec::new(),
+        Vec::new(),
+    )?;
     database::get_library_settings(&connection).map_err(map_error)
 }
 
@@ -303,6 +356,22 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>) -> Result<ScanStat
                     status.clone()
                 };
                 let _ = emit_scan_status(&app, &snapshot);
+                let _ = emit_workspace_domains(
+                    &app,
+                    vec![
+                        WorkspaceDomain::Home,
+                        WorkspaceDomain::Library,
+                        WorkspaceDomain::Organize,
+                        WorkspaceDomain::Review,
+                        WorkspaceDomain::Duplicates,
+                        WorkspaceDomain::CreatorAudit,
+                        WorkspaceDomain::CategoryAudit,
+                        WorkspaceDomain::Snapshots,
+                    ],
+                    "scan-finished",
+                    Vec::new(),
+                    Vec::new(),
+                );
             }
             Err(error) => {
                 let snapshot = {
@@ -355,16 +424,72 @@ pub fn get_downloads_inbox(
     query: Option<DownloadsInboxQuery>,
     state: State<'_, AppState>,
 ) -> Result<DownloadsInboxResponse, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    downloads_watcher::list_download_items(
+    let response = downloads_watcher::list_download_items(
         &connection,
         &settings,
         &seed_pack,
         query.unwrap_or_default(),
     )
-    .map_err(map_error)
+    .map_err(map_error)?;
+    log_slow_command("get_downloads_inbox", started_at, || {
+        format!("for {} queue item(s)", response.items.len())
+    });
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn get_downloads_queue(
+    query: Option<DownloadsInboxQuery>,
+    state: State<'_, AppState>,
+) -> Result<DownloadsInboxResponse, String> {
+    let started_at = Instant::now();
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    let response = downloads_watcher::list_download_queue(
+        &connection,
+        &settings,
+        &seed_pack,
+        query.unwrap_or_default(),
+    )
+    .map_err(map_error)?;
+    log_slow_command("get_downloads_queue", started_at, || {
+        format!("for {} queue item(s)", response.items.len())
+    });
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn get_downloads_selection(
+    item_id: i64,
+    preset_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<DownloadsSelectionResponse, String> {
+    let started_at = Instant::now();
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    let response = downloads_watcher::get_download_item_selection(
+        &connection,
+        &settings,
+        &seed_pack,
+        item_id,
+        preset_name,
+    )
+    .map_err(map_error)?;
+    let file_count = response
+        .detail
+        .as_ref()
+        .map(|detail| detail.files.len())
+        .unwrap_or(0);
+    log_slow_command("get_downloads_selection", started_at, || {
+        format!("for item {item_id} with {file_count} file(s)")
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -407,8 +532,14 @@ pub fn get_library_facets(state: State<'_, AppState>) -> Result<LibraryFacets, S
 
 #[tauri::command]
 pub fn get_duplicate_overview(state: State<'_, AppState>) -> Result<DuplicateOverview, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
-    crate::core::duplicate_detector::get_duplicate_overview(&connection).map_err(map_error)
+    let overview =
+        crate::core::duplicate_detector::get_duplicate_overview(&connection).map_err(map_error)?;
+    log_slow_command("get_duplicate_overview", started_at, || {
+        format!("for {} duplicate pair(s)", overview.total_pairs)
+    });
+    Ok(overview)
 }
 
 #[tauri::command]
@@ -417,13 +548,18 @@ pub fn list_duplicate_pairs(
     limit: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<Vec<DuplicatePair>, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
-    crate::core::duplicate_detector::list_duplicate_pairs(
+    let pairs = crate::core::duplicate_detector::list_duplicate_pairs(
         &connection,
         duplicate_type,
         limit.unwrap_or(160),
     )
-    .map_err(map_error)
+    .map_err(map_error)?;
+    log_slow_command("list_duplicate_pairs", started_at, || {
+        format!("for {} pair row(s)", pairs.len())
+    });
+    Ok(pairs)
 }
 
 #[tauri::command]
@@ -438,14 +574,19 @@ pub fn preview_organization(
     limit: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<OrganizationPreview, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    if limit.is_some_and(|value| value <= 0) {
-        rule_engine::build_preview_full(&connection, &settings, preset_name).map_err(map_error)
+    let preview = if limit.is_some_and(|value| value <= 0) {
+        rule_engine::build_preview_full(&connection, &settings, preset_name).map_err(map_error)?
     } else {
         rule_engine::build_preview(&connection, &settings, preset_name, limit.unwrap_or(40))
-            .map_err(map_error)
-    }
+            .map_err(map_error)?
+    };
+    log_slow_command("preview_organization", started_at, || {
+        format!("for {} suggested row(s)", preview.suggestions.len())
+    });
+    Ok(preview)
 }
 
 #[tauri::command]
@@ -454,10 +595,16 @@ pub fn get_review_queue(
     limit: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ReviewQueueItem>, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    rule_engine::load_review_queue(&connection, &settings, preset_name, limit.unwrap_or(80))
-        .map_err(map_error)
+    let queue =
+        rule_engine::load_review_queue(&connection, &settings, preset_name, limit.unwrap_or(80))
+            .map_err(map_error)?;
+    log_slow_command("get_review_queue", started_at, || {
+        format!("for {} review item(s)", queue.len())
+    });
+    Ok(queue)
 }
 
 #[tauri::command]
@@ -471,6 +618,7 @@ pub fn list_snapshots(
 
 #[tauri::command]
 pub fn apply_preview_organization(
+    app: AppHandle,
     preset_name: Option<String>,
     limit: Option<i64>,
     approved: bool,
@@ -478,30 +626,62 @@ pub fn apply_preview_organization(
 ) -> Result<ApplyPreviewResult, String> {
     let mut connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    move_engine::apply_preview_moves(
+    let result = move_engine::apply_preview_moves(
         &mut connection,
         &settings,
         preset_name,
         limit.unwrap_or(80),
         approved,
     )
-    .map_err(map_error)
+    .map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::Snapshots,
+        ],
+        "organize-applied",
+        Vec::new(),
+        Vec::new(),
+    )?;
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn restore_snapshot(
+    app: AppHandle,
     snapshot_id: i64,
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<RestoreSnapshotResult, String> {
     let mut connection = state.connection().map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    move_engine::restore_snapshot(&mut connection, &seed_pack, snapshot_id, approved)
-        .map_err(map_error)
+    let result = move_engine::restore_snapshot(&mut connection, &seed_pack, snapshot_id, approved)
+        .map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::Snapshots,
+        ],
+        "snapshot-restored",
+        Vec::new(),
+        Vec::new(),
+    )?;
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn apply_download_item(
+    app: AppHandle,
     item_id: i64,
     preset_name: Option<String>,
     approved: bool,
@@ -539,6 +719,21 @@ pub fn apply_download_item(
     )
     .map_err(map_error)?;
     downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::Snapshots,
+        ],
+        "download-item-applied",
+        vec![item_id],
+        Vec::new(),
+    )?;
     Ok(result)
 }
 
@@ -568,6 +763,7 @@ pub fn get_download_item_review_plan(
 
 #[tauri::command]
 pub fn apply_guided_download_item(
+    app: AppHandle,
     item_id: i64,
     approved: bool,
     state: State<'_, AppState>,
@@ -608,11 +804,27 @@ pub fn apply_guided_download_item(
         }
     };
     downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::Snapshots,
+        ],
+        "guided-download-applied",
+        vec![item_id],
+        vec![plan.profile_key.clone()],
+    )?;
     Ok(result)
 }
 
 #[tauri::command]
 pub fn apply_special_review_fix(
+    app: AppHandle,
     item_id: i64,
     approved: bool,
     state: State<'_, AppState>,
@@ -643,11 +855,27 @@ pub fn apply_special_review_fix(
         }
     };
     downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::Snapshots,
+        ],
+        "special-review-fix-applied",
+        vec![item_id],
+        Vec::new(),
+    )?;
     Ok(result)
 }
 
 #[tauri::command]
 pub fn apply_review_plan_action(
+    app: AppHandle,
     item_id: i64,
     action_kind: String,
     related_item_id: Option<i64>,
@@ -694,6 +922,25 @@ pub fn apply_review_plan_action(
                 }
             };
             downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Library,
+                    WorkspaceDomain::Organize,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                    WorkspaceDomain::Snapshots,
+                ],
+                "review-plan-repair-applied",
+                vec![item_id],
+                review_plan
+                    .profile_key
+                    .clone()
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+            )?;
             Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
                 focus_item_id: item_id,
@@ -750,6 +997,21 @@ pub fn apply_review_plan_action(
             downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
                 .map_err(map_error)?;
             downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Library,
+                    WorkspaceDomain::Organize,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                    WorkspaceDomain::Snapshots,
+                ],
+                "review-plan-dependency-installed",
+                vec![item_id, dependency_item_id],
+                vec![plan.profile_key.clone()],
+            )?;
             Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
                 focus_item_id: item_id,
@@ -870,6 +1132,18 @@ pub fn apply_review_plan_action(
             .map_err(map_error)?;
             downloads_watcher::refresh_download_item_status(&connection, imported_item_id)
                 .map_err(map_error)?;
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                ],
+                "review-plan-download-imported",
+                vec![item_id, imported_item_id],
+                Vec::new(),
+            )?;
             Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
                 focus_item_id: imported_item_id,
@@ -958,6 +1232,22 @@ pub fn apply_review_plan_action(
             downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
             downloads_watcher::refresh_download_item_status(&connection, leftover_item_id)
                 .map_err(map_error)?;
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                ],
+                "review-plan-batch-split",
+                vec![item_id, leftover_item_id],
+                review_plan
+                    .profile_key
+                    .clone()
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+            )?;
 
             Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
@@ -980,11 +1270,24 @@ pub fn apply_review_plan_action(
 
 #[tauri::command]
 pub fn ignore_download_item(
+    app: AppHandle,
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     let mut connection = state.connection().map_err(map_error)?;
     downloads_watcher::ignore_download_item(&mut connection, item_id).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+        ],
+        "download-item-ignored",
+        vec![item_id],
+        Vec::new(),
+    )?;
     Ok(true)
 }
 
@@ -993,8 +1296,13 @@ pub fn list_library_files(
     query: LibraryQuery,
     state: State<'_, AppState>,
 ) -> Result<LibraryListResponse, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
-    library_index::list_library_files(&connection, query).map_err(map_error)
+    let response = library_index::list_library_files(&connection, query).map_err(map_error)?;
+    log_slow_command("list_library_files", started_at, || {
+        format!("for {} visible file row(s)", response.items.len())
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -1002,11 +1310,17 @@ pub fn get_creator_audit(
     query: Option<CreatorAuditQuery>,
     state: State<'_, AppState>,
 ) -> Result<CreatorAuditResponse, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    creator_audit::load_creator_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
-        .map_err(map_error)
+    let response =
+        creator_audit::load_creator_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
+            .map_err(map_error)?;
+    log_slow_command("get_creator_audit", started_at, || {
+        format!("for {} creator group(s)", response.groups.len())
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -1014,11 +1328,17 @@ pub fn get_category_audit(
     query: Option<CategoryAuditQuery>,
     state: State<'_, AppState>,
 ) -> Result<CategoryAuditResponse, String> {
+    let started_at = Instant::now();
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    category_audit::load_category_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
-        .map_err(map_error)
+    let response =
+        category_audit::load_category_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
+            .map_err(map_error)?;
+    log_slow_command("get_category_audit", started_at, || {
+        format!("for {} category group(s)", response.groups.len())
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -1056,6 +1376,7 @@ pub fn get_file_detail(
 
 #[tauri::command]
 pub fn save_creator_learning(
+    app: AppHandle,
     file_id: i64,
     creator_name: String,
     alias_name: Option<String>,
@@ -1076,11 +1397,25 @@ pub fn save_creator_learning(
     )
     .map_err(map_error)?;
 
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::CreatorAudit,
+        ],
+        "creator-learning-saved",
+        vec![file_id],
+        Vec::new(),
+    )?;
     library_index::get_file_detail(&connection, file_id).map_err(map_error)
 }
 
 #[tauri::command]
 pub fn apply_creator_audit(
+    app: AppHandle,
     file_ids: Vec<i64>,
     creator_name: String,
     alias_name: Option<String>,
@@ -1101,6 +1436,19 @@ pub fn apply_creator_audit(
     )
     .map_err(map_error)?;
 
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::CreatorAudit,
+        ],
+        "creator-audit-applied",
+        file_ids.clone(),
+        Vec::new(),
+    )?;
     Ok(ApplyCreatorAuditResult {
         creator_name,
         updated_count,
@@ -1111,6 +1459,7 @@ pub fn apply_creator_audit(
 
 #[tauri::command]
 pub fn apply_category_audit(
+    app: AppHandle,
     file_ids: Vec<i64>,
     kind: String,
     subtype: Option<String>,
@@ -1138,6 +1487,19 @@ pub fn apply_category_audit(
     )
     .map_err(map_error)?;
 
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::CategoryAudit,
+        ],
+        "category-audit-applied",
+        file_ids.clone(),
+        Vec::new(),
+    )?;
     Ok(ApplyCategoryAuditResult {
         kind: normalized_kind,
         subtype,
@@ -1148,6 +1510,7 @@ pub fn apply_category_audit(
 
 #[tauri::command]
 pub fn save_category_override(
+    app: AppHandle,
     file_id: i64,
     kind: String,
     subtype: Option<String>,
@@ -1170,6 +1533,19 @@ pub fn save_category_override(
     database::save_category_override(&mut connection, file_id, &normalized_kind, subtype.as_deref())
         .map_err(map_error)?;
 
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::CategoryAudit,
+        ],
+        "category-override-saved",
+        vec![file_id],
+        Vec::new(),
+    )?;
     library_index::get_file_detail(&connection, file_id).map_err(map_error)
 }
 
@@ -1191,6 +1567,11 @@ pub fn emit_downloads_status(
     status: &crate::models::DownloadsWatcherStatus,
 ) -> Result<(), String> {
     app.emit("downloads-status", status)
+        .map_err(|error| error.to_string())
+}
+
+pub fn emit_workspace_change(app: &AppHandle, change: &WorkspaceChange) -> Result<(), String> {
+    app.emit("workspace-change", change)
         .map_err(|error| error.to_string())
 }
 

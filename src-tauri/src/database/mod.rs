@@ -73,6 +73,18 @@ fn ensure_migration_table(connection: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+fn create_index_if_table_exists(
+    connection: &Connection,
+    table_name: &str,
+    sql: &str,
+) -> AppResult<()> {
+    if table_exists(connection, table_name)? {
+        connection.execute_batch(sql)?;
+    }
+
+    Ok(())
+}
+
 pub fn seed_database(connection: &mut Connection, seed_pack: &SeedPack) -> AppResult<()> {
     let transaction = connection.transaction()?;
 
@@ -816,6 +828,15 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     )?;
     connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
+         CREATE INDEX IF NOT EXISTS idx_download_items_updated_at ON download_items (updated_at);
+         CREATE INDEX IF NOT EXISTS idx_download_items_status_updated_at ON download_items (status, updated_at);
+         CREATE INDEX IF NOT EXISTS idx_download_items_special_family ON download_items (special_family);
+         CREATE INDEX IF NOT EXISTS idx_download_items_matched_profile_key ON download_items (matched_profile_key);
+         CREATE INDEX IF NOT EXISTS idx_files_download_item_id_source_location ON files (download_item_id, source_location);
+         CREATE INDEX IF NOT EXISTS idx_files_source_location_kind ON files (source_location, kind);
+         CREATE INDEX IF NOT EXISTS idx_files_source_location_filename ON files (source_location, filename);
+         CREATE INDEX IF NOT EXISTS idx_files_relative_depth ON files (relative_depth);
+         CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id ON snapshot_items (snapshot_id);
          CREATE TABLE IF NOT EXISTS special_mod_family_state (
             profile_key TEXT PRIMARY KEY,
             profile_name TEXT NOT NULL,
@@ -843,6 +864,32 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
          CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);",
+    )?;
+
+    create_index_if_table_exists(
+        connection,
+        "review_queue",
+        "CREATE INDEX IF NOT EXISTS idx_review_queue_created_at ON review_queue (created_at);",
+    )?;
+    create_index_if_table_exists(
+        connection,
+        "review_queue",
+        "CREATE INDEX IF NOT EXISTS idx_review_queue_file_id ON review_queue (file_id);",
+    )?;
+    create_index_if_table_exists(
+        connection,
+        "duplicates",
+        "CREATE INDEX IF NOT EXISTS idx_duplicates_duplicate_type ON duplicates (duplicate_type);",
+    )?;
+    create_index_if_table_exists(
+        connection,
+        "duplicates",
+        "CREATE INDEX IF NOT EXISTS idx_duplicates_file_id_a ON duplicates (file_id_a);",
+    )?;
+    create_index_if_table_exists(
+        connection,
+        "duplicates",
+        "CREATE INDEX IF NOT EXISTS idx_duplicates_file_id_b ON duplicates (file_id_b);",
     )?;
 
     Ok(())

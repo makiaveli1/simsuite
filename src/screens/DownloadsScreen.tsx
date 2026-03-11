@@ -211,7 +211,7 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
-      const response = await api.getDownloadsInbox({
+      const response = await api.getDownloadsQueue({
         search: deferredSearch || undefined,
         status: statusFilter || undefined,
         limit: 120,
@@ -229,36 +229,13 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
-      const shouldLoadReviewPlan =
-        item.intakeMode === "needs_review" ||
-        item.intakeMode === "blocked" ||
-        (item.intakeMode === "guided" && !item.specialDecision?.applyReady);
-      const detailPromise = api.getDownloadItemDetail(item.id);
-      const previewPromise =
-        item.intakeMode === "standard" &&
-        ["ready", "partial", "needs_review"].includes(item.status)
-          ? api.previewDownloadItem(item.id, selectedPreset)
-          : Promise.resolve(null);
-      const guidedPromise =
-        item.intakeMode === "guided"
-          ? api.getDownloadItemGuidedPlan(item.id)
-          : Promise.resolve(null);
-      const reviewPromise = shouldLoadReviewPlan
-        ? api.getDownloadItemReviewPlan(item.id)
-        : Promise.resolve(null);
-
-      const [detail, preview, guidedPlan, reviewPlan] = await Promise.all([
-        detailPromise,
-        previewPromise,
-        guidedPromise,
-        reviewPromise,
-      ]);
+      const selection = await api.getDownloadsSelection(item.id, selectedPreset);
 
       startTransition(() => {
-        setSelectedDetail(detail);
-        setSelectedPreview(preview);
-        setSelectedGuidedPlan(guidedPlan);
-        setSelectedReviewPlan(reviewPlan);
+        setSelectedDetail(selection.detail);
+        setSelectedPreview(selection.preview);
+        setSelectedGuidedPlan(selection.guidedPlan);
+        setSelectedReviewPlan(selection.reviewPlan);
       });
     } catch (error) {
       startTransition(() => {
@@ -477,21 +454,22 @@ export function DownloadsScreen({
   }
 
   const overview = inbox?.overview ?? null;
+  const selectedResolvedItem = selectedDetail?.item ?? selectedItem;
   const selectedFiles = selectedDetail?.files ?? [];
   const selectedSpecialDecision =
-    selectedItem?.specialDecision ?? selectedDetail?.item.specialDecision ?? null;
+    selectedDetail?.item.specialDecision ?? selectedItem?.specialDecision ?? null;
   const previewSuggestions = selectedPreview?.suggestions ?? [];
   const safeCount = actionableCount(selectedPreview);
   const reviewCount =
-    selectedItem?.intakeMode === "guided"
+    selectedResolvedItem?.intakeMode === "guided"
       ? selectedGuidedPlan?.reviewFiles.length ??
         selectedReviewPlan?.reviewFiles.length ??
-        selectedItem?.reviewFileCount ??
+        selectedResolvedItem?.reviewFileCount ??
         0
-      : selectedItem?.intakeMode === "needs_review" ||
-          selectedItem?.intakeMode === "blocked"
-        ? selectedReviewPlan?.reviewFiles.length ?? selectedItem?.reviewFileCount ?? 0
-      : selectedPreview?.reviewCount ?? selectedItem?.reviewFileCount ?? 0;
+      : selectedResolvedItem?.intakeMode === "needs_review" ||
+          selectedResolvedItem?.intakeMode === "blocked"
+        ? selectedReviewPlan?.reviewFiles.length ?? selectedResolvedItem?.reviewFileCount ?? 0
+      : selectedPreview?.reviewCount ?? selectedResolvedItem?.reviewFileCount ?? 0;
   const unchangedCount = alignedCount(selectedPreview);
   const reviewActions = selectedSpecialDecision
     ? buildDecisionActions(selectedSpecialDecision, selectedReviewPlan)
@@ -501,25 +479,25 @@ export function DownloadsScreen({
   const primaryReviewAction =
     selectedSpecialDecision?.primaryAction ?? reviewActions[0] ?? null;
   const guidedNeedsReview = Boolean(
-    selectedItem?.intakeMode === "guided" &&
+    selectedResolvedItem?.intakeMode === "guided" &&
       (selectedSpecialDecision
         ? !selectedSpecialDecision.applyReady
         : selectedGuidedPlan && !selectedGuidedPlan.applyReady),
   );
   const incomingOlder = selectedSpecialDecision?.versionStatus === "incoming_older";
   const canApply =
-    selectedItem?.intakeMode === "guided"
+    selectedResolvedItem?.intakeMode === "guided"
       ? Boolean(selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady)
-      : selectedItem?.intakeMode === "standard" && safeCount > 0;
+      : selectedResolvedItem?.intakeMode === "standard" && safeCount > 0;
   const showPrimaryAction =
-    Boolean(selectedItem) &&
+    Boolean(selectedResolvedItem) &&
     !incomingOlder &&
     (canApply || Boolean(primaryReviewAction));
-  const applyLabel = selectedItem
+  const applyLabel = selectedResolvedItem
     ? primaryReviewAction
       ? reviewActionLabel(primaryReviewAction, userView, isApplying)
       : applyButtonLabel(
-          selectedItem.intakeMode,
+          selectedResolvedItem.intakeMode,
           selectedGuidedPlan,
           selectedSpecialDecision,
           userView,
@@ -529,15 +507,15 @@ export function DownloadsScreen({
     : userView === "beginner"
       ? "Move safe files"
       : "Apply safe batch";
-  const selectedAutoRecheckNote = selectedItem
-    ? findAutoRecheckNote(selectedItem.notes)
+  const selectedAutoRecheckNote = selectedResolvedItem
+    ? findAutoRecheckNote(selectedResolvedItem.notes)
     : null;
   const primaryActionDisabled = primaryReviewAction
     ? isApplying
     : !canApply || isApplying;
-  const nextStepTitle = selectedItem
+  const nextStepTitle = selectedResolvedItem
     ? downloadsNextStepTitle(
-        selectedItem,
+        selectedResolvedItem,
         selectedGuidedPlan,
         selectedSpecialDecision,
         primaryReviewAction,
@@ -546,9 +524,9 @@ export function DownloadsScreen({
         userView,
       )
     : null;
-  const nextStepDescription = selectedItem
+  const nextStepDescription = selectedResolvedItem
     ? downloadsNextStepDescription(
-        selectedItem,
+        selectedResolvedItem,
         selectedGuidedPlan,
         selectedSpecialDecision,
         primaryReviewAction,
@@ -556,9 +534,9 @@ export function DownloadsScreen({
         userView,
       )
     : null;
-  const inspectorSections = selectedItem
+  const inspectorSections = selectedResolvedItem
     ? buildInspectorSections({
-        selectedItem,
+        selectedItem: selectedResolvedItem,
         selectedFiles,
         selectedPreview,
         selectedGuidedPlan,
@@ -572,9 +550,9 @@ export function DownloadsScreen({
     : [];
   const groupedItems = groupDownloadItems(inbox?.items ?? []);
   const splitStage = userView !== "beginner";
-  const inspectorSignals = selectedItem
+  const inspectorSignals = selectedResolvedItem
     ? buildDownloadInspectorSignals(
-        selectedItem,
+        selectedResolvedItem,
         selectedSpecialDecision,
         selectedReviewPlan,
         selectedAutoRecheckNote,

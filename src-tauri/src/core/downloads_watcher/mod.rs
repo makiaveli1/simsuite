@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, RecvTimeoutError},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 
 use crate::{
     app_state::AppState,
-    commands::emit_downloads_status,
+    commands::{emit_downloads_status, emit_workspace_change},
     core::{
         bundle_detector, duplicate_detector,
         install_profile_engine::{self, SpecialDecisionContext},
@@ -27,15 +27,27 @@ use crate::{
     models::{
         CatalogSourceInfo, DownloadInboxDetail, DownloadInboxFile, DownloadIntakeMode,
         DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
-        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsTimelineEntry,
+        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
+        DownloadsTimelineEntry,
         DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan, LibrarySettings,
-        OrganizationPreview, SpecialReviewPlan,
+        OrganizationPreview, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
     },
 };
 
 const WATCHER_DEBOUNCE_MS: u64 = 900;
 const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v1";
 const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
+const SLOW_DOWNLOADS_LOG_THRESHOLD_MS: u128 = 40;
+
+fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usize) {
+    #[cfg(debug_assertions)]
+    {
+        let elapsed_ms = started_at.elapsed().as_millis();
+        if elapsed_ms >= SLOW_DOWNLOADS_LOG_THRESHOLD_MS {
+            eprintln!("[perf] {operation} took {elapsed_ms}ms for {count} item(s)");
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct ObservedSource {
@@ -200,6 +212,26 @@ pub fn list_download_items(
     seed_pack: &crate::seed::SeedPack,
     query: DownloadsInboxQuery,
 ) -> AppResult<DownloadsInboxResponse> {
+    list_download_items_internal(connection, settings, seed_pack, query, true)
+}
+
+pub fn list_download_queue(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    query: DownloadsInboxQuery,
+) -> AppResult<DownloadsInboxResponse> {
+    list_download_items_internal(connection, settings, seed_pack, query, false)
+}
+
+fn list_download_items_internal(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    query: DownloadsInboxQuery,
+    include_timelines: bool,
+) -> AppResult<DownloadsInboxResponse> {
+    let started_at = Instant::now();
     let overview = load_overview(connection, settings)?;
     let mut sql = String::from(
         "SELECT
@@ -345,13 +377,17 @@ pub fn list_download_items(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut items = Vec::new();
-    for mut item in rows {
-        item.sample_files = load_item_sample_names(connection, item.id)?;
-        items.push(item);
+    let mut items = rows;
+    let sample_names = load_item_sample_names_batch(
+        connection,
+        &items.iter().map(|item| item.id).collect::<Vec<_>>(),
+    )?;
+    for item in items.iter_mut() {
+        item.sample_files = sample_names.get(&item.id).cloned().unwrap_or_default();
     }
 
-    enrich_download_items(connection, settings, seed_pack, &mut items)?;
+    enrich_download_items(connection, settings, seed_pack, &mut items, include_timelines)?;
+    log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
 }
@@ -361,6 +397,7 @@ fn enrich_download_items(
     settings: &LibrarySettings,
     seed_pack: &crate::seed::SeedPack,
     items: &mut [DownloadsInboxItem],
+    include_timelines: bool,
 ) -> AppResult<()> {
     let mut context = SpecialDecisionContext::default();
     for item in items.iter_mut() {
@@ -394,7 +431,11 @@ fn enrich_download_items(
                     })
             })
             .unwrap_or_default();
-        item.timeline = build_download_timeline(connection, item);
+        item.timeline = if include_timelines {
+            build_download_timeline(connection, item)
+        } else {
+            Vec::new()
+        };
     }
 
     Ok(())
@@ -756,6 +797,64 @@ pub fn get_download_item_detail(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Some(DownloadInboxDetail { item, files }))
+}
+
+pub fn get_download_item_selection(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+    preset_name: Option<String>,
+) -> AppResult<DownloadsSelectionResponse> {
+    let started_at = Instant::now();
+    let detail = get_download_item_detail(connection, settings, seed_pack, item_id)?;
+    let mut preview = None;
+    let mut guided_plan = None;
+    let mut review_plan = None;
+
+    if let Some(detail_item) = detail.as_ref().map(|value| &value.item) {
+        if detail_item.intake_mode == DownloadIntakeMode::Standard
+            && matches!(detail_item.status.as_str(), "ready" | "partial" | "needs_review")
+        {
+            preview = Some(preview_download_item(
+                connection,
+                settings,
+                seed_pack,
+                item_id,
+                preset_name.clone(),
+            )?);
+        }
+
+        if detail_item.intake_mode == DownloadIntakeMode::Guided {
+            guided_plan =
+                install_profile_engine::build_guided_plan(connection, settings, seed_pack, item_id)?;
+        }
+
+        let should_load_review_plan = matches!(
+            detail_item.intake_mode,
+            DownloadIntakeMode::NeedsReview | DownloadIntakeMode::Blocked
+        ) || (detail_item.intake_mode == DownloadIntakeMode::Guided
+            && !detail_item
+                .special_decision
+                .as_ref()
+                .is_some_and(|decision| decision.apply_ready));
+
+        if should_load_review_plan {
+            review_plan =
+                install_profile_engine::build_review_plan(connection, settings, seed_pack, item_id)?;
+        }
+    }
+
+    let file_count = detail.as_ref().map(|value| value.files.len()).unwrap_or(0);
+    log_slow_downloads_operation("downloads_selection", started_at, file_count);
+
+    Ok(DownloadsSelectionResponse {
+        item_id,
+        detail,
+        preview,
+        guided_plan,
+        review_plan,
+    })
 }
 
 pub fn preview_download_item(
@@ -1194,6 +1293,22 @@ fn process_downloads_once(
     }
     let status = summarize_status(&connection, Some(watched_root.to_string_lossy().to_string()))?;
     store_status(state, app, status.clone())?;
+    if changed || reassessed_existing || assessment_version_changed {
+        let _ = emit_workspace_change(
+            app,
+            &WorkspaceChange {
+                domains: vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                ],
+                reason: "downloads-processed".to_owned(),
+                item_ids: Vec::new(),
+                family_keys: Vec::new(),
+            },
+        );
+    }
     Ok(status)
 }
 
@@ -2194,6 +2309,43 @@ fn load_item_sample_names(connection: &Connection, item_id: i64) -> AppResult<Ve
         .query_map(params![item_id], |row| row.get(0))?
         .collect::<Result<Vec<String>, _>>()?;
     Ok(names)
+}
+
+fn load_item_sample_names_batch(
+    connection: &Connection,
+    item_ids: &[i64],
+) -> AppResult<HashMap<i64, Vec<String>>> {
+    if item_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(item_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT download_item_id, filename
+         FROM files
+         WHERE download_item_id IN ({placeholders})
+         ORDER BY download_item_id,
+                  CASE WHEN source_location = 'downloads' THEN 0 ELSE 1 END,
+                  filename COLLATE NOCASE"
+    );
+
+    let mut statement = connection.prepare(&sql)?;
+    let mut rows = statement.query(rusqlite::params_from_iter(item_ids.iter()))?;
+    let mut samples = HashMap::new();
+
+    while let Some(row) = rows.next()? {
+        let item_id = row.get::<_, i64>(0)?;
+        let filename = row.get::<_, String>(1)?;
+        let entry = samples.entry(item_id).or_insert_with(Vec::new);
+        if entry.len() < 4 {
+            entry.push(filename);
+        }
+    }
+
+    Ok(samples)
 }
 
 fn normalize_extension(path: &Path) -> String {
