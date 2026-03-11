@@ -48,6 +48,16 @@ fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usi
     }
 }
 
+fn log_slow_downloads_step(operation: &str, started_at: Instant, detail: impl FnOnce() -> String) {
+    #[cfg(debug_assertions)]
+    {
+        let elapsed_ms = started_at.elapsed().as_millis();
+        if elapsed_ms >= SLOW_DOWNLOADS_LOG_THRESHOLD_MS {
+            eprintln!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+        }
+    }
+}
+
 fn checking_downloads_status(
     watched_root: &Path,
     current_item: Option<String>,
@@ -253,7 +263,14 @@ fn list_download_items_internal(
     include_timelines: bool,
 ) -> AppResult<DownloadsInboxResponse> {
     let started_at = Instant::now();
+    let overview_started_at = Instant::now();
     let overview = load_overview(connection, settings)?;
+    log_slow_downloads_step("downloads_queue::overview", overview_started_at, || {
+        format!(
+            "with {} total item(s) and {} active file(s)",
+            overview.total_items, overview.active_files
+        )
+    });
     let mut sql = String::from(
         "SELECT
             di.id,
@@ -345,6 +362,7 @@ fn list_download_items_internal(
         .collect::<Vec<_>>();
     values.push(rusqlite::types::Value::Integer(limit));
 
+    let query_started_at = Instant::now();
     let mut statement = connection.prepare(&sql)?;
     let rows = statement
         .query_map(rusqlite::params_from_iter(values.iter()), |row| {
@@ -397,8 +415,16 @@ fn list_download_items_internal(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    log_slow_downloads_step("downloads_queue::query", query_started_at, || {
+        format!(
+            "for {} row(s) include_timelines={}",
+            rows.len(),
+            include_timelines
+        )
+    });
 
     let mut items = rows;
+    let sample_started_at = Instant::now();
     let sample_names = load_item_sample_names_batch(
         connection,
         &items.iter().map(|item| item.id).collect::<Vec<_>>(),
@@ -406,7 +432,11 @@ fn list_download_items_internal(
     for item in items.iter_mut() {
         item.sample_files = sample_names.get(&item.id).cloned().unwrap_or_default();
     }
+    log_slow_downloads_step("downloads_queue::samples", sample_started_at, || {
+        format!("for {} visible item(s)", items.len())
+    });
 
+    let enrich_started_at = Instant::now();
     enrich_download_items(
         connection,
         settings,
@@ -414,6 +444,9 @@ fn list_download_items_internal(
         &mut items,
         include_timelines,
     )?;
+    log_slow_downloads_step("downloads_queue::enrich", enrich_started_at, || {
+        format!("for {} visible item(s)", items.len())
+    });
     log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
@@ -468,17 +501,19 @@ fn enrich_download_items(
     Ok(())
 }
 
-fn enrich_download_item(
-    connection: &Connection,
-    settings: &LibrarySettings,
-    seed_pack: &crate::seed::SeedPack,
-    item: &mut DownloadsInboxItem,
-) -> AppResult<()> {
-    let mut context = SpecialDecisionContext::default();
-    hydrate_download_item(connection, settings, seed_pack, item, &mut context, true)?;
-    item.related_item_ids = load_related_item_ids(connection, item)?;
-    item.timeline = build_download_timeline(connection, item);
-    Ok(())
+fn should_load_special_decision(item: &DownloadsInboxItem) -> bool {
+    item.intake_mode != DownloadIntakeMode::Standard
+        || item.guided_install_available
+        || item
+            .matched_profile_key
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+        || item
+            .special_family
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
 }
 
 fn hydrate_download_item(
@@ -489,14 +524,18 @@ fn hydrate_download_item(
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
 ) -> AppResult<()> {
-    item.special_decision = install_profile_engine::build_special_mod_decision_cached(
-        connection,
-        settings,
-        seed_pack,
-        item.id,
-        context,
-        allow_network_latest,
-    )?;
+    item.special_decision = if should_load_special_decision(item) {
+        install_profile_engine::build_special_mod_decision_cached(
+            connection,
+            settings,
+            seed_pack,
+            item.id,
+            context,
+            allow_network_latest,
+        )?
+    } else {
+        None
+    };
     if let Some(decision) = item.special_decision.as_ref() {
         item.queue_lane = decision.queue_lane.clone();
         item.queue_summary = decision.queue_summary.clone();
@@ -776,7 +815,34 @@ pub fn get_download_item_detail(
     seed_pack: &crate::seed::SeedPack,
     item_id: i64,
 ) -> AppResult<Option<DownloadInboxDetail>> {
-    let Some(item) = load_item_by_id(connection, settings, seed_pack, item_id)? else {
+    let mut context = SpecialDecisionContext::default();
+    get_download_item_detail_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        &mut context,
+        false,
+    )
+}
+
+fn get_download_item_detail_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+    allow_network_latest: bool,
+) -> AppResult<Option<DownloadInboxDetail>> {
+    let Some(item) = load_item_by_id_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        context,
+        allow_network_latest,
+    )?
+    else {
         return Ok(None);
     };
 
@@ -831,7 +897,19 @@ pub fn get_download_item_selection(
     preset_name: Option<String>,
 ) -> AppResult<DownloadsSelectionResponse> {
     let started_at = Instant::now();
-    let detail = get_download_item_detail(connection, settings, seed_pack, item_id)?;
+    let mut context = SpecialDecisionContext::default();
+    let detail_started_at = Instant::now();
+    let detail = get_download_item_detail_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        &mut context,
+        false,
+    )?;
+    log_slow_downloads_step("downloads_selection::detail", detail_started_at, || {
+        format!("for item {}", item_id)
+    });
     let mut preview = None;
     let mut guided_plan = None;
     let mut review_plan = None;
@@ -843,6 +921,7 @@ pub fn get_download_item_selection(
                 "ready" | "partial" | "needs_review"
             )
         {
+            let preview_started_at = Instant::now();
             preview = Some(preview_download_item(
                 connection,
                 settings,
@@ -850,12 +929,25 @@ pub fn get_download_item_selection(
                 item_id,
                 preset_name.clone(),
             )?);
+            log_slow_downloads_step("downloads_selection::preview", preview_started_at, || {
+                format!("for item {}", item_id)
+            });
         }
 
         if detail_item.intake_mode == DownloadIntakeMode::Guided {
-            guided_plan = install_profile_engine::build_guided_plan(
-                connection, settings, seed_pack, item_id,
+            let guided_started_at = Instant::now();
+            guided_plan = install_profile_engine::build_guided_plan_cached(
+                connection,
+                settings,
+                seed_pack,
+                item_id,
+                &mut context,
             )?;
+            log_slow_downloads_step(
+                "downloads_selection::guided_plan",
+                guided_started_at,
+                || format!("for item {}", item_id),
+            );
         }
 
         let should_load_review_plan = matches!(
@@ -868,9 +960,19 @@ pub fn get_download_item_selection(
                 .is_some_and(|decision| decision.apply_ready));
 
         if should_load_review_plan {
-            review_plan = install_profile_engine::build_review_plan(
-                connection, settings, seed_pack, item_id,
+            let review_started_at = Instant::now();
+            review_plan = install_profile_engine::build_review_plan_cached(
+                connection,
+                settings,
+                seed_pack,
+                item_id,
+                &mut context,
             )?;
+            log_slow_downloads_step(
+                "downloads_selection::review_plan",
+                review_started_at,
+                || format!("for item {}", item_id),
+            );
         }
     }
 
@@ -2210,6 +2312,25 @@ fn load_item_by_id(
     seed_pack: &crate::seed::SeedPack,
     item_id: i64,
 ) -> AppResult<Option<DownloadsInboxItem>> {
+    let mut context = SpecialDecisionContext::default();
+    load_item_by_id_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        &mut context,
+        false,
+    )
+}
+
+fn load_item_by_id_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &crate::seed::SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+    allow_network_latest: bool,
+) -> AppResult<Option<DownloadsInboxItem>> {
     connection
         .query_row(
             "SELECT
@@ -2323,7 +2444,16 @@ fn load_item_by_id(
         .and_then(|item| {
             if let Some(mut item) = item {
                 item.sample_files = load_item_sample_names(connection, item.id)?;
-                enrich_download_item(connection, settings, seed_pack, &mut item)?;
+                hydrate_download_item(
+                    connection,
+                    settings,
+                    seed_pack,
+                    &mut item,
+                    context,
+                    allow_network_latest,
+                )?;
+                item.related_item_ids = load_related_item_ids(connection, &item)?;
+                item.timeline = build_download_timeline(connection, &item);
                 Ok(Some(item))
             } else {
                 Ok(None)

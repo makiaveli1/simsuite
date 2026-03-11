@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use chrono::Utc;
@@ -319,6 +320,92 @@ pub struct SpecialDecisionContext {
     layout_cache: HashMap<String, ExistingInstallLayout>,
     sibling_cache: HashMap<String, Vec<FamilySiblingRecord>>,
     family_state_cache: HashMap<String, StoredSpecialModFamilyState>,
+    item_cache: HashMap<i64, DownloadItemRecord>,
+    active_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
+    all_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
+    evaluation_cache: HashMap<i64, EvaluationResult>,
+}
+
+const SLOW_INSTALL_PROFILE_LOG_THRESHOLD_MS: u128 = 40;
+
+fn log_slow_install_profile_step(
+    operation: &str,
+    started_at: Instant,
+    detail: impl FnOnce() -> String,
+) {
+    #[cfg(debug_assertions)]
+    {
+        let elapsed_ms = started_at.elapsed().as_millis();
+        if elapsed_ms >= SLOW_INSTALL_PROFILE_LOG_THRESHOLD_MS {
+            eprintln!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+        }
+    }
+}
+
+fn load_item_with_staging_cached(
+    connection: &Connection,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Option<DownloadItemRecord>> {
+    if let Some(item) = context.item_cache.get(&item_id) {
+        return Ok(Some(item.clone()));
+    }
+
+    let item = load_item_with_staging(connection, item_id)?;
+    if let Some(item) = item.as_ref() {
+        context.item_cache.insert(item_id, item.clone());
+    }
+    Ok(item)
+}
+
+fn load_profile_files_cached(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    active_only: bool,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Vec<ProfileFile>> {
+    let cache = if active_only {
+        &mut context.active_profile_files_cache
+    } else {
+        &mut context.all_profile_files_cache
+    };
+    if let Some(files) = cache.get(&item_id) {
+        return Ok(files.clone());
+    }
+
+    let files = load_profile_files(connection, seed_pack, item_id, active_only)?;
+    cache.insert(item_id, files.clone());
+    Ok(files)
+}
+
+fn evaluate_download_item_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<EvaluationResult> {
+    if let Some(result) = context.evaluation_cache.get(&item_id) {
+        return Ok(result.clone());
+    }
+
+    let started_at = Instant::now();
+    let result = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    log_slow_install_profile_step("evaluate_download_item", started_at, || {
+        format!(
+            "for item {} mode={} profile={}",
+            item_id,
+            intake_mode_label(&result.assessment.intake_mode),
+            result
+                .matched_profile
+                .as_ref()
+                .map(|profile| profile.key.as_str())
+                .unwrap_or("none")
+        )
+    });
+    context.evaluation_cache.insert(item_id, result.clone());
+    Ok(result)
 }
 
 pub fn assess_download_item(
@@ -421,7 +508,18 @@ pub fn build_guided_plan(
     seed_pack: &SeedPack,
     item_id: i64,
 ) -> AppResult<Option<GuidedInstallPlan>> {
-    build_guided_plan_internal(connection, settings, seed_pack, item_id, false)
+    let mut context = SpecialDecisionContext::default();
+    build_guided_plan_cached(connection, settings, seed_pack, item_id, &mut context)
+}
+
+pub fn build_guided_plan_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Option<GuidedInstallPlan>> {
+    build_guided_plan_internal(connection, settings, seed_pack, item_id, false, context)
 }
 
 pub fn build_repair_guided_plan(
@@ -430,7 +528,18 @@ pub fn build_repair_guided_plan(
     seed_pack: &SeedPack,
     item_id: i64,
 ) -> AppResult<Option<GuidedInstallPlan>> {
-    build_guided_plan_internal(connection, settings, seed_pack, item_id, true)
+    let mut context = SpecialDecisionContext::default();
+    build_repair_guided_plan_cached(connection, settings, seed_pack, item_id, &mut context)
+}
+
+pub fn build_repair_guided_plan_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Option<GuidedInstallPlan>> {
+    build_guided_plan_internal(connection, settings, seed_pack, item_id, true, context)
 }
 
 fn build_guided_plan_internal(
@@ -439,8 +548,10 @@ fn build_guided_plan_internal(
     seed_pack: &SeedPack,
     item_id: i64,
     allow_repair_layout: bool,
+    context: &mut SpecialDecisionContext,
 ) -> AppResult<Option<GuidedInstallPlan>> {
-    let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    let evaluation =
+        evaluate_download_item_cached(connection, settings, seed_pack, item_id, context)?;
     if evaluation.assessment.intake_mode != DownloadIntakeMode::Guided && !allow_repair_layout {
         return Ok(None);
     }
@@ -448,11 +559,11 @@ fn build_guided_plan_internal(
     let Some(profile) = evaluation.matched_profile.clone() else {
         return Ok(None);
     };
-    let Some(item) = load_item_with_staging(connection, item_id)? else {
+    let Some(item) = load_item_with_staging_cached(connection, item_id, context)? else {
         return Ok(None);
     };
-    let active_files = load_profile_files(connection, seed_pack, item_id, true)?;
-    let layout = detect_existing_layout(connection, settings, seed_pack, &profile)?;
+    let active_files = load_profile_files_cached(connection, seed_pack, item_id, true, context)?;
+    let layout = detect_existing_layout_cached(connection, settings, seed_pack, &profile, context)?;
     let can_repair_layout = allow_repair_layout
         && layout.repair_plan_available
         && evaluation.assessment.missing_dependencies.is_empty()
@@ -668,18 +779,30 @@ pub fn build_review_plan(
     seed_pack: &SeedPack,
     item_id: i64,
 ) -> AppResult<Option<SpecialReviewPlan>> {
-    let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    let mut context = SpecialDecisionContext::default();
+    build_review_plan_cached(connection, settings, seed_pack, item_id, &mut context)
+}
+
+pub fn build_review_plan_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<Option<SpecialReviewPlan>> {
+    let evaluation =
+        evaluate_download_item_cached(connection, settings, seed_pack, item_id, context)?;
     if evaluation.assessment.intake_mode == DownloadIntakeMode::Standard {
         return Ok(None);
     }
 
     let guided_plan = if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided {
-        build_guided_plan(connection, settings, seed_pack, item_id)?
+        build_guided_plan_cached(connection, settings, seed_pack, item_id, context)?
     } else {
         None
     };
     let special_decision = if evaluation.matched_profile.is_some() {
-        build_special_mod_decision(connection, settings, seed_pack, item_id)?
+        build_special_mod_decision_cached(connection, settings, seed_pack, item_id, context, false)?
     } else {
         None
     };
@@ -693,12 +816,15 @@ pub fn build_review_plan(
         return Ok(None);
     }
 
-    let files = load_profile_files(connection, seed_pack, item_id, true)?;
-    let repair_guided_plan = build_repair_guided_plan(connection, settings, seed_pack, item_id)?;
+    let files = load_profile_files_cached(connection, seed_pack, item_id, true, context)?;
+    let repair_guided_plan =
+        build_repair_guided_plan_cached(connection, settings, seed_pack, item_id, context)?;
     let repair_layout = evaluation
         .matched_profile
         .as_ref()
-        .map(|profile| detect_existing_layout(connection, settings, seed_pack, profile))
+        .map(|profile| {
+            detect_existing_layout_cached(connection, settings, seed_pack, profile, context)
+        })
         .transpose()?;
     let review_files = guided_plan
         .as_ref()
@@ -898,6 +1024,7 @@ pub fn build_review_plan(
     }))
 }
 
+#[cfg(test)]
 pub fn build_special_mod_decision(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -923,16 +1050,18 @@ pub fn build_special_mod_decision_cached(
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
 ) -> AppResult<Option<SpecialModDecision>> {
-    let evaluation = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    let evaluation =
+        evaluate_download_item_cached(connection, settings, seed_pack, item_id, context)?;
     let Some(profile) = evaluation.matched_profile.clone() else {
         return Ok(None);
     };
-    let item = load_item_with_staging(connection, item_id)?.unwrap_or_else(empty_item_record);
+    let item = load_item_with_staging_cached(connection, item_id, context)?
+        .unwrap_or_else(empty_item_record);
     let evidence = evaluation
         .matched_evidence
         .clone()
         .unwrap_or_else(|| collect_profile_evidence(&profile, &empty_item_record(), &[], &[], &[]));
-    let files = load_profile_files(connection, seed_pack, item_id, true)?;
+    let files = load_profile_files_cached(connection, seed_pack, item_id, true, context)?;
     let layout = detect_existing_layout_cached(connection, settings, seed_pack, &profile, context)?;
     let family_key = format!("special:{}", profile.key);
     let siblings = load_family_siblings_cached(connection, item_id, &profile.key, context)?;
@@ -2689,6 +2818,7 @@ fn detect_existing_layout(
     seed_pack: &SeedPack,
     profile: &GuidedInstallProfileSeed,
 ) -> AppResult<ExistingInstallLayout> {
+    let started_at = Instant::now();
     let mods_root = settings
         .mods_path
         .as_ref()
@@ -2858,7 +2988,7 @@ fn detect_existing_layout(
     let repair_plan_available = (scattered_match_count > 0 || scattered_preserve_count > 0)
         && foreign_target_files.is_empty();
 
-    Ok(ExistingInstallLayout {
+    let layout = ExistingInstallLayout {
         target_folder,
         existing_files,
         preserve_files,
@@ -2866,7 +2996,18 @@ fn detect_existing_layout(
         existing_install_detected,
         safe_to_update,
         repair_plan_available,
-    })
+    };
+    log_slow_install_profile_step("detect_existing_layout", started_at, || {
+        format!(
+            "for profile {} existing={} preserve={} safe={} repairable={}",
+            profile.key,
+            layout.existing_files.len(),
+            layout.preserve_files.len(),
+            layout.safe_to_update,
+            layout.repair_plan_available
+        )
+    });
+    Ok(layout)
 }
 
 fn merge_disk_existing_candidates(
@@ -3039,6 +3180,7 @@ fn load_profile_files(
     item_id: i64,
     active_only: bool,
 ) -> AppResult<Vec<ProfileFile>> {
+    let started_at = Instant::now();
     let location_filter = if active_only {
         "AND f.source_location = 'downloads'"
     } else {
@@ -3089,6 +3231,14 @@ fn load_profile_files(
     for file in &mut rows {
         refresh_profile_file_insights_if_needed(connection, seed_pack, file);
     }
+    log_slow_install_profile_step("load_profile_files", started_at, || {
+        format!(
+            "for item {} loaded {} {} file(s)",
+            item_id,
+            rows.len(),
+            if active_only { "active" } else { "family" }
+        )
+    });
     Ok(rows)
 }
 
