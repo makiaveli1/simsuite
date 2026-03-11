@@ -64,6 +64,43 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (March 11, 2026)
+
+The current app is no longer just a scan-and-sort shell. It already has a real Downloads Inbox, a real guided special-mod pipeline, and real snapshot-backed apply flows.
+
+Important current behavior:
+
+- `Downloads` is the intake desk for new files, archives, guided special-mod installs, blocked items, and review-only batches
+- `Organize` is the safe sorter for broader library cleanup and preset-based moves
+- `Library`, `Creator Audit`, and `Category Audit` feed learned data back into later scans and suggestions
+- `Review` is the hold queue for files that still need a human decision
+- `Duplicates` is inspection-only right now
+
+Important current special-mod architecture:
+
+- the app has a built-in special-mod catalog in `seed/install_profiles.json`
+- special mods are handled with per-mod rules, not one shared MCCC rule
+- update decisions are local-first:
+  - compare the downloaded pack
+  - compare the installed files on disk
+  - use saved family state and file fingerprints only when needed
+  - use official latest checks only as extra guidance
+- internal file inspection now helps special-mod identity and version checks
+- community sources and third-party indexes are not part of runtime install authority
+
+Current integration and performance work already in place:
+
+- workspace change events now refresh only the parts of the app that actually changed
+- Downloads queue and selected-item loading were split so Inbox can stay lighter
+- the app now lazy-loads major screens
+- hot-path indexes and slow-command timing logs were added
+- Inbox startup now boots from a real Downloads watcher state instead of guessing
+
+Current biggest known gap:
+
+- Inbox still feels slower and more fragile than the other major screens in real desktop use
+- the remaining work should focus on measuring and reducing repeated special-mod and detail-panel work inside Inbox before expanding the special-mod catalog further
+
 ## Known gaps versus the full product plan
 
 - scanner is incremental and backgrounded now, but deeper prioritization and scheduling controls are still missing

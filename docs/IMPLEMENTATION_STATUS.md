@@ -2,6 +2,33 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 11, 2026)
+
+This session focused on two connected areas:
+
+1. making the special-mod Inbox logic more trustworthy
+2. reducing repeated Inbox work and startup mistakes
+
+Important changes already landed:
+
+- special-mod support now uses stronger per-mod rules instead of loosely sharing MCCC behavior
+- special-mod decisions now use a clearer family model so related downloads can be compared together
+- local installed-vs-downloaded comparison is now the main update decision path
+- internal file inspection now feeds special-mod identity and version checks
+- official latest checks remain helper-only
+- same-version downloads can be treated as already current
+- MCCC update handling now preserves `.cfg` settings and tolerates disk-only older files during replace steps
+- trusted “open official page” handling was fixed to use the real browser path
+- workspace refresh moved toward targeted domain invalidation instead of broad reloads
+- Downloads queue loading and selected-item loading were split to reduce repeated heavy work
+- Inbox startup now begins from a real watcher state and retries locked reads more gracefully
+
+Still not solved well enough:
+
+- Inbox is still the main performance and stability pain point in real desktop use
+- the page can still hang or feel heavy when selecting items or waiting for richer special-mod details
+- the next session should investigate real desktop Inbox timings and repeated work before adding more special-mod coverage
+
 ## Fully implemented or materially in place
 
 ### Platform and storage
@@ -119,6 +146,11 @@ Implemented:
 - special review plans for downloads that match a special pattern but cannot be auto-applied safely
 - dependency status checks against already-installed libraries and other active Inbox items
 - snapshot-backed guided apply with preserve-file handling for profile sidecars such as MCCC `.cfg` files
+- local-first special-mod version comparison using downloaded packs, installed files, saved family state, and file-signature fallback
+- internal file inspection hints feeding special-mod identity and version evidence
+- special-mod family grouping so duplicate downloaded versions can be compared together
+- helper-only official latest checks for reviewed built-in special mods
+- one shared special-mod decision result feeding queue, side panel, and main action state more consistently
 
 Missing:
 
@@ -126,6 +158,8 @@ Missing:
 - broader curated incompatibility coverage beyond the initial seed set
 - auto-resolving multi-item dependency install order inside Inbox
 - guided option-pack choice flows
+- deeper Inbox performance cleanup for large queues and heavy special-mod families
+- final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
 
 ### UI coverage
 
@@ -177,11 +211,15 @@ Implemented:
 - staged archive extraction into app-managed intake folders
 - downloads watcher status events
 - Downloads screen with queue, safe preview, guided special setup, review/blocked states, apply, and ignore flows
+- Inbox bootstrap loading so first-open Downloads can begin from the real watcher state instead of a guessed empty/setup state
+- locked-read retries for read-only Inbox commands
+- targeted `downloads-sync-finished` workspace change event after watcher passes complete
 
 Missing:
 
 - deeper archive-content heuristics for unsupported/edge archive layouts
 - dedicated watcher controls beyond the current general Settings surface
+- final removal of remaining real-world Inbox hangs during first-open and item-selection flows
 
 ### Patch recovery
 
@@ -214,7 +252,14 @@ Missing:
 
 ## Recommended next effort
 
-The highest-value next step is to finish the next safe-action surfaces before moving on to AI:
+The highest-value next step is to stabilize Inbox fully before moving on to broader feature growth:
+
+1. measure the real desktop Inbox slow paths and lock windows
+2. remove repeated special-mod and detail-panel work from interactive Inbox flows
+3. keep Home, Library, Organize, Review, and Duplicates correctly synced without broad refreshes
+4. only after that, continue broader special-mod catalog curation
+
+After Inbox is solid again, the next large product steps remain:
 
 1. snapshot-backed duplicate cleanup actions
 2. full Mirror Mode / Assisted Migration / Fresh Setup workflows
