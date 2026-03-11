@@ -1635,7 +1635,7 @@ fn detect_existing_layout(
         .ok_or_else(|| {
             AppError::Message("Set a Mods folder before using special installs.".to_owned())
         })?;
-    let target_folder = mods_root.join(&profile.install_folder_name);
+    let default_target_folder = mods_root.join(&profile.install_folder_name);
     let mut warnings = Vec::new();
     let mut safe_to_update = true;
     let mut existing_install_detected = false;
@@ -1674,25 +1674,47 @@ fn detect_existing_layout(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut existing_files = Vec::new();
-    let mut preserve_files = Vec::new();
-    for mut file in installed_files {
+    let mut existing_candidates = Vec::new();
+    let mut preserve_candidates = Vec::new();
+    for file in installed_files {
         if !Path::new(&file.path).exists() {
             continue;
         }
 
-        let in_target = path_starts_with(&file.path, &target_folder);
+        if is_existing_profile_file(&file, profile) {
+            existing_candidates.push(file);
+        } else if matches_preserve_rule(&file.filename, &file.extension, profile) {
+            preserve_candidates.push(file);
+        }
+    }
+
+    let target_folder = select_existing_target_folder(
+        &mods_root,
+        &default_target_folder,
+        &existing_candidates,
+        &preserve_candidates,
+        profile,
+    );
+    let shared_root_target = target_folder == mods_root;
+
+    let mut existing_files = Vec::new();
+    let mut preserve_files = Vec::new();
+    for mut file in existing_candidates {
+        existing_install_detected = true;
+        let in_target = is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
         file.in_target_folder = in_target;
-        let matches_profile = is_existing_profile_file(&file, profile);
-        if matches_profile {
+        if !in_target {
+            safe_to_update = false;
+            scattered_match_count += 1;
+        }
+        existing_files.push(file);
+    }
+
+    for mut file in preserve_candidates {
+        let in_target = is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
+        if is_related_preserve_file(&file.filename, &file.extension, in_target, profile) {
             existing_install_detected = true;
-            if !in_target {
-                safe_to_update = false;
-                scattered_match_count += 1;
-            }
-            existing_files.push(file);
-        } else if is_related_preserve_file(&file.filename, &file.extension, in_target, profile) {
-            existing_install_detected = true;
+            file.in_target_folder = in_target;
             if !in_target {
                 safe_to_update = false;
                 scattered_preserve_count += 1;
@@ -1705,7 +1727,7 @@ fn detect_existing_layout(
         .iter()
         .map(|file| normalize_path_key(&file.path))
         .collect::<HashSet<_>>();
-    for preserve_path in scan_preserve_files(&target_folder, profile)? {
+    for preserve_path in scan_preserve_files(&target_folder, profile, shared_root_target)? {
         let preserve_path_string = preserve_path.to_string_lossy().to_string();
         if known_preserve_paths.contains(&normalize_path_key(&preserve_path_string)) {
             continue;
@@ -1735,7 +1757,7 @@ fn detect_existing_layout(
         ));
     }
 
-    let foreign_target_files = scan_foreign_target_files(&target_folder, profile)?;
+    let foreign_target_files = scan_foreign_target_files(&target_folder, profile, shared_root_target)?;
     if !foreign_target_files.is_empty() {
         safe_to_update = false;
         warnings.push(format!(
@@ -1756,6 +1778,52 @@ fn detect_existing_layout(
         safe_to_update,
         repair_plan_available,
     })
+}
+
+fn select_existing_target_folder(
+    mods_root: &Path,
+    default_target_folder: &Path,
+    existing_candidates: &[ExistingInstallFile],
+    preserve_candidates: &[ExistingInstallFile],
+    profile: &GuidedInstallProfileSeed,
+) -> PathBuf {
+    let mut selected_folder: Option<PathBuf> = None;
+
+    for file in existing_candidates.iter().chain(
+        preserve_candidates
+            .iter()
+            .filter(|file| file_matches_profile_prefix(&file.filename, profile)),
+    ) {
+        let Some(parent) = Path::new(&file.path).parent() else {
+            return default_target_folder.to_path_buf();
+        };
+        let Ok(relative) = parent.strip_prefix(mods_root) else {
+            return default_target_folder.to_path_buf();
+        };
+        if relative.components().count() > 1 {
+            return default_target_folder.to_path_buf();
+        }
+
+        match &selected_folder {
+            Some(folder) if folder != parent => return default_target_folder.to_path_buf(),
+            Some(_) => {}
+            None => selected_folder = Some(parent.to_path_buf()),
+        }
+    }
+
+    selected_folder.unwrap_or_else(|| default_target_folder.to_path_buf())
+}
+
+fn is_in_selected_special_folder(path: &str, target_folder: &Path, shared_root_target: bool) -> bool {
+    let Some(parent) = Path::new(path).parent() else {
+        return false;
+    };
+
+    if shared_root_target {
+        return parent == target_folder;
+    }
+
+    parent == target_folder
 }
 
 fn load_item_with_staging(
@@ -1930,7 +1998,7 @@ fn is_related_preserve_file(
         return false;
     }
 
-    in_target_folder || name_matches_profile(filename, profile)
+    in_target_folder || name_matches_profile(filename, profile) || file_matches_profile_prefix(filename, profile)
 }
 
 fn is_profile_content_name(
@@ -1956,6 +2024,15 @@ fn is_profile_content_name(
     };
 
     prefix_match || name_matches_profile(filename, profile)
+}
+
+fn file_matches_profile_prefix(filename: &str, profile: &GuidedInstallProfileSeed) -> bool {
+    let normalized_name = normalized(filename);
+    profile
+        .script_prefixes
+        .iter()
+        .chain(profile.package_prefixes.iter())
+        .any(|prefix| normalized_name.starts_with(&normalized(prefix)))
 }
 
 fn name_matches_profile(filename: &str, profile: &GuidedInstallProfileSeed) -> bool {
@@ -2247,12 +2324,31 @@ fn build_available_review_actions(
 fn scan_preserve_files(
     target_folder: &Path,
     profile: &GuidedInstallProfileSeed,
+    shared_root_target: bool,
 ) -> AppResult<Vec<PathBuf>> {
     if !target_folder.exists() {
         return Ok(Vec::new());
     }
 
     let mut preserve_paths = Vec::new();
+    if shared_root_target {
+        for entry in fs::read_dir(target_folder)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let filename = entry.file_name().to_string_lossy().to_string();
+            let extension = normalize_extension(&path);
+            if matches_preserve_rule(&filename, &extension, profile)
+                && file_matches_profile_prefix(&filename, profile)
+            {
+                preserve_paths.push(path);
+            }
+        }
+        return Ok(preserve_paths);
+    }
+
     for entry in WalkDir::new(target_folder)
         .max_depth(3)
         .into_iter()
@@ -2271,8 +2367,13 @@ fn scan_preserve_files(
 fn scan_foreign_target_files(
     target_folder: &Path,
     profile: &GuidedInstallProfileSeed,
+    shared_root_target: bool,
 ) -> AppResult<Vec<PathBuf>> {
     if !target_folder.exists() {
+        return Ok(Vec::new());
+    }
+
+    if shared_root_target {
         return Ok(Vec::new());
     }
 
@@ -2404,10 +2505,6 @@ fn normalized(value: &str) -> String {
             _ => ' ',
         })
         .collect::<String>()
-}
-
-fn path_starts_with(path: &str, root: &Path) -> bool {
-    normalized(path).contains(&normalized(&root.to_string_lossy()))
 }
 
 fn normalize_path_key(path: &str) -> String {
@@ -2709,6 +2806,56 @@ mod tests {
     }
 
     #[test]
+    fn first_wave_guided_profiles_allow_clean_root_level_updates() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+
+        for (index, profile) in seed_pack.install_catalog.guided_profiles.iter().enumerate() {
+            let item_id = 340 + index as i64;
+            build_sample_download(&staging_root, &connection, item_id, profile);
+
+            let existing_name = Path::new(
+                profile
+                    .sample_filenames
+                    .first()
+                    .expect("sample filename"),
+            )
+            .file_name()
+            .and_then(|value| value.to_str())
+            .expect("basename");
+            let existing_path = temp.path().join("Mods").join(existing_name);
+            fs::write(&existing_path, b"old").expect("old");
+            insert_installed_file(
+                &connection,
+                &existing_path,
+                if existing_path
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|value| value.eq_ignore_ascii_case("ts4script"))
+                {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+
+            let plan = build_guided_plan(&connection, &settings, &seed_pack, item_id)
+                .expect("plan")
+                .expect("guided");
+            assert!(
+                plan.apply_ready,
+                "expected a ready root-level guided update plan for {}",
+                profile.key
+            );
+            assert!(
+                !plan.replace_files.is_empty(),
+                "expected replace files for {}",
+                profile.key
+            );
+        }
+    }
+
+    #[test]
     fn creator_named_regular_mods_stay_on_standard_path() {
         let (_temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
@@ -2959,7 +3106,7 @@ mod tests {
     }
 
     #[test]
-    fn scattered_existing_install_blocks_guided_update() {
+    fn deep_existing_install_blocks_guided_update() {
         let (temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
         let profile = seed_pack
@@ -2970,7 +3117,12 @@ mod tests {
             .expect("mccc");
         build_sample_download(&staging_root, &connection, 227, profile);
 
-        let scattered = temp.path().join("Mods").join("Gameplay").join("mc_cmd_center.ts4script");
+        let scattered = temp
+            .path()
+            .join("Mods")
+            .join("Gameplay")
+            .join("MCCC")
+            .join("mc_cmd_center.ts4script");
         fs::create_dir_all(scattered.parent().expect("parent")).expect("dir");
         fs::write(&scattered, b"old").expect("old");
         insert_installed_file(&connection, &scattered, "Script Mods");
