@@ -1677,6 +1677,10 @@ fn detect_existing_layout(
     let mut existing_files = Vec::new();
     let mut preserve_files = Vec::new();
     for mut file in installed_files {
+        if !Path::new(&file.path).exists() {
+            continue;
+        }
+
         let in_target = path_starts_with(&file.path, &target_folder);
         file.in_target_folder = in_target;
         let matches_profile = is_existing_profile_file(&file, profile);
@@ -2823,7 +2827,7 @@ mod tests {
             .expect("official source action");
         assert_eq!(
             action.url.as_deref(),
-            Some("https://deaderpool-mccc.com/installation.html")
+            Some("https://deaderpool-mccc.com/downloads.html")
         );
     }
 
@@ -3135,6 +3139,41 @@ mod tests {
         assert_eq!(plan.preserve_files.len(), 1);
 
         let review_plan = build_review_plan(&connection, &settings, &seed_pack, 232)
+            .expect("review plan");
+        assert!(review_plan.is_none());
+    }
+
+    #[test]
+    fn stale_indexed_special_files_do_not_block_fresh_guided_install() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        build_sample_download(&staging_root, &connection, 233, profile);
+
+        let stale_path = temp
+            .path()
+            .join("Mods")
+            .join("MCCC")
+            .join("mc_cmd_center.ts4script");
+        insert_installed_file(&connection, &stale_path, "Script Mods");
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 233).expect("assessment");
+        assert_eq!(assessment.intake_mode, DownloadIntakeMode::Guided);
+        assert!(!assessment.existing_install_detected);
+
+        let plan = build_guided_plan(&connection, &settings, &seed_pack, 233)
+            .expect("plan")
+            .expect("guided");
+        assert!(plan.apply_ready);
+        assert!(plan.review_files.is_empty());
+
+        let review_plan = build_review_plan(&connection, &settings, &seed_pack, 233)
             .expect("review plan");
         assert!(review_plan.is_none());
     }

@@ -1,15 +1,15 @@
 {
-  "seed_version": "2.0.0",
+  "seed_version": "2.0.1",
   "guided_profiles": [
     {
       "key": "mccc",
       "display_name": "MC Command Center",
       "creator": "Deaderpool",
       "family": "Gameplay Suites",
-      "official_source_url": "https://deaderpool-mccc.com/installation.html",
-      "official_download_url": "https://drive.google.com/uc?export=download&id=1vK5Xp0Qi72wf0jgrf4HfQiyfM-bEdjQ8",
+      "official_source_url": "https://deaderpool-mccc.com/downloads.html",
+      "official_download_url": "https://drive.google.com/uc?export=download&id=1J_yt-tu8vvHGPI2B6VMoMEjudoSfmHQt",
       "reference_source": ["official_docs", "mod_hound_reference"],
-      "reviewed_at": "2026-03-09",
+      "reviewed_at": "2026-03-11",
       "sample_filenames": [
         "mc_cmd_center.ts4script",
         "mc_cmd_center.package",
@@ -329,9 +329,9 @@
     {
       "key": "not_compatible_with_mccc",
       "display_name": "Conflicts with MC Command Center",
-      "official_source_url": "https://deaderpool-mccc.com/installation.html",
+      "official_source_url": "https://deaderpool-mccc.com/downloads.html",
       "reference_source": ["official_docs", "mod_hound_reference"],
-      "reviewed_at": "2026-03-09",
+      "reviewed_at": "2026-03-11",
       "sample_filenames": ["README_not_compatible_with_mccc.txt"],
       "installed_profile_key": "mccc",
       "name_clues": ["not compatible with mccc"],

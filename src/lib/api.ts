@@ -139,10 +139,10 @@ const buildMockDependencyStatus = (
 });
 
 const mockMcccCatalogSource = buildMockCatalogSource(
-  "https://deaderpool-mccc.com/installation.html",
-  "https://drive.google.com/uc?export=download&id=1vK5Xp0Qi72wf0jgrf4HfQiyfM-bEdjQ8",
+  "https://deaderpool-mccc.com/downloads.html",
+  "https://drive.google.com/uc?export=download&id=1J_yt-tu8vvHGPI2B6VMoMEjudoSfmHQt",
   ["official_docs", "mod_hound_reference"],
-  "2026-03-09",
+  "2026-03-11",
 );
 
 const mockXmlInjectorCatalogSource = buildMockCatalogSource(
