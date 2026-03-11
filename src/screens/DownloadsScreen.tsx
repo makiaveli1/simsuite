@@ -63,7 +63,27 @@ interface DownloadsScreenProps {
   userView: UserView;
 }
 
+interface DownloadsSelectionState {
+  itemId: number | null;
+  requestId: number;
+  detail: DownloadInboxDetail | null;
+  preview: OrganizationPreview | null;
+  guidedPlan: GuidedInstallPlan | null;
+  reviewPlan: SpecialReviewPlan | null;
+}
+
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
+
+function createEmptySelectionState(): DownloadsSelectionState {
+  return {
+    itemId: null,
+    requestId: 0,
+    detail: null,
+    preview: null,
+    guidedPlan: null,
+    reviewPlan: null,
+  };
+}
 
 export function DownloadsScreen({
   refreshVersion,
@@ -84,16 +104,9 @@ export function DownloadsScreen({
   const [presets, setPresets] = useState<RulePreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState("Category First");
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<DownloadInboxDetail | null>(
-    null,
+  const [selectionState, setSelectionState] = useState<DownloadsSelectionState>(
+    createEmptySelectionState,
   );
-  const [selectedPreview, setSelectedPreview] = useState<OrganizationPreview | null>(
-    null,
-  );
-  const [selectedGuidedPlan, setSelectedGuidedPlan] =
-    useState<GuidedInstallPlan | null>(null);
-  const [selectedReviewPlan, setSelectedReviewPlan] =
-    useState<SpecialReviewPlan | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -104,9 +117,11 @@ export function DownloadsScreen({
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
   const inboxRetryTimer = useRef<number | null>(null);
-  const previousWatcherState = useRef<DownloadsWatcherStatus["state"] | null>(
-    null,
-  );
+  const queueRequestId = useRef(0);
+  const selectionRequestId = useRef(0);
+  const pendingRefreshReloadSkips = useRef(0);
+  const pendingPreferredSelectionId = useRef<number | null>(null);
+  const previousRefreshVersion = useRef(refreshVersion);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -126,30 +141,13 @@ export function DownloadsScreen({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     const unlisten = api.listenToDownloadsStatus((status) => {
       startTransition(() => {
         setWatcherStatus(status);
       });
     });
 
-    void api
-      .getDownloadsWatcherStatus()
-      .then((status) => {
-        if (cancelled) {
-          return;
-        }
-
-        startTransition(() => {
-          setWatcherStatus(status);
-        });
-      })
-      .catch(() => {
-        // The bootstrap path handles first-load errors already.
-      });
-
     return () => {
-      cancelled = true;
       void unlisten.then((dispose) => dispose());
     };
   }, []);
@@ -175,6 +173,10 @@ export function DownloadsScreen({
 
     void (async () => {
       if (watcherStatus.state === "error") {
+        pendingRefreshReloadSkips.current = Math.max(
+          0,
+          pendingRefreshReloadSkips.current - 1,
+        );
         if (!cancelled && watcherStatus.lastError) {
           setErrorMessage(watcherStatus.lastError);
         }
@@ -204,13 +206,23 @@ export function DownloadsScreen({
 
   useEffect(() => {
     void loadBootstrap();
-  }, [refreshVersion, deferredSearch, statusFilter]);
+  }, [deferredSearch, statusFilter]);
 
   useEffect(() => {
-    const lastState = previousWatcherState.current;
-    const nextState = watcherStatus?.state ?? null;
-    previousWatcherState.current = nextState;
+    if (previousRefreshVersion.current === refreshVersion) {
+      return;
+    }
 
+    previousRefreshVersion.current = refreshVersion;
+    if (pendingRefreshReloadSkips.current > 0) {
+      pendingRefreshReloadSkips.current -= 1;
+      return;
+    }
+
+    void loadBootstrap();
+  }, [refreshVersion]);
+
+  useEffect(() => {
     if (!watcherStatus?.configured) {
       return;
     }
@@ -224,8 +236,7 @@ export function DownloadsScreen({
       return;
     }
 
-    const finishedInitialCheck = lastState === "processing";
-    if (finishedInitialCheck || inbox === null) {
+    if (inbox === null) {
       void loadInbox();
     }
   }, [
@@ -239,7 +250,18 @@ export function DownloadsScreen({
   useEffect(() => {
     const items = inbox?.items ?? [];
     if (!items.length) {
+      pendingPreferredSelectionId.current = null;
       setSelectedItemId(null);
+      return;
+    }
+
+    const preferredItemId = pendingPreferredSelectionId.current;
+    if (
+      preferredItemId !== null &&
+      items.some((item) => item.id === preferredItemId)
+    ) {
+      pendingPreferredSelectionId.current = null;
+      setSelectedItemId(preferredItemId);
       return;
     }
 
@@ -253,10 +275,12 @@ export function DownloadsScreen({
 
   useEffect(() => {
     if (!selectedItem) {
-      setSelectedDetail(null);
-      setSelectedPreview(null);
-      setSelectedGuidedPlan(null);
-      setSelectedReviewPlan(null);
+      const requestId = ++selectionRequestId.current;
+      setIsLoadingSelection(false);
+      setSelectionState({
+        ...createEmptySelectionState(),
+        requestId,
+      });
       return;
     }
 
@@ -302,6 +326,7 @@ export function DownloadsScreen({
   }
 
   async function loadBootstrap() {
+    const requestId = ++queueRequestId.current;
     setIsLoadingInbox(true);
     setErrorMessage(null);
 
@@ -312,6 +337,10 @@ export function DownloadsScreen({
         status: statusFilter || undefined,
         limit: 120,
       });
+
+      if (requestId !== queueRequestId.current) {
+        return;
+      }
 
       startTransition(() => {
         setWatcherStatus(response.watcherStatus);
@@ -329,11 +358,14 @@ export function DownloadsScreen({
         void loadBootstrap();
       });
     } finally {
-      setIsLoadingInbox(false);
+      if (requestId === queueRequestId.current) {
+        setIsLoadingInbox(false);
+      }
     }
   }
 
   async function loadInbox() {
+    const requestId = ++queueRequestId.current;
     setIsLoadingInbox(true);
     setErrorMessage(null);
 
@@ -344,6 +376,9 @@ export function DownloadsScreen({
         status: statusFilter || undefined,
         limit: 120,
       });
+      if (requestId !== queueRequestId.current) {
+        return;
+      }
       startTransition(() => {
         setInbox(response);
       });
@@ -352,39 +387,69 @@ export function DownloadsScreen({
         void loadInbox();
       });
     } finally {
-      setIsLoadingInbox(false);
+      if (requestId === queueRequestId.current) {
+        setIsLoadingInbox(false);
+      }
     }
   }
 
   async function loadSelectedItem(item: DownloadsInboxItem) {
+    const requestId = ++selectionRequestId.current;
     setIsLoadingSelection(true);
     setErrorMessage(null);
+    startTransition(() => {
+      setSelectionState({
+        itemId: item.id,
+        requestId,
+        detail: null,
+        preview: null,
+        guidedPlan: null,
+        reviewPlan: null,
+      });
+    });
 
     try {
       const selection = await api.getDownloadsSelection(item.id, selectedPreset);
+      if (requestId !== selectionRequestId.current) {
+        return;
+      }
 
       startTransition(() => {
-        setSelectedDetail(selection.detail);
-        setSelectedPreview(selection.preview);
-        setSelectedGuidedPlan(selection.guidedPlan);
-        setSelectedReviewPlan(selection.reviewPlan);
+        setSelectionState({
+          itemId: item.id,
+          requestId,
+          detail: selection.detail,
+          preview: selection.preview,
+          guidedPlan: selection.guidedPlan,
+          reviewPlan: selection.reviewPlan,
+        });
       });
     } catch (error) {
+      if (requestId !== selectionRequestId.current) {
+        return;
+      }
       startTransition(() => {
-        setSelectedDetail(null);
-        setSelectedPreview(null);
-        setSelectedGuidedPlan(null);
-        setSelectedReviewPlan(null);
+        setSelectionState({
+          itemId: item.id,
+          requestId,
+          detail: null,
+          preview: null,
+          guidedPlan: null,
+          reviewPlan: null,
+        });
       });
       setErrorMessage(toErrorMessage(error));
     } finally {
-      setIsLoadingSelection(false);
+      if (requestId === selectionRequestId.current) {
+        setIsLoadingSelection(false);
+      }
     }
   }
 
   async function handleRefresh() {
     setStatusMessage(null);
     setErrorMessage(null);
+    pendingRefreshReloadSkips.current += 1;
 
     try {
       const nextStatus = await api.refreshDownloadsInbox();
@@ -406,6 +471,10 @@ export function DownloadsScreen({
           : "Inbox refreshed and checked again.",
       );
     } catch (error) {
+      pendingRefreshReloadSkips.current = Math.max(
+        0,
+        pendingRefreshReloadSkips.current - 1,
+      );
       setErrorMessage(toErrorMessage(error));
     }
   }
@@ -435,6 +504,10 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
+      const mutatesInbox = reviewActionUpdatesInbox(action.kind);
+      if (mutatesInbox) {
+        pendingRefreshReloadSkips.current += 1;
+      }
       const result = await api.applyReviewPlanAction(
         selectedItem.id,
         action.kind,
@@ -447,17 +520,17 @@ export function DownloadsScreen({
         globalThis.open?.(result.openedUrl, "_blank", "noopener,noreferrer");
       }
 
-      const shouldReload =
-        needsApproval ||
-        result.createdItemId !== null ||
-        result.focusItemId !== selectedItem.id;
+      const shouldReload = mutatesInbox;
 
       if (shouldReload) {
+        pendingPreferredSelectionId.current = result.focusItemId;
         await loadInbox();
       }
 
       setSelectedItemId(result.focusItemId);
-      setWatcherStatus(await api.getDownloadsWatcherStatus());
+      if (shouldReload) {
+        setWatcherStatus(await api.getDownloadsWatcherStatus());
+      }
 
       if (
         result.snapshotId !== null ||
@@ -470,6 +543,12 @@ export function DownloadsScreen({
 
       setStatusMessage(result.message);
     } catch (error) {
+      if (reviewActionUpdatesInbox(action.kind)) {
+        pendingRefreshReloadSkips.current = Math.max(
+          0,
+          pendingRefreshReloadSkips.current - 1,
+        );
+      }
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsApplying(false);
@@ -503,6 +582,7 @@ export function DownloadsScreen({
       setErrorMessage(null);
 
       try {
+        pendingRefreshReloadSkips.current += 1;
         const result = await api.applyGuidedDownloadItem(selectedItem.id, true);
         setStatusMessage(
           isSameVersion
@@ -513,6 +593,10 @@ export function DownloadsScreen({
         await loadInbox();
         setWatcherStatus(await api.getDownloadsWatcherStatus());
       } catch (error) {
+        pendingRefreshReloadSkips.current = Math.max(
+          0,
+          pendingRefreshReloadSkips.current - 1,
+        );
         setErrorMessage(toErrorMessage(error));
       } finally {
         setIsApplying(false);
@@ -538,6 +622,7 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
+      pendingRefreshReloadSkips.current += 1;
       const result = await api.applyDownloadItem(
         selectedItem.id,
         selectedPreset,
@@ -550,6 +635,10 @@ export function DownloadsScreen({
       await loadInbox();
       setWatcherStatus(await api.getDownloadsWatcherStatus());
     } catch (error) {
+      pendingRefreshReloadSkips.current = Math.max(
+        0,
+        pendingRefreshReloadSkips.current - 1,
+      );
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsApplying(false);
@@ -573,12 +662,17 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
+      pendingRefreshReloadSkips.current += 1;
       await api.ignoreDownloadItem(selectedItem.id);
       setStatusMessage(`${selectedItem.displayName} was removed from the active inbox.`);
       onDataChanged();
       await loadInbox();
       setWatcherStatus(await api.getDownloadsWatcherStatus());
     } catch (error) {
+      pendingRefreshReloadSkips.current = Math.max(
+        0,
+        pendingRefreshReloadSkips.current - 1,
+      );
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsIgnoring(false);
@@ -586,10 +680,15 @@ export function DownloadsScreen({
   }
 
   const overview = inbox?.overview ?? null;
-  const selectedResolvedItem = selectedDetail?.item ?? selectedItem;
-  const selectedFiles = selectedDetail?.files ?? [];
+  const activeSelection =
+    selectedItem && selectionState.itemId === selectedItem.id ? selectionState : null;
+  const selectedResolvedItem = activeSelection?.detail?.item ?? selectedItem;
+  const selectedFiles = activeSelection?.detail?.files ?? [];
   const selectedSpecialDecision =
-    selectedDetail?.item.specialDecision ?? selectedItem?.specialDecision ?? null;
+    activeSelection?.detail?.item.specialDecision ?? selectedItem?.specialDecision ?? null;
+  const selectedPreview = activeSelection?.preview ?? null;
+  const selectedGuidedPlan = activeSelection?.guidedPlan ?? null;
+  const selectedReviewPlan = activeSelection?.reviewPlan ?? null;
   const previewSuggestions = selectedPreview?.suggestions ?? [];
   const safeCount = actionableCount(selectedPreview);
   const reviewCount =
@@ -2952,6 +3051,15 @@ function reviewActionDescription(
 }
 
 function reviewActionNeedsApproval(kind: ReviewPlanAction["kind"]) {
+  return (
+    kind === "repair_special" ||
+    kind === "install_dependency" ||
+    kind === "download_missing_files" ||
+    kind === "separate_supported_files"
+  );
+}
+
+function reviewActionUpdatesInbox(kind: ReviewPlanAction["kind"]) {
   return (
     kind === "repair_special" ||
     kind === "install_dependency" ||
