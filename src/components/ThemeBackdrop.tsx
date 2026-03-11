@@ -1,6 +1,7 @@
 import { m, useReducedMotion } from "motion/react";
 import { getBackdropMotion } from "../lib/motion";
 import type { Screen, UiTheme } from "../lib/types";
+import { backdropScreenLabel } from "../lib/uiLanguage";
 
 interface ThemeBackdropProps {
   theme: UiTheme;
@@ -9,7 +10,7 @@ interface ThemeBackdropProps {
 
 export function ThemeBackdrop({ theme, screen }: ThemeBackdropProps) {
   const reducedMotion = useReducedMotion();
-  const label = friendlyScreenLabel(screen);
+  const label = backdropScreenLabel(screen);
   const motionProfile = getBackdropMotion(theme);
 
   return (
@@ -55,32 +56,4 @@ export function ThemeBackdrop({ theme, screen }: ThemeBackdropProps) {
       <div className="theme-backdrop-screen-tag">{label}</div>
     </div>
   );
-}
-
-function friendlyScreenLabel(screen: Screen) {
-  if (screen === "creatorAudit") {
-    return "Creator Names";
-  }
-
-  if (screen === "categoryAudit") {
-    return "Mod Types";
-  }
-
-  if (screen === "downloads") {
-    return "Downloads";
-  }
-
-  if (screen === "duplicates") {
-    return "Duplicates";
-  }
-
-  if (screen === "organize") {
-    return "Tidy Up";
-  }
-
-  if (screen === "settings") {
-    return "Settings";
-  }
-
-  return screen.charAt(0).toUpperCase() + screen.slice(1);
 }

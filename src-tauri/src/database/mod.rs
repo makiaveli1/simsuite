@@ -138,7 +138,10 @@ pub fn seed_database(connection: &mut Connection, seed_pack: &SeedPack) -> AppRe
     Ok(())
 }
 
-pub fn load_runtime_seed_pack(connection: &Connection, base_seed: &SeedPack) -> AppResult<SeedPack> {
+pub fn load_runtime_seed_pack(
+    connection: &Connection,
+    base_seed: &SeedPack,
+) -> AppResult<SeedPack> {
     let mut runtime = base_seed.clone();
 
     {
@@ -177,7 +180,9 @@ pub fn load_runtime_seed_pack(connection: &Connection, base_seed: &SeedPack) -> 
         )?;
 
         let rows = statement
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         for (canonical_name, alias_name) in rows {
@@ -322,18 +327,14 @@ pub fn save_creator_learning_batch(
     }
 
     if lock_preference {
-        let (file_path, source_location, kind, subtype): (
-            String,
-            String,
-            String,
-            Option<String>,
-        ) = transaction.query_row(
-            "SELECT path, source_location, kind, subtype
+        let (file_path, source_location, kind, subtype): (String, String, String, Option<String>) =
+            transaction.query_row(
+                "SELECT path, source_location, kind, subtype
              FROM files
              WHERE id = ?1",
-            params![unique_file_ids[0]],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )?;
+                params![unique_file_ids[0]],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
 
         let resolved_path = resolve_preferred_path(
             settings,
@@ -370,10 +371,8 @@ pub fn save_creator_learning_batch(
         )?;
 
         for file_id in &unique_file_ids {
-            let (parser_warnings_json, confidence): (String, f64) = file_lookup.query_row(
-                params![file_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )?;
+            let (parser_warnings_json, confidence): (String, f64) =
+                file_lookup.query_row(params![file_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
             let parser_warnings = filter_creator_warnings(&parser_warnings_json);
             file_update.execute(params![
                 creator_id,
@@ -463,8 +462,8 @@ pub fn save_category_override_batch(
         )?;
 
         for file_id in &unique_file_ids {
-            let (file_path, parser_warnings_json, confidence): (String, String, f64) =
-                file_lookup.query_row(params![file_id], |row| {
+            let (file_path, parser_warnings_json, confidence): (String, String, f64) = file_lookup
+                .query_row(params![file_id], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                 })?;
 
@@ -806,7 +805,12 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "download_items", "catalog_source_url", "TEXT")?;
     ensure_column(connection, "download_items", "catalog_download_url", "TEXT")?;
     ensure_column(connection, "download_items", "latest_check_url", "TEXT")?;
-    ensure_column(connection, "download_items", "latest_check_strategy", "TEXT")?;
+    ensure_column(
+        connection,
+        "download_items",
+        "latest_check_strategy",
+        "TEXT",
+    )?;
     ensure_column(
         connection,
         "download_items",
@@ -951,7 +955,11 @@ fn merge_runtime_alias(runtime: &mut SeedPack, canonical_name: &str, alias_name:
     runtime.parser_lexicon.insert(normalized_alias);
 
     if let Some(profile) = runtime.creator_profiles.get_mut(canonical_name) {
-        if !profile.aliases.iter().any(|alias| normalize_key(alias) == normalize_key(alias_name)) {
+        if !profile
+            .aliases
+            .iter()
+            .any(|alias| normalize_key(alias) == normalize_key(alias_name))
+        {
             profile.aliases.push(alias_name.to_owned());
         }
     }
@@ -1017,7 +1025,9 @@ fn resolve_preferred_path(
     creator_name: &str,
     preferred_path: Option<&str>,
 ) -> String {
-    if let Some(preferred_path) = preferred_path.and_then(|value| clean_optional_string(value.to_owned())) {
+    if let Some(preferred_path) =
+        preferred_path.and_then(|value| clean_optional_string(value.to_owned()))
+    {
         return normalize_relative_path(&preferred_path);
     }
 
@@ -1154,7 +1164,10 @@ mod tests {
             .get("CustomMaker")
             .expect("custom profile");
         assert!(profile.locked_by_user);
-        assert_eq!(profile.preferred_path.as_deref(), Some("Creators/CustomMaker"));
+        assert_eq!(
+            profile.preferred_path.as_deref(),
+            Some("Creators/CustomMaker")
+        );
     }
 
     #[test]
@@ -1256,10 +1269,7 @@ mod tests {
             )
             .expect("creator meta");
         assert_eq!(creator_meta.0, 1);
-        assert_eq!(
-            creator_meta.1.as_deref(),
-            Some("Downloads")
-        );
+        assert_eq!(creator_meta.1.as_deref(), Some("Downloads"));
 
         assert!(get_creator_learning_version(&connection)
             .expect("learning version")

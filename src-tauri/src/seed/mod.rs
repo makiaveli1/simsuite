@@ -520,8 +520,6 @@ mod tests {
         };
 
         let error = validate_install_catalog(&catalog).expect_err("catalog should fail");
-        assert!(error
-            .to_string()
-            .contains("unsafe install depth"));
+        assert!(error.to_string().contains("unsafe install depth"));
     }
 }

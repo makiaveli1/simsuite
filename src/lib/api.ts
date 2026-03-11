@@ -21,6 +21,7 @@ import type {
   DependencyStatus,
   DownloadInboxDetail,
   DownloadsInboxItem,
+  DownloadsBootstrapResponse,
   DownloadsInboxQuery,
   DownloadsInboxResponse,
   DownloadsSelectionResponse,
@@ -3936,6 +3937,22 @@ function getDownloadsQueue(query?: DownloadsInboxQuery) {
   return invoke<DownloadsInboxResponse>("get_downloads_inbox", { query });
 }
 
+async function getDownloadsBootstrap(query?: DownloadsInboxQuery) {
+  if (hasTauriRuntime) {
+    return tauriInvoke<DownloadsBootstrapResponse>("get_downloads_bootstrap", { query });
+  }
+
+  return {
+    watcherStatus: mockDownloadsWatcherStatus,
+    queue:
+      mockDownloadsWatcherStatus.configured &&
+      mockDownloadsWatcherStatus.state !== "processing" &&
+      mockDownloadsWatcherStatus.state !== "error"
+        ? await getDownloadsQueue(query)
+        : null,
+  } satisfies DownloadsBootstrapResponse;
+}
+
 async function getDownloadsSelection(itemId: number, presetName?: string) {
   if (hasTauriRuntime) {
     return tauriInvoke<DownloadsSelectionResponse>("get_downloads_selection", {
@@ -4003,6 +4020,7 @@ export const api = {
   listenToScanStatus,
   listenToDownloadsStatus,
   listenToWorkspaceChanges,
+  getDownloadsBootstrap,
   getDownloadsQueue,
   getDownloadsSelection,
   getDownloadsInbox: (query?: DownloadsInboxQuery) =>

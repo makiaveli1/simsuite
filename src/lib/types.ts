@@ -496,6 +496,11 @@ export interface DownloadsInboxResponse {
   items: DownloadsInboxItem[];
 }
 
+export interface DownloadsBootstrapResponse {
+  watcherStatus: DownloadsWatcherStatus;
+  queue: DownloadsInboxResponse | null;
+}
+
 export interface DownloadsSelectionResponse {
   itemId: number;
   detail: DownloadInboxDetail | null;

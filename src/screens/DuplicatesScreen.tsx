@@ -9,6 +9,7 @@ import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import { screenHelperLine, unknownCreatorLabel } from "../lib/uiLanguage";
 import type {
   DuplicatesLayoutPreset,
   DuplicateOverview,
@@ -134,12 +135,12 @@ export function DuplicatesScreen({
                 value={selected.detectionMethod}
               />
               <DetailRow
-                label={userView === "beginner" ? "Left maker" : "Left creator"}
-                value={selected.primaryCreator ?? "Not known yet"}
+                label="Left creator"
+                value={selected.primaryCreator ?? unknownCreatorLabel(userView)}
               />
               <DetailRow
-                label={userView === "beginner" ? "Right maker" : "Right creator"}
-                value={selected.secondaryCreator ?? "Not known yet"}
+                label="Right creator"
+                value={selected.secondaryCreator ?? unknownCreatorLabel(userView)}
               />
               {userView !== "beginner" ? (
                 <DetailRow
@@ -205,6 +206,7 @@ export function DuplicatesScreen({
             <Copy size={18} strokeWidth={2} />
             <h1>{userView === "beginner" ? "Same Mod Twice?" : "Duplicates"}</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("duplicates", userView)}</p>
         </div>
         <div className="header-actions">
           <button
@@ -239,13 +241,15 @@ export function DuplicatesScreen({
       </div>
 
       <LayoutPresetBar
-        title={userView === "beginner" ? "Workspace" : "Duplicates layout"}
+        title={userView === "beginner" ? "Quick view" : "Duplicates layout"}
         summary={
           userView === "beginner"
-            ? "Choose whether you want more room for the match list or the comparison details."
-            : "Saved layouts for broad sweeps or deeper path comparison."
+            ? "Keep the match list and the compare panel easy to read while you look through repeats."
+            : userView === "power"
+              ? "Saved layouts for broad sweeps or deeper path comparison."
+              : "Saved layouts for broad sweeps or deeper path comparison."
         }
-        presets={DUPLICATES_LAYOUT_PRESETS}
+        presets={userView === "beginner" ? [] : DUPLICATES_LAYOUT_PRESETS}
         activePreset={duplicatesLayoutPreset}
         onApplyPreset={(preset) =>
           applyDuplicatesLayoutPreset(preset as DuplicatesLayoutPreset)
@@ -254,8 +258,8 @@ export function DuplicatesScreen({
           collapsed: duplicatesFiltersCollapsed,
           onToggle: () =>
             setDuplicatesFiltersCollapsed(!duplicatesFiltersCollapsed),
-          hiddenLabel: userView === "beginner" ? "Show filters" : "Show filters",
-          shownLabel: userView === "beginner" ? "Hide filters" : "Hide filters",
+          hiddenLabel: "Show filters",
+          shownLabel: "Hide filters",
         }}
       />
 

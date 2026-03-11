@@ -219,7 +219,8 @@ pub fn load_creator_audit(
                 .max_by_key(|(_, count)| *count)
                 .map(|(kind, _)| kind.clone())
                 .unwrap_or_else(|| "Unknown".to_owned());
-            let confidence = (group.confidence_sum / (group.file_ids.len() as f64)).clamp(0.0, 0.99);
+            let confidence =
+                (group.confidence_sum / (group.file_ids.len() as f64)).clamp(0.0, 0.99);
 
             let audit_group = CreatorAuditGroup {
                 id,
@@ -229,7 +230,11 @@ pub fn load_creator_audit(
                 item_count,
                 dominant_kind,
                 source_signals: group.source_signals.into_iter().collect(),
-                alias_samples: group.alias_samples.into_iter().take(MAX_ALIAS_SAMPLES).collect(),
+                alias_samples: group
+                    .alias_samples
+                    .into_iter()
+                    .take(MAX_ALIAS_SAMPLES)
+                    .collect(),
                 file_ids: group.file_ids,
                 sample_files: group.sample_files,
             };
@@ -295,11 +300,9 @@ pub fn load_creator_group_files(
     let mut source_signals = BTreeSet::new();
 
     for record in records {
-        let Some(selection) = select_candidate(&record, settings, seed_pack)
-            .filter(|selected| {
-                selected.score >= MIN_GROUP_SCORE && selected.normalized_key == group_id
-            })
-        else {
+        let Some(selection) = select_candidate(&record, settings, seed_pack).filter(|selected| {
+            selected.score >= MIN_GROUP_SCORE && selected.normalized_key == group_id
+        }) else {
             continue;
         };
 
@@ -463,13 +466,23 @@ fn collect_signals(
     .into_iter()
     .flatten()
     {
-        if let Some(signal) = build_signal(&raw, "Filename pattern", 0.82, Some(raw.clone()), seed_pack) {
+        if let Some(signal) =
+            build_signal(&raw, "Filename pattern", 0.82, Some(raw.clone()), seed_pack)
+        {
             signals.push(signal);
         }
     }
 
-    for (folder, weight) in collect_folder_candidates(&record.path, &record.source_location, settings) {
-        if let Some(signal) = build_signal(&folder, "Folder path", weight, Some(folder.clone()), seed_pack) {
+    for (folder, weight) in
+        collect_folder_candidates(&record.path, &record.source_location, settings)
+    {
+        if let Some(signal) = build_signal(
+            &folder,
+            "Folder path",
+            weight,
+            Some(folder.clone()),
+            seed_pack,
+        ) {
             signals.push(signal);
         }
     }
@@ -514,7 +527,11 @@ fn build_signal(
 
 fn resolve_candidate(value: &str, seed_pack: &SeedPack) -> Option<String> {
     let compact = collapse_whitespace(value);
-    if compact.is_empty() || !compact.chars().any(|character| character.is_ascii_alphabetic()) {
+    if compact.is_empty()
+        || !compact
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+    {
         return None;
     }
 
@@ -602,7 +619,10 @@ fn extract_collab_prefix_candidate(base_name: &str) -> Option<String> {
 }
 
 fn extract_family_prefix_candidate(base_name: &str) -> Option<String> {
-    if base_name.contains(['[', '(', '{', '_']) || base_name.contains(" - ") || base_name.contains(" x ") {
+    if base_name.contains(['[', '(', '{', '_'])
+        || base_name.contains(" - ")
+        || base_name.contains(" x ")
+    {
         return None;
     }
 

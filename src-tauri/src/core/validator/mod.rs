@@ -19,6 +19,8 @@ pub struct ValidationRequest {
     pub source_location: String,
     pub confidence: f64,
     pub suggested_relative_path: String,
+    pub guided_install: bool,
+    pub allow_existing_target: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +63,7 @@ pub fn validate_suggestion(
         }
     }
 
-    if request.extension == ".ts4script" {
+    if request.extension == ".ts4script" && !request.guided_install {
         let creator = request
             .creator
             .as_deref()
@@ -82,6 +84,9 @@ pub fn validate_suggestion(
         .parent()
         .map(|parent| parent.components().count())
         .unwrap_or(0);
+    if request.extension == ".ts4script" && request.guided_install && folder_depth > 1 {
+        notes.push("guided_script_depth_requires_review".to_owned());
+    }
     if request.extension == ".package" && folder_depth > 5 {
         final_relative = package_fallback_path(request);
         notes.push("validator_limited_package_depth".to_owned());
@@ -121,15 +126,17 @@ pub fn validate_suggestion(
             notes.push("preview_path_collision_detected".to_owned());
         }
 
-        let existing_owner: Option<i64> = connection
-            .query_row(
-                "SELECT id FROM files WHERE path = ?1 AND id <> ?2",
-                params![path, request.file_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if existing_owner.is_some() {
-            notes.push("existing_path_collision_detected".to_owned());
+        if !request.allow_existing_target {
+            let existing_owner: Option<i64> = connection
+                .query_row(
+                    "SELECT id FROM files WHERE path = ?1 AND id <> ?2",
+                    params![path, request.file_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if existing_owner.is_some() {
+                notes.push("existing_path_collision_detected".to_owned());
+            }
         }
     }
 
@@ -141,6 +148,7 @@ pub fn validate_suggestion(
                 | "missing_target_root"
                 | "preview_path_collision_detected"
                 | "existing_path_collision_detected"
+                | "guided_script_depth_requires_review"
         )
     });
 
@@ -234,6 +242,8 @@ mod tests {
                 confidence: 0.95,
                 suggested_relative_path: "Gameplay/Deaderpool/MCCC/mc_cmd_center.ts4script"
                     .to_owned(),
+                guided_install: false,
+                allow_existing_target: false,
             },
             &HashSet::new(),
         )
@@ -290,6 +300,8 @@ mod tests {
                 source_location: "mods".to_owned(),
                 confidence: 0.8,
                 suggested_relative_path: "CAS/Hair/Simstrouble/Breezy.package".to_owned(),
+                guided_install: false,
+                allow_existing_target: false,
             },
             &HashSet::new(),
         )
@@ -299,5 +311,42 @@ mod tests {
         assert!(result
             .notes
             .contains(&"existing_path_collision_detected".to_owned()));
+    }
+
+    #[test]
+    fn validator_keeps_guided_script_paths_when_depth_is_safe() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+
+        let result = validate_suggestion(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:/Mods".to_owned()),
+                tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
+            },
+            &ValidationRequest {
+                file_id: 7,
+                filename: "mc_cmd_center.ts4script".to_owned(),
+                extension: ".ts4script".to_owned(),
+                kind: "ScriptMods".to_owned(),
+                subtype: Some("Utility".to_owned()),
+                creator: Some("Deaderpool".to_owned()),
+                bundle_name: None,
+                source_location: "downloads".to_owned(),
+                confidence: 0.97,
+                suggested_relative_path: "MCCC/mc_cmd_center.ts4script".to_owned(),
+                guided_install: true,
+                allow_existing_target: true,
+            },
+            &HashSet::new(),
+        )
+        .expect("validated");
+
+        assert_eq!(result.final_relative_path, "MCCC/mc_cmd_center.ts4script");
+        assert!(!result.review_required);
+        assert!(!result
+            .notes
+            .contains(&"validator_flattened_script_depth".to_owned()));
     }
 }

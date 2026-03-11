@@ -39,6 +39,7 @@ pub fn run() {
             commands::get_scan_status,
             commands::get_downloads_watcher_status,
             commands::refresh_downloads_inbox,
+            commands::get_downloads_bootstrap,
             commands::get_downloads_inbox,
             commands::get_downloads_queue,
             commands::get_downloads_selection,

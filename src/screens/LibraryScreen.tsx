@@ -8,6 +8,12 @@ import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import {
+  friendlyTypeLabel,
+  screenHelperLine,
+  screenLabel,
+  unknownCreatorLabel,
+} from "../lib/uiLanguage";
 import type {
   CategoryOverrideInfo,
   CreatorLearningInfo,
@@ -203,7 +209,7 @@ export function LibraryScreen({
       }
 
       setSelected(updated);
-      setCategoryMessage("Category override saved.");
+      setCategoryMessage("Type override saved.");
       await Promise.all([loadRows(updated.id), api.getLibraryFacets().then(setFacets)]);
     } finally {
       setSavingCategory(false);
@@ -250,12 +256,12 @@ export function LibraryScreen({
           children: (
             <div className="detail-list">
               <DetailRow
-                label={userView === "beginner" ? "Maker" : "Creator"}
-                value={selected.creator ?? "Not known yet"}
+                label="Creator"
+                value={selected.creator ?? unknownCreatorLabel(userView)}
               />
               <DetailRow
-                label={userView === "beginner" ? "Type" : "Kind"}
-                value={selected.kind}
+                label="Type"
+                value={friendlyTypeLabel(selected.kind)}
               />
               <DetailRow
                 label="Subtype"
@@ -419,10 +425,10 @@ export function LibraryScreen({
           : []),
         {
           id: "creator",
-          label: userView === "beginner" ? "Fix creator name" : "Creator learning",
+          label: userView === "beginner" ? "Set creator" : "Creator learning",
           hint:
             userView === "beginner"
-              ? "Teach the maker name once and reuse it later."
+              ? "Save the creator once and reuse it later."
               : "Save creator matches and optional folder preferences.",
           defaultCollapsed: false,
           children: (
@@ -463,11 +469,11 @@ export function LibraryScreen({
         },
         {
           id: "category",
-          label: userView === "beginner" ? "Fix mod type" : "Category override",
+          label: userView === "beginner" ? "Set type" : "Type override",
           hint:
             userView === "beginner"
               ? "Correct the type label without moving the file."
-              : "Override kind and subtype for later scans and previews.",
+              : "Override type and subtype for later scans and previews.",
           defaultCollapsed: false,
           children: (
             <CategoryOverrideBlock
@@ -511,8 +517,9 @@ export function LibraryScreen({
           <p className="eyebrow">{userView === "beginner" ? "Your files" : "Index"}</p>
           <div className="screen-title-row">
             <LibraryBig size={18} strokeWidth={2} />
-            <h1>{userView === "beginner" ? "My CC" : "Library"}</h1>
+            <h1>{screenLabel("library", userView)}</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("library", userView)}</p>
         </div>
         <div className="header-actions">
           <button
@@ -527,13 +534,15 @@ export function LibraryScreen({
       </div>
 
       <LayoutPresetBar
-        title={userView === "beginner" ? "Workspace" : "Library layout"}
+        title={userView === "beginner" ? "Quick filters" : "Library layout"}
         summary={
           userView === "beginner"
-            ? "Pick whether you want more room for the file list or the file details."
-            : "Saved layout presets for browsing, inspecting, or catalog-style review."
+            ? "Keep the list calm by hiding or showing the filters when you need them."
+            : userView === "power"
+              ? "Saved layout presets for denser browse and inspection passes."
+              : "Saved layout presets for browsing, inspecting, or catalog-style review."
         }
-        presets={LIBRARY_LAYOUT_PRESETS}
+        presets={userView === "beginner" ? [] : LIBRARY_LAYOUT_PRESETS}
         activePreset={libraryLayoutPreset}
         onApplyPreset={(preset) =>
           applyLibraryLayoutPreset(preset as LibraryLayoutPreset)
@@ -541,8 +550,8 @@ export function LibraryScreen({
         filterToggle={{
           collapsed: libraryFiltersCollapsed,
           onToggle: () => setLibraryFiltersCollapsed(!libraryFiltersCollapsed),
-          hiddenLabel: userView === "beginner" ? "Show filters" : "Show filters",
-          shownLabel: userView === "beginner" ? "Hide filters" : "Hide filters",
+          hiddenLabel: "Show filters",
+          shownLabel: "Hide filters",
         }}
       />
 
@@ -562,7 +571,7 @@ export function LibraryScreen({
             </label>
 
             <label className="field">
-              <span>{userView === "beginner" ? "Type" : "Kind"}</span>
+              <span>Type</span>
               <select
                 value={kind}
                 onChange={(event) => {
@@ -573,7 +582,7 @@ export function LibraryScreen({
                 <option value="">All</option>
                 {facets?.kinds.map((item) => (
                   <option key={item} value={item}>
-                    {item}
+                    {friendlyTypeLabel(item)}
                   </option>
                 ))}
               </select>
@@ -600,7 +609,7 @@ export function LibraryScreen({
             ) : null}
 
             <label className="field">
-              <span>{userView === "beginner" ? "Maker" : "Creator"}</span>
+              <span>Creator</span>
               <select
                 value={creator}
                 onChange={(event) => {
@@ -677,8 +686,8 @@ export function LibraryScreen({
                 <thead>
                   <tr>
                     <th>{userView === "beginner" ? "File" : "Name"}</th>
-                    <th>{userView === "beginner" ? "Maker" : "Creator"}</th>
-                    <th>{userView === "beginner" ? "Type" : "Kind"}</th>
+                    <th>Creator</th>
+                    <th>Type</th>
                     {tableColumns.includes("root") ? (
                       <th>{userView === "beginner" ? "Folder" : "Root"}</th>
                     ) : null}
@@ -709,10 +718,10 @@ export function LibraryScreen({
                           <div className="file-title">{row.filename}</div>
                           <div className="file-path">{row.path}</div>
                         </td>
-                        <td>{row.creator ?? "Not known yet"}</td>
+                        <td>{row.creator ?? unknownCreatorLabel(userView)}</td>
                         <td>
                           <span className={`kind-pill kind-${kindSlug(row.kind)}`}>
-                            {row.kind}
+                            {friendlyTypeLabel(row.kind)}
                           </span>
                         </td>
                         {tableColumns.includes("root") ? (
@@ -861,7 +870,7 @@ function CreatorLearningBlock({
     <div className="creator-learning-block">
       <div className="creator-learning-header">
         <div className="section-label">
-          {userView === "beginner" ? "Fix creator name" : "Creator learning"}
+          {userView === "beginner" ? "Set creator" : "Creator learning"}
         </div>
         {creatorLearning.lockedByUser ? (
           <span className="ghost-chip">
@@ -873,13 +882,13 @@ function CreatorLearningBlock({
       <div className="learning-intro">
         <strong>
           {userView === "beginner"
-            ? "Use this when the maker name is wrong or missing."
-            : "Teach SimSuite the creator name for this file."}
+            ? "Use this when the creator is wrong or missing."
+            : "Save the creator for this file."}
         </strong>
         <span>
           {userView === "beginner"
             ? "Saving here helps future scans recognize this creator again."
-            : "This saves a creator name or alias and reuses it in later scans."}
+            : "This saves a creator name or extra clue and reuses it in later scans."}
         </span>
       </div>
 
@@ -901,17 +910,17 @@ function CreatorLearningBlock({
 
       <div className={`creator-learning-grid ${showAdvanced ? "" : "is-compact"}`}>
         <label className="field">
-          <span>{userView === "beginner" ? "Creator name" : "Creator"}</span>
+          <span>Creator</span>
           <input
             value={creatorDraft}
             onChange={(event) => onCreatorDraftChange(event.target.value)}
-            placeholder={userView === "beginner" ? "Who made this?" : "Canonical creator"}
+            placeholder={userView === "beginner" ? "Creator name" : "Creator"}
           />
         </label>
 
         {showAdvanced ? (
           <label className="field">
-            <span>Alias seen</span>
+            <span>Also save this clue</span>
             <input
               value={aliasDraft}
               onChange={(event) => onAliasDraftChange(event.target.value)}
@@ -965,11 +974,11 @@ function CreatorLearningBlock({
           {savingCreator
             ? "Saving..."
             : userView === "beginner"
-              ? "Save creator name"
+              ? "Save creator"
               : "Save creator"}
         </button>
         <button type="button" className="secondary-action" onClick={onOpenAudit}>
-          {userView === "beginner" ? "Fix many names" : "Open creator batches"}
+          {userView === "beginner" ? "Fix many creators" : "Open creator batches"}
         </button>
         {creatorMessage ? <span className="creator-learning-message">{creatorMessage}</span> : null}
       </div>
@@ -1008,7 +1017,7 @@ function CategoryOverrideBlock({
     <div className="category-override-block">
       <div className="creator-learning-header">
         <div className="section-label">
-          {userView === "beginner" ? "Fix mod type" : "Category override"}
+          {userView === "beginner" ? "Set type" : "Type override"}
         </div>
         {categoryOverride.savedByUser ? (
           <span className="ghost-chip">
@@ -1021,7 +1030,7 @@ function CategoryOverrideBlock({
         <strong>
           {userView === "beginner"
             ? "Use this when the type looks wrong."
-            : "Set the kind and subtype when the automatic guess is off."}
+            : "Set the type and subtype when the automatic guess is off."}
         </strong>
         <span>
           {userView === "beginner"
@@ -1032,15 +1041,15 @@ function CategoryOverrideBlock({
 
       <div className={`creator-learning-grid ${showSubtype ? "" : "is-compact"}`}>
         <label className="field">
-          <span>{userView === "beginner" ? "Type" : "Kind"}</span>
+          <span>Type</span>
           <select
             value={categoryKindDraft}
             onChange={(event) => onKindChange(event.target.value)}
           >
-            <option value="">{userView === "beginner" ? "Choose a type" : "Select kind"}</option>
+            <option value="">{userView === "beginner" ? "Choose a type" : "Select type"}</option>
             {kindOptions.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {friendlyTypeLabel(item)}
               </option>
             ))}
           </select>
@@ -1069,7 +1078,7 @@ function CategoryOverrideBlock({
             ? "Saving..."
             : userView === "beginner"
               ? "Save type"
-              : "Save category"}
+              : "Save type"}
         </button>
         <button type="button" className="secondary-action" onClick={onOpenAudit}>
           {userView === "beginner" ? "Fix many types" : "Open type batches"}

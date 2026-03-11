@@ -114,7 +114,10 @@ pub fn load_family_state(
     Ok(state)
 }
 
-pub fn save_family_state(connection: &Connection, state: &StoredSpecialModFamilyState) -> AppResult<()> {
+pub fn save_family_state(
+    connection: &Connection,
+    state: &StoredSpecialModFamilyState,
+) -> AppResult<()> {
     let latest = state.latest.clone().unwrap_or(SpecialOfficialLatestInfo {
         source_url: None,
         download_url: None,
@@ -254,7 +257,10 @@ pub fn compare_versions(
         }
     }
 
-    match (installed_version.and_then(parse_version_parts), incoming_version.and_then(parse_version_parts)) {
+    match (
+        installed_version.and_then(parse_version_parts),
+        incoming_version.and_then(parse_version_parts),
+    ) {
         (Some(installed), Some(incoming)) => match incoming.cmp(&installed) {
             std::cmp::Ordering::Greater => SpecialVersionStatus::IncomingNewer,
             std::cmp::Ordering::Equal => {
@@ -417,11 +423,7 @@ fn latest_cache_is_fresh(checked_at: Option<&str>) -> bool {
 }
 
 fn fetch_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<SpecialOfficialLatestInfo> {
-    match profile
-        .latest_check_strategy
-        .as_deref()
-        .unwrap_or("manual")
-    {
+    match profile.latest_check_strategy.as_deref().unwrap_or("manual") {
         "mccc_downloads_page" => fetch_mccc_latest_info(profile),
         "github_releases" => fetch_github_latest_info(profile),
         "protected_page" | "manual" => Ok(unknown_latest(
@@ -435,7 +437,9 @@ fn fetch_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<SpecialOff
     }
 }
 
-fn fetch_mccc_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<SpecialOfficialLatestInfo> {
+fn fetch_mccc_latest_info(
+    profile: &GuidedInstallProfileSeed,
+) -> AppResult<SpecialOfficialLatestInfo> {
     let source_url = profile
         .latest_check_url
         .clone()
@@ -445,15 +449,16 @@ fn fetch_mccc_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<Speci
     Ok(parse_mccc_latest_html(profile, &source_url, &body))
 }
 
-fn fetch_github_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<SpecialOfficialLatestInfo> {
-    let source_url = profile
-        .latest_check_url
-        .clone()
-        .unwrap_or_else(|| format!("{}/releases/latest", profile.official_source_url.trim_end_matches('/')));
-    let response = client()?
-        .get(&source_url)
-        .send()?
-        .error_for_status()?;
+fn fetch_github_latest_info(
+    profile: &GuidedInstallProfileSeed,
+) -> AppResult<SpecialOfficialLatestInfo> {
+    let source_url = profile.latest_check_url.clone().unwrap_or_else(|| {
+        format!(
+            "{}/releases/latest",
+            profile.official_source_url.trim_end_matches('/')
+        )
+    });
+    let response = client()?.get(&source_url).send()?.error_for_status()?;
     let final_url = response.url().to_string();
     Ok(parse_github_latest_url(profile, &final_url))
 }
@@ -578,10 +583,8 @@ fn extract_ranked_version_candidates(value: &str) -> Vec<RankedVersionCandidate>
         }
     }
 
-    let sequence = Regex::new(
-        r"(?i)(?:^|[^0-9])([0-9]{1,4}(?:[._-][0-9]{1,4}){1,3})(?:[^0-9]|$)",
-    )
-    .expect("sequence regex");
+    let sequence = Regex::new(r"(?i)(?:^|[^0-9])([0-9]{1,4}(?:[._-][0-9]{1,4}){1,3})(?:[^0-9]|$)")
+        .expect("sequence regex");
     for captures in sequence.captures_iter(value) {
         if let Some(matched) = captures.get(1) {
             if let Some(candidate) = build_ranked_candidate(value, matched.as_str(), false) {
@@ -659,7 +662,10 @@ fn parse_version_parts(value: &str) -> Option<Vec<i64>> {
     }
 }
 
-pub fn version_hints_from_profile(profile: &GuidedInstallProfileSeed, display_name: &str) -> Vec<String> {
+pub fn version_hints_from_profile(
+    profile: &GuidedInstallProfileSeed,
+    display_name: &str,
+) -> Vec<String> {
     let mut values = vec![display_name.to_owned()];
     values.extend(profile.version_file_hints.iter().cloned());
     values.extend(profile.sample_filenames.iter().cloned());
@@ -667,7 +673,8 @@ pub fn version_hints_from_profile(profile: &GuidedInstallProfileSeed, display_na
 }
 
 pub fn signature_entries_from_paths(paths: &[&Path]) -> Vec<SignatureEntry> {
-    paths.iter()
+    paths
+        .iter()
         .filter_map(|path| {
             let metadata = path.metadata().ok()?;
             let filename = path.file_name()?.to_string_lossy().to_string();
@@ -698,8 +705,9 @@ mod tests {
             .into_iter()
             .find(|profile| profile.key == "mccc")
             .expect("mccc");
-        profile.official_download_url =
-            Some("https://deaderpool-mccc.com/release/McCmdCenter_AllModules_2026_1_1.zip".to_owned());
+        profile.official_download_url = Some(
+            "https://deaderpool-mccc.com/release/McCmdCenter_AllModules_2026_1_1.zip".to_owned(),
+        );
         let html = r#"
             <html>
               <body>
@@ -709,11 +717,8 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_mccc_latest_html(
-            &profile,
-            "https://deaderpool-mccc.com/downloads.html",
-            html,
-        );
+        let parsed =
+            parse_mccc_latest_html(&profile, "https://deaderpool-mccc.com/downloads.html", html);
 
         assert_eq!(parsed.latest_version.as_deref(), Some("2026.1.1"));
         assert_eq!(

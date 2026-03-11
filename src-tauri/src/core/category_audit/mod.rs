@@ -355,13 +355,11 @@ fn select_candidate(
 
     for signal in collect_signals(record, settings, seed_pack) {
         let key = category_group_id(&signal.kind, signal.subtype.as_deref());
-        let entry = aggregates
-            .entry(key)
-            .or_insert_with(|| CategoryAggregate {
-                kind: signal.kind.clone(),
-                subtype: signal.subtype.clone(),
-                ..CategoryAggregate::default()
-            });
+        let entry = aggregates.entry(key).or_insert_with(|| CategoryAggregate {
+            kind: signal.kind.clone(),
+            subtype: signal.subtype.clone(),
+            ..CategoryAggregate::default()
+        });
         entry.kind = signal.kind.clone();
         entry.subtype = signal.subtype.clone();
         entry.score += signal.score;
@@ -475,7 +473,9 @@ fn collect_signals(
         );
     }
 
-    for (folder, weight) in collect_folder_candidates(&record.path, &record.source_location, settings) {
+    for (folder, weight) in
+        collect_folder_candidates(&record.path, &record.source_location, settings)
+    {
         if let Some((kind, subtype)) = infer_category_from_folder(&folder) {
             push_signal(
                 &mut signals,
@@ -580,7 +580,11 @@ fn infer_category_from_insights(
         } else {
             record.current_subtype.clone()
         };
-        return Some(("CAS".to_owned(), sanitize_subtype(subtype), Some("CASPart".to_owned())));
+        return Some((
+            "CAS".to_owned(),
+            sanitize_subtype(subtype),
+            Some("CASPart".to_owned()),
+        ));
     }
 
     if summary
@@ -659,15 +663,13 @@ fn infer_category_from_folder(folder: &str) -> Option<(&'static str, Option<Stri
 
     let result = match normalized.as_str() {
         "cas" => ("CAS", None),
-        "hair" | "hairstyles" | "bangs" | "ponytail" | "braid" => {
-            ("CAS", Some("Hair".to_owned()))
-        }
+        "hair" | "hairstyles" | "bangs" | "ponytail" | "braid" => ("CAS", Some("Hair".to_owned())),
         "facialhair" | "beard" | "beards" | "mustache" | "mustaches" => {
             ("CAS", Some("Facial Hair".to_owned()))
         }
         "tops" | "top" | "shirt" | "shirts" | "jacket" | "jackets" | "hoodie" | "hoodies"
-        | "sweater" | "sweaters" | "blouse" | "blouses" | "cardigan" | "cardigans"
-        | "bodysuit" | "bodysuits" => ("CAS", Some("Tops".to_owned())),
+        | "sweater" | "sweaters" | "blouse" | "blouses" | "cardigan" | "cardigans" | "bodysuit"
+        | "bodysuits" => ("CAS", Some("Tops".to_owned())),
         "bottoms" | "bottom" | "jeans" | "pants" | "shorts" | "skirt" | "skirts" => {
             ("CAS", Some("Bottoms".to_owned()))
         }
@@ -679,13 +681,14 @@ fn infer_category_from_folder(folder: &str) -> Option<(&'static str, Option<Stri
             ("CAS", Some("Skin".to_owned()))
         }
         "tattoo" | "tattoos" => ("CAS", Some("Tattoos".to_owned())),
-        "accessory" | "accessories" | "jewelry" | "hats" | "glasses" | "earrings"
-        | "necklaces" | "rings" => ("CAS", Some("Accessories".to_owned())),
+        "accessory" | "accessories" | "jewelry" | "hats" | "glasses" | "earrings" | "necklaces"
+        | "rings" => ("CAS", Some("Accessories".to_owned())),
         "preset" | "presets" => ("PresetsAndSliders", Some("Presets".to_owned())),
         "slider" | "sliders" => ("PresetsAndSliders", Some("Sliders".to_owned())),
         "buildbuy" | "build" | "buy" => ("BuildBuy", None),
-        "furniture" | "kitchen" | "bathroom" | "bedroom" | "living" | "dining"
-        | "nursery" => ("BuildBuy", Some("Furniture".to_owned())),
+        "furniture" | "kitchen" | "bathroom" | "bedroom" | "living" | "dining" | "nursery" => {
+            ("BuildBuy", Some("Furniture".to_owned()))
+        }
         "decor" | "clutter" | "plant" | "plants" | "lighting" => {
             ("BuildBuy", Some("Decor".to_owned()))
         }
@@ -789,6 +792,9 @@ mod tests {
         assert_eq!(response.unresolved_files, 0);
         assert_eq!(response.groups.len(), 1);
         assert_eq!(response.groups[0].suggested_kind, "CAS");
-        assert_eq!(response.groups[0].suggested_subtype.as_deref(), Some("Hair"));
+        assert_eq!(
+            response.groups[0].suggested_subtype.as_deref(),
+            Some("Hair")
+        );
     }
 }

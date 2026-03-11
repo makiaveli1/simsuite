@@ -6,6 +6,7 @@ This repository currently runs as a Tauri desktop app with:
 - `src-tauri/src/`: Rust backend modules and Tauri commands
 - `database/`: SQLite migrations and schema mirror
 - `seed/`: starter creators, aliases, taxonomy, keyword dictionaries, and rule presets
+- `seed/install_profiles.json`: built-in special mod catalog for guided installs, dependency rules, incompatibility warnings, and review-only download patterns
 - `models/`: reserved for shared classification and prompt assets
 - `user_data/`: reserved for user-learned data
 
@@ -18,6 +19,7 @@ Implemented modules:
 - `bundle_detector`
 - `duplicate_detector`
 - `downloads_watcher`
+- `install_profile_engine`
 - `rule_engine`
 - `validator`
 - `library_index`
@@ -49,6 +51,7 @@ Implemented screens:
 - Home
 - Downloads
 - Library
+- Settings
 - Creator Audit
 - Category Audit
 - Duplicates
@@ -60,13 +63,14 @@ Not yet implemented:
 - Tray
 - Patch Recovery
 - Tools
-- Settings
 
 ## Known gaps versus the full product plan
 
 - scanner is incremental and backgrounded now, but deeper prioritization and scheduling controls are still missing
 - duplicate detection covers exact, filename, and version cases, but safe duplicate cleanup actions are still missing
 - tray bundles are grouped; broader mod-set bundle detection is not implemented
+- the special mod catalog covers the first curated wave only; broader curated profile, dependency, and incompatibility coverage is still pending
+- option-pack and manual-step archives are detected and routed to review, but SimSuite does not yet guide users through choosing install variants
 - AI classification is not wired to Ollama or llama.cpp yet
 - patch recovery tooling is still pending
-- user-facing Settings, Tools, and Tray surfaces are still missing
+- user-facing Tools and Tray surfaces are still missing

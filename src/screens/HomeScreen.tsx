@@ -17,6 +17,7 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
+import { reviewLabel, screenHelperLine, screenLabel } from "../lib/uiLanguage";
 import type {
   DetectedLibraryPaths,
   HomeOverview,
@@ -121,7 +122,7 @@ export function HomeScreen({
             onClick: () => onNavigate("downloads"),
           },
           {
-            label: "Needs help",
+            label: "Needs review",
             value: overview?.reviewCount ?? 0,
             icon: ShieldAlert,
             tone: "warn" as const,
@@ -237,6 +238,7 @@ export function HomeScreen({
             <House size={18} strokeWidth={2} />
             <h1>Home</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("home", userView)}</p>
         </div>
         <div className="header-actions">
           {detectedPaths?.modsPath || detectedPaths?.trayPath ? (
@@ -342,21 +344,21 @@ export function HomeScreen({
             <ActionCard
               index={0}
               icon={LibraryBig}
-              label={userView === "beginner" ? "My CC" : "Library"}
+              label={screenLabel("library", userView)}
               title="Open the indexed file explorer"
               onClick={() => onNavigate("library")}
             />
             <ActionCard
               index={1}
               icon={Download}
-              label={userView === "beginner" ? "Inbox" : "Downloads"}
+              label={screenLabel("downloads", userView)}
               title="Open the downloads intake workspace"
               onClick={() => onNavigate("downloads")}
             />
             <ActionCard
               index={2}
               icon={ShieldAlert}
-              label={userView === "beginner" ? "Needs help" : "Review"}
+              label={reviewLabel(userView)}
               title="Open the review queue"
               onClick={() => onNavigate("review")}
             />

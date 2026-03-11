@@ -66,7 +66,10 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
     })
 }
 
-pub fn get_library_facets(connection: &Connection, taxonomy: &TaxonomySeed) -> AppResult<LibraryFacets> {
+pub fn get_library_facets(
+    connection: &Connection,
+    taxonomy: &TaxonomySeed,
+) -> AppResult<LibraryFacets> {
     let creators = string_list(
         connection,
         "SELECT DISTINCT canonical_name FROM creators ORDER BY canonical_name COLLATE NOCASE",

@@ -815,6 +815,13 @@ pub struct DownloadsInboxResponse {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DownloadsBootstrapResponse {
+    pub watcher_status: DownloadsWatcherStatus,
+    pub queue: Option<DownloadsInboxResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadsSelectionResponse {
     pub item_id: i64,
     pub detail: Option<DownloadInboxDetail>,

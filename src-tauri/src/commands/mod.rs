@@ -3,6 +3,8 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
     time::Instant,
 };
 
@@ -20,15 +22,16 @@ use crate::{
     error::AppError,
     models::{
         ApplyCategoryAuditResult, ApplyCreatorAuditResult, ApplyGuidedDownloadResult,
-        ApplyPreviewResult, ApplySpecialReviewFixResult, CategoryAuditFile, CategoryAuditQuery,
-        CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
-        DetectedLibraryPaths, DownloadInboxDetail, DownloadsInboxQuery, DownloadsInboxResponse,
-        DownloadsSelectionResponse, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair,
-        FileDetail, GuidedInstallPlan, HomeOverview, LibraryFacets, LibraryListResponse,
-        LibraryQuery, LibrarySettings, OrganizationPreview, RestoreSnapshotResult,
-        ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset, ScanPhase,
-        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        WorkspaceChange, WorkspaceDomain, ApplyReviewPlanActionResult,
+        ApplyPreviewResult, ApplyReviewPlanActionResult, ApplySpecialReviewFixResult,
+        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CreatorAuditFile,
+        CreatorAuditQuery, CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail,
+        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
+        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
+        DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan, HomeOverview,
+        LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings, OrganizationPreview,
+        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        WorkspaceChange, WorkspaceDomain,
     },
 };
 
@@ -46,6 +49,52 @@ fn log_slow_command(command: &str, started_at: Instant, detail: impl FnOnce() ->
             eprintln!("[perf] {command} took {elapsed_ms}ms {}", detail());
         }
     }
+}
+
+const READ_RETRY_BACKOFF_MS: [u64; 3] = [60, 120, 240];
+
+fn is_locked_read_error(error: &AppError) -> bool {
+    let lowered = error.to_string().to_ascii_lowercase();
+    lowered.contains("database is locked")
+        || lowered.contains("database table is locked")
+        || lowered.contains("database schema is locked")
+        || lowered.contains("database busy")
+}
+
+fn retry_locked_read<T>(
+    command: &str,
+    mut operation: impl FnMut() -> Result<T, AppError>,
+) -> Result<T, String> {
+    let mut last_error: Option<AppError> = None;
+
+    for (attempt, backoff_ms) in READ_RETRY_BACKOFF_MS
+        .iter()
+        .copied()
+        .chain(std::iter::once(0))
+        .enumerate()
+    {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if !is_locked_read_error(&error) || attempt == READ_RETRY_BACKOFF_MS.len() {
+                    return Err(map_error(error));
+                }
+
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[perf] {command} hit a locked read on attempt {}. Retrying in {}ms.",
+                    attempt + 1,
+                    backoff_ms
+                );
+                last_error = Some(error);
+                thread::sleep(Duration::from_millis(backoff_ms));
+            }
+        }
+    }
+
+    Err(last_error
+        .map(map_error)
+        .unwrap_or_else(|| "Read failed.".to_owned()))
 }
 
 fn workspace_change(
@@ -69,19 +118,34 @@ fn emit_workspace_domains(
     item_ids: Vec<i64>,
     family_keys: Vec<String>,
 ) -> Result<(), String> {
-    emit_workspace_change(app, &workspace_change(domains, reason, item_ids, family_keys))
+    emit_workspace_change(
+        app,
+        &workspace_change(domains, reason, item_ids, family_keys),
+    )
 }
 
 fn review_action_kind_matches(kind: &ReviewPlanActionKind, value: &str) -> bool {
     matches!(
         (kind, value),
         (ReviewPlanActionKind::RepairSpecial, "repair_special")
-            | (ReviewPlanActionKind::InstallDependency, "install_dependency")
+            | (
+                ReviewPlanActionKind::InstallDependency,
+                "install_dependency"
+            )
             | (ReviewPlanActionKind::OpenDependency, "open_dependency")
             | (ReviewPlanActionKind::OpenRelatedItem, "open_related_item")
-            | (ReviewPlanActionKind::DownloadMissingFiles, "download_missing_files")
-            | (ReviewPlanActionKind::OpenOfficialSource, "open_official_source")
-            | (ReviewPlanActionKind::SeparateSupportedFiles, "separate_supported_files")
+            | (
+                ReviewPlanActionKind::DownloadMissingFiles,
+                "download_missing_files"
+            )
+            | (
+                ReviewPlanActionKind::OpenOfficialSource,
+                "open_official_source"
+            )
+            | (
+                ReviewPlanActionKind::SeparateSupportedFiles,
+                "separate_supported_files"
+            )
     )
 }
 
@@ -104,7 +168,9 @@ fn find_review_action(
                 }
         })
         .cloned()
-        .ok_or_else(|| "This review action is no longer available for the selected inbox item.".to_owned())
+        .ok_or_else(|| {
+            "This review action is no longer available for the selected inbox item.".to_owned()
+        })
 }
 
 fn sanitize_download_filename(filename: &str, fallback: &str) -> String {
@@ -147,7 +213,9 @@ fn filename_from_response(response: &reqwest::blocking::Response, fallback: &str
         .map(ToOwned::to_owned);
 
     sanitize_download_filename(
-        &header_name.or(url_name).unwrap_or_else(|| fallback.to_owned()),
+        &header_name
+            .or(url_name)
+            .unwrap_or_else(|| fallback.to_owned()),
         fallback,
     )
 }
@@ -185,7 +253,10 @@ fn copy_split_files(
     staging_root: &Path,
     file_ids: &[i64],
 ) -> Result<(), String> {
-    let wanted = file_ids.iter().copied().collect::<std::collections::HashSet<_>>();
+    let wanted = file_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
     for file in files.iter().filter(|file| wanted.contains(&file.file_id)) {
         let relative = file
             .archive_member_path
@@ -425,20 +496,71 @@ pub fn get_downloads_inbox(
     state: State<'_, AppState>,
 ) -> Result<DownloadsInboxResponse, String> {
     let started_at = Instant::now();
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let response = downloads_watcher::list_download_items(
-        &connection,
-        &settings,
-        &seed_pack,
-        query.unwrap_or_default(),
-    )
-    .map_err(map_error)?;
+    let query = query.unwrap_or_default();
+    let response = retry_locked_read("get_downloads_inbox", || {
+        let connection = state.connection()?;
+        let settings = database::get_library_settings(&connection)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::list_download_items(&connection, &settings, &seed_pack, query.clone())
+    })?;
     log_slow_command("get_downloads_inbox", started_at, || {
         format!("for {} queue item(s)", response.items.len())
     });
     Ok(response)
+}
+
+#[tauri::command]
+pub fn get_downloads_bootstrap(
+    query: Option<DownloadsInboxQuery>,
+    state: State<'_, AppState>,
+) -> Result<DownloadsBootstrapResponse, String> {
+    let started_at = Instant::now();
+    let watcher_status = state
+        .downloads_status()
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "Downloads status lock poisoned".to_owned())?;
+
+    let queue = if !watcher_status.configured
+        || watcher_status.state == DownloadsWatcherState::Processing
+        || watcher_status.state == DownloadsWatcherState::Error
+    {
+        None
+    } else {
+        let query = query.unwrap_or_default();
+        Some(retry_locked_read("get_downloads_bootstrap", || {
+            let connection = state.connection()?;
+            let settings = database::get_library_settings(&connection)?;
+            let seed_pack = state.seed_pack();
+            downloads_watcher::list_download_queue(
+                &connection,
+                &settings,
+                &seed_pack,
+                query.clone(),
+            )
+        })?)
+    };
+
+    log_slow_command("get_downloads_bootstrap", started_at, || {
+        format!(
+            "watcher={}, queue={}",
+            match watcher_status.state {
+                DownloadsWatcherState::Idle => "idle",
+                DownloadsWatcherState::Watching => "watching",
+                DownloadsWatcherState::Processing => "processing",
+                DownloadsWatcherState::Error => "error",
+            },
+            queue
+                .as_ref()
+                .map(|response| response.items.len().to_string())
+                .unwrap_or_else(|| "deferred".to_owned())
+        )
+    });
+
+    Ok(DownloadsBootstrapResponse {
+        watcher_status,
+        queue,
+    })
 }
 
 #[tauri::command]
@@ -447,16 +569,13 @@ pub fn get_downloads_queue(
     state: State<'_, AppState>,
 ) -> Result<DownloadsInboxResponse, String> {
     let started_at = Instant::now();
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let response = downloads_watcher::list_download_queue(
-        &connection,
-        &settings,
-        &seed_pack,
-        query.unwrap_or_default(),
-    )
-    .map_err(map_error)?;
+    let query = query.unwrap_or_default();
+    let response = retry_locked_read("get_downloads_queue", || {
+        let connection = state.connection()?;
+        let settings = database::get_library_settings(&connection)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::list_download_queue(&connection, &settings, &seed_pack, query.clone())
+    })?;
     log_slow_command("get_downloads_queue", started_at, || {
         format!("for {} queue item(s)", response.items.len())
     });
@@ -470,17 +589,18 @@ pub fn get_downloads_selection(
     state: State<'_, AppState>,
 ) -> Result<DownloadsSelectionResponse, String> {
     let started_at = Instant::now();
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let response = downloads_watcher::get_download_item_selection(
-        &connection,
-        &settings,
-        &seed_pack,
-        item_id,
-        preset_name,
-    )
-    .map_err(map_error)?;
+    let response = retry_locked_read("get_downloads_selection", || {
+        let connection = state.connection()?;
+        let settings = database::get_library_settings(&connection)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::get_download_item_selection(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+            preset_name.clone(),
+        )
+    })?;
     let file_count = response
         .detail
         .as_ref()
@@ -690,14 +810,10 @@ pub fn apply_download_item(
     let mut connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    let Some(item) = downloads_watcher::get_download_item_detail(
-        &connection,
-        &settings,
-        &seed_pack,
-        item_id,
-    )
-    .map_err(map_error)?
-    .map(|detail| detail.item)
+    let Some(item) =
+        downloads_watcher::get_download_item_detail(&connection, &settings, &seed_pack, item_id)
+            .map_err(map_error)?
+            .map(|detail| detail.item)
     else {
         return Err("Inbox item was not found.".to_owned());
     };
@@ -921,7 +1037,8 @@ pub fn apply_review_plan_action(
                     return Err(map_error(error));
                 }
             };
-            downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+            downloads_watcher::refresh_download_item_status(&connection, item_id)
+                .map_err(map_error)?;
             emit_workspace_domains(
                 &app,
                 vec![
@@ -955,7 +1072,9 @@ pub fn apply_review_plan_action(
                 snapshot_name: Some(result.snapshot_name),
                 message: format!(
                     "Fixed the old {} setup and refreshed the special install plan.",
-                    review_plan.profile_name.unwrap_or_else(|| "special mod".to_owned())
+                    review_plan
+                        .profile_name
+                        .unwrap_or_else(|| "special mod".to_owned())
                 ),
             })
         }
@@ -996,7 +1115,8 @@ pub fn apply_review_plan_action(
             };
             downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
                 .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+            downloads_watcher::refresh_download_item_status(&connection, item_id)
+                .map_err(map_error)?;
             emit_workspace_domains(
                 &app,
                 vec![
@@ -1168,19 +1288,21 @@ pub fn apply_review_plan_action(
             if !approved {
                 return Err("Split was blocked because approval was not confirmed.".to_owned());
             }
-            let profile_key = review_plan
-                .profile_key
-                .clone()
-                .ok_or_else(|| "This inbox item does not have a matched special-mod profile.".to_owned())?;
-            let Some((supported_ids, leftover_ids)) = install_profile_engine::collect_supported_subset_file_ids(
-                &connection,
-                &seed_pack,
-                item_id,
-                &profile_key,
-            )
-            .map_err(map_error)?
+            let profile_key = review_plan.profile_key.clone().ok_or_else(|| {
+                "This inbox item does not have a matched special-mod profile.".to_owned()
+            })?;
+            let Some((supported_ids, leftover_ids)) =
+                install_profile_engine::collect_supported_subset_file_ids(
+                    &connection,
+                    &seed_pack,
+                    item_id,
+                    &profile_key,
+                )
+                .map_err(map_error)?
             else {
-                return Err("SimSuite could not find a clean supported subset to split out.".to_owned());
+                return Err(
+                    "SimSuite could not find a clean supported subset to split out.".to_owned(),
+                );
             };
             let source = downloads_watcher::get_download_item_source(&connection, item_id)
                 .map_err(map_error)?
@@ -1191,8 +1313,8 @@ pub fn apply_review_plan_action(
                 &seed_pack,
                 item_id,
             )
-                .map_err(map_error)?
-                .ok_or_else(|| "This inbox item could not be loaded.".to_owned())?;
+            .map_err(map_error)?
+            .ok_or_else(|| "This inbox item could not be loaded.".to_owned())?;
             let split_root = state
                 .app_data_dir
                 .join("downloads_split")
@@ -1229,7 +1351,8 @@ pub fn apply_review_plan_action(
                 vec!["Leftover files from a mixed special-mod batch.".to_owned()],
             )
             .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+            downloads_watcher::refresh_download_item_status(&connection, item_id)
+                .map_err(map_error)?;
             downloads_watcher::refresh_download_item_status(&connection, leftover_item_id)
                 .map_err(map_error)?;
             emit_workspace_domains(
@@ -1314,9 +1437,13 @@ pub fn get_creator_audit(
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    let response =
-        creator_audit::load_creator_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
-            .map_err(map_error)?;
+    let response = creator_audit::load_creator_audit(
+        &connection,
+        &settings,
+        &seed_pack,
+        query.unwrap_or_default(),
+    )
+    .map_err(map_error)?;
     log_slow_command("get_creator_audit", started_at, || {
         format!("for {} creator group(s)", response.groups.len())
     });
@@ -1332,9 +1459,13 @@ pub fn get_category_audit(
     let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
-    let response =
-        category_audit::load_category_audit(&connection, &settings, &seed_pack, query.unwrap_or_default())
-            .map_err(map_error)?;
+    let response = category_audit::load_category_audit(
+        &connection,
+        &settings,
+        &seed_pack,
+        query.unwrap_or_default(),
+    )
+    .map_err(map_error)?;
     log_slow_command("get_category_audit", started_at, || {
         format!("for {} category group(s)", response.groups.len())
     });
@@ -1530,8 +1661,13 @@ pub fn save_category_override(
     }
 
     let mut connection = state.connection().map_err(map_error)?;
-    database::save_category_override(&mut connection, file_id, &normalized_kind, subtype.as_deref())
-        .map_err(map_error)?;
+    database::save_category_override(
+        &mut connection,
+        file_id,
+        &normalized_kind,
+        subtype.as_deref(),
+    )
+    .map_err(map_error)?;
 
     emit_workspace_domains(
         &app,
@@ -1589,4 +1725,37 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
             Some(PathBuf::from(trimmed))
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_locked_read_error, retry_locked_read};
+    use crate::error::AppError;
+
+    #[test]
+    fn retry_locked_read_retries_transient_locked_errors() {
+        let mut attempts = 0;
+        let result = retry_locked_read("test_locked_read", || {
+            attempts += 1;
+            if attempts < 3 {
+                return Err(AppError::Message("database is locked".to_owned()));
+            }
+
+            Ok::<_, AppError>(42)
+        })
+        .expect("locked read should recover");
+
+        assert_eq!(result, 42);
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn locked_read_detection_matches_busy_database_errors() {
+        assert!(is_locked_read_error(&AppError::Message(
+            "database table is locked".to_owned()
+        )));
+        assert!(!is_locked_read_error(&AppError::Message(
+            "no such table: missing".to_owned()
+        )));
+    }
 }

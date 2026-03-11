@@ -10,8 +10,8 @@ use sha2::Digest;
 
 use crate::{
     core::{
-        bundle_detector, downloads_watcher, duplicate_detector, filename_parser::parse_filename,
-        file_inspector::inspect_file, install_profile_engine, rule_engine, snapshot_manager,
+        bundle_detector, downloads_watcher, duplicate_detector, file_inspector::inspect_file,
+        filename_parser::parse_filename, install_profile_engine, rule_engine, snapshot_manager,
     },
     database,
     error::{AppError, AppResult},
@@ -45,7 +45,8 @@ pub fn apply_preview_moves_for_files(
         ));
     }
 
-    let preview = rule_engine::build_preview_for_files(connection, settings, preset_name.clone(), file_ids)?;
+    let preview =
+        rule_engine::build_preview_for_files(connection, settings, preset_name.clone(), file_ids)?;
     apply_preview_moves_internal(connection, settings, preset_name, Some(preview), approved)
 }
 
@@ -166,7 +167,9 @@ pub fn apply_guided_download_plan(
             return Err(error);
         }
 
-        if let Err(error) = update_file_record_on_backup(connection, item.file_id, &item.backup_path) {
+        if let Err(error) =
+            update_file_record_on_backup(connection, item.file_id, &item.backup_path)
+        {
             rollback_guided_changes(
                 connection,
                 settings,
@@ -280,16 +283,22 @@ pub fn apply_special_review_fix(
         ));
     }
 
-    let review_plan = install_profile_engine::build_review_plan(connection, settings, seed_pack, item_id)?
-        .ok_or_else(|| AppError::Message("This inbox item does not have a special review plan.".to_owned()))?;
+    let review_plan =
+        install_profile_engine::build_review_plan(connection, settings, seed_pack, item_id)?
+            .ok_or_else(|| {
+                AppError::Message("This inbox item does not have a special review plan.".to_owned())
+            })?;
     if !review_plan.repair_plan_available {
         return Err(AppError::Message(
             "This inbox item does not have a safe repair plan yet.".to_owned(),
         ));
     }
 
-    let guided_plan = install_profile_engine::build_repair_guided_plan(connection, settings, seed_pack, item_id)?
-        .ok_or_else(|| AppError::Message("SimSuite could not build the safe repair plan.".to_owned()))?;
+    let guided_plan =
+        install_profile_engine::build_repair_guided_plan(connection, settings, seed_pack, item_id)?
+            .ok_or_else(|| {
+                AppError::Message("SimSuite could not build the safe repair plan.".to_owned())
+            })?;
 
     let incoming_moves = guided_plan
         .install_files
@@ -316,7 +325,9 @@ pub fn apply_special_review_fix(
         .filter_map(|file| {
             let file_id = file.file_id?;
             let target_path = file.target_path.as_ref()?;
-            if normalized_path_key(Path::new(&file.current_path)) == normalized_path_key(Path::new(target_path)) {
+            if normalized_path_key(Path::new(&file.current_path))
+                == normalized_path_key(Path::new(target_path))
+            {
                 return None;
             }
 
@@ -399,13 +410,27 @@ pub fn apply_special_review_fix(
 
     for item in &replace_targets {
         if let Err(error) = move_single_file(&item.original_path, &item.backup_path) {
-            rollback_guided_changes(connection, settings, seed_pack, &moved_files, &moved_backups)?;
+            rollback_guided_changes(
+                connection,
+                settings,
+                seed_pack,
+                &moved_files,
+                &moved_backups,
+            )?;
             delete_snapshot(connection, snapshot.id)?;
             return Err(error);
         }
 
-        if let Err(error) = update_file_record_on_backup(connection, item.file_id, &item.backup_path) {
-            rollback_guided_changes(connection, settings, seed_pack, &moved_files, &moved_backups)?;
+        if let Err(error) =
+            update_file_record_on_backup(connection, item.file_id, &item.backup_path)
+        {
+            rollback_guided_changes(
+                connection,
+                settings,
+                seed_pack,
+                &moved_files,
+                &moved_backups,
+            )?;
             delete_snapshot(connection, snapshot.id)?;
             return Err(error);
         }
@@ -414,13 +439,25 @@ pub fn apply_special_review_fix(
 
     for item in &all_moves {
         if let Err(error) = move_single_file(&item.current_path, &item.final_path) {
-            rollback_guided_changes(connection, settings, seed_pack, &moved_files, &moved_backups)?;
+            rollback_guided_changes(
+                connection,
+                settings,
+                seed_pack,
+                &moved_files,
+                &moved_backups,
+            )?;
             delete_snapshot(connection, snapshot.id)?;
             return Err(error);
         }
         moved_files.push(item.clone());
         if let Err(error) = update_file_record_after_move(connection, settings, item) {
-            rollback_guided_changes(connection, settings, seed_pack, &moved_files, &moved_backups)?;
+            rollback_guided_changes(
+                connection,
+                settings,
+                seed_pack,
+                &moved_files,
+                &moved_backups,
+            )?;
             delete_snapshot(connection, snapshot.id)?;
             return Err(error);
         }
@@ -428,7 +465,13 @@ pub fn apply_special_review_fix(
 
     for item in &replace_targets {
         if let Err(error) = delete_file_record(connection, item.file_id) {
-            rollback_guided_changes(connection, settings, seed_pack, &moved_files, &moved_backups)?;
+            rollback_guided_changes(
+                connection,
+                settings,
+                seed_pack,
+                &moved_files,
+                &moved_backups,
+            )?;
             delete_snapshot(connection, snapshot.id)?;
             return Err(error);
         }
@@ -1012,7 +1055,8 @@ fn restore_deleted_file_record(
                 .ok_or_else(|| AppError::Message("Mods folder is not set.".to_owned()))?,
         )
     };
-    let source_location = if restored_path.starts_with(settings.tray_path.as_deref().unwrap_or("")) {
+    let source_location = if restored_path.starts_with(settings.tray_path.as_deref().unwrap_or(""))
+    {
         "tray".to_owned()
     } else {
         "mods".to_owned()
@@ -1026,7 +1070,11 @@ fn restore_deleted_file_record(
     let relative_depth_value = restored_path
         .strip_prefix(&root_path)
         .ok()
-        .and_then(|relative| relative.parent().map(|parent| parent.components().count() as i64))
+        .and_then(|relative| {
+            relative
+                .parent()
+                .map(|parent| parent.components().count() as i64)
+        })
         .unwrap_or_default();
     let parsed = parse_filename(&filename, seed_pack);
     let inspection = inspect_file(restored_path, &extension, seed_pack)?;
@@ -1196,7 +1244,9 @@ fn ensure_creator(connection: &Connection, creator_name: &str) -> AppResult<i64>
 }
 
 fn normalized_path_key(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase()
 }
 
 fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
@@ -1485,25 +1535,24 @@ mod tests {
         .expect("apply");
 
         assert_eq!(apply_result.moved_count, 2);
-        assert!(
-            mods.join("CAS")
-                .join("Hair")
-                .join("Simstrouble")
-                .join("messy_hair.package")
-                .exists()
-        );
-        assert!(
-            mods.join("CAS")
-                .join("Hair")
-                .join("Simstrouble")
-                .join("messy_top.package")
-                .exists()
-        );
+        assert!(mods
+            .join("CAS")
+            .join("Hair")
+            .join("Simstrouble")
+            .join("messy_hair.package")
+            .exists());
+        assert!(mods
+            .join("CAS")
+            .join("Hair")
+            .join("Simstrouble")
+            .join("messy_top.package")
+            .exists());
     }
 
     #[test]
     fn guided_mccc_first_install_creates_snapshot_and_moves_files() {
-        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) = setup_guided_env();
+        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) =
+            setup_guided_env();
         let app_data_dir = temp.path().join("AppData");
         fs::create_dir_all(&app_data_dir).expect("app data");
 
@@ -1513,10 +1562,28 @@ mod tests {
 
         let core_script = staging.join("mc_cmd_center.ts4script");
         let core_package = staging.join("mc_cmd_center.package");
-        write_ts4script_archive(&core_script, "mc_cmd_center/__init__.py", b"new-core-script");
+        write_ts4script_archive(
+            &core_script,
+            "mc_cmd_center/__init__.py",
+            b"new-core-script",
+        );
         fs::write(&core_package, b"new-core-package").expect("core package");
-        insert_download_file(&connection, 201, 20101, &core_script, "mc_cmd_center.ts4script", ".ts4script");
-        insert_download_file(&connection, 201, 20102, &core_package, "mc_cmd_center.package", ".package");
+        insert_download_file(
+            &connection,
+            201,
+            20101,
+            &core_script,
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+        );
+        insert_download_file(
+            &connection,
+            201,
+            20102,
+            &core_package,
+            "mc_cmd_center.package",
+            ".package",
+        );
 
         let assessment = crate::core::install_profile_engine::assess_download_item(
             &connection,
@@ -1560,7 +1627,8 @@ mod tests {
 
     #[test]
     fn guided_mccc_update_keeps_cfg_and_rollback_restores_old_files() {
-        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) = setup_guided_env();
+        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) =
+            setup_guided_env();
         let app_data_dir = temp.path().join("AppData");
         fs::create_dir_all(&app_data_dir).expect("app data");
 
@@ -1572,8 +1640,18 @@ mod tests {
         write_ts4script_archive(&old_script, "mc_cmd_center/__init__.py", b"old-core-script");
         fs::write(&old_package, b"old-core-package").expect("old package");
         fs::write(&cfg, b"user-settings").expect("cfg");
-        insert_installed_file(&connection, &old_script, "mc_cmd_center.ts4script", ".ts4script");
-        insert_installed_file(&connection, &old_package, "mc_cmd_center.package", ".package");
+        insert_installed_file(
+            &connection,
+            &old_script,
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+        );
+        insert_installed_file(
+            &connection,
+            &old_package,
+            "mc_cmd_center.package",
+            ".package",
+        );
 
         let staging = downloads.join("Inbox").join("MCCC_Update");
         fs::create_dir_all(&staging).expect("staging");
@@ -1585,9 +1663,30 @@ mod tests {
         write_ts4script_archive(&new_script, "mc_cmd_center/__init__.py", b"new-core-script");
         fs::write(&new_package, b"new-core-package").expect("new package");
         fs::write(&new_module, b"new-module").expect("new module");
-        insert_download_file(&connection, 202, 20201, &new_script, "mc_cmd_center.ts4script", ".ts4script");
-        insert_download_file(&connection, 202, 20202, &new_package, "mc_cmd_center.package", ".package");
-        insert_download_file(&connection, 202, 20203, &new_module, "mc_woohoo.package", ".package");
+        insert_download_file(
+            &connection,
+            202,
+            20201,
+            &new_script,
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+        );
+        insert_download_file(
+            &connection,
+            202,
+            20202,
+            &new_package,
+            "mc_cmd_center.package",
+            ".package",
+        );
+        insert_download_file(
+            &connection,
+            202,
+            20203,
+            &new_module,
+            "mc_woohoo.package",
+            ".package",
+        );
 
         let assessment = crate::core::install_profile_engine::assess_download_item(
             &connection,
@@ -1615,19 +1714,32 @@ mod tests {
         assert_eq!(apply_result.replaced_count, 2);
         assert_eq!(apply_result.preserved_count, 1);
         assert!(!fs::read(&old_script).expect("installed script").is_empty());
-        assert_eq!(fs::read(&old_package).expect("installed package"), b"new-core-package");
-        assert_eq!(fs::read(target.join("mc_woohoo.package")).expect("installed module"), b"new-module");
+        assert_eq!(
+            fs::read(&old_package).expect("installed package"),
+            b"new-core-package"
+        );
+        assert_eq!(
+            fs::read(target.join("mc_woohoo.package")).expect("installed module"),
+            b"new-module"
+        );
         assert_eq!(fs::read(&cfg).expect("cfg after apply"), b"user-settings");
         assert!(!new_script.exists());
         assert!(!new_package.exists());
         assert!(!new_module.exists());
 
-        let rollback = restore_snapshot(&mut connection, &seed_pack, apply_result.snapshot_id, true)
-            .expect("rollback");
+        let rollback =
+            restore_snapshot(&mut connection, &seed_pack, apply_result.snapshot_id, true)
+                .expect("rollback");
         assert_eq!(rollback.restored_count, 5);
         assert!(!fs::read(&old_script).expect("restored script").is_empty());
-        assert_eq!(fs::read(&old_package).expect("restored package"), b"old-core-package");
-        assert_eq!(fs::read(&cfg).expect("cfg after rollback"), b"user-settings");
+        assert_eq!(
+            fs::read(&old_package).expect("restored package"),
+            b"old-core-package"
+        );
+        assert_eq!(
+            fs::read(&cfg).expect("cfg after rollback"),
+            b"user-settings"
+        );
         assert!(new_script.exists());
         assert!(new_package.exists());
         assert!(new_module.exists());
@@ -1636,7 +1748,8 @@ mod tests {
 
     #[test]
     fn guided_mccc_update_allows_disk_only_existing_replacements() {
-        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) = setup_guided_env();
+        let (temp, mods, _tray, downloads, mut connection, seed_pack, settings) =
+            setup_guided_env();
         let app_data_dir = temp.path().join("AppData");
         fs::create_dir_all(&app_data_dir).expect("app data");
 
@@ -1655,8 +1768,22 @@ mod tests {
         let new_package = staging.join("mc_cmd_center.package");
         write_ts4script_archive(&new_script, "mc_cmd_center/__init__.py", b"new-core-script");
         fs::write(&new_package, b"new-core-package").expect("new package");
-        insert_download_file(&connection, 203, 20301, &new_script, "mc_cmd_center.ts4script", ".ts4script");
-        insert_download_file(&connection, 203, 20302, &new_package, "mc_cmd_center.package", ".package");
+        insert_download_file(
+            &connection,
+            203,
+            20301,
+            &new_script,
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+        );
+        insert_download_file(
+            &connection,
+            203,
+            20302,
+            &new_package,
+            "mc_cmd_center.package",
+            ".package",
+        );
 
         let assessment = crate::core::install_profile_engine::assess_download_item(
             &connection,
@@ -1670,10 +1797,7 @@ mod tests {
             .expect("plan")
             .expect("guided plan");
 
-        assert!(plan
-            .replace_files
-            .iter()
-            .all(|file| file.file_id.is_none()));
+        assert!(plan.replace_files.iter().all(|file| file.file_id.is_none()));
 
         let apply_result = apply_guided_download_plan(
             &mut connection,
@@ -1687,7 +1811,10 @@ mod tests {
 
         assert_eq!(apply_result.installed_count, 2);
         assert_eq!(apply_result.replaced_count, 2);
-        assert_eq!(fs::read(&old_package).expect("installed package"), b"new-core-package");
+        assert_eq!(
+            fs::read(&old_package).expect("installed package"),
+            b"new-core-package"
+        );
         assert!(!new_script.exists());
         assert!(!new_package.exists());
     }

@@ -10,6 +10,7 @@ This document maps the current implementation to the active product requirements
 - Rust backend core
 - SQLite schema and migrations
 - seed loading for creators, aliases, taxonomy, keyword dictionaries, and rule presets
+- built-in special mod catalog seed for guided profiles, dependency rules, incompatibility rules, and review-only patterns
 - expanded local creator alias and category keyword knowledge base informed by current Sims creator naming patterns
 - separate user-learned creator alias storage layered on top of seed data without overwriting seed packs
 - local schema evolution support for new scan metadata such as file inspection insights
@@ -33,6 +34,7 @@ Implemented in Rust and exposed through Tauri commands:
 - approval-gated move engine
 - snapshot creation and rollback
 - read-only library index queries
+- special mod catalog engine for guided installs, dependency checks, incompatibility warnings, and review-only download patterns
 
 ### Current tests
 
@@ -43,6 +45,7 @@ Automated Rust tests exist for:
 - validator safety rules
 - filesystem move simulation
 - rollback reliability
+- special mod catalog assessment, dependency review paths, guided update plans, false-positive avoidance, and rollback-backed guided installs
 
 ## Partially implemented
 
@@ -97,6 +100,33 @@ Missing:
 - Fresh Setup Mode workflow
 - editable custom rules and templates in the UI
 
+### Special mod catalog and Inbox routing
+
+Implemented:
+
+- built-in guided install catalog seeded from local curated data
+- built-in dependency rule catalog seeded from local curated data
+- built-in incompatibility warnings seeded from local curated data
+- review-only pattern catalog for option packs and manual-step archives
+- MCCC guided first install and guided update flow
+- XML Injector guided flow
+- Lot 51 Core Library guided flow
+- Sims 4 Community Library guided flow
+- Lumpinou Toolbox guided flow
+- Smart Core Script guided flow
+- guided install routing based on staged evidence, installed-layout checks, dependency checks, and incompatibility checks
+- Inbox routing into `Normal`, `Special setup`, `Needs review`, or `Blocked`
+- special review plans for downloads that match a special pattern but cannot be auto-applied safely
+- dependency status checks against already-installed libraries and other active Inbox items
+- snapshot-backed guided apply with preserve-file handling for profile sidecars such as MCCC `.cfg` files
+
+Missing:
+
+- user-extensible local catalog packs
+- broader curated incompatibility coverage beyond the initial seed set
+- auto-resolving multi-item dependency install order inside Inbox
+- guided option-pack choice flows
+
 ### UI coverage
 
 Implemented:
@@ -107,6 +137,7 @@ Implemented:
 - Duplicates
 - Organize
 - Review
+- Settings
 - Creator Audit
 - Category Audit
 - compact Library inspector controls for saving creator overrides and learned aliases
@@ -119,7 +150,6 @@ Missing:
 - Tray
 - Patch Recovery
 - Tools
-- Settings
 
 ## Not implemented yet
 
@@ -146,12 +176,12 @@ Implemented:
 - archive detection for `.zip`, `.7z`, and `.rar`
 - staged archive extraction into app-managed intake folders
 - downloads watcher status events
-- Downloads screen with queue, safe preview, apply, and ignore flows
+- Downloads screen with queue, safe preview, guided special setup, review/blocked states, apply, and ignore flows
 
 Missing:
 
 - deeper archive-content heuristics for unsupported/edge archive layouts
-- dedicated settings surface for watcher controls
+- dedicated watcher controls beyond the current general Settings surface
 
 ### Patch recovery
 
@@ -171,6 +201,7 @@ Missing:
 - The current backend does satisfy the rule that file operations are approval-gated and snapshot-backed.
 - The current backend does satisfy the rule that AI never moves files directly, because AI is not wired into file movement at all yet.
 - The current creator and parser improvements remain fully local/offline; public web sources were used only to strengthen seed data and implementation research, not as a runtime dependency.
+- The special mod catalog is also fully local/offline at runtime. Mod Hound-style knowledge was used only during curation of the built-in seed data; the app does not call Mod Hound or depend on it at runtime.
 - `.package` inspection does not rely on a universal embedded creator field, because Sims package files do not expose one consistently. Creator inference is therefore layered across filename, folder, script namespace, and embedded-name hints.
 - User-learned creator aliases are now stored in SQLite and merged into the runtime recognition pack for later scans, instead of being baked into seed files.
 - The Creator Audit workflow now works from the indexed database instead of the raw filesystem, so batch creator cleanup stays fast even on large libraries.
@@ -178,6 +209,7 @@ Missing:
 - The Category Audit workflow now works from the indexed database instead of the raw filesystem, so batch category cleanup stays fast even on large libraries.
 - The Library screen now exposes inspection metadata such as detected format, script namespaces, creator hints, resource summaries, and embedded names for Standard and Power views.
 - The current backend now materially covers the planned work through Phase 7, including downloads intake and inbox review.
+- The current backend now materially covers Phase 7.6 special-mod routing for the first curated wave, including guided setup, dependency review, incompatibility review, and review-only patterns for ambiguous archives.
 - The previous `docs/ARCHITECTURE.md` statement that moves were still disabled was outdated and has been corrected.
 
 ## Recommended next effort
@@ -186,7 +218,8 @@ The highest-value next step is to finish the next safe-action surfaces before mo
 
 1. snapshot-backed duplicate cleanup actions
 2. full Mirror Mode / Assisted Migration / Fresh Setup workflows
-3. editable rule templates and presets in the UI
+3. broader special-mod catalog curation and dependency coverage
+4. editable rule templates and presets in the UI
 
 After those are complete, the next effort should be Phase 8:
 

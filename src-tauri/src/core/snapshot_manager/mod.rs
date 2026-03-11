@@ -4,9 +4,10 @@ use crate::{error::AppResult, models::SnapshotSummary};
 
 #[derive(Debug, Clone)]
 pub struct SnapshotItemRecord {
-    pub file_id: i64,
+    pub file_id: Option<i64>,
     pub original_path: String,
     pub original_hash: Option<String>,
+    pub backup_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,15 +32,16 @@ pub fn create_snapshot(
 
     {
         let mut insert_item = transaction.prepare(
-            "INSERT INTO snapshot_items (snapshot_id, file_id, original_path, original_hash)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO snapshot_items (snapshot_id, file_id, original_path, original_hash, backup_path)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         for item in items {
             insert_item.execute(params![
                 snapshot_id,
                 item.file_id,
                 item.original_path,
-                item.original_hash
+                item.original_hash,
+                item.backup_path
             ])?;
         }
     }

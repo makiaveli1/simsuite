@@ -11,6 +11,6 @@ pub mod library_index;
 pub mod move_engine;
 pub mod rule_engine;
 pub mod scanner;
-pub mod special_mod_versions;
 pub mod snapshot_manager;
+pub mod special_mod_versions;
 pub mod validator;

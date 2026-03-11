@@ -15,24 +15,8 @@ const GENERIC_SHORT_TAGS: &[&str] = &[
 ];
 const GENERIC_SET_NAME_TOKENS: &[&str] = &["cc", "ts4", "sims4", "mod", "mods"];
 const STRONG_CREATOR_SUFFIX_TOKENS: &[&str] = &[
-    "crib",
-    "dresser",
-    "bed",
-    "hair",
-    "skirt",
-    "dress",
-    "top",
-    "jeans",
-    "shorts",
-    "trait",
-    "preset",
-    "eyeliner",
-    "lashes",
-    "nails",
-    "nail",
-    "menu",
-    "override",
-    "script",
+    "crib", "dresser", "bed", "hair", "skirt", "dress", "top", "jeans", "shorts", "trait",
+    "preset", "eyeliner", "lashes", "nails", "nail", "menu", "override", "script",
 ];
 
 #[derive(Debug, Clone)]
@@ -306,7 +290,9 @@ fn is_ignored_leading_token(token: &str, seed_pack: &SeedPack) -> bool {
 fn can_use_bracket_as_creator_prefix(prefix: &str, seed_pack: &SeedPack) -> bool {
     tokenize_filename(prefix).into_iter().all(|token| {
         let normalized = normalize_key(&token);
-        normalized.chars().all(|character| character.is_ascii_digit())
+        normalized
+            .chars()
+            .all(|character| character.is_ascii_digit())
             || is_ignored_leading_token(&normalized, seed_pack)
     })
 }
@@ -390,7 +376,12 @@ fn detect_compact_suffix_creator(
 
 fn resolve_creator_candidate(value: &str, seed_pack: &SeedPack) -> Option<String> {
     let compact = collapse_whitespace(value);
-    if compact.is_empty() || compact.len() > 40 || !compact.chars().any(|character| character.is_ascii_alphabetic()) {
+    if compact.is_empty()
+        || compact.len() > 40
+        || !compact
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+    {
         return None;
     }
 
@@ -409,14 +400,16 @@ fn resolve_creator_candidate(value: &str, seed_pack: &SeedPack) -> Option<String
         .map(|token| normalize_key(token))
         .collect::<Vec<_>>();
 
-    if normalized_tokens.iter().all(|token| is_ignored_leading_token(token, seed_pack)) {
+    if normalized_tokens
+        .iter()
+        .all(|token| is_ignored_leading_token(token, seed_pack))
+    {
         return None;
     }
 
-    if normalized_tokens
-        .iter()
-        .all(|token| seed_pack.version_token_set.contains(token) || seed_pack.support_token_set.contains(token))
-    {
+    if normalized_tokens.iter().all(|token| {
+        seed_pack.version_token_set.contains(token) || seed_pack.support_token_set.contains(token)
+    }) {
         return None;
     }
 
@@ -1025,7 +1018,10 @@ mod tests {
     fn detects_creator_patterns_from_real_world_filenames() {
         let seed_pack = load_seed_pack().expect("seed pack");
         let cases = [
-            ("SERAWIS - Alive ( skin undertones - freckles ).package", "SERAWIS"),
+            (
+                "SERAWIS - Alive ( skin undertones - freckles ).package",
+                "SERAWIS",
+            ),
             ("08eva bottom by LUCKYEIGHT.package", "LUCKYEIGHT"),
             ("1_[SS] Recipes_Toddler_Porridge_SPA_ES_laura.package", "SS"),
             ("7NANA - (Ella) Suspender Shorts Set.package", "7NANA"),
@@ -1040,7 +1036,10 @@ mod tests {
             ),
             ("AdrienPastel x Natasha Skirt.package", "AdrienPastel"),
             ("AggressiveKitty_Toy_Corgi.package", "AggressiveKitty"),
-            ("adrienpastel_top_landon_jacket_kids.package", "adrienpastel"),
+            (
+                "adrienpastel_top_landon_jacket_kids.package",
+                "adrienpastel",
+            ),
             ("Artemissy_Sensitive_Trait_V2.package", "Artemissy"),
             ("ANGISSI_F_LIPS_PRESET_29.package", "ANGISSI"),
             ("Andirz_SmartCoreScript_v.2.9.0.ts4script", "Andirz"),
@@ -1050,7 +1049,10 @@ mod tests {
             ("BabyBooCrib.package", "BabyBoo"),
             ("BabyBooDresser.package", "BabyBoo"),
             ("BackTrack_fSpicy_Bikini(Bottom).package", "BackTrack"),
-            ("BackTrack_fNoelia_Jeans_Shorts_BeltACC.package", "BackTrack"),
+            (
+                "BackTrack_fNoelia_Jeans_Shorts_BeltACC.package",
+                "BackTrack",
+            ),
         ];
 
         for (filename, expected_creator) in cases {

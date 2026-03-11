@@ -478,9 +478,7 @@ fn decompress_legacy(bytes: &[u8], expected_size: usize) -> AppResult<Vec<u8>> {
     let compression_type = bytes[0];
     let mut cursor = Cursor::new(&bytes[2..]);
     let encoded_size = read_legacy_size(&mut cursor, compression_type)?;
-    let target_size = encoded_size
-        .max(expected_size)
-        .min(MAX_RESOURCE_BYTES);
+    let target_size = encoded_size.max(expected_size).min(MAX_RESOURCE_BYTES);
     let mut output = vec![0_u8; target_size];
     let mut position = 0_usize;
 
@@ -512,8 +510,10 @@ fn decompress_legacy(bytes: &[u8], expected_size: usize) -> AppResult<Vec<u8>> {
                 let byte3 = read_u8_from_cursor(&mut cursor)?;
                 let num_plain_text = (byte0 & 0x03) as usize;
                 let num_to_copy = ((((byte0 & 0x0c) as usize) << 6) + byte3 as usize + 5) as usize;
-                let copy_offset =
-                    (((byte0 & 0x10) as usize) << 12) + ((byte1 as usize) << 8) + byte2 as usize + 1;
+                let copy_offset = (((byte0 & 0x10) as usize) << 12)
+                    + ((byte1 as usize) << 8)
+                    + byte2 as usize
+                    + 1;
 
                 copy_plain_text(&mut cursor, &mut output, num_plain_text, &mut position)?;
                 copy_compressed_text(&mut output, num_to_copy, &mut position, copy_offset)?;
@@ -685,7 +685,10 @@ where
             }
 
             let is_known = seed_pack.creator_profiles.contains_key(&creator)
-                || seed_pack.creator_lookup.values().any(|existing| existing == &creator);
+                || seed_pack
+                    .creator_lookup
+                    .values()
+                    .any(|existing| existing == &creator);
             if is_known {
                 known_hints.push(creator);
             } else {
@@ -987,7 +990,9 @@ mod tests {
     fn inspects_ts4script_archives_for_version_and_family_hints() {
         let seed_pack = load_seed_pack().expect("seed");
         let temp = tempdir().expect("tempdir");
-        let filepath = temp.path().join("McCmdCenter_AllModules_2026_1_1.ts4script");
+        let filepath = temp
+            .path()
+            .join("McCmdCenter_AllModules_2026_1_1.ts4script");
         let file = File::create(&filepath).expect("archive");
         let mut writer = zip::ZipWriter::new(file);
         let options = SimpleFileOptions::default();
@@ -1059,7 +1064,9 @@ mod tests {
 
     #[test]
     fn decompresses_legacy_record_payloads() {
-        let compressed = vec![0x10, 0xFB, 0x00, 0x00, 0x05, 0xE0, b'H', b'e', b'l', b'l', 0xFD, b'o'];
+        let compressed = vec![
+            0x10, 0xFB, 0x00, 0x00, 0x05, 0xE0, b'H', b'e', b'l', b'l', 0xFD, b'o',
+        ];
         let payload = decompress_legacy(&compressed, 5).expect("payload");
         assert_eq!(payload, b"Hello");
     }

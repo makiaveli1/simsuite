@@ -30,7 +30,8 @@ export function LayoutPresetBar({
   onApplyPreset,
   filterToggle,
 }: LayoutPresetBarProps) {
-  const isCustom = !presets.some((preset) => preset.id === activePreset);
+  const isCustom =
+    presets.length > 0 && !presets.some((preset) => preset.id === activePreset);
 
   return (
     <div className="panel-card layout-strip">

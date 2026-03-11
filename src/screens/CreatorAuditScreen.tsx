@@ -8,6 +8,7 @@ import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
+import { friendlyTypeLabel, reviewLabel, screenHelperLine } from "../lib/uiLanguage";
 import type {
   CreatorAuditFile,
   CreatorAuditResponse,
@@ -79,32 +80,32 @@ export function CreatorAuditScreen({
     ? [
         {
           id: "what-save-does",
-          label: userView === "beginner" ? "What save does" : "Batch learning",
+          label: userView === "beginner" ? "What save does" : "Save for this group",
           hint:
             userView === "beginner"
-              ? "This teaches one creator name to the whole group."
-              : "Applies one creator identity across the selected cluster.",
+              ? "This saves one creator for the whole group."
+              : "Saves one creator name across the selected group.",
           children: (
             <div className="audit-what-card">
               <strong>What save does</strong>
               <span>
-                SimSuite will remember this creator name for this whole group and reuse it on later scans.
+                SimSuite will remember this creator for this whole group and reuse it on later scans.
               </span>
             </div>
           ),
         },
         {
           id: "cluster-facts",
-          label: userView === "beginner" ? "Group summary" : "Cluster facts",
+          label: userView === "beginner" ? "Group summary" : "Group details",
           hint:
             userView === "beginner"
               ? "How many files are in this group and how strong the match is."
-              : "Dominant kind, confidence, and known-creator status.",
+              : "Main type, confidence, and known-creator status.",
           children: (
             <div className="detail-list">
               <DetailRow
-                label={userView === "beginner" ? "Main type" : "Dominant kind"}
-                value={selectedGroup.dominantKind}
+                label="Main type"
+                value={friendlyTypeLabel(selectedGroup.dominantKind)}
               />
               <DetailRow
                 label="Confidence"
@@ -172,26 +173,26 @@ export function CreatorAuditScreen({
           : []),
         {
           id: "teach",
-          label: userView === "beginner" ? "Save creator name" : "Teach creator",
+          label: "Save creator",
           hint:
             userView === "beginner"
-              ? "Enter the maker name once for this whole batch."
-              : "Set the canonical creator, alias, and optional route lock.",
+              ? "Enter the creator once for this whole batch."
+              : "Save the creator name, an extra clue, and an optional folder lock.",
           children: (
             <>
               <div className="creator-learning-grid">
                 <label className="field">
-                  <span>{userView === "beginner" ? "Creator name" : "Canonical creator"}</span>
+                  <span>Creator</span>
                   <input
                     value={creatorDraft}
                     onChange={(event) => setCreatorDraft(event.target.value)}
-                    placeholder={userView === "beginner" ? "Who made these files?" : "Creator name"}
+                    placeholder={userView === "beginner" ? "Creator name" : "Creator"}
                   />
                 </label>
 
                 {userView !== "beginner" ? (
                   <label className="field">
-                    <span>Alias to learn</span>
+                    <span>Also save this clue</span>
                     <input
                       value={aliasDraft}
                       onChange={(event) => setAliasDraft(event.target.value)}
@@ -285,8 +286,8 @@ export function CreatorAuditScreen({
       return;
     }
 
-    const confirmed = globalThis.confirm(
-      `Apply ${creatorDraft.trim()} to ${selectedGroup.itemCount} files in this creator cluster? This will teach future scans too.`,
+      const confirmed = globalThis.confirm(
+      `Apply ${creatorDraft.trim()} to ${selectedGroup.itemCount} files in this creator group? SimSuite will remember it on later scans too.`,
     );
     if (!confirmed) {
       return;
@@ -305,7 +306,7 @@ export function CreatorAuditScreen({
         preferredPathDraft.trim() || undefined,
       );
       setStatusMessage(
-        `Learned ${result.creatorName} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
+        `Saved ${result.creatorName} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
       );
       onDataChanged();
       await loadAudit();
@@ -353,8 +354,9 @@ export function CreatorAuditScreen({
           <p className="eyebrow">{userView === "beginner" ? "Name cleanup" : "Learning"}</p>
           <div className="screen-title-row">
             <Fingerprint size={18} strokeWidth={2} />
-            <h1>{userView === "beginner" ? "Creator Names" : "Creator Audit"}</h1>
+            <h1>{userView === "beginner" ? "Creators" : "Creator groups"}</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("creatorAudit", userView)}</p>
         </div>
         <div className="header-actions">
           <button
@@ -372,7 +374,7 @@ export function CreatorAuditScreen({
             onClick={() => onNavigate("review")}
           >
             <ShieldAlert size={14} strokeWidth={2} />
-            {userView === "beginner" ? "Needs attention" : "Review"}
+            {reviewLabel(userView)}
           </button>
         </div>
       </div>
@@ -448,7 +450,7 @@ export function CreatorAuditScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Step 1</p>
-                <h2>{userView === "beginner" ? "Choose a creator group" : "Grouped suggestions"}</h2>
+                <h2>{userView === "beginner" ? "Choose a creator group" : "Creator groups"}</h2>
               </div>
               <span className="ghost-chip">
                 {audit?.groups.length ?? 0} shown
@@ -502,7 +504,7 @@ export function CreatorAuditScreen({
                     <div className="audit-group-main">
                       <strong>{group.suggestedCreator}</strong>
                       <span>
-                        {friendlyKindLabel(group.dominantKind)} ·{" "}
+                        {friendlyTypeLabel(group.dominantKind)} ·{" "}
                         {group.itemCount.toLocaleString()} files
                       </span>
                     </div>
@@ -522,12 +524,12 @@ export function CreatorAuditScreen({
                 ))
               ) : (
                 <StatePanel
-                  eyebrow={userView === "beginner" ? "Creator names" : "Creator audit"}
-                  title="No clusters match"
+                  eyebrow={userView === "beginner" ? "Creators" : "Creator groups"}
+                  title="No groups match"
                   body={
                     userView === "beginner"
                       ? "Try a broader search or lower the minimum size if you want SimSuite to show smaller creator-name groups."
-                      : "Clear the search or reduce the minimum group size to surface weaker creator clusters."
+                      : "Clear the search or reduce the minimum group size to surface weaker creator groups."
                   }
                   icon={SearchX}
                   compact
@@ -551,7 +553,7 @@ export function CreatorAuditScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Step 2</p>
-                <h2>{userView === "beginner" ? "Check these example files" : "Files in cluster"}</h2>
+                <h2>{userView === "beginner" ? "Check these example files" : "Files in group"}</h2>
               </div>
               <div className="header-actions">
                 {selectedGroup && selectedGroup.itemCount > selectedGroup.sampleFiles.length ? (
@@ -596,11 +598,11 @@ export function CreatorAuditScreen({
             ) : (
                 <StatePanel
                   eyebrow="Samples"
-                  title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+                  title="Select a group"
                   body={
                     userView === "beginner"
                       ? "Pick one creator group from the left to preview a few matching filenames before you save anything."
-                      : "Choose a creator cluster to inspect the sample files and decide whether the shared clues are trustworthy."
+                      : "Choose a creator group to inspect the sample files and decide whether the shared clues are trustworthy."
                   }
                   icon={Fingerprint}
                   compact
@@ -631,7 +633,7 @@ export function CreatorAuditScreen({
                     <div className="audit-group-main">
                       <strong>{file.filename}</strong>
                       <span>
-                        {file.kind}
+                        {friendlyTypeLabel(file.kind)}
                         {userView !== "beginner" && file.subtype
                           ? ` · ${file.subtype}`
                           : ""}
@@ -656,8 +658,8 @@ export function CreatorAuditScreen({
                   }
                   body={
                     userView === "beginner"
-                      ? "This means the sampled backlog is clustering cleanly right now."
-                      : "The sampled backlog does not currently have extra edge cases outside the grouped clusters."
+                      ? "This means the sampled backlog is grouping cleanly right now."
+                      : "The sampled backlog does not currently have extra edge cases outside the grouped files."
                   }
                   icon={Sparkles}
                   tone="good"
@@ -686,19 +688,19 @@ export function CreatorAuditScreen({
                 sections={creatorAuditInspectorSections}
                 intro={
                   userView === "beginner"
-                    ? "Keep the clues you care about open and tuck the rest away while you batch-fix creator names."
-                    : "Reorder or collapse creator-audit sections to fit quick batches or deeper verification."
+                    ? "Keep the clues you care about open and tuck the rest away while you batch-fix creators."
+                    : "Reorder or collapse creator sections to fit quick batches or deeper checks."
                 }
               />
             </>
           ) : (
             <StatePanel
-              eyebrow={userView === "beginner" ? "Creator names" : "Creator audit"}
-              title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+              eyebrow={userView === "beginner" ? "Creators" : "Creator groups"}
+              title="Select a group"
               body={
                 userView === "beginner"
-                  ? "The right panel will explain the group and save one creator name across the full batch when you confirm it."
-                  : "The inspector holds the shared clues, aliases, and batch teaching controls for the selected creator cluster."
+                  ? "The right panel will explain the group and save one creator across the full batch when you confirm it."
+                  : "The inspector holds the shared clues, extra name hints, and save controls for the selected creator group."
               }
               icon={Fingerprint}
               meta={["Applies to future scans", "Does not move files"]}
@@ -754,7 +756,7 @@ function AuditFileRow({
       <div className="audit-group-main">
         <strong>{file.filename}</strong>
         <span>
-          {file.kind}
+          {friendlyTypeLabel(file.kind)}
           {file.subtype ? ` · ${file.subtype}` : ""}
           {userView === "power" && file.currentCreator
             ? ` · ${file.currentCreator}`
@@ -809,30 +811,6 @@ function DetailRow({
       <strong className={mono ? "mono-text" : ""}>{value}</strong>
     </div>
   );
-}
-
-function friendlyKindLabel(kind: string) {
-  if (kind === "BuildBuy") {
-    return "Build/Buy";
-  }
-
-  if (kind === "ScriptMods") {
-    return "Script Mods";
-  }
-
-  if (kind === "OverridesAndDefaults") {
-    return "Overrides";
-  }
-
-  if (kind === "PosesAndAnimation") {
-    return "Poses & Animations";
-  }
-
-  if (kind === "PresetsAndSliders") {
-    return "Presets & Sliders";
-  }
-
-  return kind;
 }
 
 function confidenceLabel(confidence: number) {

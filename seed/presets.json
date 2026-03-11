@@ -7,6 +7,11 @@
       "priority": 100
     },
     {
+      "name": "Mirror Mode",
+      "template": "keep-current-safe-shape",
+      "priority": 150
+    },
+    {
       "name": "Creator First",
       "template": "Creators/{creator}/{kind}/{subtype}",
       "priority": 200

@@ -23,8 +23,8 @@ use crate::{
         CatalogSourceInfo, DependencyStatus, DownloadIntakeMode, DownloadQueueLane,
         DownloadRiskLevel, FileInsights, GuidedInstallFileEntry, GuidedInstallPlan,
         LibrarySettings, ReviewPlanAction, ReviewPlanActionKind, SpecialDecisionState,
-        SpecialExistingInstallState, SpecialFamilyRole, SpecialLocalPackState,
-        SpecialModDecision, SpecialReviewPlan, SpecialVersionStatus,
+        SpecialExistingInstallState, SpecialFamilyRole, SpecialLocalPackState, SpecialModDecision,
+        SpecialReviewPlan, SpecialVersionStatus,
     },
     seed::{
         DependencyRuleSeed, GuidedInstallProfileSeed, IncompatibilityRuleSeed,
@@ -400,8 +400,16 @@ pub fn store_download_item_assessment(
                 .catalog_source
                 .as_ref()
                 .and_then(|source| source.reviewed_at.clone()),
-            if assessment.existing_install_detected { 1_i64 } else { 0_i64 },
-            if assessment.guided_install_available { 1_i64 } else { 0_i64 },
+            if assessment.existing_install_detected {
+                1_i64
+            } else {
+                0_i64
+            },
+            if assessment.guided_install_available {
+                1_i64
+            } else {
+                0_i64
+            },
         ],
     )?;
     Ok(())
@@ -565,17 +573,15 @@ fn build_guided_plan_internal(
             file_id: file.file_id,
             filename: file.filename.clone(),
             current_path: file.path.clone(),
-            target_path: Some(
-                if file.in_target_folder {
-                    file.path.clone()
-                } else {
-                    layout
-                        .target_folder
-                        .join(&file.filename)
-                        .to_string_lossy()
-                        .to_string()
-                },
-            ),
+            target_path: Some(if file.in_target_folder {
+                file.path.clone()
+            } else {
+                layout
+                    .target_folder
+                    .join(&file.filename)
+                    .to_string_lossy()
+                    .to_string()
+            }),
             archive_member_path: None,
             kind: "Config".to_owned(),
             subtype: None,
@@ -680,7 +686,9 @@ pub fn build_review_plan(
 
     if evaluation.assessment.intake_mode == DownloadIntakeMode::Guided
         && guided_plan.as_ref().is_none_or(|plan| plan.apply_ready)
-        && special_decision.as_ref().is_none_or(|decision| decision.apply_ready)
+        && special_decision
+            .as_ref()
+            .is_none_or(|decision| decision.apply_ready)
     {
         return Ok(None);
     }
@@ -697,7 +705,8 @@ pub fn build_review_plan(
         .map(|plan| plan.review_files.clone())
         .filter(|files| !files.is_empty())
         .unwrap_or_else(|| {
-            files.iter()
+            files
+                .iter()
                 .map(|file| GuidedInstallFileEntry {
                     file_id: Some(file.file_id),
                     filename: file.filename.clone(),
@@ -712,9 +721,17 @@ pub fn build_review_plan(
                 .collect::<Vec<_>>()
         });
 
-    let (repair_plan_available, repair_action_label, repair_reason, repair_target_folder,
-        repair_move_files, repair_replace_files, repair_keep_files, repair_warnings,
-        repair_can_continue_install) = if let (Some(profile), Some(layout)) =
+    let (
+        repair_plan_available,
+        repair_action_label,
+        repair_reason,
+        repair_target_folder,
+        repair_move_files,
+        repair_replace_files,
+        repair_keep_files,
+        repair_warnings,
+        repair_can_continue_install,
+    ) = if let (Some(profile), Some(layout)) =
         (evaluation.matched_profile.as_ref(), repair_layout.as_ref())
     {
         let scattered_existing = layout
@@ -746,17 +763,15 @@ pub fn build_review_plan(
                 file_id: file.file_id,
                 filename: file.filename.clone(),
                 current_path: file.path.clone(),
-                target_path: Some(
-                    if file.in_target_folder {
-                        file.path.clone()
-                    } else {
-                        layout
-                            .target_folder
-                            .join(&file.filename)
-                            .to_string_lossy()
-                            .to_string()
-                    },
-                ),
+                target_path: Some(if file.in_target_folder {
+                    file.path.clone()
+                } else {
+                    layout
+                        .target_folder
+                        .join(&file.filename)
+                        .to_string_lossy()
+                        .to_string()
+                }),
                 archive_member_path: None,
                 kind: "Config".to_owned(),
                 subtype: None,
@@ -928,7 +943,9 @@ pub fn build_special_mod_decision_cached(
         .filter(|sibling_id| *sibling_id != item_id)
         .collect::<Vec<_>>();
     let primary_family_item_id = primary_family.as_ref().map(|item| item.id);
-    let primary_family_item_name = primary_family.as_ref().map(|item| item.display_name.clone());
+    let primary_family_item_name = primary_family
+        .as_ref()
+        .map(|item| item.display_name.clone());
     let family_role = match primary_family_item_id {
         Some(primary_id) if primary_id != item_id => SpecialFamilyRole::Superseded,
         Some(_) | None => SpecialFamilyRole::Primary,
@@ -982,8 +999,8 @@ pub fn build_special_mod_decision_cached(
     );
     let version_status = version_comparison.version_status.clone();
     let same_version = version_comparison.same_version;
-    let apply_ready = evaluation.assessment.guided_install_available
-        && family_role == SpecialFamilyRole::Primary;
+    let apply_ready =
+        evaluation.assessment.guided_install_available && family_role == SpecialFamilyRole::Primary;
 
     let version_blocks_update = matches!(
         version_status,
@@ -1090,7 +1107,8 @@ pub fn build_special_mod_decision_cached(
         || installed_version_evidence.source.as_deref() == Some("inside mod")
     {
         Some("inside mod".to_owned())
-    } else if incoming_version_evidence.source.is_some() || installed_version_evidence.source.is_some()
+    } else if incoming_version_evidence.source.is_some()
+        || installed_version_evidence.source.is_some()
     {
         Some("local file names".to_owned())
     } else {
@@ -1191,7 +1209,8 @@ pub fn reconcile_special_mod_family(
     let install_path = layout
         .existing_install_detected
         .then(|| layout.target_folder.to_string_lossy().to_string());
-    let item = load_item_with_staging(connection, applied_item_id)?.unwrap_or_else(empty_item_record);
+    let item =
+        load_item_with_staging(connection, applied_item_id)?.unwrap_or_else(empty_item_record);
     let files = load_profile_files(connection, seed_pack, applied_item_id, false)?;
     let mut family_state = load_family_state_cached(
         connection,
@@ -1201,8 +1220,7 @@ pub fn reconcile_special_mod_family(
         install_path.clone(),
     )?;
 
-    let incoming_version =
-        incoming_version_for_profile(&profile, &item.display_name, &files).value;
+    let incoming_version = incoming_version_for_profile(&profile, &item.display_name, &files).value;
     let incoming_signature = incoming_signature_for_profile(&profile, &files);
     family_state.installed.install_state = existing_install_state;
     family_state.installed.install_path = install_path;
@@ -1235,7 +1253,9 @@ pub fn reconcile_special_mod_family(
          WHERE di.matched_profile_key = ?1",
     )?;
     let family_rows = statement
-        .query_map(params![profile_key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .query_map(params![profile_key], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
 
     connection.execute(
@@ -1267,7 +1287,10 @@ pub fn reconcile_special_mod_family(
         )?;
     }
 
-    Ok(family_rows.into_iter().map(|(item_id, _)| item_id).collect())
+    Ok(family_rows
+        .into_iter()
+        .map(|(item_id, _)| item_id)
+        .collect())
 }
 
 fn special_decision_state_for_action(kind: &ReviewPlanActionKind) -> SpecialDecisionState {
@@ -1453,7 +1476,9 @@ fn load_family_state_cached(
     Ok(state)
 }
 
-fn existing_install_state_from_layout(layout: &ExistingInstallLayout) -> SpecialExistingInstallState {
+fn existing_install_state_from_layout(
+    layout: &ExistingInstallLayout,
+) -> SpecialExistingInstallState {
     if !layout.existing_install_detected {
         SpecialExistingInstallState::NotInstalled
     } else if layout.repair_plan_available {
@@ -1472,7 +1497,11 @@ fn incoming_version_for_profile(
 ) -> VersionEvidence {
     let mut values = special_mod_versions::version_hints_from_profile(profile, display_name);
     values.extend(files.iter().map(|file| file.filename.clone()));
-    values.extend(files.iter().filter_map(|file| file.archive_member_path.clone()));
+    values.extend(
+        files
+            .iter()
+            .filter_map(|file| file.archive_member_path.clone()),
+    );
     if let Some(version) = extract_version_from_values(&values) {
         return VersionEvidence {
             value: Some(version),
@@ -1636,11 +1665,20 @@ fn select_primary_family_item(
                 .then_with(|| left.updated_at.cmp(&right.updated_at))
                 .then_with(|| left.id.cmp(&right.id))
         })
-        .or_else(|| siblings.iter().find(|sibling| sibling.id == item_id).cloned())
+        .or_else(|| {
+            siblings
+                .iter()
+                .find(|sibling| sibling.id == item_id)
+                .cloned()
+        })
 }
 
 fn family_item_score(item: &FamilySiblingRecord) -> i64 {
-    let guided_bonus = if item.guided_install_available { 4000 } else { 0 };
+    let guided_bonus = if item.guided_install_available {
+        4000
+    } else {
+        0
+    };
     let status_bonus = match item.status.as_str() {
         "ready" => 350,
         "partial" => 220,
@@ -1654,10 +1692,7 @@ fn family_item_score(item: &FamilySiblingRecord) -> i64 {
         DownloadIntakeMode::Standard => 100,
     };
 
-    guided_bonus
-        + status_bonus
-        + intake_bonus
-        + (item.active_file_count * 25)
+    guided_bonus + status_bonus + intake_bonus + (item.active_file_count * 25)
         - (item.review_file_count * 60)
 }
 
@@ -1751,8 +1786,11 @@ fn evaluate_download_item(
 
     if let Some(candidate) = best_candidate {
         let layout = detect_existing_layout(connection, settings, seed_pack, &candidate.profile)?;
-        let dependency_rules =
-            collect_required_dependency_rules(seed_pack, &candidate.profile, &matched_dependency_rules);
+        let dependency_rules = collect_required_dependency_rules(
+            seed_pack,
+            &candidate.profile,
+            &matched_dependency_rules,
+        );
         let dependencies =
             resolve_dependency_status(connection, settings, seed_pack, item_id, &dependency_rules)?;
         let incompatibility_warnings = collect_incompatibility_warnings(
@@ -2096,8 +2134,13 @@ fn evaluate_download_item(
         });
     }
 
-    let dependencies =
-        resolve_dependency_status(connection, settings, seed_pack, item_id, &matched_dependency_rules)?;
+    let dependencies = resolve_dependency_status(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        &matched_dependency_rules,
+    )?;
     let missing_dependencies = dependencies
         .iter()
         .filter(|dependency| dependency.status == "missing")
@@ -2226,7 +2269,8 @@ fn evaluate_download_item(
         explanation:
             "This looks like a normal download, so it can use the standard safe hand-off preview."
                 .to_owned(),
-        recommended_next_step: "Open the normal hand-off preview and review the safe batch.".to_owned(),
+        recommended_next_step: "Open the normal hand-off preview and review the safe batch."
+            .to_owned(),
     })
 }
 
@@ -2268,9 +2312,13 @@ fn collect_profile_evidence(
         clue_list_matches(input, &profile.name_clues)
             || clue_list_matches(input, &profile.sample_filenames)
     });
-    let required_core_present = files
-        .iter()
-        .any(|file| matches_required_core(&file.filename, &file.extension, &profile.required_name_clues));
+    let required_core_present = files.iter().any(|file| {
+        matches_required_core(
+            &file.filename,
+            &file.extension,
+            &profile.required_name_clues,
+        )
+    });
     let matched_files = files
         .iter()
         .filter(|file| is_profile_content_file(file, profile))
@@ -2287,7 +2335,9 @@ fn collect_profile_evidence(
         .required_all_filenames
         .iter()
         .filter(|required_filename| {
-            files.iter().any(|file| normalized(&file.filename) == normalized(required_filename))
+            files
+                .iter()
+                .any(|file| normalized(&file.filename) == normalized(required_filename))
         })
         .count() as i64;
     let unmatched_supported_files = files
@@ -2427,7 +2477,8 @@ fn resolve_dependency_status(
                 format!("{} is already installed.", rule.display_name),
             )
         } else if let Some(item) = &inbox_item {
-            let summary = if item.guided_install_available && item.intake_mode == DownloadIntakeMode::Guided
+            let summary = if item.guided_install_available
+                && item.intake_mode == DownloadIntakeMode::Guided
             {
                 format!(
                     "{} is in the Inbox and ready for safe setup as {}.",
@@ -2443,7 +2494,10 @@ fn resolve_dependency_status(
         } else {
             (
                 "missing".to_owned(),
-                format!("{} is required before this mod can be installed safely.", rule.display_name),
+                format!(
+                    "{} is required before this mod can be installed safely.",
+                    rule.display_name
+                ),
             )
         };
 
@@ -2476,7 +2530,9 @@ fn collect_incompatibility_rule_matches(
         .install_catalog
         .incompatibility_rules
         .iter()
-        .filter(|rule| matches_incompatibility_rule(rule, item, files, text_clues, archive_path_clues))
+        .filter(|rule| {
+            matches_incompatibility_rule(rule, item, files, text_clues, archive_path_clues)
+        })
         .cloned()
         .collect()
 }
@@ -2491,12 +2547,18 @@ fn collect_incompatibility_warnings(
     let mut seen = HashSet::new();
     let mut warnings = Vec::new();
 
-    for rule in matched_rules
-        .iter()
-        .chain(seed_pack.install_catalog.incompatibility_rules.iter().filter(|rule| {
-            profile.incompatibility_keys.iter().any(|key| key == &rule.key)
-        }))
-    {
+    for rule in matched_rules.iter().chain(
+        seed_pack
+            .install_catalog
+            .incompatibility_rules
+            .iter()
+            .filter(|rule| {
+                profile
+                    .incompatibility_keys
+                    .iter()
+                    .any(|key| key == &rule.key)
+            }),
+    ) {
         if !seen.insert(rule.key.clone()) {
             continue;
         }
@@ -2541,7 +2603,8 @@ fn collect_review_patterns(
                 .iter()
                 .any(|input| clue_list_matches(input, &pattern.name_clues))
                 || !collect_matched_clues(text_clues, &pattern.text_clues).is_empty()
-                || !collect_matched_clues(archive_path_clues, &pattern.archive_path_clues).is_empty()
+                || !collect_matched_clues(archive_path_clues, &pattern.archive_path_clues)
+                    .is_empty()
         })
         .cloned()
         .collect()
@@ -2600,24 +2663,24 @@ fn dependency_in_inbox(
             END,
             updated_at DESC
          LIMIT 1",
-        params![item_id, dependency_key],
-        |row| {
-            let intake_mode: String = row.get(2)?;
-            Ok(InboxDependencyItem {
-                id: row.get(0)?,
-                display_name: row.get(1)?,
-                intake_mode: match intake_mode.as_str() {
-                    "guided" => DownloadIntakeMode::Guided,
-                    "needs_review" => DownloadIntakeMode::NeedsReview,
-                    "blocked" => DownloadIntakeMode::Blocked,
-                    _ => DownloadIntakeMode::Standard,
-                },
-                guided_install_available: row.get::<_, i64>(3)? != 0,
-            })
-        },
-    )
-    .optional()
-    .map_err(AppError::from)
+            params![item_id, dependency_key],
+            |row| {
+                let intake_mode: String = row.get(2)?;
+                Ok(InboxDependencyItem {
+                    id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    intake_mode: match intake_mode.as_str() {
+                        "guided" => DownloadIntakeMode::Guided,
+                        "needs_review" => DownloadIntakeMode::NeedsReview,
+                        "blocked" => DownloadIntakeMode::Blocked,
+                        _ => DownloadIntakeMode::Standard,
+                    },
+                    guided_install_available: row.get::<_, i64>(3)? != 0,
+                })
+            },
+        )
+        .optional()
+        .map_err(AppError::from)
 }
 
 fn detect_existing_layout(
@@ -2719,7 +2782,8 @@ fn detect_existing_layout(
     let mut preserve_files = Vec::new();
     for mut file in existing_candidates {
         existing_install_detected = true;
-        let in_target = is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
+        let in_target =
+            is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
         file.in_target_folder = in_target;
         if !in_target {
             safe_to_update = false;
@@ -2729,7 +2793,8 @@ fn detect_existing_layout(
     }
 
     for mut file in preserve_candidates {
-        let in_target = is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
+        let in_target =
+            is_in_selected_special_folder(&file.path, &target_folder, shared_root_target);
         if is_related_preserve_file(&file.filename, &file.extension, in_target, profile) {
             existing_install_detected = true;
             file.in_target_folder = in_target;
@@ -2763,7 +2828,10 @@ fn detect_existing_layout(
             kind: "Config".to_owned(),
             subtype: None,
             creator: profile.creator.clone(),
-            size: preserve_path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+            size: preserve_path
+                .metadata()
+                .map(|meta| meta.len() as i64)
+                .unwrap_or_default(),
             hash: None,
             insights: FileInsights::default(),
             in_target_folder: true,
@@ -2777,7 +2845,8 @@ fn detect_existing_layout(
         ));
     }
 
-    let foreign_target_files = scan_foreign_target_files(&target_folder, profile, shared_root_target)?;
+    let foreign_target_files =
+        scan_foreign_target_files(&target_folder, profile, shared_root_target)?;
     if !foreign_target_files.is_empty() {
         safe_to_update = false;
         warnings.push(format!(
@@ -2786,8 +2855,8 @@ fn detect_existing_layout(
         ));
     }
 
-    let repair_plan_available =
-        (scattered_match_count > 0 || scattered_preserve_count > 0) && foreign_target_files.is_empty();
+    let repair_plan_available = (scattered_match_count > 0 || scattered_preserve_count > 0)
+        && foreign_target_files.is_empty();
 
     Ok(ExistingInstallLayout {
         target_folder,
@@ -2851,7 +2920,10 @@ fn merge_disk_existing_candidates(
                 },
                 subtype: None,
                 creator: profile.creator.clone(),
-                size: path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+                size: path
+                    .metadata()
+                    .map(|meta| meta.len() as i64)
+                    .unwrap_or_default(),
                 hash: None,
                 insights: FileInsights::default(),
                 in_target_folder: false,
@@ -2870,7 +2942,10 @@ fn merge_disk_existing_candidates(
                 kind: "Config".to_owned(),
                 subtype: None,
                 creator: profile.creator.clone(),
-                size: path.metadata().map(|meta| meta.len() as i64).unwrap_or_default(),
+                size: path
+                    .metadata()
+                    .map(|meta| meta.len() as i64)
+                    .unwrap_or_default(),
                 hash: None,
                 insights: FileInsights::default(),
                 in_target_folder: false,
@@ -2919,7 +2994,11 @@ fn select_existing_target_folder(
     selected_folder.unwrap_or_else(|| default_target_folder.to_path_buf())
 }
 
-fn is_in_selected_special_folder(path: &str, target_folder: &Path, shared_root_target: bool) -> bool {
+fn is_in_selected_special_folder(
+    path: &str,
+    target_folder: &Path,
+    shared_root_target: bool,
+) -> bool {
     let Some(parent) = Path::new(path).parent() else {
         return false;
     };
@@ -3021,12 +3100,42 @@ fn read_text_clues(staging_path: Option<&str>, files: &[ProfileFile]) -> AppResu
         if let Some(member_path) = &file.archive_member_path {
             clues.push(normalized(member_path));
         }
-        clues.extend(file.insights.embedded_names.iter().map(|value| normalized(value)));
-        clues.extend(file.insights.resource_summary.iter().map(|value| normalized(value)));
-        clues.extend(file.insights.creator_hints.iter().map(|value| normalized(value)));
-        clues.extend(file.insights.script_namespaces.iter().map(|value| normalized(value)));
-        clues.extend(file.insights.family_hints.iter().map(|value| normalized(value)));
-        clues.extend(file.insights.version_hints.iter().map(|value| normalized(value)));
+        clues.extend(
+            file.insights
+                .embedded_names
+                .iter()
+                .map(|value| normalized(value)),
+        );
+        clues.extend(
+            file.insights
+                .resource_summary
+                .iter()
+                .map(|value| normalized(value)),
+        );
+        clues.extend(
+            file.insights
+                .creator_hints
+                .iter()
+                .map(|value| normalized(value)),
+        );
+        clues.extend(
+            file.insights
+                .script_namespaces
+                .iter()
+                .map(|value| normalized(value)),
+        );
+        clues.extend(
+            file.insights
+                .family_hints
+                .iter()
+                .map(|value| normalized(value)),
+        );
+        clues.extend(
+            file.insights
+                .version_hints
+                .iter()
+                .map(|value| normalized(value)),
+        );
     }
 
     if let Some(staging_path) = staging_path {
@@ -3085,7 +3194,8 @@ fn collect_extra_supported_files<'a>(
     files: &'a [ProfileFile],
     profile: &GuidedInstallProfileSeed,
 ) -> Vec<&'a ProfileFile> {
-    files.iter()
+    files
+        .iter()
         .filter(|file| is_supported_special_extension(&file.extension))
         .filter(|file| !is_profile_content_file(file, profile))
         .collect()
@@ -3095,7 +3205,9 @@ fn has_supported_subset_to_separate(
     files: &[ProfileFile],
     profile: &GuidedInstallProfileSeed,
 ) -> bool {
-    files.iter().any(|file| is_profile_content_file(file, profile))
+    files
+        .iter()
+        .any(|file| is_profile_content_file(file, profile))
         && profile_pack_is_complete(files, profile)
         && !collect_extra_supported_files(files, profile).is_empty()
 }
@@ -3104,7 +3216,10 @@ fn is_profile_content_file(file: &ProfileFile, profile: &GuidedInstallProfileSee
     is_profile_content_name(&file.filename, &file.extension, profile)
 }
 
-fn is_existing_profile_file(file: &ExistingInstallFile, profile: &GuidedInstallProfileSeed) -> bool {
+fn is_existing_profile_file(
+    file: &ExistingInstallFile,
+    profile: &GuidedInstallProfileSeed,
+) -> bool {
     is_profile_content_name(&file.filename, &file.extension, profile)
 }
 
@@ -3118,7 +3233,9 @@ fn is_related_preserve_file(
         return false;
     }
 
-    in_target_folder || name_matches_profile(filename, profile) || file_matches_profile_prefix(filename, profile)
+    in_target_folder
+        || name_matches_profile(filename, profile)
+        || file_matches_profile_prefix(filename, profile)
 }
 
 fn is_profile_content_name(
@@ -3251,7 +3368,10 @@ fn matches_incompatibility_rule(
 }
 
 fn collect_item_inputs(item: &DownloadItemRecord, files: &[ProfileFile]) -> Vec<String> {
-    let mut inputs = vec![normalized(&item.display_name), normalized(&item.source_path)];
+    let mut inputs = vec![
+        normalized(&item.display_name),
+        normalized(&item.source_path),
+    ];
     for file in files {
         inputs.push(normalized(&file.filename));
         if let Some(member_path) = &file.archive_member_path {
@@ -3372,7 +3492,9 @@ fn build_available_review_actions(
             });
         }
 
-        let has_profile_files = files.iter().any(|file| is_profile_content_file(file, profile));
+        let has_profile_files = files
+            .iter()
+            .any(|file| is_profile_content_file(file, profile));
         if has_profile_files && !has_required_core(files, profile) {
             if let Some(download_url) = profile.official_download_url.clone() {
                 actions.push(ReviewPlanAction {
@@ -3863,7 +3985,12 @@ mod tests {
                     parser_warnings,
                     insights
                  ) VALUES (?1, ?2, ?3, ?4, 0.95, 'mods', '[]', '{}')",
-                params![path.to_string_lossy().to_string(), filename, extension, kind],
+                params![
+                    path.to_string_lossy().to_string(),
+                    filename,
+                    extension,
+                    kind
+                ],
             )
             .expect("installed file");
     }
@@ -3927,7 +4054,14 @@ mod tests {
         insert_download_item(connection, item_id, display_name, &staging);
         let file_path = staging.join(filename);
         fs::write(&file_path, b"sample").expect("write sample");
-        insert_download_file(connection, item_id, item_id * 100 + 1, &file_path, filename, kind);
+        insert_download_file(
+            connection,
+            item_id,
+            item_id * 100 + 1,
+            &file_path,
+            filename,
+            kind,
+        );
     }
 
     fn install_target_for_profile(temp_root: &Path, profile: &GuidedInstallProfileSeed) -> PathBuf {
@@ -4041,7 +4175,10 @@ mod tests {
             );
 
             if !profile.preserve_extensions.is_empty() {
-                let preserve = target.join(format!("{}_settings{}", profile.key, profile.preserve_extensions[0]));
+                let preserve = target.join(format!(
+                    "{}_settings{}",
+                    profile.key, profile.preserve_extensions[0]
+                ));
                 fs::write(&preserve, b"keep").expect("preserve");
             }
 
@@ -4082,15 +4219,11 @@ mod tests {
             let item_id = 340 + index as i64;
             build_sample_download(&staging_root, &connection, item_id, profile);
 
-            let existing_name = Path::new(
-                profile
-                    .sample_filenames
-                    .first()
-                    .expect("sample filename"),
-            )
-            .file_name()
-            .and_then(|value| value.to_str())
-            .expect("basename");
+            let existing_name =
+                Path::new(profile.sample_filenames.first().expect("sample filename"))
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .expect("basename");
             let existing_path = temp.path().join("Mods").join(existing_name);
             fs::write(&existing_path, b"old").expect("old");
             insert_installed_file(
@@ -4130,10 +4263,26 @@ mod tests {
 
         let near_misses = [
             ("Lot51_Normal_Set.zip", "lot51_table.package", "BuildBuy"),
-            ("ColonolNutty_Shelf.zip", "colonolnutty_bookshelf.package", "BuildBuy"),
-            ("Lumpinou_Relationship_Overhaul.zip", "lumpinou_relationship_overhaul.package", "Gameplay"),
-            ("Andirz_Custom_Trait.zip", "andirz_custom_trait.package", "Gameplay"),
-            ("Triplis_Cafe_Set.zip", "triplis_cafe_counter.package", "BuildBuy"),
+            (
+                "ColonolNutty_Shelf.zip",
+                "colonolnutty_bookshelf.package",
+                "BuildBuy",
+            ),
+            (
+                "Lumpinou_Relationship_Overhaul.zip",
+                "lumpinou_relationship_overhaul.package",
+                "Gameplay",
+            ),
+            (
+                "Andirz_Custom_Trait.zip",
+                "andirz_custom_trait.package",
+                "Gameplay",
+            ),
+            (
+                "Triplis_Cafe_Set.zip",
+                "triplis_cafe_counter.package",
+                "BuildBuy",
+            ),
         ];
 
         for (index, (archive_name, filename, kind)) in near_misses.iter().enumerate() {
@@ -4146,8 +4295,8 @@ mod tests {
                 filename,
                 kind,
             );
-            let assessment =
-                assess_download_item(&connection, &settings, &seed_pack, item_id).expect("assessment");
+            let assessment = assess_download_item(&connection, &settings, &seed_pack, item_id)
+                .expect("assessment");
             assert_eq!(
                 assessment.intake_mode,
                 DownloadIntakeMode::Standard,
@@ -4207,10 +4356,9 @@ mod tests {
             .into_iter()
             .find(|action| action.kind == ReviewPlanActionKind::DownloadMissingFiles)
             .expect("download action");
-        assert!(action
-            .url
-            .as_deref()
-            .is_some_and(|url| url.contains("deaderpool-mccc.com") || url.contains("drive.google.com")));
+        assert!(action.url.as_deref().is_some_and(
+            |url| url.contains("deaderpool-mccc.com") || url.contains("drive.google.com")
+        ));
     }
 
     #[test]
@@ -4309,7 +4457,10 @@ mod tests {
             .expect("xml dependency");
         assert_eq!(dependency.status, "inbox");
         assert_eq!(dependency.inbox_item_id, Some(223));
-        assert_eq!(dependency.inbox_item_name.as_deref(), Some("XML_Injector.zip"));
+        assert_eq!(
+            dependency.inbox_item_name.as_deref(),
+            Some("XML_Injector.zip")
+        );
         assert_eq!(
             dependency.inbox_item_intake_mode,
             Some(DownloadIntakeMode::Guided)
@@ -4479,16 +4630,13 @@ mod tests {
             .expect("review");
         assert_eq!(review_plan.mode, DownloadIntakeMode::NeedsReview);
         assert_eq!(review_plan.review_files.len(), 1);
-        assert!(review_plan
-            .available_actions
-            .iter()
-            .any(|action| {
-                matches!(
-                    action.kind,
-                    ReviewPlanActionKind::DownloadMissingFiles
-                        | ReviewPlanActionKind::OpenOfficialSource
-                )
-            }));
+        assert!(review_plan.available_actions.iter().any(|action| {
+            matches!(
+                action.kind,
+                ReviewPlanActionKind::DownloadMissingFiles
+                    | ReviewPlanActionKind::OpenOfficialSource
+            )
+        }));
     }
 
     #[test]
@@ -4558,8 +4706,8 @@ mod tests {
         assert_eq!(plan.replace_files.len(), 2);
         assert_eq!(plan.preserve_files.len(), 1);
 
-        let review_plan = build_review_plan(&connection, &settings, &seed_pack, 232)
-            .expect("review plan");
+        let review_plan =
+            build_review_plan(&connection, &settings, &seed_pack, 232).expect("review plan");
         assert!(review_plan.is_none());
     }
 
@@ -4742,8 +4890,14 @@ mod tests {
             .expect("decision")
             .expect("special decision");
         assert_eq!(decision.incoming_version.as_deref(), Some("2026.1.1"));
-        assert_eq!(decision.incoming_version_source.as_deref(), Some("inside mod"));
-        assert_eq!(decision.installed_version_source.as_deref(), Some("inside mod"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
         assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
         assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
         assert!(decision.same_version);
@@ -4880,7 +5034,10 @@ mod tests {
         let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 263)
             .expect("decision")
             .expect("special decision");
-        assert_eq!(decision.installed_version_source.as_deref(), Some("saved family state"));
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("saved family state")
+        );
         assert_eq!(decision.version_status, SpecialVersionStatus::Unknown);
         assert!(!decision.same_version);
     }
@@ -4911,7 +5068,11 @@ mod tests {
             "deaderpool/mccc/mc_cmd_version.pyc",
             b"\0supports patch 1.113.277 and version 2026_1_1",
         );
-        update_file_insights_by_id(&connection, 26400 + target_sample.0 as i64 + 1, &FileInsights::default());
+        update_file_insights_by_id(
+            &connection,
+            26400 + target_sample.0 as i64 + 1,
+            &FileInsights::default(),
+        );
 
         let assessment =
             assess_download_item(&connection, &settings, &seed_pack, 264).expect("assessment");
@@ -4921,7 +5082,10 @@ mod tests {
             .expect("special decision");
 
         assert_eq!(decision.incoming_version.as_deref(), Some("2026.1.1"));
-        assert_eq!(decision.incoming_version_source.as_deref(), Some("inside mod"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
 
         let stored_insights: String = connection
             .query_row(
@@ -4974,7 +5138,8 @@ mod tests {
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent).expect("parents");
             }
-            if sample.ends_with("mc_cmd_center.ts4script") || sample.ends_with("mc_career.ts4script")
+            if sample.ends_with("mc_cmd_center.ts4script")
+                || sample.ends_with("mc_career.ts4script")
             {
                 let entry_name = if sample.ends_with("mc_cmd_center.ts4script") {
                     "deaderpool/mccc/mc_cmd_version.pyc"
@@ -5191,7 +5356,8 @@ mod tests {
         );
         let partial_assessment =
             assess_download_item(&connection, &settings, &seed_pack, 240).expect("partial");
-        store_download_item_assessment(&connection, 240, &partial_assessment).expect("store partial");
+        store_download_item_assessment(&connection, 240, &partial_assessment)
+            .expect("store partial");
 
         let profile = seed_pack
             .install_catalog
@@ -5251,14 +5417,17 @@ mod tests {
         assert!(plan.apply_ready);
         assert!(plan.review_files.is_empty());
 
-        let review_plan = build_review_plan(&connection, &settings, &seed_pack, 233)
-            .expect("review plan");
+        let review_plan =
+            build_review_plan(&connection, &settings, &seed_pack, 233).expect("review plan");
         assert!(review_plan.is_none());
     }
 
     #[test]
     fn normalized_helper_collapses_symbol_noise() {
-        assert_eq!(normalized("[MCCC] MC_Command_Center"), " mccc  mc command center");
+        assert_eq!(
+            normalized("[MCCC] MC_Command_Center"),
+            " mccc  mc command center"
+        );
     }
 
     #[test]
@@ -5278,7 +5447,9 @@ mod tests {
         assert!(summary
             .iter()
             .any(|value| value.contains("matching special-mod files")));
-        assert!(summary.iter().any(|value| value.contains("Required core files")));
+        assert!(summary
+            .iter()
+            .any(|value| value.contains("Required core files")));
         assert!(summary.iter().any(|value| value.contains("xml injector")));
     }
 }

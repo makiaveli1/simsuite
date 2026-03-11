@@ -1265,12 +1265,13 @@ mod tests {
             database_path,
             seed_pack: Arc::new(seed_pack),
             scan_status: Arc::new(Mutex::new(crate::models::ScanStatus::default())),
-            downloads_status: Arc::new(Mutex::new(
-                crate::models::DownloadsWatcherStatus::default(),
-            )),
+            downloads_status: Arc::new(
+                Mutex::new(crate::models::DownloadsWatcherStatus::default()),
+            ),
             downloads_watcher_control: Arc::new(Mutex::new(
                 crate::app_state::DownloadsWatcherControl::default(),
             )),
+            downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir: temp.path().to_path_buf(),
         }
     }

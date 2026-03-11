@@ -8,6 +8,7 @@ import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
+import { friendlyTypeLabel, reviewLabel, screenHelperLine } from "../lib/uiLanguage";
 import type {
   CategoryAuditFile,
   CategoryAuditResponse,
@@ -93,27 +94,27 @@ export function CategoryAuditScreen({
     ? [
         {
           id: "what-save-does",
-          label: userView === "beginner" ? "What save does" : "Batch learning",
+          label: userView === "beginner" ? "What save does" : "Save for this group",
           hint:
             userView === "beginner"
-              ? "This teaches one mod type to the whole group."
-              : "Applies one kind and subtype across the selected cluster.",
+              ? "This saves one type for the whole group."
+              : "Saves one type across the selected group.",
           children: (
             <div className="audit-what-card">
               <strong>What save does</strong>
               <span>
-                SimSuite will remember this mod type for this whole group and reuse it on later scans.
+                SimSuite will remember this type for this whole group and reuse it on later scans.
               </span>
             </div>
           ),
         },
         {
           id: "cluster-facts",
-          label: userView === "beginner" ? "Group summary" : "Cluster facts",
+          label: userView === "beginner" ? "Group summary" : "Group details",
           hint:
             userView === "beginner"
               ? "How many files are in this group and how strong the match is."
-              : "Confidence, keyword cues, and cluster identity.",
+              : "Confidence, keyword clues, and group identity.",
           children: (
             <div className="detail-list">
               <DetailRow
@@ -158,7 +159,7 @@ export function CategoryAuditScreen({
                 hint:
                   userView === "beginner"
                     ? "Shared words that helped SimSuite guess the type."
-                    : "Common filename keywords inside this cluster.",
+                    : "Common filename keywords inside this group.",
                 children: (
                   <div className="creator-suggestion-strip">
                     {selectedGroup.keywordSamples.map((sample) => (
@@ -173,26 +174,26 @@ export function CategoryAuditScreen({
           : []),
         {
           id: "teach",
-          label: userView === "beginner" ? "Save mod type" : "Teach category",
+          label: "Save type",
           hint:
             userView === "beginner"
               ? "Save the right type once for the whole batch."
-              : "Set the kind and optional subtype for this group.",
+              : "Set the type and optional subtype for this group.",
           children: (
             <>
               <div className="creator-learning-grid">
                 <label className="field">
-                  <span>{userView === "beginner" ? "Type" : "Kind"}</span>
+                  <span>Type</span>
                   <select
                     value={kindDraft}
                     onChange={(event) => setKindDraft(event.target.value)}
                   >
                     <option value="">
-                      {userView === "beginner" ? "Choose a type" : "Select kind"}
+                      {userView === "beginner" ? "Choose a type" : "Select type"}
                     </option>
                     {taxonomyKinds.map((kind) => (
                       <option key={kind} value={kind}>
-                        {friendlyKindLabel(kind)}
+                        {friendlyTypeLabel(kind)}
                       </option>
                     ))}
                   </select>
@@ -265,7 +266,7 @@ export function CategoryAuditScreen({
     }
 
     const confirmed = globalThis.confirm(
-      `Apply ${kindDraft.trim()}${subtypeDraft.trim() ? ` / ${subtypeDraft.trim()}` : ""} to ${selectedGroup.itemCount} files in this category cluster?`,
+      `Apply ${kindDraft.trim()}${subtypeDraft.trim() ? ` / ${subtypeDraft.trim()}` : ""} to ${selectedGroup.itemCount} files in this type group?`,
     );
     if (!confirmed) {
       return;
@@ -282,7 +283,7 @@ export function CategoryAuditScreen({
         subtypeDraft.trim() || undefined,
       );
       setStatusMessage(
-        `Saved ${result.kind}${result.subtype ? ` / ${result.subtype}` : ""} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
+        `Saved ${friendlyTypeLabel(result.kind)}${result.subtype ? ` / ${result.subtype}` : ""} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
       );
       onDataChanged();
       await loadAudit();
@@ -330,8 +331,9 @@ export function CategoryAuditScreen({
           <p className="eyebrow">{userView === "beginner" ? "Type cleanup" : "Learning"}</p>
           <div className="screen-title-row">
             <Shapes size={18} strokeWidth={2} />
-            <h1>{userView === "beginner" ? "Mod Types" : "Category Audit"}</h1>
+            <h1>{userView === "beginner" ? "Types" : "Type groups"}</h1>
           </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("categoryAudit", userView)}</p>
         </div>
         <div className="header-actions">
           <button
@@ -349,7 +351,7 @@ export function CategoryAuditScreen({
             onClick={() => onNavigate("review")}
           >
             <ShieldAlert size={14} strokeWidth={2} />
-            {userView === "beginner" ? "Needs attention" : "Review"}
+            {reviewLabel(userView)}
           </button>
         </div>
       </div>
@@ -364,7 +366,7 @@ export function CategoryAuditScreen({
           index={0}
           step="1"
           title="Pick a group"
-          detail="SimSuite groups files that look like the same kind of CC or mod."
+          detail="SimSuite groups files that look like the same type of CC or mod."
         />
         <LearningStep
           index={1}
@@ -418,7 +420,7 @@ export function CategoryAuditScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Step 1</p>
-                <h2>{userView === "beginner" ? "Choose a mod type group" : "Category suggestions"}</h2>
+                <h2>{userView === "beginner" ? "Choose a type group" : "Type groups"}</h2>
               </div>
               <span className="ghost-chip">
                 {audit?.groups.length ?? 0} shown
@@ -431,7 +433,7 @@ export function CategoryAuditScreen({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Kind, subtype, filename"
+                  placeholder="Type, subtype, filename"
                 />
               </label>
 
@@ -471,7 +473,7 @@ export function CategoryAuditScreen({
                   >
                     <div className="audit-group-main">
                       <strong>
-                        {friendlyKindLabel(group.suggestedKind)}
+                        {friendlyTypeLabel(group.suggestedKind)}
                         {group.suggestedSubtype ? ` / ${group.suggestedSubtype}` : ""}
                       </strong>
                       <span>{group.itemCount.toLocaleString()} files</span>
@@ -490,12 +492,12 @@ export function CategoryAuditScreen({
                 ))
               ) : (
                 <StatePanel
-                  eyebrow={userView === "beginner" ? "Mod types" : "Category audit"}
-                  title="No clusters match"
+                  eyebrow={userView === "beginner" ? "Types" : "Type groups"}
+                  title="No groups match"
                   body={
                     userView === "beginner"
                       ? "Try a broader search or lower the minimum size to show smaller mod-type groups."
-                      : "Clear the search or reduce the minimum group size to surface weaker category clusters."
+                      : "Clear the search or reduce the minimum group size to surface weaker type groups."
                   }
                   icon={SearchX}
                   compact
@@ -519,7 +521,7 @@ export function CategoryAuditScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Step 2</p>
-                <h2>{userView === "beginner" ? "Check these example files" : "Files in cluster"}</h2>
+                <h2>{userView === "beginner" ? "Check these example files" : "Files in group"}</h2>
               </div>
               <div className="header-actions">
                 {selectedGroup && selectedGroup.itemCount > selectedGroup.sampleFiles.length ? (
@@ -566,11 +568,11 @@ export function CategoryAuditScreen({
             ) : (
                 <StatePanel
                   eyebrow="Samples"
-                  title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+                  title="Select a group"
                   body={
                     userView === "beginner"
-                      ? "Pick one mod-type group from the left to preview a few example files before you save the type."
-                      : "Choose a category cluster to inspect the sample files and confirm the kind/subtype before applying it."
+                      ? "Pick one type group from the left to preview a few example files before you save the type."
+                      : "Choose a type group to inspect the sample files and confirm the type before applying it."
                   }
                   icon={Shapes}
                   compact
@@ -601,7 +603,7 @@ export function CategoryAuditScreen({
                     <div className="audit-group-main">
                       <strong>{file.filename}</strong>
                       <span>
-                        {file.currentKind}
+                        {friendlyTypeLabel(file.currentKind)}
                         {file.currentSubtype ? ` / ${file.currentSubtype}` : ""}
                       </span>
                     </div>
@@ -625,7 +627,7 @@ export function CategoryAuditScreen({
                   body={
                     userView === "beginner"
                       ? "That means the sampled backlog is grouping cleanly right now."
-                      : "The sampled backlog does not currently have extra unmatched files outside the shown clusters."
+                      : "The sampled backlog does not currently have extra unmatched files outside the shown groups."
                   }
                   icon={Sparkles}
                   tone="good"
@@ -643,7 +645,7 @@ export function CategoryAuditScreen({
                 <div>
                   <p className="eyebrow">Step 3</p>
                   <h2>
-                    {friendlyKindLabel(selectedGroup.suggestedKind)}
+                    {friendlyTypeLabel(selectedGroup.suggestedKind)}
                     {selectedGroup.suggestedSubtype
                       ? ` / ${selectedGroup.suggestedSubtype}`
                       : ""}
@@ -660,18 +662,18 @@ export function CategoryAuditScreen({
                 intro={
                   userView === "beginner"
                     ? "Keep the clues you care about open and hide the rest while you batch-fix type names."
-                    : "Reorder or collapse category-audit sections to fit quick batches or deeper checks."
+                    : "Reorder or collapse type sections to fit quick batches or deeper checks."
                 }
               />
             </>
           ) : (
             <StatePanel
-              eyebrow={userView === "beginner" ? "Mod types" : "Category audit"}
-              title={userView === "beginner" ? "Select a group" : "Select a cluster"}
+                  eyebrow={userView === "beginner" ? "Types" : "Type groups"}
+              title="Select a group"
               body={
                 userView === "beginner"
                   ? "The right panel will explain the group and save one shared type across the full batch when you confirm it."
-                  : "The inspector holds the grouped clues and batch controls for teaching a kind and subtype to the selected cluster."
+                  : "The inspector holds the grouped clues and save controls for the selected type group."
               }
               icon={Shapes}
               meta={["Applies to future scans", "Does not move files"]}
@@ -731,10 +733,10 @@ function CategoryAuditFileRow({
       <div className="audit-group-main">
         <strong>{file.filename}</strong>
         <span>
-          {friendlyKindLabel(file.currentKind)}
+          {friendlyTypeLabel(file.currentKind)}
           {file.currentSubtype ? ` / ${file.currentSubtype}` : ""}
           {" -> "}
-          {friendlyKindLabel(suggestedKind)}
+          {friendlyTypeLabel(suggestedKind)}
           {suggestedSubtype ? ` / ${suggestedSubtype}` : ""}
         </span>
       </div>
@@ -791,30 +793,6 @@ function DetailRow({
       <strong className={mono ? "mono-text" : ""}>{value}</strong>
     </div>
   );
-}
-
-function friendlyKindLabel(kind: string) {
-  if (kind === "BuildBuy") {
-    return "Build/Buy";
-  }
-
-  if (kind === "ScriptMods") {
-    return "Script Mods";
-  }
-
-  if (kind === "OverridesAndDefaults") {
-    return "Overrides";
-  }
-
-  if (kind === "PosesAndAnimation") {
-    return "Poses & Animations";
-  }
-
-  if (kind === "PresetsAndSliders") {
-    return "Presets & Sliders";
-  }
-
-  return kind;
 }
 
 function confidenceLabel(confidence: number) {
