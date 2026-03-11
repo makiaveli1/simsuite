@@ -1789,16 +1789,16 @@ fn derive_item_status(connection: &Connection, item_id: i64) -> AppResult<String
         return Ok("needs_review".to_owned());
     }
 
+    if intake_mode == "guided" && guided_install_available != 0 && active_file_count > 0 {
+        return Ok("ready".to_owned());
+    }
+
     if review_file_count > 0 && review_file_count < active_file_count {
         return Ok("partial".to_owned());
     }
 
     if review_file_count > 0 {
         return Ok("needs_review".to_owned());
-    }
-
-    if intake_mode == "guided" && guided_install_available != 0 && active_file_count > 0 {
-        return Ok("ready".to_owned());
     }
 
     if active_file_count > 0 {
@@ -2355,6 +2355,38 @@ mod tests {
         insert_file(&connection, 1, "downloads", "ready-two.package");
 
         let status = derive_item_status(&connection, 1).expect("derive status");
+        assert_eq!(status, "ready");
+    }
+
+    #[test]
+    fn guided_ready_items_ignore_generic_review_flags() {
+        let connection = setup_connection();
+        insert_download_item_with_mode(&connection, 24, "partial", "guided", 1);
+        let file_id = insert_file_with_shape(
+            &connection,
+            24,
+            "downloads",
+            "mc_cmd_center.package",
+            ".package",
+            "Unknown",
+        );
+        insert_file_with_shape(
+            &connection,
+            24,
+            "downloads",
+            "mc_cmd_center.ts4script",
+            ".ts4script",
+            "ScriptMods",
+        );
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence)
+                 VALUES (?1, ?2, ?3)",
+                params![file_id, "low_confidence_parse", 0.41_f64],
+            )
+            .expect("insert review item");
+
+        let status = derive_item_status(&connection, 24).expect("derive status");
         assert_eq!(status, "ready");
     }
 
