@@ -2,7 +2,7 @@
 
 ## Current Priority
 
-- March 12, 2026: trim the remaining live Inbox delay now that the worst freeze is fixed in the user's real Downloads folder.
+- March 12, 2026: trim the remaining live Inbox delay now that the worst freeze is fixed and the window-thread freeze has been reduced.
 - March 12, 2026: widen Inbox special-mod validation beyond MCCC now that the native desktop smoke lane is steady again.
 - March 12, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
 - March 12, 2026: decide later whether unsupported unrelated `.7z` and `.rar` downloads should also be hidden, or keep staying visible as safety-held items.
@@ -47,6 +47,16 @@
 - March 12, 2026: changed the Downloads watcher so archive downloads that clearly contain no Sims mod or Tray files are auto-marked as `ignored` instead of filling the normal Inbox with error rows.
 - March 12, 2026: changed the normal Inbox queue and overview counts so ignored items stay hidden unless the user explicitly asks for the `Ignored` filter.
 - March 12, 2026: aligned the browser-preview mock Inbox with the same ignored-item rule so preview counts match the real app better.
+- March 12, 2026: moved the heavy Inbox Tauri commands onto background blocking workers instead of running them as normal foreground commands:
+  - queue load
+  - bootstrap load
+  - selected-item load
+  - preview/guided/review plan loads
+  - normal apply
+  - guided apply
+  - repair/apply review actions
+  - ignore
+- March 12, 2026: this keeps the real Tauri window responsive while Inbox work is happening, even though the underlying Downloads scan still takes time on the user's real folder.
 
 ## What Was Tested
 
@@ -85,6 +95,19 @@
   - unrelated non-Sims ZIPs no longer appear in normal Inbox
   - the watcher still settles to `Watching`
   - the unrelated `ffmpeg-8.0.1-essentials_build.7z` file still appears because unsupported archive types are still held for safety instead of auto-ignored
+- March 12, 2026: after the async Inbox command change, `cargo check --manifest-path src-tauri/Cargo.toml`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run build`, and `npm run tauri:build -- --debug` all passed again.
+- March 12, 2026: real desktop timing checks using the real Tauri window showed:
+  - isolated fixture app:
+    - first Inbox open to ready items: about `1.24s`
+    - MCCC selection to version panel: about `0.15s`
+    - XML Injector selection to version panel: about `0.10s`
+    - refresh to stable: about `0.38s`
+  - user's actual Downloads-backed app:
+    - first Inbox open to ready state: about `12.38s`
+    - MCCC selection to version panel: about `0.11s`
+    - XML Injector selection to version panel: about `0.10s`
+    - refresh-to-Home navigation while Inbox was checking: about `0.36s`
+- March 12, 2026: those live timing checks strongly suggest the remaining problem is first-load scan cost, not the old “the whole window freezes during every Inbox action” problem.
 
 ## What Worked
 
@@ -129,10 +152,15 @@
   - unrelated ZIP junk no longer crowds the normal queue
   - real Sims downloads still show up
   - ignored downloads are still available through the explicit `Ignored` filter path
+- The real live Tauri window stays responsive much better now:
+  - normal special-mod selection is fast in the real app
+  - refresh no longer blocks a quick screen switch
+  - the remaining wait is concentrated in the live Downloads scan itself
 
 ## Known Problems / Gaps
 
 - Live Inbox first open is much better now, but about 14 seconds is still slower than it should feel.
+- Live Inbox first open is much better now, and in the latest timing pass it was about `12.38s`, but that is still slower than it should feel.
 - Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
@@ -144,7 +172,8 @@
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
 - The Downloads refresh cleanup currently uses a short local grace window to swallow duplicate post-action reloads. That is much lighter than before, but it may still need tuning if real watcher traffic stays noisy in a large live Downloads folder.
-- The live read-only refresh check after the performance fix looked calm, but it still needs a fuller human desktop pass for repeated selection and action testing now that the big freeze is gone.
+- The live read-only refresh check after the async-command fix looked calm, but the remaining first-load scan still needs deeper backend trimming.
+- The real desktop smoke wrapper currently needs a running local Vite frontend at `http://localhost:1420` when it drives the raw debug Tauri executable, so keep that in mind if the desktop harness suddenly lands on a blank `localhost refused to connect` page again.
 
 ## Important Decisions
 
@@ -165,7 +194,11 @@
   - ZIPs with no Sims files are auto-ignored
   - normal Inbox hides ignored items
   - unsupported `.7z` and `.rar` still stay visible for safety
-- Then re-check Inbox in the user's real desktop setup and see whether the remaining delay comes mostly from archive scanning, queue rendering, or selected-item detail work.
+- The latest live timings now say:
+  - selected-item detail work is no longer the main user-facing freeze
+  - refresh no longer locks the window
+  - the remaining delay is mostly in the live Downloads scan path
+- Next, re-check the live scan path itself and trim the remaining first-open cost without bringing back duplicate reloads.
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
 - Keep MCCC and GitHub release parsing as the known-good online helpers.
 - Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:

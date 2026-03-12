@@ -107,13 +107,29 @@ Important follow-up result:
   - ignored items are hidden from the normal Inbox queue and top counts unless the user explicitly opens the `Ignored` filter
   - a safe read-only real desktop check against the user's actual Downloads folder proved that real Sims downloads still show while unrelated ZIP noise stays out of the normal queue
   - unsupported `.7z` files still stay visible because SimSuite is still choosing safety over guesswork for those archive types
+- the Inbox window-thread freeze has been reduced:
+  - the heavy Inbox Tauri commands now run on background blocking workers instead of the foreground window thread
+  - this covers queue load, bootstrap load, selected-item load, preview/guided/review plan loads, apply paths, review-action paths, and ignore
+  - the goal was simple: keep the app usable while Inbox work is still happening
+- new real desktop timing checks now show the split clearly:
+  - isolated fixture app:
+    - first Inbox open to ready items: about `1.24s`
+    - special-mod selection to the version panel: about `0.10s` to `0.15s`
+    - refresh to stable: about `0.38s`
+  - user's actual Downloads-backed app:
+    - first Inbox open to ready state: about `12.38s`
+    - MCCC selection to version panel: about `0.11s`
+    - XML Injector selection to version panel: about `0.10s`
+    - refresh followed by an immediate switch to Home: about `0.36s`
+- this strongly suggests the remaining problem is the live Downloads scan cost, not the old “every Inbox action freezes the whole window” problem
 
 Important remaining gap:
 
-- the worst Inbox freeze is fixed in the user's real desktop setup, but the first live load is still slower than it should feel at about 14 seconds
+- the worst Inbox freeze is fixed in the user's real desktop setup, and the latest live first-open timing was about `12.38s`, but that is still slower than it should feel
 - helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
 - direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
 - unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior
+- the raw debug Tauri desktop smoke lane currently expects the local Vite frontend to be reachable at `http://localhost:1420`; otherwise the driver lands on a `localhost refused to connect` page instead of the app UI
 
 Repo memory is now expected to live in:
 
@@ -278,6 +294,7 @@ Missing:
 - auto-resolving multi-item dependency install order inside Inbox
 - guided option-pack choice flows
 - deeper Inbox performance cleanup for large live queues and heavy special-mod families after the duplicate rebuild fix
+- deeper live-scan performance cleanup now that selection and refresh responsiveness are materially better
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
 - full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
 - a clean product decision for unsupported unrelated archive types:

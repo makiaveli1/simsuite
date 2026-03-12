@@ -42,6 +42,16 @@ fn map_error(error: AppError) -> String {
     error.to_string()
 }
 
+async fn run_blocking_command<T, F>(command: &'static str, operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("{command} task failed: {error}"))?
+}
+
 const SLOW_COMMAND_LOG_THRESHOLD_MS: u128 = 40;
 
 fn log_slow_command(command: &str, started_at: Instant, detail: impl FnOnce() -> String) {
@@ -600,44 +610,101 @@ pub fn refresh_downloads_inbox(
 }
 
 #[tauri::command]
-pub fn get_downloads_inbox(
+pub async fn get_downloads_inbox(
     query: Option<DownloadsInboxQuery>,
     state: State<'_, AppState>,
 ) -> Result<DownloadsInboxResponse, String> {
-    let started_at = Instant::now();
-    let query = query.unwrap_or_default();
-    let response = retry_locked_read("get_downloads_inbox", || {
-        let connection = state.connection()?;
-        let settings = database::get_library_settings(&connection)?;
-        let seed_pack = state.seed_pack();
-        downloads_watcher::list_download_items(&connection, &settings, &seed_pack, query.clone())
-    })?;
-    log_slow_command("get_downloads_inbox", started_at, || {
-        format!("for {} queue item(s)", response.items.len())
-    });
-    Ok(response)
+    let state = state.inner().clone();
+    run_blocking_command("get_downloads_inbox", move || {
+        let started_at = Instant::now();
+        let query = query.unwrap_or_default();
+        let response = retry_locked_read("get_downloads_inbox", || {
+            let connection = state.connection()?;
+            let settings = database::get_library_settings(&connection)?;
+            let seed_pack = state.seed_pack();
+            downloads_watcher::list_download_items(
+                &connection,
+                &settings,
+                &seed_pack,
+                query.clone(),
+            )
+        })?;
+        log_slow_command("get_downloads_inbox", started_at, || {
+            format!("for {} queue item(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_downloads_bootstrap(
+pub async fn get_downloads_bootstrap(
     query: Option<DownloadsInboxQuery>,
     state: State<'_, AppState>,
 ) -> Result<DownloadsBootstrapResponse, String> {
-    let started_at = Instant::now();
-    let watcher_status = state
-        .downloads_status()
-        .lock()
-        .map(|status| status.clone())
-        .map_err(|_| "Downloads status lock poisoned".to_owned())?;
+    let state = state.inner().clone();
+    run_blocking_command("get_downloads_bootstrap", move || {
+        let started_at = Instant::now();
+        let watcher_status = state
+            .downloads_status()
+            .lock()
+            .map(|status| status.clone())
+            .map_err(|_| "Downloads status lock poisoned".to_owned())?;
 
-    let queue = if !watcher_status.configured
-        || watcher_status.state == DownloadsWatcherState::Processing
-        || watcher_status.state == DownloadsWatcherState::Error
-    {
-        None
-    } else {
+        let queue = if !watcher_status.configured
+            || watcher_status.state == DownloadsWatcherState::Processing
+            || watcher_status.state == DownloadsWatcherState::Error
+        {
+            None
+        } else {
+            let query = query.unwrap_or_default();
+            Some(retry_locked_read("get_downloads_bootstrap", || {
+                let connection = state.connection()?;
+                let settings = database::get_library_settings(&connection)?;
+                let seed_pack = state.seed_pack();
+                downloads_watcher::list_download_queue(
+                    &connection,
+                    &settings,
+                    &seed_pack,
+                    query.clone(),
+                )
+            })?)
+        };
+
+        log_slow_command("get_downloads_bootstrap", started_at, || {
+            format!(
+                "watcher={}, queue={}",
+                match watcher_status.state {
+                    DownloadsWatcherState::Idle => "idle",
+                    DownloadsWatcherState::Watching => "watching",
+                    DownloadsWatcherState::Processing => "processing",
+                    DownloadsWatcherState::Error => "error",
+                },
+                queue
+                    .as_ref()
+                    .map(|response| response.items.len().to_string())
+                    .unwrap_or_else(|| "deferred".to_owned())
+            )
+        });
+
+        Ok(DownloadsBootstrapResponse {
+            watcher_status,
+            queue,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_downloads_queue(
+    query: Option<DownloadsInboxQuery>,
+    state: State<'_, AppState>,
+) -> Result<DownloadsInboxResponse, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_downloads_queue", move || {
+        let started_at = Instant::now();
         let query = query.unwrap_or_default();
-        Some(retry_locked_read("get_downloads_bootstrap", || {
+        let response = retry_locked_read("get_downloads_queue", || {
             let connection = state.connection()?;
             let settings = database::get_library_settings(&connection)?;
             let seed_pack = state.seed_pack();
@@ -647,109 +714,86 @@ pub fn get_downloads_bootstrap(
                 &seed_pack,
                 query.clone(),
             )
-        })?)
-    };
-
-    log_slow_command("get_downloads_bootstrap", started_at, || {
-        format!(
-            "watcher={}, queue={}",
-            match watcher_status.state {
-                DownloadsWatcherState::Idle => "idle",
-                DownloadsWatcherState::Watching => "watching",
-                DownloadsWatcherState::Processing => "processing",
-                DownloadsWatcherState::Error => "error",
-            },
-            queue
-                .as_ref()
-                .map(|response| response.items.len().to_string())
-                .unwrap_or_else(|| "deferred".to_owned())
-        )
-    });
-
-    Ok(DownloadsBootstrapResponse {
-        watcher_status,
-        queue,
+        })?;
+        log_slow_command("get_downloads_queue", started_at, || {
+            format!("for {} queue item(s)", response.items.len())
+        });
+        Ok(response)
     })
+    .await
 }
 
 #[tauri::command]
-pub fn get_downloads_queue(
-    query: Option<DownloadsInboxQuery>,
-    state: State<'_, AppState>,
-) -> Result<DownloadsInboxResponse, String> {
-    let started_at = Instant::now();
-    let query = query.unwrap_or_default();
-    let response = retry_locked_read("get_downloads_queue", || {
-        let connection = state.connection()?;
-        let settings = database::get_library_settings(&connection)?;
-        let seed_pack = state.seed_pack();
-        downloads_watcher::list_download_queue(&connection, &settings, &seed_pack, query.clone())
-    })?;
-    log_slow_command("get_downloads_queue", started_at, || {
-        format!("for {} queue item(s)", response.items.len())
-    });
-    Ok(response)
-}
-
-#[tauri::command]
-pub fn get_downloads_selection(
+pub async fn get_downloads_selection(
     item_id: i64,
     preset_name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<DownloadsSelectionResponse, String> {
-    let started_at = Instant::now();
-    let response = retry_locked_read("get_downloads_selection", || {
-        let connection = state.connection()?;
-        let settings = database::get_library_settings(&connection)?;
-        let seed_pack = state.seed_pack();
-        downloads_watcher::get_download_item_selection(
-            &connection,
-            &settings,
-            &seed_pack,
-            item_id,
-            preset_name.clone(),
-        )
-    })?;
-    let file_count = response
-        .detail
-        .as_ref()
-        .map(|detail| detail.files.len())
-        .unwrap_or(0);
-    log_slow_command("get_downloads_selection", started_at, || {
-        format!("for item {item_id} with {file_count} file(s)")
-    });
-    Ok(response)
+    let state = state.inner().clone();
+    run_blocking_command("get_downloads_selection", move || {
+        let started_at = Instant::now();
+        let response = retry_locked_read("get_downloads_selection", || {
+            let connection = state.connection()?;
+            let settings = database::get_library_settings(&connection)?;
+            let seed_pack = state.seed_pack();
+            downloads_watcher::get_download_item_selection(
+                &connection,
+                &settings,
+                &seed_pack,
+                item_id,
+                preset_name.clone(),
+            )
+        })?;
+        let file_count = response
+            .detail
+            .as_ref()
+            .map(|detail| detail.files.len())
+            .unwrap_or(0);
+        log_slow_command("get_downloads_selection", started_at, || {
+            format!("for item {item_id} with {file_count} file(s)")
+        });
+        Ok(response)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_download_item_detail(
+pub async fn get_download_item_detail(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<DownloadInboxDetail>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    downloads_watcher::get_download_item_detail(&connection, &settings, &seed_pack, item_id)
-        .map_err(map_error)
+    let state = state.inner().clone();
+    run_blocking_command("get_download_item_detail", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::get_download_item_detail(&connection, &settings, &seed_pack, item_id)
+            .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn preview_download_item(
+pub async fn preview_download_item(
     item_id: i64,
     preset_name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<OrganizationPreview, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    downloads_watcher::preview_download_item(
-        &connection,
-        &settings,
-        &seed_pack,
-        item_id,
-        preset_name,
-    )
-    .map_err(map_error)
+    let state = state.inner().clone();
+    run_blocking_command("preview_download_item", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::preview_download_item(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+            preset_name,
+        )
+        .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -909,197 +953,230 @@ pub fn restore_snapshot(
 }
 
 #[tauri::command]
-pub fn apply_download_item(
+pub async fn apply_download_item(
     app: AppHandle,
     item_id: i64,
     preset_name: Option<String>,
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyPreviewResult, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let Some(item) =
-        downloads_watcher::get_download_item_detail(&connection, &settings, &seed_pack, item_id)
-            .map_err(map_error)?
-            .map(|detail| detail.item)
-    else {
-        return Err("Inbox item was not found.".to_owned());
-    };
-    if item.intake_mode != crate::models::DownloadIntakeMode::Standard {
-        return Err(
-            "This inbox item uses a special setup flow. Open its guided preview instead."
-                .to_owned(),
-        );
-    }
+    let state = state.inner().clone();
+    run_blocking_command("apply_download_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let Some(item) = downloads_watcher::get_download_item_detail(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+        )
+        .map_err(map_error)?
+        .map(|detail| detail.item) else {
+            return Err("Inbox item was not found.".to_owned());
+        };
+        if item.intake_mode != crate::models::DownloadIntakeMode::Standard {
+            return Err(
+                "This inbox item uses a special setup flow. Open its guided preview instead."
+                    .to_owned(),
+            );
+        }
 
-    let file_ids =
-        downloads_watcher::load_active_file_ids(&connection, item_id).map_err(map_error)?;
-    let result = move_engine::apply_preview_moves_for_files(
-        &mut connection,
-        &settings,
-        preset_name,
-        &file_ids,
-        approved,
-    )
-    .map_err(map_error)?;
-    downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Downloads,
-            WorkspaceDomain::Library,
-            WorkspaceDomain::Organize,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::Duplicates,
-            WorkspaceDomain::Snapshots,
-        ],
-        "download-item-applied",
-        vec![item_id],
-        Vec::new(),
-    )?;
-    Ok(result)
+        let file_ids =
+            downloads_watcher::load_active_file_ids(&connection, item_id).map_err(map_error)?;
+        let result = move_engine::apply_preview_moves_for_files(
+            &mut connection,
+            &settings,
+            preset_name,
+            &file_ids,
+            approved,
+        )
+        .map_err(map_error)?;
+        downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+                WorkspaceDomain::Snapshots,
+            ],
+            "download-item-applied",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_download_item_guided_plan(
+pub async fn get_download_item_guided_plan(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<GuidedInstallPlan>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    downloads_watcher::get_download_item_guided_plan(&connection, &settings, &seed_pack, item_id)
+    let state = state.inner().clone();
+    run_blocking_command("get_download_item_guided_plan", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::get_download_item_guided_plan(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+        )
         .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_download_item_review_plan(
+pub async fn get_download_item_review_plan(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<SpecialReviewPlan>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    downloads_watcher::get_download_item_review_plan(&connection, &settings, &seed_pack, item_id)
+    let state = state.inner().clone();
+    run_blocking_command("get_download_item_review_plan", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        downloads_watcher::get_download_item_review_plan(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+        )
         .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn apply_guided_download_item(
+pub async fn apply_guided_download_item(
     app: AppHandle,
     item_id: i64,
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyGuidedDownloadResult, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let Some(plan) = downloads_watcher::get_download_item_guided_plan(
-        &connection,
-        &settings,
-        &seed_pack,
-        item_id,
-    )
-    .map_err(map_error)?
-    else {
-        return Err("This inbox item does not have a guided special setup plan.".to_owned());
-    };
+    let state = state.inner().clone();
+    run_blocking_command("apply_guided_download_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let Some(plan) = downloads_watcher::get_download_item_guided_plan(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+        )
+        .map_err(map_error)?
+        else {
+            return Err("This inbox item does not have a guided special setup plan.".to_owned());
+        };
 
-    let result = match move_engine::apply_guided_download_plan(
-        &mut connection,
-        &settings,
-        &seed_pack,
-        &state.app_data_dir,
-        &plan,
-        approved,
-    ) {
-        Ok(result) => result,
-        Err(error) => {
-            let detail = error.to_string();
-            let _ = database::record_download_item_event(
-                &connection,
-                item_id,
-                "apply_failed",
-                "Guided install failed",
-                Some(&detail),
-            );
-            return Err(map_error(error));
-        }
-    };
-    downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Downloads,
-            WorkspaceDomain::Library,
-            WorkspaceDomain::Organize,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::Duplicates,
-            WorkspaceDomain::Snapshots,
-        ],
-        "guided-download-applied",
-        vec![item_id],
-        vec![plan.profile_key.clone()],
-    )?;
-    Ok(result)
+        let result = match move_engine::apply_guided_download_plan(
+            &mut connection,
+            &settings,
+            &seed_pack,
+            &state.app_data_dir,
+            &plan,
+            approved,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                let detail = error.to_string();
+                let _ = database::record_download_item_event(
+                    &connection,
+                    item_id,
+                    "apply_failed",
+                    "Guided install failed",
+                    Some(&detail),
+                );
+                return Err(map_error(error));
+            }
+        };
+        downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+                WorkspaceDomain::Snapshots,
+            ],
+            "guided-download-applied",
+            vec![item_id],
+            vec![plan.profile_key.clone()],
+        )?;
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn apply_special_review_fix(
+pub async fn apply_special_review_fix(
     app: AppHandle,
     item_id: i64,
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplySpecialReviewFixResult, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
+    let state = state.inner().clone();
+    run_blocking_command("apply_special_review_fix", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
 
-    let result = match move_engine::apply_special_review_fix(
-        &mut connection,
-        &settings,
-        &seed_pack,
-        &state.app_data_dir,
-        item_id,
-        approved,
-    ) {
-        Ok(result) => result,
-        Err(error) => {
-            let detail = error.to_string();
-            let _ = database::record_download_item_event(
-                &connection,
-                item_id,
-                "apply_failed",
-                "Special repair failed",
-                Some(&detail),
-            );
-            return Err(map_error(error));
-        }
-    };
-    downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Downloads,
-            WorkspaceDomain::Library,
-            WorkspaceDomain::Organize,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::Duplicates,
-            WorkspaceDomain::Snapshots,
-        ],
-        "special-review-fix-applied",
-        vec![item_id],
-        Vec::new(),
-    )?;
-    Ok(result)
+        let result = match move_engine::apply_special_review_fix(
+            &mut connection,
+            &settings,
+            &seed_pack,
+            &state.app_data_dir,
+            item_id,
+            approved,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                let detail = error.to_string();
+                let _ = database::record_download_item_event(
+                    &connection,
+                    item_id,
+                    "apply_failed",
+                    "Special repair failed",
+                    Some(&detail),
+                );
+                return Err(map_error(error));
+            }
+        };
+        downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+                WorkspaceDomain::Snapshots,
+            ],
+            "special-review-fix-applied",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn apply_review_plan_action(
+pub async fn apply_review_plan_action(
     app: AppHandle,
     item_id: i64,
     action_kind: String,
@@ -1108,214 +1185,167 @@ pub fn apply_review_plan_action(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyReviewPlanActionResult, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let Some(review_plan) = downloads_watcher::get_download_item_review_plan(
-        &connection,
-        &settings,
-        &seed_pack,
-        item_id,
-    )
-    .map_err(map_error)?
-    else {
-        return Err("This inbox item no longer has a special review plan.".to_owned());
-    };
-    let action = find_review_action(&review_plan, &action_kind, related_item_id, url.as_deref())?;
+    let state = state.inner().clone();
+    run_blocking_command("apply_review_plan_action", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let Some(review_plan) = downloads_watcher::get_download_item_review_plan(
+            &connection,
+            &settings,
+            &seed_pack,
+            item_id,
+        )
+        .map_err(map_error)?
+        else {
+            return Err("This inbox item no longer has a special review plan.".to_owned());
+        };
+        let action =
+            find_review_action(&review_plan, &action_kind, related_item_id, url.as_deref())?;
 
-    match action.kind {
-        ReviewPlanActionKind::RepairSpecial => {
-            let result = match move_engine::apply_special_review_fix(
-                &mut connection,
-                &settings,
-                &seed_pack,
-                &state.app_data_dir,
-                item_id,
-                approved,
-            ) {
-                Ok(result) => result,
-                Err(error) => {
-                    let detail = error.to_string();
-                    let _ = database::record_download_item_event(
-                        &connection,
-                        item_id,
-                        "apply_failed",
-                        "Special repair failed",
-                        Some(&detail),
-                    );
-                    return Err(map_error(error));
-                }
-            };
-            downloads_watcher::refresh_download_item_status(&connection, item_id)
-                .map_err(map_error)?;
-            emit_workspace_domains(
-                &app,
-                vec![
-                    WorkspaceDomain::Home,
-                    WorkspaceDomain::Downloads,
-                    WorkspaceDomain::Library,
-                    WorkspaceDomain::Organize,
-                    WorkspaceDomain::Review,
-                    WorkspaceDomain::Duplicates,
-                    WorkspaceDomain::Snapshots,
-                ],
-                "review-plan-repair-applied",
-                vec![item_id],
-                review_plan
-                    .profile_key
-                    .clone()
-                    .into_iter()
-                    .collect::<Vec<_>>(),
-            )?;
-            Ok(ApplyReviewPlanActionResult {
-                action_kind: action.kind,
-                focus_item_id: item_id,
-                created_item_id: None,
-                opened_url: None,
-                snapshot_id: Some(result.snapshot_id),
-                repaired_count: result.repaired_count,
-                installed_count: result.installed_count,
-                replaced_count: result.replaced_count,
-                preserved_count: result.preserved_count,
-                deferred_review_count: result.deferred_review_count,
-                snapshot_name: Some(result.snapshot_name),
-                message: format!(
-                    "Fixed the old {} setup and refreshed the special install plan.",
+        match action.kind {
+            ReviewPlanActionKind::RepairSpecial => {
+                let result = match move_engine::apply_special_review_fix(
+                    &mut connection,
+                    &settings,
+                    &seed_pack,
+                    &state.app_data_dir,
+                    item_id,
+                    approved,
+                ) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        let detail = error.to_string();
+                        let _ = database::record_download_item_event(
+                            &connection,
+                            item_id,
+                            "apply_failed",
+                            "Special repair failed",
+                            Some(&detail),
+                        );
+                        return Err(map_error(error));
+                    }
+                };
+                downloads_watcher::refresh_download_item_status(&connection, item_id)
+                    .map_err(map_error)?;
+                emit_workspace_domains(
+                    &app,
+                    vec![
+                        WorkspaceDomain::Home,
+                        WorkspaceDomain::Downloads,
+                        WorkspaceDomain::Library,
+                        WorkspaceDomain::Organize,
+                        WorkspaceDomain::Review,
+                        WorkspaceDomain::Duplicates,
+                        WorkspaceDomain::Snapshots,
+                    ],
+                    "review-plan-repair-applied",
+                    vec![item_id],
                     review_plan
-                        .profile_name
-                        .unwrap_or_else(|| "special mod".to_owned())
-                ),
-            })
-        }
-        ReviewPlanActionKind::InstallDependency => {
-            let dependency_item_id = action
-                .related_item_id
-                .ok_or_else(|| "This dependency action is missing its inbox item.".to_owned())?;
-            let Some(plan) = downloads_watcher::get_download_item_guided_plan(
-                &connection,
-                &settings,
-                &seed_pack,
-                dependency_item_id,
-            )
-            .map_err(map_error)?
-            else {
-                return Err("This dependency no longer has a guided setup plan.".to_owned());
-            };
-            let result = match move_engine::apply_guided_download_plan(
-                &mut connection,
-                &settings,
-                &seed_pack,
-                &state.app_data_dir,
-                &plan,
-                approved,
-            ) {
-                Ok(result) => result,
-                Err(error) => {
-                    let detail = error.to_string();
-                    let _ = database::record_download_item_event(
-                        &connection,
-                        dependency_item_id,
-                        "apply_failed",
-                        "Dependency install failed",
-                        Some(&detail),
-                    );
-                    return Err(map_error(error));
-                }
-            };
-            downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
-                .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, item_id)
-                .map_err(map_error)?;
-            emit_workspace_domains(
-                &app,
-                vec![
-                    WorkspaceDomain::Home,
-                    WorkspaceDomain::Downloads,
-                    WorkspaceDomain::Library,
-                    WorkspaceDomain::Organize,
-                    WorkspaceDomain::Review,
-                    WorkspaceDomain::Duplicates,
-                    WorkspaceDomain::Snapshots,
-                ],
-                "review-plan-dependency-installed",
-                vec![item_id, dependency_item_id],
-                vec![plan.profile_key.clone()],
-            )?;
-            Ok(ApplyReviewPlanActionResult {
+                        .profile_key
+                        .clone()
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                )?;
+                Ok(ApplyReviewPlanActionResult {
+                    action_kind: action.kind,
+                    focus_item_id: item_id,
+                    created_item_id: None,
+                    opened_url: None,
+                    snapshot_id: Some(result.snapshot_id),
+                    repaired_count: result.repaired_count,
+                    installed_count: result.installed_count,
+                    replaced_count: result.replaced_count,
+                    preserved_count: result.preserved_count,
+                    deferred_review_count: result.deferred_review_count,
+                    snapshot_name: Some(result.snapshot_name),
+                    message: format!(
+                        "Fixed the old {} setup and refreshed the special install plan.",
+                        review_plan
+                            .profile_name
+                            .unwrap_or_else(|| "special mod".to_owned())
+                    ),
+                })
+            }
+            ReviewPlanActionKind::InstallDependency => {
+                let dependency_item_id = action.related_item_id.ok_or_else(|| {
+                    "This dependency action is missing its inbox item.".to_owned()
+                })?;
+                let Some(plan) = downloads_watcher::get_download_item_guided_plan(
+                    &connection,
+                    &settings,
+                    &seed_pack,
+                    dependency_item_id,
+                )
+                .map_err(map_error)?
+                else {
+                    return Err("This dependency no longer has a guided setup plan.".to_owned());
+                };
+                let result = match move_engine::apply_guided_download_plan(
+                    &mut connection,
+                    &settings,
+                    &seed_pack,
+                    &state.app_data_dir,
+                    &plan,
+                    approved,
+                ) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        let detail = error.to_string();
+                        let _ = database::record_download_item_event(
+                            &connection,
+                            dependency_item_id,
+                            "apply_failed",
+                            "Dependency install failed",
+                            Some(&detail),
+                        );
+                        return Err(map_error(error));
+                    }
+                };
+                downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
+                    .map_err(map_error)?;
+                downloads_watcher::refresh_download_item_status(&connection, item_id)
+                    .map_err(map_error)?;
+                emit_workspace_domains(
+                    &app,
+                    vec![
+                        WorkspaceDomain::Home,
+                        WorkspaceDomain::Downloads,
+                        WorkspaceDomain::Library,
+                        WorkspaceDomain::Organize,
+                        WorkspaceDomain::Review,
+                        WorkspaceDomain::Duplicates,
+                        WorkspaceDomain::Snapshots,
+                    ],
+                    "review-plan-dependency-installed",
+                    vec![item_id, dependency_item_id],
+                    vec![plan.profile_key.clone()],
+                )?;
+                Ok(ApplyReviewPlanActionResult {
+                    action_kind: action.kind,
+                    focus_item_id: item_id,
+                    created_item_id: None,
+                    opened_url: None,
+                    snapshot_id: Some(result.snapshot_id),
+                    repaired_count: 0,
+                    installed_count: result.installed_count,
+                    replaced_count: result.replaced_count,
+                    preserved_count: result.preserved_count,
+                    deferred_review_count: result.deferred_review_count,
+                    snapshot_name: Some(result.snapshot_name),
+                    message: format!(
+                        "Installed {} and re-checked the waiting item.",
+                        action
+                            .related_item_name
+                            .unwrap_or_else(|| "the required library".to_owned())
+                    ),
+                })
+            }
+            ReviewPlanActionKind::OpenDependency => Ok(ApplyReviewPlanActionResult {
                 action_kind: action.kind,
-                focus_item_id: item_id,
+                focus_item_id: action.related_item_id.unwrap_or(item_id),
                 created_item_id: None,
                 opened_url: None,
-                snapshot_id: Some(result.snapshot_id),
-                repaired_count: 0,
-                installed_count: result.installed_count,
-                replaced_count: result.replaced_count,
-                preserved_count: result.preserved_count,
-                deferred_review_count: result.deferred_review_count,
-                snapshot_name: Some(result.snapshot_name),
-                message: format!(
-                    "Installed {} and re-checked the waiting item.",
-                    action
-                        .related_item_name
-                        .unwrap_or_else(|| "the required library".to_owned())
-                ),
-            })
-        }
-        ReviewPlanActionKind::OpenDependency => Ok(ApplyReviewPlanActionResult {
-            action_kind: action.kind,
-            focus_item_id: action.related_item_id.unwrap_or(item_id),
-            created_item_id: None,
-            opened_url: None,
-            snapshot_id: None,
-            repaired_count: 0,
-            installed_count: 0,
-            replaced_count: 0,
-            preserved_count: 0,
-            deferred_review_count: 0,
-            snapshot_name: None,
-            message: format!(
-                "Opened the {} inbox item so you can sort it first.",
-                action
-                    .related_item_name
-                    .unwrap_or_else(|| "dependency".to_owned())
-            ),
-        }),
-        ReviewPlanActionKind::OpenRelatedItem => Ok(ApplyReviewPlanActionResult {
-            action_kind: action.kind,
-            focus_item_id: action.related_item_id.unwrap_or(item_id),
-            created_item_id: None,
-            opened_url: None,
-            snapshot_id: None,
-            repaired_count: 0,
-            installed_count: 0,
-            replaced_count: 0,
-            preserved_count: 0,
-            deferred_review_count: 0,
-            snapshot_name: None,
-            message: format!(
-                "Opened {} so you can use the fuller local pack first.",
-                action
-                    .related_item_name
-                    .unwrap_or_else(|| "the better Inbox item".to_owned())
-            ),
-        }),
-        ReviewPlanActionKind::OpenOfficialSource => {
-            let opened_url = match approved_review_action_url(&action, "official page") {
-                Ok(url) => url,
-                Err(detail) => {
-                    record_blocked_review_action_event(&connection, item_id, &action, &detail);
-                    return Err(detail);
-                }
-            };
-            webbrowser::open(opened_url.as_str()).map_err(|error| {
-                format!("SimSuite could not open the official page in your browser: {error}")
-            })?;
-
-            Ok(ApplyReviewPlanActionResult {
-                action_kind: action.kind,
-                focus_item_id: item_id,
-                created_item_id: None,
-                opened_url: Some(opened_url.to_string()),
                 snapshot_id: None,
                 repaired_count: 0,
                 installed_count: 0,
@@ -1324,215 +1354,281 @@ pub fn apply_review_plan_action(
                 deferred_review_count: 0,
                 snapshot_name: None,
                 message: format!(
-                    "Opened the official {} page in your browser.",
+                    "Opened the {} inbox item so you can sort it first.",
                     action
                         .related_item_name
-                        .unwrap_or_else(|| "download".to_owned())
+                        .unwrap_or_else(|| "dependency".to_owned())
                 ),
-            })
-        }
-        ReviewPlanActionKind::DownloadMissingFiles => {
-            if !approved {
-                return Err("Download was blocked because approval was not confirmed.".to_owned());
-            }
-            let fallback_name = format!(
-                "{}.zip",
-                action
-                    .related_item_name
-                    .clone()
-                    .unwrap_or_else(|| "special-download".to_owned())
-                    .replace(' ', "_")
-            );
-            let url = match approved_review_action_url(&action, "trusted download link") {
-                Ok(url) => url,
-                Err(detail) => {
-                    record_blocked_review_action_event(&connection, item_id, &action, &detail);
-                    return Err(detail);
-                }
-            };
-            let downloaded_file =
-                match download_review_action_file(&url, &state.app_data_dir, &fallback_name) {
-                    Ok(path) => path,
+            }),
+            ReviewPlanActionKind::OpenRelatedItem => Ok(ApplyReviewPlanActionResult {
+                action_kind: action.kind,
+                focus_item_id: action.related_item_id.unwrap_or(item_id),
+                created_item_id: None,
+                opened_url: None,
+                snapshot_id: None,
+                repaired_count: 0,
+                installed_count: 0,
+                replaced_count: 0,
+                preserved_count: 0,
+                deferred_review_count: 0,
+                snapshot_name: None,
+                message: format!(
+                    "Opened {} so you can use the fuller local pack first.",
+                    action
+                        .related_item_name
+                        .unwrap_or_else(|| "the better Inbox item".to_owned())
+                ),
+            }),
+            ReviewPlanActionKind::OpenOfficialSource => {
+                let opened_url = match approved_review_action_url(&action, "official page") {
+                    Ok(url) => url,
                     Err(detail) => {
                         record_blocked_review_action_event(&connection, item_id, &action, &detail);
                         return Err(detail);
                     }
                 };
-            let imported_item_id = downloads_watcher::import_download_source(
-                &mut connection,
-                state.inner(),
-                &downloaded_file,
-                Some(
-                    downloaded_file
-                        .file_name()
-                        .map(|value| value.to_string_lossy().to_string())
-                        .unwrap_or(fallback_name),
-                ),
-                Some(item_id),
-            )
-            .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, imported_item_id)
-                .map_err(map_error)?;
-            emit_workspace_domains(
-                &app,
-                vec![
-                    WorkspaceDomain::Home,
-                    WorkspaceDomain::Downloads,
-                    WorkspaceDomain::Review,
-                    WorkspaceDomain::Duplicates,
-                ],
-                "review-plan-download-imported",
-                vec![item_id, imported_item_id],
-                Vec::new(),
-            )?;
-            Ok(ApplyReviewPlanActionResult {
-                action_kind: action.kind,
-                focus_item_id: imported_item_id,
-                created_item_id: None,
-                opened_url: None,
-                snapshot_id: None,
-                repaired_count: 0,
-                installed_count: 0,
-                replaced_count: 0,
-                preserved_count: 0,
-                deferred_review_count: 0,
-                snapshot_name: None,
-                message: format!(
-                    "Downloaded the trusted {} archive into the Inbox and re-checked it.",
+                webbrowser::open(opened_url.as_str()).map_err(|error| {
+                    format!("SimSuite could not open the official page in your browser: {error}")
+                })?;
+
+                Ok(ApplyReviewPlanActionResult {
+                    action_kind: action.kind,
+                    focus_item_id: item_id,
+                    created_item_id: None,
+                    opened_url: Some(opened_url.to_string()),
+                    snapshot_id: None,
+                    repaired_count: 0,
+                    installed_count: 0,
+                    replaced_count: 0,
+                    preserved_count: 0,
+                    deferred_review_count: 0,
+                    snapshot_name: None,
+                    message: format!(
+                        "Opened the official {} page in your browser.",
+                        action
+                            .related_item_name
+                            .unwrap_or_else(|| "download".to_owned())
+                    ),
+                })
+            }
+            ReviewPlanActionKind::DownloadMissingFiles => {
+                if !approved {
+                    return Err(
+                        "Download was blocked because approval was not confirmed.".to_owned()
+                    );
+                }
+                let fallback_name = format!(
+                    "{}.zip",
                     action
                         .related_item_name
-                        .unwrap_or_else(|| "special-mod".to_owned())
-                ),
-            })
-        }
-        ReviewPlanActionKind::SeparateSupportedFiles => {
-            if !approved {
-                return Err("Split was blocked because approval was not confirmed.".to_owned());
+                        .clone()
+                        .unwrap_or_else(|| "special-download".to_owned())
+                        .replace(' ', "_")
+                );
+                let url = match approved_review_action_url(&action, "trusted download link") {
+                    Ok(url) => url,
+                    Err(detail) => {
+                        record_blocked_review_action_event(&connection, item_id, &action, &detail);
+                        return Err(detail);
+                    }
+                };
+                let downloaded_file =
+                    match download_review_action_file(&url, &state.app_data_dir, &fallback_name) {
+                        Ok(path) => path,
+                        Err(detail) => {
+                            record_blocked_review_action_event(
+                                &connection,
+                                item_id,
+                                &action,
+                                &detail,
+                            );
+                            return Err(detail);
+                        }
+                    };
+                let imported_item_id = downloads_watcher::import_download_source(
+                    &mut connection,
+                    &state,
+                    &downloaded_file,
+                    Some(
+                        downloaded_file
+                            .file_name()
+                            .map(|value| value.to_string_lossy().to_string())
+                            .unwrap_or(fallback_name),
+                    ),
+                    Some(item_id),
+                )
+                .map_err(map_error)?;
+                downloads_watcher::refresh_download_item_status(&connection, imported_item_id)
+                    .map_err(map_error)?;
+                emit_workspace_domains(
+                    &app,
+                    vec![
+                        WorkspaceDomain::Home,
+                        WorkspaceDomain::Downloads,
+                        WorkspaceDomain::Review,
+                        WorkspaceDomain::Duplicates,
+                    ],
+                    "review-plan-download-imported",
+                    vec![item_id, imported_item_id],
+                    Vec::new(),
+                )?;
+                Ok(ApplyReviewPlanActionResult {
+                    action_kind: action.kind,
+                    focus_item_id: imported_item_id,
+                    created_item_id: None,
+                    opened_url: None,
+                    snapshot_id: None,
+                    repaired_count: 0,
+                    installed_count: 0,
+                    replaced_count: 0,
+                    preserved_count: 0,
+                    deferred_review_count: 0,
+                    snapshot_name: None,
+                    message: format!(
+                        "Downloaded the trusted {} archive into the Inbox and re-checked it.",
+                        action
+                            .related_item_name
+                            .unwrap_or_else(|| "special-mod".to_owned())
+                    ),
+                })
             }
-            let profile_key = review_plan.profile_key.clone().ok_or_else(|| {
-                "This inbox item does not have a matched special-mod profile.".to_owned()
-            })?;
-            let Some((supported_ids, leftover_ids)) =
-                install_profile_engine::collect_supported_subset_file_ids(
+            ReviewPlanActionKind::SeparateSupportedFiles => {
+                if !approved {
+                    return Err("Split was blocked because approval was not confirmed.".to_owned());
+                }
+                let profile_key = review_plan.profile_key.clone().ok_or_else(|| {
+                    "This inbox item does not have a matched special-mod profile.".to_owned()
+                })?;
+                let Some((supported_ids, leftover_ids)) =
+                    install_profile_engine::collect_supported_subset_file_ids(
+                        &connection,
+                        &seed_pack,
+                        item_id,
+                        &profile_key,
+                    )
+                    .map_err(map_error)?
+                else {
+                    return Err(
+                        "SimSuite could not find a clean supported subset to split out.".to_owned(),
+                    );
+                };
+                let source = downloads_watcher::get_download_item_source(&connection, item_id)
+                    .map_err(map_error)?
+                    .ok_or_else(|| "This inbox item could not be found.".to_owned())?;
+                let detail = downloads_watcher::get_download_item_detail(
                     &connection,
+                    &settings,
                     &seed_pack,
                     item_id,
-                    &profile_key,
                 )
                 .map_err(map_error)?
-            else {
-                return Err(
-                    "SimSuite could not find a clean supported subset to split out.".to_owned(),
-                );
-            };
-            let source = downloads_watcher::get_download_item_source(&connection, item_id)
-                .map_err(map_error)?
-                .ok_or_else(|| "This inbox item could not be found.".to_owned())?;
-            let detail = downloads_watcher::get_download_item_detail(
-                &connection,
-                &settings,
-                &seed_pack,
-                item_id,
-            )
-            .map_err(map_error)?
-            .ok_or_else(|| "This inbox item could not be loaded.".to_owned())?;
-            let split_root = state
-                .app_data_dir
-                .join("downloads_split")
-                .join(item_id.to_string())
-                .join(chrono::Utc::now().format("%Y%m%d%H%M%S").to_string());
-            let supported_root = split_root.join("supported");
-            let leftover_root = split_root.join("leftover");
-            copy_split_files(&detail.files, &supported_root, &supported_ids)?;
-            copy_split_files(&detail.files, &leftover_root, &leftover_ids)?;
+                .ok_or_else(|| "This inbox item could not be loaded.".to_owned())?;
+                let split_root = state
+                    .app_data_dir
+                    .join("downloads_split")
+                    .join(item_id.to_string())
+                    .join(chrono::Utc::now().format("%Y%m%d%H%M%S").to_string());
+                let supported_root = split_root.join("supported");
+                let leftover_root = split_root.join("leftover");
+                copy_split_files(&detail.files, &supported_root, &supported_ids)?;
+                copy_split_files(&detail.files, &leftover_root, &leftover_ids)?;
 
-            let supported_name = review_plan
-                .profile_name
-                .clone()
-                .unwrap_or_else(|| detail.item.display_name.clone());
-            let leftover_name = format!("{} - extra files", detail.item.display_name);
-
-            downloads_watcher::import_staged_batch(
-                &mut connection,
-                state.inner(),
-                &source,
-                &supported_root,
-                supported_name,
-                Some(item_id),
-                vec!["Split out the supported special-mod files from a mixed batch.".to_owned()],
-            )
-            .map_err(map_error)?;
-            let leftover_item_id = downloads_watcher::import_staged_batch(
-                &mut connection,
-                state.inner(),
-                &source,
-                &leftover_root,
-                leftover_name,
-                None,
-                vec!["Leftover files from a mixed special-mod batch.".to_owned()],
-            )
-            .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, item_id)
-                .map_err(map_error)?;
-            downloads_watcher::refresh_download_item_status(&connection, leftover_item_id)
-                .map_err(map_error)?;
-            emit_workspace_domains(
-                &app,
-                vec![
-                    WorkspaceDomain::Home,
-                    WorkspaceDomain::Downloads,
-                    WorkspaceDomain::Review,
-                    WorkspaceDomain::Duplicates,
-                ],
-                "review-plan-batch-split",
-                vec![item_id, leftover_item_id],
-                review_plan
-                    .profile_key
+                let supported_name = review_plan
+                    .profile_name
                     .clone()
-                    .into_iter()
-                    .collect::<Vec<_>>(),
-            )?;
+                    .unwrap_or_else(|| detail.item.display_name.clone());
+                let leftover_name = format!("{} - extra files", detail.item.display_name);
 
-            Ok(ApplyReviewPlanActionResult {
-                action_kind: action.kind,
-                focus_item_id: item_id,
-                created_item_id: Some(leftover_item_id),
-                opened_url: None,
-                snapshot_id: None,
-                repaired_count: 0,
-                installed_count: 0,
-                replaced_count: 0,
-                preserved_count: 0,
-                deferred_review_count: 0,
-                snapshot_name: None,
-                message: "Split the supported special-mod files into their own clean inbox batch."
-                    .to_owned(),
-            })
+                downloads_watcher::import_staged_batch(
+                    &mut connection,
+                    &state,
+                    &source,
+                    &supported_root,
+                    supported_name,
+                    Some(item_id),
+                    vec![
+                        "Split out the supported special-mod files from a mixed batch.".to_owned(),
+                    ],
+                )
+                .map_err(map_error)?;
+                let leftover_item_id = downloads_watcher::import_staged_batch(
+                    &mut connection,
+                    &state,
+                    &source,
+                    &leftover_root,
+                    leftover_name,
+                    None,
+                    vec!["Leftover files from a mixed special-mod batch.".to_owned()],
+                )
+                .map_err(map_error)?;
+                downloads_watcher::refresh_download_item_status(&connection, item_id)
+                    .map_err(map_error)?;
+                downloads_watcher::refresh_download_item_status(&connection, leftover_item_id)
+                    .map_err(map_error)?;
+                emit_workspace_domains(
+                    &app,
+                    vec![
+                        WorkspaceDomain::Home,
+                        WorkspaceDomain::Downloads,
+                        WorkspaceDomain::Review,
+                        WorkspaceDomain::Duplicates,
+                    ],
+                    "review-plan-batch-split",
+                    vec![item_id, leftover_item_id],
+                    review_plan
+                        .profile_key
+                        .clone()
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                )?;
+
+                Ok(ApplyReviewPlanActionResult {
+                    action_kind: action.kind,
+                    focus_item_id: item_id,
+                    created_item_id: Some(leftover_item_id),
+                    opened_url: None,
+                    snapshot_id: None,
+                    repaired_count: 0,
+                    installed_count: 0,
+                    replaced_count: 0,
+                    preserved_count: 0,
+                    deferred_review_count: 0,
+                    snapshot_name: None,
+                    message:
+                        "Split the supported special-mod files into their own clean inbox batch."
+                            .to_owned(),
+                })
+            }
         }
-    }
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn ignore_download_item(
+pub async fn ignore_download_item(
     app: AppHandle,
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    downloads_watcher::ignore_download_item(&mut connection, item_id).map_err(map_error)?;
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Downloads,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::Duplicates,
-        ],
-        "download-item-ignored",
-        vec![item_id],
-        Vec::new(),
-    )?;
-    Ok(true)
+    let state = state.inner().clone();
+    run_blocking_command("ignore_download_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        downloads_watcher::ignore_download_item(&mut connection, item_id).map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+            ],
+            "download-item-ignored",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(true)
+    })
+    .await
 }
 
 #[tauri::command]
