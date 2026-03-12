@@ -2,7 +2,42 @@
 
 This document maps the current implementation to the active product requirements.
 
-## Current session note (March 11, 2026)
+## Current session note (March 12, 2026)
+
+This session did two important things:
+
+1. it proved more of Inbox against the real Tauri desktop app instead of only the browser preview
+2. it added a simple repo memory and handoff process so the next session can pick up quickly
+
+Important changes and findings:
+
+- special-mod review links are now checked more strictly before SimSuite opens or downloads anything
+- `.7z` and `.rar` downloads are now held for review instead of being unpacked automatically
+- watcher refresh now has a narrower path for ordinary file-system events instead of always rescanning the whole Downloads tree
+- special-mod queue rows now use a lighter summary while the selected item keeps the full detail and evidence
+- a real Tauri desktop smoke lane now exists with isolated fixture folders, so Inbox can be tested without touching the user's real Mods or Downloads folders
+- the real desktop MCCC flow was checked end to end, including selection, version evidence, refresh, and safe apply
+- the local compare result in the tested MCCC flow was accurate:
+  - installed `2025.9.0`
+  - incoming `2026.1.1`
+  - result `Incoming pack is newer`
+- after safe apply, SimSuite updated the installed version to `2026.1.1` and preserved the `.cfg` settings file
+
+Important real bug found:
+
+- after a safe MCCC apply, Inbox can wrongly treat a partial blocked sibling as the "better" family item and point the user back to it
+
+Important remaining gap:
+
+- helper-only official latest support is still too narrow for supported special mods whose official pages are readable today, especially Lot 51 and several CurseForge-backed pages
+
+Repo memory is now expected to live in:
+
+- `SESSION_HANDOFF.md` for the current baton-pass
+- `docs/IMPLEMENTATION_STATUS.md` for broader progress
+- `docs/ARCHITECTURE.md` only when real structure or behavior changes
+
+## Previous session note (March 11, 2026)
 
 This session focused on two connected areas:
 
