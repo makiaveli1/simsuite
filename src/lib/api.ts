@@ -44,6 +44,7 @@ import type {
   ScanProgress,
   ScanStatus,
   ScanSummary,
+  SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
   WorkspaceChange,
@@ -105,6 +106,8 @@ const emptyInsights = {
   scriptNamespaces: [],
   embeddedNames: [],
   creatorHints: [],
+  versionHints: [],
+  familyHints: [],
 };
 const emptyCreatorLearning = (): CreatorLearningInfo => ({
   lockedByUser: false,
@@ -115,6 +118,14 @@ const emptyCategoryOverride = (): CategoryOverrideInfo => ({
   savedByUser: false,
   kind: null,
   subtype: null,
+});
+const normalizeMockInsights = (
+  insights: Partial<FileDetail["insights"]>,
+): FileDetail["insights"] => ({
+  ...emptyInsights,
+  ...insights,
+  versionHints: insights.versionHints ?? [],
+  familyHints: insights.familyHints ?? [],
 });
 const buildMockCatalogSource = (
   officialSourceUrl: string | null,
@@ -179,6 +190,355 @@ const buildMockReviewAction = (
   relatedItemName,
   url,
 });
+
+function buildMockOfficialLatest(
+  item: DownloadsInboxItem,
+  latestVersion: string | null,
+  note: string | null,
+) {
+  if (!item.catalogSource) {
+    return null;
+  }
+
+  return {
+    sourceUrl: item.catalogSource.officialSourceUrl,
+    downloadUrl: item.catalogSource.officialDownloadUrl,
+    latestVersion,
+    checkedAt: item.catalogSource.reviewedAt,
+    confidence: latestVersion ? 0.88 : 0.6,
+    status: latestVersion ? "known" : "unknown",
+    note,
+  };
+}
+
+function buildMockInstalledState(
+  profileKey: string,
+  profileName: string,
+  installState: SpecialModDecision["installedState"]["installState"],
+  installPath: string | null,
+  installedVersion: string | null,
+  installedSignature: string | null,
+): SpecialModDecision["installedState"] {
+  return {
+    profileKey,
+    profileName,
+    installState,
+    installPath,
+    installedVersion,
+    installedSignature,
+    sourceItemId: null,
+    checkedAt: "2026-03-11T09:24:00.000Z",
+  };
+}
+
+function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision | null {
+  const guidedPlan = buildMockGuidedPlan(item.id);
+  const reviewPlan = buildMockReviewPlan(item.id);
+  const availableActions = reviewPlan?.availableActions ?? [];
+  const primaryAction = availableActions[0] ?? null;
+
+  if (item.id === 42) {
+    return {
+      itemId: 42,
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      state: "guided_ready",
+      localPackState: "complete",
+      existingInstallState: "clean",
+      installedState: buildMockInstalledState(
+        "mccc",
+        "MC Command Center",
+        "clean",
+        `${DEFAULT_MODS_PATH}\\MCCC`,
+        "2026.2.0",
+        "mccc-local-2026.2.0",
+      ),
+      familyRole: "primary",
+      familyKey: "mccc",
+      primaryFamilyItemId: 42,
+      primaryFamilyItemName: item.displayName,
+      siblingItemIds: [43, 44, 47],
+      queueLane: "special_setup",
+      queueSummary: "Ready to update the installed MCCC folder.",
+      explanation:
+        guidedPlan?.explanation ??
+        "SimSuite found a complete MCCC download and a safe local update path.",
+      recommendedNextStep: "Update MC Command Center in the guided flow.",
+      incomingVersion: "2026.3.0",
+      incomingSignature: "mccc-download-2026.3.0",
+      incomingVersionSource: "inside mod",
+      incomingVersionEvidence: [
+        "mc_cmd_center.ts4script hinted 2026.3.0 from inside the download.",
+        "mc_cmd_center.package backed up the same local version clue.",
+      ],
+      installedVersionSource: "inside mod",
+      installedVersionEvidence: [
+        "mc_cmd_center.ts4script hinted 2026.2.0 from the installed mod files.",
+        "mc_settings.cfg will stay in place during the update.",
+      ],
+      comparisonSource: "inside mod",
+      comparisonEvidence: [
+        "SimSuite compared the local versions 2026.3.0 and 2026.2.0.",
+        "The best local clue came from inside the mod files.",
+      ],
+      versionStatus: "incoming_newer",
+      sameVersion: false,
+      officialLatest: buildMockOfficialLatest(
+        item,
+        "2026.3.0",
+        "Official latest is extra guidance only and does not block the local update.",
+      ),
+      applyReady: true,
+      availableActions,
+      primaryAction,
+    };
+  }
+
+  if (item.id === 43) {
+    return {
+      itemId: 43,
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      state: "download_missing_files",
+      localPackState: "partial",
+      existingInstallState: "not_installed",
+      installedState: buildMockInstalledState(
+        "mccc",
+        "MC Command Center",
+        "not_installed",
+        null,
+        null,
+        null,
+      ),
+      familyRole: "primary",
+      familyKey: "mccc",
+      primaryFamilyItemId: 43,
+      primaryFamilyItemName: item.displayName,
+      siblingItemIds: [],
+      queueLane: "blocked",
+      queueSummary: "Blocked until the missing MCCC core files are present.",
+      explanation:
+        reviewPlan?.explanation ??
+        "SimSuite found MCCC clues, but the local pack is missing required files.",
+      recommendedNextStep:
+        reviewPlan?.recommendedNextStep ??
+        "Download the missing MCCC files, then let SimSuite check the full set again.",
+      incomingVersion: null,
+      incomingSignature: null,
+      incomingVersionSource: null,
+      incomingVersionEvidence: [
+        "The partial local batch did not give SimSuite a reliable version clue.",
+      ],
+      installedVersionSource: null,
+      installedVersionEvidence: [
+        "No installed MCCC files were found in Mods for this check.",
+      ],
+      comparisonSource: null,
+      comparisonEvidence: [
+        "SimSuite blocked this pack because the local MCCC set is incomplete.",
+      ],
+      versionStatus: "unknown",
+      sameVersion: false,
+      officialLatest: buildMockOfficialLatest(
+        item,
+        "2026.3.0",
+        "Official latest is helper-only here. The missing local files are the real blocker.",
+      ),
+      applyReady: false,
+      availableActions,
+      primaryAction,
+    };
+  }
+
+  if (item.id === 44) {
+    return {
+      itemId: 44,
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      state: "separate_supported_files",
+      localPackState: "mixed",
+      existingInstallState: "not_installed",
+      installedState: buildMockInstalledState(
+        "mccc",
+        "MC Command Center",
+        "not_installed",
+        null,
+        null,
+        null,
+      ),
+      familyRole: "primary",
+      familyKey: "mccc",
+      primaryFamilyItemId: 44,
+      primaryFamilyItemName: item.displayName,
+      siblingItemIds: [],
+      queueLane: "blocked",
+      queueSummary: "Blocked until the clean MCCC files are separated.",
+      explanation:
+        reviewPlan?.explanation ??
+        "SimSuite found a real MCCC set mixed with unrelated files in the same archive.",
+      recommendedNextStep:
+        reviewPlan?.recommendedNextStep ??
+        "Separate the supported MCCC files before continuing.",
+      incomingVersion: null,
+      incomingSignature: null,
+      incomingVersionSource: null,
+      incomingVersionEvidence: [
+        "The mixed local batch did not give SimSuite one safe version answer.",
+      ],
+      installedVersionSource: null,
+      installedVersionEvidence: [
+        "No installed MCCC files were needed for this mixed-pack check.",
+      ],
+      comparisonSource: null,
+      comparisonEvidence: [
+        "SimSuite stopped because unrelated local files were mixed into the MCCC archive.",
+      ],
+      versionStatus: "unknown",
+      sameVersion: false,
+      officialLatest: buildMockOfficialLatest(
+        item,
+        "2026.3.0",
+        "Official latest is only extra guidance. The local mixed archive is the main issue.",
+      ),
+      applyReady: false,
+      availableActions,
+      primaryAction,
+    };
+  }
+
+  if (item.id === 46) {
+    return {
+      itemId: 46,
+      profileKey: "xml_injector",
+      profileName: "XML Injector",
+      specialFamily: "Support library",
+      state: "guided_ready",
+      localPackState: "complete",
+      existingInstallState: "not_installed",
+      installedState: buildMockInstalledState(
+        "xml_injector",
+        "XML Injector",
+        "not_installed",
+        null,
+        null,
+        null,
+      ),
+      familyRole: "primary",
+      familyKey: "xml_injector",
+      primaryFamilyItemId: 46,
+      primaryFamilyItemName: item.displayName,
+      siblingItemIds: [45],
+      queueLane: "special_setup",
+      queueSummary: "Ready to install XML Injector before dependent mods.",
+      explanation:
+        guidedPlan?.explanation ??
+        "SimSuite found a complete XML Injector pack and a safe local install path.",
+      recommendedNextStep: "Install XML Injector first, then refresh dependent mods.",
+      incomingVersion: "4",
+      incomingSignature: "xml-injector-download-v4",
+      incomingVersionSource: "download name",
+      incomingVersionEvidence: [
+        "The download name hinted 4.",
+        "XmlInjector_Script_v4.ts4script matched the same local file-name clue.",
+      ],
+      installedVersionSource: null,
+      installedVersionEvidence: [
+        "No installed XML Injector files were found in Mods.",
+      ],
+      comparisonSource: "download name",
+      comparisonEvidence: [
+        "SimSuite matched the local XML Injector files and found no installed copy yet.",
+      ],
+      versionStatus: "not_installed",
+      sameVersion: false,
+      officialLatest: buildMockOfficialLatest(
+        item,
+        "4",
+        "Official latest is extra guidance only and does not block a safe fresh install.",
+      ),
+      applyReady: true,
+      availableActions,
+      primaryAction,
+    };
+  }
+
+  if (item.id === 47) {
+    return {
+      itemId: 47,
+      profileKey: "mccc",
+      profileName: "MC Command Center",
+      specialFamily: "Script suite",
+      state: "repair_before_update",
+      localPackState: "complete",
+      existingInstallState: "repairable",
+      installedState: buildMockInstalledState(
+        "mccc",
+        "MC Command Center",
+        "repairable",
+        `${DEFAULT_MODS_PATH}\\MCCC`,
+        "2026.0.9",
+        null,
+      ),
+      familyRole: "primary",
+      familyKey: "mccc",
+      primaryFamilyItemId: 47,
+      primaryFamilyItemName: item.displayName,
+      siblingItemIds: [42],
+      queueLane: "blocked",
+      queueSummary: "Repair the old MCCC layout first, then finish the update.",
+      explanation:
+        reviewPlan?.explanation ??
+        "SimSuite found the update, but the installed MCCC files still need a safe repair first.",
+      recommendedNextStep:
+        reviewPlan?.recommendedNextStep ??
+        "Repair the old MCCC setup first, then finish the update.",
+      incomingVersion: "2026.1.1",
+      incomingSignature: "mccc-download-2026.1.1",
+      incomingVersionSource: "download name",
+      incomingVersionEvidence: [
+        "The download name hinted 2026.1.1.",
+        "mc_cmd_center.ts4script is already staged in the local repair batch.",
+      ],
+      installedVersionSource: "saved family state",
+      installedVersionEvidence: [
+        "The last saved family record still shows 2026.0.9.",
+        "The loose installed files still look like the same MCCC family.",
+      ],
+      comparisonSource: "saved family state",
+      comparisonEvidence: [
+        "SimSuite compared the local versions 2026.1.1 and 2026.0.9.",
+        "The installed side fell back to the last saved family record.",
+      ],
+      versionStatus: "incoming_newer",
+      sameVersion: false,
+      officialLatest: buildMockOfficialLatest(
+        item,
+        "2026.3.0",
+        "Official latest is helper-only. The local repair-first rule is still what matters here.",
+      ),
+      applyReady: false,
+      availableActions,
+      primaryAction,
+    };
+  }
+
+  return null;
+}
+
+function buildMockDetailItem(item: DownloadsInboxItem): DownloadsInboxItem {
+  const specialDecision = buildMockSpecialDecision(item);
+  if (!specialDecision) {
+    return item;
+  }
+
+  return {
+    ...item,
+    specialDecision,
+  };
+}
 
 function syncMockDownloadsWatcherStatus() {
   const activeItems = mockDownloadsItems.filter((item) => item.status !== "ignored").length;
@@ -305,6 +665,8 @@ const mockFiles = ([
       scriptNamespaces: ["deaderpool", "mccc"],
       embeddedNames: ["mc_cmd_center", "mc_settings"],
       creatorHints: ["Deaderpool"],
+      versionHints: ["2026.2.0"],
+      familyHints: ["mccc"],
     },
   },
   {
@@ -404,9 +766,10 @@ const mockFiles = ([
     },
   },
 ] as Omit<FileDetail, "creatorLearning" | "categoryOverride">[]).map((file) => ({
+  ...file,
+  insights: normalizeMockInsights(file.insights),
   creatorLearning: emptyCreatorLearning(),
   categoryOverride: emptyCategoryOverride(),
-  ...file,
 }));
 
 const mockReviewQueue: ReviewQueueItem[] = [
@@ -1513,10 +1876,11 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
   if (!item) {
     return null;
   }
+  const detailItem = buildMockDetailItem(item);
 
   if (itemId === 41) {
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 8,
@@ -1566,7 +1930,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
 
   if (itemId === 42) {
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4201,
@@ -1631,7 +1995,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
   if (itemId === 43) {
     if (item.intakeMode === "guided") {
       return {
-        item: structuredClone(item),
+        item: structuredClone(detailItem),
         files: [
           {
             fileId: 4301,
@@ -1680,7 +2044,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
     }
 
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4301,
@@ -1705,7 +2069,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
   if (itemId === 44) {
     if (item.intakeMode === "guided") {
       return {
-        item: structuredClone(item),
+        item: structuredClone(detailItem),
         files: [
           {
             fileId: 4401,
@@ -1754,7 +2118,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
     }
 
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4401,
@@ -1838,7 +2202,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
     const dependencyResolved = item.intakeMode === "standard";
 
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4501,
@@ -1876,7 +2240,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
 
   if (itemId === 46) {
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4601,
@@ -1912,7 +2276,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
 
   if (itemId === 47) {
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4701,
@@ -1976,7 +2340,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
 
   if (itemId === 48) {
     return {
-      item: structuredClone(item),
+      item: structuredClone(detailItem),
       files: [
         {
           fileId: 4801,
@@ -2011,7 +2375,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
   }
 
   return {
-    item: structuredClone(item),
+    item: structuredClone(detailItem),
     files: [
       {
         fileId: 8,
