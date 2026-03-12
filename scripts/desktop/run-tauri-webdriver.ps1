@@ -28,14 +28,15 @@ function Resolve-ToolPath {
 function New-SmokeTs4script {
     param(
         [string]$Path,
-        [string]$Version
+        [string]$Version,
+        [string]$Marker = 'MC Command Center'
     )
 
     $workingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
     $payloadRoot = Join-Path $workingRoot 'payload'
     $zipPath = Join-Path $workingRoot 'script.zip'
     New-Item -ItemType Directory -Force -Path $payloadRoot | Out-Null
-    Set-Content -Encoding UTF8 -Path (Join-Path $payloadRoot 'version.txt') -Value "MC Command Center $Version"
+    Set-Content -Encoding UTF8 -Path (Join-Path $payloadRoot 'version.txt') -Value "$Marker $Version"
     Compress-Archive -Path (Join-Path $payloadRoot '*') -DestinationPath $zipPath -Force
     Move-Item -Force $zipPath $Path
     Remove-Item -Recurse -Force $workingRoot
@@ -69,12 +70,17 @@ function Initialize-SmokeFixtures {
     $downloads = Join-Path $root 'downloads'
     $mods = Join-Path $root 'Mods'
     $installedMccc = Join-Path $mods 'MCCC'
+    $installedXml = Join-Path $mods 'XML Injector'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
+    $xmlSameRoot = Join-Path $root 'incoming-xml-same'
+    $xmlOlderRoot = Join-Path $root 'incoming-xml-older'
     $specialItem = "MCCC_Update_Test_$token" 
     $blockedItem = "MCCC_Partial_Blocked_Test_$token"
+    $xmlSameItem = "XML_Injector_Same_Test_$token"
+    $xmlOlderItem = "XML_Injector_Older_Test_$token"
 
-    foreach ($path in @($appData, $downloads, $installedMccc, $incomingRoot, $blockedRoot)) {
+    foreach ($path in @($appData, $downloads, $installedMccc, $installedXml, $incomingRoot, $blockedRoot, $xmlSameRoot, $xmlOlderRoot)) {
         New-Item -ItemType Directory -Force -Path $path | Out-Null
     }
 
@@ -91,6 +97,13 @@ function Initialize-SmokeFixtures {
     Write-SmokePackage -Path (Join-Path $blockedRoot 'mc_woohoo.package') -Content 'partial woohoo only'
     New-SmokeZip -SourceRoot $blockedRoot -ZipPath (Join-Path $downloads "$blockedItem.zip")
 
+    New-SmokeTs4script -Path (Join-Path $installedXml 'XmlInjector_Script_v4_0.ts4script') -Version '4.0' -Marker 'XML Injector version'
+    New-SmokeTs4script -Path (Join-Path $xmlSameRoot 'XmlInjector_Script_v4_0.ts4script') -Version '4.0' -Marker 'XML Injector version'
+    New-SmokeZip -SourceRoot $xmlSameRoot -ZipPath (Join-Path $downloads "$xmlSameItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $xmlOlderRoot 'XmlInjector_Script_v3_0.ts4script') -Version '3.0' -Marker 'XML Injector version'
+    New-SmokeZip -SourceRoot $xmlOlderRoot -ZipPath (Join-Path $downloads "$xmlOlderItem.zip")
+
     return @{
         Root = $root
         AppData = $appData
@@ -98,6 +111,8 @@ function Initialize-SmokeFixtures {
         Mods = $mods
         SpecialItem = $specialItem
         BlockedItem = $blockedItem
+        XmlSameItem = $xmlSameItem
+        XmlOlderItem = $xmlOlderItem
     }
 }
 
@@ -200,6 +215,8 @@ $session = @{
             mods = $fixture.Mods
             specialItem = $fixture.SpecialItem
             blockedItem = $fixture.BlockedItem
+            xmlSameItem = $fixture.XmlSameItem
+            xmlOlderItem = $fixture.XmlOlderItem
         }
     } else {
         $null

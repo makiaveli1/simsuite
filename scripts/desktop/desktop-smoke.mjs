@@ -5,6 +5,8 @@ import path from "node:path";
 const WEBDRIVER_URL = process.env.SIMSUITE_WEBDRIVER_URL ?? "http://127.0.0.1:4444";
 const DEFAULT_SPECIAL_ITEM = "MCCC_Update_Test";
 const DEFAULT_BLOCKED_ITEM = "MCCC_Partial_Blocked_Test";
+const DEFAULT_XML_SAME_ITEM = "XML_Injector_Same_Test";
+const DEFAULT_XML_OLDER_ITEM = "XML_Injector_Older_Test";
 const DEFAULT_APP_PATHS = [
   path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
   path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
@@ -153,6 +155,37 @@ async function clickVisibleText(driver, partialText, timeoutMs = 30000) {
   await element.click();
 }
 
+async function findVisibleQueueRow(driver, partialText, timeoutMs = 30000) {
+  const label = xpathString(partialText);
+  const locator = By.xpath(
+    `//button[contains(@class, 'downloads-item-row')][.//strong[contains(normalize-space(.), ${label})]]`,
+  );
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  await driver.wait(async () => {
+    const rows = await driver.findElements(locator);
+    for (const row of rows) {
+      if (await row.isDisplayed()) {
+        return true;
+      }
+    }
+    return false;
+  }, timeoutMs);
+  const rows = await driver.findElements(locator);
+  for (const row of rows) {
+    if (await row.isDisplayed()) {
+      return row;
+    }
+  }
+  throw new Error(`Could not find a visible inbox row named "${partialText}".`);
+}
+
+async function clickQueueRow(driver, partialText, timeoutMs = 30000) {
+  const row = await findVisibleQueueRow(driver, partialText, timeoutMs);
+  await driver.wait(until.elementIsVisible(row), timeoutMs);
+  await driver.wait(until.elementIsEnabled(row), timeoutMs);
+  await row.click();
+}
+
 async function waitForText(driver, text, timeoutMs = 30000) {
   const startedAt = Date.now();
   const target = text.toLowerCase();
@@ -252,7 +285,7 @@ async function clickSpecialQueueItem(driver) {
     DEFAULT_SPECIAL_ITEM;
   if (namedItem) {
     try {
-      await clickVisibleText(driver, namedItem);
+      await clickQueueRow(driver, namedItem);
       return;
     } catch {
     }
@@ -280,7 +313,7 @@ async function clickBlockedQueueItem(driver) {
     DEFAULT_BLOCKED_ITEM;
   if (namedItem) {
     try {
-      await clickVisibleText(driver, namedItem);
+      await clickQueueRow(driver, namedItem);
       return;
     } catch {
     }
@@ -300,11 +333,17 @@ async function clickBlockedQueueItem(driver) {
   throw new Error("Could not find a visible blocked special-mod queue item.");
 }
 
+async function clickNamedQueueItem(driver, partialText, timeoutMs = 30000) {
+  await clickQueueRow(driver, partialText, timeoutMs);
+}
+
 async function run() {
   const appPath = resolveAppPath();
   const session = loadDriverSession();
   const fixtureSpecialItem = session?.fixture?.specialItem ?? DEFAULT_SPECIAL_ITEM;
   const fixtureBlockedItem = session?.fixture?.blockedItem ?? DEFAULT_BLOCKED_ITEM;
+  const fixtureXmlSameItem = session?.fixture?.xmlSameItem ?? DEFAULT_XML_SAME_ITEM;
+  const fixtureXmlOlderItem = session?.fixture?.xmlOlderItem ?? DEFAULT_XML_OLDER_ITEM;
   const capabilities = new Capabilities();
   capabilities.setBrowserName("wry");
   capabilities.set("tauri:options", {
@@ -332,6 +371,8 @@ async function run() {
     );
     await waitForQueueItem(driver, fixtureSpecialItem, 90000);
     await waitForQueueItem(driver, fixtureBlockedItem, 90000);
+    await waitForQueueItem(driver, fixtureXmlSameItem, 90000);
+    await waitForQueueItem(driver, fixtureXmlOlderItem, 90000);
 
     await clickSpecialQueueItem(driver);
     await waitForText(driver, "Versions");
@@ -339,6 +380,16 @@ async function run() {
     await waitForText(driver, "Incoming");
     await waitForText(driver, "Compare");
     await waitForAnyText(driver, ["Incoming evidence", "Main check"], 30000);
+
+    await clickNamedQueueItem(driver, fixtureXmlSameItem);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
+    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+
+    await clickNamedQueueItem(driver, fixtureXmlOlderItem);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
+    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
 
     if (INCLUDE_APPLY) {
       if (process.env.SIMSUITE_ALLOW_APPLY_SMOKE !== "1") {
@@ -370,10 +421,18 @@ async function run() {
       await clickBlockedQueueItem(driver);
       await waitForAnyText(
         driver,
-        ["already installed", "Ignore this leftover", "no longer needs to lead the install"],
+        [
+          "A fuller MC Command Center pack from this family is already installed.",
+          "Ignore this leftover MC Command Center download",
+          "A fuller family pack is already installed",
+        ],
         30000,
       );
-      await ensureTextStaysHidden(driver, "already in Inbox as", 2000);
+      await ensureTextStaysHidden(
+        driver,
+        "A fuller MC Command Center pack is already in Inbox as",
+        2000,
+      );
     } else {
       await clickBlockedQueueItem(driver);
       await waitForAnyText(

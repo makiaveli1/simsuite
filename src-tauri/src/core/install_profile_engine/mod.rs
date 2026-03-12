@@ -1,13 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::Read,
     path::{Path, PathBuf},
     time::Instant,
 };
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
+use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
+use zip::ZipArchive;
 
 use crate::{
     core::{
@@ -1871,9 +1874,57 @@ fn incoming_signature_for_profile(
         .map(|file| SignatureEntry {
             filename: file.filename.clone(),
             size: file.size,
-            hash: file.hash.clone(),
+            hash: stable_special_file_hash(
+                Path::new(&file.path),
+                &file.extension,
+                file.hash.as_deref(),
+            ),
         })
         .collect::<Vec<_>>();
+    build_signature(&entries)
+}
+
+fn stable_special_file_hash(
+    path: &Path,
+    extension: &str,
+    stored_hash: Option<&str>,
+) -> Option<String> {
+    if extension == ".ts4script" {
+        normalized_ts4script_content_hash(path).or_else(|| stored_hash.map(|hash| hash.to_owned()))
+    } else {
+        stored_hash.map(|hash| hash.to_owned())
+    }
+}
+
+fn normalized_ts4script_content_hash(path: &Path) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut archive = ZipArchive::new(file).ok()?;
+    let mut entries = Vec::new();
+    let mut buffer = [0_u8; 8192];
+
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).ok()?;
+        if entry.name().ends_with('/') {
+            continue;
+        }
+
+        let entry_name = entry.name().replace('\\', "/");
+        let mut hasher = Sha256::new();
+        loop {
+            let read = entry.read(&mut buffer).ok()?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+
+        entries.push(SignatureEntry {
+            filename: entry_name,
+            size: entry.size() as i64,
+            hash: Some(hex::encode(hasher.finalize())),
+        });
+    }
+
     build_signature(&entries)
 }
 
@@ -2029,7 +2080,11 @@ fn installed_signature_for_profile(
         .map(|file| SignatureEntry {
             filename: file.filename.clone(),
             size: file.size,
-            hash: file.hash.clone(),
+            hash: stable_special_file_hash(
+                Path::new(&file.path),
+                &file.extension,
+                file.hash.as_deref(),
+            ),
         })
         .collect::<Vec<_>>();
     build_signature(&entries)
@@ -4308,6 +4363,7 @@ mod tests {
         store_download_item_assessment,
     };
     use crate::{
+        core::scanner,
         database::{initialize, save_library_paths, seed_database},
         models::{
             DownloadIntakeMode, DownloadQueueLane, FileInsights, LibrarySettings,
@@ -4459,6 +4515,22 @@ mod tests {
     fn write_script_archive(path: &Path, entry_name: &str, contents: &[u8]) {
         let file = File::create(path).expect("archive file");
         let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(entry_name, SimpleFileOptions::default())
+            .expect("start archive file");
+        writer.write_all(contents).expect("write archive file");
+        writer.finish().expect("finish archive file");
+    }
+
+    fn write_script_archive_with_comment(
+        path: &Path,
+        entry_name: &str,
+        contents: &[u8],
+        comment: &str,
+    ) {
+        let file = File::create(path).expect("archive file");
+        let mut writer = zip::ZipWriter::new(file);
+        writer.set_comment(comment);
         writer
             .start_file(entry_name, SimpleFileOptions::default())
             .expect("start archive file");
@@ -5291,6 +5363,157 @@ mod tests {
         assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
         assert!(decision.primary_action.is_none());
         assert!(decision.recommended_next_step.contains("already current"));
+    }
+
+    #[test]
+    fn same_version_xml_injector_download_is_marked_as_already_current() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("xml_same_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, 278, "XML_Injector_Script_v4_0.zip", &staging);
+        let incoming_script = staging.join("XmlInjector_Script_v4_0.ts4script");
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            b"XML Injector version 4.0",
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            278,
+            27801,
+            &incoming_script,
+            "XmlInjector_Script_v4_0.ts4script",
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            27801,
+            &FileInsights {
+                version_hints: vec!["4.0".to_owned()],
+                family_hints: vec!["xml injector".to_owned(), "xmlinjector".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join("XML Injector");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("XmlInjector_Script_v4_0.ts4script");
+        write_script_archive_with_comment(
+            &current_script,
+            "version.txt",
+            b"XML Injector version 4.0",
+            "installed",
+        );
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec!["4.0".to_owned()],
+                family_hints: vec!["xml injector".to_owned(), "xmlinjector".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+        assert_ne!(
+            scanner::hash_file(&incoming_script).expect("incoming hash"),
+            scanner::hash_file(&current_script).expect("installed hash"),
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 278).expect("assessment");
+        store_download_item_assessment(&connection, 278, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 278)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, "xml_injector");
+        assert!(decision.apply_ready);
+        assert!(decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(decision.incoming_version.as_deref(), Some("4.0"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert!(decision.primary_action.is_none());
+        assert!(decision.recommended_next_step.contains("already current"));
+    }
+
+    #[test]
+    fn older_xml_injector_download_is_not_treated_as_the_next_update() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("xml_older_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, 279, "XML_Injector_Script_v3_0.zip", &staging);
+        let incoming_script = staging.join("XmlInjector_Script_v3_0.ts4script");
+        fs::write(&incoming_script, b"older xml injector").expect("incoming script");
+        insert_download_file(
+            &connection,
+            279,
+            27901,
+            &incoming_script,
+            "XmlInjector_Script_v3_0.ts4script",
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            27901,
+            &FileInsights {
+                version_hints: vec!["3.0".to_owned()],
+                family_hints: vec!["xml injector".to_owned(), "xmlinjector".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join("XML Injector");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("XmlInjector_Script_v4_0.ts4script");
+        fs::write(&current_script, b"current xml injector").expect("installed sample");
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec!["4.0".to_owned()],
+                family_hints: vec!["xml injector".to_owned(), "xmlinjector".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 279).expect("assessment");
+        store_download_item_assessment(&connection, 279, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 279)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, "xml_injector");
+        assert!(!decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::IncomingOlder);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(decision.incoming_version.as_deref(), Some("3.0"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert!(decision.primary_action.is_none());
+        assert!(decision
+            .recommended_next_step
+            .contains("Ignore this older XML Injector download"));
     }
 
     #[test]

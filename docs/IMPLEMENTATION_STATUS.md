@@ -36,12 +36,28 @@ Important changes and findings:
   - it survives short body-refresh gaps after apply
   - apply mode follows a simpler path instead of doing extra pre-apply refresh work
   - it runs `tauri build -- --debug` by default so it uses the real desktop app surface
+- `.ts4script` same-version comparison is now more trustworthy for supported special mods:
+  - SimSuite now hashes the real inner script contents instead of trusting the outer zip wrapper bytes
+  - this avoids false “unknown” results when two logically identical script mods were zipped at different times
+- the native desktop smoke lane is now more trustworthy too:
+  - it clicks the real Inbox queue row buttons by item name instead of any matching text on the page
+  - that removed a false failure where the smoke test was reacting to a different item elsewhere in the Inbox
+- XML Injector is now covered better in the real desktop fixture app:
+  - same-version flow
+  - older-version flow
+  - version evidence display
 
 Important follow-up result:
 
 - the original post-apply family bug was real and is now fixed in backend code, UI wording, and real desktop checks
 - the real desktop base Inbox smoke passes
 - the real desktop special-mod apply smoke passes
+- the real desktop base smoke now also proves XML Injector same-version and older-version handling
+- the real desktop XML Injector same-version result is now correct:
+  - installed `4.0`
+  - incoming `4.0`
+  - result `Installed and incoming match`
+  - inner-file evidence wins over outer zip noise
 - the current fixture-backed real desktop result for MCCC after apply is now:
   - the full pack lands in the done lane
   - the full pack reads as matching the installed version
@@ -216,7 +232,7 @@ Missing:
 - guided option-pack choice flows
 - deeper Inbox performance cleanup for large queues and heavy special-mod families
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
-- full native desktop fixture coverage beyond the current MCCC-first smoke lane
+- full native desktop fixture coverage beyond the current MCCC and XML Injector smoke lane
 
 ### UI coverage
 
@@ -280,6 +296,7 @@ Missing:
 - deeper archive-content heuristics for unsupported/edge archive layouts
 - dedicated watcher controls beyond the current general Settings surface
 - final removal of remaining real-world Inbox hangs during first-open and item-selection flows
+- helper-only official latest parsing is still too narrow for several supported mods even when the official source is readable today
 
 ### Patch recovery
 
@@ -317,7 +334,8 @@ The highest-value next step is to stabilize Inbox fully before moving on to broa
 1. measure the real desktop Inbox slow paths and lock windows
 2. remove repeated special-mod and detail-panel work from interactive Inbox flows
 3. keep Home, Library, Organize, Review, and Duplicates correctly synced without broad refreshes
-4. only after that, continue broader special-mod catalog curation
+4. widen helper-only official latest parsing for the supported readable sources that still show `unknown`
+5. expand the real desktop special-mod fixture lane beyond MCCC and XML Injector
 
 After Inbox is solid again, the next large product steps remain:
 
