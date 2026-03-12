@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 12, 2026: verify the Inbox freeze fix against the user's real Downloads folder, not only the isolated desktop smoke fixtures.
 - March 12, 2026: widen Inbox special-mod validation beyond MCCC now that the native desktop smoke lane is steady again.
 - March 12, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
 - The highest-priority remaining gap is broader supported-mod coverage and helper-only official latest parsing for supported sources that still return `unknown`.
@@ -31,6 +32,10 @@
 - March 12, 2026: corrected the apply smoke assertion so it only flags the wrong MCCC sibling wording, not a separate XML Inbox row that can legitimately mention a fuller sibling.
 - March 12, 2026: added Sims 4 Community Library to the backend version-comparison tests and the real Tauri desktop fixture lane.
 - March 12, 2026: confirmed that direct app-style requests to CurseForge and Lot 51 still hit Cloudflare challenge pages, so helper-only latest expansion for those sources needs a safe official endpoint, not a bypass.
+- March 12, 2026: trimmed repeated Inbox reload work in `DownloadsScreen.tsx` so one local action no longer stacks several queue reload paths on top of each other.
+- March 12, 2026: replaced the old one-count skip with a short grace window after local Inbox reloads, so command events and watcher follow-up events do not immediately force another heavy Downloads reload.
+- March 12, 2026: changed post-action Inbox updates so apply, ignore, and special review actions now use one main queue reload and refresh watcher status in the background instead of blocking on another extra call first.
+- March 12, 2026: tightened selected-item reloads so the right panel now reloads when the selected item id or `updatedAt` changes, not every time the whole queue object is rebuilt.
 
 ## What Was Tested
 
@@ -56,6 +61,7 @@
   - Sims 4 Community Library same-version item loads
   - Sims 4 Community Library older-version item loads
   - version evidence and compare text appear in the real app
+- March 12, 2026: after the Inbox reload cleanup, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run tauri:build -- --debug`, and `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply` all passed again.
 
 ## What Worked
 
@@ -87,9 +93,15 @@
   - same-version downloads settle into the already-current path
   - older downloads stay out of the update path
   - the version panel shows local compare clues in the real app
+- The real desktop smoke still passes after the Inbox refresh cleanup:
+  - Inbox open still works
+  - refresh still works
+  - MCCC apply still works
+  - the lighter reload path did not break the real desktop special-mod flow
 
 ## Known Problems / Gaps
 
+- The freeze fix is proven against the real desktop fixture app, but it still needs a real live-folder check against the user's own heavier Downloads state.
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
   - Lot 51 and several CurseForge-backed supported mods still show `unknown` even though their official pages are readable today
@@ -99,6 +111,7 @@
 - The native smoke lane is now stable for the current MCCC, XML Injector, and Sims 4 Community Library flows, but it still does not cover the other supported special mods yet.
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
+- The Downloads refresh cleanup currently uses a short local grace window to swallow duplicate post-action reloads. That is much lighter than before, but it may still need tuning if real watcher traffic stays noisy in a large live Downloads folder.
 
 ## Important Decisions
 
@@ -115,6 +128,7 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Before widening more special-mod coverage, check Inbox in the user's real desktop setup again and confirm whether the freeze/over-refresh problem is now actually better in live use.
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
 - Keep MCCC and GitHub release parsing as the known-good online helpers.
 - Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:

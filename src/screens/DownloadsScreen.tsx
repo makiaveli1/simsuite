@@ -84,6 +84,7 @@ interface DownloadsScreenCache {
 
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
 const DEFAULT_DOWNLOADS_PRESET = "Category First";
+const WORKSPACE_RELOAD_GRACE_MS = 1200;
 const downloadsScreenCache: DownloadsScreenCache = {
   refreshVersion: -1,
   watcherStatus: null,
@@ -147,16 +148,40 @@ export function DownloadsScreen({
   const [isLoadingSelection, setIsLoadingSelection] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
+  const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
+    downloadsScreenCache.watcherStatus,
+  );
+  const latestInbox = useRef<DownloadsInboxResponse | null>(
+    downloadsScreenCache.inbox,
+  );
+  const latestBusyState = useRef({
+    isLoadingInbox: false,
+    isApplying: false,
+    isIgnoring: false,
+    isRefreshing: false,
+  });
   const inboxRetryTimer = useRef<number | null>(null);
   const watcherPollTimer = useRef<number | null>(null);
+  const workspaceReloadTimer = useRef<number | null>(null);
   const queueRequestId = useRef(0);
   const selectionRequestId = useRef(0);
-  const pendingRefreshReloadSkips = useRef(0);
+  const pendingWorkspaceReload = useRef(false);
   const pendingPreferredSelectionId = useRef<number | null>(null);
   const previousRefreshVersion = useRef(refreshVersion);
+  const latestRefreshVersion = useRef(refreshVersion);
+  const skipWorkspaceReloadUntil = useRef(0);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
+    latestRefreshVersion.current = refreshVersion;
+    latestWatcherStatus.current = watcherStatus;
+    latestInbox.current = inbox;
+    latestBusyState.current = {
+      isLoadingInbox,
+      isApplying,
+      isIgnoring,
+      isRefreshing,
+    };
     downloadsScreenCache.refreshVersion = refreshVersion;
     downloadsScreenCache.watcherStatus = watcherStatus;
     downloadsScreenCache.inbox = inbox;
@@ -166,6 +191,10 @@ export function DownloadsScreen({
     downloadsScreenCache.statusFilter = statusFilter;
   }, [
     inbox,
+    isApplying,
+    isIgnoring,
+    isLoadingInbox,
+    isRefreshing,
     refreshVersion,
     search,
     selectedItemId,
@@ -212,6 +241,9 @@ export function DownloadsScreen({
       if (watcherPollTimer.current !== null) {
         globalThis.clearTimeout(watcherPollTimer.current);
       }
+      if (workspaceReloadTimer.current !== null) {
+        globalThis.clearTimeout(workspaceReloadTimer.current);
+      }
     };
   }, []);
 
@@ -241,10 +273,6 @@ export function DownloadsScreen({
 
     void (async () => {
       if (watcherStatus.state === "error") {
-        pendingRefreshReloadSkips.current = Math.max(
-          0,
-          pendingRefreshReloadSkips.current - 1,
-        );
         if (!cancelled && watcherStatus.lastError) {
           setErrorMessage(watcherStatus.lastError);
         }
@@ -255,6 +283,7 @@ export function DownloadsScreen({
       }
 
       await loadInbox();
+      markRecentLocalInboxReload();
       if (cancelled) {
         return;
       }
@@ -278,7 +307,7 @@ export function DownloadsScreen({
       return;
     }
 
-    void loadBootstrap();
+    void loadVisibleInbox();
   }, [deferredSearch, statusFilter]);
 
   useEffect(() => {
@@ -287,13 +316,49 @@ export function DownloadsScreen({
     }
 
     previousRefreshVersion.current = refreshVersion;
-    if (pendingRefreshReloadSkips.current > 0) {
-      pendingRefreshReloadSkips.current -= 1;
+    if (Date.now() < skipWorkspaceReloadUntil.current) {
       return;
     }
 
-    void loadBootstrap();
-  }, [refreshVersion]);
+    if (shouldPauseWorkspaceReload()) {
+      pendingWorkspaceReload.current = true;
+      scheduleWorkspaceReload();
+      return;
+    }
+
+    void loadVisibleInbox();
+  }, [
+    isApplying,
+    isIgnoring,
+    isLoadingInbox,
+    isRefreshing,
+    refreshVersion,
+    watcherStatus?.configured,
+    watcherStatus?.state,
+  ]);
+
+  useEffect(() => {
+    if (!pendingWorkspaceReload.current) {
+      clearScheduledWorkspaceReload();
+      return;
+    }
+
+    if (Date.now() < skipWorkspaceReloadUntil.current || shouldPauseWorkspaceReload()) {
+      scheduleWorkspaceReload();
+      return;
+    }
+
+    pendingWorkspaceReload.current = false;
+    clearScheduledWorkspaceReload();
+    void loadVisibleInbox();
+  }, [
+    isApplying,
+    isIgnoring,
+    isLoadingInbox,
+    isRefreshing,
+    watcherStatus?.configured,
+    watcherStatus?.state,
+  ]);
 
   useEffect(() => {
     if (!watcherStatus?.configured) {
@@ -358,7 +423,7 @@ export function DownloadsScreen({
     }
 
     void loadSelectedItem(selectedItem);
-  }, [selectedItem, selectedPreset]);
+  }, [selectedItem?.id, selectedItem?.updatedAt, selectedPreset]);
 
   function clearScheduledInboxRetry() {
     if (inboxRetryTimer.current !== null) {
@@ -385,6 +450,13 @@ export function DownloadsScreen({
     }
   }
 
+  function clearScheduledWorkspaceReload() {
+    if (workspaceReloadTimer.current !== null) {
+      globalThis.clearTimeout(workspaceReloadTimer.current);
+      workspaceReloadTimer.current = null;
+    }
+  }
+
   function scheduleWatcherPoll(delayMs = 320) {
     if (watcherPollTimer.current !== null) {
       return;
@@ -394,6 +466,44 @@ export function DownloadsScreen({
       watcherPollTimer.current = null;
       void refreshWatcherStatus();
     }, delayMs);
+  }
+
+  function scheduleWorkspaceReload(delayMs = 320) {
+    if (workspaceReloadTimer.current !== null) {
+      return;
+    }
+
+    workspaceReloadTimer.current = globalThis.setTimeout(() => {
+      workspaceReloadTimer.current = null;
+      if (!pendingWorkspaceReload.current) {
+        return;
+      }
+      if (Date.now() < skipWorkspaceReloadUntil.current || shouldPauseWorkspaceReload()) {
+        scheduleWorkspaceReload(320);
+        return;
+      }
+      pendingWorkspaceReload.current = false;
+      void loadVisibleInbox();
+    }, delayMs);
+  }
+
+  function shouldPauseWorkspaceReload() {
+    const busyState = latestBusyState.current;
+    const currentWatcherStatus = latestWatcherStatus.current;
+    return (
+      busyState.isLoadingInbox ||
+      busyState.isApplying ||
+      busyState.isIgnoring ||
+      busyState.isRefreshing ||
+      currentWatcherStatus?.state === "processing"
+    );
+  }
+
+  function markRecentLocalInboxReload() {
+    pendingWorkspaceReload.current = false;
+    clearScheduledWorkspaceReload();
+    skipWorkspaceReloadUntil.current = Date.now() + WORKSPACE_RELOAD_GRACE_MS;
+    previousRefreshVersion.current = latestRefreshVersion.current;
   }
 
   function handleLockedInboxRead(error: unknown, retry: () => void) {
@@ -425,6 +535,29 @@ export function DownloadsScreen({
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
     }
+  }
+
+  async function loadVisibleInbox() {
+    const currentWatcherStatus = latestWatcherStatus.current;
+    const currentInbox = latestInbox.current;
+    if (
+      currentWatcherStatus?.configured &&
+      currentWatcherStatus.state !== "processing" &&
+      currentWatcherStatus.state !== "error" &&
+      currentInbox !== null
+    ) {
+      await loadInbox();
+      return;
+    }
+
+    await loadBootstrap();
+  }
+
+  async function reloadInboxAfterMutation(preferredItemId?: number | null) {
+    pendingPreferredSelectionId.current = preferredItemId ?? null;
+    await loadInbox();
+    markRecentLocalInboxReload();
+    void refreshWatcherStatus();
   }
 
   async function loadBootstrap() {
@@ -551,7 +684,6 @@ export function DownloadsScreen({
   async function handleRefresh() {
     setStatusMessage(null);
     setErrorMessage(null);
-    pendingRefreshReloadSkips.current += 1;
 
     try {
       const nextStatus = await api.refreshDownloadsInbox();
@@ -567,16 +699,13 @@ export function DownloadsScreen({
       }
 
       await loadInbox();
+      markRecentLocalInboxReload();
       setStatusMessage(
         userView === "beginner"
           ? "Inbox checked again."
           : "Inbox refreshed and checked again.",
       );
     } catch (error) {
-      pendingRefreshReloadSkips.current = Math.max(
-        0,
-        pendingRefreshReloadSkips.current - 1,
-      );
       setErrorMessage(toErrorMessage(error));
     }
   }
@@ -607,9 +736,6 @@ export function DownloadsScreen({
 
     try {
       const mutatesInbox = reviewActionUpdatesInbox(action.kind);
-      if (mutatesInbox) {
-        pendingRefreshReloadSkips.current += 1;
-      }
       const result = await api.applyReviewPlanAction(
         selectedItem.id,
         action.kind,
@@ -625,14 +751,10 @@ export function DownloadsScreen({
       const shouldReload = mutatesInbox;
 
       if (shouldReload) {
-        pendingPreferredSelectionId.current = result.focusItemId;
-        await loadInbox();
+        await reloadInboxAfterMutation(result.focusItemId);
       }
 
       setSelectedItemId(result.focusItemId);
-      if (shouldReload) {
-        setWatcherStatus(await api.getDownloadsWatcherStatus());
-      }
 
       if (
         result.snapshotId !== null ||
@@ -645,12 +767,6 @@ export function DownloadsScreen({
 
       setStatusMessage(result.message);
     } catch (error) {
-      if (reviewActionUpdatesInbox(action.kind)) {
-        pendingRefreshReloadSkips.current = Math.max(
-          0,
-          pendingRefreshReloadSkips.current - 1,
-        );
-      }
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsApplying(false);
@@ -684,7 +800,6 @@ export function DownloadsScreen({
       setErrorMessage(null);
 
       try {
-        pendingRefreshReloadSkips.current += 1;
         const result = await api.applyGuidedDownloadItem(selectedItem.id, true);
         setStatusMessage(
           isSameVersion
@@ -692,13 +807,8 @@ export function DownloadsScreen({
             : `${selectedGuidedPlan.profileName} installed safely. ${result.installedCount} new file(s) moved, ${result.replacedCount} old file(s) replaced, and ${result.preservedCount} settings file(s) kept.`,
         );
         onDataChanged();
-        await loadInbox();
-        setWatcherStatus(await api.getDownloadsWatcherStatus());
+        await reloadInboxAfterMutation();
       } catch (error) {
-        pendingRefreshReloadSkips.current = Math.max(
-          0,
-          pendingRefreshReloadSkips.current - 1,
-        );
         setErrorMessage(toErrorMessage(error));
       } finally {
         setIsApplying(false);
@@ -724,7 +834,6 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
-      pendingRefreshReloadSkips.current += 1;
       const result = await api.applyDownloadItem(
         selectedItem.id,
         selectedPreset,
@@ -734,13 +843,8 @@ export function DownloadsScreen({
         `Moved ${result.movedCount} safe file(s) from ${selectedItem.displayName}. ${result.deferredReviewCount} file(s) stayed in the inbox.`,
       );
       onDataChanged();
-      await loadInbox();
-      setWatcherStatus(await api.getDownloadsWatcherStatus());
+      await reloadInboxAfterMutation();
     } catch (error) {
-      pendingRefreshReloadSkips.current = Math.max(
-        0,
-        pendingRefreshReloadSkips.current - 1,
-      );
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsApplying(false);
@@ -764,17 +868,11 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
-      pendingRefreshReloadSkips.current += 1;
       await api.ignoreDownloadItem(selectedItem.id);
       setStatusMessage(`${selectedItem.displayName} was removed from the active inbox.`);
       onDataChanged();
-      await loadInbox();
-      setWatcherStatus(await api.getDownloadsWatcherStatus());
+      await reloadInboxAfterMutation();
     } catch (error) {
-      pendingRefreshReloadSkips.current = Math.max(
-        0,
-        pendingRefreshReloadSkips.current - 1,
-      );
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsIgnoring(false);

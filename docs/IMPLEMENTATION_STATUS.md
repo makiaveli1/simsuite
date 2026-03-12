@@ -11,6 +11,16 @@ This session did two important things:
 
 Important changes and findings:
 
+- Inbox refresh work was tightened again after a regression report:
+  - local Inbox actions were still causing too many queue reload paths to pile up
+  - the Downloads screen now keeps one main post-action reload path instead of mixing local reloads, watcher follow-up reloads, and workspace-triggered reloads back to back
+  - watcher status refresh after local actions now happens in the background instead of blocking the whole Inbox action path
+  - the right panel now reloads on selected-item `id` and `updatedAt`, instead of every queue rebuild
+- the real Tauri desktop fixture app still passes after that Inbox reload cleanup:
+  - open Inbox
+  - refresh Inbox
+  - apply MCCC update
+  - keep version evidence and post-apply state correct
 - special-mod review links are now checked more strictly before SimSuite opens or downloads anything
 - `.7z` and `.rar` downloads are now held for review instead of being unpacked automatically
 - watcher refresh now has a narrower path for ordinary file-system events instead of always rescanning the whole Downloads tree
@@ -78,6 +88,7 @@ Important follow-up result:
 
 Important remaining gap:
 
+- the latest Inbox performance cleanup is proven in the real fixture-backed desktop app, but it still needs a live check against the user's real Downloads folder and real queue size
 - helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
 - direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
 
@@ -243,7 +254,7 @@ Missing:
 - broader curated incompatibility coverage beyond the initial seed set
 - auto-resolving multi-item dependency install order inside Inbox
 - guided option-pack choice flows
-- deeper Inbox performance cleanup for large queues and heavy special-mod families
+- deeper Inbox performance cleanup for large live queues and heavy special-mod families after the latest refresh-deduping pass
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
 - full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
 
@@ -308,7 +319,7 @@ Missing:
 
 - deeper archive-content heuristics for unsupported/edge archive layouts
 - dedicated watcher controls beyond the current general Settings surface
-- final removal of remaining real-world Inbox hangs during first-open and item-selection flows
+- final removal of any remaining real-world Inbox hangs during heavy live-folder use
 - helper-only official latest parsing is still too narrow for several supported mods because some official sources are still blocked by Cloudflare for plain app requests
 
 ### Patch recovery
