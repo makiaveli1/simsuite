@@ -72,7 +72,27 @@ interface DownloadsSelectionState {
   reviewPlan: SpecialReviewPlan | null;
 }
 
+interface DownloadsScreenCache {
+  refreshVersion: number;
+  watcherStatus: DownloadsWatcherStatus | null;
+  inbox: DownloadsInboxResponse | null;
+  selectedItemId: number | null;
+  selectedPreset: string;
+  search: string;
+  statusFilter: string;
+}
+
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
+const DEFAULT_DOWNLOADS_PRESET = "Category First";
+const downloadsScreenCache: DownloadsScreenCache = {
+  refreshVersion: -1,
+  watcherStatus: null,
+  inbox: null,
+  selectedItemId: null,
+  selectedPreset: DEFAULT_DOWNLOADS_PRESET,
+  search: "",
+  statusFilter: "",
+};
 
 function createEmptySelectionState(): DownloadsSelectionState {
   return {
@@ -97,18 +117,29 @@ export function DownloadsScreen({
     setDownloadsDetailWidth,
     setDownloadsQueueHeight,
   } = useUiPreferences();
-  const [watcherStatus, setWatcherStatus] = useState<DownloadsWatcherStatus | null>(
-    null,
+  const skipInitialBootstrap = useRef(
+    downloadsScreenCache.refreshVersion === refreshVersion &&
+      (downloadsScreenCache.watcherStatus !== null ||
+        downloadsScreenCache.inbox !== null),
   );
-  const [inbox, setInbox] = useState<DownloadsInboxResponse | null>(null);
+  const [watcherStatus, setWatcherStatus] = useState<DownloadsWatcherStatus | null>(
+    downloadsScreenCache.watcherStatus,
+  );
+  const [inbox, setInbox] = useState<DownloadsInboxResponse | null>(
+    downloadsScreenCache.inbox,
+  );
   const [presets, setPresets] = useState<RulePreset[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState("Category First");
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState(
+    downloadsScreenCache.selectedPreset,
+  );
+  const [selectedItemId, setSelectedItemId] = useState<number | null>(
+    downloadsScreenCache.selectedItemId,
+  );
   const [selectionState, setSelectionState] = useState<DownloadsSelectionState>(
     createEmptySelectionState,
   );
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState(downloadsScreenCache.search);
+  const [statusFilter, setStatusFilter] = useState(downloadsScreenCache.statusFilter);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
@@ -126,6 +157,24 @@ export function DownloadsScreen({
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
+    downloadsScreenCache.refreshVersion = refreshVersion;
+    downloadsScreenCache.watcherStatus = watcherStatus;
+    downloadsScreenCache.inbox = inbox;
+    downloadsScreenCache.selectedItemId = selectedItemId;
+    downloadsScreenCache.selectedPreset = selectedPreset;
+    downloadsScreenCache.search = search;
+    downloadsScreenCache.statusFilter = statusFilter;
+  }, [
+    inbox,
+    refreshVersion,
+    search,
+    selectedItemId,
+    selectedPreset,
+    statusFilter,
+    watcherStatus,
+  ]);
+
+  useEffect(() => {
     void api
       .listRulePresets()
       .then((items) => {
@@ -133,7 +182,9 @@ export function DownloadsScreen({
           setPresets(items);
           if (items.length > 0) {
             setSelectedPreset((current) =>
-              items.some((item) => item.name === current) ? current : items[0].name,
+              items.some((item) => item.name === current)
+                ? current
+                : items[0].name,
             );
           }
         });
@@ -222,6 +273,11 @@ export function DownloadsScreen({
   }, [isRefreshing, userView, watcherStatus]);
 
   useEffect(() => {
+    if (skipInitialBootstrap.current) {
+      skipInitialBootstrap.current = false;
+      return;
+    }
+
     void loadBootstrap();
   }, [deferredSearch, statusFilter]);
 
