@@ -7,6 +7,8 @@ const DEFAULT_SPECIAL_ITEM = "MCCC_Update_Test";
 const DEFAULT_BLOCKED_ITEM = "MCCC_Partial_Blocked_Test";
 const DEFAULT_XML_SAME_ITEM = "XML_Injector_Same_Test";
 const DEFAULT_XML_OLDER_ITEM = "XML_Injector_Older_Test";
+const DEFAULT_S4CL_SAME_ITEM = "S4CL_Same_Test";
+const DEFAULT_S4CL_OLDER_ITEM = "S4CL_Older_Test";
 const DEFAULT_APP_PATHS = [
   path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
   path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
@@ -344,6 +346,8 @@ async function run() {
   const fixtureBlockedItem = session?.fixture?.blockedItem ?? DEFAULT_BLOCKED_ITEM;
   const fixtureXmlSameItem = session?.fixture?.xmlSameItem ?? DEFAULT_XML_SAME_ITEM;
   const fixtureXmlOlderItem = session?.fixture?.xmlOlderItem ?? DEFAULT_XML_OLDER_ITEM;
+  const fixtureS4clSameItem = session?.fixture?.s4clSameItem ?? DEFAULT_S4CL_SAME_ITEM;
+  const fixtureS4clOlderItem = session?.fixture?.s4clOlderItem ?? DEFAULT_S4CL_OLDER_ITEM;
   const capabilities = new Capabilities();
   capabilities.setBrowserName("wry");
   capabilities.set("tauri:options", {
@@ -373,6 +377,8 @@ async function run() {
     await waitForQueueItem(driver, fixtureBlockedItem, 90000);
     await waitForQueueItem(driver, fixtureXmlSameItem, 90000);
     await waitForQueueItem(driver, fixtureXmlOlderItem, 90000);
+    await waitForQueueItem(driver, fixtureS4clSameItem, 90000);
+    await waitForQueueItem(driver, fixtureS4clOlderItem, 90000);
 
     await clickSpecialQueueItem(driver);
     await waitForText(driver, "Versions");
@@ -387,6 +393,16 @@ async function run() {
     await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
 
     await clickNamedQueueItem(driver, fixtureXmlOlderItem);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
+    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
+
+    await clickNamedQueueItem(driver, fixtureS4clSameItem);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
+    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+
+    await clickNamedQueueItem(driver, fixtureS4clOlderItem);
     await waitForText(driver, "Versions");
     await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
     await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);

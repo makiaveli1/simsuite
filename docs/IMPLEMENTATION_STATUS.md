@@ -46,6 +46,13 @@ Important changes and findings:
   - same-version flow
   - older-version flow
   - version evidence display
+- Sims 4 Community Library is now covered too:
+  - same-version flow
+  - older-version flow
+  - real desktop version evidence display
+- a live helper-only latest check gap was confirmed:
+  - direct app-style requests to CurseForge and Lot 51 still hit Cloudflare challenge pages
+  - this means the remaining helper-only latest gaps need safe official endpoints, not brittle workarounds
 
 Important follow-up result:
 
@@ -53,11 +60,16 @@ Important follow-up result:
 - the real desktop base Inbox smoke passes
 - the real desktop special-mod apply smoke passes
 - the real desktop base smoke now also proves XML Injector same-version and older-version handling
+- the real desktop base smoke now also proves Sims 4 Community Library same-version and older-version handling
 - the real desktop XML Injector same-version result is now correct:
   - installed `4.0`
   - incoming `4.0`
   - result `Installed and incoming match`
   - inner-file evidence wins over outer zip noise
+- the real desktop Sims 4 Community Library result is now correct:
+  - same-version downloads settle into the already-current path
+  - older downloads stay out of the update path
+  - local evidence still drives the result in the real app
 - the current fixture-backed real desktop result for MCCC after apply is now:
   - the full pack lands in the done lane
   - the full pack reads as matching the installed version
@@ -66,7 +78,8 @@ Important follow-up result:
 
 Important remaining gap:
 
-- helper-only official latest support is still too narrow for supported special mods whose official pages are readable today, especially Lot 51 and several CurseForge-backed pages
+- helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
+- direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
 
 Repo memory is now expected to live in:
 
@@ -232,7 +245,7 @@ Missing:
 - guided option-pack choice flows
 - deeper Inbox performance cleanup for large queues and heavy special-mod families
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
-- full native desktop fixture coverage beyond the current MCCC and XML Injector smoke lane
+- full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
 
 ### UI coverage
 
@@ -296,7 +309,7 @@ Missing:
 - deeper archive-content heuristics for unsupported/edge archive layouts
 - dedicated watcher controls beyond the current general Settings surface
 - final removal of remaining real-world Inbox hangs during first-open and item-selection flows
-- helper-only official latest parsing is still too narrow for several supported mods even when the official source is readable today
+- helper-only official latest parsing is still too narrow for several supported mods because some official sources are still blocked by Cloudflare for plain app requests
 
 ### Patch recovery
 
@@ -334,8 +347,8 @@ The highest-value next step is to stabilize Inbox fully before moving on to broa
 1. measure the real desktop Inbox slow paths and lock windows
 2. remove repeated special-mod and detail-panel work from interactive Inbox flows
 3. keep Home, Library, Organize, Review, and Duplicates correctly synced without broad refreshes
-4. widen helper-only official latest parsing for the supported readable sources that still show `unknown`
-5. expand the real desktop special-mod fixture lane beyond MCCC and XML Injector
+4. widen helper-only official latest parsing only where there is a safe official endpoint the app can fetch without brittle bypass work
+5. expand the real desktop special-mod fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library
 
 After Inbox is solid again, the next large product steps remain:
 

@@ -5517,6 +5517,167 @@ mod tests {
     }
 
     #[test]
+    fn same_version_s4cl_download_is_marked_as_already_current() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("s4cl_same_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, 280, "S4CL_v2_9_0.zip", &staging);
+        let incoming_script = staging.join("S4CL.ts4script");
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            b"S4CL version 2.9.0",
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            280,
+            28001,
+            &incoming_script,
+            "S4CL.ts4script",
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            28001,
+            &FileInsights {
+                version_hints: vec!["2.9.0".to_owned()],
+                family_hints: vec!["s4cl".to_owned(), "sims 4 community library".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join("S4CL");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("S4CL.ts4script");
+        write_script_archive_with_comment(
+            &current_script,
+            "version.txt",
+            b"S4CL version 2.9.0",
+            "installed",
+        );
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec!["2.9.0".to_owned()],
+                family_hints: vec!["s4cl".to_owned(), "sims 4 community library".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+        assert_ne!(
+            scanner::hash_file(&incoming_script).expect("incoming hash"),
+            scanner::hash_file(&current_script).expect("installed hash"),
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 280).expect("assessment");
+        store_download_item_assessment(&connection, 280, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 280)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, "sims_4_community_library");
+        assert!(decision.apply_ready);
+        assert!(decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(decision.incoming_version.as_deref(), Some("2.9.0"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert!(decision.primary_action.is_none());
+        assert!(decision.recommended_next_step.contains("already current"));
+    }
+
+    #[test]
+    fn older_s4cl_download_is_not_treated_as_the_next_update() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("s4cl_older_version");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, 281, "S4CL_v2_8_0.zip", &staging);
+        let incoming_script = staging.join("S4CL.ts4script");
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            b"S4CL version 2.8.0",
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            281,
+            28101,
+            &incoming_script,
+            "S4CL.ts4script",
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            28101,
+            &FileInsights {
+                version_hints: vec!["2.8.0".to_owned()],
+                family_hints: vec!["s4cl".to_owned(), "sims 4 community library".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join("S4CL");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join("S4CL.ts4script");
+        write_script_archive_with_comment(
+            &current_script,
+            "version.txt",
+            b"S4CL version 2.9.0",
+            "installed",
+        );
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec!["2.9.0".to_owned()],
+                family_hints: vec!["s4cl".to_owned(), "sims 4 community library".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 281).expect("assessment");
+        store_download_item_assessment(&connection, 281, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 281)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, "sims_4_community_library");
+        assert!(!decision.same_version);
+        assert_eq!(decision.version_status, SpecialVersionStatus::IncomingOlder);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(decision.incoming_version.as_deref(), Some("2.8.0"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert!(decision.primary_action.is_none());
+        assert!(decision
+            .recommended_next_step
+            .contains("Ignore this older Sims 4 Community Library download"));
+    }
+
+    #[test]
     fn inside_mod_version_hints_drive_same_version_detection() {
         let (temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));

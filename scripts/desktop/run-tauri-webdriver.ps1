@@ -71,16 +71,33 @@ function Initialize-SmokeFixtures {
     $mods = Join-Path $root 'Mods'
     $installedMccc = Join-Path $mods 'MCCC'
     $installedXml = Join-Path $mods 'XML Injector'
+    $installedS4cl = Join-Path $mods 'S4CL'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
     $xmlSameRoot = Join-Path $root 'incoming-xml-same'
     $xmlOlderRoot = Join-Path $root 'incoming-xml-older'
+    $s4clSameRoot = Join-Path $root 'incoming-s4cl-same'
+    $s4clOlderRoot = Join-Path $root 'incoming-s4cl-older'
     $specialItem = "MCCC_Update_Test_$token" 
     $blockedItem = "MCCC_Partial_Blocked_Test_$token"
     $xmlSameItem = "XML_Injector_Same_Test_$token"
     $xmlOlderItem = "XML_Injector_Older_Test_$token"
+    $s4clSameItem = "S4CL_Same_Test_$token"
+    $s4clOlderItem = "S4CL_Older_Test_$token"
 
-    foreach ($path in @($appData, $downloads, $installedMccc, $installedXml, $incomingRoot, $blockedRoot, $xmlSameRoot, $xmlOlderRoot)) {
+    foreach ($path in @(
+        $appData,
+        $downloads,
+        $installedMccc,
+        $installedXml,
+        $installedS4cl,
+        $incomingRoot,
+        $blockedRoot,
+        $xmlSameRoot,
+        $xmlOlderRoot,
+        $s4clSameRoot,
+        $s4clOlderRoot
+    )) {
         New-Item -ItemType Directory -Force -Path $path | Out-Null
     }
 
@@ -104,6 +121,13 @@ function Initialize-SmokeFixtures {
     New-SmokeTs4script -Path (Join-Path $xmlOlderRoot 'XmlInjector_Script_v3_0.ts4script') -Version '3.0' -Marker 'XML Injector version'
     New-SmokeZip -SourceRoot $xmlOlderRoot -ZipPath (Join-Path $downloads "$xmlOlderItem.zip")
 
+    New-SmokeTs4script -Path (Join-Path $installedS4cl 'S4CL.ts4script') -Version '2.9.0' -Marker 'S4CL version'
+    New-SmokeTs4script -Path (Join-Path $s4clSameRoot 'S4CL.ts4script') -Version '2.9.0' -Marker 'S4CL version'
+    New-SmokeZip -SourceRoot $s4clSameRoot -ZipPath (Join-Path $downloads "$s4clSameItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $s4clOlderRoot 'S4CL.ts4script') -Version '2.8.0' -Marker 'S4CL version'
+    New-SmokeZip -SourceRoot $s4clOlderRoot -ZipPath (Join-Path $downloads "$s4clOlderItem.zip")
+
     return @{
         Root = $root
         AppData = $appData
@@ -113,6 +137,8 @@ function Initialize-SmokeFixtures {
         BlockedItem = $blockedItem
         XmlSameItem = $xmlSameItem
         XmlOlderItem = $xmlOlderItem
+        S4clSameItem = $s4clSameItem
+        S4clOlderItem = $s4clOlderItem
     }
 }
 
@@ -217,6 +243,8 @@ $session = @{
             blockedItem = $fixture.BlockedItem
             xmlSameItem = $fixture.XmlSameItem
             xmlOlderItem = $fixture.XmlOlderItem
+            s4clSameItem = $fixture.S4clSameItem
+            s4clOlderItem = $fixture.S4clOlderItem
         }
     } else {
         $null

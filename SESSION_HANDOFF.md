@@ -29,6 +29,8 @@
 - March 12, 2026: upgraded the native desktop smoke lane so it clicks the real Inbox row buttons by item name instead of any matching text on screen.
 - March 12, 2026: extended the fixture-backed real desktop lane to prove XML Injector same-version and older-version handling alongside the MCCC checks.
 - March 12, 2026: corrected the apply smoke assertion so it only flags the wrong MCCC sibling wording, not a separate XML Inbox row that can legitimately mention a fuller sibling.
+- March 12, 2026: added Sims 4 Community Library to the backend version-comparison tests and the real Tauri desktop fixture lane.
+- March 12, 2026: confirmed that direct app-style requests to CurseForge and Lot 51 still hit Cloudflare challenge pages, so helper-only latest expansion for those sources needs a safe official endpoint, not a bypass.
 
 ## What Was Tested
 
@@ -49,6 +51,11 @@
   - XML Injector older-version item loads
   - version evidence and compare text appear in the real app
 - March 12, 2026: real Tauri desktop apply smoke still passes after the XML fixture and smoke-harness upgrades.
+- March 12, 2026: focused Sims 4 Community Library backend tests passed.
+- March 12, 2026: real Tauri desktop base smoke now also proves:
+  - Sims 4 Community Library same-version item loads
+  - Sims 4 Community Library older-version item loads
+  - version evidence and compare text appear in the real app
 
 ## What Worked
 
@@ -76,16 +83,20 @@
   - incoming `4.0`
   - compare result `Installed and incoming match`
   - the decision no longer falls back to `Version could not be compared` just because the two `.ts4script` zip wrappers differ
+- Real desktop Sims 4 Community Library now behaves correctly in the fixture app:
+  - same-version downloads settle into the already-current path
+  - older downloads stay out of the update path
+  - the version panel shows local compare clues in the real app
 
 ## Known Problems / Gaps
 
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
   - Lot 51 and several CurseForge-backed supported mods still show `unknown` even though their official pages are readable today
-- Real desktop fixture coverage is still strongest for MCCC. The other supported special mods still need the same end-to-end fixture checks.
-- Real desktop coverage now includes XML Injector same-version and older-version checks, but the other supported special-mod families still need fixture-backed desktop flows.
+- Direct non-browser requests to CurseForge and Lot 51 still hit Cloudflare challenge pages, so helper-only latest expansion for those sources is blocked unless we find a safe official machine-readable path.
+- Real desktop coverage now includes MCCC, XML Injector, and Sims 4 Community Library, but the other supported special-mod families still need fixture-backed desktop flows.
 - `.7z` and `.rar` are safely held for review right now, but there is not yet a safe supported extraction path for them.
-- The native smoke lane is now stable for the current MCCC fixture flow, but it still does not cover the other supported special mods yet.
+- The native smoke lane is now stable for the current MCCC, XML Injector, and Sims 4 Community Library flows, but it still does not cover the other supported special mods yet.
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
 
@@ -104,13 +115,9 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
-- Start by widening helper-only official latest parsers for the supported readable official sources:
-  - Lot 51 Core Library
-  - XML Injector
-  - Lumpinou Toolbox
-  - Smart Core Script
-- Then expand the real desktop fixture lane beyond MCCC so every supported special mod has:
-- Then expand the real desktop fixture lane beyond MCCC and XML Injector so every supported special mod has:
+- Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
+- Keep MCCC and GitHub release parsing as the known-good online helpers.
+- Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:
   - update flow
   - same-version flow
   - older-version flow
