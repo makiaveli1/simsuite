@@ -63,6 +63,15 @@ Important changes and findings:
 - a live helper-only latest check gap was confirmed:
   - direct app-style requests to CurseForge and Lot 51 still hit Cloudflare challenge pages
   - this means the remaining helper-only latest gaps need safe official endpoints, not brittle workarounds
+- a real live Inbox bottleneck was found and fixed:
+  - safe read-only desktop checks against the user's actual Downloads folder showed that Inbox was filling the real database but still looked stuck in `Checking your Downloads inbox...`
+  - the main slowdown was the filename duplicate rebuild that ran after every downloads refresh
+  - on a safe copy of the real database that old filename duplicate step took about 107 seconds
+  - that duplicate step now uses a grouped Rust pass instead of the slow full-table self-join
+- ZIP handling is lighter now too:
+  - ZIP archives get a fast name-only check before unpacking
+  - SimSuite only unpacks ZIPs when they actually contain Sims files
+  - `.7z` and `.rar` still stay blocked for safety
 
 Important follow-up result:
 
@@ -80,6 +89,14 @@ Important follow-up result:
   - same-version downloads settle into the already-current path
   - older downloads stay out of the update path
   - local evidence still drives the result in the real app
+- the real live Inbox no longer hangs forever on first open:
+  - in the user's actual desktop setup, Inbox now reaches the real queue in about 14 seconds
+  - the queue shows the expected live items such as MCCC, Lot 51 Core Library, and XML Injector
+  - the watcher state now settles back to `Watching`
+- the biggest freeze cause is now understood and reduced:
+  - it was not mainly queue rendering
+  - it was not mainly ZIP extraction anymore
+  - it was the duplicate rebuild work happening before the watcher reported Inbox as ready
 - the current fixture-backed real desktop result for MCCC after apply is now:
   - the full pack lands in the done lane
   - the full pack reads as matching the installed version
@@ -88,7 +105,8 @@ Important follow-up result:
 
 Important remaining gap:
 
-- the latest Inbox performance cleanup is proven in the real fixture-backed desktop app, but it still needs a live check against the user's real Downloads folder and real queue size
+- the worst Inbox freeze is fixed in the user's real desktop setup, but the first live load is still slower than it should feel at about 14 seconds
+- unrelated non-Sims ZIP files still show up as Inbox error rows, which is accurate but noisy
 - helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
 - direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
 
@@ -254,9 +272,12 @@ Missing:
 - broader curated incompatibility coverage beyond the initial seed set
 - auto-resolving multi-item dependency install order inside Inbox
 - guided option-pack choice flows
-- deeper Inbox performance cleanup for large live queues and heavy special-mod families after the latest refresh-deduping pass
+- deeper Inbox performance cleanup for large live queues and heavy special-mod families after the duplicate rebuild fix
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
 - full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
+- a clean product decision for unrelated non-Sims downloads:
+  - keep them visible as blocked/error intake items
+  - or ignore them earlier so Inbox stays focused on Sims content
 
 ### UI coverage
 

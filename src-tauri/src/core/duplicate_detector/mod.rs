@@ -19,14 +19,7 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
         params![],
     )?;
 
-    connection.execute(
-        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
-         SELECT a.id, b.id, 'filename', 'filename_match', CURRENT_TIMESTAMP
-         FROM files a
-         JOIN files b ON LOWER(a.filename) = LOWER(b.filename) AND a.id < b.id
-         WHERE COALESCE(a.hash, '') <> COALESCE(b.hash, '')",
-        params![],
-    )?;
+    insert_filename_duplicates(connection)?;
 
     insert_version_duplicates(connection)?;
 
@@ -214,6 +207,52 @@ fn insert_version_duplicates(connection: &mut Connection) -> AppResult<()> {
     Ok(())
 }
 
+fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
+    let mut statement = connection.prepare(
+        "SELECT id, filename, COALESCE(hash, '')
+         FROM files
+         ORDER BY filename COLLATE NOCASE, id",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut grouped = HashMap::<String, Vec<(i64, String)>>::new();
+    for (file_id, filename, hash) in rows {
+        grouped
+            .entry(filename.to_ascii_lowercase())
+            .or_default()
+            .push((file_id, hash));
+    }
+
+    for files in grouped.values().filter(|items| items.len() > 1) {
+        for left in 0..files.len() {
+            for right in (left + 1)..files.len() {
+                let (left_id, left_hash) = &files[left];
+                let (right_id, right_hash) = &files[right];
+                if left_hash == right_hash {
+                    continue;
+                }
+
+                let pair_key = ordered_pair(*left_id, *right_id);
+                connection.execute(
+                    "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+                     VALUES (?1, ?2, 'filename', 'filename_match', CURRENT_TIMESTAMP)",
+                    params![pair_key.0, pair_key.1],
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn load_existing_pairs(connection: &Connection) -> AppResult<Vec<(i64, i64)>> {
     let mut statement = connection.prepare("SELECT file_id_a, file_id_b FROM duplicates")?;
     let rows = statement
@@ -347,6 +386,22 @@ mod tests {
         assert_eq!(overview.exact_pairs, 1);
         assert_eq!(overview.filename_pairs, 1);
         assert_eq!(overview.version_pairs, 1);
+    }
+
+    #[test]
+    fn filename_duplicates_match_case_insensitively_without_readding_exact_pairs() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        insert_file(&connection, "Hair.package", Some("aaa"), 10);
+        insert_file(&connection, "hair.package", Some("bbb"), 10);
+        insert_file(&connection, "HAIR.package", Some("bbb"), 10);
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let overview = get_duplicate_overview(&connection).expect("overview");
+
+        assert_eq!(overview.exact_pairs, 1);
+        assert_eq!(overview.filename_pairs, 2);
     }
 
     #[test]

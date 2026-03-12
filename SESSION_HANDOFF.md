@@ -2,10 +2,11 @@
 
 ## Current Priority
 
-- March 12, 2026: verify the Inbox freeze fix against the user's real Downloads folder, not only the isolated desktop smoke fixtures.
+- March 12, 2026: trim the remaining live Inbox delay now that the worst freeze is fixed in the user's real Downloads folder.
+- March 12, 2026: decide whether unrelated non-Sims archives should stay visible as Inbox error rows or be ignored earlier.
 - March 12, 2026: widen Inbox special-mod validation beyond MCCC now that the native desktop smoke lane is steady again.
 - March 12, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
-- The highest-priority remaining gap is broader supported-mod coverage and helper-only official latest parsing for supported sources that still return `unknown`.
+- The highest-priority remaining gaps are the remaining live Inbox delay, the noisy unrelated-download rows, broader supported-mod coverage, and helper-only official latest parsing for supported sources that still return `unknown`.
 
 ## What Changed This Session
 
@@ -36,6 +37,13 @@
 - March 12, 2026: replaced the old one-count skip with a short grace window after local Inbox reloads, so command events and watcher follow-up events do not immediately force another heavy Downloads reload.
 - March 12, 2026: changed post-action Inbox updates so apply, ignore, and special review actions now use one main queue reload and refresh watcher status in the background instead of blocking on another extra call first.
 - March 12, 2026: tightened selected-item reloads so the right panel now reloads when the selected item id or `updatedAt` changes, not every time the whole queue object is rebuilt.
+- March 12, 2026: added a fast ZIP pre-check in the Downloads watcher so ZIP archives are only unpacked when they actually contain Sims files.
+- March 12, 2026: replaced the slow filename-duplicate rebuild query with a grouped Rust pass that keeps the same duplicate results without the full-table self-join.
+- March 12, 2026: proved on a safe copy of the real app database that the old filename-duplicate SQL was the main Inbox freeze source:
+  - delete old duplicate rows was basically instant
+  - exact-hash duplicate rebuild was basically instant
+  - filename duplicate rebuild took about 107 seconds on the real library
+- March 12, 2026: proved that the grouped filename-duplicate approach on the same real data is tiny by comparison, taking about 0.08 seconds to build the pairs in a safe measurement.
 
 ## What Was Tested
 
@@ -62,6 +70,12 @@
   - Sims 4 Community Library older-version item loads
   - version evidence and compare text appear in the real app
 - March 12, 2026: after the Inbox reload cleanup, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run tauri:build -- --debug`, and `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply` all passed again.
+- March 12, 2026: after the ZIP pre-check and duplicate rebuild fix, `cargo fmt --manifest-path src-tauri/Cargo.toml`, `cargo test --manifest-path src-tauri/Cargo.toml`, and `npm run tauri:build -- --debug` all passed again.
+- March 12, 2026: a safe read-only real Tauri desktop check against the user's actual Downloads folder now proves:
+  - Inbox first open finishes instead of hanging forever
+  - the live queue appears after about 14 seconds
+  - the real queue shows the expected live items, including MCCC, Lot 51 Core Library, and XML Injector downloads
+  - the watcher settles to `Watching` instead of staying stuck in `Checking`
 
 ## What Worked
 
@@ -98,10 +112,15 @@
   - refresh still works
   - MCCC apply still works
   - the lighter reload path did not break the real desktop special-mod flow
+- The real live Inbox is materially better now:
+  - it no longer sits in `Checking your Downloads inbox...` forever
+  - it loads the real queue in the desktop app
+  - the worst freeze was caused by the duplicate rebuild, not by the queue rendering itself
 
 ## Known Problems / Gaps
 
-- The freeze fix is proven against the real desktop fixture app, but it still needs a real live-folder check against the user's own heavier Downloads state.
+- Live Inbox first open is much better now, but about 14 seconds is still slower than it should feel.
+- Unrelated non-Sims ZIP downloads still appear in Inbox as `No supported Sims files were found in this download.` rows. That is accurate, but it is noisy.
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
   - Lot 51 and several CurseForge-backed supported mods still show `unknown` even though their official pages are readable today
@@ -112,6 +131,7 @@
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
 - The Downloads refresh cleanup currently uses a short local grace window to swallow duplicate post-action reloads. That is much lighter than before, but it may still need tuning if real watcher traffic stays noisy in a large live Downloads folder.
+- The live read-only refresh check after the performance fix looked calm, but it still needs a fuller human desktop pass for repeated selection and action testing now that the big freeze is gone.
 
 ## Important Decisions
 
@@ -128,7 +148,8 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
-- Before widening more special-mod coverage, check Inbox in the user's real desktop setup again and confirm whether the freeze/over-refresh problem is now actually better in live use.
+- Before widening more special-mod coverage, decide whether unrelated non-Sims ZIPs should be ignored earlier instead of turning into noisy Inbox error rows.
+- Then re-check Inbox in the user's real desktop setup and see whether the remaining delay comes mostly from archive scanning, queue rendering, or selected-item detail work.
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
 - Keep MCCC and GitHub release parsing as the known-good online helpers.
 - Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:

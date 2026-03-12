@@ -1580,6 +1580,8 @@ fn process_source(
     let mut staged_root = None;
     let discovered = if source.source_kind == "file" {
         vec![build_discovered_file(watched_root, &source.path)?]
+    } else if !should_extract_archive_source(source, &mut notes)? {
+        Vec::new()
     } else {
         let next_root = build_archive_staging_root(
             &state.app_data_dir,
@@ -2229,6 +2231,48 @@ fn extract_archive(
     }
 
     Ok(discovered)
+}
+
+fn should_extract_archive_source(
+    source: &ObservedSource,
+    notes: &mut Vec<String>,
+) -> AppResult<bool> {
+    if !matches!(source.archive_format.as_deref(), Some("zip")) {
+        return Ok(true);
+    }
+
+    if zip_archive_contains_supported_content(&source.path)? {
+        return Ok(true);
+    }
+
+    notes.push(
+        "Skipped ZIP extraction because no supported Sims files were found inside.".to_owned(),
+    );
+    Ok(false)
+}
+
+fn zip_archive_contains_supported_content(source_path: &Path) -> AppResult<bool> {
+    let file = fs::File::open(source_path)?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|error| AppError::Message(error.to_string()))?;
+
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| AppError::Message(error.to_string()))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(enclosed) = entry.enclosed_name() else {
+            continue;
+        };
+        let extension = normalize_extension(&enclosed);
+        if is_supported_content_extension(&extension) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 fn extract_zip_archive(
@@ -2958,15 +3002,18 @@ mod tests {
         get_download_item_guided_plan, has_auto_recheck_note, ingest_held_archive_source,
         load_existing_items, mark_item_rechecked_with_new_rules,
         mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
-        reassess_existing_item, refresh_download_item_status, should_use_full_downloads_scan,
-        staging_segment_for_source, summarize_status, ObservedSource,
+        reassess_existing_item, refresh_download_item_status, should_extract_archive_source,
+        should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
+        ObservedSource,
     };
     use crate::database::initialize;
     use crate::models::{DownloadsWatcherState, LibrarySettings};
     use crate::seed;
     use chrono::{TimeZone, Utc};
     use rusqlite::{params, Connection};
+    use std::{fs::File, io::Write};
     use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
 
     fn setup_connection() -> Connection {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
@@ -3055,6 +3102,21 @@ mod tests {
                 ],
             )
             .expect("insert download item with mode");
+    }
+
+    fn create_test_zip(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(path).expect("create zip");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        for (entry_path, contents) in entries {
+            archive
+                .start_file(*entry_path, options)
+                .expect("start zip entry");
+            archive.write_all(contents).expect("write zip entry");
+        }
+
+        archive.finish().expect("finish zip");
     }
 
     fn insert_file(
@@ -3380,6 +3442,66 @@ mod tests {
         assert!(error_message
             .as_deref()
             .is_some_and(|value| value.contains("paused .rar extraction")));
+    }
+
+    #[test]
+    fn zip_quick_check_skips_archives_without_supported_sims_files() {
+        let temp = tempdir().expect("temp dir");
+        let archive_path = temp.path().join("notes-only.zip");
+        create_test_zip(
+            &archive_path,
+            &[
+                ("docs/readme.txt", b"read me"),
+                ("docs/changelog.md", b"changes"),
+            ],
+        );
+        let metadata = archive_path.metadata().expect("zip metadata");
+        let source = ObservedSource {
+            path: archive_path,
+            display_name: "notes-only.zip".to_owned(),
+            source_kind: "archive".to_owned(),
+            archive_format: Some("zip".to_owned()),
+            source_size: metadata.len() as i64,
+            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
+        };
+        let mut notes = Vec::new();
+
+        let should_extract =
+            should_extract_archive_source(&source, &mut notes).expect("quick zip check");
+
+        assert!(!should_extract);
+        assert!(notes.iter().any(|note| {
+            note.contains("Skipped ZIP extraction because no supported Sims files were found")
+        }));
+    }
+
+    #[test]
+    fn zip_quick_check_keeps_archives_with_supported_sims_files() {
+        let temp = tempdir().expect("temp dir");
+        let archive_path = temp.path().join("mod-files.zip");
+        create_test_zip(
+            &archive_path,
+            &[
+                ("Mods/test.package", b"package bytes"),
+                ("docs/readme.txt", b"read me"),
+            ],
+        );
+        let metadata = archive_path.metadata().expect("zip metadata");
+        let source = ObservedSource {
+            path: archive_path,
+            display_name: "mod-files.zip".to_owned(),
+            source_kind: "archive".to_owned(),
+            archive_format: Some("zip".to_owned()),
+            source_size: metadata.len() as i64,
+            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
+        };
+        let mut notes = Vec::new();
+
+        let should_extract =
+            should_extract_archive_source(&source, &mut notes).expect("quick zip check");
+
+        assert!(should_extract);
+        assert!(notes.is_empty());
     }
 
     #[test]
