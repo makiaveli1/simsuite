@@ -139,6 +139,21 @@ async function hasVisibleText(driver, text) {
   return false;
 }
 
+async function ensureTextStaysHidden(driver, text, timeoutMs = 5000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await hasVisibleText(driver, text)) {
+      throw new Error(`Unexpected text became visible: ${text}`);
+    }
+    await driver.sleep(250);
+  }
+}
+
+async function dumpBodyText(driver, label) {
+  const body = await driver.findElement(By.css("body")).getText();
+  console.log(`\n===== ${label} =====\n${body}\n`);
+}
+
 async function waitForQueueItem(driver, partialText, timeoutMs = 90000) {
   const startedAt = Date.now();
   let retried = false;
@@ -261,10 +276,23 @@ async function run() {
         );
       }
       await clickSpecialQueueItem(driver);
-      await waitForAnyText(driver, ["Update safely", "Install safely"], 30000);
+      try {
+        await waitForAnyText(driver, ["Update safely", "Install safely"], 30000);
+      } catch (error) {
+        await dumpBodyText(driver, "apply-step-timeout");
+        throw error;
+      }
       const applyLabel = process.env.SIMSUITE_SMOKE_APPLY_LABEL ?? "Update safely";
       await clickButton(driver, applyLabel);
       await waitForAnyText(driver, ["Done", "Installed safely", "Updated safely"], 30000);
+      await waitForQueueItem(driver, FIXTURE_BLOCKED_ITEM, 30000);
+      await clickBlockedQueueItem(driver);
+      await waitForAnyText(
+        driver,
+        ["already installed", "Ignore this leftover", "no longer needs to lead the install"],
+        30000,
+      );
+      await ensureTextStaysHidden(driver, "already in Inbox as", 2000);
     }
 
     console.log(`Desktop smoke passed against ${appPath}`);

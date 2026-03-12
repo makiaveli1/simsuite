@@ -22,10 +22,18 @@ Important changes and findings:
   - incoming `2026.1.1`
   - result `Incoming pack is newer`
 - after safe apply, SimSuite updated the installed version to `2026.1.1` and preserved the `.cfg` settings file
+- the post-apply family-ranking bug has now been fixed in backend logic:
+  - applied fuller family packs stay in the sibling comparison instead of disappearing
+  - weaker leftover siblings no longer get the wrong “open the other Inbox item first” action in the backend decision path
+- a new backend regression test now covers that exact post-apply MCCC family case
 
-Important real bug found:
+Important follow-up result:
 
-- after a safe MCCC apply, Inbox can wrongly treat a partial blocked sibling as the "better" family item and point the user back to it
+- the original post-apply family bug was real and is now fixed in backend code and tests
+- the real desktop base Inbox smoke still passes after that fix
+- the real desktop apply smoke helper is still not steady enough:
+  - some runs time out before the apply action appears
+  - one debug run showed stale or mixed fixture state, so the harness itself still needs cleanup before it can be trusted as a full signoff path
 
 Important remaining gap:
 
@@ -195,6 +203,7 @@ Missing:
 - guided option-pack choice flows
 - deeper Inbox performance cleanup for large queues and heavy special-mod families
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
+- a steady native desktop apply smoke that can prove post-apply Inbox state without manual follow-up
 
 ### UI coverage
 

@@ -1112,10 +1112,13 @@ pub fn build_special_mod_decision_cached(
     let primary_family_item_name = primary_family
         .as_ref()
         .map(|item| item.display_name.clone());
+    let primary_family_item_status = primary_family.as_ref().map(|item| item.status.as_str());
     let family_role = match primary_family_item_id {
         Some(primary_id) if primary_id != item_id => SpecialFamilyRole::Superseded,
         Some(_) | None => SpecialFamilyRole::Primary,
     };
+    let superseded_by_installed_family = family_role == SpecialFamilyRole::Superseded
+        && primary_family_item_status == Some("applied");
     let local_pack_state = evidence.local_pack_state(&profile);
     let existing_install_state = existing_install_state_from_layout(&layout);
     let install_path = layout
@@ -1189,7 +1192,7 @@ pub fn build_special_mod_decision_cached(
         build_available_review_actions(seed_pack, &evaluation, &files, Some(&layout))
     };
 
-    if family_role == SpecialFamilyRole::Superseded {
+    if family_role == SpecialFamilyRole::Superseded && !superseded_by_installed_family {
         if let (Some(primary_id), Some(primary_name)) =
             (primary_family_item_id, primary_family_item_name.clone())
         {
@@ -1212,7 +1215,9 @@ pub fn build_special_mod_decision_cached(
     }
 
     available_actions.sort_by(|left, right| right.priority.cmp(&left.priority));
-    let primary_action = if version_blocks_update && family_role == SpecialFamilyRole::Primary {
+    let primary_action = if superseded_by_installed_family
+        || (version_blocks_update && family_role == SpecialFamilyRole::Primary)
+    {
         None
     } else {
         available_actions.first().cloned()
@@ -1224,7 +1229,9 @@ pub fn build_special_mod_decision_cached(
     } else {
         SpecialDecisionState::ReviewManually
     };
-    let queue_lane = if version_blocks_update && family_role == SpecialFamilyRole::Primary {
+    let queue_lane = if superseded_by_installed_family
+        || (version_blocks_update && family_role == SpecialFamilyRole::Primary)
+    {
         DownloadQueueLane::Done
     } else {
         special_decision_queue_lane(&state, &evaluation.assessment.intake_mode)
@@ -1235,10 +1242,16 @@ pub fn build_special_mod_decision_cached(
         &local_pack_state,
         family_role.clone(),
         primary_family_item_name.clone(),
+        superseded_by_installed_family,
         &version_status,
         &evaluation,
     );
-    let explanation = if include_full_details && family_role == SpecialFamilyRole::Superseded {
+    let explanation = if include_full_details && superseded_by_installed_family {
+        format!(
+            "SimSuite already used a fuller {} pack from this family, so this leftover download no longer needs to lead the install.",
+            profile.display_name
+        )
+    } else if include_full_details && family_role == SpecialFamilyRole::Superseded {
         format!(
             "SimSuite found more than one {} download in the Inbox and picked the fuller local pack to lead with.",
             profile.display_name
@@ -1260,7 +1273,12 @@ pub fn build_special_mod_decision_cached(
     } else {
         queue_summary.clone()
     };
-    let recommended_next_step = if include_full_details && same_version {
+    let recommended_next_step = if include_full_details && superseded_by_installed_family {
+        format!(
+            "Ignore this leftover {} download unless you want to keep the extra archive for reference.",
+            profile.display_name
+        )
+    } else if include_full_details && same_version {
         format!(
             "{} is already current. Reinstall only if you want to replace a damaged copy.",
             profile.display_name
@@ -1566,9 +1584,17 @@ fn build_special_queue_summary(
     local_pack_state: &SpecialLocalPackState,
     family_role: SpecialFamilyRole,
     primary_family_item_name: Option<String>,
+    superseded_by_installed_family: bool,
     version_status: &SpecialVersionStatus,
     evaluation: &EvaluationResult,
 ) -> String {
+    if superseded_by_installed_family {
+        return format!(
+            "A fuller {} pack from this family is already installed.",
+            profile.display_name
+        );
+    }
+
     if family_role == SpecialFamilyRole::Superseded {
         return format!(
             "A fuller {} pack is already in Inbox as {}.",
@@ -2007,7 +2033,7 @@ fn load_family_siblings(
             di.status
          FROM download_items di
          WHERE di.matched_profile_key = ?1
-           AND di.status NOT IN ('applied', 'ignored', 'error')
+            AND di.status NOT IN ('ignored', 'error')
          ORDER BY di.updated_at DESC, di.id DESC",
     )?;
 
@@ -4259,6 +4285,7 @@ mod tests {
         },
         seed::{load_seed_pack, GuidedInstallProfileSeed, SeedPack},
     };
+    use chrono::Utc;
     use rusqlite::{params, Connection};
     use serde_json::to_string;
     use std::{
@@ -5923,6 +5950,99 @@ mod tests {
             .expect("primary special decision");
         assert_eq!(primary_decision.family_role, SpecialFamilyRole::Primary);
         assert!(primary_decision.apply_ready);
+    }
+
+    #[test]
+    fn applied_full_family_pack_keeps_leftover_partial_out_of_the_waiting_lane() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+
+        let partial_staging = staging_root.join("mccc_partial_after_apply");
+        fs::create_dir_all(&partial_staging).expect("partial staging");
+        insert_download_item(
+            &connection,
+            270,
+            "MCCC_partial_after_apply.zip",
+            &partial_staging,
+        );
+        let partial_file = partial_staging.join("mc_cmd_center.ts4script");
+        fs::write(&partial_file, b"core").expect("partial file");
+        insert_download_file(
+            &connection,
+            270,
+            27001,
+            &partial_file,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        let partial_assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 270).expect("partial");
+        store_download_item_assessment(&connection, 270, &partial_assessment)
+            .expect("store partial");
+
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        build_sample_download(&staging_root, &connection, 271, profile);
+        let full_assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 271).expect("full");
+        store_download_item_assessment(&connection, 271, &full_assessment).expect("store full");
+
+        let install_root = install_target_for_profile(temp.path(), profile);
+        fs::create_dir_all(&install_root).expect("install root");
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let source_path = staging_root.join("271").join(sample.replace('/', "\\"));
+            let installed_path = install_root.join(sample.replace('/', "\\"));
+            if let Some(parent) = installed_path.parent() {
+                fs::create_dir_all(parent).expect("install parent");
+            }
+            fs::copy(&source_path, &installed_path).expect("copy installed file");
+            connection
+                .execute(
+                    "UPDATE files
+                     SET path = ?2,
+                         source_location = 'mods',
+                         relative_depth = 1,
+                         indexed_at = CURRENT_TIMESTAMP
+                     WHERE id = ?1",
+                    params![
+                        27100 + index as i64 + 1,
+                        installed_path.to_string_lossy().to_string()
+                    ],
+                )
+                .expect("mark installed file");
+        }
+
+        connection
+            .execute(
+                "UPDATE download_items
+                 SET status = 'applied',
+                     updated_at = ?2
+                 WHERE id = ?1",
+                params![271, Utc::now().to_rfc3339()],
+            )
+            .expect("mark applied");
+
+        let affected =
+            reconcile_special_mod_family(&connection, &settings, &seed_pack, "mccc", 271)
+                .expect("reconcile");
+        assert!(affected.contains(&270));
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 270)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.family_role, SpecialFamilyRole::Superseded);
+        assert_eq!(decision.primary_family_item_id, Some(271));
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert!(decision.primary_action.is_none());
+        assert!(decision.queue_summary.contains("already installed"));
+        assert!(!decision.queue_summary.contains("already in Inbox"));
+        assert!(decision
+            .recommended_next_step
+            .contains("Ignore this leftover"));
     }
 
     #[test]
