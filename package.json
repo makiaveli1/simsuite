@@ -13,6 +13,7 @@
     "tauri:build": "tauri build",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "desktop:driver": "pwsh -NoProfile -File scripts/desktop/run-tauri-webdriver.ps1",
+    "desktop:driver:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
     "desktop:smoke": "node scripts/desktop/desktop-smoke.mjs",
     "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply"
   },

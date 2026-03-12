@@ -547,11 +547,11 @@ pub fn sync_category_override_path(
 }
 
 pub fn get_library_settings(connection: &Connection) -> AppResult<LibrarySettings> {
-    Ok(LibrarySettings {
+    Ok(apply_library_settings_overrides(LibrarySettings {
         mods_path: get_app_setting(connection, "mods_path")?,
         tray_path: get_app_setting(connection, "tray_path")?,
         downloads_path: get_app_setting(connection, "downloads_path")?,
-    })
+    }))
 }
 
 pub fn save_library_paths(
@@ -623,6 +623,32 @@ fn clean_optional_string(value: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_owned())
+    }
+}
+
+fn env_override_path(name: &str) -> Option<String> {
+    std::env::var(name).ok().and_then(clean_optional_string)
+}
+
+fn apply_library_settings_overrides(settings: LibrarySettings) -> LibrarySettings {
+    apply_library_settings_override_values(
+        settings,
+        env_override_path("SIMSUITE_MODS_PATH"),
+        env_override_path("SIMSUITE_TRAY_PATH"),
+        env_override_path("SIMSUITE_DOWNLOADS_PATH"),
+    )
+}
+
+fn apply_library_settings_override_values(
+    settings: LibrarySettings,
+    mods_override: Option<String>,
+    tray_override: Option<String>,
+    downloads_override: Option<String>,
+) -> LibrarySettings {
+    LibrarySettings {
+        mods_path: mods_override.or(settings.mods_path),
+        tray_path: tray_override.or(settings.tray_path),
+        downloads_path: downloads_override.or(settings.downloads_path),
     }
 }
 
@@ -1131,6 +1157,27 @@ mod tests {
     use crate::{models::LibrarySettings, seed::load_seed_pack};
 
     use super::*;
+
+    #[test]
+    fn library_settings_overrides_replace_only_present_values() {
+        let settings = apply_library_settings_override_values(
+            LibrarySettings {
+                mods_path: Some("C:/Mods/Real".to_owned()),
+                tray_path: Some("C:/Tray/Real".to_owned()),
+                downloads_path: Some("C:/Downloads/Real".to_owned()),
+            },
+            Some("C:/Mods/Test".to_owned()),
+            None,
+            Some("C:/Downloads/Test".to_owned()),
+        );
+
+        assert_eq!(settings.mods_path, Some("C:/Mods/Test".to_owned()));
+        assert_eq!(settings.tray_path, Some("C:/Tray/Real".to_owned()));
+        assert_eq!(
+            settings.downloads_path,
+            Some("C:/Downloads/Test".to_owned())
+        );
+    }
 
     #[test]
     fn runtime_seed_pack_includes_user_learned_aliases() {

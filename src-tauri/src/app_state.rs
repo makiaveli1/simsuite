@@ -35,10 +35,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn initialise(app: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
-        let app_data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| AppError::Message(error.to_string()))?;
+        let app_data_dir = resolve_app_data_dir(
+            app.path()
+                .app_data_dir()
+                .map_err(|error| AppError::Message(error.to_string()))?,
+        );
 
         fs::create_dir_all(&app_data_dir)?;
 
@@ -106,6 +107,23 @@ impl AppState {
 
     pub fn downloads_processing_lock(&self) -> Arc<Mutex<()>> {
         Arc::clone(&self.downloads_processing_lock)
+    }
+}
+
+fn resolve_app_data_dir(default_dir: PathBuf) -> PathBuf {
+    std::env::var("SIMSUITE_APP_DATA_DIR")
+        .ok()
+        .and_then(clean_override_path)
+        .map(PathBuf::from)
+        .unwrap_or(default_dir)
+}
+
+fn clean_override_path(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
     }
 }
 
@@ -201,5 +219,21 @@ mod tests {
             Some("Initial inbox refresh")
         );
         let _ = fs::remove_dir_all(downloads_root);
+    }
+
+    #[test]
+    fn resolve_app_data_dir_keeps_default_without_override() {
+        let default_dir = PathBuf::from("C:/Users/Test/AppData/Default");
+
+        assert_eq!(resolve_app_data_dir(default_dir.clone()), default_dir);
+    }
+
+    #[test]
+    fn clean_override_path_trims_non_empty_values() {
+        assert_eq!(
+            clean_override_path(" C:/Temp/SimSuiteSmoke ".to_owned()),
+            Some("C:/Temp/SimSuiteSmoke".to_owned())
+        );
+        assert_eq!(clean_override_path("   ".to_owned()), None);
     }
 }
