@@ -2652,6 +2652,42 @@ function buildSpecialVersionSection(
           />
           <DetailRow label="Official latest" value={officialVersion} />
         </div>
+        {specialDecision.incomingVersionEvidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Incoming evidence</div>
+            <div className="downloads-evidence-list">
+              {specialDecision.incomingVersionEvidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {specialDecision.installedVersionEvidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Installed evidence</div>
+            <div className="downloads-evidence-list">
+              {specialDecision.installedVersionEvidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {specialDecision.comparisonEvidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Main check</div>
+            <div className="downloads-evidence-list">
+              {specialDecision.comparisonEvidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {specialDecision.officialLatest?.note ? (
           <div className="downloads-evidence-list">
             <div className="downloads-evidence-row">

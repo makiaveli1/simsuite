@@ -646,8 +646,11 @@ export interface SpecialModDecision {
   incomingVersion: string | null;
   incomingSignature: string | null;
   incomingVersionSource: string | null;
+  incomingVersionEvidence: string[];
   installedVersionSource: string | null;
+  installedVersionEvidence: string[];
   comparisonSource: string | null;
+  comparisonEvidence: string[];
   versionStatus: SpecialVersionStatus;
   sameVersion: boolean;
   officialLatest: SpecialOfficialLatestInfo | null;

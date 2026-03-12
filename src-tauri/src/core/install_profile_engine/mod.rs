@@ -13,8 +13,9 @@ use crate::{
     core::{
         file_inspector,
         special_mod_versions::{
-            self, build_signature, build_version_comparison, extract_version_from_values,
-            load_family_state, load_or_refresh_latest_info, save_family_state, SignatureEntry,
+            self, build_signature, build_version_comparison,
+            extract_version_candidates_from_value, extract_version_from_values, load_family_state,
+            load_or_refresh_latest_info, save_family_state, SignatureEntry,
             StoredSpecialModFamilyState,
         },
         validator::{self, ValidationRequest},
@@ -107,6 +108,26 @@ struct ExistingInstallLayout {
 struct VersionEvidence {
     value: Option<String>,
     source: Option<String>,
+    lines: Vec<String>,
+}
+
+fn push_version_evidence_line(lines: &mut Vec<String>, line: impl Into<String>) {
+    let line = line.into();
+    if !lines.contains(&line) {
+        lines.push(line);
+    }
+}
+
+fn limit_version_evidence_lines(lines: &mut Vec<String>) {
+    if lines.len() > 2 {
+        lines.truncate(2);
+    }
+}
+
+fn string_contains_version_hint(value: &str, version: &str) -> bool {
+    extract_version_candidates_from_value(value)
+        .iter()
+        .any(|candidate| candidate == version)
 }
 
 fn special_insights_need_refresh(extension: &str, insights: &FileInsights) -> bool {
@@ -1091,8 +1112,7 @@ pub fn build_special_mod_decision_cached(
         &existing_install_state,
         install_path.clone(),
     )?;
-    let incoming_version_evidence =
-        incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_version_evidence = incoming_version_for_profile(&profile, &item.display_name, &files);
     let incoming_version = incoming_version_evidence.value.clone();
     let incoming_signature = incoming_signature_for_profile(&profile, &files);
     let mut installed_version_evidence = installed_version_for_profile(&profile, &layout);
@@ -1102,6 +1122,12 @@ pub fn build_special_mod_decision_cached(
         let saved_version = family_state.installed.installed_version.clone();
         if saved_version.is_some() && installed_version_evidence.source.is_none() {
             installed_version_evidence.source = Some("saved family state".to_owned());
+            if let Some(version) = saved_version.as_deref() {
+                push_version_evidence_line(
+                    &mut installed_version_evidence.lines,
+                    format!("The last saved family record still shows {}.", version),
+                );
+            }
         }
         saved_version
     };
@@ -1236,6 +1262,10 @@ pub fn build_special_mod_decision_cached(
         || installed_version_evidence.source.as_deref() == Some("inside mod")
     {
         Some("inside mod".to_owned())
+    } else if incoming_version_evidence.source.as_deref() == Some("saved family state")
+        || installed_version_evidence.source.as_deref() == Some("saved family state")
+    {
+        Some("saved family state".to_owned())
     } else if incoming_version_evidence.source.is_some()
         || installed_version_evidence.source.is_some()
     {
@@ -1243,6 +1273,14 @@ pub fn build_special_mod_decision_cached(
     } else {
         None
     };
+    let comparison_evidence = build_comparison_evidence_lines(
+        incoming_version.as_deref(),
+        family_state.installed.installed_version.as_deref(),
+        incoming_signature.as_deref(),
+        family_state.installed.installed_signature.as_deref(),
+        &version_status,
+        comparison_source.as_deref(),
+    );
 
     Ok(Some(SpecialModDecision {
         item_id,
@@ -1264,8 +1302,11 @@ pub fn build_special_mod_decision_cached(
         incoming_version,
         incoming_signature,
         incoming_version_source: incoming_version_evidence.source,
+        incoming_version_evidence: incoming_version_evidence.lines,
         installed_version_source: installed_version_evidence.source,
+        installed_version_evidence: installed_version_evidence.lines,
         comparison_source,
+        comparison_evidence,
         version_status,
         same_version,
         official_latest,
@@ -1624,6 +1665,39 @@ fn incoming_version_for_profile(
     display_name: &str,
     files: &[ProfileFile],
 ) -> VersionEvidence {
+    let inside_mod_values = files
+        .iter()
+        .filter(|file| is_profile_content_file(file, profile))
+        .flat_map(|file| file.insights.version_hints.iter().cloned())
+        .collect::<Vec<_>>();
+    if let Some(version) = extract_version_from_values(&inside_mod_values) {
+        let mut lines = Vec::new();
+        if let Some(file) = files.iter().find(|file| {
+            is_profile_content_file(file, profile)
+                && file
+                    .insights
+                    .version_hints
+                    .iter()
+                    .any(|hint| hint == &version)
+        }) {
+            push_version_evidence_line(
+                &mut lines,
+                format!("{} hinted {} from inside the download.", file.filename, version),
+            );
+        } else {
+            push_version_evidence_line(
+                &mut lines,
+                format!("Inside-mod clues pointed to {}.", version),
+            );
+        }
+        limit_version_evidence_lines(&mut lines);
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("inside mod".to_owned()),
+            lines,
+        };
+    }
+
     let mut values = special_mod_versions::version_hints_from_profile(profile, display_name);
     values.extend(files.iter().map(|file| file.filename.clone()));
     values.extend(
@@ -1632,21 +1706,36 @@ fn incoming_version_for_profile(
             .filter_map(|file| file.archive_member_path.clone()),
     );
     if let Some(version) = extract_version_from_values(&values) {
+        let mut lines = Vec::new();
+        if string_contains_version_hint(display_name, &version) {
+            push_version_evidence_line(
+                &mut lines,
+                format!("The download name hinted {}.", version),
+            );
+        }
+        if let Some(file) = files.iter().find(|file| {
+            string_contains_version_hint(&file.filename, &version)
+                || file
+                    .archive_member_path
+                    .as_deref()
+                    .is_some_and(|path| string_contains_version_hint(path, &version))
+        }) {
+            push_version_evidence_line(
+                &mut lines,
+                format!("{} also hinted {} in the local file names.", file.filename, version),
+            );
+        }
+        if lines.is_empty() {
+            push_version_evidence_line(
+                &mut lines,
+                format!("Local file names hinted {}.", version),
+            );
+        }
+        limit_version_evidence_lines(&mut lines);
         return VersionEvidence {
             value: Some(version),
             source: Some("download name".to_owned()),
-        };
-    }
-
-    let inside_mod_values = files
-        .iter()
-        .filter(|file| is_profile_content_file(file, profile))
-        .flat_map(|file| file.insights.version_hints.iter().cloned())
-        .collect::<Vec<_>>();
-    if let Some(version) = extract_version_from_values(&inside_mod_values) {
-        return VersionEvidence {
-            value: Some(version),
-            source: Some("inside mod".to_owned()),
+            lines,
         };
     }
 
@@ -1680,9 +1769,28 @@ fn installed_version_for_profile(
         .flat_map(|file| file.insights.version_hints.iter().cloned())
         .collect::<Vec<_>>();
     if let Some(version) = extract_version_from_values(&inside_mod_values) {
+        let mut lines = Vec::new();
+        if let Some(file) = layout
+            .existing_files
+            .iter()
+            .chain(layout.preserve_files.iter())
+            .find(|file| file.insights.version_hints.iter().any(|hint| hint == &version))
+        {
+            push_version_evidence_line(
+                &mut lines,
+                format!("{} hinted {} from the installed mod files.", file.filename, version),
+            );
+        } else {
+            push_version_evidence_line(
+                &mut lines,
+                format!("Installed inside-mod clues pointed to {}.", version),
+            );
+        }
+        limit_version_evidence_lines(&mut lines);
         return VersionEvidence {
             value: Some(version),
             source: Some("inside mod".to_owned()),
+            lines,
         };
     }
 
@@ -1699,13 +1807,82 @@ fn installed_version_for_profile(
     );
     values.extend(profile.version_file_hints.iter().cloned());
     if let Some(version) = extract_version_from_values(&values) {
+        let mut lines = Vec::new();
+        if let Some(file) = layout
+            .existing_files
+            .iter()
+            .chain(layout.preserve_files.iter())
+            .find(|file| string_contains_version_hint(&file.filename, &version))
+        {
+            push_version_evidence_line(
+                &mut lines,
+                format!("{} hinted {} from the installed file names.", file.filename, version),
+            );
+        } else {
+            push_version_evidence_line(
+                &mut lines,
+                format!("Installed file names hinted {}.", version),
+            );
+        }
+        limit_version_evidence_lines(&mut lines);
         return VersionEvidence {
             value: Some(version),
             source: Some("installed files".to_owned()),
+            lines,
         };
     }
 
     VersionEvidence::default()
+}
+
+fn build_comparison_evidence_lines(
+    incoming_version: Option<&str>,
+    installed_version: Option<&str>,
+    incoming_signature: Option<&str>,
+    installed_signature: Option<&str>,
+    version_status: &SpecialVersionStatus,
+    comparison_source: Option<&str>,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if incoming_signature.is_some()
+        && installed_signature.is_some()
+        && *version_status == SpecialVersionStatus::SameVersion
+        && (incoming_version.is_none() || installed_version.is_none())
+    {
+        push_version_evidence_line(
+            &mut lines,
+            "Matching file fingerprints confirmed the same version.".to_owned(),
+        );
+    } else if let (Some(incoming), Some(installed)) = (incoming_version, installed_version) {
+        push_version_evidence_line(
+            &mut lines,
+            format!("SimSuite compared the local versions {} and {}.", incoming, installed),
+        );
+    }
+
+    match comparison_source {
+        Some("inside mod") => push_version_evidence_line(
+            &mut lines,
+            "The best local clue came from inside the mod files.".to_owned(),
+        ),
+        Some("saved family state") => push_version_evidence_line(
+            &mut lines,
+            "The installed side fell back to the last saved family record.".to_owned(),
+        ),
+        Some("local file names") => push_version_evidence_line(
+            &mut lines,
+            "SimSuite fell back to local archive and file names for this check.".to_owned(),
+        ),
+        Some("file signature") if lines.is_empty() => push_version_evidence_line(
+            &mut lines,
+            "Matching file fingerprints were the strongest local clue.".to_owned(),
+        ),
+        _ => {}
+    }
+
+    limit_version_evidence_lines(&mut lines);
+    lines
 }
 
 fn installed_signature_for_profile(
@@ -5051,6 +5228,81 @@ mod tests {
         assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
         assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
         assert!(decision.same_version);
+        assert!(decision
+            .incoming_version_evidence
+            .iter()
+            .any(|line| line.contains("inside the download")));
+        assert!(decision
+            .installed_version_evidence
+            .iter()
+            .any(|line| line.contains("installed mod files")));
+        assert!(decision
+            .comparison_evidence
+            .iter()
+            .any(|line| line.contains("inside the mod files")));
+    }
+
+    #[test]
+    fn incoming_special_mod_versions_prefer_inside_mod_hints_over_download_name() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        let staging = staging_root.join("mccc_inside_mod_priority");
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(
+            &connection,
+            266,
+            "McCmdCenter_AllModules_2025_4_0.zip",
+            &staging,
+        );
+
+        for (index, sample) in profile.sample_filenames.iter().enumerate() {
+            let file_path = staging.join(sample);
+            fs::write(&file_path, b"sample").expect("sample");
+            insert_download_file(
+                &connection,
+                266,
+                26600 + index as i64 + 1,
+                &file_path,
+                sample,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+        update_file_insights_by_id(
+            &connection,
+            26601,
+            &FileInsights {
+                version_hints: vec!["2026.1.1".to_owned()],
+                family_hints: vec!["mccc".to_owned()],
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 266).expect("assessment");
+        store_download_item_assessment(&connection, 266, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 266)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.incoming_version.as_deref(), Some("2026.1.1"));
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert!(decision
+            .incoming_version_evidence
+            .iter()
+            .any(|line| line.contains("inside the download")));
     }
 
     #[test]
@@ -5190,6 +5442,62 @@ mod tests {
         );
         assert_eq!(decision.version_status, SpecialVersionStatus::Unknown);
         assert!(!decision.same_version);
+        assert!(decision
+            .installed_version_evidence
+            .iter()
+            .any(|line| line.contains("last saved family record")));
+        assert!(decision
+            .comparison_evidence
+            .iter()
+            .any(|line| line.contains("saved family record")));
+    }
+
+    #[test]
+    fn matching_signatures_add_file_fingerprint_evidence() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "mccc")
+            .expect("mccc");
+        build_sample_download(&staging_root, &connection, 267, profile);
+
+        let existing_root = temp.path().join("Mods").join("MCCC");
+        fs::create_dir_all(&existing_root).expect("existing");
+        for sample in &profile.sample_filenames {
+            let file_path = existing_root.join(sample);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).expect("existing parents");
+            }
+            fs::write(&file_path, b"sample").expect("installed sample");
+            insert_installed_file(
+                &connection,
+                &file_path,
+                if sample.ends_with(".ts4script") {
+                    "Script Mods"
+                } else {
+                    "Mods"
+                },
+            );
+        }
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, 267).expect("assessment");
+        store_download_item_assessment(&connection, 267, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, 267)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert!(decision.same_version);
+        assert_eq!(decision.comparison_source.as_deref(), Some("file signature"));
+        assert!(decision.incoming_version.is_none());
+        assert!(decision
+            .comparison_evidence
+            .iter()
+            .any(|line| line.contains("fingerprint")));
     }
 
     #[test]

@@ -240,6 +240,7 @@ export function LibraryScreen({
     selected &&
       (selected.insights.format ||
         selected.insights.creatorHints.length ||
+        selected.insights.versionHints.length ||
         selected.insights.embeddedNames.length ||
         selected.insights.scriptNamespaces.length ||
         selected.insights.resourceSummary.length),
@@ -377,6 +378,18 @@ export function LibraryScreen({
                           {selected.insights.creatorHints.map((hint) => (
                             <span key={hint} className="ghost-chip">
                               {hint}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.insights.versionHints.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">Version hints</div>
+                        <div className="tag-list">
+                          {selected.insights.versionHints.map((item) => (
+                            <span key={item} className="ghost-chip">
+                              {item}
                             </span>
                           ))}
                         </div>
