@@ -26,6 +26,7 @@ pub struct AppState {
     pub seed_pack: Arc<SeedPack>,
     pub scan_status: Arc<Mutex<ScanStatus>>,
     pub downloads_status: Arc<Mutex<DownloadsWatcherStatus>>,
+    pub keep_running_in_background: Arc<Mutex<bool>>,
     pub downloads_watcher_control: Arc<Mutex<DownloadsWatcherControl>>,
     pub downloads_processing_lock: Arc<Mutex<()>>,
     #[allow(dead_code)]
@@ -49,6 +50,9 @@ impl AppState {
         let seed_pack = seed::load_seed_pack()?;
         database::seed_database(&mut connection, &seed_pack)?;
         let library_settings = database::get_library_settings(&connection)?;
+        let keep_running_in_background = parse_bool_setting(
+            database::get_app_setting(&connection, "keep_running_in_background")?,
+        );
         let initial_downloads_status = build_initial_downloads_status(&library_settings);
 
         Ok(Self {
@@ -56,6 +60,7 @@ impl AppState {
             seed_pack: Arc::new(seed_pack),
             scan_status: Arc::new(Mutex::new(ScanStatus::default())),
             downloads_status: Arc::new(Mutex::new(initial_downloads_status)),
+            keep_running_in_background: Arc::new(Mutex::new(keep_running_in_background)),
             downloads_watcher_control: Arc::new(Mutex::new(DownloadsWatcherControl::default())),
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir,
@@ -78,6 +83,22 @@ impl AppState {
         Arc::clone(&self.downloads_status)
     }
 
+    pub fn keep_running_in_background(&self) -> bool {
+        self.keep_running_in_background
+            .lock()
+            .map(|value| *value)
+            .unwrap_or(false)
+    }
+
+    pub fn set_keep_running_in_background(&self, enabled: bool) -> AppResult<()> {
+        let keep_running_in_background = Arc::clone(&self.keep_running_in_background);
+        let mut guard = keep_running_in_background
+            .lock()
+            .map_err(|_| AppError::Message("Background mode lock poisoned".to_owned()))?;
+        *guard = enabled;
+        Ok(())
+    }
+
     pub fn downloads_watcher_control(&self) -> Arc<Mutex<DownloadsWatcherControl>> {
         Arc::clone(&self.downloads_watcher_control)
     }
@@ -85,6 +106,13 @@ impl AppState {
     pub fn downloads_processing_lock(&self) -> Arc<Mutex<()>> {
         Arc::clone(&self.downloads_processing_lock)
     }
+}
+
+fn parse_bool_setting(value: Option<String>) -> bool {
+    value
+        .as_deref()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
 }
 
 fn build_initial_downloads_status(settings: &LibrarySettings) -> DownloadsWatcherStatus {

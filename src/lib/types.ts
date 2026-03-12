@@ -34,6 +34,10 @@ export interface LibrarySettings {
   downloadsPath: string | null;
 }
 
+export interface AppBehaviorSettings {
+  keepRunningInBackground: boolean;
+}
+
 export interface DetectedLibraryPaths {
   modsPath: string | null;
   trayPath: string | null;

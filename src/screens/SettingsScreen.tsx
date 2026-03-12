@@ -1,19 +1,23 @@
+import { useEffect, useState } from "react";
 import { m } from "motion/react";
 import {
   LayoutPanelLeft,
+  LoaderCircle,
   Palette,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import { useUiPreferences } from "../components/UiPreferencesContext";
+import { api } from "../lib/api";
 import {
   EXPERIENCE_MODE_ORDER,
   EXPERIENCE_MODE_PROFILES,
 } from "../lib/experienceMode";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
-import type { ExperienceMode, UiDensity } from "../lib/types";
+import type { AppBehaviorSettings, ExperienceMode, UiDensity } from "../lib/types";
 import { screenHelperLine } from "../lib/uiLanguage";
 
 const EXPERIENCE_CARDS: Record<
@@ -86,6 +90,9 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const { theme, density, setTheme, setDensity, resetPanelSizes } =
     useUiPreferences();
+  const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
+  const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
+  const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
   const activeTheme = getThemeDefinition(theme);
   const activeView = {
     ...EXPERIENCE_MODE_PROFILES[experienceMode],
@@ -93,6 +100,48 @@ export function SettingsScreen({
   };
   const activeDensity =
     DENSITIES.find((item) => item.id === density) ?? DENSITIES[1];
+  const keepRunningInBackground = appBehavior?.keepRunningInBackground ?? false;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void api
+      .getAppBehaviorSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setAppBehavior(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBackgroundModeError(toErrorMessage(error));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function updateBackgroundMode(keepRunning: boolean) {
+    if (appBehavior?.keepRunningInBackground === keepRunning) {
+      return;
+    }
+
+    setIsSavingBackgroundMode(true);
+    setBackgroundModeError(null);
+
+    try {
+      const nextSettings = await api.saveAppBehaviorSettings({
+        keepRunningInBackground: keepRunning,
+      });
+      setAppBehavior(nextSettings);
+    } catch (error) {
+      setBackgroundModeError(toErrorMessage(error));
+    } finally {
+      setIsSavingBackgroundMode(false);
+    }
+  }
 
   return (
     <div className="screen-shell settings-screen">
@@ -279,6 +328,84 @@ export function SettingsScreen({
             <div className="panel-heading">
               <div>
                 <span className="section-label">
+                  <Workflow size={14} strokeWidth={2} />
+                  Background mode
+                </span>
+                <h2>Choose what happens on close</h2>
+              </div>
+              <p className="workspace-toolbar-copy">
+                Keep SimSuite alive in the tray only if you want Downloads watching to
+                keep going after you close the main window.
+              </p>
+            </div>
+
+            <div className="segmented-control" role="tablist" aria-label="Close behavior">
+              <m.button
+                type="button"
+                className={`segment-button ${
+                  appBehavior && !keepRunningInBackground ? "is-active" : ""
+                }`}
+                onClick={() => void updateBackgroundMode(false)}
+                disabled={!appBehavior || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Close app
+              </m.button>
+              <m.button
+                type="button"
+                className={`segment-button ${
+                  keepRunningInBackground ? "is-active" : ""
+                }`}
+                onClick={() => void updateBackgroundMode(true)}
+                disabled={!appBehavior || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Hide to tray
+              </m.button>
+            </div>
+
+            <div className="settings-summary-card">
+              <span className="section-label">Current close action</span>
+              <strong>
+                {!appBehavior
+                  ? "Loading close behavior"
+                  : keepRunningInBackground
+                    ? "Hide to tray"
+                    : "Close app"}
+              </strong>
+              <p className="workspace-toolbar-copy">
+                {!appBehavior
+                  ? "Reading your saved preference."
+                  : keepRunningInBackground
+                    ? "Closing the main window keeps SimSuite running in the tray so the Downloads watcher can stay awake."
+                    : "Closing the main window exits SimSuite completely, so Downloads watching stops until you open the app again."}
+              </p>
+              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                {isSavingBackgroundMode ? (
+                  <span className="settings-inline-status">
+                    <LoaderCircle size={14} strokeWidth={2} className="spin" />
+                    Saving close behavior...
+                  </span>
+                ) : keepRunningInBackground ? (
+                  "The tray menu gives you Open SimSuite and Exit SimSuite."
+                ) : (
+                  "Best if you only want SimSuite running while the window is open."
+                )}
+              </p>
+              {backgroundModeError ? (
+                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                  {backgroundModeError}
+                </p>
+              ) : null}
+            </div>
+          </m.section>
+
+          <m.section className="panel-card" {...stagedListItem(4)}>
+            <div className="panel-heading">
+              <div>
+                <span className="section-label">
                   <RotateCcw size={14} strokeWidth={2} />
                   Layout memory
                 </span>
@@ -351,4 +478,12 @@ export function SettingsScreen({
       </div>
     </div>
   );
+}
+
+function toErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

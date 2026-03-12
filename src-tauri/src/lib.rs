@@ -8,8 +8,64 @@ mod seed;
 
 use app_state::AppState;
 use core::downloads_watcher;
-use tauri::Manager;
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, WindowEvent,
+};
 use tracing_subscriber::EnvFilter;
+
+pub const MAIN_TRAY_ID: &str = "main-tray";
+const TRAY_OPEN_ID: &str = "tray-open";
+const TRAY_EXIT_ID: &str = "tray-exit";
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn build_tray(
+    app: &tauri::AppHandle,
+    state: &AppState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let menu = MenuBuilder::new(app)
+        .text(TRAY_OPEN_ID, "Open SimSuite")
+        .separator()
+        .text(TRAY_EXIT_ID, "Exit SimSuite")
+        .build()?;
+
+    let mut tray_builder = TrayIconBuilder::with_id(MAIN_TRAY_ID)
+        .menu(&menu)
+        .tooltip("SimSuite")
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_OPEN_ID => show_main_window(app),
+            TRAY_EXIT_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder = tray_builder.icon(icon);
+    }
+
+    let tray = tray_builder.build(app)?;
+    tray.set_visible(state.keep_running_in_background())?;
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,11 +81,33 @@ pub fn run() {
         .setup(|app| {
             let state = AppState::initialise(app.handle())?;
             downloads_watcher::restart_watcher(app.handle(), &state)?;
+            build_tray(app.handle(), &state)?;
             app.manage(state);
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let state = app.state::<AppState>();
+                if !state.keep_running_in_background() {
+                    return;
+                }
+
+                if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
+                    let _ = tray.set_visible(true);
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_library_settings,
+            commands::get_app_behavior_settings,
+            commands::save_app_behavior_settings,
             commands::save_library_paths,
             commands::detect_default_library_paths,
             commands::pick_folder,

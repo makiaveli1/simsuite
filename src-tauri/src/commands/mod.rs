@@ -20,7 +20,9 @@ use crate::{
     },
     database,
     error::AppError,
+    MAIN_TRAY_ID,
     models::{
+        AppBehaviorSettings,
         ApplyCategoryAuditResult, ApplyCreatorAuditResult, ApplyGuidedDownloadResult,
         ApplyPreviewResult, ApplyReviewPlanActionResult, ApplySpecialReviewFixResult,
         CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CreatorAuditFile,
@@ -276,6 +278,44 @@ fn copy_split_files(
 pub fn get_library_settings(state: State<'_, AppState>) -> Result<LibrarySettings, String> {
     let connection = state.connection().map_err(map_error)?;
     database::get_library_settings(&connection).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_app_behavior_settings(
+    state: State<'_, AppState>,
+) -> Result<AppBehaviorSettings, String> {
+    Ok(AppBehaviorSettings {
+        keep_running_in_background: state.keep_running_in_background(),
+    })
+}
+
+#[tauri::command]
+pub fn save_app_behavior_settings(
+    app: AppHandle,
+    settings: AppBehaviorSettings,
+    state: State<'_, AppState>,
+) -> Result<AppBehaviorSettings, String> {
+    let mut connection = state.connection().map_err(map_error)?;
+    let raw_value = if settings.keep_running_in_background {
+        "true"
+    } else {
+        "false"
+    };
+    database::save_app_setting(
+        &mut connection,
+        "keep_running_in_background",
+        Some(raw_value),
+        "user",
+    )
+    .map_err(map_error)?;
+    state
+        .set_keep_running_in_background(settings.keep_running_in_background)
+        .map_err(map_error)?;
+    if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
+        tray.set_visible(settings.keep_running_in_background)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(settings)
 }
 
 #[tauri::command]

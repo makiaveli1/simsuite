@@ -1268,6 +1268,7 @@ mod tests {
             downloads_status: Arc::new(
                 Mutex::new(crate::models::DownloadsWatcherStatus::default()),
             ),
+            keep_running_in_background: Arc::new(Mutex::new(false)),
             downloads_watcher_control: Arc::new(Mutex::new(
                 crate::app_state::DownloadsWatcherControl::default(),
             )),

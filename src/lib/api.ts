@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import type {
+  AppBehaviorSettings,
   ApplyReviewPlanActionResult,
   ApplyCategoryAuditResult,
   ApplyCreatorAuditResult,
@@ -99,6 +100,9 @@ let mockDownloadsWatcherStatus: DownloadsWatcherStatus = {
   readyItems: 2,
   needsReviewItems: 1,
   activeItems: 3,
+};
+let mockAppBehaviorSettings: AppBehaviorSettings = {
+  keepRunningInBackground: false,
 };
 const emptyInsights = {
   format: null,
@@ -3324,6 +3328,13 @@ async function mockInvoke<T>(
     case "get_downloads_watcher_status":
       syncMockDownloadsWatcherStatus();
       return structuredClone(mockDownloadsWatcherStatus) as T;
+    case "get_app_behavior_settings":
+      return structuredClone(mockAppBehaviorSettings) as T;
+    case "save_app_behavior_settings": {
+      const settings = payload?.settings as AppBehaviorSettings;
+      mockAppBehaviorSettings = structuredClone(settings);
+      return structuredClone(mockAppBehaviorSettings) as T;
+    }
     case "refresh_downloads_inbox":
       syncMockDownloadsWatcherStatus();
       emitMockDownloadsStatus({
@@ -4366,6 +4377,10 @@ async function getDownloadsSelection(itemId: number, presetName?: string) {
 
 export const api = {
   getLibrarySettings: () => invoke<LibrarySettings>("get_library_settings"),
+  getAppBehaviorSettings: () =>
+    invoke<AppBehaviorSettings>("get_app_behavior_settings"),
+  saveAppBehaviorSettings: (settings: AppBehaviorSettings) =>
+    invoke<AppBehaviorSettings>("save_app_behavior_settings", { settings }),
   saveLibraryPaths: (settings: LibrarySettings) =>
     invoke<LibrarySettings>("save_library_paths", { settings }),
   detectDefaultLibraryPaths: () =>

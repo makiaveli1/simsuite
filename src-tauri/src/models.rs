@@ -8,6 +8,12 @@ pub struct LibrarySettings {
     pub downloads_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppBehaviorSettings {
+    pub keep_running_in_background: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectedLibraryPaths {
