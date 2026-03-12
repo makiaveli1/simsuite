@@ -26,10 +26,7 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-fn build_tray(
-    app: &tauri::AppHandle,
-    state: &AppState,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn build_tray(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn std::error::Error>> {
     let menu = MenuBuilder::new(app)
         .text(TRAY_OPEN_ID, "Open SimSuite")
         .separator()

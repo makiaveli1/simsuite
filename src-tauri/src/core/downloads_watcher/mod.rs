@@ -18,7 +18,9 @@ use crate::{
     commands::{emit_downloads_status, emit_workspace_change},
     core::{
         bundle_detector, duplicate_detector,
-        install_profile_engine::{self, SpecialDecisionContext},
+        install_profile_engine::{
+            self, DownloadItemAssessment, SpecialDecisionContext, SpecialDecisionDetailLevel,
+        },
         rule_engine,
         scanner::{self, DiscoveredFile},
     },
@@ -37,6 +39,8 @@ const WATCHER_DEBOUNCE_MS: u64 = 900;
 const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v1";
 const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
 const SLOW_DOWNLOADS_LOG_THRESHOLD_MS: u128 = 40;
+const HELD_ARCHIVE_SAFETY_NOTE: &str =
+    "SimSuite paused this archive type for safety. Use a ZIP version for now, or review the archive manually.";
 
 fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usize) {
     #[cfg(debug_assertions)]
@@ -461,7 +465,15 @@ fn enrich_download_items(
 ) -> AppResult<()> {
     let mut context = SpecialDecisionContext::default();
     for item in items.iter_mut() {
-        hydrate_download_item(connection, settings, seed_pack, item, &mut context, false)?;
+        hydrate_download_item(
+            connection,
+            settings,
+            seed_pack,
+            item,
+            &mut context,
+            false,
+            false,
+        )?;
     }
 
     let mut family_members: HashMap<String, Vec<i64>> = HashMap::new();
@@ -523,6 +535,7 @@ fn hydrate_download_item(
     item: &mut DownloadsInboxItem,
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
+    include_full_special_details: bool,
 ) -> AppResult<()> {
     item.special_decision = if should_load_special_decision(item) {
         install_profile_engine::build_special_mod_decision_cached(
@@ -532,6 +545,11 @@ fn hydrate_download_item(
             item.id,
             context,
             allow_network_latest,
+            if include_full_special_details {
+                SpecialDecisionDetailLevel::Full
+            } else {
+                SpecialDecisionDetailLevel::Queue
+            },
         )?
     } else {
         None
@@ -823,6 +841,7 @@ pub fn get_download_item_detail(
         item_id,
         &mut context,
         false,
+        true,
     )
 }
 
@@ -833,6 +852,7 @@ fn get_download_item_detail_cached(
     item_id: i64,
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
+    include_full_special_details: bool,
 ) -> AppResult<Option<DownloadInboxDetail>> {
     let Some(item) = load_item_by_id_cached(
         connection,
@@ -841,6 +861,7 @@ fn get_download_item_detail_cached(
         item_id,
         context,
         allow_network_latest,
+        include_full_special_details,
     )?
     else {
         return Ok(None);
@@ -906,6 +927,7 @@ pub fn get_download_item_selection(
         item_id,
         &mut context,
         false,
+        true,
     )?;
     log_slow_downloads_step("downloads_selection::detail", detail_started_at, || {
         format!("for item {}", item_id)
@@ -1054,18 +1076,37 @@ pub fn ignore_download_item(connection: &mut Connection, item_id: i64) -> AppRes
 }
 
 pub fn refresh_download_item_status(connection: &Connection, item_id: i64) -> AppResult<()> {
-    let Some(current_status) = connection
+    let Some((current_status, active_file_count, intake_mode)) = connection
         .query_row(
-            "SELECT status FROM download_items WHERE id = ?1",
+            "SELECT
+                status,
+                (
+                    SELECT COUNT(*)
+                    FROM files
+                    WHERE download_item_id = ?1
+                      AND source_location = 'downloads'
+                ) AS active_file_count,
+                COALESCE(intake_mode, 'standard')
+             FROM download_items
+             WHERE id = ?1",
             params![item_id],
-            |row| row.get::<_, String>(0),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )
         .optional()?
     else {
         return Ok(());
     };
 
-    if current_status == "ignored" || current_status == "error" {
+    if current_status == "ignored" {
+        return Ok(());
+    }
+    if current_status == "error" && active_file_count == 0 && intake_mode != "blocked" {
         return Ok(());
     }
 
@@ -1255,6 +1296,7 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
 
         match event_rx.recv_timeout(Duration::from_secs(1)) {
             Ok(Ok(event)) => {
+                let mut changed_paths = event.paths.clone();
                 let current_item = event
                     .paths
                     .first()
@@ -1266,9 +1308,20 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                     .unwrap_or_else(|| "Downloads update".to_owned());
 
                 thread::sleep(Duration::from_millis(WATCHER_DEBOUNCE_MS));
-                while event_rx.try_recv().is_ok() {}
+                while let Ok(next_event) = event_rx.try_recv() {
+                    if let Ok(next_event) = next_event {
+                        changed_paths.extend(next_event.paths);
+                    }
+                }
 
-                let _ = process_downloads_once(&app, &state, Some(current_item), false);
+                let changed_paths = dedupe_changed_paths(changed_paths);
+                let _ = process_downloads_once_for_paths(
+                    &app,
+                    &state,
+                    Some(current_item),
+                    false,
+                    Some(&changed_paths),
+                );
             }
             Ok(Err(error)) => {
                 let current = state.downloads_status();
@@ -1300,6 +1353,16 @@ fn process_downloads_once(
     state: &AppState,
     current_item: Option<String>,
     manual: bool,
+) -> AppResult<DownloadsWatcherStatus> {
+    process_downloads_once_for_paths(app, state, current_item, manual, None)
+}
+
+fn process_downloads_once_for_paths(
+    app: &AppHandle,
+    state: &AppState,
+    current_item: Option<String>,
+    manual: bool,
+    changed_paths: Option<&[PathBuf]>,
 ) -> AppResult<DownloadsWatcherStatus> {
     let processing_lock = state.downloads_processing_lock();
     let _processing_guard = processing_lock
@@ -1352,7 +1415,17 @@ fn process_downloads_once(
         .into_iter()
         .map(|item| (normalize_path_key(&item.match_path), item))
         .collect::<HashMap<_, _>>();
-    let observed = collect_observed_sources(&watched_root)?;
+    let use_full_scan = should_use_full_downloads_scan(
+        &watched_root,
+        manual,
+        assessment_version_changed,
+        changed_paths,
+    );
+    let observed = if use_full_scan {
+        collect_observed_sources(&watched_root)?
+    } else {
+        collect_observed_sources_for_paths(&watched_root, changed_paths.unwrap_or_default())?
+    };
     let existing = load_existing_items(&connection)?;
     let mut changed = false;
     let mut reassessed_existing = false;
@@ -1398,7 +1471,14 @@ fn process_downloads_once(
         changed = true;
     }
 
-    mark_missing_direct_sources(&connection, &existing, &observed)?;
+    let missing_changed = if use_full_scan {
+        mark_missing_direct_sources(&connection, &existing, &observed)?
+    } else if let Some(paths) = changed_paths {
+        mark_missing_direct_sources_for_paths(&connection, &existing, paths)?
+    } else {
+        false
+    };
+    changed |= missing_changed;
 
     if changed {
         bundle_detector::rebuild_bundles(&mut connection)?;
@@ -1463,6 +1543,10 @@ fn process_source(
     source: &ObservedSource,
     existing: Option<&ExistingDownloadItem>,
 ) -> AppResult<i64> {
+    if should_hold_archive_for_safety(source) {
+        return ingest_held_archive_source(connection, source, existing.map(|item| item.id));
+    }
+
     let mut notes = Vec::new();
     let mut staged_root = None;
     let discovered = if source.source_kind == "file" {
@@ -1492,6 +1576,84 @@ fn process_source(
         staged_root.as_deref(),
         &notes,
     )
+}
+
+fn should_hold_archive_for_safety(source: &ObservedSource) -> bool {
+    matches!(source.archive_format.as_deref(), Some("7z") | Some("rar"))
+}
+
+fn held_archive_reason(source: &ObservedSource) -> String {
+    let archive_label = match source.archive_format.as_deref() {
+        Some("7z") => ".7z",
+        Some("rar") => ".rar",
+        _ => "this archive",
+    };
+    format!("SimSuite paused {archive_label} extraction until a safer handler is in place.")
+}
+
+fn held_archive_assessment(reason: &str) -> DownloadItemAssessment {
+    DownloadItemAssessment {
+        intake_mode: DownloadIntakeMode::Blocked,
+        risk_level: DownloadRiskLevel::High,
+        matched_profile_key: None,
+        matched_profile_name: None,
+        special_family: None,
+        assessment_reasons: vec![reason.to_owned()],
+        dependency_summary: Vec::new(),
+        missing_dependencies: Vec::new(),
+        inbox_dependencies: Vec::new(),
+        incompatibility_warnings: Vec::new(),
+        post_install_notes: Vec::new(),
+        evidence_summary: vec![HELD_ARCHIVE_SAFETY_NOTE.to_owned()],
+        catalog_source: None,
+        existing_install_detected: false,
+        guided_install_available: false,
+    }
+}
+
+fn ingest_held_archive_source(
+    connection: &mut Connection,
+    source: &ObservedSource,
+    existing_item_id: Option<i64>,
+) -> AppResult<i64> {
+    let item_id = upsert_download_item(connection, source, existing_item_id)?;
+    let now = Utc::now().to_rfc3339();
+    let reason = held_archive_reason(source);
+    let notes = vec![
+        HELD_ARCHIVE_SAFETY_NOTE.to_owned(),
+        "This Inbox item was held before extraction, so SimSuite did not unpack any archive contents."
+            .to_owned(),
+    ];
+
+    connection.execute(
+        "UPDATE files
+         SET download_item_id = NULL
+         WHERE download_item_id = ?1
+           AND source_location <> 'downloads'",
+        params![item_id],
+    )?;
+    connection.execute(
+        "DELETE FROM files
+         WHERE download_item_id = ?1
+           AND source_location = 'downloads'",
+        params![item_id],
+    )?;
+
+    let assessment = held_archive_assessment(&reason);
+    install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
+    connection.execute(
+        "UPDATE download_items
+         SET status = 'needs_review',
+             error_message = ?2,
+             notes = ?3,
+             detected_file_count = 0,
+             staging_path = NULL,
+             updated_at = ?4,
+             last_seen_at = ?4
+         WHERE id = ?1",
+        params![item_id, reason, serde_json::to_string(&notes)?, now],
+    )?;
+    Ok(item_id)
 }
 
 fn ingest_processed_source(
@@ -1773,6 +1935,58 @@ fn collect_observed_sources(root: &Path) -> AppResult<Vec<ObservedSource>> {
     Ok(observed)
 }
 
+fn should_use_full_downloads_scan(
+    watched_root: &Path,
+    manual: bool,
+    assessment_version_changed: bool,
+    changed_paths: Option<&[PathBuf]>,
+) -> bool {
+    if manual || assessment_version_changed {
+        return true;
+    }
+    let Some(changed_paths) = changed_paths else {
+        return true;
+    };
+    if changed_paths.is_empty() || changed_paths.len() > 24 {
+        return true;
+    }
+    changed_paths.iter().any(|path| {
+        path.as_os_str().is_empty()
+            || path == watched_root
+            || !path.starts_with(watched_root)
+            || path.is_dir()
+    })
+}
+
+fn collect_observed_sources_for_paths(
+    watched_root: &Path,
+    changed_paths: &[PathBuf],
+) -> AppResult<Vec<ObservedSource>> {
+    let mut observed = Vec::new();
+    let mut seen = HashSet::new();
+
+    for path in changed_paths {
+        if path.as_os_str().is_empty() || !path.starts_with(watched_root) || !path.exists() {
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let extension = normalize_extension(path);
+        if !is_observable_download_extension(&extension) {
+            continue;
+        }
+        let key = normalize_path_key(&path.to_string_lossy());
+        if !seen.insert(key) {
+            continue;
+        }
+        observed.push(build_observed_source_from_path(path, None)?);
+    }
+
+    observed.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(observed)
+}
+
 fn build_observed_source_from_path(
     source_path: &Path,
     display_name: Option<String>,
@@ -2006,12 +2220,13 @@ fn mark_missing_direct_sources(
     connection: &Connection,
     existing: &HashMap<String, ExistingDownloadItem>,
     observed: &[ObservedSource],
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let observed_paths = observed
         .iter()
         .map(|item| normalize_path_key(&item.path.to_string_lossy()))
         .collect::<HashSet<_>>();
     let now = Utc::now().to_rfc3339();
+    let mut changed = false;
 
     for item in existing.values() {
         if observed_paths.contains(&normalize_path_key(&item.source_path)) {
@@ -2021,17 +2236,51 @@ fn mark_missing_direct_sources(
             continue;
         }
 
-        connection.execute(
+        changed |= connection.execute(
             "UPDATE download_items
              SET status = 'error',
                  error_message = ?2,
                  updated_at = ?3
              WHERE id = ?1",
             params![item.id, "Source file is missing from Downloads.", now],
-        )?;
+        )? > 0;
     }
 
-    Ok(())
+    Ok(changed)
+}
+
+fn mark_missing_direct_sources_for_paths(
+    connection: &Connection,
+    existing: &HashMap<String, ExistingDownloadItem>,
+    changed_paths: &[PathBuf],
+) -> AppResult<bool> {
+    let now = Utc::now().to_rfc3339();
+    let mut changed = false;
+
+    for path in changed_paths {
+        let key = normalize_path_key(&path.to_string_lossy());
+        let Some(item) = existing.get(&key) else {
+            continue;
+        };
+        if path.exists()
+            || item.source_kind != "file"
+            || item.status == "applied"
+            || item.status == "ignored"
+        {
+            continue;
+        }
+
+        changed |= connection.execute(
+            "UPDATE download_items
+             SET status = 'error',
+                 error_message = ?2,
+                 updated_at = ?3
+             WHERE id = ?1",
+            params![item.id, "Source file is missing from Downloads.", now],
+        )? > 0;
+    }
+
+    Ok(changed)
 }
 
 fn recompute_item_statuses(connection: &Connection) -> AppResult<()> {
@@ -2320,6 +2569,7 @@ fn load_item_by_id(
         item_id,
         &mut context,
         false,
+        true,
     )
 }
 
@@ -2330,6 +2580,7 @@ fn load_item_by_id_cached(
     item_id: i64,
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
+    include_full_special_details: bool,
 ) -> AppResult<Option<DownloadsInboxItem>> {
     connection
         .query_row(
@@ -2451,6 +2702,7 @@ fn load_item_by_id_cached(
                     &mut item,
                     context,
                     allow_network_latest,
+                    include_full_special_details,
                 )?;
                 item.related_item_ids = load_related_item_ids(connection, &item)?;
                 item.timeline = build_download_timeline(connection, &item);
@@ -2517,6 +2769,18 @@ fn normalize_extension(path: &Path) -> String {
     path.extension()
         .map(|value| format!(".{}", value.to_string_lossy().to_lowercase()))
         .unwrap_or_default()
+}
+
+fn dedupe_changed_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for path in paths {
+        let key = normalize_path_key(&path.to_string_lossy());
+        if seen.insert(key) {
+            deduped.push(path);
+        }
+    }
+    deduped
 }
 
 fn archive_format_for_extension(extension: &str) -> Option<String> {
@@ -2626,13 +2890,17 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
 mod tests {
     use super::{
         checking_downloads_status, derive_item_status, get_download_item_guided_plan,
-        has_auto_recheck_note, mark_item_rechecked_with_new_rules, parse_string_array,
-        preview_download_item, reassess_existing_item, summarize_status,
+        has_auto_recheck_note, ingest_held_archive_source, load_existing_items,
+        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
+        parse_string_array, preview_download_item, reassess_existing_item,
+        refresh_download_item_status, should_use_full_downloads_scan, summarize_status,
+        ObservedSource,
     };
     use crate::database::initialize;
     use crate::models::{DownloadsWatcherState, LibrarySettings};
     use crate::seed;
     use rusqlite::{params, Connection};
+    use tempfile::tempdir;
 
     fn setup_connection() -> Connection {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
@@ -2980,6 +3248,122 @@ mod tests {
         assert_eq!(intake_mode, "guided");
         assert_eq!(matched_profile_name.as_deref(), Some("MC Command Center"));
         assert_eq!(guided_install_available, 1);
+    }
+
+    #[test]
+    fn held_archives_are_kept_as_blocked_inbox_items() {
+        let temp = tempdir().expect("temp dir");
+        let archive_path = temp.path().join("test-download.rar");
+        std::fs::write(&archive_path, b"not a real archive").expect("write archive");
+        let metadata = archive_path.metadata().expect("archive metadata");
+        let mut connection = setup_connection();
+        let source = ObservedSource {
+            path: archive_path.clone(),
+            display_name: "test-download.rar".to_owned(),
+            source_kind: "archive".to_owned(),
+            archive_format: Some("rar".to_owned()),
+            source_size: metadata.len() as i64,
+            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
+        };
+
+        let item_id =
+            ingest_held_archive_source(&mut connection, &source, None).expect("held archive item");
+
+        let (status, intake_mode, error_message, detected_file_count): (
+            String,
+            String,
+            Option<String>,
+            i64,
+        ) = connection
+            .query_row(
+                "SELECT status, intake_mode, error_message, detected_file_count
+                 FROM download_items
+                 WHERE id = ?1",
+                params![item_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("load held archive item");
+
+        assert_eq!(status, "needs_review");
+        assert_eq!(intake_mode, "blocked");
+        assert_eq!(detected_file_count, 0);
+        assert!(error_message
+            .as_deref()
+            .is_some_and(|value| value.contains("paused .rar extraction")));
+    }
+
+    #[test]
+    fn refresh_download_item_status_can_recheck_blocked_error_items() {
+        let connection = setup_connection();
+        insert_download_item_with_mode(&connection, 24, "error", "blocked", 0);
+
+        refresh_download_item_status(&connection, 24).expect("refresh blocked error item");
+
+        let status: String = connection
+            .query_row(
+                "SELECT status FROM download_items WHERE id = ?1",
+                params![24],
+                |row| row.get(0),
+            )
+            .expect("load refreshed status");
+
+        assert_eq!(status, "needs_review");
+    }
+
+    #[test]
+    fn narrow_watcher_scan_stays_on_simple_file_events() {
+        let temp = tempdir().expect("temp dir");
+        let watched_root = temp.path().to_path_buf();
+        let changed_path = watched_root.join("new-mod.package");
+        std::fs::write(&changed_path, b"package").expect("write file");
+
+        assert!(!should_use_full_downloads_scan(
+            &watched_root,
+            false,
+            false,
+            Some(&[changed_path]),
+        ));
+    }
+
+    #[test]
+    fn narrow_watcher_scan_marks_removed_direct_files_as_changed() {
+        let temp = tempdir().expect("temp dir");
+        let watched_root = temp.path().to_path_buf();
+        let removed_path = watched_root.join("removed-mod.package");
+        std::fs::write(&removed_path, b"package").expect("write file");
+        let connection = setup_connection();
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id, source_path, display_name, source_kind, status
+                 ) VALUES (?1, ?2, ?3, 'file', 'ready')",
+                params![
+                    41,
+                    removed_path.to_string_lossy().to_string(),
+                    "removed-mod.package"
+                ],
+            )
+            .expect("insert download item");
+        let existing = load_existing_items(&connection).expect("existing items");
+        std::fs::remove_file(&removed_path).expect("remove file");
+
+        let changed =
+            mark_missing_direct_sources_for_paths(&connection, &existing, &[removed_path.clone()])
+                .expect("mark removed file");
+
+        let (status, error_message): (String, Option<String>) = connection
+            .query_row(
+                "SELECT status, error_message FROM download_items WHERE id = 41",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("load removed item");
+
+        assert!(changed);
+        assert_eq!(status, "error");
+        assert!(error_message
+            .as_deref()
+            .is_some_and(|value| value.contains("missing")));
     }
 
     #[test]

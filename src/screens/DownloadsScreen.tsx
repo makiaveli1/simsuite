@@ -3215,7 +3215,7 @@ function reviewActionConfirmation(
   switch (action.kind) {
     case "repair_special":
       return userView === "beginner"
-        ? `${action.label}? SimSuite will make a restore point, move the older files out of the way, keep your settings files, and then continue the MCCC update.`
+        ? `${action.label}? SimSuite will make a restore point, move the older files out of the way, keep your settings files, and then continue the special-mod update.`
         : `${action.label}? SimSuite will create a restore point, clear the older install out of the way, keep ${reviewPlan?.repairKeepFiles.length ?? 0} setting file(s), and continue the special update when it is safe.`;
     case "install_dependency":
       return `${action.label}? SimSuite will safely set up ${action.relatedItemName ?? "the helper mod"} first, create a restore point, and then re-check ${itemName}.`;

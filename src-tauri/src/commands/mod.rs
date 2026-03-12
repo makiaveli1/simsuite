@@ -1,4 +1,6 @@
 use chrono::Utc;
+use reqwest::Url;
+use rusqlite::Connection;
 use std::{
     fs,
     io::Write,
@@ -20,21 +22,20 @@ use crate::{
     },
     database,
     error::AppError,
-    MAIN_TRAY_ID,
     models::{
-        AppBehaviorSettings,
-        ApplyCategoryAuditResult, ApplyCreatorAuditResult, ApplyGuidedDownloadResult,
-        ApplyPreviewResult, ApplyReviewPlanActionResult, ApplySpecialReviewFixResult,
-        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CreatorAuditFile,
-        CreatorAuditQuery, CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail,
-        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
-        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
-        DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan, HomeOverview,
-        LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings, OrganizationPreview,
-        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        WorkspaceChange, WorkspaceDomain,
+        AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
+        ApplyGuidedDownloadResult, ApplyPreviewResult, ApplyReviewPlanActionResult,
+        ApplySpecialReviewFixResult, CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse,
+        CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse, DetectedLibraryPaths,
+        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
+        DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
+        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
+        HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
+        OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
+        ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
+        SnapshotSummary, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
     },
+    MAIN_TRAY_ID,
 };
 
 fn map_error(error: AppError) -> String {
@@ -162,17 +163,20 @@ fn find_review_action(
         .find(|action| {
             review_action_kind_matches(&action.kind, action_kind)
                 && action.related_item_id == related_item_id
-                && match (action.url.as_deref(), url) {
-                    (Some(left), Some(right)) => left == right,
-                    (None, None) => true,
-                    (_, None) => true,
-                    (None, Some(_)) => false,
-                }
+                && review_action_url_matches(action.url.as_deref(), url)
         })
         .cloned()
         .ok_or_else(|| {
             "This review action is no longer available for the selected inbox item.".to_owned()
         })
+}
+
+fn review_action_url_matches(expected: Option<&str>, provided: Option<&str>) -> bool {
+    match (expected, provided) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 fn sanitize_download_filename(filename: &str, fallback: &str) -> String {
@@ -222,20 +226,69 @@ fn filename_from_response(response: &reqwest::blocking::Response, fallback: &str
     )
 }
 
+fn approved_review_action_url(action: &ReviewPlanAction, label: &str) -> Result<Url, String> {
+    let url = action
+        .url
+        .as_deref()
+        .ok_or_else(|| format!("This {label} is missing its website address."))?;
+    let parsed =
+        Url::parse(url).map_err(|_| format!("This {label} does not have a valid web address."))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "SimSuite blocked this {label} because only secure HTTPS links are allowed."
+        ));
+    }
+    if parsed.host_str().is_none() {
+        return Err(format!(
+            "SimSuite blocked this {label} because the link is missing a website name."
+        ));
+    }
+    Ok(parsed)
+}
+
+fn blocked_review_action_label(kind: &ReviewPlanActionKind) -> &'static str {
+    match kind {
+        ReviewPlanActionKind::OpenOfficialSource => "Blocked unsafe official page",
+        ReviewPlanActionKind::DownloadMissingFiles => "Blocked unsafe trusted download",
+        _ => "Blocked unsafe review action",
+    }
+}
+
+fn record_blocked_review_action_event(
+    connection: &Connection,
+    item_id: i64,
+    action: &ReviewPlanAction,
+    detail: &str,
+) {
+    let _ = database::record_download_item_event(
+        connection,
+        item_id,
+        "review_action_blocked",
+        blocked_review_action_label(&action.kind),
+        Some(detail),
+    );
+}
+
 fn download_review_action_file(
-    url: &str,
+    url: &Url,
     app_data_dir: &Path,
     fallback_name: &str,
 ) -> Result<PathBuf, String> {
+    let expected_host = url.host_str().ok_or_else(|| {
+        "SimSuite blocked this trusted download because the link is missing a website name."
+            .to_owned()
+    })?;
     let client = Client::builder()
         .redirect(reqwest::redirect::Policy::limited(8))
         .build()
         .map_err(|error| error.to_string())?;
     let mut response = client
-        .get(url)
+        .get(url.clone())
         .send()
         .and_then(|response| response.error_for_status())
         .map_err(|error| error.to_string())?;
+    let final_url = response.url().clone();
+    validate_review_download_redirect(expected_host, &final_url)?;
     let filename = filename_from_response(&response, fallback_name);
     let destination_dir = app_data_dir
         .join("trusted_downloads")
@@ -248,6 +301,22 @@ fn download_review_action_file(
         .map_err(|error| error.to_string())?;
     file.flush().map_err(|error| error.to_string())?;
     Ok(destination)
+}
+
+fn validate_review_download_redirect(expected_host: &str, final_url: &Url) -> Result<(), String> {
+    if final_url.scheme() != "https" {
+        return Err(
+            "SimSuite blocked this trusted download because it redirected to a non-secure page."
+                .to_owned(),
+        );
+    }
+    if final_url.host_str() != Some(expected_host) {
+        return Err(format!(
+            "SimSuite blocked this trusted download because it redirected from {expected_host} to {}.",
+            final_url.host_str().unwrap_or("an unknown site")
+        ));
+    }
+    Ok(())
 }
 
 fn copy_split_files(
@@ -1231,11 +1300,14 @@ pub fn apply_review_plan_action(
             ),
         }),
         ReviewPlanActionKind::OpenOfficialSource => {
-            let opened_url = action.url.clone().ok_or_else(|| {
-                "This official page is missing its website address, so SimSuite could not open it."
-                    .to_owned()
-            })?;
-            webbrowser::open(&opened_url).map_err(|error| {
+            let opened_url = match approved_review_action_url(&action, "official page") {
+                Ok(url) => url,
+                Err(detail) => {
+                    record_blocked_review_action_event(&connection, item_id, &action, &detail);
+                    return Err(detail);
+                }
+            };
+            webbrowser::open(opened_url.as_str()).map_err(|error| {
                 format!("SimSuite could not open the official page in your browser: {error}")
             })?;
 
@@ -1243,7 +1315,7 @@ pub fn apply_review_plan_action(
                 action_kind: action.kind,
                 focus_item_id: item_id,
                 created_item_id: None,
-                opened_url: Some(opened_url),
+                opened_url: Some(opened_url.to_string()),
                 snapshot_id: None,
                 repaired_count: 0,
                 installed_count: 0,
@@ -1271,12 +1343,21 @@ pub fn apply_review_plan_action(
                     .unwrap_or_else(|| "special-download".to_owned())
                     .replace(' ', "_")
             );
-            let url = action
-                .url
-                .clone()
-                .ok_or_else(|| "This action is missing its trusted download link.".to_owned())?;
+            let url = match approved_review_action_url(&action, "trusted download link") {
+                Ok(url) => url,
+                Err(detail) => {
+                    record_blocked_review_action_event(&connection, item_id, &action, &detail);
+                    return Err(detail);
+                }
+            };
             let downloaded_file =
-                download_review_action_file(&url, &state.app_data_dir, &fallback_name)?;
+                match download_review_action_file(&url, &state.app_data_dir, &fallback_name) {
+                    Ok(path) => path,
+                    Err(detail) => {
+                        record_blocked_review_action_event(&connection, item_id, &action, &detail);
+                        return Err(detail);
+                    }
+                };
             let imported_item_id = downloads_watcher::import_download_source(
                 &mut connection,
                 state.inner(),
@@ -1769,8 +1850,27 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_locked_read_error, retry_locked_read};
-    use crate::error::AppError;
+    use super::{
+        approved_review_action_url, is_locked_read_error, retry_locked_read,
+        review_action_url_matches, validate_review_download_redirect,
+    };
+    use crate::{
+        error::AppError,
+        models::{ReviewPlanAction, ReviewPlanActionKind},
+    };
+    use reqwest::Url;
+
+    fn review_action(url: Option<&str>) -> ReviewPlanAction {
+        ReviewPlanAction {
+            kind: ReviewPlanActionKind::OpenOfficialSource,
+            label: "Open page".to_owned(),
+            description: "Open page".to_owned(),
+            priority: 1,
+            related_item_id: None,
+            related_item_name: Some("Test".to_owned()),
+            url: url.map(ToOwned::to_owned),
+        }
+    }
 
     #[test]
     fn retry_locked_read_retries_transient_locked_errors() {
@@ -1797,5 +1897,51 @@ mod tests {
         assert!(!is_locked_read_error(&AppError::Message(
             "no such table: missing".to_owned()
         )));
+    }
+
+    #[test]
+    fn approved_review_action_url_allows_secure_https_links() {
+        let action = review_action(Some("https://example.com/downloads"));
+        let url = approved_review_action_url(&action, "official page").expect("https url");
+
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("example.com"));
+    }
+
+    #[test]
+    fn approved_review_action_url_rejects_non_https_links() {
+        let action = review_action(Some("http://example.com/downloads"));
+        let error =
+            approved_review_action_url(&action, "trusted download link").expect_err("http blocked");
+
+        assert!(error.contains("HTTPS"));
+    }
+
+    #[test]
+    fn review_action_url_matching_requires_exact_link_for_web_actions() {
+        assert!(review_action_url_matches(
+            Some("https://example.com/downloads"),
+            Some("https://example.com/downloads")
+        ));
+        assert!(!review_action_url_matches(
+            Some("https://example.com/downloads"),
+            Some("https://example.com/other")
+        ));
+        assert!(!review_action_url_matches(
+            Some("https://example.com/downloads"),
+            None
+        ));
+    }
+
+    #[test]
+    fn validate_review_download_redirect_rejects_off_host_redirect() {
+        let redirected =
+            Url::parse("https://cdn.example.net/downloads/file.zip").expect("redirected url");
+        let error = validate_review_download_redirect("example.com", &redirected)
+            .expect_err("off-host redirect blocked");
+
+        assert!(error.contains("redirected"));
+        assert!(error.contains("example.com"));
+        assert!(error.contains("cdn.example.net"));
     }
 }

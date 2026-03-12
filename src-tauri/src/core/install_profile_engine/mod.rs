@@ -13,10 +13,9 @@ use crate::{
     core::{
         file_inspector,
         special_mod_versions::{
-            self, build_signature, build_version_comparison,
-            extract_version_candidates_from_value, extract_version_from_values, load_family_state,
-            load_or_refresh_latest_info, save_family_state, SignatureEntry,
-            StoredSpecialModFamilyState,
+            self, build_signature, build_version_comparison, extract_version_candidates_from_value,
+            extract_version_from_values, load_family_state, load_or_refresh_latest_info,
+            save_family_state, SignatureEntry, StoredSpecialModFamilyState,
         },
         validator::{self, ValidationRequest},
     },
@@ -345,6 +344,12 @@ pub struct SpecialDecisionContext {
     active_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
     all_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
     evaluation_cache: HashMap<i64, EvaluationResult>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecialDecisionDetailLevel {
+    Queue,
+    Full,
 }
 
 const SLOW_INSTALL_PROFILE_LOG_THRESHOLD_MS: u128 = 40;
@@ -823,7 +828,15 @@ pub fn build_review_plan_cached(
         None
     };
     let special_decision = if evaluation.matched_profile.is_some() {
-        build_special_mod_decision_cached(connection, settings, seed_pack, item_id, context, false)?
+        build_special_mod_decision_cached(
+            connection,
+            settings,
+            seed_pack,
+            item_id,
+            context,
+            false,
+            SpecialDecisionDetailLevel::Full,
+        )?
     } else {
         None
     };
@@ -1060,6 +1073,7 @@ pub fn build_special_mod_decision(
         item_id,
         &mut context,
         false,
+        SpecialDecisionDetailLevel::Full,
     )
 }
 
@@ -1070,7 +1084,9 @@ pub fn build_special_mod_decision_cached(
     item_id: i64,
     context: &mut SpecialDecisionContext,
     allow_network_latest: bool,
+    detail_level: SpecialDecisionDetailLevel,
 ) -> AppResult<Option<SpecialModDecision>> {
+    let include_full_details = detail_level == SpecialDecisionDetailLevel::Full;
     let evaluation =
         evaluate_download_item_cached(connection, settings, seed_pack, item_id, context)?;
     let Some(profile) = evaluation.matched_profile.clone() else {
@@ -1112,7 +1128,8 @@ pub fn build_special_mod_decision_cached(
         &existing_install_state,
         install_path.clone(),
     )?;
-    let incoming_version_evidence = incoming_version_for_profile(&profile, &item.display_name, &files);
+    let incoming_version_evidence =
+        incoming_version_for_profile(&profile, &item.display_name, &files);
     let incoming_version = incoming_version_evidence.value.clone();
     let incoming_signature = incoming_signature_for_profile(&profile, &files);
     let mut installed_version_evidence = installed_version_for_profile(&profile, &layout);
@@ -1140,8 +1157,13 @@ pub fn build_special_mod_decision_cached(
     family_state.installed.installed_signature = installed_signature;
     family_state.installed.checked_at = Some(Utc::now().to_rfc3339());
 
-    let official_latest = load_or_refresh_latest_info(connection, &profile, allow_network_latest)?;
-    family_state.latest = official_latest.clone();
+    let official_latest = if include_full_details {
+        let latest = load_or_refresh_latest_info(connection, &profile, allow_network_latest)?;
+        family_state.latest = latest.clone();
+        latest
+    } else {
+        None
+    };
     save_family_state(connection, &family_state)?;
     context
         .family_state_cache
@@ -1207,42 +1229,6 @@ pub fn build_special_mod_decision_cached(
     } else {
         special_decision_queue_lane(&state, &evaluation.assessment.intake_mode)
     };
-    let explanation = if family_role == SpecialFamilyRole::Superseded {
-        format!(
-            "SimSuite found more than one {} download in the Inbox and picked the fuller local pack to lead with.",
-            profile.display_name
-        )
-    } else if same_version {
-        format!(
-            "This {} version already matches the copy that is installed.",
-            profile.display_name
-        )
-    } else if version_status == SpecialVersionStatus::IncomingOlder {
-        format!(
-            "This {} download looks older than the copy that is already installed.",
-            profile.display_name
-        )
-    } else if apply_ready {
-        profile.help_summary.clone()
-    } else {
-        evaluation.explanation.clone()
-    };
-    let recommended_next_step = if same_version {
-        format!(
-            "{} is already current. Reinstall only if you want to replace a damaged copy.",
-            profile.display_name
-        )
-    } else if version_status == SpecialVersionStatus::IncomingOlder {
-        format!(
-            "Ignore this older {} download unless you want to roll back on purpose.",
-            profile.display_name
-        )
-    } else {
-        primary_action
-            .as_ref()
-            .map(|action| action.description.clone())
-            .unwrap_or_else(|| evaluation.recommended_next_step.clone())
-    };
     let queue_summary = build_special_queue_summary(
         &profile,
         &state,
@@ -1252,35 +1238,105 @@ pub fn build_special_mod_decision_cached(
         &version_status,
         &evaluation,
     );
-    let comparison_source = if incoming_signature.is_some()
-        && family_state.installed.installed_signature.is_some()
-        && version_status == SpecialVersionStatus::SameVersion
-        && (incoming_version.is_none() || family_state.installed.installed_version.is_none())
-    {
-        Some("file signature".to_owned())
-    } else if incoming_version_evidence.source.as_deref() == Some("inside mod")
-        || installed_version_evidence.source.as_deref() == Some("inside mod")
-    {
-        Some("inside mod".to_owned())
-    } else if incoming_version_evidence.source.as_deref() == Some("saved family state")
-        || installed_version_evidence.source.as_deref() == Some("saved family state")
-    {
-        Some("saved family state".to_owned())
-    } else if incoming_version_evidence.source.is_some()
-        || installed_version_evidence.source.is_some()
-    {
-        Some("local file names".to_owned())
+    let explanation = if include_full_details && family_role == SpecialFamilyRole::Superseded {
+        format!(
+            "SimSuite found more than one {} download in the Inbox and picked the fuller local pack to lead with.",
+            profile.display_name
+        )
+    } else if include_full_details && same_version {
+        format!(
+            "This {} version already matches the copy that is installed.",
+            profile.display_name
+        )
+    } else if include_full_details && version_status == SpecialVersionStatus::IncomingOlder {
+        format!(
+            "This {} download looks older than the copy that is already installed.",
+            profile.display_name
+        )
+    } else if include_full_details && apply_ready {
+        profile.help_summary.clone()
+    } else if include_full_details {
+        evaluation.explanation.clone()
+    } else {
+        queue_summary.clone()
+    };
+    let recommended_next_step = if include_full_details && same_version {
+        format!(
+            "{} is already current. Reinstall only if you want to replace a damaged copy.",
+            profile.display_name
+        )
+    } else if include_full_details && version_status == SpecialVersionStatus::IncomingOlder {
+        format!(
+            "Ignore this older {} download unless you want to roll back on purpose.",
+            profile.display_name
+        )
+    } else if include_full_details {
+        primary_action
+            .as_ref()
+            .map(|action| action.description.clone())
+            .unwrap_or_else(|| evaluation.recommended_next_step.clone())
+    } else {
+        primary_action
+            .as_ref()
+            .map(|action| action.label.clone())
+            .unwrap_or_else(|| queue_summary.clone())
+    };
+    let comparison_source = if include_full_details {
+        if incoming_signature.is_some()
+            && family_state.installed.installed_signature.is_some()
+            && version_status == SpecialVersionStatus::SameVersion
+            && (incoming_version.is_none() || family_state.installed.installed_version.is_none())
+        {
+            Some("file signature".to_owned())
+        } else if incoming_version_evidence.source.as_deref() == Some("inside mod")
+            || installed_version_evidence.source.as_deref() == Some("inside mod")
+        {
+            Some("inside mod".to_owned())
+        } else if incoming_version_evidence.source.as_deref() == Some("saved family state")
+            || installed_version_evidence.source.as_deref() == Some("saved family state")
+        {
+            Some("saved family state".to_owned())
+        } else if incoming_version_evidence.source.is_some()
+            || installed_version_evidence.source.is_some()
+        {
+            Some("local file names".to_owned())
+        } else {
+            None
+        }
     } else {
         None
     };
-    let comparison_evidence = build_comparison_evidence_lines(
-        incoming_version.as_deref(),
-        family_state.installed.installed_version.as_deref(),
-        incoming_signature.as_deref(),
-        family_state.installed.installed_signature.as_deref(),
-        &version_status,
-        comparison_source.as_deref(),
-    );
+    let comparison_evidence = if include_full_details {
+        build_comparison_evidence_lines(
+            incoming_version.as_deref(),
+            family_state.installed.installed_version.as_deref(),
+            incoming_signature.as_deref(),
+            family_state.installed.installed_signature.as_deref(),
+            &version_status,
+            comparison_source.as_deref(),
+        )
+    } else {
+        Vec::new()
+    };
+    let (incoming_version_source, incoming_version_evidence_lines) = if include_full_details {
+        (
+            incoming_version_evidence.source,
+            incoming_version_evidence.lines,
+        )
+    } else {
+        (None, Vec::new())
+    };
+    let (installed_version_source, installed_version_evidence_lines) = if include_full_details {
+        (
+            installed_version_evidence.source,
+            installed_version_evidence.lines,
+        )
+    } else {
+        (None, Vec::new())
+    };
+    if !include_full_details {
+        available_actions.clear();
+    }
 
     Ok(Some(SpecialModDecision {
         item_id,
@@ -1301,10 +1357,10 @@ pub fn build_special_mod_decision_cached(
         recommended_next_step,
         incoming_version,
         incoming_signature,
-        incoming_version_source: incoming_version_evidence.source,
-        incoming_version_evidence: incoming_version_evidence.lines,
-        installed_version_source: installed_version_evidence.source,
-        installed_version_evidence: installed_version_evidence.lines,
+        incoming_version_source,
+        incoming_version_evidence: incoming_version_evidence_lines,
+        installed_version_source,
+        installed_version_evidence: installed_version_evidence_lines,
         comparison_source,
         comparison_evidence,
         version_status,
@@ -1312,7 +1368,11 @@ pub fn build_special_mod_decision_cached(
         official_latest,
         apply_ready,
         available_actions,
-        primary_action,
+        primary_action: if include_full_details {
+            primary_action
+        } else {
+            None
+        },
         installed_state: family_state.installed,
     }))
 }
@@ -1682,7 +1742,10 @@ fn incoming_version_for_profile(
         }) {
             push_version_evidence_line(
                 &mut lines,
-                format!("{} hinted {} from inside the download.", file.filename, version),
+                format!(
+                    "{} hinted {} from inside the download.",
+                    file.filename, version
+                ),
             );
         } else {
             push_version_evidence_line(
@@ -1722,14 +1785,14 @@ fn incoming_version_for_profile(
         }) {
             push_version_evidence_line(
                 &mut lines,
-                format!("{} also hinted {} in the local file names.", file.filename, version),
+                format!(
+                    "{} also hinted {} in the local file names.",
+                    file.filename, version
+                ),
             );
         }
         if lines.is_empty() {
-            push_version_evidence_line(
-                &mut lines,
-                format!("Local file names hinted {}.", version),
-            );
+            push_version_evidence_line(&mut lines, format!("Local file names hinted {}.", version));
         }
         limit_version_evidence_lines(&mut lines);
         return VersionEvidence {
@@ -1774,11 +1837,19 @@ fn installed_version_for_profile(
             .existing_files
             .iter()
             .chain(layout.preserve_files.iter())
-            .find(|file| file.insights.version_hints.iter().any(|hint| hint == &version))
+            .find(|file| {
+                file.insights
+                    .version_hints
+                    .iter()
+                    .any(|hint| hint == &version)
+            })
         {
             push_version_evidence_line(
                 &mut lines,
-                format!("{} hinted {} from the installed mod files.", file.filename, version),
+                format!(
+                    "{} hinted {} from the installed mod files.",
+                    file.filename, version
+                ),
             );
         } else {
             push_version_evidence_line(
@@ -1816,7 +1887,10 @@ fn installed_version_for_profile(
         {
             push_version_evidence_line(
                 &mut lines,
-                format!("{} hinted {} from the installed file names.", file.filename, version),
+                format!(
+                    "{} hinted {} from the installed file names.",
+                    file.filename, version
+                ),
             );
         } else {
             push_version_evidence_line(
@@ -1857,7 +1931,10 @@ fn build_comparison_evidence_lines(
     } else if let (Some(incoming), Some(installed)) = (incoming_version, installed_version) {
         push_version_evidence_line(
             &mut lines,
-            format!("SimSuite compared the local versions {} and {}.", incoming, installed),
+            format!(
+                "SimSuite compared the local versions {} and {}.",
+                incoming, installed
+            ),
         );
     }
 
@@ -5492,7 +5569,10 @@ mod tests {
             .expect("special decision");
         assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
         assert!(decision.same_version);
-        assert_eq!(decision.comparison_source.as_deref(), Some("file signature"));
+        assert_eq!(
+            decision.comparison_source.as_deref(),
+            Some("file signature")
+        );
         assert!(decision.incoming_version.is_none());
         assert!(decision
             .comparison_evidence

@@ -1872,6 +1872,18 @@ function createMockDownloadsOverview() {
       0,
     ),
     watchedPath: mockSettings.downloadsPath,
+    readyNowItems: mockDownloadsItems.filter(
+      (item) => item.queueLane === "ready_now",
+    ).length,
+    specialSetupItems: mockDownloadsItems.filter(
+      (item) => item.queueLane === "special_setup",
+    ).length,
+    waitingOnYouItems: mockDownloadsItems.filter(
+      (item) => item.queueLane === "waiting_on_you",
+    ).length,
+    blockedItems: mockDownloadsItems.filter((item) => item.queueLane === "blocked")
+      .length,
+    doneItems: mockDownloadsItems.filter((item) => item.queueLane === "done").length,
   };
 }
 

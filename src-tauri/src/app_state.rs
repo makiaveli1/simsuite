@@ -50,9 +50,10 @@ impl AppState {
         let seed_pack = seed::load_seed_pack()?;
         database::seed_database(&mut connection, &seed_pack)?;
         let library_settings = database::get_library_settings(&connection)?;
-        let keep_running_in_background = parse_bool_setting(
-            database::get_app_setting(&connection, "keep_running_in_background")?,
-        );
+        let keep_running_in_background = parse_bool_setting(database::get_app_setting(
+            &connection,
+            "keep_running_in_background",
+        )?);
         let initial_downloads_status = build_initial_downloads_status(&library_settings);
 
         Ok(Self {
