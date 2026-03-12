@@ -117,6 +117,7 @@ export function DownloadsScreen({
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
   const inboxRetryTimer = useRef<number | null>(null);
+  const watcherPollTimer = useRef<number | null>(null);
   const queueRequestId = useRef(0);
   const selectionRequestId = useRef(0);
   const pendingRefreshReloadSkips = useRef(0);
@@ -157,8 +158,24 @@ export function DownloadsScreen({
       if (inboxRetryTimer.current !== null) {
         globalThis.clearTimeout(inboxRetryTimer.current);
       }
+      if (watcherPollTimer.current !== null) {
+        globalThis.clearTimeout(watcherPollTimer.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!watcherStatus?.configured || watcherStatus.state !== "processing") {
+      clearScheduledWatcherPoll();
+      return;
+    }
+
+    scheduleWatcherPoll(inbox === null ? 180 : 320);
+
+    return () => {
+      clearScheduledWatcherPoll();
+    };
+  }, [inbox, watcherStatus?.configured, watcherStatus?.state]);
 
   useEffect(() => {
     if (!isRefreshing || !watcherStatus) {
@@ -305,6 +322,24 @@ export function DownloadsScreen({
     }, delayMs);
   }
 
+  function clearScheduledWatcherPoll() {
+    if (watcherPollTimer.current !== null) {
+      globalThis.clearTimeout(watcherPollTimer.current);
+      watcherPollTimer.current = null;
+    }
+  }
+
+  function scheduleWatcherPoll(delayMs = 320) {
+    if (watcherPollTimer.current !== null) {
+      return;
+    }
+
+    watcherPollTimer.current = globalThis.setTimeout(() => {
+      watcherPollTimer.current = null;
+      void refreshWatcherStatus();
+    }, delayMs);
+  }
+
   function handleLockedInboxRead(error: unknown, retry: () => void) {
     const message = toErrorMessage(error);
     if (!isLockedDatabaseError(message)) {
@@ -323,6 +358,17 @@ export function DownloadsScreen({
           : "Inbox is still checking your Downloads folder. Trying again.",
     );
     scheduleInboxRetry(retry);
+  }
+
+  async function refreshWatcherStatus() {
+    try {
+      const status = await api.getDownloadsWatcherStatus();
+      startTransition(() => {
+        setWatcherStatus(status);
+      });
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    }
   }
 
   async function loadBootstrap() {
