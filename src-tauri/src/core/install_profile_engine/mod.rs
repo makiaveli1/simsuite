@@ -1131,10 +1131,10 @@ pub fn build_special_mod_decision_cached(
         &existing_install_state,
         install_path.clone(),
     )?;
-    let incoming_version_evidence =
+    let mut incoming_version_evidence =
         incoming_version_for_profile(&profile, &item.display_name, &files);
-    let incoming_version = incoming_version_evidence.value.clone();
-    let incoming_signature = incoming_signature_for_profile(&profile, &files);
+    let mut incoming_version = incoming_version_evidence.value.clone();
+    let mut incoming_signature = incoming_signature_for_profile(&profile, &files);
     let mut installed_version_evidence = installed_version_for_profile(&profile, &layout);
     let installed_version = if installed_version_evidence.value.is_some() {
         installed_version_evidence.value.clone()
@@ -1171,6 +1171,32 @@ pub fn build_special_mod_decision_cached(
     context
         .family_state_cache
         .insert(profile.key.clone(), family_state.clone());
+
+    let applied_family_anchor = primary_family_item_status == Some("applied")
+        && family_role == SpecialFamilyRole::Primary
+        && family_state.installed.source_item_id == Some(item_id)
+        && existing_install_state != SpecialExistingInstallState::NotInstalled;
+
+    if applied_family_anchor {
+        incoming_version = family_state.installed.installed_version.clone();
+        incoming_signature = family_state.installed.installed_signature.clone();
+        incoming_version_evidence.source = Some("applied result".to_owned());
+        incoming_version_evidence.lines.clear();
+        if let Some(version) = incoming_version.as_deref() {
+            push_version_evidence_line(
+                &mut incoming_version_evidence.lines,
+                format!(
+                    "This Inbox batch already became the installed copy, so SimSuite is matching the applied result at {}.",
+                    version
+                ),
+            );
+        } else {
+            push_version_evidence_line(
+                &mut incoming_version_evidence.lines,
+                "This Inbox batch already became the installed copy, so SimSuite is matching the applied result.".to_owned(),
+            );
+        }
+    }
 
     let version_comparison = build_version_comparison(
         &family_state.installed,
@@ -1212,6 +1238,10 @@ pub fn build_special_mod_decision_cached(
                 },
             );
         }
+    }
+
+    if superseded_by_installed_family {
+        available_actions.clear();
     }
 
     available_actions.sort_by(|left, right| right.priority.cmp(&left.priority));
@@ -6037,12 +6067,26 @@ mod tests {
         assert_eq!(decision.family_role, SpecialFamilyRole::Superseded);
         assert_eq!(decision.primary_family_item_id, Some(271));
         assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert!(decision.available_actions.is_empty());
         assert!(decision.primary_action.is_none());
         assert!(decision.queue_summary.contains("already installed"));
         assert!(!decision.queue_summary.contains("already in Inbox"));
         assert!(decision
             .recommended_next_step
             .contains("Ignore this leftover"));
+
+        let applied_decision = build_special_mod_decision(&connection, &settings, &seed_pack, 271)
+            .expect("applied decision")
+            .expect("applied special decision");
+        assert_eq!(applied_decision.family_role, SpecialFamilyRole::Primary);
+        assert_eq!(applied_decision.queue_lane, DownloadQueueLane::Done);
+        assert!(applied_decision.same_version);
+        assert!(applied_decision.available_actions.is_empty());
+        assert!(applied_decision.primary_action.is_none());
+        assert!(applied_decision.queue_summary.contains("already installed"));
+        assert!(applied_decision
+            .recommended_next_step
+            .contains("already current"));
     }
 
     #[test]

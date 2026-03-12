@@ -1282,12 +1282,41 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
         return;
     }
 
-    let _ = process_downloads_once(
+    if let Err(error) = process_downloads_once(
         &app,
         &state,
         Some("Initial inbox refresh".to_owned()),
         false,
-    );
+    ) {
+        let fallback = state
+            .downloads_status()
+            .lock()
+            .map(|status| DownloadsWatcherStatus {
+                state: DownloadsWatcherState::Error,
+                watched_path: status.watched_path.clone(),
+                configured: status.configured,
+                current_item: Some("Initial inbox refresh".to_owned()),
+                last_run_at: status.last_run_at.clone(),
+                last_change_at: status.last_change_at.clone(),
+                last_error: Some(error.to_string()),
+                ready_items: status.ready_items,
+                needs_review_items: status.needs_review_items,
+                active_items: status.active_items,
+            })
+            .unwrap_or(DownloadsWatcherStatus {
+                state: DownloadsWatcherState::Error,
+                watched_path: Some(watched_root.to_string_lossy().to_string()),
+                configured: true,
+                current_item: Some("Initial inbox refresh".to_owned()),
+                last_run_at: None,
+                last_change_at: None,
+                last_error: Some(error.to_string()),
+                ready_items: 0,
+                needs_review_items: 0,
+                active_items: 0,
+            });
+        let _ = store_status(&state, &app, fallback);
+    }
 
     loop {
         if stop.try_recv().is_ok() {
@@ -1552,15 +1581,12 @@ fn process_source(
     let discovered = if source.source_kind == "file" {
         vec![build_discovered_file(watched_root, &source.path)?]
     } else {
-        let next_root = state
-            .app_data_dir
-            .join("downloads_inbox")
-            .join(
-                existing
-                    .map(|item| item.id.to_string())
-                    .unwrap_or_else(|| "new".to_owned()),
-            )
-            .join(Utc::now().format("%Y%m%d%H%M%S").to_string());
+        let next_root = build_archive_staging_root(
+            &state.app_data_dir,
+            existing.map(|item| item.id),
+            &source.display_name,
+            Utc::now(),
+        );
         let extracted = extract_archive(source, &next_root, &mut notes)?;
         staged_root = Some(next_root);
         extracted
@@ -1576,6 +1602,45 @@ fn process_source(
         staged_root.as_deref(),
         &notes,
     )
+}
+
+fn staging_segment_for_source(display_name: &str) -> String {
+    let mut sanitized = display_name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    sanitized = sanitized.trim_matches('-').to_owned();
+    if sanitized.is_empty() {
+        "download".to_owned()
+    } else {
+        sanitized.chars().take(48).collect()
+    }
+}
+
+fn build_archive_staging_root(
+    app_data_dir: &Path,
+    existing_item_id: Option<i64>,
+    display_name: &str,
+    now: DateTime<Utc>,
+) -> PathBuf {
+    app_data_dir
+        .join("downloads_inbox")
+        .join(
+            existing_item_id
+                .map(|item_id| item_id.to_string())
+                .unwrap_or_else(|| "new".to_owned()),
+        )
+        .join(format!(
+            "{}-{}",
+            now.format("%Y%m%d%H%M%S%f"),
+            staging_segment_for_source(display_name)
+        ))
 }
 
 fn should_hold_archive_for_safety(source: &ObservedSource) -> bool {
@@ -2889,16 +2954,17 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        checking_downloads_status, derive_item_status, get_download_item_guided_plan,
-        has_auto_recheck_note, ingest_held_archive_source, load_existing_items,
-        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
-        parse_string_array, preview_download_item, reassess_existing_item,
-        refresh_download_item_status, should_use_full_downloads_scan, summarize_status,
-        ObservedSource,
+        build_archive_staging_root, checking_downloads_status, derive_item_status,
+        get_download_item_guided_plan, has_auto_recheck_note, ingest_held_archive_source,
+        load_existing_items, mark_item_rechecked_with_new_rules,
+        mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
+        reassess_existing_item, refresh_download_item_status, should_use_full_downloads_scan,
+        staging_segment_for_source, summarize_status, ObservedSource,
     };
     use crate::database::initialize;
     use crate::models::{DownloadsWatcherState, LibrarySettings};
     use crate::seed;
+    use chrono::{TimeZone, Utc};
     use rusqlite::{params, Connection};
     use tempfile::tempdir;
 
@@ -2925,6 +2991,30 @@ mod tests {
             status.current_item.as_deref(),
             Some("Initial inbox refresh")
         );
+    }
+
+    #[test]
+    fn staging_segment_normalizes_download_names_for_safe_paths() {
+        assert_eq!(
+            staging_segment_for_source("MCCC Update Test.zip"),
+            "mccc-update-test-zip"
+        );
+        assert_eq!(staging_segment_for_source("   "), "download");
+    }
+
+    #[test]
+    fn archive_staging_root_stays_unique_for_different_names_in_the_same_second() {
+        let app_data_dir = std::path::Path::new("C:/Temp/SimSuite");
+        let now = Utc
+            .with_ymd_and_hms(2026, 3, 12, 14, 5, 7)
+            .single()
+            .expect("timestamp");
+        let first_root = build_archive_staging_root(app_data_dir, None, "MCCC_Partial.zip", now);
+        let second_root = build_archive_staging_root(app_data_dir, None, "MCCC_Update.zip", now);
+
+        assert_ne!(first_root, second_root);
+        assert!(first_root.to_string_lossy().contains("mccc-partial-zip"));
+        assert!(second_root.to_string_lossy().contains("mccc-update-zip"));
     }
 
     fn insert_download_item(connection: &Connection, item_id: i64, status: &str) {

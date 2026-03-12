@@ -2828,14 +2828,18 @@ function buildDownloadInspectorSignals(
     item.matchedProfileName &&
     (item.intakeMode === "needs_review" || item.intakeMode === "blocked")
   ) {
+    const coveredByInstalledFamily =
+      specialDecision?.queueLane === "done" && specialDecision.familyRole === "superseded";
     signals.push({
       id: "review",
       tone: "review",
       label: "Setup clue",
       title: item.matchedProfileName,
-      body: reviewPlan?.repairPlanAvailable
-        ? "A safe repair path is ready from this panel."
-        : "It still needs one more check before anything can move.",
+      body: coveredByInstalledFamily
+        ? "A fuller pack from this family is already installed, so this leftover batch can stay out of the install path."
+        : reviewPlan?.repairPlanAvailable
+          ? "A safe repair path is ready from this panel."
+          : "It still needs one more check before anything can move.",
     });
   }
 
@@ -3258,6 +3262,12 @@ function downloadsInspectorIdleNote(
       : "The backend already picked the safest next step for this special-mod batch.";
   }
 
+  if (specialDecision?.queueLane === "done" && specialDecision.familyRole === "superseded") {
+    return userView === "beginner"
+      ? "A fuller pack from this family is already installed, so this leftover download can stay ignored."
+      : "A fuller family pack is already installed, so this leftover batch no longer needs a repair or update step.";
+  }
+
   if (intakeMode === "needs_review") {
     return reviewPlan?.availableActions.length
       ? userView === "beginner"
@@ -3344,6 +3354,12 @@ function downloadsNextStepTitle(
         : userView === "beginner"
           ? "Install this special mod safely"
           : "Guided install is ready";
+    }
+
+    if (specialDecision.queueLane === "done" && specialDecision.familyRole === "superseded") {
+      return userView === "beginner"
+        ? "This leftover pack is already covered"
+        : "A fuller family pack is already installed";
     }
 
     return userView === "beginner"

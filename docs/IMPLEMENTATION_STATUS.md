@@ -26,14 +26,27 @@ Important changes and findings:
   - applied fuller family packs stay in the sibling comparison instead of disappearing
   - weaker leftover siblings no longer get the wrong “open the other Inbox item first” action in the backend decision path
 - a new backend regression test now covers that exact post-apply MCCC family case
+- a watcher startup bug was fixed so the first Inbox refresh no longer fails silently and leaves the watcher stuck in `processing`
+- archive staging roots are now unique per fresh source, so two new downloads arriving in the same second do not contaminate each other
+- the post-apply full-pack item now reuses the installed family anchor instead of being misread as an incomplete fresh download
+- covered leftover special-mod items now drop stale “download missing files” actions once a fuller family pack is already installed
+- the blocked leftover panel wording now matches the backend truth better instead of still sounding like an unresolved blocker
+- the native Tauri smoke wrapper is now steadier:
+  - it reads body text in a safer way
+  - it survives short body-refresh gaps after apply
+  - apply mode follows a simpler path instead of doing extra pre-apply refresh work
+  - it runs `tauri build -- --debug` by default so it uses the real desktop app surface
 
 Important follow-up result:
 
-- the original post-apply family bug was real and is now fixed in backend code and tests
-- the real desktop base Inbox smoke still passes after that fix
-- the real desktop apply smoke helper is still not steady enough:
-  - some runs time out before the apply action appears
-  - one debug run showed stale or mixed fixture state, so the harness itself still needs cleanup before it can be trusted as a full signoff path
+- the original post-apply family bug was real and is now fixed in backend code, UI wording, and real desktop checks
+- the real desktop base Inbox smoke passes
+- the real desktop special-mod apply smoke passes
+- the current fixture-backed real desktop result for MCCC after apply is now:
+  - the full pack lands in the done lane
+  - the full pack reads as matching the installed version
+  - the leftover partial pack reads as already covered by the fuller installed family pack
+  - the leftover pack recommends ignoring the archive instead of trying to fetch another copy first
 
 Important remaining gap:
 
@@ -203,7 +216,7 @@ Missing:
 - guided option-pack choice flows
 - deeper Inbox performance cleanup for large queues and heavy special-mod families
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
-- a steady native desktop apply smoke that can prove post-apply Inbox state without manual follow-up
+- full native desktop fixture coverage beyond the current MCCC-first smoke lane
 
 ### UI coverage
 
@@ -258,6 +271,9 @@ Implemented:
 - Inbox bootstrap loading so first-open Downloads can begin from the real watcher state instead of a guessed empty/setup state
 - locked-read retries for read-only Inbox commands
 - targeted `downloads-sync-finished` workspace change event after watcher passes complete
+- watcher startup now reports a real error state if the first refresh fails instead of silently staying in `processing`
+- archive staging roots now use a unique timestamp plus source name so new downloads do not share one staging folder
+- a native Tauri desktop smoke wrapper now launches an isolated fixture app, builds the real desktop app when needed, and can cover both base Inbox flow and a safe MCCC apply flow
 
 Missing:
 

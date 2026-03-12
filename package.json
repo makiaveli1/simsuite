@@ -15,7 +15,9 @@
     "desktop:driver": "pwsh -NoProfile -File scripts/desktop/run-tauri-webdriver.ps1",
     "desktop:driver:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
     "desktop:smoke": "node scripts/desktop/desktop-smoke.mjs",
-    "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply"
+    "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply",
+    "desktop:smoke:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1",
+    "desktop:smoke:apply:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",

@@ -1,6 +1,8 @@
 param(
     [int]$Port = 4444,
-    [switch]$UseSmokeFixtures
+    [switch]$UseSmokeFixtures,
+    [switch]$CleanSmokeProcesses,
+    [string]$SessionFile = (Join-Path $PSScriptRoot '..\..\output\desktop\tauri-driver-session.json')
 )
 
 function Resolve-ToolPath {
@@ -62,12 +64,15 @@ function New-SmokeZip {
 
 function Initialize-SmokeFixtures {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ("simsuite-desktop-smoke-" + [Guid]::NewGuid().ToString('N'))
+    $token = [System.IO.Path]::GetFileName($root).Replace('simsuite-desktop-smoke-', '')
     $appData = Join-Path $root 'appdata'
     $downloads = Join-Path $root 'downloads'
     $mods = Join-Path $root 'Mods'
     $installedMccc = Join-Path $mods 'MCCC'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
+    $specialItem = "MCCC_Update_Test_$token" 
+    $blockedItem = "MCCC_Partial_Blocked_Test_$token"
 
     foreach ($path in @($appData, $downloads, $installedMccc, $incomingRoot, $blockedRoot)) {
         New-Item -ItemType Directory -Force -Path $path | Out-Null
@@ -81,16 +86,27 @@ function Initialize-SmokeFixtures {
     New-SmokeTs4script -Path (Join-Path $incomingRoot 'mc_cmd_center.ts4script') -Version '2026.1.1'
     Write-SmokePackage -Path (Join-Path $incomingRoot 'mc_cmd_center.package') -Content 'incoming mccc package'
     Write-SmokePackage -Path (Join-Path $incomingRoot 'mc_woohoo.package') -Content 'incoming woohoo package'
-    New-SmokeZip -SourceRoot $incomingRoot -ZipPath (Join-Path $downloads 'MCCC_Update_Test_2026_1_1.zip')
+    New-SmokeZip -SourceRoot $incomingRoot -ZipPath (Join-Path $downloads "$specialItem.zip")
 
     Write-SmokePackage -Path (Join-Path $blockedRoot 'mc_woohoo.package') -Content 'partial woohoo only'
-    New-SmokeZip -SourceRoot $blockedRoot -ZipPath (Join-Path $downloads 'MCCC_Partial_Blocked_Test.zip')
+    New-SmokeZip -SourceRoot $blockedRoot -ZipPath (Join-Path $downloads "$blockedItem.zip")
 
     return @{
         Root = $root
         AppData = $appData
         Downloads = $downloads
         Mods = $mods
+        SpecialItem = $specialItem
+        BlockedItem = $blockedItem
+    }
+}
+
+function Stop-SmokeProcesses {
+    foreach ($name in @('tauri-driver', 'msedgedriver', 'simsuite', 'SimSuite')) {
+        try {
+            Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force
+        } catch {
+        }
     }
 }
 
@@ -114,6 +130,10 @@ if ($UseSmokeFixtures -or $env:SIMSUITE_USE_SMOKE_FIXTURES -eq '1') {
     $env:SIMSUITE_APP_DATA_DIR = $fixture.AppData
     $env:SIMSUITE_DOWNLOADS_PATH = $fixture.Downloads
     $env:SIMSUITE_MODS_PATH = $fixture.Mods
+}
+
+if ($CleanSmokeProcesses) {
+    Stop-SmokeProcesses
 }
 
 if (-not $tauriDriverPath) {
@@ -163,7 +183,32 @@ if (-not $ready) {
     exit 1
 }
 
+$sessionDirectory = Split-Path -Parent $SessionFile
+if ($sessionDirectory) {
+    New-Item -ItemType Directory -Force -Path $sessionDirectory | Out-Null
+}
+
+$session = @{
+    port = $Port
+    statusUrl = $statusUrl
+    tauriDriverPid = $process.Id
+    fixture = if ($fixture) {
+        @{
+            root = $fixture.Root
+            appData = $fixture.AppData
+            downloads = $fixture.Downloads
+            mods = $fixture.Mods
+            specialItem = $fixture.SpecialItem
+            blockedItem = $fixture.BlockedItem
+        }
+    } else {
+        $null
+    }
+}
+$session | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $SessionFile
+
 if ($fixture) {
     Write-Output "TAURI_DRIVER_FIXTURES root=$($fixture.Root) downloads=$($fixture.Downloads) mods=$($fixture.Mods)"
 }
+Write-Output "TAURI_DRIVER_SESSION file=$SessionFile"
 Write-Output "TAURI_DRIVER_READY pid=$($process.Id) url=$statusUrl"
