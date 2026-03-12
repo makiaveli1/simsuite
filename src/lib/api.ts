@@ -1856,34 +1856,33 @@ function createMockOverview(): HomeOverview {
 }
 
 function createMockDownloadsOverview() {
+  const visibleItems = mockDownloadsItems.filter((item) => item.status !== "ignored");
   return {
-    totalItems: mockDownloadsItems.length,
-    readyItems: mockDownloadsItems.filter((item) =>
+    totalItems: visibleItems.length,
+    readyItems: visibleItems.filter((item) =>
       ["ready", "partial"].includes(item.status),
     ).length,
-    needsReviewItems: mockDownloadsItems.filter(
+    needsReviewItems: visibleItems.filter(
       (item) => item.status === "needs_review",
     ).length,
-    appliedItems: mockDownloadsItems.filter((item) => item.status === "applied")
-      .length,
-    errorItems: mockDownloadsItems.filter((item) => item.status === "error").length,
-    activeFiles: mockDownloadsItems.reduce(
+    appliedItems: visibleItems.filter((item) => item.status === "applied").length,
+    errorItems: visibleItems.filter((item) => item.status === "error").length,
+    activeFiles: visibleItems.reduce(
       (count, item) => count + item.activeFileCount,
       0,
     ),
     watchedPath: mockSettings.downloadsPath,
-    readyNowItems: mockDownloadsItems.filter(
+    readyNowItems: visibleItems.filter(
       (item) => item.queueLane === "ready_now",
     ).length,
-    specialSetupItems: mockDownloadsItems.filter(
+    specialSetupItems: visibleItems.filter(
       (item) => item.queueLane === "special_setup",
     ).length,
-    waitingOnYouItems: mockDownloadsItems.filter(
+    waitingOnYouItems: visibleItems.filter(
       (item) => item.queueLane === "waiting_on_you",
     ).length,
-    blockedItems: mockDownloadsItems.filter((item) => item.queueLane === "blocked")
-      .length,
-    doneItems: mockDownloadsItems.filter((item) => item.queueLane === "done").length,
+    blockedItems: visibleItems.filter((item) => item.queueLane === "blocked").length,
+    doneItems: visibleItems.filter((item) => item.queueLane === "done").length,
   };
 }
 
@@ -3376,7 +3375,7 @@ async function mockInvoke<T>(
           [item.displayName, item.sourcePath, ...item.sampleFiles].some((value) =>
             value.toLowerCase().includes(search),
           );
-        const matchesStatus = !status || item.status === status;
+        const matchesStatus = status ? item.status === status : item.status !== "ignored";
         return matchesSearch && matchesStatus;
       });
 

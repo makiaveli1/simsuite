@@ -102,13 +102,18 @@ Important follow-up result:
   - the full pack reads as matching the installed version
   - the leftover partial pack reads as already covered by the fuller installed family pack
   - the leftover pack recommends ignoring the archive instead of trying to fetch another copy first
+- normal live Inbox is cleaner now:
+  - ZIP downloads that clearly contain no Sims mod or Tray files are auto-marked `ignored`
+  - ignored items are hidden from the normal Inbox queue and top counts unless the user explicitly opens the `Ignored` filter
+  - a safe read-only real desktop check against the user's actual Downloads folder proved that real Sims downloads still show while unrelated ZIP noise stays out of the normal queue
+  - unsupported `.7z` files still stay visible because SimSuite is still choosing safety over guesswork for those archive types
 
 Important remaining gap:
 
 - the worst Inbox freeze is fixed in the user's real desktop setup, but the first live load is still slower than it should feel at about 14 seconds
-- unrelated non-Sims ZIP files still show up as Inbox error rows, which is accurate but noisy
 - helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
 - direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
+- unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior
 
 Repo memory is now expected to live in:
 
@@ -275,9 +280,9 @@ Missing:
 - deeper Inbox performance cleanup for large live queues and heavy special-mod families after the duplicate rebuild fix
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
 - full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
-- a clean product decision for unrelated non-Sims downloads:
-  - keep them visible as blocked/error intake items
-  - or ignore them earlier so Inbox stays focused on Sims content
+- a clean product decision for unsupported unrelated archive types:
+  - keep `.7z` and `.rar` visible as safety-held intake items
+  - or add a stricter ignore path that still avoids hiding real Sims archives by mistake
 
 ### UI coverage
 

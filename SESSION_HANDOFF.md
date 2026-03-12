@@ -3,10 +3,10 @@
 ## Current Priority
 
 - March 12, 2026: trim the remaining live Inbox delay now that the worst freeze is fixed in the user's real Downloads folder.
-- March 12, 2026: decide whether unrelated non-Sims archives should stay visible as Inbox error rows or be ignored earlier.
 - March 12, 2026: widen Inbox special-mod validation beyond MCCC now that the native desktop smoke lane is steady again.
 - March 12, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
-- The highest-priority remaining gaps are the remaining live Inbox delay, the noisy unrelated-download rows, broader supported-mod coverage, and helper-only official latest parsing for supported sources that still return `unknown`.
+- March 12, 2026: decide later whether unsupported unrelated `.7z` and `.rar` downloads should also be hidden, or keep staying visible as safety-held items.
+- The highest-priority remaining gaps are the remaining live Inbox delay, broader supported-mod coverage, helper-only official latest parsing for supported sources that still return `unknown`, and the product choice around unsupported unrelated archives.
 
 ## What Changed This Session
 
@@ -44,6 +44,9 @@
   - exact-hash duplicate rebuild was basically instant
   - filename duplicate rebuild took about 107 seconds on the real library
 - March 12, 2026: proved that the grouped filename-duplicate approach on the same real data is tiny by comparison, taking about 0.08 seconds to build the pairs in a safe measurement.
+- March 12, 2026: changed the Downloads watcher so archive downloads that clearly contain no Sims mod or Tray files are auto-marked as `ignored` instead of filling the normal Inbox with error rows.
+- March 12, 2026: changed the normal Inbox queue and overview counts so ignored items stay hidden unless the user explicitly asks for the `Ignored` filter.
+- March 12, 2026: aligned the browser-preview mock Inbox with the same ignored-item rule so preview counts match the real app better.
 
 ## What Was Tested
 
@@ -76,6 +79,12 @@
   - the live queue appears after about 14 seconds
   - the real queue shows the expected live items, including MCCC, Lot 51 Core Library, and XML Injector downloads
   - the watcher settles to `Watching` instead of staying stuck in `Checking`
+- March 12, 2026: after the new ignore rule, `cargo fmt --manifest-path src-tauri/Cargo.toml`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run build`, and `npm run tauri:build -- --debug` all passed again.
+- March 12, 2026: a second safe read-only real Tauri desktop check against the user's actual Downloads folder now proves:
+  - the real Sims downloads still appear in normal Inbox
+  - unrelated non-Sims ZIPs no longer appear in normal Inbox
+  - the watcher still settles to `Watching`
+  - the unrelated `ffmpeg-8.0.1-essentials_build.7z` file still appears because unsupported archive types are still held for safety instead of auto-ignored
 
 ## What Worked
 
@@ -116,11 +125,15 @@
   - it no longer sits in `Checking your Downloads inbox...` forever
   - it loads the real queue in the desktop app
   - the worst freeze was caused by the duplicate rebuild, not by the queue rendering itself
+- The real live Inbox is cleaner now too:
+  - unrelated ZIP junk no longer crowds the normal queue
+  - real Sims downloads still show up
+  - ignored downloads are still available through the explicit `Ignored` filter path
 
 ## Known Problems / Gaps
 
 - Live Inbox first open is much better now, but about 14 seconds is still slower than it should feel.
-- Unrelated non-Sims ZIP downloads still appear in Inbox as `No supported Sims files were found in this download.` rows. That is accurate, but it is noisy.
+- Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
   - Lot 51 and several CurseForge-backed supported mods still show `unknown` even though their official pages are readable today
@@ -148,7 +161,10 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
-- Before widening more special-mod coverage, decide whether unrelated non-Sims ZIPs should be ignored earlier instead of turning into noisy Inbox error rows.
+- The unrelated ZIP decision is now done:
+  - ZIPs with no Sims files are auto-ignored
+  - normal Inbox hides ignored items
+  - unsupported `.7z` and `.rar` still stay visible for safety
 - Then re-check Inbox in the user's real desktop setup and see whether the remaining delay comes mostly from archive scanning, queue rendering, or selected-item detail work.
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
 - Keep MCCC and GitHub release parsing as the known-good online helpers.

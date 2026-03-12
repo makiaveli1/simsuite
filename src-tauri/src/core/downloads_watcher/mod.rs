@@ -41,6 +41,8 @@ const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
 const SLOW_DOWNLOADS_LOG_THRESHOLD_MS: u128 = 40;
 const HELD_ARCHIVE_SAFETY_NOTE: &str =
     "SimSuite paused this archive type for safety. Use a ZIP version for now, or review the archive manually.";
+const IGNORED_NON_SIMS_DOWNLOAD_NOTE: &str =
+    "SimSuite ignored this download because it does not contain Sims mod or Tray files.";
 
 fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usize) {
     #[cfg(debug_assertions)]
@@ -344,15 +346,18 @@ fn list_download_items_internal(
         params.push(format!("%{search}%"));
     }
 
-    if let Some(status) = query
+    let requested_status = query
         .status
         .as_ref()
         .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
+        .filter(|value| !value.is_empty());
+
+    if let Some(status) = requested_status {
         let index = params.len() + 1;
         sql.push_str(&format!(" AND di.status = ?{index}"));
         params.push(status.to_owned());
+    } else {
+        sql.push_str(" AND di.status <> 'ignored'");
     }
 
     let limit = query.limit.unwrap_or(120);
@@ -1678,6 +1683,26 @@ fn held_archive_assessment(reason: &str) -> DownloadItemAssessment {
     }
 }
 
+fn ignored_non_sims_download_assessment() -> DownloadItemAssessment {
+    DownloadItemAssessment {
+        intake_mode: DownloadIntakeMode::Standard,
+        risk_level: DownloadRiskLevel::Low,
+        matched_profile_key: None,
+        matched_profile_name: None,
+        special_family: None,
+        assessment_reasons: Vec::new(),
+        dependency_summary: Vec::new(),
+        missing_dependencies: Vec::new(),
+        inbox_dependencies: Vec::new(),
+        incompatibility_warnings: Vec::new(),
+        post_install_notes: Vec::new(),
+        evidence_summary: vec![IGNORED_NON_SIMS_DOWNLOAD_NOTE.to_owned()],
+        catalog_source: None,
+        existing_install_detected: false,
+        guided_install_available: false,
+    }
+}
+
 fn ingest_held_archive_source(
     connection: &mut Connection,
     source: &ObservedSource,
@@ -1723,6 +1748,53 @@ fn ingest_held_archive_source(
     Ok(item_id)
 }
 
+fn ingest_ignored_non_sims_source(
+    connection: &mut Connection,
+    source: &ObservedSource,
+    existing_item_id: Option<i64>,
+    notes: &[String],
+) -> AppResult<i64> {
+    let item_id = upsert_download_item(connection, source, existing_item_id)?;
+    let now = Utc::now().to_rfc3339();
+    let mut item_notes = vec![IGNORED_NON_SIMS_DOWNLOAD_NOTE.to_owned()];
+    for note in notes {
+        if item_notes.iter().any(|existing| existing == note) {
+            continue;
+        }
+        item_notes.push(note.clone());
+    }
+
+    connection.execute(
+        "UPDATE files
+         SET download_item_id = NULL
+         WHERE download_item_id = ?1
+           AND source_location <> 'downloads'",
+        params![item_id],
+    )?;
+    connection.execute(
+        "DELETE FROM files
+         WHERE download_item_id = ?1
+           AND source_location = 'downloads'",
+        params![item_id],
+    )?;
+
+    let assessment = ignored_non_sims_download_assessment();
+    install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
+    connection.execute(
+        "UPDATE download_items
+         SET status = 'ignored',
+             error_message = NULL,
+             notes = ?2,
+             detected_file_count = 0,
+             staging_path = NULL,
+             updated_at = ?3,
+             last_seen_at = ?3
+         WHERE id = ?1",
+        params![item_id, serde_json::to_string(&item_notes)?, now],
+    )?;
+    Ok(item_id)
+}
+
 fn ingest_processed_source(
     connection: &mut Connection,
     seed_pack: &crate::seed::SeedPack,
@@ -1750,6 +1822,9 @@ fn ingest_processed_source(
     )?;
 
     if discovered.is_empty() {
+        if source.source_kind == "archive" {
+            return ingest_ignored_non_sims_source(connection, source, Some(item_id), notes);
+        }
         connection.execute(
             "UPDATE download_items
              SET status = 'error',
@@ -2617,7 +2692,7 @@ fn load_overview(
                     ELSE 0
                 END
             ),
-            SUM(
+             SUM(
                 CASE
                     WHEN status = 'error'
                       OR (
@@ -2627,9 +2702,10 @@ fn load_overview(
                     THEN 1
                     ELSE 0
                 END
-            ),
-            SUM(CASE WHEN status IN ('applied', 'ignored') THEN 1 ELSE 0 END)
-         FROM download_items",
+             ),
+             SUM(CASE WHEN status IN ('applied', 'ignored') THEN 1 ELSE 0 END)
+         FROM download_items
+         WHERE status <> 'ignored'",
         [],
         |row| {
             Ok((
@@ -3000,14 +3076,15 @@ mod tests {
     use super::{
         build_archive_staging_root, checking_downloads_status, derive_item_status,
         get_download_item_guided_plan, has_auto_recheck_note, ingest_held_archive_source,
-        load_existing_items, mark_item_rechecked_with_new_rules,
-        mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
-        reassess_existing_item, refresh_download_item_status, should_extract_archive_source,
+        ingest_ignored_non_sims_source, list_download_queue, load_existing_items,
+        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
+        parse_string_array, preview_download_item, reassess_existing_item,
+        refresh_download_item_status, should_extract_archive_source,
         should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
         ObservedSource,
     };
     use crate::database::initialize;
-    use crate::models::{DownloadsWatcherState, LibrarySettings};
+    use crate::models::{DownloadsInboxQuery, DownloadsWatcherState, LibrarySettings};
     use crate::seed;
     use chrono::{TimeZone, Utc};
     use rusqlite::{params, Connection};
@@ -3502,6 +3579,91 @@ mod tests {
 
         assert!(should_extract);
         assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn irrelevant_archives_are_auto_ignored() {
+        let temp = tempdir().expect("temp dir");
+        let archive_path = temp.path().join("notes-only.zip");
+        create_test_zip(&archive_path, &[("docs/readme.txt", b"read me")]);
+        let metadata = archive_path.metadata().expect("zip metadata");
+        let mut connection = setup_connection();
+        let source = ObservedSource {
+            path: archive_path,
+            display_name: "notes-only.zip".to_owned(),
+            source_kind: "archive".to_owned(),
+            archive_format: Some("zip".to_owned()),
+            source_size: metadata.len() as i64,
+            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
+        };
+
+        let item_id = ingest_ignored_non_sims_source(
+            &mut connection,
+            &source,
+            None,
+            &[
+                "Skipped ZIP extraction because no supported Sims files were found inside."
+                    .to_owned(),
+            ],
+        )
+        .expect("ignored source");
+
+        let (status, error_message, notes_json): (String, Option<String>, String) = connection
+            .query_row(
+                "SELECT status, error_message, notes
+                 FROM download_items
+                 WHERE id = ?1",
+                params![item_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("load ignored item");
+        let notes = parse_string_array(notes_json);
+
+        assert_eq!(status, "ignored");
+        assert!(error_message.is_none());
+        assert!(notes.iter().any(|note| {
+            note.contains(
+                "ignored this download because it does not contain Sims mod or Tray files",
+            )
+        }));
+    }
+
+    #[test]
+    fn default_queue_hides_ignored_items_but_ignored_filter_can_show_them() {
+        let connection = setup_connection();
+        let settings = LibrarySettings {
+            mods_path: None,
+            tray_path: None,
+            downloads_path: Some("C:/Downloads".to_owned()),
+        };
+        let seed_pack = seed::load_seed_pack().expect("seed pack");
+        insert_download_item(&connection, 51, "ignored");
+        insert_download_item(&connection, 52, "ready");
+
+        let default_queue = list_download_queue(
+            &connection,
+            &settings,
+            &seed_pack,
+            DownloadsInboxQuery::default(),
+        )
+        .expect("default queue");
+        let ignored_queue = list_download_queue(
+            &connection,
+            &settings,
+            &seed_pack,
+            DownloadsInboxQuery {
+                search: None,
+                status: Some("ignored".to_owned()),
+                limit: None,
+            },
+        )
+        .expect("ignored queue");
+
+        assert_eq!(default_queue.overview.total_items, 1);
+        assert_eq!(default_queue.items.len(), 1);
+        assert_eq!(default_queue.items[0].id, 52);
+        assert_eq!(ignored_queue.items.len(), 1);
+        assert_eq!(ignored_queue.items[0].id, 51);
     }
 
     #[test]
