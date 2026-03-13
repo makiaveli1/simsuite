@@ -11,6 +11,28 @@ This session did two important things:
 
 Important changes and findings:
 
+- XML Injector now has a safe helper-only official latest source:
+  - the built-in profile now points at the readable official page on `scumbumbomods.com`
+  - SimSuite can read the current XML Injector version there without adding risky bypass logic
+- helper-only latest widening is still intentionally limited:
+  - Lot 51 and the CurseForge-backed supported mods still stay `unknown`
+  - plain app-style requests to those sources still hit challenge pages
+  - SimSuite should keep waiting for safe official endpoints instead of forcing a workaround
+- the real desktop special-mod smoke lane now covers every currently supported built-in family in base mode:
+  - MCCC
+  - XML Injector
+  - Lot 51 Core Library
+  - Sims 4 Community Library
+  - Lumpinou Toolbox
+  - Smart Core Script
+- package-backed support-library compares are now more trustworthy in the real app:
+  - if the installed side is missing a saved hash for a `.package` file
+  - SimSuite now falls back to hashing the real installed file from disk
+  - this stops false `Version could not be compared` results when the installed and downloaded packs are actually the same
+- a new backend regression test now covers that missing-installed-hash support-library case
+- future special-mod growth should stay shared and data-driven:
+  - keep common compare, evidence, and smoke logic reusable
+  - keep mod-specific differences in seed data or small strategy hooks instead of repeated per-mod branches
 - real live Inbox timing was traced properly instead of guessed:
   - an optional debug perf file can now be written with `SIMSUITE_PERF_TRACE_PATH`
   - that showed the real Downloads watcher pass was already fast at about `0.38s` to `0.51s`
@@ -73,7 +95,19 @@ Important changes and findings:
   - same-version flow
   - older-version flow
   - version evidence display
+- Lot 51 Core Library is now covered too:
+  - same-version flow
+  - older-version flow
+  - package-backed same-version comparison in the real desktop app
+- Lumpinou Toolbox is now covered too:
+  - same-version flow
+  - older-version flow
+  - package-backed same-version comparison in the real desktop app
 - Sims 4 Community Library is now covered too:
+  - same-version flow
+  - older-version flow
+  - real desktop version evidence display
+- Smart Core Script is now covered too:
   - same-version flow
   - older-version flow
   - real desktop version evidence display
@@ -102,6 +136,13 @@ Important follow-up result:
   - incoming `4.0`
   - result `Installed and incoming match`
   - inner-file evidence wins over outer zip noise
+- the real desktop Lot 51 Core Library result is now correct:
+  - same-version downloads settle into the already-current path
+  - older downloads stay out of the update path
+  - the old false `Version could not be compared` result is gone when installed package hashes were simply missing from the saved index
+- the real desktop Lumpinou Toolbox result is now correct:
+  - same-version downloads settle into the already-current path
+  - older downloads stay out of the update path
 - the real desktop Sims 4 Community Library result is now correct:
   - same-version downloads settle into the already-current path
   - older downloads stay out of the update path
@@ -145,8 +186,8 @@ Important follow-up result:
 Important remaining gap:
 
 - the worst Inbox freeze is fixed in the user's real desktop setup, and live first-open is now about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s`
-- helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
-- direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
+- helper-only official latest support is still too narrow for the remaining supported special mods whose official sources are not safely readable by plain app requests
+- XML Injector is now covered safely, but direct non-browser requests to CurseForge and Lot 51 are still blocked by challenge pages, so those helpers still need a safe official machine-readable source before they can be widened in the app
 - unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior
 - the raw debug Tauri desktop smoke lane currently expects the local Vite frontend to be reachable at `http://localhost:1420`; otherwise the driver lands on a `localhost refused to connect` page instead of the app UI
 
@@ -305,6 +346,7 @@ Implemented:
 - internal file inspection hints feeding special-mod identity and version evidence
 - special-mod family grouping so duplicate downloaded versions can be compared together
 - helper-only official latest checks for reviewed built-in special mods
+- XML Injector helper-only latest parsing from a safe readable official page
 - one shared special-mod decision result feeding queue, side panel, and main action state more consistently
 
 Missing:
@@ -316,7 +358,7 @@ Missing:
 - deeper Inbox performance cleanup for large live queues and heavy special-mod families after the duplicate rebuild fix
 - deeper live-scan performance cleanup now that selection and refresh responsiveness are materially better
 - final cleanup of stale Inbox ownership and repeated special-mod recomputation during interactive use
-- full native desktop fixture coverage beyond the current MCCC, XML Injector, and Sims 4 Community Library smoke lane
+- deeper native desktop apply and blocked-flow coverage beyond the current base lane that now covers all six built-in supported families
 - a clean product decision for unsupported unrelated archive types:
   - keep `.7z` and `.rar` visible as safety-held intake items
   - or add a stricter ignore path that still avoids hiding real Sims archives by mistake
@@ -377,13 +419,14 @@ Implemented:
 - watcher startup now reports a real error state if the first refresh fails instead of silently staying in `processing`
 - archive staging roots now use a unique timestamp plus source name so new downloads do not share one staging folder
 - a native Tauri desktop smoke wrapper now launches an isolated fixture app, builds the real desktop app when needed, and can cover both base Inbox flow and a safe MCCC apply flow
+- the native Tauri desktop base smoke now covers all six built-in supported special-mod families
 
 Missing:
 
 - deeper archive-content heuristics for unsupported/edge archive layouts
 - dedicated watcher controls beyond the current general Settings surface
 - final removal of any remaining real-world Inbox hangs during heavy live-folder use
-- helper-only official latest parsing is still too narrow for several supported mods because some official sources are still blocked by Cloudflare for plain app requests
+- helper-only official latest parsing is still too narrow for several supported mods because some official sources are still blocked by challenge pages for plain app requests
 
 ### Patch recovery
 

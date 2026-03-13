@@ -2,14 +2,29 @@
 
 ## Current Priority
 
-- March 13, 2026: widen Inbox special-mod validation beyond MCCC, XML Injector, and Sims 4 Community Library now that the live Inbox first-open delay is back under control.
-- March 13, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
+- March 13, 2026: helper-only official latest support should expand only where there is a safe official endpoint the app can read without hacks or challenge bypasses.
+- March 13, 2026: keep building the special-mod system so shared compare, evidence, and test logic stays reusable when the built-in mod list grows.
 - March 13, 2026: trim selected special-item detail load next if it still feels heavy in live desktop use.
 - March 13, 2026: decide later whether unsupported unrelated `.7z` and `.rar` downloads should also be hidden, or keep staying visible as safety-held items.
-- The highest-priority remaining gaps are broader supported-mod coverage, helper-only official latest parsing for supported sources that still return `unknown`, heavier selected-item special-mod detail loads, and the product choice around unsupported unrelated archives.
+- The highest-priority remaining gaps are helper-only official latest parsing for the supported sources that still return `unknown`, heavier selected-item special-mod detail loads, deeper apply and blocked-flow coverage beyond MCCC, and the product choice around unsupported unrelated archives.
 
 ## What Changed This Session
 
+- March 13, 2026: added a safe helper-only official latest path for XML Injector using the readable official page at `https://scumbumbomods.com/xml-injector`.
+- March 13, 2026: kept Lot 51 and the CurseForge-backed supported mods on helper-only `unknown` for now because plain app-style requests still hit challenge pages, and SimSuite should not use brittle workarounds.
+- March 13, 2026: expanded the fixture-backed real desktop Inbox smoke lane so the base smoke now covers every currently supported special-mod family:
+  - MCCC
+  - XML Injector
+  - Lot 51 Core Library
+  - Sims 4 Community Library
+  - Lumpinou Toolbox
+  - Smart Core Script
+- March 13, 2026: strengthened the smoke fixtures so package-backed support libraries use more realistic same-version and older-version test data instead of weaker shortcuts.
+- March 13, 2026: fixed a real version-compare gap for package-backed support mods:
+  - if the installed side does not already have a saved hash for a `.package` file
+  - SimSuite now falls back to hashing the real installed file from disk
+  - this stops false `Version could not be compared` results when the installed and downloaded packs are actually the same
+- March 13, 2026: added a backend regression test for that missing-installed-hash support-library case so the fix is protected.
 - March 13, 2026: traced the real live Inbox with an optional debug perf file using `SIMSUITE_PERF_TRACE_PATH`, so the desktop app can write slow-step timings to a local file during debug runs.
 - March 13, 2026: proved the remaining live Inbox delay was no longer the Downloads watcher pass itself:
   - live `downloads_sync` was only about `0.38s` to `0.51s`
@@ -67,6 +82,17 @@
 
 ## What Was Tested
 
+- March 13, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the latest special-mod validation changes.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `137` tests.
+- March 13, 2026: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with warnings only.
+- March 13, 2026: real Tauri desktop base smoke passed again through `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`.
+- March 13, 2026: real Tauri desktop apply smoke passed again through `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply`.
+- March 13, 2026: the real desktop base smoke now proves same-version and older-version behavior for:
+  - XML Injector
+  - Lot 51 Core Library
+  - Lumpinou Toolbox
+  - Sims 4 Community Library
+  - Smart Core Script
 - March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed after the live Inbox queue optimization work.
 - March 13, 2026: `npm run tauri:build -- --debug` passed after the live Inbox queue optimization work.
 - March 13, 2026: real Tauri desktop timing checks against the user's actual Downloads folder now show:
@@ -127,6 +153,11 @@
 
 ## What Worked
 
+- Real desktop same-version support-library checks now work for the currently supported package-backed families:
+  - Lot 51 Core Library
+  - Lumpinou Toolbox
+- Real desktop same-version and older-version checks now work across the full current built-in special-mod set.
+- XML Injector helper-only official latest can now be read safely from its official page without adding any risky bypass behavior.
 - Real desktop Inbox first-open, refresh, and selection worked in the fixture app.
 - Real desktop MCCC version evidence was clear and correct before apply:
   - installed `2025.9.0`
@@ -185,12 +216,11 @@
 - Live Inbox first open is now much better at about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s` for a real MCCC row.
 - Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
-  - MCCC and GitHub release pages are supported
-  - Lot 51 and several CurseForge-backed supported mods still show `unknown` even though their official pages are readable today
-- Direct non-browser requests to CurseForge and Lot 51 still hit Cloudflare challenge pages, so helper-only latest expansion for those sources is blocked unless we find a safe official machine-readable path.
-- Real desktop coverage now includes MCCC, XML Injector, and Sims 4 Community Library, but the other supported special-mod families still need fixture-backed desktop flows.
+  - MCCC, GitHub release pages, and XML Injector are supported
+  - Lot 51 Core Library, Lumpinou Toolbox, and Smart Core Script still show `unknown`
+- Direct non-browser requests to CurseForge and Lot 51 still hit challenge pages, so helper-only latest expansion for those sources is blocked unless we find a safe official machine-readable path.
 - `.7z` and `.rar` are safely held for review right now, but there is not yet a safe supported extraction path for them.
-- The native smoke lane is now stable for the current MCCC, XML Injector, and Sims 4 Community Library flows, but it still does not cover the other supported special mods yet.
+- The native smoke lane is now stable for the current supported families in base mode, but the deeper apply and blocked-flow lane is still strongest for MCCC.
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
 - The Downloads refresh cleanup currently uses a short local grace window to swallow duplicate post-action reloads. That is much lighter than before, but it may still need tuning if real watcher traffic stays noisy in a large live Downloads folder.
@@ -201,18 +231,21 @@
 
 - Keep local installed-vs-downloaded truth as the real authority for Inbox decisions.
 - Keep official latest as helper-only extra context.
+- Keep growing the special-mod system through shared compare/evidence/test helpers plus seed data, instead of copy-pasting mod-specific logic everywhere.
 - Keep `SESSION_HANDOFF.md` as the main cross-session baton-pass file.
 - Keep `docs/IMPLEMENTATION_STATUS.md` as the broader project memory.
-- Keep the Sims 4 index file as reference material only.
+- Keep the Sims 4 index file as reference material only, not as owned content, runtime truth, or a scrape target.
 - Keep `.7z` and `.rar` blocked for now instead of unpacking them automatically.
 - Treat the Tauri desktop smoke wrapper as the preferred real-app Inbox check, not the browser preview.
 - Treat normalized inner `.ts4script` content as the stronger same-version fingerprint for supported script-based special mods.
+- Treat direct disk hashing as the fallback for installed package-backed special mods when the saved library hash is missing.
 - Keep Inbox queue rows light and let the selected item panel carry the full special-mod compare work.
 
 ## Next Session Start Here
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
+- The current built-in special-mod families are now covered in the real desktop base smoke lane, so the next validation step is no longer “add basic coverage.”
 - The unrelated ZIP decision is now done:
   - ZIPs with no Sims files are auto-ignored
   - normal Inbox hides ignored items
@@ -222,14 +255,16 @@
   - the queue is no longer the big live bottleneck
   - the remaining heavier path is selected-item special-mod detail at about `1.95s`
 - Next, keep the faster queue path in place and move on to:
-  - broader supported special-mod validation
   - helper-only official latest gaps
+  - deeper apply and blocked-flow coverage for non-MCCC supported mods
   - a smaller selected-item detail optimization pass only if it still feels heavy in real use
-- Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
-- Keep MCCC and GitHub release parsing as the known-good online helpers.
-- Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:
-  - update flow
-  - same-version flow
-  - older-version flow
-  - partial-pack flow
-- After that, use the real Tauri smoke lane to prove those supported-mod flows one by one.
+- Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting challenge pages.
+- Keep MCCC, GitHub release parsing, and XML Injector parsing as the known-good online helpers.
+- Then extend the real desktop fixture lane from base validation into deeper scenarios for the remaining supported families:
+  - apply flow where safe
+  - blocked or partial-pack flow where it exists
+  - clearer evidence wording checks
+- After that, keep the future catalog expansion data-driven:
+  - shared backend compare logic
+  - shared smoke helpers
+  - per-mod rules in seed data or small strategy hooks only

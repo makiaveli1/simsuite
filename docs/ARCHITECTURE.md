@@ -80,13 +80,20 @@ Important current special-mod architecture:
 
 - the app has a built-in special-mod catalog in `seed/install_profiles.json`
 - special mods are handled with per-mod rules, not one shared MCCC rule
+- the repeatable parts of special-mod handling should stay shared:
+  - common compare logic
+  - common evidence building
+  - common smoke-test helpers
+  - keep per-mod differences in seed data or small strategy hooks so the catalog can grow without copy-paste logic
 - update decisions are local-first:
   - compare the downloaded pack
   - compare the installed files on disk
   - use saved family state and file fingerprints only when needed
   - use official latest checks only as extra guidance
+- if the installed side is missing a saved package hash, the compare flow can fall back to hashing the real installed file from disk so same-version support libraries do not false-flag as unknown
 - internal file inspection now helps special-mod identity and version checks
 - community sources and third-party indexes are not part of runtime install authority
+- helper-only official latest checks should only use safe readable official endpoints; challenge bypasses and brittle scraping workarounds are out of scope
 
 Current integration and performance work already in place:
 
@@ -100,7 +107,7 @@ Current integration and performance work already in place:
 Current biggest known gap:
 
 - Inbox is much healthier in real desktop use now, but richer selected-item special-mod detail can still feel heavier than the rest of the screen
-- the remaining work should focus on trimming that selected-item detail path and expanding supported special-mod validation before growing the catalog further
+- the remaining work should focus on trimming that selected-item detail path and extending deeper apply or blocked-flow validation before growing the catalog further
 
 ## Known gaps versus the full product plan
 
