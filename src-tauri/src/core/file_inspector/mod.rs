@@ -241,7 +241,17 @@ fn collect_version_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<S
 }
 
 fn should_read_ts4script_payload_for_hints(entry_name_lower: &str) -> bool {
+    if entry_name_lower.contains("game_version") {
+        return false;
+    }
+
     entry_name_lower.contains("version")
+        || entry_name_lower.ends_with("modfilemanifest.yml")
+        || entry_name_lower.ends_with("modfilemanifest.yaml")
+        || entry_name_lower.ends_with("modfilemanifest.json")
+        || entry_name_lower.ends_with("manifest.yml")
+        || entry_name_lower.ends_with("manifest.yaml")
+        || entry_name_lower.ends_with("manifest.json")
         || entry_name_lower.ends_with("readme.txt")
         || entry_name_lower.ends_with("readme.md")
         || entry_name_lower.ends_with("changelog.txt")
@@ -1041,6 +1051,44 @@ mod tests {
             .version_hints
             .iter()
             .any(|value| value == "2026.1.1"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn ts4script_manifest_versions_beat_game_patch_noise() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("lot51_core.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("lot51_core/lib/game_version.pyc", options)
+            .expect("start game version");
+        writer
+            .write_all(b"Supports game version 1.105.332")
+            .expect("write game version");
+        writer
+            .start_file("lot51_core/llamalogic.modfilemanifest.yml", options)
+            .expect("start manifest");
+        writer
+            .write_all(b"name: Lot 51 Core Library\nversion: 1.41\n")
+            .expect("write manifest");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert!(outcome
+            .insights
+            .version_hints
+            .iter()
+            .any(|value| value == "1.41"));
+        assert!(!outcome
+            .insights
+            .version_hints
+            .iter()
+            .any(|value| value == "1.105.332"));
 
         fs::remove_file(filepath).expect("cleanup");
     }

@@ -5923,6 +5923,23 @@ mod tests {
     }
 
     #[test]
+    fn same_version_single_file_lot51_core_download_is_marked_as_already_current() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "lot51_core_library",
+            item_id: 2821,
+            staging_dir_name: "lot51_same_version_single_file",
+            display_name: "lot51_core_v1_41.zip",
+            incoming_filename: "lot51_core.ts4script",
+            incoming_version: "1.41",
+            version_marker: "Lot 51 Core Library version",
+            install_folder_name: "Lot51 Core Library",
+            family_hints: &["lot 51 core library", "lot51 core library", "lot51 core"],
+            expected_status: SpecialVersionStatus::SameVersion,
+            expected_next_step: "already current",
+        });
+    }
+
+    #[test]
     fn older_lot51_core_library_download_is_not_treated_as_the_next_update() {
         assert_special_script_version_case(SpecialScriptVersionCase {
             profile_key: "lot51_core_library",

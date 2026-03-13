@@ -892,6 +892,9 @@ export function DownloadsScreen({
   const selectedFiles = activeSelection?.detail?.files ?? [];
   const selectedSpecialDecision =
     activeSelection?.detail?.item.specialDecision ?? selectedItem?.specialDecision ?? null;
+  const selectedStateBadge = selectedResolvedItem
+    ? primaryInboxStateBadge(selectedResolvedItem, userView)
+    : null;
   const selectedPreview = activeSelection?.preview ?? null;
   const selectedGuidedPlan = activeSelection?.guidedPlan ?? null;
   const selectedReviewPlan = activeSelection?.reviewPlan ?? null;
@@ -1260,13 +1263,17 @@ export function DownloadsScreen({
                           </div>
 
                           <div className="downloads-lane-list">
-                            {group.items.map((item, index) => (
+                            {group.items.map((item, index) => {
+                              const primaryBadge = primaryInboxStateBadge(item, userView);
+                              const rowTone = inboxItemTone(item);
+
+                              return (
                               <m.button
                                 key={item.id}
                                 type="button"
                                 className={`downloads-item-row ${
                                   selectedItemId === item.id ? "is-selected" : ""
-                                } downloads-item-row-${itemStatusTone(item.status)}`}
+                                } downloads-item-row-${rowTone}`}
                                 onClick={() => {
                                   setStatusMessage(null);
                                   setSelectedItemId(item.id);
@@ -1303,19 +1310,28 @@ export function DownloadsScreen({
                                       Linked {item.relatedItemIds.length + 1}
                                     </span>
                                   ) : null}
-                                  <span
-                                    className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}
-                                  >
-                                    {intakeModeLabel(item.intakeMode)}
-                                  </span>
-                                  <span
-                                    className={`confidence-badge ${itemStatusTone(item.status)}`}
-                                  >
-                                    {friendlyItemStatus(item.status)}
-                                  </span>
+                                  {primaryBadge ? (
+                                    <span className={`confidence-badge ${primaryBadge.tone}`}>
+                                      {primaryBadge.label}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <span
+                                        className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}
+                                      >
+                                        {intakeModeLabel(item.intakeMode)}
+                                      </span>
+                                      <span
+                                        className={`confidence-badge ${itemStatusTone(item.status)}`}
+                                      >
+                                        {friendlyItemStatus(item.status)}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
                               </m.button>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       ))
@@ -1503,12 +1519,24 @@ export function DownloadsScreen({
                     <span className="ghost-chip">
                       {queueLaneLabel(selectedItem.queueLane ?? deriveQueueLane(selectedItem), userView)}
                     </span>
-                    <span className={`confidence-badge ${intakeModeTone(selectedItem.intakeMode)}`}>
-                      {intakeModeLabel(selectedItem.intakeMode)}
-                    </span>
-                    <span className={`confidence-badge ${itemStatusTone(selectedItem.status)}`}>
-                      {friendlyItemStatus(selectedItem.status)}
-                    </span>
+                    {selectedStateBadge ? (
+                      <span className={`confidence-badge ${selectedStateBadge.tone}`}>
+                        {selectedStateBadge.label}
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`confidence-badge ${intakeModeTone(selectedItem.intakeMode)}`}
+                        >
+                          {intakeModeLabel(selectedItem.intakeMode)}
+                        </span>
+                        <span
+                          className={`confidence-badge ${itemStatusTone(selectedItem.status)}`}
+                        >
+                          {friendlyItemStatus(selectedItem.status)}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -3783,6 +3811,42 @@ function specialVersionStatusLabel(
     default:
       return userView === "beginner" ? "Version unclear" : "Version could not be compared";
   }
+}
+
+function specialVersionTone(decision: SpecialModDecision) {
+  switch (decision.versionStatus) {
+    case "incoming_newer":
+    case "not_installed":
+      return "good";
+    case "incoming_older":
+      return "low";
+    case "unknown":
+      return "medium";
+    default:
+      return "neutral";
+  }
+}
+
+function primaryInboxStateBadge(
+  item: DownloadsInboxItem,
+  userView: UserView,
+): { label: string; tone: string } | null {
+  if (!item.specialDecision) {
+    return null;
+  }
+
+  return {
+    label: specialVersionStatusLabel(item.specialDecision, userView),
+    tone: specialVersionTone(item.specialDecision),
+  };
+}
+
+function inboxItemTone(item: DownloadsInboxItem) {
+  if (item.specialDecision) {
+    return specialVersionTone(item.specialDecision);
+  }
+
+  return itemStatusTone(item.status);
 }
 
 function friendlyItemStatus(status: string) {

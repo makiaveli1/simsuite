@@ -11,6 +11,19 @@ This session did two important things:
 
 Important changes and findings:
 
+- a final same-version special-mod mismatch was traced in the real app:
+  - Lot 51 Core Library and XML Injector were already comparing correctly in the selected detail panel
+  - but some queue-row and header badges were still showing older raw `Special setup` and `Ready` state
+  - the visible Inbox state for supported special mods now follows the final special-mod decision instead
+- queue hydration now carries the lightweight special-mod decision for supported queue rows too, not just the selected detail panel:
+  - this keeps row summaries and lane counts aligned with the same local compare truth
+  - top lane counts are now recalculated from the enriched queue items after special-mod hydration
+- `.ts4script` version reading is now stricter and more useful:
+  - `game_version` payload files are ignored as version evidence
+  - manifest files such as `modfilemanifest.yml` are read as version evidence
+  - this fixed the false Lot 51 `1.105.x` game-patch reading and restored the real local mod version `1.41`
+- the Tauri desktop WebDriver launcher now tolerates a clean `tauri-driver` handoff instead of failing early
+- the fixture-based real desktop smoke lane passes again after that launcher fix
 - supported same-version special-mod reinstalls are now more consistent in Inbox:
   - the selected-item compare path could already know when a safe reinstall was ready
   - but the action area could still trust an older row state and only show `Ignore`
@@ -196,6 +209,7 @@ Important follow-up result:
 Important remaining gap:
 
 - the worst Inbox freeze is fixed in the user's real desktop setup, and live first-open is now about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s`
+- the ad hoc scripted real-folder desktop check still needs a cleaner wrapper if we want a repeatable one-command read-only run against the user's actual Downloads and Mods folders
 - deeper non-MCCC apply and repair desktop checks still need to be widened, even though same-version reinstall visibility is now covered
 - helper-only official latest support is still too narrow for the remaining supported special mods whose official sources are not safely readable by plain app requests
 - XML Injector is now covered safely, but direct non-browser requests to CurseForge and Lot 51 are still blocked by challenge pages, so those helpers still need a safe official machine-readable source before they can be widened in the app

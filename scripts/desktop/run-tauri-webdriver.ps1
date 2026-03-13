@@ -152,14 +152,11 @@ function Initialize-SmokeFixtures {
     New-SmokeTs4script -Path (Join-Path $s4clOlderRoot 'S4CL.ts4script') -Version '2.8.0' -Marker 'S4CL version'
     New-SmokeZip -SourceRoot $s4clOlderRoot -ZipPath (Join-Path $downloads "$s4clOlderItem.zip")
 
-    New-SmokeTs4script -Path (Join-Path $installedLot51 'Lot51_CoreLibrary.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
-    Write-SmokePackage -Path (Join-Path $installedLot51 'lot51_core_library.package') -Content 'lot51 core library package v1.41'
-    New-SmokeTs4script -Path (Join-Path $lot51SameRoot 'Lot51_CoreLibrary.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
-    Write-SmokePackage -Path (Join-Path $lot51SameRoot 'lot51_core_library.package') -Content 'lot51 core library package v1.41'
+    New-SmokeTs4script -Path (Join-Path $installedLot51 'lot51_core.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
+    New-SmokeTs4script -Path (Join-Path $lot51SameRoot 'lot51_core.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
     New-SmokeZip -SourceRoot $lot51SameRoot -ZipPath (Join-Path $downloads "$lot51SameItem.zip")
 
-    New-SmokeTs4script -Path (Join-Path $lot51OlderRoot 'Lot51_CoreLibrary.ts4script') -Version '1.40' -Marker 'Lot 51 Core Library version'
-    Write-SmokePackage -Path (Join-Path $lot51OlderRoot 'lot51_core_library.package') -Content 'incoming older lot51 core library package'
+    New-SmokeTs4script -Path (Join-Path $lot51OlderRoot 'lot51_core.ts4script') -Version '1.40' -Marker 'Lot 51 Core Library version'
     New-SmokeZip -SourceRoot $lot51OlderRoot -ZipPath (Join-Path $downloads "$lot51OlderItem.zip")
 
     New-SmokeTs4script -Path (Join-Path $installedToolbox 'lumpinou_toolbox.ts4script') -Version '1.8.0' -Marker 'Lumpinou Toolbox version'
@@ -257,18 +254,22 @@ $process = Start-Process `
 
 $statusUrl = "http://127.0.0.1:$Port/status"
 $ready = $false
+$launcherExitCode = $null
 for ($attempt = 0; $attempt -lt 40; $attempt++) {
     Start-Sleep -Milliseconds 500
-    if ($process.HasExited) {
-        Write-Error "tauri-driver exited early with code $($process.ExitCode)."
-        exit 1
-    }
-
     try {
         Invoke-WebRequest -UseBasicParsing -Uri $statusUrl | Out-Null
         $ready = $true
         break
     } catch {
+    }
+
+    if ($process.HasExited) {
+        $launcherExitCode = $process.ExitCode
+        if ($launcherExitCode -ne 0) {
+            Write-Error "tauri-driver exited early with code $launcherExitCode."
+            exit 1
+        }
     }
 }
 
@@ -289,7 +290,8 @@ if ($sessionDirectory) {
 $session = @{
     port = $Port
     statusUrl = $statusUrl
-    tauriDriverPid = $process.Id
+    tauriDriverPid = if ($process.HasExited) { $null } else { $process.Id }
+    tauriDriverExitCode = $launcherExitCode
     fixture = if ($fixture) {
         @{
             root = $fixture.Root

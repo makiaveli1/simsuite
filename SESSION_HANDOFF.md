@@ -2,6 +2,8 @@
 
 ## Current Priority
 
+- March 13, 2026: the same-version special-mod display mismatch is now fixed in code, so the next product priority is deeper non-MCCC apply and blocked-flow validation rather than more queue-state repair.
+- March 13, 2026: keep the real Tauri test lane healthy; fixture-based native smoke is working again, but the ad hoc real-folder live-check wrapper still needs cleanup if we want a one-command read-only check against the user's actual folders.
 - March 13, 2026: keep same-version special-mod reinstall support consistent across the built-in catalog, so the selected item can still offer a safe reinstall path when the downloaded copy matches what is installed.
 - March 13, 2026: helper-only official latest support should expand only where there is a safe official endpoint the app can read without hacks or challenge bypasses.
 - March 13, 2026: keep building the special-mod system so shared compare, evidence, and test logic stays reusable when the built-in mod list grows.
@@ -11,6 +13,20 @@
 
 ## What Changed This Session
 
+- March 13, 2026: a real read-only Inbox trace against the user's live folders showed one last same-version mismatch:
+  - Lot 51 Core Library and XML Injector were already comparing correctly in the detail panel
+  - but some queue-row and header badges were still using older raw `intakeMode` and `status` fields, so they could still look like `Special setup` and `Ready`
+- March 13, 2026: queue hydration now always loads the lightweight special-mod decision for supported queue items, not just the selected detail load:
+  - this lets the queue row summary and top lane counts follow the same special-mod truth as the selected panel
+- March 13, 2026: queue overview counts are now recalculated from the enriched queue items after special-mod hydration, so same-version and done-lane counts stay honest.
+- March 13, 2026: special `.ts4script` version reading now ignores `game_version` payload noise and reads manifest files too:
+  - this fixed the false Lot 51 `1.105.x` game-patch reading
+  - the same archive now settles on the real local mod version `1.41`
+- March 13, 2026: the Inbox row badges and selected-item header now use the final special-mod decision badge when one exists:
+  - same-version items now show `Already current`
+  - the row tone no longer stays stuck on the older raw `Ready` state
+  - this keeps the visible state aligned with the real local compare result without adding more UI clutter
+- March 13, 2026: fixed the Tauri desktop WebDriver launcher so it no longer treats a clean `tauri-driver` handoff as an early failure.
 - March 13, 2026: fixed a same-version special-mod action gap in Inbox:
   - the compare and guided-plan path could already know a safe reinstall was available
   - but the right-side action area could still trust an older row state and only show `Ignore`
@@ -90,6 +106,17 @@
 
 ## What Was Tested
 
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml queue_hydration_keeps_same_version_special_items_in_done_with_reinstall_path -- --nocapture` passed.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml ts4script_manifest_versions_beat_game_patch_noise -- --nocapture` passed.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml same_version_single_file_lot51_core_download_is_marked_as_already_current -- --nocapture` passed.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `142` tests after the latest queue, version-reading, and badge-alignment fixes.
+- March 13, 2026: `npm run build` passed after the latest Inbox badge-alignment fix.
+- March 13, 2026: `npm run tauri:build -- --debug` passed after the latest Inbox badge-alignment fix.
+- March 13, 2026: `npm run desktop:smoke:fixtures` passed after the WebDriver launcher fix.
+- March 13, 2026: a safe read-only real desktop probe against the user's actual Downloads and Mods folders proved before the latest badge cleanup that:
+  - Lot 51 Core Library selected detail showed `Installed 1.41`, `Incoming 1.41`, `Compare Installed and incoming match`, and `Reinstall guided copy`
+  - XML Injector selected detail showed `Installed 4.2`, `Incoming 4.2`, `Compare Installed and incoming match`, and `Reinstall guided copy`
+  - the remaining mismatch was down to visible row/header badges, not the local compare logic itself
 - March 13, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the same-version reinstall fix.
 - March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml hydrated_selection_uses_ready_special_guided_state` passed.
 - March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `138` tests after the same-version reinstall fix.
@@ -168,6 +195,13 @@
 
 ## What Worked
 
+- The real local compare logic is now correct for the live same-version cases that were checked against the user's own files:
+  - Lot 51 Core Library now settles on `1.41`, not a Sims game patch number
+  - XML Injector now settles on `4.2`
+  - both can show a safe reinstall path when the incoming archive matches what is already installed
+- Queue hydration and top lane counts now follow the special-mod decision instead of older generic fields.
+- The Inbox list and selected header now use the final special-mod compare state for supported items, so the visible state can stay aligned with `Already current` instead of showing stale `Special setup` and `Ready` chips.
+- The fixture-based real Tauri smoke lane is working again after the desktop launcher fix.
 - Same-version reinstall is no longer MCCC-only in practice:
   - if the selected special-mod decision says a safe guided reinstall is ready
   - the right-side Inbox action area now shows the reinstall path instead of falling back to `Ignore`
@@ -235,6 +269,7 @@
 ## Known Problems / Gaps
 
 - Live Inbox first open is now much better at about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s` for a real MCCC row.
+- The fixture-based native smoke path is healthy again, but the ad hoc scripted live-folder desktop check still needs a cleaner wrapper if we want a repeatable one-command read-only run against the user's real Downloads and Mods folders.
 - The reinstall fix was proven through same-version desktop smoke coverage, but deeper non-MCCC apply or repair flows still need broader real desktop coverage.
 - Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
@@ -253,6 +288,7 @@
 
 - Keep local installed-vs-downloaded truth as the real authority for Inbox decisions.
 - Keep official latest as helper-only extra context.
+- Keep visible Inbox state for supported special mods tied to the final special-mod decision, not the older raw `status` and `intakeMode` fields.
 - Keep growing the special-mod system through shared compare/evidence/test helpers plus seed data, instead of copy-pasting mod-specific logic everywhere.
 - Keep `SESSION_HANDOFF.md` as the main cross-session baton-pass file.
 - Keep `docs/IMPLEMENTATION_STATUS.md` as the broader project memory.
@@ -267,6 +303,9 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
+- The same-version Lot 51 and XML Injector issue was two separate problems:
+  - local compare truth is now fixed
+  - visible queue/header badges now follow that truth
 - The current built-in special-mod families are now covered in the real desktop base smoke lane, so the next validation step is no longer “add basic coverage.”
 - The unrelated ZIP decision is now done:
   - ZIPs with no Sims files are auto-ignored
@@ -280,6 +319,7 @@
   - helper-only official latest gaps
   - deeper apply and blocked-flow coverage for non-MCCC supported mods
   - a smaller selected-item detail optimization pass only if it still feels heavy in real use
+- If another same-version display mismatch shows up, check the UI first for any place still rendering raw `status` or `intakeMode` instead of the special-mod decision.
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting challenge pages.
 - Keep MCCC, GitHub release parsing, and XML Injector parsing as the known-good online helpers.
 - Then extend the real desktop fixture lane from base validation into deeper scenarios for the remaining supported families:

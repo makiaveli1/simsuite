@@ -110,6 +110,7 @@
       "reviewed_at": "2026-03-09",
       "sample_filenames": [
         "Lot51_CoreLibrary.ts4script",
+        "lot51_core.ts4script",
         "lot51_core_library.package"
       ],
       "version_file_hints": ["Lot51_CoreLibrary", "Core Library"],
@@ -118,7 +119,7 @@
         "Keep one current Lot 51 Core Library install.",
         "If another mod says it needs Core Library, update the library first."
       ],
-      "required_name_clues": ["corelibrary", "lot51corelibrary", "lot51core"],
+      "required_name_clues": ["corelibrary", "lot51corelibrary", "lot51core", "lot51 core"],
       "script_prefixes": ["lot51_core", "lot51core"],
       "package_prefixes": ["lot51_core", "lot51core"],
       "name_clues": ["lot 51 core library", "lot51 core library", "lot51 core"],
