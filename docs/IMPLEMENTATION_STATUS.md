@@ -4,217 +4,82 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 13, 2026)
 
-This session did two important things:
-
-1. it finished the highest-value live Inbox performance cleanup instead of guessing from browser preview behavior
-2. it kept the repo memory and handoff system up to date with real desktop timing results
+This session moved SimSuite from a mostly special-mod-only version story to one shared version and update-watch foundation for all content.
 
 Important changes and findings:
 
-- a final same-version special-mod mismatch was traced in the real app:
-  - Lot 51 Core Library and XML Injector were already comparing correctly in the selected detail panel
-  - but some queue-row and header badges were still showing older raw `Special setup` and `Ready` state
-  - the visible Inbox state for supported special mods now follows the final special-mod decision instead
-- queue hydration now carries the lightweight special-mod decision for supported queue rows too, not just the selected detail panel:
-  - this keeps row summaries and lane counts aligned with the same local compare truth
-  - top lane counts are now recalculated from the enriched queue items after special-mod hydration
-- `.ts4script` version reading is now stricter and more useful:
-  - `game_version` payload files are ignored as version evidence
-  - manifest files such as `modfilemanifest.yml` are read as version evidence
-  - this fixed the false Lot 51 `1.105.x` game-patch reading and restored the real local mod version `1.41`
-- the Tauri desktop WebDriver launcher now tolerates a clean `tauri-driver` handoff instead of failing early
-- the fixture-based real desktop smoke lane passes again after that launcher fix
-- supported same-version special-mod reinstalls are now more consistent in Inbox:
-  - the selected-item compare path could already know when a safe reinstall was ready
-  - but the action area could still trust an older row state and only show `Ignore`
-  - the selected-item action logic now trusts the fuller special-mod decision and guided plan when deciding whether to show a reinstall action
-- selection hydration now upgrades the selected item to guided-ready when the loaded special-mod decision is apply-ready, even if the saved queue row was older
-- a new backend regression test now protects that same-version reinstall case with XML Injector fixture data
-- the real desktop base smoke now checks for reinstall-button visibility on same-version supported special mods, not just compare text
-- XML Injector now has a safe helper-only official latest source:
-  - the built-in profile now points at the readable official page on `scumbumbomods.com`
-  - SimSuite can read the current XML Injector version there without adding risky bypass logic
-- helper-only latest widening is still intentionally limited:
-  - Lot 51 and the CurseForge-backed supported mods still stay `unknown`
-  - plain app-style requests to those sources still hit challenge pages
-  - SimSuite should keep waiting for safe official endpoints instead of forcing a workaround
-- the real desktop special-mod smoke lane now covers every currently supported built-in family in base mode:
+- the backend now has one shared version-and-match layer for all content:
+  - `file_inspector` collects structured `versionSignals`
+  - `content_versions` builds local content subjects, finds the best installed match, and returns compare status plus confidence
+  - weak matches stay `unknown` instead of pretending to know
+- `versionHints` are still kept as the short compatibility summary, but they are now derived from stronger structured signals
+- Inbox can now compare normal mods and CC too when the local installed match is strong enough
+- the compare result now has a separate confidence level:
+  - `exact`
+  - `strong`
+  - `medium`
+  - `weak`
+  - `unknown`
+- signature matches still win as the strongest same-version proof
+- if version labels match but fingerprints do not, the result stays cautious instead of calling it current
+- supported special mods now sit on top of the same shared foundation instead of using a separate version world
+- `versionStrategy` is now active in real profile data for the built-in supported special mods:
+  - the seed model now reads `versionStrategy` correctly
+  - inside-file clues can win over names where that is the right rule
+  - old stored `versionHints` can still help as a migration bridge when `versionSignals` are missing
+- the current built-in supported mods now run on that profile-driven version-rule path:
   - MCCC
   - XML Injector
   - Lot 51 Core Library
   - Sims 4 Community Library
   - Lumpinou Toolbox
   - Smart Core Script
-- package-backed support-library compares are now more trustworthy in the real app:
-  - if the installed side is missing a saved hash for a `.package` file
-  - SimSuite now falls back to hashing the real installed file from disk
-  - this stops false `Version could not be compared` results when the installed and downloaded packs are actually the same
-- a new backend regression test now covers that missing-installed-hash support-library case
-- future special-mod growth should stay shared and data-driven:
-  - keep common compare, evidence, and smoke logic reusable
-  - keep mod-specific differences in seed data or small strategy hooks instead of repeated per-mod branches
-- real live Inbox timing was traced properly instead of guessed:
-  - an optional debug perf file can now be written with `SIMSUITE_PERF_TRACE_PATH`
-  - that showed the real Downloads watcher pass was already fast at about `0.38s` to `0.51s`
-  - the real slowdown was `downloads_queue::enrich`, because the queue was still rebuilding full special-mod decisions for visible rows
-- the special-mod evaluation path now reuses its context properly:
-  - cached queue and selection paths now reuse one installed Mods inventory
-  - cached evaluation now reuses loaded files and installed-layout checks instead of silently falling back to the uncached evaluator
-- installed-layout checks are lighter now:
-  - the installed Mods inventory resolves disk truth once when it is built
-  - the app no longer re-checks every installed file path again for each special-mod profile
-- the Inbox queue is lighter again in the real desktop app:
-  - queue rows now stay on lightweight lane and summary logic
-  - the full special-mod decision stays on the selected item panel instead of every visible row
-- new real desktop live timings on the user's actual setup now show:
-  - first Inbox open to real visible items: about `1.07s`
-  - heavy selected MCCC detail to version section: about `1.95s`
-  - this is a major improvement from the earlier live first-open timing of about `12.38s`
-- Inbox refresh work was tightened again after a regression report:
-  - local Inbox actions were still causing too many queue reload paths to pile up
-  - the Downloads screen now keeps one main post-action reload path instead of mixing local reloads, watcher follow-up reloads, and workspace-triggered reloads back to back
-  - watcher status refresh after local actions now happens in the background instead of blocking the whole Inbox action path
-  - the right panel now reloads on selected-item `id` and `updatedAt`, instead of every queue rebuild
-- the real Tauri desktop fixture app still passes after that Inbox reload cleanup:
-  - open Inbox
-  - refresh Inbox
-  - apply MCCC update
-  - keep version evidence and post-apply state correct
-- special-mod review links are now checked more strictly before SimSuite opens or downloads anything
-- `.7z` and `.rar` downloads are now held for review instead of being unpacked automatically
-- watcher refresh now has a narrower path for ordinary file-system events instead of always rescanning the whole Downloads tree
-- special-mod queue rows now use a lighter summary while the selected item keeps the full detail and evidence
-- a real Tauri desktop smoke lane now exists with isolated fixture folders, so Inbox can be tested without touching the user's real Mods or Downloads folders
-- the real desktop MCCC flow was checked end to end, including selection, version evidence, refresh, and safe apply
-- the local compare result in the tested MCCC flow was accurate:
-  - installed `2025.9.0`
-  - incoming `2026.1.1`
-  - result `Incoming pack is newer`
-- after safe apply, SimSuite updated the installed version to `2026.1.1` and preserved the `.cfg` settings file
-- the post-apply family-ranking bug has now been fixed in backend logic:
-  - applied fuller family packs stay in the sibling comparison instead of disappearing
-  - weaker leftover siblings no longer get the wrong “open the other Inbox item first” action in the backend decision path
-- a new backend regression test now covers that exact post-apply MCCC family case
-- a watcher startup bug was fixed so the first Inbox refresh no longer fails silently and leaves the watcher stuck in `processing`
-- archive staging roots are now unique per fresh source, so two new downloads arriving in the same second do not contaminate each other
-- the post-apply full-pack item now reuses the installed family anchor instead of being misread as an incomplete fresh download
-- covered leftover special-mod items now drop stale “download missing files” actions once a fuller family pack is already installed
-- the blocked leftover panel wording now matches the backend truth better instead of still sounding like an unresolved blocker
-- the native Tauri smoke wrapper is now steadier:
-  - it reads body text in a safer way
-  - it survives short body-refresh gaps after apply
-  - apply mode follows a simpler path instead of doing extra pre-apply refresh work
-  - it runs `tauri build -- --debug` by default so it uses the real desktop app surface
-- `.ts4script` same-version comparison is now more trustworthy for supported special mods:
-  - SimSuite now hashes the real inner script contents instead of trusting the outer zip wrapper bytes
-  - this avoids false “unknown” results when two logically identical script mods were zipped at different times
-- the native desktop smoke lane is now more trustworthy too:
-  - it clicks the real Inbox queue row buttons by item name instead of any matching text on the page
-  - that removed a false failure where the smoke test was reacting to a different item elsewhere in the Inbox
-- XML Injector is now covered better in the real desktop fixture app:
-  - same-version flow
-  - older-version flow
-  - version evidence display
-- Lot 51 Core Library is now covered too:
-  - same-version flow
-  - older-version flow
-  - package-backed same-version comparison in the real desktop app
-- Lumpinou Toolbox is now covered too:
-  - same-version flow
-  - older-version flow
-  - package-backed same-version comparison in the real desktop app
-- Sims 4 Community Library is now covered too:
-  - same-version flow
-  - older-version flow
-  - real desktop version evidence display
-- Smart Core Script is now covered too:
-  - same-version flow
-  - older-version flow
-  - real desktop version evidence display
-- a live helper-only latest check gap was confirmed:
-  - direct app-style requests to CurseForge and Lot 51 still hit Cloudflare challenge pages
-  - this means the remaining helper-only latest gaps need safe official endpoints, not brittle workarounds
-- a real live Inbox bottleneck was found and fixed:
-  - safe read-only desktop checks against the user's actual Downloads folder showed that Inbox was filling the real database but still looked stuck in `Checking your Downloads inbox...`
-  - the main slowdown was the filename duplicate rebuild that ran after every downloads refresh
-  - on a safe copy of the real database that old filename duplicate step took about 107 seconds
-  - that duplicate step now uses a grouped Rust pass instead of the slow full-table self-join
-- ZIP handling is lighter now too:
-  - ZIP archives get a fast name-only check before unpacking
-  - SimSuite only unpacks ZIPs when they actually contain Sims files
-  - `.7z` and `.rar` still stay blocked for safety
+- Lumpinou Toolbox is now a proof case for the new rule layer:
+  - noisy runtime clues are no longer enough on their own
+  - cleaner local filename clues can take priority
+- Library now has installed-version awareness without turning into another Inbox:
+  - selected detail shows installed version summary
+  - selected detail shows local version evidence
+  - selected detail shows watch status
+  - Library list rows are still kept simple
+- Home now rolls up the broader update-watch picture without adding more stacked boxes:
+  - exact updates
+  - possible updates
+  - unknown watch state
+- generic watch results now have a proper model:
+  - exact page vs creator page
+  - current vs exact update vs possible update vs unknown
+  - helper-only status that does not override local Inbox truth
+- the long-term growth scaffolding is now in the repo:
+  - `docs/SPECIAL_MOD_ONBOARDING.md`
+  - `docs/SPECIAL_MOD_CANDIDATES.json`
+- the frozen external Sims mod index stays reference-only and is not used as runtime truth or a maintenance source
+- the real fixture-backed desktop smoke still passes after the shared version foundation work
+- the current shared foundation builds on the earlier Inbox performance work instead of undoing it:
+  - queue stays light
+  - selected detail keeps the heavier evidence work
+  - no new network dependence was added to the local compare hot path
 
 Important follow-up result:
 
-- same-version reinstall support is now properly visible beyond MCCC:
-  - the selected item action area now follows the fuller special-mod decision instead of stale row state
-  - same-version supported special mods can keep offering a safe reinstall path when the local compare says the installed and incoming copies match
-- the original post-apply family bug was real and is now fixed in backend code, UI wording, and real desktop checks
-- the real desktop base Inbox smoke passes
-- the real desktop special-mod apply smoke passes
-- the real desktop base smoke now also proves XML Injector same-version and older-version handling
-- the real desktop base smoke now also proves Sims 4 Community Library same-version and older-version handling
-- the real desktop XML Injector same-version result is now correct:
-  - installed `4.0`
-  - incoming `4.0`
-  - result `Installed and incoming match`
-  - inner-file evidence wins over outer zip noise
-- the real desktop Lot 51 Core Library result is now correct:
-  - same-version downloads settle into the already-current path
-  - older downloads stay out of the update path
-  - the old false `Version could not be compared` result is gone when installed package hashes were simply missing from the saved index
-- the real desktop Lumpinou Toolbox result is now correct:
-  - same-version downloads settle into the already-current path
-  - older downloads stay out of the update path
-- the real desktop Sims 4 Community Library result is now correct:
-  - same-version downloads settle into the already-current path
-  - older downloads stay out of the update path
-  - local evidence still drives the result in the real app
-- the real live Inbox no longer hangs forever on first open:
-  - in the user's actual desktop setup, Inbox now reaches the real queue in about `1.07s`
-  - the queue shows the expected live items such as MCCC, Lot 51 Core Library, and XML Injector
-  - the watcher state now settles back to `Watching`
-- the biggest freeze cause is now understood and reduced:
-  - it was not mainly queue rendering
-  - it was not mainly ZIP extraction anymore
-  - it was the duplicate rebuild work happening before the watcher reported Inbox as ready
-- the current fixture-backed real desktop result for MCCC after apply is now:
-  - the full pack lands in the done lane
-  - the full pack reads as matching the installed version
-  - the leftover partial pack reads as already covered by the fuller installed family pack
-  - the leftover pack recommends ignoring the archive instead of trying to fetch another copy first
-- normal live Inbox is cleaner now:
-  - ZIP downloads that clearly contain no Sims mod or Tray files are auto-marked `ignored`
-  - ignored items are hidden from the normal Inbox queue and top counts unless the user explicitly opens the `Ignored` filter
-  - a safe read-only real desktop check against the user's actual Downloads folder proved that real Sims downloads still show while unrelated ZIP noise stays out of the normal queue
-  - unsupported `.7z` files still stay visible because SimSuite is still choosing safety over guesswork for those archive types
-- the Inbox window-thread freeze has been reduced:
-  - the heavy Inbox Tauri commands now run on background blocking workers instead of the foreground window thread
-  - this covers queue load, bootstrap load, selected-item load, preview/guided/review plan loads, apply paths, review-action paths, and ignore
-  - the goal was simple: keep the app usable while Inbox work is still happening
-- new real desktop timing checks now show the split clearly:
-  - isolated fixture app:
-    - first Inbox open to ready items: about `1.24s`
-    - special-mod selection to the version panel: about `0.10s` to `0.15s`
-    - refresh to stable: about `0.38s`
-  - user's actual Downloads-backed app:
-    - first Inbox open to ready state: about `1.07s`
-    - MCCC selection to version panel: about `1.95s`
-    - the watcher sync itself: about `0.38s` to `0.51s`
-    - refresh followed by an immediate switch to Home: about `0.36s`
-- this now shows a clearer split:
-  - the old first-open queue bottleneck is mostly fixed
-  - the remaining heavier path is selected-item special-mod detail, not the Downloads watcher pass
+- the earlier Inbox speed work still holds:
+  - real live first-open is still about `1.07s`
+  - the queue still stays light
+  - selected special detail is still the heavier path at about `1.95s`
+- the special-mod rework did not pull the app back into the old freeze state
+- the real fixture-backed desktop smoke still proves the current built-in supported special-mod flows
+- the app now has a path to scale beyond the current six supported special mods without growing a new Rust branch for every version rule change
 
 Important remaining gap:
 
-- the worst Inbox freeze is fixed in the user's real desktop setup, and live first-open is now about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s`
-- the ad hoc scripted real-folder desktop check still needs a cleaner wrapper if we want a repeatable one-command read-only run against the user's actual Downloads and Mods folders
-- deeper non-MCCC apply and repair desktop checks still need to be widened, even though same-version reinstall visibility is now covered
-- helper-only official latest support is still too narrow for the remaining supported special mods whose official sources are not safely readable by plain app requests
-- XML Injector is now covered safely, but direct non-browser requests to CurseForge and Lot 51 are still blocked by challenge pages, so those helpers still need a safe official machine-readable source before they can be widened in the app
-- unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior
-- the raw debug Tauri desktop smoke lane currently expects the local Vite frontend to be reachable at `http://localhost:1420`; otherwise the driver lands on a `localhost refused to connect` page instead of the app UI
+- the next missing product layer is user-facing watch management:
+  - the app can show watch results now
+  - but broader setup and editing flows still need careful product work
+- helper-only official latest support is still narrow where the source is not safely readable by plain app requests
+- deeper non-MCCC apply and repair desktop checks still need to be widened
+- the first curated post-foundation expansion wave has not started yet
+- heavy selected-item special-mod detail is still slower than the queue in real desktop use
+- the raw debug Tauri desktop smoke lane still expects the local Vite frontend to be reachable at `http://localhost:1420`
 
 Repo memory is now expected to live in:
 
@@ -484,15 +349,15 @@ Missing:
 
 ## Recommended next effort
 
-The highest-value next step is to stabilize Inbox fully before moving on to broader feature growth:
+The highest-value next step is to finish the first user-facing layer on top of the new shared version and update-watch foundation:
 
-1. measure the real desktop Inbox slow paths and lock windows
-2. remove repeated special-mod and detail-panel work from interactive Inbox flows
-3. keep Home, Library, Organize, Review, and Duplicates correctly synced without broad refreshes
-4. widen helper-only official latest parsing only where there is a safe official endpoint the app can fetch without brittle bypass work
-5. expand the real desktop special-mod fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library
+1. add a careful watch-source flow for installed content
+2. widen helper-only official latest parsing only where there is a safe official endpoint the app can fetch without brittle bypass work
+3. expand the real desktop special-mod fixture lane deeper for non-MCCC apply and blocked flows
+4. use `docs/SPECIAL_MOD_ONBOARDING.md` and `docs/SPECIAL_MOD_CANDIDATES.json` for the first small post-foundation expansion wave
+5. keep watching selected-item Inbox detail performance so the broader compare system does not make the screen feel heavy again
 
-After Inbox is solid again, the next large product steps remain:
+After that first layer is solid, the next large product steps remain:
 
 1. snapshot-backed duplicate cleanup actions
 2. full Mirror Mode / Assisted Migration / Fresh Setup workflows

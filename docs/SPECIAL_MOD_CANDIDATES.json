@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "1.0.0",
+  "updatedAt": "2026-03-13",
+  "items": [
+    {
+      "key": "mccc",
+      "displayName": "MC Command Center",
+      "officialSourceUrl": "https://deaderpool-mccc.com/downloads.html",
+      "status": "supported",
+      "whyItMatters": "Widely used gameplay suite that benefits from guided install, safe updates, and settings preservation.",
+      "installShapeNotes": "Mixed script and package suite. One shallow folder is preferred. Existing .cfg files should be preserved during updates.",
+      "dependencyNotes": "No built-in dependency requirement.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Local file fingerprint, inside-file clues, and filename clues are all used.",
+      "latestCheckNotes": "Helper-only latest check is supported from the official downloads page.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for base flow and safe apply.",
+      "referenceNotes": "Seeded from the local reviewed special-mod catalog. External Sims mod indexes stay reference-only."
+    },
+    {
+      "key": "xml_injector",
+      "displayName": "XML Injector",
+      "officialSourceUrl": "https://scumbumbomods.com/xml-injector",
+      "status": "supported",
+      "whyItMatters": "Common support library that other mods depend on, so clear same-version and update checks matter.",
+      "installShapeNotes": "Single script-based support library. Root install is allowed, but one shallow folder is still safe.",
+      "dependencyNotes": "Often required by other mods, so Inbox dependency messages should stay clear.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Noisy runtime values like Python version clues are ignored.",
+      "latestCheckNotes": "Helper-only latest check is supported from the readable official page.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for same-version and older-version checks.",
+      "referenceNotes": "Use the official page as the watch helper. Do not depend on mirrors or challenge-bypass approaches."
+    },
+    {
+      "key": "lot51_core_library",
+      "displayName": "Lot 51 Core Library",
+      "officialSourceUrl": "https://lot51.cc/mods/core-library",
+      "status": "supported",
+      "whyItMatters": "Important support library with package-backed installs that exposed false version reads before the rework.",
+      "installShapeNotes": "Support-library install with predictable core files. Root-level install is valid unless the profile later needs stricter handling.",
+      "dependencyNotes": "Acts as a dependency for other mods rather than needing one itself in the current seed rules.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Game patch noise must be ignored. Manifest and local package clues matter more than loose text.",
+      "latestCheckNotes": "Helper-only latest check stays unknown for now because plain app requests hit a challenge page.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for same-version and older-version checks.",
+      "referenceNotes": "Keep waiting for a safe official machine-readable endpoint instead of adding brittle workarounds."
+    },
+    {
+      "key": "sims_4_community_library",
+      "displayName": "Sims 4 Community Library",
+      "officialSourceUrl": "https://github.com/ColonolNutty/Sims4CommunityLibrary",
+      "status": "supported",
+      "whyItMatters": "Core support library with a clean official release source that is useful as a stable rule example.",
+      "installShapeNotes": "Predictable support-library layout with shallow install expectations.",
+      "dependencyNotes": "Acts as a dependency for other mods rather than needing one itself in the current seed rules.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Inside-file and filename clues both work well here.",
+      "latestCheckNotes": "Helper-only latest check is supported through the official GitHub releases path.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for same-version and older-version checks.",
+      "referenceNotes": "This is a good example of a safe readable official source for future watch rules."
+    },
+    {
+      "key": "lumpinou_toolbox",
+      "displayName": "Lumpinou Toolbox",
+      "officialSourceUrl": "https://www.curseforge.com/sims4/mods/lumpinous-toolbox-script-library",
+      "status": "supported",
+      "whyItMatters": "This mod proved why the version system needed a profile-driven rework instead of more one-off fixes.",
+      "installShapeNotes": "Support-library install with a predictable core file, but version clues can be noisy inside the script payload.",
+      "dependencyNotes": "Acts as a dependency for other Lumpinou mods in practice, so accurate same-version checks matter.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Clean filename clues are preferred and noisy runtime values must be ignored.",
+      "latestCheckNotes": "Helper-only latest check stays unknown for now because the official page is behind a challenge for plain app requests.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for same-version and older-version checks.",
+      "referenceNotes": "Use this profile as the proof case when adding future mods with messy internal version clues."
+    },
+    {
+      "key": "smart_core_script",
+      "displayName": "Smart Core Script",
+      "officialSourceUrl": "https://www.curseforge.com/sims4/mods/smart-core-script",
+      "status": "supported",
+      "whyItMatters": "Support library with predictable install behavior that helps exercise the shared compare path.",
+      "installShapeNotes": "Shallow support-library layout with a stable core install shape.",
+      "dependencyNotes": "Acts as a dependency for related mods rather than needing one itself in the current seed rules.",
+      "versionRuleNotes": "Profile-driven version strategy is active. Local clues are used first and saved state stays fallback-only.",
+      "latestCheckNotes": "Helper-only latest check stays unknown for now because the official page is behind a challenge for plain app requests.",
+      "fixtureStatus": "Real desktop fixture coverage is in place for same-version and older-version checks.",
+      "referenceNotes": "Keep future expansion data-driven so support-library mods like this do not need custom Rust branches."
+    }
+  ]
+}

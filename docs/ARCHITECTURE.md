@@ -17,6 +17,7 @@ Implemented modules:
 - `scanner`
 - `filename_parser`
 - `bundle_detector`
+- `content_versions`
 - `duplicate_detector`
 - `downloads_watcher`
 - `install_profile_engine`
@@ -64,9 +65,9 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
-## Current engineering note (March 11, 2026)
+## Current engineering note (March 13, 2026)
 
-The current app is no longer just a scan-and-sort shell. It already has a real Downloads Inbox, a real guided special-mod pipeline, and real snapshot-backed apply flows.
+The current app is no longer just a scan-and-sort shell. It already has a real Downloads Inbox, a real guided special-mod pipeline, real snapshot-backed apply flows, and one shared version-and-watch foundation for all content.
 
 Important current behavior:
 
@@ -75,11 +76,35 @@ Important current behavior:
 - `Library`, `Creator Audit`, and `Category Audit` feed learned data back into later scans and suggestions
 - `Review` is the hold queue for files that still need a human decision
 - `Duplicates` is inspection-only right now
+- `Home` can now summarize broader update-watch status without turning into another busy dashboard
+
+Important current version-and-watch architecture:
+
+- `file_inspector` now collects structured local `versionSignals` for all content
+- `FileInsights.versionHints` stays as the short compatibility summary, but it is no longer the whole version story
+- `content_versions` builds one local subject for a download or installed item and then:
+  - scores the best installed match
+  - compares versions
+  - returns a separate confidence result
+  - stays cautious when the match is weak or the local clues disagree
+- generic downloads can now compare against installed content when the local match is strong enough
+- weak generic matches stay `unknown` instead of pretending to know
+- `Library` now shows installed-version facts and watch status in the detail panel only
+- `Home` now rolls up:
+  - exact updates
+  - possible updates
+  - unknown watch status
+- watch data is stored separately from local compare truth:
+  - local compare still decides Inbox version truth
+  - watch results stay helper-only
+- guided install is still special-mod-only
+- community lists and third-party indexes are still reference material only, not runtime truth
 
 Important current special-mod architecture:
 
 - the app has a built-in special-mod catalog in `seed/install_profiles.json`
 - special mods are handled with per-mod rules, not one shared MCCC rule
+- special-mod profiles can now declare `versionStrategy` rules in seed data
 - the repeatable parts of special-mod handling should stay shared:
   - common compare logic
   - common evidence building
@@ -108,7 +133,11 @@ Current integration and performance work already in place:
 Current biggest known gap:
 
 - Inbox is much healthier in real desktop use now, but richer selected-item special-mod detail can still feel heavier than the rest of the screen
-- the remaining work should focus on trimming that selected-item detail path and extending deeper apply or blocked-flow validation before growing the catalog further
+- broader watch-source setup and management still needs careful product work
+- the remaining work should focus on:
+  - trimming that selected-item detail path
+  - widening safe helper-only latest sources
+  - extending deeper apply or blocked-flow validation before growing the catalog further
 
 ## Known gaps versus the full product plan
 
@@ -116,6 +145,7 @@ Current biggest known gap:
 - duplicate detection covers exact, filename, and version cases, but safe duplicate cleanup actions are still missing
 - tray bundles are grouped; broader mod-set bundle detection is not implemented
 - the special mod catalog covers the first curated wave only; broader curated profile, dependency, and incompatibility coverage is still pending
+- the shared version foundation is in place for all content, but broader user-facing watch management and later Library watch filters are still pending
 - option-pack and manual-step archives are detected and routed to review, but SimSuite does not yet guide users through choosing install variants
 - AI classification is not wired to Ollama or llama.cpp yet
 - patch recovery tooling is still pending
