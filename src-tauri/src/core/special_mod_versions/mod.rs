@@ -29,6 +29,7 @@ pub struct VersionComparison {
     pub incoming_signature: Option<String>,
     pub version_status: SpecialVersionStatus,
     pub same_version: bool,
+    pub same_version_signature_mismatch: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -290,14 +291,28 @@ pub fn build_version_comparison(
     installed: &SpecialInstalledState,
     incoming_version: Option<String>,
     incoming_signature: Option<String>,
+    allow_same_version_signature_mismatch: bool,
 ) -> VersionComparison {
-    let version_status = compare_versions(
+    let base_status = compare_versions(
         installed.install_state != SpecialExistingInstallState::NotInstalled,
         installed.installed_version.as_deref(),
         installed.installed_signature.as_deref(),
         incoming_version.as_deref(),
         incoming_signature.as_deref(),
     );
+    let same_version_signature_mismatch = matches!(base_status, SpecialVersionStatus::Unknown)
+        && allow_same_version_signature_mismatch
+        && same_release_label_mismatch_only(
+            installed.installed_version.as_deref(),
+            installed.installed_signature.as_deref(),
+            incoming_version.as_deref(),
+            incoming_signature.as_deref(),
+        );
+    let version_status = if same_version_signature_mismatch {
+        SpecialVersionStatus::SameVersion
+    } else {
+        base_status
+    };
     let same_version = version_status == SpecialVersionStatus::SameVersion;
 
     VersionComparison {
@@ -305,7 +320,29 @@ pub fn build_version_comparison(
         incoming_signature,
         version_status,
         same_version,
+        same_version_signature_mismatch,
     }
+}
+
+fn same_release_label_mismatch_only(
+    installed_version: Option<&str>,
+    installed_signature: Option<&str>,
+    incoming_version: Option<&str>,
+    incoming_signature: Option<&str>,
+) -> bool {
+    let (Some(installed), Some(incoming), Some(left_signature), Some(right_signature)) = (
+        installed_version.and_then(parse_version_parts),
+        incoming_version.and_then(parse_version_parts),
+        installed_signature,
+        incoming_signature,
+    ) else {
+        return false;
+    };
+
+    installed == incoming
+        && !left_signature.is_empty()
+        && !right_signature.is_empty()
+        && left_signature != right_signature
 }
 
 pub fn load_or_refresh_latest_info(
@@ -773,6 +810,22 @@ mod tests {
     };
     use crate::models::SpecialVersionStatus;
     use crate::seed::load_seed_pack;
+
+    #[test]
+    fn lumpinou_toolbox_uses_same_release_signature_policy() {
+        let pack = load_seed_pack().expect("seed pack");
+        let profile = pack
+            .install_catalog
+            .guided_profiles
+            .into_iter()
+            .find(|profile| profile.key == "lumpinou_toolbox")
+            .expect("lumpinou toolbox profile");
+        let policy = profile
+            .version_strategy
+            .as_ref()
+            .and_then(|strategy| strategy.same_version_signature_policy.as_deref());
+        assert_eq!(policy, Some("same_release"));
+    }
 
     #[test]
     fn parses_mccc_latest_from_downloads_page_html() {

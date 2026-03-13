@@ -274,7 +274,8 @@
             "pattern": "^(\\d+)\\.(\\d{3})(\\d)$",
             "replace": "$1.$2.$3"
           }
-        ]
+        ],
+        "sameVersionSignaturePolicy": "same_release"
       },
       "help_summary": "Lumpinou Toolbox is a shared support set. Keep it together in one shallow folder so dependent mods stay easy to update and troubleshoot.",
       "post_install_notes": [

@@ -177,6 +177,63 @@ pub fn resolve_library_file_version(
     Ok((installed_summary, watch_result))
 }
 
+pub fn save_watch_source_for_library_file(
+    connection: &Connection,
+    settings: &crate::models::LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+    source_kind: WatchSourceKind,
+    source_label: Option<String>,
+    source_url: &str,
+) -> AppResult<Option<WatchResult>> {
+    let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+        return Ok(None);
+    };
+
+    let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+    let subject_rows = load_subject_rows_for_locator(
+        connection,
+        settings.mods_path.as_deref(),
+        &locator,
+        file_row.id,
+    )?;
+    let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+
+    save_watch_source_for_subject(
+        connection,
+        &subject.key,
+        source_kind,
+        source_label,
+        source_url,
+    )?;
+
+    resolve_watch_result(connection, seed_pack, &subject)
+}
+
+pub fn clear_watch_source_for_library_file(
+    connection: &Connection,
+    settings: &crate::models::LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+) -> AppResult<Option<WatchResult>> {
+    let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+        return Ok(None);
+    };
+
+    let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+    let subject_rows = load_subject_rows_for_locator(
+        connection,
+        settings.mods_path.as_deref(),
+        &locator,
+        file_row.id,
+    )?;
+    let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+
+    clear_watch_source_for_subject(connection, &subject.key)?;
+
+    resolve_watch_result(connection, seed_pack, &subject)
+}
+
 pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> {
     let exact_generic = scalar(
         connection,
@@ -217,6 +274,52 @@ pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> 
 
 fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {
     Ok(connection.query_row(sql, [], |row| row.get(0))?)
+}
+
+pub fn save_watch_source_for_subject(
+    connection: &Connection,
+    subject_key: &str,
+    source_kind: WatchSourceKind,
+    source_label: Option<String>,
+    source_url: &str,
+) -> AppResult<()> {
+    connection.execute(
+        "INSERT INTO content_watch_sources (
+            subject_key,
+            source_kind,
+            source_label,
+            source_url,
+            approved_by_user,
+            updated_at
+        ) VALUES (?1, ?2, ?3, ?4, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(subject_key) DO UPDATE SET
+            source_kind = excluded.source_kind,
+            source_label = excluded.source_label,
+            source_url = excluded.source_url,
+            approved_by_user = excluded.approved_by_user,
+            updated_at = CURRENT_TIMESTAMP",
+        params![
+            subject_key,
+            match source_kind {
+                WatchSourceKind::ExactPage => "exact_page",
+                WatchSourceKind::CreatorPage => "creator_page",
+            },
+            source_label,
+            source_url,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn clear_watch_source_for_subject(
+    connection: &Connection,
+    subject_key: &str,
+) -> AppResult<()> {
+    connection.execute(
+        "DELETE FROM content_watch_sources WHERE subject_key = ?1",
+        params![subject_key],
+    )?;
+    Ok(())
 }
 
 fn parse_file_insights(value: String) -> FileInsights {
@@ -1374,7 +1477,29 @@ fn resolve_watch_result(
             note: result.note,
             evidence: result.evidence,
         })),
-        _ => Ok(Some(WatchResult {
+        (Some(source), None) => Ok(Some(WatchResult {
+            status: WatchStatus::NotWatched,
+            source_kind: Some(source.source_kind),
+            source_label: source.source_label,
+            source_url: Some(source.source_url),
+            latest_version: None,
+            checked_at: None,
+            confidence: VersionConfidence::Unknown,
+            note: Some("Watch source is saved, but it has not been checked yet.".to_owned()),
+            evidence: Vec::new(),
+        })),
+        (None, Some(result)) => Ok(Some(WatchResult {
+            status: result.status,
+            source_kind: None,
+            source_label: None,
+            source_url: None,
+            latest_version: result.latest_version,
+            checked_at: result.checked_at,
+            confidence: result.confidence,
+            note: result.note,
+            evidence: result.evidence,
+        })),
+        (None, None) => Ok(Some(WatchResult {
             status: WatchStatus::NotWatched,
             source_kind: None,
             source_label: None,

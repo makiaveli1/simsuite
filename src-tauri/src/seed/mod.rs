@@ -168,6 +168,7 @@ pub struct VersionStrategySeed {
     pub payload_patterns: Vec<VersionSignalPathPatternSeed>,
     pub ignored_patterns: Vec<String>,
     pub rewrites: Vec<VersionRewriteSeed>,
+    pub same_version_signature_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

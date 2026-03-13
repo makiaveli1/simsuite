@@ -4228,6 +4228,48 @@ async function mockInvoke<T>(
         structuredClone(mockFiles.find((item) => item.id === fileId) ?? null) as T
       );
     }
+    case "save_watch_source_for_file": {
+      const fileId = payload?.fileId as number;
+      const sourceKind = String(payload?.sourceKind ?? "") as WatchSourceKind;
+      const sourceUrl = String(payload?.sourceUrl ?? "").trim();
+      const sourceLabel = payload?.sourceLabel
+        ? String(payload.sourceLabel).trim()
+        : "";
+      const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
+
+      if (fileIndex === -1 || !sourceUrl || (sourceKind !== "exact_page" && sourceKind !== "creator_page")) {
+        return null as T;
+      }
+
+      const next = structuredClone(mockFiles[fileIndex]);
+      next.watchResult = {
+        status: "not_watched",
+        sourceKind,
+        sourceLabel: sourceLabel || null,
+        sourceUrl,
+        latestVersion: null,
+        checkedAt: null,
+        confidence: "unknown",
+        note: "Watch source is saved, but it has not been checked yet.",
+        evidence: [],
+      };
+
+      mockFiles[fileIndex] = next;
+      return structuredClone(next) as T;
+    }
+    case "clear_watch_source_for_file": {
+      const fileId = payload?.fileId as number;
+      const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
+
+      if (fileIndex === -1) {
+        return null as T;
+      }
+
+      const next = structuredClone(mockFiles[fileIndex]);
+      next.watchResult = buildMockWatchResult(next);
+      mockFiles[fileIndex] = next;
+      return structuredClone(next) as T;
+    }
     case "save_creator_learning": {
       const fileId = payload?.fileId as number;
       const creatorName = String(payload?.creatorName ?? "").trim();
@@ -4716,6 +4758,22 @@ export const api = {
     invoke<LibraryListResponse>("list_library_files", { query }),
   getFileDetail: (fileId: number) =>
     invoke<FileDetail | null>("get_file_detail", { fileId }),
+  saveWatchSourceForFile: (
+    fileId: number,
+    sourceKind: WatchSourceKind,
+    sourceLabel: string | undefined,
+    sourceUrl: string,
+  ) =>
+    invoke<FileDetail | null>("save_watch_source_for_file", {
+      fileId,
+      sourceKind,
+      sourceLabel,
+      sourceUrl,
+    }),
+  clearWatchSourceForFile: (fileId: number) =>
+    invoke<FileDetail | null>("clear_watch_source_for_file", {
+      fileId,
+    }),
   saveCategoryOverride: (fileId: number, kind: string, subtype?: string) =>
     invoke<FileDetail | null>("save_category_override", {
       fileId,

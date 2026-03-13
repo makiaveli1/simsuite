@@ -33,6 +33,11 @@
 - March 13, 2026: added long-term growth docs:
   - `docs/SPECIAL_MOD_ONBOARDING.md`
   - `docs/SPECIAL_MOD_CANDIDATES.json`
+- March 13, 2026: fixed same-release handling for Lumpinou Toolbox so a same-version download with different file fingerprints is treated as a safe reinstall instead of “version unclear”, while MCCC stays strict.
+- March 13, 2026: added the first user-facing watch-source flow for installed content:
+  - Library detail can now save or clear per-subject watch sources (exact mod page or creator page).
+  - watch sources are stored in `content_watch_sources` with user approval.
+  - the watch resolver distinguishes between “no source saved” and “source saved but not yet checked”.
 
 ## What Was Tested
 

@@ -26,6 +26,7 @@ import type {
   UserView,
   VersionConfidence,
   WatchResult,
+  WatchSourceKind,
 } from "../lib/types";
 
 interface LibraryScreenProps {
@@ -92,6 +93,12 @@ export function LibraryScreen({
   const [categorySubtypeDraft, setCategorySubtypeDraft] = useState("");
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [watchEditing, setWatchEditing] = useState(false);
+  const [watchSourceKind, setWatchSourceKind] = useState<WatchSourceKind>("exact_page");
+  const [watchSourceLabel, setWatchSourceLabel] = useState("");
+  const [watchSourceUrl, setWatchSourceUrl] = useState("");
+  const [savingWatch, setSavingWatch] = useState(false);
+  const [watchMessage, setWatchMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -121,6 +128,11 @@ export function LibraryScreen({
       setCategoryKindDraft("");
       setCategorySubtypeDraft("");
       setCategoryMessage(null);
+      setWatchEditing(false);
+      setWatchSourceKind("exact_page");
+      setWatchSourceLabel("");
+      setWatchSourceUrl("");
+      setWatchMessage(null);
       return;
     }
 
@@ -132,6 +144,19 @@ export function LibraryScreen({
     setCategoryKindDraft(selected.categoryOverride.kind ?? selected.kind);
     setCategorySubtypeDraft(selected.categoryOverride.subtype ?? selected.subtype ?? "");
     setCategoryMessage(null);
+
+    const currentWatch = selected.watchResult;
+    if (currentWatch?.sourceKind && currentWatch.sourceUrl) {
+      setWatchSourceKind(currentWatch.sourceKind);
+      setWatchSourceLabel(currentWatch.sourceLabel ?? "");
+      setWatchSourceUrl(currentWatch.sourceUrl);
+    } else {
+      setWatchSourceKind("exact_page");
+      setWatchSourceLabel("");
+      setWatchSourceUrl("");
+    }
+    setWatchEditing(false);
+    setWatchMessage(null);
   }, [selected]);
 
   async function loadRows(preferredSelectedId?: number) {
@@ -250,6 +275,66 @@ export function LibraryScreen({
   const hasVersionWatchInfo = Boolean(
     selected?.installedVersionSummary || selected?.watchResult,
   );
+
+  async function saveWatchSource() {
+    if (!selected) {
+      return;
+    }
+
+    const trimmedUrl = watchSourceUrl.trim();
+    if (!trimmedUrl) {
+      setWatchMessage("Enter a watch URL first.");
+      return;
+    }
+
+    setSavingWatch(true);
+    setWatchMessage(null);
+
+    try {
+      const updated = await api.saveWatchSourceForFile(
+        selected.id,
+        watchSourceKind,
+        watchSourceLabel.trim() || undefined,
+        trimmedUrl,
+      );
+
+      if (!updated) {
+        return;
+      }
+
+      setSelected(updated);
+      setWatchEditing(false);
+      setWatchMessage("Watch source saved.");
+      await loadRows(updated.id);
+    } finally {
+      setSavingWatch(false);
+    }
+  }
+
+  async function clearWatchSource() {
+    if (!selected) {
+      return;
+    }
+
+    setSavingWatch(true);
+    setWatchMessage(null);
+
+    try {
+      const updated = await api.clearWatchSourceForFile(selected.id);
+      if (!updated) {
+        return;
+      }
+
+      setSelected(updated);
+      setWatchEditing(false);
+      setWatchSourceLabel("");
+      setWatchSourceUrl("");
+      setWatchMessage("Watch source cleared.");
+      await loadRows(updated.id);
+    } finally {
+      setSavingWatch(false);
+    }
+  }
   const libraryInspectorSections = selected
     ? [
         {
@@ -379,6 +464,111 @@ export function LibraryScreen({
                         </div>
                       </div>
                     ) : null}
+                    <div className="detail-block">
+                      <div className="section-label">
+                        {userView === "beginner" ? "Watch source" : "Watch settings"}
+                      </div>
+                      {!watchEditing ? (
+                        <div className="detail-row-actions">
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => {
+                              setWatchEditing(true);
+                              setWatchMessage(null);
+                            }}
+                          >
+                            {selected.watchResult?.sourceKind
+                              ? userView === "beginner"
+                                ? "Change watch source"
+                                : "Change watch source"
+                              : userView === "beginner"
+                                ? "Add watch source"
+                                : "Add watch source"}
+                          </button>
+                          {selected.watchResult?.sourceKind ? (
+                            <button
+                              type="button"
+                              className="ghost-action"
+                              disabled={savingWatch}
+                              onClick={() => void clearWatchSource()}
+                            >
+                              {userView === "beginner" ? "Stop watching" : "Clear watch source"}
+                            </button>
+                          ) : null}
+                          {watchMessage ? (
+                            <span className="creator-learning-message">{watchMessage}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="creator-learning-grid">
+                          <label className="field">
+                            <span>Source type</span>
+                            <select
+                              value={watchSourceKind}
+                              onChange={(event) =>
+                                setWatchSourceKind(event.target.value as WatchSourceKind)
+                              }
+                            >
+                              <option value="exact_page">Exact mod page</option>
+                              <option value="creator_page">Creator page</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>URL</span>
+                            <input
+                              value={watchSourceUrl}
+                              onChange={(event) => setWatchSourceUrl(event.target.value)}
+                              placeholder="https://example.com/mod-page"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Label (optional)</span>
+                            <input
+                              value={watchSourceLabel}
+                              onChange={(event) => setWatchSourceLabel(event.target.value)}
+                              placeholder={
+                                watchSourceKind === "creator_page"
+                                  ? "Creator name"
+                                  : "Mod name on page"
+                              }
+                            />
+                          </label>
+                          <div className="creator-learning-actions">
+                            <button
+                              type="button"
+                              className="primary-action"
+                              disabled={savingWatch || !watchSourceUrl.trim()}
+                              onClick={() => void saveWatchSource()}
+                            >
+                              {savingWatch ? "Saving..." : "Save watch"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-action"
+                              disabled={savingWatch}
+                              onClick={() => {
+                                setWatchEditing(false);
+                                setWatchMessage(null);
+                                if (!selected.watchResult?.sourceKind) {
+                                  setWatchSourceLabel("");
+                                  setWatchSourceUrl("");
+                                } else if (selected.watchResult.sourceKind) {
+                                  setWatchSourceKind(selected.watchResult.sourceKind);
+                                  setWatchSourceLabel(selected.watchResult.sourceLabel ?? "");
+                                  setWatchSourceUrl(selected.watchResult.sourceUrl ?? "");
+                                }
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            {watchMessage ? (
+                              <span className="creator-learning-message">{watchMessage}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </>
                 ),
               },

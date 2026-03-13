@@ -72,9 +72,10 @@ Important follow-up result:
 
 Important remaining gap:
 
-- the next missing product layer is user-facing watch management:
+- the next missing product layer is deeper user-facing watch management:
   - the app can show watch results now
-  - but broader setup and editing flows still need careful product work
+  - Library detail can save or clear an approved watch source for one installed subject
+  - but broader batch setup, editing flows, and helper-only polling still need careful product work
 - helper-only official latest support is still narrow where the source is not safely readable by plain app requests
 - deeper non-MCCC apply and repair desktop checks still need to be widened
 - the first curated post-foundation expansion wave has not started yet

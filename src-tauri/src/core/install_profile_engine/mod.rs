@@ -1303,6 +1303,7 @@ pub fn build_special_mod_decision_cached(
         &family_state.installed,
         incoming_version.clone(),
         incoming_signature.clone(),
+        allow_same_version_signature_mismatch(&profile),
     );
     let version_status = version_comparison.version_status.clone();
     let same_version = version_comparison.same_version;
@@ -1462,6 +1463,7 @@ pub fn build_special_mod_decision_cached(
             incoming_signature.as_deref(),
             family_state.installed.installed_signature.as_deref(),
             &version_status,
+            version_comparison.same_version_signature_mismatch,
             comparison_source.as_deref(),
         )
     } else {
@@ -2381,6 +2383,33 @@ fn installed_version_for_profile(
         return resolved;
     }
 
+    // Fallback: if strategy-based resolution did not find a version, reuse any
+    // legacy `version_hints` stored on the installed files so older indexed
+    // data can still provide a stable installed version label.
+    let legacy_hint = layout
+        .existing_files
+        .iter()
+        .chain(layout.preserve_files.iter())
+        .flat_map(|file| file.insights.version_hints.iter())
+        .find(|value| !value.trim().is_empty())
+        .cloned();
+    if let Some(version) = legacy_hint {
+        let mut lines = Vec::new();
+        push_version_evidence_line(
+            &mut lines,
+            format!(
+                "Older installed version hints kept {} from existing family data.",
+                version
+            ),
+        );
+        limit_version_evidence_lines(&mut lines);
+        return VersionEvidence {
+            value: Some(version),
+            source: Some("installed files".to_owned()),
+            lines,
+        };
+    }
+
     let mut values = layout
         .existing_files
         .iter()
@@ -2431,11 +2460,26 @@ fn build_comparison_evidence_lines(
     incoming_signature: Option<&str>,
     installed_signature: Option<&str>,
     version_status: &SpecialVersionStatus,
+    same_version_signature_mismatch: bool,
     comparison_source: Option<&str>,
 ) -> Vec<String> {
     let mut lines = Vec::new();
 
-    if incoming_signature.is_some()
+    if same_version_signature_mismatch {
+        if let Some(version) = incoming_version.or(installed_version) {
+            push_version_evidence_line(
+                &mut lines,
+                format!(
+                    "Both local copies point to version {}, but their file fingerprints differ.",
+                    version
+                ),
+            );
+        }
+        push_version_evidence_line(
+            &mut lines,
+            "This profile allows a safe same-release reinstall when the version matches but the files do not.".to_owned(),
+        );
+    } else if incoming_signature.is_some()
         && installed_signature.is_some()
         && *version_status == SpecialVersionStatus::SameVersion
         && (incoming_version.is_none() || installed_version.is_none())
@@ -2476,6 +2520,14 @@ fn build_comparison_evidence_lines(
 
     limit_version_evidence_lines(&mut lines);
     lines
+}
+
+fn allow_same_version_signature_mismatch(profile: &GuidedInstallProfileSeed) -> bool {
+    profile
+        .version_strategy
+        .as_ref()
+        .and_then(|strategy| strategy.same_version_signature_policy.as_deref())
+        .is_some_and(|value| value == "same_release")
 }
 
 fn installed_signature_for_profile(
@@ -5100,6 +5152,92 @@ mod tests {
         }
     }
 
+    fn assert_same_version_signature_policy_case(
+        profile_key: &str,
+        display_name: &str,
+        incoming_filename: &str,
+        version: &str,
+        version_marker: &str,
+        install_folder_name: &str,
+        family_hints: &[&str],
+        expected_status: SpecialVersionStatus,
+    ) {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join(format!("{profile_key}_signature_policy"));
+        fs::create_dir_all(&staging).expect("staging");
+        let item_id = 8800;
+        insert_download_item(&connection, item_id, display_name, &staging);
+
+        let incoming_script = staging.join(incoming_filename);
+        let incoming_version_text = format!("{version_marker} {version} incoming build");
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            incoming_version_text.as_bytes(),
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            item_id,
+            item_id * 100 + 1,
+            &incoming_script,
+            incoming_filename,
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            item_id * 100 + 1,
+            &FileInsights {
+                version_hints: vec![version.to_owned()],
+                family_hints: family_hints.iter().map(|value| (*value).to_owned()).collect(),
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join(install_folder_name);
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join(incoming_filename);
+        let installed_version_text = format!("{version_marker} {version} installed build");
+        write_script_archive_with_comment(
+            &current_script,
+            "version.txt",
+            installed_version_text.as_bytes(),
+            "installed",
+        );
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec![version.to_owned()],
+                family_hints: family_hints.iter().map(|value| (*value).to_owned()).collect(),
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, item_id).expect("assessment");
+        store_download_item_assessment(&connection, item_id, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, item_id)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, profile_key);
+        assert_eq!(decision.version_status, expected_status);
+
+        if expected_status == SpecialVersionStatus::SameVersion {
+            assert!(decision.same_version);
+            assert!(decision.apply_ready);
+            assert!(decision
+                .comparison_evidence
+                .iter()
+                .any(|line| line.contains("file fingerprints differ")));
+        } else {
+            assert!(!decision.same_version);
+        }
+    }
+
     fn bump_patch_version(version: &str) -> String {
         let mut parts = version
             .split('.')
@@ -6169,7 +6307,7 @@ mod tests {
             decision.installed_version_source.as_deref(),
             Some("inside mod")
         );
-        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert_eq!(decision.comparison_source, Some("inside mod".to_owned()));
         assert!(decision.primary_action.is_none());
         assert!(decision.recommended_next_step.contains("already current"));
     }
@@ -6322,6 +6460,20 @@ mod tests {
     }
 
     #[test]
+    fn same_version_lumpinou_toolbox_signature_mismatch_stays_current() {
+        assert_same_version_signature_policy_case(
+            "lumpinou_toolbox",
+            "Lumpinou_Toolbox_v1_179_6.zip",
+            "lumpinou_toolbox.ts4script",
+            "1.179.6",
+            "Lumpinou Toolbox version",
+            "Lumpinou Toolbox",
+            &["lumpinou toolbox", "lumpinou_toolbox"],
+            SpecialVersionStatus::SameVersion,
+        );
+    }
+
+    #[test]
     fn older_lumpinou_toolbox_download_is_not_treated_as_the_next_update() {
         assert_special_script_version_case(SpecialScriptVersionCase {
             profile_key: "lumpinou_toolbox",
@@ -6336,6 +6488,20 @@ mod tests {
             expected_status: SpecialVersionStatus::IncomingOlder,
             expected_next_step: "Ignore this older",
         });
+    }
+
+    #[test]
+    fn same_version_mccc_signature_mismatch_stays_cautious() {
+        assert_same_version_signature_policy_case(
+            "mccc",
+            "McCmdCenter_AllModules_2026_1_1.zip",
+            "mc_cmd_center.ts4script",
+            "2026.1.1",
+            "MC Command Center version",
+            "MCCC",
+            &["mccc", "mc command center"],
+            SpecialVersionStatus::Unknown,
+        );
     }
 
     #[test]
@@ -6812,7 +6978,7 @@ mod tests {
         assert!(decision
             .comparison_evidence
             .iter()
-            .any(|line| line.contains("saved family record")));
+            .any(|line| line.contains("saved family")));
     }
 
     #[test]

@@ -17,8 +17,8 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        category_audit, creator_audit, downloads_watcher, install_profile_engine, library_index,
-        move_engine, rule_engine, scanner, snapshot_manager,
+        category_audit, content_versions, creator_audit, downloads_watcher,
+        install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
     },
     database,
     error::AppError,
@@ -33,7 +33,7 @@ use crate::{
         HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
         OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
         ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     MAIN_TRAY_ID,
 };
@@ -1719,6 +1719,74 @@ pub fn get_file_detail(
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
     let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn save_watch_source_for_file(
+    app: AppHandle,
+    file_id: i64,
+    source_kind: WatchSourceKind,
+    source_label: Option<String>,
+    source_url: String,
+    state: State<'_, AppState>,
+) -> Result<Option<FileDetail>, String> {
+    let mut connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+
+    content_versions::save_watch_source_for_library_file(
+        &mut connection,
+        &settings,
+        &seed_pack,
+        file_id,
+        source_kind,
+        source_label,
+        &source_url,
+    )
+    .map_err(map_error)?;
+
+    emit_workspace_domains(
+        &app,
+        vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+        "watch-source-saved",
+        vec![file_id],
+        Vec::new(),
+    )?;
+
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn clear_watch_source_for_file(
+    app: AppHandle,
+    file_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<FileDetail>, String> {
+    let mut connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+
+    content_versions::clear_watch_source_for_library_file(
+        &mut connection,
+        &settings,
+        &seed_pack,
+        file_id,
+    )
+    .map_err(map_error)?;
+
+    emit_workspace_domains(
+        &app,
+        vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+        "watch-source-cleared",
+        vec![file_id],
+        Vec::new(),
+    )?;
+
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
     library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
