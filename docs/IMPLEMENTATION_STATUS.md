@@ -11,6 +11,13 @@ This session did two important things:
 
 Important changes and findings:
 
+- supported same-version special-mod reinstalls are now more consistent in Inbox:
+  - the selected-item compare path could already know when a safe reinstall was ready
+  - but the action area could still trust an older row state and only show `Ignore`
+  - the selected-item action logic now trusts the fuller special-mod decision and guided plan when deciding whether to show a reinstall action
+- selection hydration now upgrades the selected item to guided-ready when the loaded special-mod decision is apply-ready, even if the saved queue row was older
+- a new backend regression test now protects that same-version reinstall case with XML Injector fixture data
+- the real desktop base smoke now checks for reinstall-button visibility on same-version supported special mods, not just compare text
 - XML Injector now has a safe helper-only official latest source:
   - the built-in profile now points at the readable official page on `scumbumbomods.com`
   - SimSuite can read the current XML Injector version there without adding risky bypass logic
@@ -126,6 +133,9 @@ Important changes and findings:
 
 Important follow-up result:
 
+- same-version reinstall support is now properly visible beyond MCCC:
+  - the selected item action area now follows the fuller special-mod decision instead of stale row state
+  - same-version supported special mods can keep offering a safe reinstall path when the local compare says the installed and incoming copies match
 - the original post-apply family bug was real and is now fixed in backend code, UI wording, and real desktop checks
 - the real desktop base Inbox smoke passes
 - the real desktop special-mod apply smoke passes
@@ -186,6 +196,7 @@ Important follow-up result:
 Important remaining gap:
 
 - the worst Inbox freeze is fixed in the user's real desktop setup, and live first-open is now about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s`
+- deeper non-MCCC apply and repair desktop checks still need to be widened, even though same-version reinstall visibility is now covered
 - helper-only official latest support is still too narrow for the remaining supported special mods whose official sources are not safely readable by plain app requests
 - XML Injector is now covered safely, but direct non-browser requests to CurseForge and Lot 51 are still blocked by challenge pages, so those helpers still need a safe official machine-readable source before they can be widened in the app
 - unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior

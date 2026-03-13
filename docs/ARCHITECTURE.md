@@ -90,6 +90,7 @@ Important current special-mod architecture:
   - compare the installed files on disk
   - use saved family state and file fingerprints only when needed
   - use official latest checks only as extra guidance
+- selected-item special-mod actions should trust the fuller loaded special-mod decision and guided plan over stale queue-row intake flags, so same-version safe reinstalls do not disappear just because the queue row was older
 - if the installed side is missing a saved package hash, the compare flow can fall back to hashing the real installed file from disk so same-version support libraries do not false-flag as unknown
 - internal file inspection now helps special-mod identity and version checks
 - community sources and third-party indexes are not part of runtime install authority

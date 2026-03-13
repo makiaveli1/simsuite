@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 13, 2026: keep same-version special-mod reinstall support consistent across the built-in catalog, so the selected item can still offer a safe reinstall path when the downloaded copy matches what is installed.
 - March 13, 2026: helper-only official latest support should expand only where there is a safe official endpoint the app can read without hacks or challenge bypasses.
 - March 13, 2026: keep building the special-mod system so shared compare, evidence, and test logic stays reusable when the built-in mod list grows.
 - March 13, 2026: trim selected special-item detail load next if it still feels heavy in live desktop use.
@@ -10,6 +11,13 @@
 
 ## What Changed This Session
 
+- March 13, 2026: fixed a same-version special-mod action gap in Inbox:
+  - the compare and guided-plan path could already know a safe reinstall was available
+  - but the right-side action area could still trust an older row state and only show `Ignore`
+  - the selected-item action logic now trusts the fuller special-mod decision and guided plan when a safe reinstall is ready
+- March 13, 2026: tightened selection hydration so a loaded special-mod decision that is ready to apply also marks the selected item as guided-ready, even if the saved queue row was older.
+- March 13, 2026: added a backend regression test for that case using XML Injector same-version fixture data.
+- March 13, 2026: upgraded the real desktop same-version smoke check so it now proves the reinstall action is actually visible, not just the compare text.
 - March 13, 2026: added a safe helper-only official latest path for XML Injector using the readable official page at `https://scumbumbomods.com/xml-injector`.
 - March 13, 2026: kept Lot 51 and the CurseForge-backed supported mods on helper-only `unknown` for now because plain app-style requests still hit challenge pages, and SimSuite should not use brittle workarounds.
 - March 13, 2026: expanded the fixture-backed real desktop Inbox smoke lane so the base smoke now covers every currently supported special-mod family:
@@ -82,6 +90,13 @@
 
 ## What Was Tested
 
+- March 13, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the same-version reinstall fix.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml hydrated_selection_uses_ready_special_guided_state` passed.
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `138` tests after the same-version reinstall fix.
+- March 13, 2026: `npm run build` passed after the same-version reinstall fix.
+- March 13, 2026: real Tauri desktop base smoke passed again through `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`, and the same-version checks now also prove the reinstall button is visible.
+- March 13, 2026: real Tauri desktop apply smoke passed through `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply -SkipBuild`.
+- March 13, 2026: a local build-artifact lock hit `dist/favicon.svg` during one `-IncludeApply` run with a rebuild, so the retry used `-SkipBuild` and still proved the app logic path.
 - March 13, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the latest special-mod validation changes.
 - March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `137` tests.
 - March 13, 2026: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with warnings only.
@@ -153,6 +168,12 @@
 
 ## What Worked
 
+- Same-version reinstall is no longer MCCC-only in practice:
+  - if the selected special-mod decision says a safe guided reinstall is ready
+  - the right-side Inbox action area now shows the reinstall path instead of falling back to `Ignore`
+- The real desktop same-version smoke now proves both parts together:
+  - the version compare text is correct
+  - the reinstall button is present
 - Real desktop same-version support-library checks now work for the currently supported package-backed families:
   - Lot 51 Core Library
   - Lumpinou Toolbox
@@ -214,6 +235,7 @@
 ## Known Problems / Gaps
 
 - Live Inbox first open is now much better at about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s` for a real MCCC row.
+- The reinstall fix was proven through same-version desktop smoke coverage, but deeper non-MCCC apply or repair flows still need broader real desktop coverage.
 - Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
   - MCCC, GitHub release pages, and XML Injector are supported
