@@ -10,9 +10,9 @@ use zip::ZipArchive;
 
 use crate::{
     core::filename_parser::detect_creator_hint,
-    core::special_mod_versions::extract_version_candidates_from_value,
+    core::special_mod_versions::extract_version_candidates_with_scores,
     error::{AppError, AppResult},
-    models::FileInsights,
+    models::{FileInsights, VersionSignal},
     seed::SeedPack,
 };
 
@@ -23,6 +23,7 @@ const MAX_SCRIPT_HINT_ENTRIES: usize = 16;
 const MAX_SCRIPT_HINT_BYTES: u64 = 128 * 1024;
 const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
+const MAX_VERSION_SIGNALS: usize = 16;
 
 const RESOURCE_NAME_MAP: u32 = 0x0166_038c;
 const RESOURCE_STRING_TABLE: u32 = 0x2205_57da;
@@ -84,6 +85,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
     let mut namespaces = BTreeSet::new();
     let mut stems = BTreeSet::new();
     let mut payload_values = Vec::new();
+    let mut archive_paths = Vec::new();
     let mut payload_reads = 0usize;
 
     for index in 0..archive.len().min(MAX_SCRIPT_ENTRIES) {
@@ -95,6 +97,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         }
 
         let entry_name = entry.name().replace('\\', "/");
+        archive_paths.push(entry_name.clone());
         for segment in entry_name.split('/').take(2) {
             let cleaned = segment.trim();
             if !cleaned.is_empty() {
@@ -119,26 +122,30 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
                 .read_to_end(&mut bytes)
                 .map_err(AppError::from)?;
             if !bytes.is_empty() {
-                payload_values.push(String::from_utf8_lossy(&bytes).to_string());
+                payload_values.push((
+                    entry_name.clone(),
+                    String::from_utf8_lossy(&bytes).to_string(),
+                ));
                 payload_reads += 1;
             }
         }
     }
 
-    let path_hint = path.to_string_lossy().to_string();
     let raw_identity_values = namespaces
         .iter()
         .chain(stems.iter())
         .map(String::as_str)
         .collect::<Vec<_>>();
     let creator_hints = collect_creator_hints(raw_identity_values.iter().copied(), seed_pack);
-    let version_hints = collect_version_hints(
-        raw_identity_values
+    let version_signals = collect_ts4script_version_signals(
+        path,
+        stems.iter().map(String::as_str),
+        archive_paths.iter().map(String::as_str),
+        payload_values
             .iter()
-            .copied()
-            .chain(payload_values.iter().map(String::as_str))
-            .chain(std::iter::once(path_hint.as_str())),
+            .map(|(entry_name, payload)| (entry_name.as_str(), payload.as_str())),
     );
+    let version_hints = derive_version_hints(&version_signals);
     let family_hints = collect_family_hints(raw_identity_values.iter().copied());
 
     let mut script_namespaces = namespaces
@@ -162,6 +169,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             embedded_names: stems.into_iter().take(MAX_DISPLAY_VALUES).collect(),
             creator_hints: creator_hints.clone(),
             version_hints,
+            version_signals,
             family_hints,
         },
         creator_hint: primary_creator,
@@ -197,14 +205,12 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
 
     let creator_hints = collect_creator_hints(embedded_names.iter().map(String::as_str), seed_pack);
     let resource_summary = build_resource_summary(&type_counts, &records);
-    let path_hint = path.to_string_lossy().to_string();
-    let version_hints = collect_version_hints(
-        embedded_names
-            .iter()
-            .map(String::as_str)
-            .chain(resource_summary.iter().map(String::as_str))
-            .chain(std::iter::once(path_hint.as_str())),
+    let version_signals = collect_package_version_signals(
+        path,
+        embedded_names.iter().map(String::as_str),
+        resource_summary.iter().map(String::as_str),
     );
+    let version_hints = derive_version_hints(&version_signals);
     let family_hints = collect_family_hints(
         embedded_names
             .iter()
@@ -221,6 +227,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             embedded_names,
             creator_hints: creator_hints.clone(),
             version_hints,
+            version_signals,
             family_hints,
         },
         creator_hint: creator_hints.first().cloned(),
@@ -230,14 +237,160 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
     })
 }
 
-fn collect_version_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let mut hints = BTreeSet::new();
-    for value in values {
-        for version in extract_version_candidates_from_value(value) {
-            hints.insert(version);
+fn collect_ts4script_version_signals<'a>(
+    path: &Path,
+    embedded_names: impl IntoIterator<Item = &'a str>,
+    archive_paths: impl IntoIterator<Item = &'a str>,
+    payload_values: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<VersionSignal> {
+    let mut signals = Vec::new();
+
+    if let Some(filename) = path.file_name().and_then(|value| value.to_str()) {
+        push_version_signals(
+            &mut signals,
+            filename,
+            "filename",
+            Some(path.to_string_lossy().as_ref()),
+            Some("file name"),
+            0.66,
+        );
+    }
+
+    for embedded_name in embedded_names {
+        push_version_signals(
+            &mut signals,
+            embedded_name,
+            "embedded_name",
+            None,
+            Some("embedded name"),
+            0.54,
+        );
+    }
+
+    for archive_path in archive_paths {
+        push_version_signals(
+            &mut signals,
+            archive_path,
+            "archive_path",
+            Some(archive_path),
+            Some("archive entry path"),
+            0.58,
+        );
+    }
+
+    for (entry_name, payload) in payload_values {
+        push_version_signals(
+            &mut signals,
+            payload,
+            "payload",
+            Some(entry_name),
+            Some("readable archive payload"),
+            0.88,
+        );
+    }
+
+    sort_and_limit_signals(signals)
+}
+
+fn collect_package_version_signals<'a>(
+    path: &Path,
+    embedded_names: impl IntoIterator<Item = &'a str>,
+    resource_summary: impl IntoIterator<Item = &'a str>,
+) -> Vec<VersionSignal> {
+    let mut signals = Vec::new();
+
+    if let Some(filename) = path.file_name().and_then(|value| value.to_str()) {
+        push_version_signals(
+            &mut signals,
+            filename,
+            "filename",
+            Some(path.to_string_lossy().as_ref()),
+            Some("file name"),
+            0.64,
+        );
+    }
+
+    for embedded_name in embedded_names {
+        push_version_signals(
+            &mut signals,
+            embedded_name,
+            "embedded_name",
+            None,
+            Some("embedded resource name"),
+            0.74,
+        );
+    }
+
+    for summary in resource_summary {
+        push_version_signals(
+            &mut signals,
+            summary,
+            "resource_summary",
+            None,
+            Some("resource summary"),
+            0.42,
+        );
+    }
+
+    sort_and_limit_signals(signals)
+}
+
+fn push_version_signals(
+    signals: &mut Vec<VersionSignal>,
+    value: &str,
+    source_kind: &str,
+    source_path: Option<&str>,
+    matched_by: Option<&str>,
+    base_confidence: f64,
+) {
+    for candidate in extract_version_candidates_with_scores(value) {
+        if signals.iter().any(|existing| {
+            existing.normalized_value == candidate.normalized
+                && existing.source_kind == source_kind
+                && existing.source_path.as_deref() == source_path
+        }) {
+            continue;
+        }
+
+        signals.push(VersionSignal {
+            raw_value: candidate.raw_value.clone(),
+            normalized_value: candidate.normalized,
+            source_kind: source_kind.to_owned(),
+            source_path: source_path.map(|path| path.to_owned()),
+            matched_by: matched_by.map(|value| value.to_owned()),
+            confidence: version_signal_confidence(base_confidence, candidate.score),
+        });
+    }
+}
+
+fn version_signal_confidence(base_confidence: f64, score: i64) -> f64 {
+    (base_confidence + (score as f64 / 120.0)).clamp(0.0, 0.99)
+}
+
+fn sort_and_limit_signals(mut signals: Vec<VersionSignal>) -> Vec<VersionSignal> {
+    signals.sort_by(|left, right| {
+        right
+            .confidence
+            .partial_cmp(&left.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.normalized_value.cmp(&right.normalized_value))
+    });
+    signals.truncate(MAX_VERSION_SIGNALS);
+    signals
+}
+
+fn derive_version_hints(signals: &[VersionSignal]) -> Vec<String> {
+    let mut hints = Vec::new();
+    for signal in signals {
+        if hints.contains(&signal.normalized_value) {
+            continue;
+        }
+        hints.push(signal.normalized_value.clone());
+        if hints.len() >= MAX_DISPLAY_VALUES {
+            break;
         }
     }
-    hints.into_iter().take(MAX_DISPLAY_VALUES).collect()
+    hints
 }
 
 fn should_read_ts4script_payload_for_hints(entry_name_lower: &str) -> bool {

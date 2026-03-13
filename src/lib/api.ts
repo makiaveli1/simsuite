@@ -33,6 +33,7 @@ import type {
   FileDetail,
   GuidedInstallPlan,
   HomeOverview,
+  InstalledVersionSummary,
   OrganizationPreview,
   LibraryFacets,
   LibraryListResponse,
@@ -48,6 +49,9 @@ import type {
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
+  VersionResolution,
+  VersionSignal,
+  WatchResult,
   WorkspaceChange,
 } from "./types";
 
@@ -111,6 +115,7 @@ const emptyInsights = {
   embeddedNames: [],
   creatorHints: [],
   versionHints: [],
+  versionSignals: [],
   familyHints: [],
 };
 const emptyCreatorLearning = (): CreatorLearningInfo => ({
@@ -129,6 +134,7 @@ const normalizeMockInsights = (
   ...emptyInsights,
   ...insights,
   versionHints: insights.versionHints ?? [],
+  versionSignals: insights.versionSignals ?? [],
   familyHints: insights.familyHints ?? [],
 });
 const buildMockCatalogSource = (
@@ -162,6 +168,178 @@ const buildMockDependencyStatus = (
   inboxItemIntakeMode: null,
   inboxItemGuidedInstallAvailable: false,
 });
+
+const buildMockVersionSignal = (
+  rawValue: string,
+  normalizedValue: string,
+  sourceKind: VersionSignal["sourceKind"],
+  confidence: number,
+  sourcePath: string | null = null,
+  matchedBy: string | null = null,
+): VersionSignal => ({
+  rawValue,
+  normalizedValue,
+  sourceKind,
+  sourcePath,
+  matchedBy,
+  confidence,
+});
+
+function buildMockVersionResolution(item: DownloadsInboxItem): VersionResolution | null {
+  switch (item.id) {
+    case 41:
+      return {
+        subjectLabel: "Spring Refresh pack",
+        matchedSubjectLabel: null,
+        matchedSubjectKey: null,
+        status: "unknown",
+        confidence: "weak",
+        matchScore: 0.34,
+        incomingVersion: null,
+        installedVersion: null,
+        incomingSignature: null,
+        installedSignature: null,
+        evidence: [
+          "This archive mixes several creators and several item names, so SimSuite is not pretending it belongs to one installed mod.",
+        ],
+        incomingEvidence: [
+          "The download filenames point to more than one mod or CC set.",
+        ],
+        installedEvidence: [],
+      };
+    case 45:
+      return {
+        subjectLabel: "Healthcare Redux Addon",
+        matchedSubjectLabel: "Healthcare Redux Addon",
+        matchedSubjectKey: "healthcare-redux-addon",
+        status: "incoming_newer",
+        confidence: "strong",
+        matchScore: 1.42,
+        incomingVersion: "6.1",
+        installedVersion: "6.0",
+        incomingSignature: "healthcare-redux-addon-6.1",
+        installedSignature: "healthcare-redux-addon-6.0",
+        evidence: [
+          "The creator hint, embedded file names, and filename tokens all point to the same installed addon.",
+          "The download version is newer than the installed copy.",
+        ],
+        incomingEvidence: [
+          "The archive filename includes version 6.1.",
+        ],
+        installedEvidence: [
+          "The installed addon files point to version 6.0.",
+        ],
+      };
+    default:
+      return null;
+  }
+}
+
+function buildMockInstalledVersionSummary(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): InstalledVersionSummary | null {
+  const lowerName = file.filename.toLowerCase();
+  const firstHint = normalizeMockInsights(file.insights).versionHints[0] ?? null;
+
+  if (lowerName.includes("mccc")) {
+    return {
+      subjectLabel: "MC Command Center",
+      subjectKey: "mccc",
+      version: "2026.3.0",
+      signature: "mccc-local-2026.3.0",
+      confidence: "strong",
+      evidence: [
+        "The installed MCCC files agree on version 2026.3.0.",
+        "The script namespace and family hints match MC Command Center.",
+      ],
+    };
+  }
+
+  if (lowerName.includes("xmlinjector")) {
+    return {
+      subjectLabel: "XML Injector",
+      subjectKey: "xml-injector",
+      version: "4.0",
+      signature: "xml-injector-4.0",
+      confidence: "strong",
+      evidence: [
+        "The filename and inside-file clues agree on XML Injector version 4.0.",
+      ],
+    };
+  }
+
+  if (file.creator || firstHint) {
+    return {
+      subjectLabel:
+        file.bundleName ?? file.creator ?? file.insights.embeddedNames[0] ?? file.filename,
+      subjectKey: file.filename.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      version: firstHint,
+      signature: file.hash,
+      confidence: firstHint ? "medium" : "weak",
+      evidence: firstHint
+        ? [`The strongest local clue for this installed file is version ${firstHint}.`]
+        : ["SimSuite can match this installed file, but it does not have a strong version clue yet."],
+    };
+  }
+
+  return null;
+}
+
+function buildMockWatchResult(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): WatchResult | null {
+  const lowerName = file.filename.toLowerCase();
+
+  if (lowerName.includes("mccc")) {
+    return {
+      status: "exact_update_available",
+      sourceKind: "exact_page",
+      sourceLabel: "MC Command Center",
+      sourceUrl: "https://deaderpool-mccc.com/downloads.html",
+      latestVersion: "2026.4.0",
+      checkedAt: "2026-03-11T10:00:00.000Z",
+      confidence: "strong",
+      note: "Official latest is a helper check and does not replace local install truth.",
+      evidence: [
+        "The official MCCC page shows a newer release than the installed copy.",
+      ],
+    };
+  }
+
+  if (lowerName.includes("xmlinjector")) {
+    return {
+      status: "current",
+      sourceKind: "exact_page",
+      sourceLabel: "XML Injector",
+      sourceUrl: "https://scumbumbomods.com/xml-injector",
+      latestVersion: "4.0",
+      checkedAt: "2026-03-11T10:00:00.000Z",
+      confidence: "strong",
+      note: "The official helper check agrees with the installed copy.",
+      evidence: [
+        "The helper check matched the installed XML Injector version.",
+      ],
+    };
+  }
+
+  return {
+    status: "not_watched",
+    sourceKind: null,
+    sourceLabel: null,
+    sourceUrl: null,
+    latestVersion: null,
+    checkedAt: null,
+    confidence: "unknown",
+    note: "No approved watch source is saved for this content yet.",
+    evidence: [],
+  };
+}
 
 const mockMcccCatalogSource = buildMockCatalogSource(
   "https://deaderpool-mccc.com/downloads.html",
@@ -534,14 +712,17 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
 
 function buildMockDetailItem(item: DownloadsInboxItem): DownloadsInboxItem {
   const specialDecision = buildMockSpecialDecision(item);
-  if (!specialDecision) {
-    return item;
-  }
+  const versionResolution = buildMockVersionResolution(item);
 
   return {
     ...item,
     specialDecision,
+    versionResolution,
   };
+}
+
+function buildMockQueueItem(item: DownloadsInboxItem): DownloadsInboxItem {
+  return buildMockDetailItem(item);
 }
 
 function syncMockDownloadsWatcherStatus() {
@@ -670,6 +851,16 @@ const mockFiles = ([
       embeddedNames: ["mc_cmd_center", "mc_settings"],
       creatorHints: ["Deaderpool"],
       versionHints: ["2026.2.0"],
+      versionSignals: [
+        buildMockVersionSignal(
+          "2026.2.0",
+          "2026.2.0",
+          "payload",
+          0.94,
+          "mc_cmd_center.ts4script",
+          "MCCC version text",
+        ),
+      ],
       familyHints: ["mccc"],
     },
   },
@@ -740,6 +931,17 @@ const mockFiles = ([
       scriptNamespaces: [],
       embeddedNames: ["Miiko_Brow_03"],
       creatorHints: ["Miiko"],
+      versionHints: ["2.4"],
+      versionSignals: [
+        buildMockVersionSignal(
+          "v2.4",
+          "2.4",
+          "filename",
+          0.72,
+          "Miiko_Eyebrows.package",
+          "filename token",
+        ),
+      ],
     },
   },
   {
@@ -769,9 +971,14 @@ const mockFiles = ([
       creatorHints: [],
     },
   },
-] as Omit<FileDetail, "creatorLearning" | "categoryOverride">[]).map((file) => ({
+] as Omit<
+  FileDetail,
+  "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+>[]).map((file) => ({
   ...file,
   insights: normalizeMockInsights(file.insights),
+  installedVersionSummary: buildMockInstalledVersionSummary(file),
+  watchResult: buildMockWatchResult(file),
   creatorLearning: emptyCreatorLearning(),
   categoryOverride: emptyCategoryOverride(),
 }));
@@ -1836,6 +2043,18 @@ let mockCategoryAuditState: {
 };
 
 function createMockOverview(): HomeOverview {
+  const exactUpdateItems = mockFiles.filter(
+    (file) => file.watchResult?.status === "exact_update_available",
+  ).length;
+  const possibleUpdateItems = mockFiles.filter(
+    (file) => file.watchResult?.status === "possible_update",
+  ).length;
+  const unknownWatchItems = mockFiles.filter(
+    (file) =>
+      file.watchResult?.status === "unknown" ||
+      file.watchResult?.status === "not_watched",
+  ).length;
+
   return {
     totalFiles: 1_834,
     modsCount: 1_622,
@@ -1850,6 +2069,9 @@ function createMockOverview(): HomeOverview {
     duplicatesCount: 18,
     reviewCount: mockReviewQueue.length,
     unsafeCount: mockFiles.filter((file) => file.safetyNotes.length > 0).length,
+    exactUpdateItems,
+    possibleUpdateItems,
+    unknownWatchItems,
     lastScanAt: mockLastScanAt,
     readOnlyMode: true,
   };
@@ -3381,7 +3603,7 @@ async function mockInvoke<T>(
 
       return {
         overview: createMockDownloadsOverview(),
-        items: structuredClone(items.slice(0, limit)),
+        items: structuredClone(items.slice(0, limit).map(buildMockQueueItem)),
       } as T;
     }
     case "get_download_item_detail":

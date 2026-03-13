@@ -893,7 +893,28 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             detail TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
-         CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);",
+         CREATE INDEX IF NOT EXISTS idx_download_item_events_item_id ON download_item_events (download_item_id, created_at DESC);
+         CREATE TABLE IF NOT EXISTS content_watch_sources (
+            subject_key TEXT PRIMARY KEY,
+            source_kind TEXT NOT NULL DEFAULT 'exact_page',
+            source_label TEXT,
+            source_url TEXT NOT NULL,
+            approved_by_user INTEGER NOT NULL DEFAULT 0 CHECK (approved_by_user IN (0, 1)),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE IF NOT EXISTS content_watch_results (
+            subject_key TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'unknown',
+            latest_version TEXT,
+            checked_at TEXT,
+            confidence TEXT NOT NULL DEFAULT 'unknown',
+            note TEXT,
+            evidence TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(subject_key) REFERENCES content_watch_sources(subject_key) ON DELETE CASCADE
+         );
+         CREATE INDEX IF NOT EXISTS idx_content_watch_sources_kind ON content_watch_sources (source_kind);
+         CREATE INDEX IF NOT EXISTS idx_content_watch_results_status ON content_watch_results (status);",
     )?;
 
     create_index_if_table_exists(

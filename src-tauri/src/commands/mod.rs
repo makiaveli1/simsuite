@@ -1719,7 +1719,9 @@ pub fn get_file_detail(
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
     let connection = state.connection().map_err(map_error)?;
-    library_index::get_file_detail(&connection, file_id).map_err(map_error)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
 }
 
 #[tauri::command]
@@ -1758,7 +1760,9 @@ pub fn save_creator_learning(
         vec![file_id],
         Vec::new(),
     )?;
-    library_index::get_file_detail(&connection, file_id).map_err(map_error)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
 }
 
 #[tauri::command]
@@ -1899,7 +1903,9 @@ pub fn save_category_override(
         vec![file_id],
         Vec::new(),
     )?;
-    library_index::get_file_detail(&connection, file_id).map_err(map_error)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
 }
 
 pub fn emit_scan_progress(

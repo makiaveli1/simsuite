@@ -511,7 +511,7 @@ fn parse_mccc_latest_html(
     let latest_version = version_re
         .captures(body)
         .and_then(|captures| captures.get(1))
-        .map(|matched| normalize_version_token(matched.as_str()));
+        .map(|matched| normalize_version_value(matched.as_str()));
     let download_url = download_re
         .captures(body)
         .and_then(|captures| captures.get(1))
@@ -536,7 +536,7 @@ fn parse_github_latest_url(
         .expect("github tag regex")
         .captures(final_url)
         .and_then(|captures| captures.get(1))
-        .map(|matched| normalize_version_token(matched.as_str()));
+        .map(|matched| normalize_version_value(matched.as_str()));
 
     SpecialOfficialLatestInfo {
         source_url: Some(final_url.to_owned()),
@@ -565,7 +565,7 @@ fn parse_xml_injector_latest_html(
     let latest_version = version_re
         .captures(body)
         .and_then(|captures| captures.get(1))
-        .map(|matched| normalize_version_token(matched.as_str()));
+        .map(|matched| normalize_version_value(matched.as_str()));
     let download_url = download_re
         .captures(body)
         .and_then(|captures| captures.get(1))
@@ -624,21 +624,22 @@ fn install_state_label(value: &SpecialExistingInstallState) -> &'static str {
     }
 }
 
-fn normalize_version_token(value: &str) -> String {
+pub fn normalize_version_value(value: &str) -> String {
     value
         .trim()
         .trim_start_matches(['v', 'V'])
         .replace(['_', '-'], ".")
 }
 
-#[derive(Debug, Clone)]
-struct RankedVersionCandidate {
-    normalized: String,
-    score: i64,
-    parts: Vec<i64>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionCandidate {
+    pub raw_value: String,
+    pub normalized: String,
+    pub score: i64,
+    pub parts: Vec<i64>,
 }
 
-fn extract_ranked_version_candidates(value: &str) -> Vec<RankedVersionCandidate> {
+fn extract_ranked_version_candidates(value: &str) -> Vec<VersionCandidate> {
     let mut candidates = Vec::new();
     let version_with_prefix =
         Regex::new(r"(?i)\b(?:version|ver|v)[\s._-]*([0-9]+(?:[._-][0-9]+){0,3})\b")
@@ -668,10 +669,11 @@ fn build_ranked_candidate(
     source: &str,
     raw_value: &str,
     prefixed: bool,
-) -> Option<RankedVersionCandidate> {
-    let normalized = normalize_version_token(raw_value);
+) -> Option<VersionCandidate> {
+    let normalized = normalize_version_value(raw_value);
     let parts = parse_version_parts(&normalized)?;
-    Some(RankedVersionCandidate {
+    Some(VersionCandidate {
+        raw_value: raw_value.to_owned(),
         normalized,
         score: score_version_candidate(source, &parts, prefixed),
         parts,
@@ -707,8 +709,8 @@ fn score_version_candidate(source: &str, parts: &[i64], prefixed: bool) -> i64 {
 }
 
 fn compare_ranked_candidates(
-    left: &RankedVersionCandidate,
-    right: &RankedVersionCandidate,
+    left: &VersionCandidate,
+    right: &VersionCandidate,
 ) -> std::cmp::Ordering {
     left.score
         .cmp(&right.score)
@@ -716,8 +718,8 @@ fn compare_ranked_candidates(
         .then_with(|| left.normalized.len().cmp(&right.normalized.len()))
 }
 
-fn parse_version_parts(value: &str) -> Option<Vec<i64>> {
-    let normalized = normalize_version_token(value);
+pub fn parse_version_parts(value: &str) -> Option<Vec<i64>> {
+    let normalized = normalize_version_value(value);
     let parts = normalized
         .split('.')
         .filter(|part| !part.trim().is_empty())
@@ -728,6 +730,13 @@ fn parse_version_parts(value: &str) -> Option<Vec<i64>> {
     } else {
         Some(parts)
     }
+}
+
+pub fn extract_version_candidates_with_scores(value: &str) -> Vec<VersionCandidate> {
+    let mut candidates = extract_ranked_version_candidates(value);
+    candidates.sort_by(|left, right| compare_ranked_candidates(right, left));
+    candidates.dedup_by(|left, right| left.normalized == right.normalized);
+    candidates
 }
 
 pub fn version_hints_from_profile(

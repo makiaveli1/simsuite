@@ -55,6 +55,9 @@ export interface HomeOverview {
   duplicatesCount: number;
   reviewCount: number;
   unsafeCount: number;
+  exactUpdateItems: number;
+  possibleUpdateItems: number;
+  unknownWatchItems: number;
   lastScanAt: string | null;
   readOnlyMode: boolean;
 }
@@ -207,6 +210,75 @@ export interface DuplicatePair {
   secondarySize: number;
 }
 
+export interface VersionSignal {
+  rawValue: string;
+  normalizedValue: string;
+  sourceKind: string;
+  sourcePath: string | null;
+  matchedBy: string | null;
+  confidence: number;
+}
+
+export type VersionCompareStatus =
+  | "not_installed"
+  | "incoming_newer"
+  | "same_version"
+  | "incoming_older"
+  | "unknown";
+
+export type VersionConfidence =
+  | "exact"
+  | "strong"
+  | "medium"
+  | "weak"
+  | "unknown";
+
+export interface VersionResolution {
+  subjectLabel: string | null;
+  matchedSubjectLabel: string | null;
+  matchedSubjectKey: string | null;
+  status: VersionCompareStatus;
+  confidence: VersionConfidence;
+  matchScore: number;
+  incomingVersion: string | null;
+  installedVersion: string | null;
+  incomingSignature: string | null;
+  installedSignature: string | null;
+  evidence: string[];
+  incomingEvidence: string[];
+  installedEvidence: string[];
+}
+
+export interface InstalledVersionSummary {
+  subjectLabel: string;
+  subjectKey: string;
+  version: string | null;
+  signature: string | null;
+  confidence: VersionConfidence;
+  evidence: string[];
+}
+
+export type WatchSourceKind = "exact_page" | "creator_page";
+
+export type WatchStatus =
+  | "not_watched"
+  | "current"
+  | "exact_update_available"
+  | "possible_update"
+  | "unknown";
+
+export interface WatchResult {
+  status: WatchStatus;
+  sourceKind: WatchSourceKind | null;
+  sourceLabel: string | null;
+  sourceUrl: string | null;
+  latestVersion: string | null;
+  checkedAt: string | null;
+  confidence: VersionConfidence;
+  note: string | null;
+  evidence: string[];
+}
+
 export interface FileInsights {
   format: string | null;
   resourceSummary: string[];
@@ -214,6 +286,7 @@ export interface FileInsights {
   embeddedNames: string[];
   creatorHints: string[];
   versionHints: string[];
+  versionSignals: VersionSignal[];
   familyHints: string[];
 }
 
@@ -234,6 +307,8 @@ export interface FileDetail extends LibraryFileRow {
   createdAt: string | null;
   parserWarnings: string[];
   insights: FileInsights;
+  installedVersionSummary: InstalledVersionSummary | null;
+  watchResult: WatchResult | null;
   creatorLearning: CreatorLearningInfo;
   categoryOverride: CategoryOverrideInfo;
 }
@@ -465,6 +540,7 @@ export interface DownloadsInboxItem {
   relatedItemIds?: number[];
   timeline?: DownloadsTimelineEntry[];
   specialDecision?: SpecialModDecision | null;
+  versionResolution?: VersionResolution | null;
 }
 
 export type DownloadQueueLane =

@@ -54,6 +54,8 @@ import type {
   SpecialModDecision,
   SpecialReviewPlan,
   UserView,
+  VersionConfidence,
+  VersionResolution,
 } from "../lib/types";
 
 interface DownloadsScreenProps {
@@ -892,6 +894,10 @@ export function DownloadsScreen({
   const selectedFiles = activeSelection?.detail?.files ?? [];
   const selectedSpecialDecision =
     activeSelection?.detail?.item.specialDecision ?? selectedItem?.specialDecision ?? null;
+  const selectedVersionResolution =
+    activeSelection?.detail?.item.versionResolution ??
+    selectedItem?.versionResolution ??
+    null;
   const selectedStateBadge = selectedResolvedItem
     ? primaryInboxStateBadge(selectedResolvedItem, userView)
     : null;
@@ -924,7 +930,9 @@ export function DownloadsScreen({
         ? !selectedSpecialDecision.applyReady
         : selectedGuidedPlan && !selectedGuidedPlan.applyReady),
   );
-  const incomingOlder = selectedSpecialDecision?.versionStatus === "incoming_older";
+  const incomingOlder =
+    selectedSpecialDecision?.versionStatus === "incoming_older" ||
+    selectedVersionResolution?.status === "incoming_older";
   const guidedActionReady = Boolean(
     selectedSpecialDecision?.applyReady || selectedGuidedPlan?.applyReady,
   );
@@ -970,6 +978,7 @@ export function DownloadsScreen({
         selectedResolvedItem,
         selectedGuidedPlan,
         selectedSpecialDecision,
+        selectedVersionResolution,
         primaryReviewAction,
         canApply,
         safeCount,
@@ -981,6 +990,7 @@ export function DownloadsScreen({
         selectedResolvedItem,
         selectedGuidedPlan,
         selectedSpecialDecision,
+        selectedVersionResolution,
         primaryReviewAction,
         safeCount,
         userView,
@@ -993,6 +1003,7 @@ export function DownloadsScreen({
         selectedPreview,
         selectedGuidedPlan,
         selectedSpecialDecision,
+        selectedVersionResolution,
         selectedReviewPlan,
         safeCount,
         reviewCount,
@@ -1006,6 +1017,7 @@ export function DownloadsScreen({
     ? buildDownloadInspectorSignals(
         selectedResolvedItem,
         selectedSpecialDecision,
+        selectedVersionResolution,
         selectedReviewPlan,
         selectedAutoRecheckNote,
       )
@@ -1599,6 +1611,7 @@ export function DownloadsScreen({
                         safeCount,
                         selectedGuidedPlan,
                         selectedSpecialDecision,
+                        selectedVersionResolution,
                         selectedReviewPlan,
                       )}
                     </div>
@@ -2378,6 +2391,7 @@ function buildInspectorSections({
   selectedPreview,
   selectedGuidedPlan,
   selectedSpecialDecision,
+  selectedVersionResolution,
   selectedReviewPlan,
   safeCount,
   reviewCount,
@@ -2389,6 +2403,7 @@ function buildInspectorSections({
   selectedPreview: OrganizationPreview | null;
   selectedGuidedPlan: GuidedInstallPlan | null;
   selectedSpecialDecision: SpecialModDecision | null;
+  selectedVersionResolution: VersionResolution | null;
   selectedReviewPlan: SpecialReviewPlan | null;
   safeCount: number;
   reviewCount: number;
@@ -2401,6 +2416,8 @@ function buildInspectorSections({
   const filesSection = buildFilesSection(selectedFiles, userView);
   const versionSection = selectedSpecialDecision
     ? buildSpecialVersionSection(selectedSpecialDecision, userView)
+    : selectedVersionResolution
+      ? buildGenericVersionSection(selectedVersionResolution, userView)
     : null;
   const sharedSections =
     userView === "beginner"
@@ -2946,9 +2963,90 @@ function buildSpecialVersionSection(
   };
 }
 
+function buildGenericVersionSection(
+  versionResolution: VersionResolution,
+  userView: UserView,
+): DockSectionDefinition {
+  return {
+    id: "version",
+    label: userView === "beginner" ? "Version check" : "Versions",
+    hint:
+      userView === "beginner"
+        ? "What SimSuite matched in Mods and how sure it feels."
+        : "Local compare result, confidence, and the evidence SimSuite used.",
+    defaultCollapsed: false,
+    children: (
+      <>
+        <div className="detail-list">
+          <DetailRow
+            label="Download"
+            value={formatVersionValue(versionResolution.incomingVersion, true)}
+          />
+          <DetailRow
+            label="Installed"
+            value={formatVersionValue(
+              versionResolution.installedVersion,
+              Boolean(versionResolution.matchedSubjectLabel),
+            )}
+          />
+          <DetailRow
+            label="Compare"
+            value={genericVersionStatusLabel(versionResolution, userView)}
+          />
+          <DetailRow
+            label="Match"
+            value={versionResolution.matchedSubjectLabel ?? "No clear installed match"}
+          />
+          <DetailRow
+            label="Confidence"
+            value={versionConfidenceLabel(versionResolution.confidence)}
+          />
+        </div>
+        {versionResolution.incomingEvidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Download evidence</div>
+            <div className="downloads-evidence-list">
+              {versionResolution.incomingEvidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {versionResolution.installedEvidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Installed evidence</div>
+            <div className="downloads-evidence-list">
+              {versionResolution.installedEvidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {versionResolution.evidence.length ? (
+          <div className="detail-block">
+            <div className="section-label">Main check</div>
+            <div className="downloads-evidence-list">
+              {versionResolution.evidence.map((line) => (
+                <div key={line} className="downloads-evidence-row">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </>
+    ),
+  };
+}
+
 function buildDownloadInspectorSignals(
   item: DownloadsInboxItem,
   specialDecision: SpecialModDecision | null,
+  versionResolution: VersionResolution | null,
   reviewPlan: SpecialReviewPlan | null,
   autoRecheckNote: string | null,
 ) {
@@ -3030,6 +3128,38 @@ function buildDownloadInspectorSignals(
       label: "Latest",
       title: `Official latest: ${specialDecision.officialLatest.latestVersion ?? "Known"}`,
       body: "This is extra guidance from the official source and does not block a safe local update.",
+    });
+  } else if (versionResolution?.status === "same_version") {
+    signals.push({
+      id: "version",
+      tone: "refresh",
+      label: "Version",
+      title: "Already current",
+      body: "The installed copy and this download look like the same version.",
+    });
+  } else if (versionResolution?.status === "incoming_older") {
+    signals.push({
+      id: "version",
+      tone: "review",
+      label: "Version",
+      title: "Older than installed",
+      body: "The installed copy looks newer than this download, so SimSuite is being cautious.",
+    });
+  } else if (versionResolution?.status === "incoming_newer") {
+    signals.push({
+      id: "version",
+      tone: "refresh",
+      label: "Version",
+      title: "Newer download",
+      body: "The incoming files look newer than the matching installed copy.",
+    });
+  } else if (versionResolution?.matchedSubjectLabel) {
+    signals.push({
+      id: "version",
+      tone: "review",
+      label: "Compare",
+      title: "Possible installed match",
+      body: `SimSuite found a likely match in Mods for ${versionResolution.matchedSubjectLabel}, but the version check is still cautious.`,
     });
   }
 
@@ -3132,6 +3262,23 @@ function deriveQueueLane(item: DownloadsInboxItem): DownloadQueueLane {
 
 function fallbackQueueSummary(item: DownloadsInboxItem) {
   const lane = item.queueLane ?? deriveQueueLane(item);
+
+  if (!item.specialDecision && item.versionResolution) {
+    switch (item.versionResolution.status) {
+      case "same_version":
+        return "This download matches the version already installed.";
+      case "incoming_older":
+        return "The copy already in Mods looks newer than this download.";
+      case "incoming_newer":
+        return "This download looks newer than the matching installed copy.";
+      case "not_installed":
+        return "No matching installed copy was found yet.";
+      default:
+        return item.versionResolution.matchedSubjectLabel
+          ? `SimSuite found a likely installed match for ${item.versionResolution.matchedSubjectLabel}, but the version result is still cautious.`
+          : "SimSuite is still gathering enough clues to compare this download.";
+    }
+  }
 
   switch (lane) {
     case "special_setup":
@@ -3386,6 +3533,7 @@ function downloadsInspectorIdleNote(
   safeCount: number,
   guidedPlan?: GuidedInstallPlan | null,
   specialDecision?: SpecialModDecision | null,
+  versionResolution?: VersionResolution | null,
   reviewPlan?: SpecialReviewPlan | null,
 ) {
   if (specialDecision?.sameVersion) {
@@ -3398,6 +3546,30 @@ function downloadsInspectorIdleNote(
     return userView === "beginner"
       ? "This download looks older than what is already installed, so SimSuite is holding it back."
       : "This incoming pack looks older than the installed copy, so SimSuite is not treating it as the next update.";
+  }
+
+  if (versionResolution?.status === "same_version") {
+    return userView === "beginner"
+      ? "This download matches the copy already in Mods. You only need it if you want to replace a damaged install by hand."
+      : "The local compare found the same version on both sides. This looks more like a duplicate than a new update.";
+  }
+
+  if (versionResolution?.status === "incoming_older") {
+    return userView === "beginner"
+      ? "This download looks older than the matching copy already in Mods, so SimSuite is holding the move back."
+      : "The matching installed copy looks newer than this download, so SimSuite is keeping the apply action quiet.";
+  }
+
+  if (versionResolution?.status === "incoming_newer") {
+    return userView === "beginner"
+      ? "This download looks newer than the matching copy already in Mods."
+      : "The shared compare engine found a newer incoming version for the matched installed content.";
+  }
+
+  if (versionResolution?.matchedSubjectLabel) {
+    return userView === "beginner"
+      ? `SimSuite found a possible match in Mods for ${versionResolution.matchedSubjectLabel}, but the version check is still cautious.`
+      : `SimSuite matched this download to ${versionResolution.matchedSubjectLabel}, but the version result is still cautious.`;
   }
 
   if (specialDecision?.availableActions.length) {
@@ -3461,6 +3633,7 @@ function downloadsNextStepTitle(
   item: DownloadsInboxItem,
   guidedPlan: GuidedInstallPlan | null,
   specialDecision: SpecialModDecision | null,
+  versionResolution: VersionResolution | null,
   reviewAction: ReviewPlanAction | null,
   canApply: boolean,
   safeCount: number,
@@ -3511,6 +3684,34 @@ function downloadsNextStepTitle(
       : "Use the safest next special-mod step";
   }
 
+  if (versionResolution?.status === "same_version") {
+    return userView === "beginner"
+      ? "This download already matches your installed copy"
+      : "Installed and incoming versions match";
+  }
+
+  if (versionResolution?.status === "incoming_older") {
+    return userView === "beginner"
+      ? "This download looks older than your installed copy"
+      : "Incoming version looks older";
+  }
+
+  if (versionResolution?.status === "incoming_newer") {
+    return canApply
+      ? userView === "beginner"
+        ? "This looks like a newer download"
+        : "Incoming version looks newer"
+      : userView === "beginner"
+        ? "A newer copy was found"
+        : "Newer incoming version found";
+  }
+
+  if (versionResolution?.matchedSubjectLabel) {
+    return userView === "beginner"
+      ? "SimSuite found a possible installed match"
+      : "Installed match found, but still cautious";
+  }
+
   if (item.intakeMode === "guided") {
     if (guidedPlan?.applyReady && canApply) {
       return guidedPlan.existingInstallDetected
@@ -3554,6 +3755,7 @@ function downloadsNextStepDescription(
   item: DownloadsInboxItem,
   guidedPlan: GuidedInstallPlan | null,
   specialDecision: SpecialModDecision | null,
+  versionResolution: VersionResolution | null,
   reviewAction: ReviewPlanAction | null,
   safeCount: number,
   userView: UserView,
@@ -3588,6 +3790,30 @@ function downloadsNextStepDescription(
     }
 
     return specialDecision.recommendedNextStep;
+  }
+
+  if (versionResolution?.status === "same_version") {
+    return userView === "beginner"
+      ? "SimSuite matched this download to the copy already in Mods and found the same version. You usually do not need to move it again."
+      : "The shared compare found the same version on both sides. This looks like a duplicate copy unless you are replacing a damaged install on purpose.";
+  }
+
+  if (versionResolution?.status === "incoming_older") {
+    return userView === "beginner"
+      ? "The matching copy already in Mods looks newer than this download, so SimSuite is not treating this as the next update."
+      : "The shared compare found a newer installed copy, so SimSuite is keeping this incoming batch out of the update path.";
+  }
+
+  if (versionResolution?.status === "incoming_newer") {
+    return userView === "beginner"
+      ? "SimSuite found a matching copy in Mods and this download looks newer."
+      : "The shared compare matched this download to installed content and the incoming version looks newer.";
+  }
+
+  if (versionResolution?.matchedSubjectLabel) {
+    return userView === "beginner"
+      ? `SimSuite found a possible match in Mods for ${versionResolution.matchedSubjectLabel}, but it is not confident enough to make a firm version call.`
+      : `SimSuite matched this download to ${versionResolution.matchedSubjectLabel}, but the local evidence is still too mixed for a firm version verdict.`;
   }
 
   if (item.intakeMode === "guided") {
@@ -3827,23 +4053,99 @@ function specialVersionTone(decision: SpecialModDecision) {
   }
 }
 
+function genericVersionStatusLabel(
+  resolution: VersionResolution,
+  userView: UserView,
+) {
+  switch (resolution.status) {
+    case "not_installed":
+      return userView === "beginner" ? "Fresh install" : "No installed match";
+    case "incoming_newer":
+      return userView === "beginner" ? "Newer download" : "Incoming looks newer";
+    case "same_version":
+      return userView === "beginner" ? "Already current" : "Installed and incoming match";
+    case "incoming_older":
+      return userView === "beginner" ? "Older than installed" : "Incoming looks older";
+    default:
+      return resolution.matchedSubjectLabel
+        ? userView === "beginner"
+          ? "Match unclear"
+          : "Installed match, version unclear"
+        : userView === "beginner"
+          ? "Version unclear"
+          : "Version could not be compared";
+  }
+}
+
+function versionConfidenceLabel(confidence: VersionConfidence) {
+  switch (confidence) {
+    case "exact":
+      return "Exact";
+    case "strong":
+      return "Strong";
+    case "medium":
+      return "Medium";
+    case "weak":
+      return "Weak";
+    default:
+      return "Unknown";
+  }
+}
+
+function genericVersionTone(resolution: VersionResolution) {
+  switch (resolution.status) {
+    case "incoming_newer":
+    case "not_installed":
+      return "good";
+    case "incoming_older":
+      return "low";
+    case "same_version":
+      return "neutral";
+    default:
+      return resolution.matchedSubjectLabel ? "medium" : "neutral";
+  }
+}
+
 function primaryInboxStateBadge(
   item: DownloadsInboxItem,
   userView: UserView,
 ): { label: string; tone: string } | null {
-  if (!item.specialDecision) {
+  if (item.specialDecision) {
+    return {
+      label: specialVersionStatusLabel(item.specialDecision, userView),
+      tone: specialVersionTone(item.specialDecision),
+    };
+  }
+
+  if (!item.versionResolution) {
     return null;
   }
 
+  if (
+    item.versionResolution.status === "not_installed" ||
+    item.versionResolution.status === "unknown"
+  ) {
+    return item.versionResolution.matchedSubjectLabel
+      ? {
+          label: genericVersionStatusLabel(item.versionResolution, userView),
+          tone: genericVersionTone(item.versionResolution),
+        }
+      : null;
+  }
+
   return {
-    label: specialVersionStatusLabel(item.specialDecision, userView),
-    tone: specialVersionTone(item.specialDecision),
+    label: genericVersionStatusLabel(item.versionResolution, userView),
+    tone: genericVersionTone(item.versionResolution),
   };
 }
 
 function inboxItemTone(item: DownloadsInboxItem) {
   if (item.specialDecision) {
     return specialVersionTone(item.specialDecision);
+  }
+
+  if (item.versionResolution) {
+    return genericVersionTone(item.versionResolution);
   }
 
   return itemStatusTone(item.status);

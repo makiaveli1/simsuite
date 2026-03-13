@@ -18,6 +18,19 @@
         "mc_woohoo.package"
       ],
       "version_file_hints": ["McCmdCenter_AllModules", "MC Command Center"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)mc[_\\s-]?cmd", "(?i)mccc"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)mc_cmd", "(?i)mccc"],
+            "pattern": "^\\d+(?:\\.\\d+)+$"
+          }
+        ],
+        "ignoredPatterns": ["^1\\.1\\d{2}\\.\\d+$"],
+        "rewrites": []
+      },
       "help_summary": "MC Command Center is a script suite. Its script and package files need to stay together in one shallow folder under Mods, and existing .cfg settings files should be kept during updates.",
       "post_install_notes": [
         "Keep the main script and module files in the same MCCC folder.",
@@ -67,6 +80,19 @@
         "XmlInjector_Test.ts4script"
       ],
       "version_file_hints": ["XmlInjector_Script", "XML Injector"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)xml[_\\s-]?injector"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)xml[_\\s-]?injector"],
+            "pattern": "^\\d+(?:\\.\\d+)+$"
+          }
+        ],
+        "ignoredPatterns": ["^3\\.7$"],
+        "rewrites": []
+      },
       "help_summary": "XML Injector is a support library. Keep one current copy in one shallow folder under Mods so other mods can find it cleanly.",
       "post_install_notes": [
         "Keep only one current XML Injector install.",
@@ -114,6 +140,19 @@
         "lot51_core_library.package"
       ],
       "version_file_hints": ["Lot51_CoreLibrary", "Core Library"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)lot51[_\\s-]?core", "(?i)core[_\\s-]?library"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)lot51", "(?i)core"],
+            "pattern": "^\\d+(?:\\.\\d+){1,3}$"
+          }
+        ],
+        "ignoredPatterns": ["^1\\.1\\d{2}\\.\\d+$"],
+        "rewrites": []
+      },
       "help_summary": "Lot 51 Core Library is a shared support library. Keep it together in one shallow folder so dependent mods can update cleanly.",
       "post_install_notes": [
         "Keep one current Lot 51 Core Library install.",
@@ -160,6 +199,19 @@
         "S4CL.ts4script"
       ],
       "version_file_hints": ["Sims4CommunityLibrary", "S4CL"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)sims4communitylibrary", "(?i)s4cl"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)s4cl", "(?i)communitylibrary"],
+            "pattern": "^\\d+(?:\\.\\d+)+$"
+          }
+        ],
+        "ignoredPatterns": ["^3\\.7$"],
+        "rewrites": []
+      },
       "help_summary": "Sims 4 Community Library is a shared support library. Keep it in one shallow folder so it stays easy to update and validate.",
       "post_install_notes": [
         "Keep one current Sims 4 Community Library install.",
@@ -206,6 +258,24 @@
         "lumpinou_toolbox.ts4script"
       ],
       "version_file_hints": ["Lumpinou_Toolbox", "Lumpinou Toolbox"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)lumpinou[_\\s-]?toolbox"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)lumpinou", "(?i)toolbox"],
+            "pattern": "^\\d+(?:\\.\\d+)+$"
+          }
+        ],
+        "ignoredPatterns": ["^3\\.7$", "^1\\.1\\d{2}\\.\\d+$"],
+        "rewrites": [
+          {
+            "pattern": "^(\\d+)\\.(\\d{3})(\\d)$",
+            "replace": "$1.$2.$3"
+          }
+        ]
+      },
       "help_summary": "Lumpinou Toolbox is a shared support set. Keep it together in one shallow folder so dependent mods stay easy to update and troubleshoot.",
       "post_install_notes": [
         "Keep one current Lumpinou Toolbox install.",
@@ -252,6 +322,19 @@
         "SmartCoreScript.ts4script"
       ],
       "version_file_hints": ["SmartCoreScript", "Smart Core Script"],
+      "versionStrategy": {
+        "incomingOrder": ["payload", "filename", "archive_path"],
+        "installedOrder": ["payload", "filename", "saved_state"],
+        "filenamePatterns": ["(?i)smart[_\\s-]?core", "(?i)smartcorescript"],
+        "payloadPatterns": [
+          {
+            "pathPatterns": ["(?i)smart", "(?i)core"],
+            "pattern": "^\\d+(?:\\.\\d+)+$"
+          }
+        ],
+        "ignoredPatterns": ["^3\\.7$", "^1\\.1\\d{2}\\.\\d+$"],
+        "rewrites": []
+      },
       "help_summary": "Smart Core Script is a support library. Keep it in one shallow folder so dependent mods can find the current version cleanly.",
       "post_install_notes": [
         "Keep one current Smart Core Script install.",

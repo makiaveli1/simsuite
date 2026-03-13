@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::Utc;
+use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
@@ -32,7 +33,7 @@ use crate::{
     },
     seed::{
         DependencyRuleSeed, GuidedInstallProfileSeed, IncompatibilityRuleSeed,
-        ReviewOnlyPatternSeed, SeedPack,
+        ReviewOnlyPatternSeed, SeedPack, VersionStrategySeed,
     },
 };
 
@@ -119,6 +120,22 @@ struct VersionEvidence {
     lines: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VersionStrategySide {
+    Incoming,
+    Installed,
+}
+
+#[derive(Debug, Clone)]
+struct StrategyVersionCandidate {
+    value: String,
+    priority: usize,
+    confidence: f64,
+    source_kind: String,
+    display_source: String,
+    evidence_line: String,
+}
+
 fn push_version_evidence_line(lines: &mut Vec<String>, line: impl Into<String>) {
     let line = line.into();
     if !lines.contains(&line) {
@@ -153,6 +170,35 @@ fn merge_insight_values(existing: &[String], fresh: &[String]) -> Vec<String> {
     merged
 }
 
+fn merge_version_signals(
+    existing: &[crate::models::VersionSignal],
+    fresh: &[crate::models::VersionSignal],
+) -> Vec<crate::models::VersionSignal> {
+    let mut merged = existing.to_vec();
+    for signal in fresh {
+        if merged.iter().any(|existing_signal| {
+            existing_signal.normalized_value == signal.normalized_value
+                && existing_signal.source_kind == signal.source_kind
+                && existing_signal.source_path == signal.source_path
+        }) {
+            continue;
+        }
+        merged.push(signal.clone());
+    }
+
+    merged.sort_by(|left, right| {
+        right
+            .confidence
+            .total_cmp(&left.confidence)
+            .then_with(|| left.source_kind.cmp(&right.source_kind))
+            .then_with(|| left.normalized_value.cmp(&right.normalized_value))
+    });
+    if merged.len() > 16 {
+        merged.truncate(16);
+    }
+    merged
+}
+
 fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileInsights {
     FileInsights {
         format: fresh.format.clone().or_else(|| existing.format.clone()),
@@ -164,6 +210,7 @@ fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileIns
         embedded_names: merge_insight_values(&existing.embedded_names, &fresh.embedded_names),
         creator_hints: merge_insight_values(&existing.creator_hints, &fresh.creator_hints),
         version_hints: merge_insight_values(&existing.version_hints, &fresh.version_hints),
+        version_signals: merge_version_signals(&existing.version_signals, &fresh.version_signals),
         family_hints: merge_insight_values(&existing.family_hints, &fresh.family_hints),
     }
 }
@@ -187,6 +234,7 @@ fn refresh_profile_file_insights_if_needed(
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);
     if merged.version_hints == file.insights.version_hints
+        && merged.version_signals == file.insights.version_signals
         && merged.family_hints == file.insights.family_hints
         && merged.creator_hints == file.insights.creator_hints
         && merged.script_namespaces == file.insights.script_namespaces
@@ -226,6 +274,7 @@ fn refresh_existing_install_file_insights_if_needed(
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);
     if merged.version_hints == file.insights.version_hints
+        && merged.version_signals == file.insights.version_signals
         && merged.family_hints == file.insights.family_hints
         && merged.creator_hints == file.insights.creator_hints
         && merged.script_namespaces == file.insights.script_namespaces
@@ -1836,45 +1885,352 @@ fn existing_install_state_from_layout(
     }
 }
 
+fn source_label_for_signal_kind(source_kind: &str, side: VersionStrategySide) -> String {
+    match (source_kind, side) {
+        ("payload", _) | ("embedded_name", _) | ("resource_summary", _) => "inside mod".to_owned(),
+        ("archive_path", VersionStrategySide::Incoming) => "download name".to_owned(),
+        ("filename", VersionStrategySide::Incoming) => "download name".to_owned(),
+        ("filename", VersionStrategySide::Installed) => "installed files".to_owned(),
+        _ => "local clues".to_owned(),
+    }
+}
+
+fn strategy_order<'a>(
+    profile: &'a GuidedInstallProfileSeed,
+    side: VersionStrategySide,
+) -> Vec<&'a str> {
+    let configured: Vec<&'a str> = profile
+        .version_strategy
+        .as_ref()
+        .map(|strategy| match side {
+            VersionStrategySide::Incoming => {
+                strategy.incoming_order.iter().map(String::as_str).collect()
+            }
+            VersionStrategySide::Installed => strategy
+                .installed_order
+                .iter()
+                .map(String::as_str)
+                .collect(),
+        })
+        .unwrap_or_default();
+
+    if !configured.is_empty() {
+        return configured;
+    }
+
+    match side {
+        VersionStrategySide::Incoming => {
+            vec!["payload", "embedded_name", "filename", "archive_path"]
+        }
+        VersionStrategySide::Installed => vec!["payload", "embedded_name", "filename"],
+    }
+}
+
+fn strategy_priority(
+    profile: &GuidedInstallProfileSeed,
+    side: VersionStrategySide,
+    source_kind: &str,
+) -> usize {
+    strategy_order(profile, side)
+        .iter()
+        .position(|candidate| *candidate == source_kind)
+        .unwrap_or(usize::MAX / 2)
+}
+
+fn regex_matches(pattern: &str, value: &str) -> bool {
+    Regex::new(pattern)
+        .ok()
+        .is_some_and(|regex| regex.is_match(value))
+}
+
+fn strategy_ignores_signal(
+    strategy: Option<&VersionStrategySeed>,
+    signal: &crate::models::VersionSignal,
+) -> bool {
+    strategy
+        .map(|value| {
+            value.ignored_patterns.iter().any(|pattern| {
+                regex_matches(pattern, &signal.raw_value)
+                    || regex_matches(pattern, &signal.normalized_value)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn apply_strategy_rewrites(strategy: Option<&VersionStrategySeed>, value: &str) -> String {
+    let mut rewritten = value.to_owned();
+    if let Some(strategy) = strategy {
+        for rule in &strategy.rewrites {
+            if let Ok(regex) = Regex::new(&rule.pattern) {
+                rewritten = regex
+                    .replace_all(&rewritten, rule.replace.as_str())
+                    .to_string();
+            }
+        }
+    }
+
+    special_mod_versions::normalize_version_value(&rewritten)
+}
+
+fn signal_allowed_for_strategy(
+    strategy: Option<&VersionStrategySeed>,
+    side: VersionStrategySide,
+    signal: &crate::models::VersionSignal,
+    container_name: &str,
+) -> bool {
+    let Some(strategy) = strategy else {
+        return true;
+    };
+
+    if strategy_ignores_signal(Some(strategy), signal) {
+        return false;
+    }
+
+    if signal.source_kind == "filename" && !strategy.filename_patterns.is_empty() {
+        return strategy.filename_patterns.iter().any(|pattern| {
+            regex_matches(pattern, container_name)
+                || signal
+                    .source_path
+                    .as_deref()
+                    .is_some_and(|path| regex_matches(pattern, path))
+        });
+    }
+
+    if signal.source_kind == "payload" && !strategy.payload_patterns.is_empty() {
+        return strategy.payload_patterns.iter().any(|rule| {
+            let path_matches = if rule.path_patterns.is_empty() {
+                true
+            } else {
+                signal.source_path.as_deref().is_some_and(|path| {
+                    rule.path_patterns
+                        .iter()
+                        .any(|pattern| regex_matches(pattern, path))
+                })
+            };
+            path_matches
+                && (regex_matches(&rule.pattern, &signal.raw_value)
+                    || regex_matches(&rule.pattern, &signal.normalized_value))
+        });
+    }
+
+    if side == VersionStrategySide::Installed && signal.source_kind == "archive_path" {
+        return false;
+    }
+
+    true
+}
+
+fn resolve_strategy_candidates(
+    _profile: &GuidedInstallProfileSeed,
+    side: VersionStrategySide,
+    candidates: Vec<StrategyVersionCandidate>,
+) -> VersionEvidence {
+    if candidates.is_empty() {
+        return VersionEvidence::default();
+    }
+
+    let mut sorted = candidates;
+    sorted.sort_by(|left, right| {
+        left.priority
+            .cmp(&right.priority)
+            .then_with(|| right.confidence.total_cmp(&left.confidence))
+            .then_with(|| {
+                special_mod_versions::parse_version_parts(&right.value)
+                    .map(|parts| parts.len())
+                    .unwrap_or_default()
+                    .cmp(
+                        &special_mod_versions::parse_version_parts(&left.value)
+                            .map(|parts| parts.len())
+                            .unwrap_or_default(),
+                    )
+            })
+    });
+
+    let top = sorted[0].clone();
+    if let Some(conflict) = sorted.iter().skip(1).find(|candidate| {
+        candidate.value != top.value
+            && candidate.priority <= top.priority + 1
+            && candidate.confidence >= 0.78
+            && top.confidence >= 0.78
+    }) {
+        let mut lines = vec![top.evidence_line.clone()];
+        push_version_evidence_line(
+            &mut lines,
+            format!(
+                "{} also pointed to {}, so SimSuite is staying cautious.",
+                conflict.display_source, conflict.value
+            ),
+        );
+        limit_version_evidence_lines(&mut lines);
+        return VersionEvidence {
+            value: None,
+            source: Some(source_label_for_signal_kind(&top.source_kind, side)),
+            lines,
+        };
+    }
+
+    let mut lines = vec![top.evidence_line.clone()];
+    if sorted
+        .iter()
+        .skip(1)
+        .any(|candidate| candidate.value == top.value)
+    {
+        push_version_evidence_line(
+            &mut lines,
+            format!("Other local clues also pointed to {}.", top.value),
+        );
+    }
+    limit_version_evidence_lines(&mut lines);
+
+    VersionEvidence {
+        value: Some(top.value),
+        source: Some(source_label_for_signal_kind(&top.source_kind, side)),
+        lines,
+    }
+}
+
+fn collect_file_signal_candidates(
+    profile: &GuidedInstallProfileSeed,
+    side: VersionStrategySide,
+    container_name: &str,
+    filename: &str,
+    signals: &[crate::models::VersionSignal],
+    location_label: &str,
+) -> Vec<StrategyVersionCandidate> {
+    let strategy = profile.version_strategy.as_ref();
+    signals
+        .iter()
+        .filter(|signal| {
+            signal_allowed_for_strategy(strategy, side, signal, container_name)
+                && strategy_priority(profile, side, &signal.source_kind) < usize::MAX / 2
+        })
+        .filter_map(|signal| {
+            let value = apply_strategy_rewrites(strategy, &signal.normalized_value);
+            if value.is_empty() {
+                return None;
+            }
+
+            let source_text = match signal.source_kind.as_str() {
+                "payload" | "embedded_name" | "resource_summary" => {
+                    format!("{filename} hinted {value} from {location_label}.")
+                }
+                "archive_path" => format!("{filename} hinted {value} from the archive path."),
+                _ => format!("{filename} hinted {value} from the file name."),
+            };
+
+            Some(StrategyVersionCandidate {
+                value,
+                priority: strategy_priority(profile, side, &signal.source_kind),
+                confidence: signal.confidence,
+                source_kind: signal.source_kind.clone(),
+                display_source: filename.to_owned(),
+                evidence_line: source_text,
+            })
+        })
+        .collect()
+}
+
+fn collect_legacy_hint_candidates(
+    profile: &GuidedInstallProfileSeed,
+    side: VersionStrategySide,
+    container_name: &str,
+    filename: &str,
+    version_hints: &[String],
+    location_label: &str,
+) -> Vec<StrategyVersionCandidate> {
+    let strategy = profile.version_strategy.as_ref();
+    if strategy_priority(profile, side, "payload") >= usize::MAX / 2 {
+        return Vec::new();
+    }
+
+    let path_allowed = strategy
+        .and_then(|value| {
+            if value.payload_patterns.is_empty() {
+                return Some(true);
+            }
+
+            Some(value.payload_patterns.iter().any(|rule| {
+                rule.path_patterns.is_empty()
+                    || rule.path_patterns.iter().any(|pattern| {
+                        regex_matches(pattern, container_name) || regex_matches(pattern, filename)
+                    })
+            }))
+        })
+        .unwrap_or(true);
+
+    if !path_allowed {
+        return Vec::new();
+    }
+
+    version_hints
+        .iter()
+        .filter_map(|hint| {
+            let raw_value = hint.trim();
+            if raw_value.is_empty() {
+                return None;
+            }
+
+            let normalized_value = apply_strategy_rewrites(strategy, raw_value);
+            if normalized_value.is_empty() {
+                return None;
+            }
+
+            if strategy.is_some_and(|value| {
+                value.ignored_patterns.iter().any(|pattern| {
+                    regex_matches(pattern, raw_value) || regex_matches(pattern, &normalized_value)
+                })
+            }) {
+                return None;
+            }
+
+            Some(StrategyVersionCandidate {
+                value: normalized_value.clone(),
+                priority: strategy_priority(profile, side, "payload"),
+                confidence: 0.82,
+                source_kind: "payload".to_owned(),
+                display_source: filename.to_owned(),
+                evidence_line: format!(
+                    "{filename} hinted {normalized_value} from {location_label}."
+                ),
+            })
+        })
+        .collect()
+}
+
 fn incoming_version_for_profile(
     profile: &GuidedInstallProfileSeed,
     display_name: &str,
     files: &[ProfileFile],
 ) -> VersionEvidence {
-    let inside_mod_values = files
+    let strategy_candidates = files
         .iter()
         .filter(|file| is_profile_content_file(file, profile))
-        .flat_map(|file| file.insights.version_hints.iter().cloned())
+        .flat_map(|file| {
+            let mut candidates = collect_file_signal_candidates(
+                profile,
+                VersionStrategySide::Incoming,
+                display_name,
+                &file.filename,
+                &file.insights.version_signals,
+                "inside the download",
+            );
+            if file.insights.version_signals.is_empty() && !file.insights.version_hints.is_empty() {
+                candidates.extend(collect_legacy_hint_candidates(
+                    profile,
+                    VersionStrategySide::Incoming,
+                    display_name,
+                    &file.filename,
+                    &file.insights.version_hints,
+                    "inside the download",
+                ));
+            }
+            candidates
+        })
         .collect::<Vec<_>>();
-    if let Some(version) = extract_version_from_values(&inside_mod_values) {
-        let mut lines = Vec::new();
-        if let Some(file) = files.iter().find(|file| {
-            is_profile_content_file(file, profile)
-                && file
-                    .insights
-                    .version_hints
-                    .iter()
-                    .any(|hint| hint == &version)
-        }) {
-            push_version_evidence_line(
-                &mut lines,
-                format!(
-                    "{} hinted {} from inside the download.",
-                    file.filename, version
-                ),
-            );
-        } else {
-            push_version_evidence_line(
-                &mut lines,
-                format!("Inside-mod clues pointed to {}.", version),
-            );
-        }
-        limit_version_evidence_lines(&mut lines);
-        return VersionEvidence {
-            value: Some(version),
-            source: Some("inside mod".to_owned()),
-            lines,
-        };
+    let resolved =
+        resolve_strategy_candidates(profile, VersionStrategySide::Incoming, strategy_candidates);
+    if resolved.value.is_some() {
+        return resolved;
     }
 
     let mut values = special_mod_versions::version_hints_from_profile(profile, display_name);
@@ -1993,44 +2349,36 @@ fn installed_version_for_profile(
     profile: &GuidedInstallProfileSeed,
     layout: &ExistingInstallLayout,
 ) -> VersionEvidence {
-    let inside_mod_values = layout
+    let strategy_candidates = layout
         .existing_files
         .iter()
         .chain(layout.preserve_files.iter())
-        .flat_map(|file| file.insights.version_hints.iter().cloned())
+        .flat_map(|file| {
+            let mut candidates = collect_file_signal_candidates(
+                profile,
+                VersionStrategySide::Installed,
+                &file.filename,
+                &file.filename,
+                &file.insights.version_signals,
+                "the installed mod files",
+            );
+            if file.insights.version_signals.is_empty() && !file.insights.version_hints.is_empty() {
+                candidates.extend(collect_legacy_hint_candidates(
+                    profile,
+                    VersionStrategySide::Installed,
+                    &file.filename,
+                    &file.filename,
+                    &file.insights.version_hints,
+                    "the installed mod files",
+                ));
+            }
+            candidates
+        })
         .collect::<Vec<_>>();
-    if let Some(version) = extract_version_from_values(&inside_mod_values) {
-        let mut lines = Vec::new();
-        if let Some(file) = layout
-            .existing_files
-            .iter()
-            .chain(layout.preserve_files.iter())
-            .find(|file| {
-                file.insights
-                    .version_hints
-                    .iter()
-                    .any(|hint| hint == &version)
-            })
-        {
-            push_version_evidence_line(
-                &mut lines,
-                format!(
-                    "{} hinted {} from the installed mod files.",
-                    file.filename, version
-                ),
-            );
-        } else {
-            push_version_evidence_line(
-                &mut lines,
-                format!("Installed inside-mod clues pointed to {}.", version),
-            );
-        }
-        limit_version_evidence_lines(&mut lines);
-        return VersionEvidence {
-            value: Some(version),
-            source: Some("inside mod".to_owned()),
-            lines,
-        };
+    let resolved =
+        resolve_strategy_candidates(profile, VersionStrategySide::Installed, strategy_candidates);
+    if resolved.value.is_some() {
+        return resolved;
     }
 
     let mut values = layout

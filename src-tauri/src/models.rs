@@ -35,6 +35,9 @@ pub struct HomeOverview {
     pub duplicates_count: i64,
     pub review_count: i64,
     pub unsafe_count: i64,
+    pub exact_update_items: i64,
+    pub possible_update_items: i64,
+    pub unknown_watch_items: i64,
     pub last_scan_at: Option<String>,
     pub read_only_mode: bool,
 }
@@ -201,6 +204,100 @@ pub struct LibraryQuery {
     pub offset: Option<i64>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionSignal {
+    pub raw_value: String,
+    pub normalized_value: String,
+    pub source_kind: String,
+    pub source_path: Option<String>,
+    pub matched_by: Option<String>,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionCompareStatus {
+    NotInstalled,
+    IncomingNewer,
+    SameVersion,
+    IncomingOlder,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionConfidence {
+    Exact,
+    Strong,
+    Medium,
+    Weak,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionResolution {
+    pub subject_label: Option<String>,
+    pub matched_subject_label: Option<String>,
+    pub matched_subject_key: Option<String>,
+    pub status: VersionCompareStatus,
+    pub confidence: VersionConfidence,
+    pub match_score: f64,
+    pub incoming_version: Option<String>,
+    pub installed_version: Option<String>,
+    pub incoming_signature: Option<String>,
+    pub installed_signature: Option<String>,
+    pub evidence: Vec<String>,
+    pub incoming_evidence: Vec<String>,
+    pub installed_evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InstalledVersionSummary {
+    pub subject_label: String,
+    pub subject_key: String,
+    pub version: Option<String>,
+    pub signature: Option<String>,
+    pub confidence: VersionConfidence,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchSourceKind {
+    ExactPage,
+    CreatorPage,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchStatus {
+    #[default]
+    NotWatched,
+    Current,
+    ExactUpdateAvailable,
+    PossibleUpdate,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WatchResult {
+    pub status: WatchStatus,
+    pub source_kind: Option<WatchSourceKind>,
+    pub source_label: Option<String>,
+    pub source_url: Option<String>,
+    pub latest_version: Option<String>,
+    pub checked_at: Option<String>,
+    pub confidence: VersionConfidence,
+    pub note: Option<String>,
+    pub evidence: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FileInsights {
@@ -210,6 +307,7 @@ pub struct FileInsights {
     pub embedded_names: Vec<String>,
     pub creator_hints: Vec<String>,
     pub version_hints: Vec<String>,
+    pub version_signals: Vec<VersionSignal>,
     pub family_hints: Vec<String>,
 }
 
@@ -319,6 +417,8 @@ pub struct FileDetail {
     pub created_at: Option<String>,
     pub parser_warnings: Vec<String>,
     pub insights: FileInsights,
+    pub installed_version_summary: Option<InstalledVersionSummary>,
+    pub watch_result: Option<WatchResult>,
     pub creator_learning: CreatorLearningInfo,
     pub category_override: CategoryOverrideInfo,
 }
@@ -796,6 +896,7 @@ pub struct DownloadsInboxItem {
     pub related_item_ids: Vec<i64>,
     pub timeline: Vec<DownloadsTimelineEntry>,
     pub special_decision: Option<SpecialModDecision>,
+    pub version_resolution: Option<VersionResolution>,
 }
 
 #[derive(Debug, Clone, Serialize)]

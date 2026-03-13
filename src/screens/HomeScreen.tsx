@@ -198,6 +198,16 @@ export function HomeScreen({
       ? [
           { label: "Moves", value: "Ask first" },
           {
+            label: "Updates ready",
+            value: `${overview?.exactUpdateItems ?? 0}`,
+          },
+          {
+            label: "Watch review",
+            value: `${overview?.possibleUpdateItems ?? 0} possible / ${
+              overview?.unknownWatchItems ?? 0
+            } unclear`,
+          },
+          {
             label: "Last check",
             value: overview?.lastScanAt
               ? new Date(overview.lastScanAt).toLocaleString()
@@ -208,6 +218,18 @@ export function HomeScreen({
       : [
           { label: "Mode", value: "Approval-first" },
           { label: "Moves", value: "Validator + snapshot" },
+          {
+            label: "Exact updates",
+            value: `${overview?.exactUpdateItems ?? 0}`,
+          },
+          {
+            label: "Possible updates",
+            value: `${overview?.possibleUpdateItems ?? 0}`,
+          },
+          {
+            label: "Watch unknown",
+            value: `${overview?.unknownWatchItems ?? 0}`,
+          },
           {
             label: "Last scan",
             value: overview?.lastScanAt

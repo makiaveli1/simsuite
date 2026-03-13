@@ -24,6 +24,8 @@ import type {
   LibraryListResponse,
   Screen,
   UserView,
+  VersionConfidence,
+  WatchResult,
 } from "../lib/types";
 
 interface LibraryScreenProps {
@@ -245,6 +247,9 @@ export function LibraryScreen({
         selected.insights.scriptNamespaces.length ||
         selected.insights.resourceSummary.length),
   );
+  const hasVersionWatchInfo = Boolean(
+    selected?.installedVersionSummary || selected?.watchResult,
+  );
   const libraryInspectorSections = selected
     ? [
         {
@@ -296,6 +301,89 @@ export function LibraryScreen({
             </div>
           ),
         },
+        ...(hasVersionWatchInfo
+          ? [
+              {
+                id: "versionWatch",
+                label:
+                  userView === "beginner" ? "Version and updates" : "Installed version",
+                hint:
+                  userView === "beginner"
+                    ? "What SimSuite knows about this installed item and any saved watch result."
+                    : "Installed version summary, local evidence, and watch status.",
+                children: (
+                  <>
+                    <div className="detail-list">
+                      <DetailRow
+                        label="Subject"
+                        value={
+                          selected.installedVersionSummary?.subjectLabel ??
+                          selected.filename
+                        }
+                      />
+                      <DetailRow
+                        label="Installed version"
+                        value={formatInstalledVersionValue(
+                          selected.installedVersionSummary?.version ?? null,
+                        )}
+                      />
+                      <DetailRow
+                        label="Confidence"
+                        value={versionConfidenceLabel(
+                          selected.installedVersionSummary?.confidence ?? "unknown",
+                        )}
+                      />
+                      <DetailRow
+                        label="Watch status"
+                        value={watchStatusLabel(selected.watchResult, userView)}
+                      />
+                      {selected.watchResult?.sourceKind ? (
+                        <DetailRow
+                          label="Watch source"
+                          value={watchSourceLabel(selected.watchResult)}
+                        />
+                      ) : null}
+                      {selected.watchResult?.latestVersion ? (
+                        <DetailRow
+                          label="Latest seen"
+                          value={selected.watchResult.latestVersion}
+                        />
+                      ) : null}
+                    </div>
+                    {selected.installedVersionSummary?.evidence.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">Local version evidence</div>
+                        <div className="downloads-evidence-list">
+                          {selected.installedVersionSummary.evidence.map((line) => (
+                            <div key={line} className="downloads-evidence-row">
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.watchResult?.note || selected.watchResult?.evidence.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">Watch notes</div>
+                        <div className="downloads-evidence-list">
+                          {selected.watchResult?.note ? (
+                            <div className="downloads-evidence-row">
+                              {selected.watchResult.note}
+                            </div>
+                          ) : null}
+                          {selected.watchResult?.evidence.map((line) => (
+                            <div key={line} className="downloads-evidence-row">
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ),
+              },
+            ]
+          : []),
         {
           id: "safety",
           label: userView === "beginner" ? "Move rules" : "Bundle and warnings",
@@ -1117,6 +1205,65 @@ function DetailRow({
       <strong className={mono ? "mono-text" : ""}>{value}</strong>
     </div>
   );
+}
+
+function formatInstalledVersionValue(value: string | null) {
+  return value?.trim() ? value : "Not clear yet";
+}
+
+function versionConfidenceLabel(confidence: VersionConfidence) {
+  switch (confidence) {
+    case "exact":
+      return "Exact";
+    case "strong":
+      return "Strong";
+    case "medium":
+      return "Medium";
+    case "weak":
+      return "Weak";
+    default:
+      return "Unknown";
+  }
+}
+
+function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
+  if (!watchResult) {
+    return userView === "beginner" ? "Not watched yet" : "Not watched";
+  }
+
+  switch (watchResult.status) {
+    case "exact_update_available":
+      return userView === "beginner"
+        ? "Confirmed update found"
+        : "Exact update available";
+    case "possible_update":
+      return userView === "beginner"
+        ? "Possible update spotted"
+        : "Possible update";
+    case "current":
+      return userView === "beginner" ? "Looks current" : "Looks current";
+    case "not_watched":
+      return userView === "beginner" ? "Not watched yet" : "Not watched";
+    default:
+      return userView === "beginner"
+        ? "Watch result is still unclear"
+        : "Unknown";
+  }
+}
+
+function watchSourceLabel(watchResult: WatchResult | null) {
+  if (!watchResult?.sourceKind) {
+    return "Not set";
+  }
+
+  switch (watchResult.sourceKind) {
+    case "exact_page":
+      return "Exact mod page";
+    case "creator_page":
+      return "Creator page";
+    default:
+      return "Saved source";
+  }
 }
 
 function formatBytes(size: number) {

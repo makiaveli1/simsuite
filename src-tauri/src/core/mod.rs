@@ -1,6 +1,7 @@
 pub mod ai_classifier;
 pub mod bundle_detector;
 pub mod category_audit;
+pub mod content_versions;
 pub mod creator_audit;
 pub mod downloads_watcher;
 pub mod duplicate_detector;

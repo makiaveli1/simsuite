@@ -18,7 +18,7 @@ use crate::{
     app_state::AppState,
     commands::{emit_downloads_status, emit_workspace_change},
     core::{
-        bundle_detector, duplicate_detector,
+        bundle_detector, content_versions, duplicate_detector,
         install_profile_engine::{
             self, DownloadItemAssessment, SpecialDecisionContext, SpecialDecisionDetailLevel,
         },
@@ -449,6 +449,7 @@ fn list_download_items_internal(
                 related_item_ids: Vec::new(),
                 timeline: Vec::new(),
                 special_decision: None,
+                version_resolution: None,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -591,6 +592,7 @@ fn hydrate_download_item(
     allow_network_latest: bool,
     include_full_special_details: bool,
 ) -> AppResult<()> {
+    item.version_resolution = None;
     item.special_decision = if should_load_special_decision(item) {
         install_profile_engine::build_special_mod_decision_cached(
             connection,
@@ -618,6 +620,18 @@ fn hydrate_download_item(
         item.family_key = Some(decision.family_key.clone());
         return Ok(());
     }
+
+    item.version_resolution = content_versions::resolve_download_item_version(
+        connection,
+        settings,
+        seed_pack,
+        item.id,
+        if include_full_special_details {
+            content_versions::CompareDetailLevel::Full
+        } else {
+            content_versions::CompareDetailLevel::Queue
+        },
+    )?;
 
     item.queue_lane = derive_queue_lane(item);
     item.queue_summary = build_queue_summary(item);
@@ -647,6 +661,32 @@ fn derive_queue_lane(item: &DownloadsInboxItem) -> DownloadQueueLane {
 }
 
 fn build_queue_summary(item: &DownloadsInboxItem) -> String {
+    if let Some(resolution) = item.version_resolution.as_ref() {
+        match resolution.status {
+            crate::models::VersionCompareStatus::SameVersion => {
+                return "SimSuite found a matching installed copy for this download.".to_owned();
+            }
+            crate::models::VersionCompareStatus::IncomingOlder => {
+                return "The installed copy looks newer than this download.".to_owned();
+            }
+            crate::models::VersionCompareStatus::IncomingNewer => {
+                return "This download looks newer than the installed copy.".to_owned();
+            }
+            crate::models::VersionCompareStatus::Unknown => {
+                if !resolution
+                    .matched_subject_label
+                    .as_deref()
+                    .unwrap_or("")
+                    .is_empty()
+                {
+                    return "SimSuite found a possible installed match, but the version is still unclear."
+                        .to_owned();
+                }
+            }
+            crate::models::VersionCompareStatus::NotInstalled => {}
+        }
+    }
+
     match derive_queue_lane(item) {
         DownloadQueueLane::ReadyNow => {
             if item.review_file_count > 0 {
@@ -3022,6 +3062,7 @@ fn load_item_by_id_cached(
                     related_item_ids: Vec::new(),
                     timeline: Vec::new(),
                     special_decision: None,
+                    version_resolution: None,
                 })
             },
         )

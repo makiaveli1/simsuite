@@ -137,6 +137,40 @@ pub struct InstallCatalogSeed {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionSignalPathPatternSeed {
+    pub path_patterns: Vec<String>,
+    pub pattern: String,
+}
+
+impl Default for VersionSignalPathPatternSeed {
+    fn default() -> Self {
+        Self {
+            path_patterns: Vec::new(),
+            pattern: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionRewriteSeed {
+    pub pattern: String,
+    pub replace: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionStrategySeed {
+    pub incoming_order: Vec<String>,
+    pub installed_order: Vec<String>,
+    pub filename_patterns: Vec<String>,
+    pub payload_patterns: Vec<VersionSignalPathPatternSeed>,
+    pub ignored_patterns: Vec<String>,
+    pub rewrites: Vec<VersionRewriteSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct GuidedInstallProfileSeed {
     pub key: String,
     pub display_name: String,
@@ -156,6 +190,8 @@ pub struct GuidedInstallProfileSeed {
     pub sample_filenames: Vec<String>,
     #[serde(default)]
     pub version_file_hints: Vec<String>,
+    #[serde(rename = "versionStrategy", default)]
+    pub version_strategy: Option<VersionStrategySeed>,
     pub help_summary: String,
     #[serde(default)]
     pub post_install_notes: Vec<String>,
@@ -484,6 +520,7 @@ mod tests {
             reviewed_at: "2026-03-11".to_owned(),
             sample_filenames: vec!["sample.ts4script".to_owned()],
             version_file_hints: vec!["sample".to_owned()],
+            version_strategy: None,
             help_summary: "Sample".to_owned(),
             post_install_notes: Vec::new(),
             required_name_clues: vec!["sample".to_owned()],

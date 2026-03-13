@@ -1,12 +1,13 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 
 use crate::{
+    core::content_versions,
     error::AppResult,
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, HomeOverview,
-        LibraryFacets, LibraryFileRow, LibraryListResponse, LibraryQuery,
+        LibraryFacets, LibraryFileRow, LibraryListResponse, LibraryQuery, LibrarySettings,
     },
-    seed::TaxonomySeed,
+    seed::{SeedPack, TaxonomySeed},
 };
 
 pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
@@ -38,6 +39,8 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
         connection,
         "SELECT COUNT(*) FROM files WHERE safety_notes <> '[]'",
     )?;
+    let (exact_update_items, possible_update_items, unknown_watch_items) =
+        content_versions::load_watch_counts(connection)?;
     let last_scan_at = connection
         .query_row(
             "SELECT completed_at
@@ -61,6 +64,9 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
         duplicates_count,
         review_count,
         unsafe_count,
+        exact_update_items,
+        possible_update_items,
+        unknown_watch_items,
         last_scan_at,
         read_only_mode: true,
     })
@@ -173,7 +179,12 @@ pub fn list_library_files(
     Ok(LibraryListResponse { total, items })
 }
 
-pub fn get_file_detail(connection: &Connection, file_id: i64) -> AppResult<Option<FileDetail>> {
+pub fn get_file_detail(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+) -> AppResult<Option<FileDetail>> {
     let detail = connection
         .query_row(
             "SELECT
@@ -228,6 +239,8 @@ pub fn get_file_detail(connection: &Connection, file_id: i64) -> AppResult<Optio
                     created_at: row.get(16)?,
                     parser_warnings: parse_string_array(row.get::<_, String>(17)?),
                     insights: parse_insights(row.get::<_, String>(18)?),
+                    installed_version_summary: None,
+                    watch_result: None,
                     creator_learning: CreatorLearningInfo {
                         locked_by_user: row.get::<_, i64>(20)? != 0,
                         preferred_path: row.get(21)?,
@@ -252,6 +265,12 @@ pub fn get_file_detail(connection: &Connection, file_id: i64) -> AppResult<Optio
                 detail.creator_learning.learned_aliases =
                     list_creator_aliases(connection, creator_name)?;
             }
+            let (installed_version_summary, watch_result) =
+                content_versions::resolve_library_file_version(
+                    connection, settings, seed_pack, file_id,
+                )?;
+            detail.installed_version_summary = installed_version_summary;
+            detail.watch_result = watch_result;
             Ok(Some(detail))
         }
         None => Ok(None),

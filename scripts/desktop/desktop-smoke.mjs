@@ -350,7 +350,17 @@ async function verifySameVersionItem(driver, partialText) {
     await clickNamedQueueItem(driver, partialText);
     await waitForText(driver, "Versions");
     await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
-    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+    await waitForAnyText(
+      driver,
+      [
+        "Inside the mod files",
+        "Matching file fingerprint",
+        "Matching file fingerprints confirmed the same version",
+        "Download name",
+        "Installed files",
+      ],
+      30000,
+    );
     await waitForAnyText(driver, ["Reinstall guided copy", "Reinstall anyway"], 30000);
   } catch (error) {
     await dumpBodyText(driver, `same-version-failure-${partialText}`);
@@ -368,6 +378,26 @@ async function verifyOlderVersionItem(driver, partialText) {
     await dumpBodyText(driver, `older-version-failure-${partialText}`);
     throw error;
   }
+}
+
+async function verifyHomeWatchSummary(driver) {
+  await clickButton(driver, "Home");
+  await waitForText(driver, "Home");
+  await waitForAnyText(driver, ["Exact updates", "Updates ready"], 30000);
+  await waitForAnyText(driver, ["Possible updates", "Watch review"], 30000);
+}
+
+async function verifyLibraryVersionWatch(driver) {
+  await clickButton(driver, "Library");
+  await waitForText(driver, "Library");
+  try {
+    await clickVisibleText(driver, "S4CL.ts4script", 30000);
+  } catch {
+    await clickVisibleText(driver, "mc_cmd_center.ts4script", 30000);
+  }
+  await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
+  await waitForText(driver, "Confidence");
+  await waitForText(driver, "Watch status");
 }
 
 async function run() {
@@ -505,6 +535,9 @@ async function run() {
       await clickButton(driver, "Refresh");
       await waitForText(driver, "Inbox");
     }
+
+    await verifyHomeWatchSummary(driver);
+    await verifyLibraryVersionWatch(driver);
 
     console.log(`Desktop smoke passed against ${appPath}`);
   } finally {
