@@ -9,6 +9,12 @@ const DEFAULT_XML_SAME_ITEM = "XML_Injector_Same_Test";
 const DEFAULT_XML_OLDER_ITEM = "XML_Injector_Older_Test";
 const DEFAULT_S4CL_SAME_ITEM = "S4CL_Same_Test";
 const DEFAULT_S4CL_OLDER_ITEM = "S4CL_Older_Test";
+const DEFAULT_LOT51_SAME_ITEM = "Lot51_Core_Same_Test";
+const DEFAULT_LOT51_OLDER_ITEM = "Lot51_Core_Older_Test";
+const DEFAULT_TOOLBOX_SAME_ITEM = "Toolbox_Same_Test";
+const DEFAULT_TOOLBOX_OLDER_ITEM = "Toolbox_Older_Test";
+const DEFAULT_SMART_CORE_SAME_ITEM = "Smart_Core_Same_Test";
+const DEFAULT_SMART_CORE_OLDER_ITEM = "Smart_Core_Older_Test";
 const DEFAULT_APP_PATHS = [
   path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
   path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
@@ -339,6 +345,30 @@ async function clickNamedQueueItem(driver, partialText, timeoutMs = 30000) {
   await clickQueueRow(driver, partialText, timeoutMs);
 }
 
+async function verifySameVersionItem(driver, partialText) {
+  try {
+    await clickNamedQueueItem(driver, partialText);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
+    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+  } catch (error) {
+    await dumpBodyText(driver, `same-version-failure-${partialText}`);
+    throw error;
+  }
+}
+
+async function verifyOlderVersionItem(driver, partialText) {
+  try {
+    await clickNamedQueueItem(driver, partialText);
+    await waitForText(driver, "Versions");
+    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
+    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
+  } catch (error) {
+    await dumpBodyText(driver, `older-version-failure-${partialText}`);
+    throw error;
+  }
+}
+
 async function run() {
   const appPath = resolveAppPath();
   const session = loadDriverSession();
@@ -348,6 +378,14 @@ async function run() {
   const fixtureXmlOlderItem = session?.fixture?.xmlOlderItem ?? DEFAULT_XML_OLDER_ITEM;
   const fixtureS4clSameItem = session?.fixture?.s4clSameItem ?? DEFAULT_S4CL_SAME_ITEM;
   const fixtureS4clOlderItem = session?.fixture?.s4clOlderItem ?? DEFAULT_S4CL_OLDER_ITEM;
+  const fixtureLot51SameItem = session?.fixture?.lot51SameItem ?? DEFAULT_LOT51_SAME_ITEM;
+  const fixtureLot51OlderItem = session?.fixture?.lot51OlderItem ?? DEFAULT_LOT51_OLDER_ITEM;
+  const fixtureToolboxSameItem = session?.fixture?.toolboxSameItem ?? DEFAULT_TOOLBOX_SAME_ITEM;
+  const fixtureToolboxOlderItem = session?.fixture?.toolboxOlderItem ?? DEFAULT_TOOLBOX_OLDER_ITEM;
+  const fixtureSmartCoreSameItem =
+    session?.fixture?.smartCoreSameItem ?? DEFAULT_SMART_CORE_SAME_ITEM;
+  const fixtureSmartCoreOlderItem =
+    session?.fixture?.smartCoreOlderItem ?? DEFAULT_SMART_CORE_OLDER_ITEM;
   const capabilities = new Capabilities();
   capabilities.setBrowserName("wry");
   capabilities.set("tauri:options", {
@@ -379,6 +417,12 @@ async function run() {
     await waitForQueueItem(driver, fixtureXmlOlderItem, 90000);
     await waitForQueueItem(driver, fixtureS4clSameItem, 90000);
     await waitForQueueItem(driver, fixtureS4clOlderItem, 90000);
+    await waitForQueueItem(driver, fixtureLot51SameItem, 90000);
+    await waitForQueueItem(driver, fixtureLot51OlderItem, 90000);
+    await waitForQueueItem(driver, fixtureToolboxSameItem, 90000);
+    await waitForQueueItem(driver, fixtureToolboxOlderItem, 90000);
+    await waitForQueueItem(driver, fixtureSmartCoreSameItem, 90000);
+    await waitForQueueItem(driver, fixtureSmartCoreOlderItem, 90000);
 
     await clickSpecialQueueItem(driver);
     await waitForText(driver, "Versions");
@@ -387,25 +431,25 @@ async function run() {
     await waitForText(driver, "Compare");
     await waitForAnyText(driver, ["Incoming evidence", "Main check"], 30000);
 
-    await clickNamedQueueItem(driver, fixtureXmlSameItem);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
-    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+    for (const item of [
+      fixtureXmlSameItem,
+      fixtureS4clSameItem,
+      fixtureLot51SameItem,
+      fixtureToolboxSameItem,
+      fixtureSmartCoreSameItem,
+    ]) {
+      await verifySameVersionItem(driver, item);
+    }
 
-    await clickNamedQueueItem(driver, fixtureXmlOlderItem);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
-    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
-
-    await clickNamedQueueItem(driver, fixtureS4clSameItem);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
-    await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
-
-    await clickNamedQueueItem(driver, fixtureS4clOlderItem);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
-    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
+    for (const item of [
+      fixtureXmlOlderItem,
+      fixtureS4clOlderItem,
+      fixtureLot51OlderItem,
+      fixtureToolboxOlderItem,
+      fixtureSmartCoreOlderItem,
+    ]) {
+      await verifyOlderVersionItem(driver, item);
+    }
 
     if (INCLUDE_APPLY) {
       if (process.env.SIMSUITE_ALLOW_APPLY_SMOKE !== "1") {

@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use chrono::{DateTime, Utc};
 use regex::Regex;
-use reqwest::blocking::Client;
+use reqwest::{blocking::Client, Url};
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
@@ -194,11 +194,17 @@ pub fn build_signature(entries: &[SignatureEntry]) -> Option<String> {
     let mut lines = entries
         .iter()
         .map(|entry| {
+            let normalized_hash = entry.hash.clone().unwrap_or_default().to_lowercase();
+            let size_token = if normalized_hash.is_empty() {
+                entry.size.to_string()
+            } else {
+                String::new()
+            };
             format!(
                 "{}|{}|{}",
                 entry.filename.to_lowercase(),
-                entry.size,
-                entry.hash.clone().unwrap_or_default().to_lowercase()
+                size_token,
+                normalized_hash
             )
         })
         .collect::<Vec<_>>();
@@ -217,14 +223,14 @@ pub fn extract_version_from_values(values: &[String]) -> Option<String> {
     values
         .iter()
         .flat_map(|value| extract_ranked_version_candidates(value))
-        .max_by(|left, right| compare_ranked_candidates(left, right))
+        .max_by(compare_ranked_candidates)
         .map(|candidate| candidate.normalized)
 }
 
 pub fn extract_version_from_value(value: &str) -> Option<String> {
     extract_ranked_version_candidates(value)
         .into_iter()
-        .max_by(|left, right| compare_ranked_candidates(left, right))
+        .max_by(compare_ranked_candidates)
         .map(|candidate| candidate.normalized)
 }
 
@@ -425,6 +431,7 @@ fn latest_cache_is_fresh(checked_at: Option<&str>) -> bool {
 fn fetch_latest_info(profile: &GuidedInstallProfileSeed) -> AppResult<SpecialOfficialLatestInfo> {
     match profile.latest_check_strategy.as_deref().unwrap_or("manual") {
         "mccc_downloads_page" => fetch_mccc_latest_info(profile),
+        "xml_injector_page" => fetch_xml_injector_latest_info(profile),
         "github_releases" => fetch_github_latest_info(profile),
         "protected_page" | "manual" => Ok(unknown_latest(
             profile,
@@ -461,6 +468,19 @@ fn fetch_github_latest_info(
     let response = client()?.get(&source_url).send()?.error_for_status()?;
     let final_url = response.url().to_string();
     Ok(parse_github_latest_url(profile, &final_url))
+}
+
+fn fetch_xml_injector_latest_info(
+    profile: &GuidedInstallProfileSeed,
+) -> AppResult<SpecialOfficialLatestInfo> {
+    let source_url = profile
+        .latest_check_url
+        .clone()
+        .unwrap_or_else(|| profile.official_source_url.clone());
+    let response = client()?.get(&source_url).send()?.error_for_status()?;
+    let final_url = response.url().to_string();
+    let body = response.text()?;
+    Ok(parse_xml_injector_latest_html(profile, &final_url, &body))
 }
 
 fn unknown_latest(profile: &GuidedInstallProfileSeed, note: &str) -> SpecialOfficialLatestInfo {
@@ -527,6 +547,54 @@ fn parse_github_latest_url(
         status: "known".to_owned(),
         note: None,
     }
+}
+
+fn parse_xml_injector_latest_html(
+    profile: &GuidedInstallProfileSeed,
+    source_url: &str,
+    body: &str,
+) -> SpecialOfficialLatestInfo {
+    let version_re = Regex::new(
+        r"(?i)(?:current version of the xml injector is version\s*|xmlinjector_script_v)([0-9]+(?:\.[0-9]+)+)",
+    )
+    .expect("xml injector version regex");
+    let download_re =
+        Regex::new(r#"(?i)href=['"]([^'"]*XmlInjector_Script_v[^'"]+\.zip[^'"]*)['"]"#)
+            .expect("xml injector download regex");
+
+    let latest_version = version_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| normalize_version_token(matched.as_str()));
+    let download_url = download_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .and_then(|matched| resolve_url(source_url, matched.as_str()));
+
+    SpecialOfficialLatestInfo {
+        source_url: Some(source_url.to_owned()),
+        download_url: download_url.or_else(|| profile.official_download_url.clone()),
+        latest_version,
+        checked_at: Some(Utc::now().to_rfc3339()),
+        confidence: 0.93,
+        status: "known".to_owned(),
+        note: None,
+    }
+}
+
+fn resolve_url(base_url: &str, value: &str) -> Option<String> {
+    if value.trim().is_empty() {
+        return None;
+    }
+
+    if value.starts_with("https://") || value.starts_with("http://") {
+        return Some(value.to_owned());
+    }
+
+    Url::parse(base_url)
+        .ok()
+        .and_then(|base| base.join(value).ok())
+        .map(|resolved| resolved.to_string())
 }
 
 fn client() -> AppResult<Client> {
@@ -690,8 +758,9 @@ pub fn signature_entries_from_paths(paths: &[&Path]) -> Vec<SignatureEntry> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_versions, extract_version_candidates_from_value, extract_version_from_values,
-        parse_github_latest_url, parse_mccc_latest_html, unknown_latest,
+        build_signature, compare_versions, extract_version_candidates_from_value,
+        extract_version_from_values, parse_github_latest_url, parse_mccc_latest_html,
+        parse_xml_injector_latest_html, unknown_latest, SignatureEntry,
     };
     use crate::models::SpecialVersionStatus;
     use crate::seed::load_seed_pack;
@@ -754,6 +823,38 @@ mod tests {
     }
 
     #[test]
+    fn parses_xml_injector_latest_from_official_page_html() {
+        let profile = load_seed_pack()
+            .expect("seed pack")
+            .install_catalog
+            .guided_profiles
+            .into_iter()
+            .find(|profile| profile.key == "xml_injector")
+            .expect("xml injector");
+        let html = r#"
+            <html>
+              <body>
+                <p>The current version of the XML Injector is version 4.2, and denoted by the _v4.2 in the filenames.</p>
+                <a href="/s/XmlInjector_Script_v42.zip">- DOWNLOAD -</a>
+              </body>
+            </html>
+        "#;
+
+        let parsed = parse_xml_injector_latest_html(
+            &profile,
+            "https://scumbumbomods.com/xml-injector",
+            html,
+        );
+
+        assert_eq!(parsed.latest_version.as_deref(), Some("4.2"));
+        assert_eq!(
+            parsed.download_url.as_deref(),
+            Some("https://scumbumbomods.com/s/XmlInjector_Script_v42.zip")
+        );
+        assert_eq!(parsed.status, "known");
+    }
+
+    #[test]
     fn protected_sources_fall_back_to_unknown_without_guessing() {
         let profile = load_seed_pack()
             .expect("seed pack")
@@ -799,5 +900,35 @@ mod tests {
         );
 
         assert_eq!(status, SpecialVersionStatus::Unknown);
+    }
+
+    #[test]
+    fn hashed_signature_entries_ignore_outer_wrapper_size_noise() {
+        let left = build_signature(&[
+            SignatureEntry {
+                filename: "Lot51_CoreLibrary.ts4script".to_owned(),
+                size: 120,
+                hash: Some("abc123".to_owned()),
+            },
+            SignatureEntry {
+                filename: "lot51_core_library.package".to_owned(),
+                size: 220,
+                hash: Some("def456".to_owned()),
+            },
+        ]);
+        let right = build_signature(&[
+            SignatureEntry {
+                filename: "Lot51_CoreLibrary.ts4script".to_owned(),
+                size: 121,
+                hash: Some("abc123".to_owned()),
+            },
+            SignatureEntry {
+                filename: "lot51_core_library.package".to_owned(),
+                size: 220,
+                hash: Some("def456".to_owned()),
+            },
+        ]);
+
+        assert_eq!(left, right);
     }
 }

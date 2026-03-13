@@ -72,18 +72,33 @@ function Initialize-SmokeFixtures {
     $installedMccc = Join-Path $mods 'MCCC'
     $installedXml = Join-Path $mods 'XML Injector'
     $installedS4cl = Join-Path $mods 'S4CL'
+    $installedLot51 = Join-Path $mods 'Lot51 Core Library'
+    $installedToolbox = Join-Path $mods 'Lumpinou Toolbox'
+    $installedSmartCore = Join-Path $mods 'Smart Core Script'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
     $xmlSameRoot = Join-Path $root 'incoming-xml-same'
     $xmlOlderRoot = Join-Path $root 'incoming-xml-older'
     $s4clSameRoot = Join-Path $root 'incoming-s4cl-same'
     $s4clOlderRoot = Join-Path $root 'incoming-s4cl-older'
+    $lot51SameRoot = Join-Path $root 'incoming-lot51-same'
+    $lot51OlderRoot = Join-Path $root 'incoming-lot51-older'
+    $toolboxSameRoot = Join-Path $root 'incoming-toolbox-same'
+    $toolboxOlderRoot = Join-Path $root 'incoming-toolbox-older'
+    $smartCoreSameRoot = Join-Path $root 'incoming-smart-core-same'
+    $smartCoreOlderRoot = Join-Path $root 'incoming-smart-core-older'
     $specialItem = "MCCC_Update_Test_$token" 
     $blockedItem = "MCCC_Partial_Blocked_Test_$token"
     $xmlSameItem = "XML_Injector_Same_Test_$token"
     $xmlOlderItem = "XML_Injector_Older_Test_$token"
     $s4clSameItem = "S4CL_Same_Test_$token"
     $s4clOlderItem = "S4CL_Older_Test_$token"
+    $lot51SameItem = "Lot51_Core_Same_Test_$token"
+    $lot51OlderItem = "Lot51_Core_Older_Test_$token"
+    $toolboxSameItem = "Toolbox_Same_Test_$token"
+    $toolboxOlderItem = "Toolbox_Older_Test_$token"
+    $smartCoreSameItem = "Smart_Core_Same_Test_$token"
+    $smartCoreOlderItem = "Smart_Core_Older_Test_$token"
 
     foreach ($path in @(
         $appData,
@@ -91,12 +106,21 @@ function Initialize-SmokeFixtures {
         $installedMccc,
         $installedXml,
         $installedS4cl,
+        $installedLot51,
+        $installedToolbox,
+        $installedSmartCore,
         $incomingRoot,
         $blockedRoot,
         $xmlSameRoot,
         $xmlOlderRoot,
         $s4clSameRoot,
-        $s4clOlderRoot
+        $s4clOlderRoot,
+        $lot51SameRoot,
+        $lot51OlderRoot,
+        $toolboxSameRoot,
+        $toolboxOlderRoot,
+        $smartCoreSameRoot,
+        $smartCoreOlderRoot
     )) {
         New-Item -ItemType Directory -Force -Path $path | Out-Null
     }
@@ -128,6 +152,33 @@ function Initialize-SmokeFixtures {
     New-SmokeTs4script -Path (Join-Path $s4clOlderRoot 'S4CL.ts4script') -Version '2.8.0' -Marker 'S4CL version'
     New-SmokeZip -SourceRoot $s4clOlderRoot -ZipPath (Join-Path $downloads "$s4clOlderItem.zip")
 
+    New-SmokeTs4script -Path (Join-Path $installedLot51 'Lot51_CoreLibrary.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
+    Write-SmokePackage -Path (Join-Path $installedLot51 'lot51_core_library.package') -Content 'lot51 core library package v1.41'
+    New-SmokeTs4script -Path (Join-Path $lot51SameRoot 'Lot51_CoreLibrary.ts4script') -Version '1.41' -Marker 'Lot 51 Core Library version'
+    Write-SmokePackage -Path (Join-Path $lot51SameRoot 'lot51_core_library.package') -Content 'lot51 core library package v1.41'
+    New-SmokeZip -SourceRoot $lot51SameRoot -ZipPath (Join-Path $downloads "$lot51SameItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $lot51OlderRoot 'Lot51_CoreLibrary.ts4script') -Version '1.40' -Marker 'Lot 51 Core Library version'
+    Write-SmokePackage -Path (Join-Path $lot51OlderRoot 'lot51_core_library.package') -Content 'incoming older lot51 core library package'
+    New-SmokeZip -SourceRoot $lot51OlderRoot -ZipPath (Join-Path $downloads "$lot51OlderItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $installedToolbox 'lumpinou_toolbox.ts4script') -Version '1.8.0' -Marker 'Lumpinou Toolbox version'
+    Write-SmokePackage -Path (Join-Path $installedToolbox 'Lumpinou_Toolbox.package') -Content 'lumpinou toolbox package v1.8.0'
+    New-SmokeTs4script -Path (Join-Path $toolboxSameRoot 'lumpinou_toolbox.ts4script') -Version '1.8.0' -Marker 'Lumpinou Toolbox version'
+    Write-SmokePackage -Path (Join-Path $toolboxSameRoot 'Lumpinou_Toolbox.package') -Content 'lumpinou toolbox package v1.8.0'
+    New-SmokeZip -SourceRoot $toolboxSameRoot -ZipPath (Join-Path $downloads "$toolboxSameItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $toolboxOlderRoot 'lumpinou_toolbox.ts4script') -Version '1.7.0' -Marker 'Lumpinou Toolbox version'
+    Write-SmokePackage -Path (Join-Path $toolboxOlderRoot 'Lumpinou_Toolbox.package') -Content 'incoming older lumpinou toolbox package'
+    New-SmokeZip -SourceRoot $toolboxOlderRoot -ZipPath (Join-Path $downloads "$toolboxOlderItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $installedSmartCore 'SmartCoreScript.ts4script') -Version '2.9.0' -Marker 'Smart Core Script version'
+    New-SmokeTs4script -Path (Join-Path $smartCoreSameRoot 'SmartCoreScript.ts4script') -Version '2.9.0' -Marker 'Smart Core Script version'
+    New-SmokeZip -SourceRoot $smartCoreSameRoot -ZipPath (Join-Path $downloads "$smartCoreSameItem.zip")
+
+    New-SmokeTs4script -Path (Join-Path $smartCoreOlderRoot 'SmartCoreScript.ts4script') -Version '2.8.0' -Marker 'Smart Core Script version'
+    New-SmokeZip -SourceRoot $smartCoreOlderRoot -ZipPath (Join-Path $downloads "$smartCoreOlderItem.zip")
+
     return @{
         Root = $root
         AppData = $appData
@@ -139,6 +190,12 @@ function Initialize-SmokeFixtures {
         XmlOlderItem = $xmlOlderItem
         S4clSameItem = $s4clSameItem
         S4clOlderItem = $s4clOlderItem
+        Lot51SameItem = $lot51SameItem
+        Lot51OlderItem = $lot51OlderItem
+        ToolboxSameItem = $toolboxSameItem
+        ToolboxOlderItem = $toolboxOlderItem
+        SmartCoreSameItem = $smartCoreSameItem
+        SmartCoreOlderItem = $smartCoreOlderItem
     }
 }
 
@@ -241,14 +298,20 @@ $session = @{
             mods = $fixture.Mods
             specialItem = $fixture.SpecialItem
             blockedItem = $fixture.BlockedItem
-            xmlSameItem = $fixture.XmlSameItem
-            xmlOlderItem = $fixture.XmlOlderItem
-            s4clSameItem = $fixture.S4clSameItem
-            s4clOlderItem = $fixture.S4clOlderItem
+                xmlSameItem = $fixture.XmlSameItem
+                xmlOlderItem = $fixture.XmlOlderItem
+                s4clSameItem = $fixture.S4clSameItem
+                s4clOlderItem = $fixture.S4clOlderItem
+                lot51SameItem = $fixture.Lot51SameItem
+                lot51OlderItem = $fixture.Lot51OlderItem
+                toolboxSameItem = $fixture.ToolboxSameItem
+                toolboxOlderItem = $fixture.ToolboxOlderItem
+                smartCoreSameItem = $fixture.SmartCoreSameItem
+                smartCoreOlderItem = $fixture.SmartCoreOlderItem
+            }
+        } else {
+            $null
         }
-    } else {
-        $null
-    }
 }
 $session | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $SessionFile
 

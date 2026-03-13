@@ -1947,9 +1947,13 @@ fn stable_special_file_hash(
     stored_hash: Option<&str>,
 ) -> Option<String> {
     if extension == ".ts4script" {
-        normalized_ts4script_content_hash(path).or_else(|| stored_hash.map(|hash| hash.to_owned()))
+        normalized_ts4script_content_hash(path)
+            .or_else(|| stored_hash.map(|hash| hash.to_owned()))
+            .or_else(|| crate::core::scanner::hash_file(path).ok())
     } else {
-        stored_hash.map(|hash| hash.to_owned())
+        stored_hash
+            .map(|hash| hash.to_owned())
+            .or_else(|| crate::core::scanner::hash_file(path).ok())
     }
 }
 
@@ -4448,11 +4452,12 @@ fn risk_level_label(level: &DownloadRiskLevel) -> &'static str {
 mod tests {
     use super::{
         assess_download_item, build_evidence_summary, build_guided_plan, build_review_plan,
-        build_special_mod_decision, normalized, reconcile_special_mod_family,
-        store_download_item_assessment,
+        build_special_mod_decision, incoming_signature_for_profile,
+        installed_signature_for_profile, normalized, reconcile_special_mod_family,
+        store_download_item_assessment, ExistingInstallFile, ExistingInstallLayout, ProfileFile,
     };
     use crate::{
-        core::scanner,
+        core::{scanner, special_mod_versions},
         database::{initialize, save_library_paths, seed_database},
         models::{
             DownloadIntakeMode, DownloadQueueLane, FileInsights, LibrarySettings,
@@ -4625,6 +4630,140 @@ mod tests {
             .expect("start archive file");
         writer.write_all(contents).expect("write archive file");
         writer.finish().expect("finish archive file");
+    }
+
+    struct SpecialScriptVersionCase<'a> {
+        profile_key: &'a str,
+        item_id: i64,
+        staging_dir_name: &'a str,
+        display_name: &'a str,
+        incoming_filename: &'a str,
+        incoming_version: &'a str,
+        version_marker: &'a str,
+        install_folder_name: &'a str,
+        family_hints: &'a [&'a str],
+        expected_status: SpecialVersionStatus,
+        expected_next_step: &'a str,
+    }
+
+    fn assert_special_script_version_case(case: SpecialScriptVersionCase<'_>) {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join(case.staging_dir_name);
+        fs::create_dir_all(&staging).expect("staging");
+        insert_download_item(&connection, case.item_id, case.display_name, &staging);
+        let incoming_script = staging.join(case.incoming_filename);
+        let incoming_version_text = format!("{} {}", case.version_marker, case.incoming_version);
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            incoming_version_text.as_bytes(),
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            case.item_id,
+            case.item_id * 100 + 1,
+            &incoming_script,
+            case.incoming_filename,
+            "Script Mods",
+        );
+        update_file_insights_by_id(
+            &connection,
+            case.item_id * 100 + 1,
+            &FileInsights {
+                version_hints: vec![case.incoming_version.to_owned()],
+                family_hints: case
+                    .family_hints
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+                ..FileInsights::default()
+            },
+        );
+
+        let existing_root = temp.path().join("Mods").join(case.install_folder_name);
+        fs::create_dir_all(&existing_root).expect("existing");
+        let current_script = existing_root.join(case.incoming_filename);
+        let installed_version = match case.expected_status {
+            SpecialVersionStatus::SameVersion => case.incoming_version.to_owned(),
+            SpecialVersionStatus::IncomingOlder => bump_patch_version(case.incoming_version),
+            _ => case.incoming_version.to_owned(),
+        };
+        let installed_version_text = format!("{} {installed_version}", case.version_marker);
+        write_script_archive_with_comment(
+            &current_script,
+            "version.txt",
+            installed_version_text.as_bytes(),
+            "installed",
+        );
+        insert_installed_file(&connection, &current_script, "Script Mods");
+        update_file_insights_by_path(
+            &connection,
+            &current_script,
+            &FileInsights {
+                version_hints: vec![installed_version.clone()],
+                family_hints: case
+                    .family_hints
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+                ..FileInsights::default()
+            },
+        );
+
+        let assessment = assess_download_item(&connection, &settings, &seed_pack, case.item_id)
+            .expect("assessment");
+        store_download_item_assessment(&connection, case.item_id, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, case.item_id)
+            .expect("decision")
+            .expect("special decision");
+        assert_eq!(decision.profile_key, case.profile_key);
+        assert_eq!(decision.version_status, case.expected_status);
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(
+            decision.incoming_version.as_deref(),
+            Some(case.incoming_version)
+        );
+        assert_eq!(
+            decision.incoming_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(
+            decision.installed_version_source.as_deref(),
+            Some("inside mod")
+        );
+        assert_eq!(decision.comparison_source.as_deref(), Some("inside mod"));
+        assert!(decision.primary_action.is_none());
+        assert!(decision
+            .recommended_next_step
+            .contains(case.expected_next_step));
+
+        match case.expected_status {
+            SpecialVersionStatus::SameVersion => {
+                assert!(decision.apply_ready);
+                assert!(decision.same_version);
+            }
+            SpecialVersionStatus::IncomingOlder => {
+                assert!(!decision.same_version);
+            }
+            _ => {}
+        }
+    }
+
+    fn bump_patch_version(version: &str) -> String {
+        let mut parts = version
+            .split('.')
+            .map(|part| part.parse::<u64>().expect("numeric version"))
+            .collect::<Vec<_>>();
+        let last_index = parts.len().checked_sub(1).expect("version part");
+        parts[last_index] += 1;
+        parts
+            .into_iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     fn build_sample_download(
@@ -5767,6 +5906,108 @@ mod tests {
     }
 
     #[test]
+    fn same_version_lot51_core_library_download_is_marked_as_already_current() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "lot51_core_library",
+            item_id: 282,
+            staging_dir_name: "lot51_same_version",
+            display_name: "Lot51_CoreLibrary_v1_41.zip",
+            incoming_filename: "Lot51_CoreLibrary.ts4script",
+            incoming_version: "1.41",
+            version_marker: "Lot 51 Core Library version",
+            install_folder_name: "Lot51 Core Library",
+            family_hints: &["lot 51 core library", "lot51 core library", "lot51 core"],
+            expected_status: SpecialVersionStatus::SameVersion,
+            expected_next_step: "already current",
+        });
+    }
+
+    #[test]
+    fn older_lot51_core_library_download_is_not_treated_as_the_next_update() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "lot51_core_library",
+            item_id: 283,
+            staging_dir_name: "lot51_older_version",
+            display_name: "Lot51_CoreLibrary_v1_40.zip",
+            incoming_filename: "Lot51_CoreLibrary.ts4script",
+            incoming_version: "1.40",
+            version_marker: "Lot 51 Core Library version",
+            install_folder_name: "Lot51 Core Library",
+            family_hints: &["lot 51 core library", "lot51 core library", "lot51 core"],
+            expected_status: SpecialVersionStatus::IncomingOlder,
+            expected_next_step: "Ignore this older",
+        });
+    }
+
+    #[test]
+    fn same_version_lumpinou_toolbox_download_is_marked_as_already_current() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "lumpinou_toolbox",
+            item_id: 284,
+            staging_dir_name: "toolbox_same_version",
+            display_name: "Lumpinou_Toolbox_v1_8_0.zip",
+            incoming_filename: "lumpinou_toolbox.ts4script",
+            incoming_version: "1.8.0",
+            version_marker: "Lumpinou Toolbox version",
+            install_folder_name: "Lumpinou Toolbox",
+            family_hints: &["lumpinou toolbox", "lumpinou_toolbox"],
+            expected_status: SpecialVersionStatus::SameVersion,
+            expected_next_step: "already current",
+        });
+    }
+
+    #[test]
+    fn older_lumpinou_toolbox_download_is_not_treated_as_the_next_update() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "lumpinou_toolbox",
+            item_id: 285,
+            staging_dir_name: "toolbox_older_version",
+            display_name: "Lumpinou_Toolbox_v1_7_0.zip",
+            incoming_filename: "lumpinou_toolbox.ts4script",
+            incoming_version: "1.7.0",
+            version_marker: "Lumpinou Toolbox version",
+            install_folder_name: "Lumpinou Toolbox",
+            family_hints: &["lumpinou toolbox", "lumpinou_toolbox"],
+            expected_status: SpecialVersionStatus::IncomingOlder,
+            expected_next_step: "Ignore this older",
+        });
+    }
+
+    #[test]
+    fn same_version_smart_core_script_download_is_marked_as_already_current() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "smart_core_script",
+            item_id: 286,
+            staging_dir_name: "smart_core_same_version",
+            display_name: "SmartCoreScript_v2_9_0.zip",
+            incoming_filename: "SmartCoreScript.ts4script",
+            incoming_version: "2.9.0",
+            version_marker: "Smart Core Script version",
+            install_folder_name: "Smart Core Script",
+            family_hints: &["smart core script", "smartcorescript", "smart core"],
+            expected_status: SpecialVersionStatus::SameVersion,
+            expected_next_step: "already current",
+        });
+    }
+
+    #[test]
+    fn older_smart_core_script_download_is_not_treated_as_the_next_update() {
+        assert_special_script_version_case(SpecialScriptVersionCase {
+            profile_key: "smart_core_script",
+            item_id: 287,
+            staging_dir_name: "smart_core_older_version",
+            display_name: "SmartCoreScript_v2_8_0.zip",
+            incoming_filename: "SmartCoreScript.ts4script",
+            incoming_version: "2.8.0",
+            version_marker: "Smart Core Script version",
+            install_folder_name: "Smart Core Script",
+            family_hints: &["smart core script", "smartcorescript", "smart core"],
+            expected_status: SpecialVersionStatus::IncomingOlder,
+            expected_next_step: "Ignore this older",
+        });
+    }
+
+    #[test]
     fn inside_mod_version_hints_drive_same_version_detection() {
         let (temp, connection, seed_pack, settings) = setup_env();
         let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
@@ -5847,6 +6088,156 @@ mod tests {
             .comparison_evidence
             .iter()
             .any(|line| line.contains("inside the mod files")));
+    }
+
+    #[test]
+    fn installed_support_library_signature_falls_back_to_disk_hashes() {
+        let (temp, _connection, seed_pack, _settings) = setup_env();
+        let profile = seed_pack
+            .install_catalog
+            .guided_profiles
+            .iter()
+            .find(|profile| profile.key == "lot51_core_library")
+            .expect("lot51");
+        let incoming_root = temp.path().join("incoming-lot51-signature");
+        let installed_root = temp.path().join("Mods").join("Lot51 Core Library");
+        fs::create_dir_all(&incoming_root).expect("incoming root");
+        fs::create_dir_all(&installed_root).expect("installed root");
+
+        let incoming_script = incoming_root.join("Lot51_CoreLibrary.ts4script");
+        let installed_script = installed_root.join("Lot51_CoreLibrary.ts4script");
+        let incoming_package = incoming_root.join("lot51_core_library.package");
+        let installed_package = installed_root.join("lot51_core_library.package");
+
+        write_script_archive_with_comment(
+            &incoming_script,
+            "version.txt",
+            b"Lot 51 Core Library version 1.41",
+            "incoming",
+        );
+        write_script_archive_with_comment(
+            &installed_script,
+            "version.txt",
+            b"Lot 51 Core Library version 1.41",
+            "installed",
+        );
+        fs::write(&incoming_package, b"lot51 core library package v1.41")
+            .expect("incoming package");
+        fs::write(&installed_package, b"lot51 core library package v1.41")
+            .expect("installed package");
+
+        let incoming_files = vec![
+            ProfileFile {
+                file_id: 1,
+                filename: "Lot51_CoreLibrary.ts4script".to_owned(),
+                path: incoming_script.to_string_lossy().to_string(),
+                archive_member_path: None,
+                extension: ".ts4script".to_owned(),
+                kind: "Script Mods".to_owned(),
+                subtype: None,
+                creator: None,
+                confidence: 0.94,
+                source_location: "downloads".to_owned(),
+                size: incoming_script
+                    .metadata()
+                    .expect("incoming script metadata")
+                    .len() as i64,
+                hash: Some(
+                    crate::core::scanner::hash_file(&incoming_script).expect("incoming script"),
+                ),
+                insights: FileInsights {
+                    version_hints: vec!["1.41".to_owned()],
+                    family_hints: vec![
+                        "lot 51 core library".to_owned(),
+                        "lot51 core library".to_owned(),
+                    ],
+                    ..FileInsights::default()
+                },
+            },
+            ProfileFile {
+                file_id: 2,
+                filename: "lot51_core_library.package".to_owned(),
+                path: incoming_package.to_string_lossy().to_string(),
+                archive_member_path: None,
+                extension: ".package".to_owned(),
+                kind: "Mods".to_owned(),
+                subtype: None,
+                creator: None,
+                confidence: 0.94,
+                source_location: "downloads".to_owned(),
+                size: incoming_package
+                    .metadata()
+                    .expect("incoming package metadata")
+                    .len() as i64,
+                hash: Some(
+                    crate::core::scanner::hash_file(&incoming_package).expect("incoming package"),
+                ),
+                insights: FileInsights::default(),
+            },
+        ];
+
+        let layout = ExistingInstallLayout {
+            target_folder: installed_root,
+            existing_files: vec![
+                ExistingInstallFile {
+                    file_id: Some(1),
+                    filename: "Lot51_CoreLibrary.ts4script".to_owned(),
+                    path: installed_script.to_string_lossy().to_string(),
+                    extension: ".ts4script".to_owned(),
+                    kind: "Script Mods".to_owned(),
+                    subtype: None,
+                    creator: None,
+                    size: installed_script
+                        .metadata()
+                        .expect("installed script metadata")
+                        .len() as i64,
+                    hash: None,
+                    insights: FileInsights {
+                        version_hints: vec!["1.41".to_owned()],
+                        family_hints: vec![
+                            "lot 51 core library".to_owned(),
+                            "lot51 core library".to_owned(),
+                        ],
+                        ..FileInsights::default()
+                    },
+                    in_target_folder: true,
+                },
+                ExistingInstallFile {
+                    file_id: None,
+                    filename: "lot51_core_library.package".to_owned(),
+                    path: installed_package.to_string_lossy().to_string(),
+                    extension: ".package".to_owned(),
+                    kind: "Mods".to_owned(),
+                    subtype: None,
+                    creator: None,
+                    size: installed_package
+                        .metadata()
+                        .expect("installed package metadata")
+                        .len() as i64,
+                    hash: None,
+                    insights: FileInsights::default(),
+                    in_target_folder: true,
+                },
+            ],
+            preserve_files: Vec::new(),
+            warnings: Vec::new(),
+            existing_install_detected: true,
+            safe_to_update: true,
+            repair_plan_available: false,
+        };
+
+        let incoming_signature = incoming_signature_for_profile(profile, &incoming_files);
+        let installed_signature = installed_signature_for_profile(profile, &layout);
+        let status = special_mod_versions::compare_versions(
+            true,
+            Some("1.41"),
+            installed_signature.as_deref(),
+            Some("1.41"),
+            incoming_signature.as_deref(),
+        );
+
+        assert_eq!(status, SpecialVersionStatus::SameVersion);
+        assert_eq!(incoming_signature, installed_signature);
     }
 
     #[test]
