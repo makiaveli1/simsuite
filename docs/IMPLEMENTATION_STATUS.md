@@ -2,15 +2,32 @@
 
 This document maps the current implementation to the active product requirements.
 
-## Current session note (March 12, 2026)
+## Current session note (March 13, 2026)
 
 This session did two important things:
 
-1. it proved more of Inbox against the real Tauri desktop app instead of only the browser preview
-2. it added a simple repo memory and handoff process so the next session can pick up quickly
+1. it finished the highest-value live Inbox performance cleanup instead of guessing from browser preview behavior
+2. it kept the repo memory and handoff system up to date with real desktop timing results
 
 Important changes and findings:
 
+- real live Inbox timing was traced properly instead of guessed:
+  - an optional debug perf file can now be written with `SIMSUITE_PERF_TRACE_PATH`
+  - that showed the real Downloads watcher pass was already fast at about `0.38s` to `0.51s`
+  - the real slowdown was `downloads_queue::enrich`, because the queue was still rebuilding full special-mod decisions for visible rows
+- the special-mod evaluation path now reuses its context properly:
+  - cached queue and selection paths now reuse one installed Mods inventory
+  - cached evaluation now reuses loaded files and installed-layout checks instead of silently falling back to the uncached evaluator
+- installed-layout checks are lighter now:
+  - the installed Mods inventory resolves disk truth once when it is built
+  - the app no longer re-checks every installed file path again for each special-mod profile
+- the Inbox queue is lighter again in the real desktop app:
+  - queue rows now stay on lightweight lane and summary logic
+  - the full special-mod decision stays on the selected item panel instead of every visible row
+- new real desktop live timings on the user's actual setup now show:
+  - first Inbox open to real visible items: about `1.07s`
+  - heavy selected MCCC detail to version section: about `1.95s`
+  - this is a major improvement from the earlier live first-open timing of about `12.38s`
 - Inbox refresh work was tightened again after a regression report:
   - local Inbox actions were still causing too many queue reload paths to pile up
   - the Downloads screen now keeps one main post-action reload path instead of mixing local reloads, watcher follow-up reloads, and workspace-triggered reloads back to back
@@ -90,7 +107,7 @@ Important follow-up result:
   - older downloads stay out of the update path
   - local evidence still drives the result in the real app
 - the real live Inbox no longer hangs forever on first open:
-  - in the user's actual desktop setup, Inbox now reaches the real queue in about 14 seconds
+  - in the user's actual desktop setup, Inbox now reaches the real queue in about `1.07s`
   - the queue shows the expected live items such as MCCC, Lot 51 Core Library, and XML Injector
   - the watcher state now settles back to `Watching`
 - the biggest freeze cause is now understood and reduced:
@@ -117,15 +134,17 @@ Important follow-up result:
     - special-mod selection to the version panel: about `0.10s` to `0.15s`
     - refresh to stable: about `0.38s`
   - user's actual Downloads-backed app:
-    - first Inbox open to ready state: about `12.38s`
-    - MCCC selection to version panel: about `0.11s`
-    - XML Injector selection to version panel: about `0.10s`
+    - first Inbox open to ready state: about `1.07s`
+    - MCCC selection to version panel: about `1.95s`
+    - the watcher sync itself: about `0.38s` to `0.51s`
     - refresh followed by an immediate switch to Home: about `0.36s`
-- this strongly suggests the remaining problem is the live Downloads scan cost, not the old “every Inbox action freezes the whole window” problem
+- this now shows a clearer split:
+  - the old first-open queue bottleneck is mostly fixed
+  - the remaining heavier path is selected-item special-mod detail, not the Downloads watcher pass
 
 Important remaining gap:
 
-- the worst Inbox freeze is fixed in the user's real desktop setup, and the latest live first-open timing was about `12.38s`, but that is still slower than it should feel
+- the worst Inbox freeze is fixed in the user's real desktop setup, and live first-open is now about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s`
 - helper-only official latest support is still too narrow for supported special mods whose official pages are readable today
 - direct non-browser requests to CurseForge and Lot 51 are still blocked by Cloudflare, so those helpers need a safe official machine-readable source before they can be widened in the app
 - unsupported unrelated `.7z` and `.rar` downloads still stay visible as safety-held items, so there is still a product decision to make about whether that is the right long-term Inbox behavior
@@ -156,13 +175,14 @@ Important changes already landed:
 - trusted “open official page” handling was fixed to use the real browser path
 - workspace refresh moved toward targeted domain invalidation instead of broad reloads
 - Downloads queue loading and selected-item loading were split to reduce repeated heavy work
+- Downloads queue rows now stay on light lane and summary logic while the selected item panel carries the full special-mod compare work
 - Inbox startup now begins from a real watcher state and retries locked reads more gracefully
 
 Still not solved well enough:
 
-- Inbox is still the main performance and stability pain point in real desktop use
-- the page can still hang or feel heavy when selecting items or waiting for richer special-mod details
-- the next session should investigate real desktop Inbox timings and repeated work before adding more special-mod coverage
+- Inbox is much steadier now in real desktop use
+- the main remaining live cost is richer selected-item special-mod detail, not queue open or basic refresh
+- the next session can go back to broader supported special-mod coverage and only return to performance if selected-item detail still feels too heavy
 
 ## Fully implemented or materially in place
 

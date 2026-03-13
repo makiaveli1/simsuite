@@ -92,14 +92,15 @@ Current integration and performance work already in place:
 
 - workspace change events now refresh only the parts of the app that actually changed
 - Downloads queue and selected-item loading were split so Inbox can stay lighter
+- Downloads queue rows now stay on lightweight lane and summary data, while full special-mod compare work stays on the selected item panel
 - the app now lazy-loads major screens
 - hot-path indexes and slow-command timing logs were added
 - Inbox startup now boots from a real Downloads watcher state instead of guessing
 
 Current biggest known gap:
 
-- Inbox still feels slower and more fragile than the other major screens in real desktop use
-- the remaining work should focus on measuring and reducing repeated special-mod and detail-panel work inside Inbox before expanding the special-mod catalog further
+- Inbox is much healthier in real desktop use now, but richer selected-item special-mod detail can still feel heavier than the rest of the screen
+- the remaining work should focus on trimming that selected-item detail path and expanding supported special-mod validation before growing the catalog further
 
 ## Known gaps versus the full product plan
 

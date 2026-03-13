@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -104,6 +104,12 @@ struct ExistingInstallLayout {
     existing_install_detected: bool,
     safe_to_update: bool,
     repair_plan_available: bool,
+}
+
+#[derive(Debug, Clone)]
+struct InstalledModsInventory {
+    mods_root: PathBuf,
+    files: Vec<ExistingInstallFile>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -347,6 +353,7 @@ pub struct SpecialDecisionContext {
     active_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
     all_profile_files_cache: HashMap<i64, Vec<ProfileFile>>,
     evaluation_cache: HashMap<i64, EvaluationResult>,
+    installed_inventory_cache: Option<InstalledModsInventory>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,6 +364,29 @@ pub enum SpecialDecisionDetailLevel {
 
 const SLOW_INSTALL_PROFILE_LOG_THRESHOLD_MS: u128 = 40;
 
+#[cfg(debug_assertions)]
+fn append_perf_trace(line: &str) {
+    let Some(path) = std::env::var("SIMSUITE_PERF_TRACE_PATH")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+
+    let trace_path = PathBuf::from(path);
+    if let Some(parent) = trace_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&trace_path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
 fn log_slow_install_profile_step(
     operation: &str,
     started_at: Instant,
@@ -366,7 +396,9 @@ fn log_slow_install_profile_step(
     {
         let elapsed_ms = started_at.elapsed().as_millis();
         if elapsed_ms >= SLOW_INSTALL_PROFILE_LOG_THRESHOLD_MS {
-            eprintln!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+            let line = format!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+            eprintln!("{line}");
+            append_perf_trace(&line);
         }
     }
 }
@@ -420,7 +452,13 @@ fn evaluate_download_item_cached(
     }
 
     let started_at = Instant::now();
-    let result = evaluate_download_item(connection, settings, seed_pack, item_id)?;
+    let result = evaluate_download_item_with_context(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        Some(context),
+    )?;
     log_slow_install_profile_step("evaluate_download_item", started_at, || {
         format!(
             "for item {} mode={} profile={}",
@@ -444,6 +482,17 @@ pub fn assess_download_item(
     item_id: i64,
 ) -> AppResult<DownloadItemAssessment> {
     evaluate_download_item(connection, settings, seed_pack, item_id).map(|result| result.assessment)
+}
+
+pub fn assess_download_item_cached(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<DownloadItemAssessment> {
+    evaluate_download_item_cached(connection, settings, seed_pack, item_id, context)
+        .map(|result| result.assessment)
 }
 
 pub fn store_download_item_assessment(
@@ -1717,7 +1766,15 @@ fn detect_existing_layout_cached(
         return Ok(layout.clone());
     }
 
-    let layout = detect_existing_layout(connection, settings, seed_pack, profile)?;
+    let mods_root = resolve_mods_root(settings)?;
+    let inventory = load_installed_mods_inventory_cached(connection, &mods_root, context)?;
+    let layout = detect_existing_layout_with_inventory(
+        connection,
+        seed_pack,
+        profile,
+        &inventory.mods_root,
+        &inventory.files,
+    )?;
     context
         .layout_cache
         .insert(profile.key.clone(), layout.clone());
@@ -2205,12 +2262,29 @@ fn evaluate_download_item(
     seed_pack: &SeedPack,
     item_id: i64,
 ) -> AppResult<EvaluationResult> {
-    let item = load_item_with_staging(connection, item_id)?.ok_or_else(|| {
+    evaluate_download_item_with_context(connection, settings, seed_pack, item_id, None)
+}
+
+fn evaluate_download_item_with_context(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    item_id: i64,
+    mut context: Option<&mut SpecialDecisionContext>,
+) -> AppResult<EvaluationResult> {
+    let item = match context.as_deref_mut() {
+        Some(context) => load_item_with_staging_cached(connection, item_id, context)?,
+        None => load_item_with_staging(connection, item_id)?,
+    }
+    .ok_or_else(|| {
         AppError::Message(
             "Inbox item was not found while building the special install plan.".to_owned(),
         )
     })?;
-    let files = load_profile_files(connection, seed_pack, item_id, true)?;
+    let files = match context.as_deref_mut() {
+        Some(context) => load_profile_files_cached(connection, seed_pack, item_id, true, context)?,
+        None => load_profile_files(connection, seed_pack, item_id, true)?,
+    };
     let text_clues = read_text_clues(item.staging_path.as_deref(), &files)?;
     let archive_path_clues = collect_archive_path_clues(&files);
     let review_patterns =
@@ -2279,7 +2353,16 @@ fn evaluate_download_item(
     );
 
     if let Some(candidate) = best_candidate {
-        let layout = detect_existing_layout(connection, settings, seed_pack, &candidate.profile)?;
+        let layout = match context.as_deref_mut() {
+            Some(context) => detect_existing_layout_cached(
+                connection,
+                settings,
+                seed_pack,
+                &candidate.profile,
+                context,
+            )?,
+            None => detect_existing_layout(connection, settings, seed_pack, &candidate.profile)?,
+        };
         let dependency_rules = collect_required_dependency_rules(
             seed_pack,
             &candidate.profile,
@@ -3177,14 +3260,8 @@ fn dependency_in_inbox(
         .map_err(AppError::from)
 }
 
-fn detect_existing_layout(
-    connection: &Connection,
-    settings: &LibrarySettings,
-    seed_pack: &SeedPack,
-    profile: &GuidedInstallProfileSeed,
-) -> AppResult<ExistingInstallLayout> {
-    let started_at = Instant::now();
-    let mods_root = settings
+fn resolve_mods_root(settings: &LibrarySettings) -> AppResult<PathBuf> {
+    settings
         .mods_path
         .as_ref()
         .map(|value| value.trim())
@@ -3192,14 +3269,30 @@ fn detect_existing_layout(
         .map(PathBuf::from)
         .ok_or_else(|| {
             AppError::Message("Set a Mods folder before using special installs.".to_owned())
-        })?;
-    let default_target_folder = mods_root.join(&profile.install_folder_name);
-    let mut warnings = Vec::new();
-    let mut safe_to_update = true;
-    let mut existing_install_detected = false;
-    let mut scattered_match_count = 0_i64;
-    let mut scattered_preserve_count = 0_i64;
+        })
+}
 
+fn load_installed_mods_inventory_cached(
+    connection: &Connection,
+    mods_root: &Path,
+    context: &mut SpecialDecisionContext,
+) -> AppResult<InstalledModsInventory> {
+    if let Some(inventory) = context.installed_inventory_cache.as_ref() {
+        if inventory.mods_root == mods_root {
+            return Ok(inventory.clone());
+        }
+    }
+
+    let inventory = load_installed_mods_inventory(connection, mods_root)?;
+    context.installed_inventory_cache = Some(inventory.clone());
+    Ok(inventory)
+}
+
+fn load_installed_mods_inventory(
+    connection: &Connection,
+    mods_root: &Path,
+) -> AppResult<InstalledModsInventory> {
+    let started_at = Instant::now();
     let like_root = format!("{}%", mods_root.to_string_lossy());
     let mut statement = connection.prepare(
         "SELECT
@@ -3216,9 +3309,10 @@ fn detect_existing_layout(
          FROM files f
          LEFT JOIN creators c ON c.id = f.creator_id
          WHERE f.source_location <> 'downloads'
-           AND f.path LIKE ?1",
+           AND f.path LIKE ?1
+           AND f.extension IN ('.package', '.ts4script', '.cfg')",
     )?;
-    let installed_files = statement
+    let mut files = statement
         .query_map(params![like_root], |row| {
             Ok(ExistingInstallFile {
                 file_id: Some(row.get(0)?),
@@ -3235,27 +3329,109 @@ fn detect_existing_layout(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    files.retain(|file| Path::new(&file.path).exists());
 
-    let mut existing_candidates = Vec::new();
-    let mut preserve_candidates = Vec::new();
-    for file in installed_files {
-        if !Path::new(&file.path).exists() {
+    let mut known_paths = files
+        .iter()
+        .map(|file| normalize_path_key(&file.path))
+        .collect::<HashSet<_>>();
+
+    for entry in WalkDir::new(mods_root).into_iter().filter_map(Result::ok) {
+        if !entry.file_type().is_file() {
             continue;
         }
 
+        let path = entry.path();
+        let extension = normalize_extension(path);
+        if !matches!(extension.as_str(), ".package" | ".ts4script" | ".cfg") {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        let normalized_path = normalize_path_key(&path_string);
+        if !known_paths.insert(normalized_path) {
+            continue;
+        }
+
+        files.push(ExistingInstallFile {
+            file_id: None,
+            filename: entry.file_name().to_string_lossy().to_string(),
+            path: path_string,
+            extension: extension.clone(),
+            kind: if extension == ".cfg" {
+                "Config".to_owned()
+            } else if extension == ".ts4script" {
+                "Script Mods".to_owned()
+            } else {
+                "Mods".to_owned()
+            },
+            subtype: None,
+            creator: None,
+            size: path
+                .metadata()
+                .map(|meta| meta.len() as i64)
+                .unwrap_or_default(),
+            hash: None,
+            insights: FileInsights::default(),
+            in_target_folder: false,
+        });
+    }
+
+    let inventory = InstalledModsInventory {
+        mods_root: mods_root.to_path_buf(),
+        files,
+    };
+    log_slow_install_profile_step("load_installed_mods_inventory", started_at, || {
+        format!(
+            "mods_root={} files={}",
+            inventory.mods_root.to_string_lossy(),
+            inventory.files.len()
+        )
+    });
+    Ok(inventory)
+}
+
+fn detect_existing_layout(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    profile: &GuidedInstallProfileSeed,
+) -> AppResult<ExistingInstallLayout> {
+    let mods_root = resolve_mods_root(settings)?;
+    let inventory = load_installed_mods_inventory(connection, &mods_root)?;
+    detect_existing_layout_with_inventory(
+        connection,
+        seed_pack,
+        profile,
+        &inventory.mods_root,
+        &inventory.files,
+    )
+}
+
+fn detect_existing_layout_with_inventory(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    profile: &GuidedInstallProfileSeed,
+    mods_root: &Path,
+    installed_inventory: &[ExistingInstallFile],
+) -> AppResult<ExistingInstallLayout> {
+    let started_at = Instant::now();
+    let default_target_folder = mods_root.join(&profile.install_folder_name);
+    let mut warnings = Vec::new();
+    let mut safe_to_update = true;
+    let mut existing_install_detected = false;
+    let mut scattered_match_count = 0_i64;
+    let mut scattered_preserve_count = 0_i64;
+
+    let mut existing_candidates = Vec::new();
+    let mut preserve_candidates = Vec::new();
+    for file in installed_inventory.iter().cloned() {
         if is_existing_profile_file(&file, profile) {
             existing_candidates.push(file);
         } else if matches_preserve_rule(&file.filename, &file.extension, profile) {
             preserve_candidates.push(file);
         }
     }
-
-    merge_disk_existing_candidates(
-        &mods_root,
-        profile,
-        &mut existing_candidates,
-        &mut preserve_candidates,
-    )?;
 
     for file in &mut existing_candidates {
         refresh_existing_install_file_insights_if_needed(connection, seed_pack, file);
@@ -3373,93 +3549,6 @@ fn detect_existing_layout(
         )
     });
     Ok(layout)
-}
-
-fn merge_disk_existing_candidates(
-    mods_root: &Path,
-    profile: &GuidedInstallProfileSeed,
-    existing_candidates: &mut Vec<ExistingInstallFile>,
-    preserve_candidates: &mut Vec<ExistingInstallFile>,
-) -> AppResult<()> {
-    let known_existing_paths = existing_candidates
-        .iter()
-        .map(|file| normalize_path_key(&file.path))
-        .collect::<HashSet<_>>();
-    let known_preserve_paths = preserve_candidates
-        .iter()
-        .map(|file| normalize_path_key(&file.path))
-        .collect::<HashSet<_>>();
-
-    for entry in WalkDir::new(mods_root)
-        .max_depth(profile.max_install_depth + 4)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        let path = entry.path();
-        let filename = entry.file_name().to_string_lossy().to_string();
-        let extension = normalize_extension(path);
-        if !matches!(extension.as_str(), ".ts4script" | ".package" | ".cfg") {
-            continue;
-        }
-
-        let path_string = path.to_string_lossy().to_string();
-        let normalized_path = normalize_path_key(&path_string);
-
-        if is_existing_profile_filename(&filename, &extension, profile) {
-            if known_existing_paths.contains(&normalized_path) {
-                continue;
-            }
-
-            existing_candidates.push(ExistingInstallFile {
-                file_id: None,
-                filename,
-                path: path_string,
-                extension: extension.clone(),
-                kind: if extension == ".ts4script" {
-                    "Script Mods".to_owned()
-                } else {
-                    "Mods".to_owned()
-                },
-                subtype: None,
-                creator: profile.creator.clone(),
-                size: path
-                    .metadata()
-                    .map(|meta| meta.len() as i64)
-                    .unwrap_or_default(),
-                hash: None,
-                insights: FileInsights::default(),
-                in_target_folder: false,
-            });
-            continue;
-        }
-
-        if matches_preserve_rule(&filename, &extension, profile)
-            && !known_preserve_paths.contains(&normalized_path)
-        {
-            preserve_candidates.push(ExistingInstallFile {
-                file_id: None,
-                filename,
-                path: path_string,
-                extension,
-                kind: "Config".to_owned(),
-                subtype: None,
-                creator: profile.creator.clone(),
-                size: path
-                    .metadata()
-                    .map(|meta| meta.len() as i64)
-                    .unwrap_or_default(),
-                hash: None,
-                insights: FileInsights::default(),
-                in_target_folder: false,
-            });
-        }
-    }
-
-    Ok(())
 }
 
 fn select_existing_target_folder(

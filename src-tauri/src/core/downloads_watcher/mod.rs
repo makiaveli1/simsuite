@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     sync::mpsc::{self, RecvTimeoutError},
     thread,
@@ -44,12 +45,37 @@ const HELD_ARCHIVE_SAFETY_NOTE: &str =
 const IGNORED_NON_SIMS_DOWNLOAD_NOTE: &str =
     "SimSuite ignored this download because it does not contain Sims mod or Tray files.";
 
+#[cfg(debug_assertions)]
+fn append_perf_trace(line: &str) {
+    let Some(path) = std::env::var("SIMSUITE_PERF_TRACE_PATH")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+
+    let trace_path = PathBuf::from(path);
+    if let Some(parent) = trace_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&trace_path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
 fn log_slow_downloads_operation(operation: &str, started_at: Instant, count: usize) {
     #[cfg(debug_assertions)]
     {
         let elapsed_ms = started_at.elapsed().as_millis();
         if elapsed_ms >= SLOW_DOWNLOADS_LOG_THRESHOLD_MS {
-            eprintln!("[perf] {operation} took {elapsed_ms}ms for {count} item(s)");
+            let line = format!("[perf] {operation} took {elapsed_ms}ms for {count} item(s)");
+            eprintln!("{line}");
+            append_perf_trace(&line);
         }
     }
 }
@@ -59,7 +85,9 @@ fn log_slow_downloads_step(operation: &str, started_at: Instant, detail: impl Fn
     {
         let elapsed_ms = started_at.elapsed().as_millis();
         if elapsed_ms >= SLOW_DOWNLOADS_LOG_THRESHOLD_MS {
-            eprintln!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+            let line = format!("[perf] {operation} took {elapsed_ms}ms {}", detail());
+            eprintln!("{line}");
+            append_perf_trace(&line);
         }
     }
 }
@@ -542,7 +570,7 @@ fn hydrate_download_item(
     allow_network_latest: bool,
     include_full_special_details: bool,
 ) -> AppResult<()> {
-    item.special_decision = if should_load_special_decision(item) {
+    item.special_decision = if include_full_special_details && should_load_special_decision(item) {
         install_profile_engine::build_special_mod_decision_cached(
             connection,
             settings,
@@ -1173,6 +1201,7 @@ pub fn import_download_source(
         Some(item_id) => load_existing_download_item(connection, item_id)?,
         None => None,
     };
+    let mut special_context = SpecialDecisionContext::default();
 
     process_source(
         connection,
@@ -1182,6 +1211,7 @@ pub fn import_download_source(
         &category_overrides,
         &source,
         existing_item.as_ref(),
+        &mut special_context,
     )
 }
 
@@ -1212,6 +1242,7 @@ pub fn import_staged_batch(
         source_size: source.source_size,
         source_modified_at: source.source_modified_at.clone(),
     };
+    let mut special_context = SpecialDecisionContext::default();
 
     ingest_processed_source(
         connection,
@@ -1222,6 +1253,7 @@ pub fn import_staged_batch(
         discovered,
         Some(staging_root),
         &notes,
+        &mut special_context,
     )
 }
 
@@ -1398,13 +1430,18 @@ fn process_downloads_once_for_paths(
     manual: bool,
     changed_paths: Option<&[PathBuf]>,
 ) -> AppResult<DownloadsWatcherStatus> {
+    let started_at = Instant::now();
     let processing_lock = state.downloads_processing_lock();
     let _processing_guard = processing_lock
         .lock()
         .map_err(|_| AppError::Message("Downloads processing lock poisoned".to_owned()))?;
 
+    let connection_started_at = Instant::now();
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
+    log_slow_downloads_step("downloads_sync::connection", connection_started_at, || {
+        "opened database connection and loaded settings".to_owned()
+    });
     let Some(downloads_path) = settings
         .downloads_path
         .clone()
@@ -1439,6 +1476,7 @@ fn process_downloads_once_for_paths(
         checking_downloads_status(&watched_root, current_item.clone()),
     )?;
 
+    let assessment_started_at = Instant::now();
     let base_seed = state.seed_pack();
     let assessment_version = current_downloads_assessment_version(base_seed.as_ref());
     let assessment_version_changed =
@@ -1449,6 +1487,15 @@ fn process_downloads_once_for_paths(
         .into_iter()
         .map(|item| (normalize_path_key(&item.match_path), item))
         .collect::<HashMap<_, _>>();
+    log_slow_downloads_step("downloads_sync::setup", assessment_started_at, || {
+        format!(
+            "assessment_version_changed={} category_overrides={}",
+            assessment_version_changed,
+            category_overrides.len()
+        )
+    });
+
+    let observe_started_at = Instant::now();
     let use_full_scan = should_use_full_downloads_scan(
         &watched_root,
         manual,
@@ -1460,11 +1507,27 @@ fn process_downloads_once_for_paths(
     } else {
         collect_observed_sources_for_paths(&watched_root, changed_paths.unwrap_or_default())?
     };
+    log_slow_downloads_step("downloads_sync::observe", observe_started_at, || {
+        format!(
+            "use_full_scan={} observed_sources={}",
+            use_full_scan,
+            observed.len()
+        )
+    });
+
+    let existing_started_at = Instant::now();
     let existing = load_existing_items(&connection)?;
+    log_slow_downloads_step("downloads_sync::existing", existing_started_at, || {
+        format!("existing_items={}", existing.len())
+    });
     let mut changed = false;
     let mut reassessed_existing = false;
     let should_reassess_unchanged = manual || assessment_version_changed;
+    let mut unchanged_items = 0_usize;
+    let mut processed_items = 0_usize;
+    let mut special_context = SpecialDecisionContext::default();
 
+    let source_loop_started_at = Instant::now();
     for source in &observed {
         let key = normalize_path_key(&source.path.to_string_lossy());
         let existing_item = existing.get(&key);
@@ -1478,12 +1541,14 @@ fn process_downloads_once_for_paths(
         if unchanged {
             let existing_item = existing_item.expect("existing item");
             update_last_seen(&connection, existing_item.id)?;
+            unchanged_items += 1;
             if should_reassess_unchanged {
                 reassess_existing_item(
                     &connection,
                     &settings,
                     &runtime_seed_pack,
                     existing_item.id,
+                    &mut special_context,
                 )?;
                 if assessment_version_changed {
                     mark_item_rechecked_with_new_rules(&connection, existing_item.id)?;
@@ -1501,10 +1566,19 @@ fn process_downloads_once_for_paths(
             &category_overrides,
             source,
             existing_item,
+            &mut special_context,
         )?;
         changed = true;
+        processed_items += 1;
     }
+    log_slow_downloads_step("downloads_sync::sources", source_loop_started_at, || {
+        format!(
+            "processed={} unchanged={} reassessed_existing={}",
+            processed_items, unchanged_items, reassessed_existing
+        )
+    });
 
+    let missing_started_at = Instant::now();
     let missing_changed = if use_full_scan {
         mark_missing_direct_sources(&connection, &existing, &observed)?
     } else if let Some(paths) = changed_paths {
@@ -1513,26 +1587,58 @@ fn process_downloads_once_for_paths(
         false
     };
     changed |= missing_changed;
+    log_slow_downloads_step("downloads_sync::missing", missing_started_at, || {
+        format!("missing_changed={missing_changed}")
+    });
 
     if changed {
+        let bundles_started_at = Instant::now();
         bundle_detector::rebuild_bundles(&mut connection)?;
+        log_slow_downloads_step("downloads_sync::bundles", bundles_started_at, || {
+            "rebuilt tray bundles".to_owned()
+        });
+
+        let duplicates_started_at = Instant::now();
         duplicate_detector::rebuild_duplicates(&mut connection)?;
+        log_slow_downloads_step("downloads_sync::duplicates", duplicates_started_at, || {
+            "rebuilt duplicate indexes".to_owned()
+        });
     }
 
+    let statuses_started_at = Instant::now();
     recompute_item_statuses(&connection)?;
+    log_slow_downloads_step("downloads_sync::statuses", statuses_started_at, || {
+        "recomputed item statuses".to_owned()
+    });
     if changed || reassessed_existing || assessment_version_changed {
+        let version_save_started_at = Instant::now();
         database::save_app_setting(
             &mut connection,
             "downloads_assessment_version",
             Some(&assessment_version),
             "seed",
         )?;
+        log_slow_downloads_step(
+            "downloads_sync::assessment_version",
+            version_save_started_at,
+            || "saved downloads assessment version".to_owned(),
+        );
     }
+
+    let summarize_started_at = Instant::now();
     let status = summarize_status(
         &connection,
         Some(watched_root.to_string_lossy().to_string()),
     )?;
+    log_slow_downloads_step("downloads_sync::summarize", summarize_started_at, || {
+        format!(
+            "ready={} needs_review={} active={}",
+            status.ready_items, status.needs_review_items, status.active_items
+        )
+    });
     drop(connection);
+
+    log_slow_downloads_operation("downloads_sync", started_at, observed.len());
     store_status(state, app, status.clone())?;
     let _ = emit_workspace_change(
         app,
@@ -1576,6 +1682,7 @@ fn process_source(
     category_overrides: &HashMap<String, database::UserCategoryOverride>,
     source: &ObservedSource,
     existing: Option<&ExistingDownloadItem>,
+    special_context: &mut SpecialDecisionContext,
 ) -> AppResult<i64> {
     if should_hold_archive_for_safety(source) {
         return ingest_held_archive_source(connection, source, existing.map(|item| item.id));
@@ -1608,6 +1715,7 @@ fn process_source(
         discovered,
         staged_root.as_deref(),
         &notes,
+        special_context,
     )
 }
 
@@ -1804,6 +1912,7 @@ fn ingest_processed_source(
     discovered: Vec<DiscoveredFile>,
     staged_root: Option<&Path>,
     notes: &[String],
+    special_context: &mut SpecialDecisionContext,
 ) -> AppResult<i64> {
     let item_id = upsert_download_item(connection, source, existing_item_id)?;
 
@@ -1919,11 +2028,12 @@ fn ingest_processed_source(
         ],
     )?;
 
-    let assessment = install_profile_engine::assess_download_item(
+    let assessment = install_profile_engine::assess_download_item_cached(
         connection,
         &database::get_library_settings(connection)?,
         seed_pack,
         item_id,
+        special_context,
     )?;
     install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
 
@@ -1935,9 +2045,15 @@ fn reassess_existing_item(
     settings: &LibrarySettings,
     seed_pack: &crate::seed::SeedPack,
     item_id: i64,
+    special_context: &mut SpecialDecisionContext,
 ) -> AppResult<()> {
-    let assessment =
-        install_profile_engine::assess_download_item(connection, settings, seed_pack, item_id)?;
+    let assessment = install_profile_engine::assess_download_item_cached(
+        connection,
+        settings,
+        seed_pack,
+        item_id,
+        special_context,
+    )?;
     install_profile_engine::store_download_item_assessment(connection, item_id, &assessment)?;
     Ok(())
 }
@@ -3083,6 +3199,7 @@ mod tests {
         should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
         ObservedSource,
     };
+    use crate::core::install_profile_engine::SpecialDecisionContext;
     use crate::database::initialize;
     use crate::models::{DownloadsInboxQuery, DownloadsWatcherState, LibrarySettings};
     use crate::seed;
@@ -3456,8 +3573,9 @@ mod tests {
             tray_path: None,
             downloads_path: Some("C:/Downloads".to_owned()),
         };
+        let mut special_context = SpecialDecisionContext::default();
 
-        reassess_existing_item(&connection, &settings, &seed_pack, 22)
+        reassess_existing_item(&connection, &settings, &seed_pack, 22, &mut special_context)
             .expect("reassess special item");
 
         let (intake_mode, matched_profile_name, guided_install_available): (

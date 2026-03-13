@@ -2,14 +2,21 @@
 
 ## Current Priority
 
-- March 12, 2026: trim the remaining live Inbox delay now that the worst freeze is fixed and the window-thread freeze has been reduced.
-- March 12, 2026: widen Inbox special-mod validation beyond MCCC now that the native desktop smoke lane is steady again.
-- March 12, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
-- March 12, 2026: decide later whether unsupported unrelated `.7z` and `.rar` downloads should also be hidden, or keep staying visible as safety-held items.
-- The highest-priority remaining gaps are the remaining live Inbox delay, broader supported-mod coverage, helper-only official latest parsing for supported sources that still return `unknown`, and the product choice around unsupported unrelated archives.
+- March 13, 2026: widen Inbox special-mod validation beyond MCCC, XML Injector, and Sims 4 Community Library now that the live Inbox first-open delay is back under control.
+- March 13, 2026: expand helper-only official latest parsing for the supported mods that still show `unknown`, while keeping local compare as the real authority.
+- March 13, 2026: trim selected special-item detail load next if it still feels heavy in live desktop use.
+- March 13, 2026: decide later whether unsupported unrelated `.7z` and `.rar` downloads should also be hidden, or keep staying visible as safety-held items.
+- The highest-priority remaining gaps are broader supported-mod coverage, helper-only official latest parsing for supported sources that still return `unknown`, heavier selected-item special-mod detail loads, and the product choice around unsupported unrelated archives.
 
 ## What Changed This Session
 
+- March 13, 2026: traced the real live Inbox with an optional debug perf file using `SIMSUITE_PERF_TRACE_PATH`, so the desktop app can write slow-step timings to a local file during debug runs.
+- March 13, 2026: proved the remaining live Inbox delay was no longer the Downloads watcher pass itself:
+  - live `downloads_sync` was only about `0.38s` to `0.51s`
+  - the real slowdown was `downloads_queue::enrich`, which was rebuilding full special-mod decisions for visible queue rows
+- March 13, 2026: changed special-mod evaluation so cached queue and selection paths reuse one installed Mods inventory and one special-mod context instead of rebuilding the same state again and again.
+- March 13, 2026: changed installed-layout checks so disk existence is resolved once while the Mods inventory is built, instead of re-checking every installed file again for every special-mod profile.
+- March 13, 2026: changed Inbox queue hydration so queue rows stay on light lane and summary data, while the full special-mod decision stays on the selected item panel where it belongs.
 - March 12, 2026: made the repo memory process official in `AGENTS.md`.
 - March 12, 2026: added this rolling handoff file as the first thing to read next session.
 - March 12, 2026: updated `docs/IMPLEMENTATION_STATUS.md` to record the latest Inbox findings, the real desktop test results, and the current known gaps.
@@ -60,6 +67,15 @@
 
 ## What Was Tested
 
+- March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed after the live Inbox queue optimization work.
+- March 13, 2026: `npm run tauri:build -- --debug` passed after the live Inbox queue optimization work.
+- March 13, 2026: real Tauri desktop timing checks against the user's actual Downloads folder now show:
+  - first Inbox open to visible real queue items: about `1.07s`
+  - MCCC selected-item detail to visible version section: about `1.95s`
+  - the watcher sync itself: about `0.38s` to `0.51s`
+- March 13, 2026: debug perf trace proved the queue path changed in the right place:
+  - before the queue fix, `downloads_queue::enrich` was about `9.29s`, then about `4.32s`
+  - after the queue-lightening change, the same live queue open dropped to about `1.07s`
 - March 12, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed.
 - March 12, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
 - March 12, 2026: `npm run build` passed.
@@ -155,12 +171,18 @@
 - The real live Tauri window stays responsive much better now:
   - normal special-mod selection is fast in the real app
   - refresh no longer blocks a quick screen switch
-  - the remaining wait is concentrated in the live Downloads scan itself
+  - the old first-open wait is no longer concentrated in the live Downloads scan
+- The real live Inbox first open is materially faster now:
+  - the real queue appears in about `1.07s` on the user's current desktop setup
+  - queue rows no longer rebuild selected-item-grade special-mod work
+  - the queue still shows the expected live MCCC, Lot 51 Core Library, and XML Injector items
+- The selected side panel still loads the full special-mod detail correctly after the queue change:
+  - real live MCCC detail still shows `Versions`, `Installed`, and `Incoming`
+  - the selected-item detail path is still slower than the queue at about `1.95s`, but it is no longer blocking the whole queue open
 
 ## Known Problems / Gaps
 
-- Live Inbox first open is much better now, but about 14 seconds is still slower than it should feel.
-- Live Inbox first open is much better now, and in the latest timing pass it was about `12.38s`, but that is still slower than it should feel.
+- Live Inbox first open is now much better at about `1.07s`, but heavy selected-item special-mod detail still takes about `1.95s` for a real MCCC row.
 - Unrelated non-Sims ZIP downloads are now auto-ignored and hidden from the normal queue, but unsupported unrelated `.7z` and `.rar` items still stay visible as safety-held items.
 - Helper-only official latest coverage is still too narrow:
   - MCCC and GitHub release pages are supported
@@ -172,7 +194,7 @@
 - Rust still has a small set of older unused-field and unused-helper warnings that were not cleaned up in this pass.
 - XML Injector older-version wording is functionally correct in the fixture app, but it may still be worth simplifying later because the queue currently explains it through the “better sibling already in Inbox” family lens.
 - The Downloads refresh cleanup currently uses a short local grace window to swallow duplicate post-action reloads. That is much lighter than before, but it may still need tuning if real watcher traffic stays noisy in a large live Downloads folder.
-- The live read-only refresh check after the async-command fix looked calm, but the remaining first-load scan still needs deeper backend trimming.
+- The live read-only refresh check now looks much healthier, but the selected-item special-mod detail path still deserves a smaller targeted pass.
 - The real desktop smoke wrapper currently needs a running local Vite frontend at `http://localhost:1420` when it drives the raw debug Tauri executable, so keep that in mind if the desktop harness suddenly lands on a blank `localhost refused to connect` page again.
 
 ## Important Decisions
@@ -185,6 +207,7 @@
 - Keep `.7z` and `.rar` blocked for now instead of unpacking them automatically.
 - Treat the Tauri desktop smoke wrapper as the preferred real-app Inbox check, not the browser preview.
 - Treat normalized inner `.ts4script` content as the stronger same-version fingerprint for supported script-based special mods.
+- Keep Inbox queue rows light and let the selected item panel carry the full special-mod compare work.
 
 ## Next Session Start Here
 
@@ -195,10 +218,13 @@
   - normal Inbox hides ignored items
   - unsupported `.7z` and `.rar` still stay visible for safety
 - The latest live timings now say:
-  - selected-item detail work is no longer the main user-facing freeze
-  - refresh no longer locks the window
-  - the remaining delay is mostly in the live Downloads scan path
-- Next, re-check the live scan path itself and trim the remaining first-open cost without bringing back duplicate reloads.
+  - first Inbox open is back down to about `1.07s`
+  - the queue is no longer the big live bottleneck
+  - the remaining heavier path is selected-item special-mod detail at about `1.95s`
+- Next, keep the faster queue path in place and move on to:
+  - broader supported special-mod validation
+  - helper-only official latest gaps
+  - a smaller selected-item detail optimization pass only if it still feels heavy in real use
 - Start by checking whether the remaining helper-only official latest sources have a safe official endpoint that the app can fetch without fighting Cloudflare.
 - Keep MCCC and GitHub release parsing as the known-good online helpers.
 - Then expand the real desktop fixture lane beyond MCCC, XML Injector, and Sims 4 Community Library so every supported special mod has:
