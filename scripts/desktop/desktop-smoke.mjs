@@ -351,6 +351,7 @@ async function verifySameVersionItem(driver, partialText) {
     await waitForText(driver, "Versions");
     await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
     await waitForAnyText(driver, ["Inside the mod files", "Download name and file names"], 30000);
+    await waitForAnyText(driver, ["Reinstall guided copy", "Reinstall anyway"], 30000);
   } catch (error) {
     await dumpBodyText(driver, `same-version-failure-${partialText}`);
     throw error;

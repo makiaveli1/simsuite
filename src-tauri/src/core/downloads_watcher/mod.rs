@@ -588,6 +588,10 @@ fn hydrate_download_item(
         None
     };
     if let Some(decision) = item.special_decision.as_ref() {
+        if decision.apply_ready {
+            item.intake_mode = DownloadIntakeMode::Guided;
+            item.guided_install_available = true;
+        }
         item.queue_lane = decision.queue_lane.clone();
         item.queue_summary = decision.queue_summary.clone();
         item.family_key = Some(decision.family_key.clone());
@@ -3191,11 +3195,11 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
 mod tests {
     use super::{
         build_archive_staging_root, checking_downloads_status, derive_item_status,
-        get_download_item_guided_plan, has_auto_recheck_note, ingest_held_archive_source,
-        ingest_ignored_non_sims_source, list_download_queue, load_existing_items,
-        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
-        parse_string_array, preview_download_item, reassess_existing_item,
-        refresh_download_item_status, should_extract_archive_source,
+        get_download_item_guided_plan, get_download_item_selection, has_auto_recheck_note,
+        ingest_held_archive_source, ingest_ignored_non_sims_source, list_download_queue,
+        load_existing_items, mark_item_rechecked_with_new_rules,
+        mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
+        reassess_existing_item, refresh_download_item_status, should_extract_archive_source,
         should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
         ObservedSource,
     };
@@ -3595,6 +3599,87 @@ mod tests {
         assert_eq!(intake_mode, "guided");
         assert_eq!(matched_profile_name.as_deref(), Some("MC Command Center"));
         assert_eq!(guided_install_available, 1);
+    }
+
+    #[test]
+    fn hydrated_selection_uses_ready_special_guided_state() {
+        let temp = tempdir().expect("temp dir");
+        let downloads = temp.path().join("Downloads");
+        let mods = temp.path().join("Mods");
+        let staging = downloads.join("xml-same-version");
+        let installed_root = mods.join("XML Injector");
+        std::fs::create_dir_all(&staging).expect("staging");
+        std::fs::create_dir_all(&installed_root).expect("installed root");
+
+        let connection = setup_connection();
+        let seed_pack = seed::load_seed_pack().expect("seed");
+        let settings = LibrarySettings {
+            mods_path: Some(mods.to_string_lossy().to_string()),
+            tray_path: None,
+            downloads_path: Some(downloads.to_string_lossy().to_string()),
+        };
+
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id, source_path, display_name, source_kind, status, intake_mode, guided_install_available
+                 ) VALUES (?1, ?2, ?3, 'archive', 'ready', 'standard', 0)",
+                params![
+                    61_i64,
+                    staging.join("XML_Injector_Same.zip")
+                        .to_string_lossy()
+                        .to_string(),
+                    "XML_Injector_Same.zip"
+                ],
+            )
+            .expect("insert download item");
+
+        let script_path = staging.join("XmlInjector_Script_v4_0.ts4script");
+        let installed_script = installed_root.join("XmlInjector_Script_v4_0.ts4script");
+        create_test_zip(
+            &script_path,
+            &[("version.txt", b"XML Injector version 4.0")],
+        );
+        create_test_zip(
+            &installed_script,
+            &[("version.txt", b"XML Injector version 4.0")],
+        );
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, kind, confidence, source_location, download_item_id, parser_warnings
+                ) VALUES (?1, ?2, ?3, ?4, 0.92, 'downloads', ?5, '[]')",
+                params![
+                    script_path.to_string_lossy().to_string(),
+                    "XmlInjector_Script_v4_0.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    61_i64
+                ],
+            )
+            .expect("insert script");
+
+        let mut special_context = SpecialDecisionContext::default();
+        reassess_existing_item(&connection, &settings, &seed_pack, 61, &mut special_context)
+            .expect("reassess special item");
+
+        connection
+            .execute(
+                "UPDATE download_items
+                 SET intake_mode = 'standard',
+                     guided_install_available = 0
+                 WHERE id = ?1",
+                params![61_i64],
+            )
+            .expect("downgrade row");
+
+        let selection = get_download_item_selection(&connection, &settings, &seed_pack, 61, None)
+            .expect("selection");
+        let item = selection.detail.expect("detail").item;
+
+        assert_eq!(item.intake_mode, crate::models::DownloadIntakeMode::Guided);
+        assert!(item.guided_install_available);
     }
 
     #[test]

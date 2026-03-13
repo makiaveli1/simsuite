@@ -778,9 +778,15 @@ export function DownloadsScreen({
       return;
     }
 
-    if (selectedItem.intakeMode === "guided") {
-      const guidedApplyReady =
-        selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady ?? false;
+    const guidedApplyReady = Boolean(
+      selectedSpecialDecision?.applyReady || selectedGuidedPlan?.applyReady,
+    );
+    const effectiveGuided =
+      selectedResolvedItem?.intakeMode === "guided" ||
+      selectedItem.intakeMode === "guided" ||
+      guidedApplyReady;
+
+    if (effectiveGuided) {
       if (!guidedApplyReady || !selectedGuidedPlan) {
         return;
       }
@@ -916,10 +922,22 @@ export function DownloadsScreen({
         : selectedGuidedPlan && !selectedGuidedPlan.applyReady),
   );
   const incomingOlder = selectedSpecialDecision?.versionStatus === "incoming_older";
+  const guidedActionReady = Boolean(
+    selectedSpecialDecision?.applyReady || selectedGuidedPlan?.applyReady,
+  );
+  const effectiveSelectedIntakeMode: DownloadIntakeMode | undefined = selectedResolvedItem
+    ? selectedResolvedItem.intakeMode === "guided" || guidedActionReady
+      ? "guided"
+      : selectedResolvedItem.intakeMode
+    : selectedItem
+      ? selectedItem.intakeMode === "guided" || guidedActionReady
+        ? "guided"
+        : selectedItem.intakeMode
+      : undefined;
   const canApply =
-    selectedResolvedItem?.intakeMode === "guided"
-      ? Boolean(selectedSpecialDecision?.applyReady ?? selectedGuidedPlan?.applyReady)
-      : selectedResolvedItem?.intakeMode === "standard" && safeCount > 0;
+    effectiveSelectedIntakeMode === "guided"
+      ? guidedActionReady
+      : effectiveSelectedIntakeMode === "standard" && safeCount > 0;
   const showPrimaryAction =
     Boolean(selectedResolvedItem) &&
     !incomingOlder &&
@@ -928,7 +946,7 @@ export function DownloadsScreen({
     ? primaryReviewAction
       ? reviewActionLabel(primaryReviewAction, userView, isApplying)
       : applyButtonLabel(
-          selectedResolvedItem.intakeMode,
+          effectiveSelectedIntakeMode ?? selectedResolvedItem.intakeMode,
           selectedGuidedPlan,
           selectedSpecialDecision,
           userView,
@@ -1548,7 +1566,7 @@ export function DownloadsScreen({
                   {!showPrimaryAction ? (
                     <div className="downloads-inspector-note">
                       {downloadsInspectorIdleNote(
-                        selectedItem.intakeMode,
+                        effectiveSelectedIntakeMode ?? selectedItem.intakeMode,
                         userView,
                         safeCount,
                         selectedGuidedPlan,
