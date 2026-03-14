@@ -51,6 +51,7 @@ import type {
   SnapshotSummary,
   VersionResolution,
   VersionSignal,
+  WatchSourceKind,
   WatchResult,
   WorkspaceChange,
 } from "./types";

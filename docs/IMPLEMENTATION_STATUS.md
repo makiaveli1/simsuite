@@ -2,6 +2,32 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 14, 2026)
+
+This session was a smaller follow-up checkpoint to verify that the Lumpinou Toolbox same-version fix really holds in the live desktop app.
+
+Important changes and findings:
+
+- fixed two small app build blockers that were preventing a fresh native desktop verification pass:
+  - `src/lib/api.ts` was using `WatchSourceKind` without importing it
+  - `src/screens/LibraryScreen.tsx` had a local state value and a helper function using the same name
+- removed the temporary live-database debug test after the live check was done, so the repo stays clean
+- rebuilt the real debug Tauri app successfully
+- confirmed the live Lumpinou Toolbox case in the real app with a read-only desktop check:
+  - the Inbox queue row now shows `Installed and incoming match`
+  - the selected item panel now shows `Already current`
+  - the primary action now shows the reinstall path instead of a cautious unclear state
+  - the live version section showed:
+    - installed `1.179.6`
+    - incoming `1.179.6`
+    - compare `Installed and incoming match`
+    - same-release reinstall evidence when fingerprints differ
+
+Important remaining gap:
+
+- broader live desktop validation is still strongest as targeted spot checks plus fixture-backed flows
+- the next product work can now move back to watch flow and careful catalog growth instead of staying stuck on the Lumpinou version issue
+
 ## Current session note (March 13, 2026)
 
 This session moved SimSuite from a mostly special-mod-only version story to one shared version and update-watch foundation for all content.

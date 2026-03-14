@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 14, 2026: Lumpinou Toolbox same-version handling is now confirmed in the real desktop app. The next product focus can move back to broader watch flow and careful special-mod growth.
 - March 13, 2026: the shared version and update-watch foundation is now in place for all content, so the next product focus is making the watch flow more complete without slowing Inbox back down.
 - March 13, 2026: keep guided install special-mod-only. Generic mods and CC can now compare against installed content, but weak matches must still stay cautious and say `unknown`.
 - March 13, 2026: use `docs/SPECIAL_MOD_ONBOARDING.md` and `docs/SPECIAL_MOD_CANDIDATES.json` for future catalog growth. The external Sims mod index stays frozen and reference-only.
@@ -9,6 +10,10 @@
 
 ## What Changed This Session
 
+- March 14, 2026: fixed two app build blockers that were preventing a fresh native desktop verification pass:
+  - `src/lib/api.ts` now imports `WatchSourceKind`
+  - `src/screens/LibraryScreen.tsx` no longer shadows the watch-source label helper with a local state name
+- March 14, 2026: removed the temporary live-database debug test after the live Lumpinou check was confirmed, so the repo keeps only normal regression coverage.
 - March 13, 2026: added one shared version-and-match layer for all content instead of keeping version comparison mostly special-mod-only.
 - March 13, 2026: `file_inspector` now stores structured `versionSignals` in file insights, while keeping `versionHints` as the short compatibility list.
 - March 13, 2026: added a shared content-version resolver that:
@@ -41,6 +46,14 @@
 
 ## What Was Tested
 
+- March 14, 2026: `npm run build` passed after the small app fixes.
+- March 14, 2026: `npm run tauri:build -- --debug` passed.
+- March 14, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `146` tests.
+- March 14, 2026: real native desktop read-only check against the live app data passed for Lumpinou Toolbox:
+  - Inbox queue row showed `Installed and incoming match`
+  - selected detail showed `Already current`
+  - the primary action showed `Reinstall guided copy`
+  - local versions showed `Installed 1.179.6` and `Incoming 1.179.6`
 - March 13, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `142` tests.
 - March 13, 2026: `cargo build --manifest-path src-tauri/Cargo.toml` passed.
 - March 13, 2026: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with warnings only.
@@ -49,6 +62,8 @@
 
 ## What Worked
 
+- The live desktop app now confirms the Lumpinou Toolbox fix in the real Inbox, not just in backend tests.
+- The real queue row and the selected item panel agree for the current live Lumpinou same-version case.
 - Generic downloads now have a shared local compare path instead of special-case-only version checks.
 - Supported special mods still keep:
   - guided install
@@ -79,6 +94,7 @@
 - Heavy selected special-item detail is still slower than the queue in real desktop use.
 - The first curated expansion wave has not started yet.
 - `cargo clippy` still reports some older warnings that were not cleaned up in this checkpoint.
+- The raw native check is still best as a read-only spot check unless we are deliberately running fixture-backed apply flows.
 
 ## Important Decisions
 

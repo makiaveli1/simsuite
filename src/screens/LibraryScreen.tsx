@@ -425,7 +425,7 @@ export function LibraryScreen({
                       {selected.watchResult?.sourceKind ? (
                         <DetailRow
                           label="Watch source"
-                          value={watchSourceLabel(selected.watchResult)}
+                          value={watchSourceKindLabel(selected.watchResult)}
                         />
                       ) : null}
                       {selected.watchResult?.latestVersion ? (
@@ -1441,7 +1441,7 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
   }
 }
 
-function watchSourceLabel(watchResult: WatchResult | null) {
+function watchSourceKindLabel(watchResult: WatchResult | null) {
   if (!watchResult?.sourceKind) {
     return "Not set";
   }

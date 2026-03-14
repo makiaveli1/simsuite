@@ -6474,6 +6474,98 @@ mod tests {
     }
 
     #[test]
+    fn live_style_lumpinou_toolbox_same_version_stays_current() {
+        let (temp, connection, seed_pack, settings) = setup_env();
+        let staging_root = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let staging = staging_root.join("live_style_toolbox_same_version");
+        fs::create_dir_all(&staging).expect("staging");
+        let item_id = 8801;
+        let filename = "Lumpinou_Toolbox_v1.179.6.ts4script";
+        insert_download_item(&connection, item_id, filename, &staging);
+
+        let incoming_script = staging.join(filename);
+        write_script_archive_with_comment(
+            &incoming_script,
+            "toolbox/version.pyc",
+            b"Lumpinou Toolbox incoming build",
+            "incoming",
+        );
+        insert_download_file(
+            &connection,
+            item_id,
+            item_id * 100 + 1,
+            &incoming_script,
+            filename,
+            "Script Mods",
+        );
+        update_file_insights_by_id(&connection, item_id * 100 + 1, &FileInsights::default());
+
+        let existing_root = temp.path().join("Mods").join("Lumpinou Toolbox");
+        fs::create_dir_all(&existing_root).expect("existing");
+        let installed_script = existing_root.join(filename);
+        write_script_archive_with_comment(
+            &installed_script,
+            "toolbox/version.pyc",
+            b"Lumpinou Toolbox installed build",
+            "installed",
+        );
+        insert_installed_file(&connection, &installed_script, "Script Mods");
+        update_file_insights_by_path(&connection, &installed_script, &FileInsights::default());
+        connection
+            .execute(
+                "UPDATE files SET hash = NULL WHERE path = ?1",
+                params![installed_script.to_string_lossy().to_string()],
+            )
+            .expect("clear installed hash");
+
+        insert_family_state(
+            &connection,
+            "lumpinou_toolbox",
+            "Lumpinou Toolbox",
+            "clean",
+            Some(&existing_root),
+            Some("1.179.6"),
+            None,
+        );
+        connection
+            .execute(
+                "UPDATE special_mod_family_state
+                 SET installed_signature = ?2
+                 WHERE profile_key = ?1",
+                params!["lumpinou_toolbox", "saved-installed-signature"],
+            )
+            .expect("saved signature");
+
+        let assessment =
+            assess_download_item(&connection, &settings, &seed_pack, item_id).expect("assessment");
+        store_download_item_assessment(&connection, item_id, &assessment).expect("stored");
+
+        let decision = build_special_mod_decision(&connection, &settings, &seed_pack, item_id)
+            .expect("decision")
+            .expect("special decision");
+
+        assert_eq!(decision.profile_key, "lumpinou_toolbox");
+        assert_eq!(decision.version_status, SpecialVersionStatus::SameVersion);
+        assert!(decision.same_version);
+        assert!(decision.apply_ready);
+        assert!(decision.primary_action.is_none());
+        assert_eq!(decision.queue_lane, DownloadQueueLane::Done);
+        assert_eq!(decision.incoming_version.as_deref(), Some("1.179.6"));
+        assert!(matches!(
+            decision.incoming_version_source.as_deref(),
+            Some("download name") | Some("inside mod")
+        ));
+        assert!(matches!(
+            decision.installed_version_source.as_deref(),
+            Some("installed files") | Some("saved family state")
+        ));
+        assert!(decision
+            .comparison_evidence
+            .iter()
+            .any(|line| line.contains("same-release reinstall")));
+    }
+
+    #[test]
     fn older_lumpinou_toolbox_download_is_not_treated_as_the_next_update() {
         assert_special_script_version_case(SpecialScriptVersionCase {
             profile_key: "lumpinou_toolbox",
