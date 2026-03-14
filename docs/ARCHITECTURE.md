@@ -89,6 +89,10 @@ Important current version-and-watch architecture:
   - stays cautious when the match is weak or the local clues disagree
 - generic downloads can now compare against installed content when the local match is strong enough
 - weak generic matches stay `unknown` instead of pretending to know
+- `Library` now focuses on installed content only:
+  - Downloads rows stay in `Inbox`
+  - Library queries exclude `source_location = 'downloads'`
+  - watch actions only attach to installed Library items
 - `Library` now shows installed-version facts and watch status in the detail panel only
 - `Home` now rolls up:
   - exact updates
@@ -99,6 +103,7 @@ Important current version-and-watch architecture:
   - watch results stay helper-only
 - guided install is still special-mod-only
 - community lists and third-party indexes are still reference material only, not runtime truth
+- future provider integrations such as CurseForge should only use official approved APIs and user-approved sources; scraping protected pages is out of scope
 
 Important current special-mod architecture:
 

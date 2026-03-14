@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 14, 2026: Library watch flow is now cleaner in the real app because Library queries now focus on installed content only. The next product focus should be the first fuller user-facing watch setup flow, not mixing Downloads rows into Library.
 - March 14, 2026: Lumpinou Toolbox same-version handling is now confirmed in the real desktop app. The next product focus can move back to broader watch flow and careful special-mod growth.
 - March 13, 2026: the shared version and update-watch foundation is now in place for all content, so the next product focus is making the watch flow more complete without slowing Inbox back down.
 - March 13, 2026: keep guided install special-mod-only. Generic mods and CC can now compare against installed content, but weak matches must still stay cautious and say `unknown`.
@@ -10,6 +11,17 @@
 
 ## What Changed This Session
 
+- March 14, 2026: fixed the first real Library watch-flow gap:
+  - `Library` now excludes Downloads rows and stays focused on installed content
+  - saving or clearing a watch source now only works for installed Library items
+  - the browser-preview mocks now match that same installed-only rule
+  - the native desktop smoke now triggers a real installed scan before it tests Library watch actions
+- March 14, 2026: added a generic installed fixture file to the native desktop smoke so the watch-source save and clear path is proven against a real Tauri app.
+- March 14, 2026: researched CurseForge update-monitoring options from official sources:
+  - CurseForge does have an official 3rd-party API path
+  - it requires applying for an API key
+  - project owners can block 3rd-party distribution per project
+  - SimSuite should only consider a CurseForge integration through that approved API path, never through scraping or challenge bypasses
 - March 14, 2026: fixed two app build blockers that were preventing a fresh native desktop verification pass:
   - `src/lib/api.ts` now imports `WatchSourceKind`
   - `src/screens/LibraryScreen.tsx` no longer shadows the watch-source label helper with a local state name
@@ -46,6 +58,18 @@
 
 ## What Was Tested
 
+- March 14, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
+- March 14, 2026: `cargo check --manifest-path src-tauri/Cargo.toml` passed.
+- March 14, 2026: `cargo build --manifest-path src-tauri/Cargo.toml` passed.
+- March 14, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `153` tests.
+- March 14, 2026: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with warnings only.
+- March 14, 2026: `npm run build` passed.
+- March 14, 2026: real native desktop fixture smoke passed after the Library watch-flow fix:
+  - the app launched in Tauri
+  - a real installed scan was triggered
+  - Library opened on installed content
+  - the generic installed fixture file could save a watch source
+  - the same file could clear that watch source again
 - March 14, 2026: `npm run build` passed after the small app fixes.
 - March 14, 2026: `npm run tauri:build -- --debug` passed.
 - March 14, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `146` tests.
@@ -62,6 +86,10 @@
 
 ## What Worked
 
+- The real Library watch flow now works on the right kind of content:
+  - installed files only
+  - not Inbox or Downloads rows
+- The native desktop smoke now proves the save-watch and clear-watch path in the real app instead of only proving that the UI renders.
 - The live desktop app now confirms the Lumpinou Toolbox fix in the real Inbox, not just in backend tests.
 - The real queue row and the selected item panel agree for the current live Lumpinou same-version case.
 - Generic downloads now have a shared local compare path instead of special-case-only version checks.
@@ -87,10 +115,15 @@
 - The watch system is readable now, but the user-facing management flow is still thin:
   - watch results can be shown
   - generic watch sources are stored in the database
-  - but broader setup and editing flows still need to grow carefully
+  - Library can now save and clear a watch source for installed items
+  - but broader setup, editing, batch setup, and polling flows still need to grow carefully
 - Helper-only official latest support is still intentionally narrow:
   - MCCC, GitHub release pages, and XML Injector are supported
   - Lot 51 and the CurseForge-backed sources still stay `unknown` because plain app requests hit challenge pages
+- CurseForge is promising as a future provider, but it is not a drop-in shortcut:
+  - it requires an approved API key
+  - project distribution can be turned off by the author
+  - the official terms place real limits on how 3rd-party apps can use and cache API data
 - Heavy selected special-item detail is still slower than the queue in real desktop use.
 - The first curated expansion wave has not started yet.
 - `cargo clippy` still reports some older warnings that were not cleaned up in this checkpoint.
@@ -102,6 +135,8 @@
 - Official latest stays helper-only.
 - Weak content matches must stay cautious and return `unknown`.
 - Guided install stays special-mod-only.
+- Library watch actions should only attach to installed Library items, not Downloads rows.
+- Any CurseForge integration must use the official approved API path. No scraping, no challenge bypasses, and no trying to sneak around author distribution settings.
 - The external Sims mod index stays frozen and reference-only.
 - Future growth should be data-driven:
   - shared version signals
@@ -116,7 +151,8 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - add the first careful user-facing watch-source flow
+  - design the first fuller user-facing watch-source flow for installed content
+  - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements
   - widen helper-only latest parsing only where there is a safe official endpoint
   - add the first small curated expansion wave through `docs/SPECIAL_MOD_CANDIDATES.json`
   - keep checking Inbox detail performance so the broader compare system does not make the screen feel heavy again

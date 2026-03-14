@@ -15,6 +15,7 @@ const DEFAULT_TOOLBOX_SAME_ITEM = "Toolbox_Same_Test";
 const DEFAULT_TOOLBOX_OLDER_ITEM = "Toolbox_Older_Test";
 const DEFAULT_SMART_CORE_SAME_ITEM = "Smart_Core_Same_Test";
 const DEFAULT_SMART_CORE_OLDER_ITEM = "Smart_Core_Older_Test";
+const DEFAULT_GENERIC_WATCH_FILE = "Generic_Watch_Mod_v1.0.package";
 const DEFAULT_APP_PATHS = [
   path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
   path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
@@ -259,6 +260,47 @@ async function dumpBodyText(driver, label) {
   console.log(`\n===== ${label} =====\n${body}\n`);
 }
 
+async function ensureLibraryIndexed(driver, timeoutMs = 90000) {
+  await clickButton(driver, "Home");
+  await waitForText(driver, "Home");
+
+  const existingBody = await getBodyText(driver);
+  if (existingBody && !existingBody.includes("Not scanned")) {
+    return;
+  }
+
+  await clickFirstVisibleButton(driver, ["Scan my CC", "Scan now", "Scan"], 30000);
+  const startedAt = Date.now();
+  let sawScanning = false;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const bodyText = await getBodyText(driver);
+    if (bodyText) {
+      if (bodyText.includes("Scanning...")) {
+        sawScanning = true;
+      }
+
+      if (!bodyText.includes("Not scanned") && (!sawScanning || !bodyText.includes("Scanning..."))) {
+        return;
+      }
+    }
+
+    await driver.sleep(500);
+  }
+
+  await dumpBodyText(driver, "scan-timeout");
+  throw new Error("Timed out waiting for the installed Library scan to finish.");
+}
+
+async function fillInputByPlaceholder(driver, placeholder, value, timeoutMs = 30000) {
+  const locator = By.css(`input[placeholder="${placeholder}"]`);
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  const input = await driver.findElement(locator);
+  await driver.wait(until.elementIsVisible(input), timeoutMs);
+  await input.clear();
+  await input.sendKeys(value);
+}
+
 async function waitForQueueItem(driver, partialText, timeoutMs = 90000) {
   const startedAt = Date.now();
   let lastRetryAt = 0;
@@ -388,6 +430,7 @@ async function verifyHomeWatchSummary(driver) {
 }
 
 async function verifyLibraryVersionWatch(driver) {
+  await ensureLibraryIndexed(driver);
   await clickButton(driver, "Library");
   await waitForText(driver, "Library");
   try {
@@ -398,6 +441,32 @@ async function verifyLibraryVersionWatch(driver) {
   await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
   await waitForText(driver, "Confidence");
   await waitForText(driver, "Watch status");
+}
+
+async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
+  await ensureLibraryIndexed(driver);
+  await clickButton(driver, "Library");
+  await waitForText(driver, "Library");
+  await clickVisibleText(driver, genericWatchFile, 30000);
+  await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
+  await waitForText(driver, "Watch status");
+  await clickButton(driver, "Add watch source");
+  await fillInputByPlaceholder(driver, "https://example.com/mod-page", "https://example.com/watch-test");
+  await clickButton(driver, "Save watch");
+  await waitForAnyText(
+    driver,
+    ["Watch source saved.", "Watch source is saved, but it has not been checked yet."],
+    30000,
+  );
+  await waitForText(driver, "Exact mod page");
+  await waitForText(driver, "Watch source is saved, but it has not been checked yet.");
+  await clickFirstVisibleButton(driver, ["Clear watch source", "Stop watching"], 30000);
+  await waitForAnyText(
+    driver,
+    ["Watch source cleared.", "No approved watch source is saved for this installed content yet."],
+    30000,
+  );
+  await waitForText(driver, "Add watch source");
 }
 
 async function run() {
@@ -417,6 +486,8 @@ async function run() {
     session?.fixture?.smartCoreSameItem ?? DEFAULT_SMART_CORE_SAME_ITEM;
   const fixtureSmartCoreOlderItem =
     session?.fixture?.smartCoreOlderItem ?? DEFAULT_SMART_CORE_OLDER_ITEM;
+  const fixtureGenericWatchFile =
+    session?.fixture?.genericWatchFile ?? DEFAULT_GENERIC_WATCH_FILE;
   const capabilities = new Capabilities();
   capabilities.setBrowserName("wry");
   capabilities.set("tauri:options", {
@@ -538,6 +609,7 @@ async function run() {
 
     await verifyHomeWatchSummary(driver);
     await verifyLibraryVersionWatch(driver);
+    await verifyLibraryWatchSaveClear(driver, fixtureGenericWatchFile);
 
     console.log(`Desktop smoke passed against ${appPath}`);
   } finally {

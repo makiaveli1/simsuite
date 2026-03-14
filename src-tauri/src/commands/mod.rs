@@ -17,8 +17,8 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        category_audit, content_versions, creator_audit, downloads_watcher,
-        install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
+        category_audit, content_versions, creator_audit, downloads_watcher, install_profile_engine,
+        library_index, move_engine, rule_engine, scanner, snapshot_manager,
     },
     database,
     error::AppError,
@@ -224,7 +224,7 @@ fn filename_from_response(response: &reqwest::blocking::Response, fallback: &str
     let url_name = response
         .url()
         .path_segments()
-        .and_then(|segments| segments.last())
+        .and_then(|mut segments| segments.next_back())
         .filter(|value| !value.trim().is_empty())
         .map(ToOwned::to_owned);
 
@@ -252,6 +252,30 @@ fn approved_review_action_url(action: &ReviewPlanAction, label: &str) -> Result<
         return Err(format!(
             "SimSuite blocked this {label} because the link is missing a website name."
         ));
+    }
+    Ok(parsed)
+}
+
+fn approved_watch_source_url(source_url: &str) -> Result<Url, String> {
+    let trimmed = source_url.trim();
+    let parsed = Url::parse(trimmed)
+        .map_err(|_| "This watch source does not have a valid web address.".to_owned())?;
+    if parsed.scheme() != "https" {
+        return Err(
+            "SimSuite only accepts secure HTTPS watch pages for saved watch sources.".to_owned(),
+        );
+    }
+    if parsed.host_str().is_none() {
+        return Err(
+            "SimSuite blocked this watch source because the link is missing a website name."
+                .to_owned(),
+        );
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(
+            "SimSuite blocked this watch source because saved links cannot include sign-in details."
+                .to_owned(),
+        );
     }
     Ok(parsed)
 }
@@ -1733,20 +1757,32 @@ pub fn save_watch_source_for_file(
     source_url: String,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let mut connection = state.connection().map_err(map_error)?;
+    let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
+    let approved_url = approved_watch_source_url(&source_url)?;
+    let cleaned_label = source_label.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    });
 
     content_versions::save_watch_source_for_library_file(
-        &mut connection,
+        &connection,
         &settings,
         &seed_pack,
         file_id,
         source_kind,
-        source_label,
-        &source_url,
+        cleaned_label,
+        approved_url.as_str(),
     )
     .map_err(map_error)?;
+    let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+        .map_err(map_error)?
+        .ok_or_else(|| "Watch sources can only be saved for installed Library items.".to_owned())?;
 
     emit_workspace_domains(
         &app,
@@ -1755,10 +1791,7 @@ pub fn save_watch_source_for_file(
         vec![file_id],
         Vec::new(),
     )?;
-
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+    Ok(Some(updated))
 }
 
 #[tauri::command]
@@ -1767,17 +1800,22 @@ pub fn clear_watch_source_for_file(
     file_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let mut connection = state.connection().map_err(map_error)?;
+    let connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let seed_pack = state.seed_pack();
 
     content_versions::clear_watch_source_for_library_file(
-        &mut connection,
+        &connection,
         &settings,
         &seed_pack,
         file_id,
     )
     .map_err(map_error)?;
+    let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+        .map_err(map_error)?
+        .ok_or_else(|| {
+            "Watch sources can only be managed for installed Library items.".to_owned()
+        })?;
 
     emit_workspace_domains(
         &app,
@@ -1786,10 +1824,7 @@ pub fn clear_watch_source_for_file(
         vec![file_id],
         Vec::new(),
     )?;
-
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+    Ok(Some(updated))
 }
 
 #[tauri::command]
@@ -2021,8 +2056,8 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        approved_review_action_url, is_locked_read_error, retry_locked_read,
-        review_action_url_matches, validate_review_download_redirect,
+        approved_review_action_url, approved_watch_source_url, is_locked_read_error,
+        retry_locked_read, review_action_url_matches, validate_review_download_redirect,
     };
     use crate::{
         error::AppError,
@@ -2113,5 +2148,30 @@ mod tests {
         assert!(error.contains("redirected"));
         assert!(error.contains("example.com"));
         assert!(error.contains("cdn.example.net"));
+    }
+
+    #[test]
+    fn approved_watch_source_url_allows_secure_https_links() {
+        let url =
+            approved_watch_source_url("https://example.com/mod-page").expect("https watch url");
+
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("example.com"));
+    }
+
+    #[test]
+    fn approved_watch_source_url_rejects_non_https_links() {
+        let error =
+            approved_watch_source_url("http://example.com/mod-page").expect_err("http blocked");
+
+        assert!(error.contains("HTTPS"));
+    }
+
+    #[test]
+    fn approved_watch_source_url_rejects_embedded_credentials() {
+        let error = approved_watch_source_url("https://user:secret@example.com/mod-page")
+            .expect_err("credentials blocked");
+
+        assert!(error.contains("sign-in details"));
     }
 }

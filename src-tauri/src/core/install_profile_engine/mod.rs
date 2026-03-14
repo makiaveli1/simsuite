@@ -5190,7 +5190,10 @@ mod tests {
             item_id * 100 + 1,
             &FileInsights {
                 version_hints: vec![version.to_owned()],
-                family_hints: family_hints.iter().map(|value| (*value).to_owned()).collect(),
+                family_hints: family_hints
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
                 ..FileInsights::default()
             },
         );
@@ -5211,7 +5214,10 @@ mod tests {
             &current_script,
             &FileInsights {
                 version_hints: vec![version.to_owned()],
-                family_hints: family_hints.iter().map(|value| (*value).to_owned()).collect(),
+                family_hints: family_hints
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
                 ..FileInsights::default()
             },
         );

@@ -3363,7 +3363,7 @@ function queueMockScan() {
 
 function filterMockFiles(query: LibraryQuery) {
   const search = query.search?.trim().toLowerCase();
-  let items = [...mockFiles];
+  let items = mockFiles.filter((item) => item.sourceLocation !== "downloads");
 
   if (search) {
     items = items.filter((item) =>
@@ -3398,6 +3398,10 @@ function filterMockFiles(query: LibraryQuery) {
     total,
     items: items.slice(offset, offset + limit),
   };
+}
+
+function mockLibraryFiles() {
+  return mockFiles.filter((item) => item.sourceLocation !== "downloads");
 }
 
 function normalizeMockAlias(value: string) {
@@ -3669,16 +3673,18 @@ async function mockInvoke<T>(
         buildMockReviewPlan(payload?.itemId as number),
       ) as T;
     case "get_library_facets":
-      return {
+      {
+        const libraryFiles = mockLibraryFiles();
+        return {
         creators: Array.from(
-          new Set(mockFiles.map((item) => item.creator).filter(Boolean)),
+          new Set(libraryFiles.map((item) => item.creator).filter(Boolean)),
         ).sort(),
-        kinds: Array.from(new Set(mockFiles.map((item) => item.kind))).sort(),
+        kinds: Array.from(new Set(libraryFiles.map((item) => item.kind))).sort(),
         subtypes: Array.from(
-          new Set(mockFiles.map((item) => item.subtype).filter(Boolean)),
+          new Set(libraryFiles.map((item) => item.subtype).filter(Boolean)),
         ).sort(),
         sources: Array.from(
-          new Set(mockFiles.map((item) => item.sourceLocation)),
+          new Set(libraryFiles.map((item) => item.sourceLocation)),
         ).sort(),
         taxonomyKinds: [
           "CAS",
@@ -3695,6 +3701,7 @@ async function mockInvoke<T>(
           "Unknown",
         ],
       } as T;
+      }
     case "get_duplicate_overview":
       return {
         totalPairs: mockDuplicatePairs.length,
@@ -4226,7 +4233,7 @@ async function mockInvoke<T>(
     case "get_file_detail": {
       const fileId = payload?.fileId as number;
       return (
-        structuredClone(mockFiles.find((item) => item.id === fileId) ?? null) as T
+        structuredClone(mockLibraryFiles().find((item) => item.id === fileId) ?? null) as T
       );
     }
     case "save_watch_source_for_file": {
@@ -4238,7 +4245,12 @@ async function mockInvoke<T>(
         : "";
       const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
 
-      if (fileIndex === -1 || !sourceUrl || (sourceKind !== "exact_page" && sourceKind !== "creator_page")) {
+      if (
+        fileIndex === -1 ||
+        mockFiles[fileIndex].sourceLocation === "downloads" ||
+        !sourceUrl ||
+        (sourceKind !== "exact_page" && sourceKind !== "creator_page")
+      ) {
         return null as T;
       }
 
@@ -4262,7 +4274,7 @@ async function mockInvoke<T>(
       const fileId = payload?.fileId as number;
       const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
 
-      if (fileIndex === -1) {
+      if (fileIndex === -1 || mockFiles[fileIndex].sourceLocation === "downloads") {
         return null as T;
       }
 

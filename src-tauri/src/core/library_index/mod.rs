@@ -78,19 +78,34 @@ pub fn get_library_facets(
 ) -> AppResult<LibraryFacets> {
     let creators = string_list(
         connection,
-        "SELECT DISTINCT canonical_name FROM creators ORDER BY canonical_name COLLATE NOCASE",
+        "SELECT DISTINCT c.canonical_name
+         FROM files f
+         JOIN creators c ON f.creator_id = c.id
+         WHERE f.source_location <> 'downloads'
+         ORDER BY c.canonical_name COLLATE NOCASE",
     )?;
     let kinds = string_list(
         connection,
-        "SELECT DISTINCT kind FROM files ORDER BY kind COLLATE NOCASE",
+        "SELECT DISTINCT kind
+         FROM files
+         WHERE source_location <> 'downloads'
+         ORDER BY kind COLLATE NOCASE",
     )?;
     let subtypes = string_list(
         connection,
-        "SELECT DISTINCT subtype FROM files WHERE subtype IS NOT NULL AND subtype <> '' ORDER BY subtype COLLATE NOCASE",
+        "SELECT DISTINCT subtype
+         FROM files
+         WHERE source_location <> 'downloads'
+           AND subtype IS NOT NULL
+           AND subtype <> ''
+         ORDER BY subtype COLLATE NOCASE",
     )?;
     let sources = string_list(
         connection,
-        "SELECT DISTINCT source_location FROM files ORDER BY source_location COLLATE NOCASE",
+        "SELECT DISTINCT source_location
+         FROM files
+         WHERE source_location <> 'downloads'
+         ORDER BY source_location COLLATE NOCASE",
     )?;
 
     Ok(LibraryFacets {
@@ -117,7 +132,7 @@ pub fn list_library_files(
          FROM files f
          LEFT JOIN creators c ON f.creator_id = c.id
          LEFT JOIN bundles b ON f.bundle_id = b.id
-         WHERE 1 = 1 {filters}"
+         WHERE f.source_location <> 'downloads' {filters}"
     );
 
     let total = connection.query_row(&total_sql, params_from_iter(params.iter()), |row| {
@@ -148,7 +163,7 @@ pub fn list_library_files(
          FROM files f
          LEFT JOIN creators c ON f.creator_id = c.id
          LEFT JOIN bundles b ON f.bundle_id = b.id
-         WHERE 1 = 1 {filters}
+         WHERE f.source_location <> 'downloads' {filters}
          ORDER BY f.filename COLLATE NOCASE
          LIMIT ? OFFSET ?"
     );
@@ -216,7 +231,8 @@ pub fn get_file_detail(
              LEFT JOIN creators c ON f.creator_id = c.id
              LEFT JOIN bundles b ON f.bundle_id = b.id
              LEFT JOIN user_category_overrides uco ON uco.match_path = f.path
-             WHERE f.id = ?1",
+             WHERE f.id = ?1
+               AND f.source_location <> 'downloads'",
             params![file_id],
             |row| {
                 Ok(FileDetail {
@@ -361,4 +377,120 @@ fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppRes
         .map_err(crate::error::AppError::from)?;
 
     Ok(aliases)
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::params;
+
+    use crate::{
+        database,
+        models::{LibraryQuery, LibrarySettings},
+        seed::load_seed_pack,
+    };
+
+    use super::{get_file_detail, get_library_facets, list_library_files};
+
+    fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Mods".to_owned()),
+            tray_path: Some("C:/Tray".to_owned()),
+            downloads_path: Some("C:/Downloads".to_owned()),
+        };
+
+        connection
+            .execute(
+                "INSERT INTO creators (canonical_name, notes) VALUES (?1, ?2)",
+                params!["TestCreator", "fixture"],
+            )
+            .expect("creator");
+        let creator_id = connection.last_insert_rowid();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    creator_id,
+                    kind,
+                    subtype,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "C:/Mods/TestCreator/installed.package",
+                    "installed.package",
+                    ".package",
+                    creator_id,
+                    "Gameplay",
+                    "Utility",
+                    0.91_f64,
+                    "mods",
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("installed file");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    creator_id,
+                    kind,
+                    subtype,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "C:/Downloads/incoming.package",
+                    "incoming.package",
+                    ".package",
+                    creator_id,
+                    "Gameplay",
+                    "Utility",
+                    0.88_f64,
+                    "downloads",
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("download file");
+
+        (connection, settings, seed_pack)
+    }
+
+    #[test]
+    fn library_queries_focus_on_installed_content() {
+        let (connection, settings, seed_pack) = setup_library_env();
+
+        let listing =
+            list_library_files(&connection, LibraryQuery::default()).expect("library listing");
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items.len(), 1);
+        assert_eq!(listing.items[0].filename, "installed.package");
+        assert_eq!(listing.items[0].source_location, "mods");
+
+        let facets = get_library_facets(&connection, &seed_pack.taxonomy).expect("facets");
+        assert_eq!(facets.sources, vec!["mods".to_owned()]);
+        assert_eq!(facets.creators, vec!["TestCreator".to_owned()]);
+
+        let download_detail =
+            get_file_detail(&connection, &settings, &seed_pack, 2).expect("download detail lookup");
+        assert!(download_detail.is_none());
+    }
 }

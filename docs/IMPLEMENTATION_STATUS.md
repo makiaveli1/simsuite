@@ -4,6 +4,40 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 14, 2026)
 
+This session tightened the first real user-facing watch flow and verified it in the real Tauri app.
+
+Important changes and findings:
+
+- fixed a role mix-up between `Library` and `Downloads`:
+  - `Library` queries now exclude `downloads` rows
+  - `Library` detail and watch actions now only work on installed items
+  - this keeps `Library` as the installed-content desk instead of turning it into another Inbox view
+- added stricter watch-source saving rules:
+  - secure `https` links only
+  - no embedded sign-in details in saved links
+  - downloads rows are rejected instead of pretending they are watchable Library items
+- updated the preview mocks so browser-preview testing follows the same installed-only Library rule
+- extended the native desktop smoke harness:
+  - added one generic installed fixture file for watch-flow checks
+  - the smoke run now triggers a real installed scan before checking Library watch actions
+  - the real Tauri app now proves that SimSuite can save and clear a watch source for an installed Library item
+- researched CurseForge as a future watch provider using official sources:
+  - CurseForge does have an official API path for 3rd-party apps
+  - it requires applying for an API key
+  - project owners can disable 3rd-party distribution on their projects
+  - this means CurseForge should be treated as a formal provider integration, not a scraping fallback
+
+Important remaining gap:
+
+- the first watch flow is now real, but it is still small:
+  - one item at a time
+  - manual save or clear
+  - no broader watch setup flow yet
+- CurseForge support should only be considered through the approved API and terms
+- the next product work should focus on a clean installed-content watch setup flow before adding provider-specific complexity
+
+## Current session note (March 14, 2026)
+
 This session was a smaller follow-up checkpoint to verify that the Lumpinou Toolbox same-version fix really holds in the live desktop app.
 
 Important changes and findings:

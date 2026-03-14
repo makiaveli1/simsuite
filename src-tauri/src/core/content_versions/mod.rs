@@ -311,10 +311,7 @@ pub fn save_watch_source_for_subject(
     Ok(())
 }
 
-pub fn clear_watch_source_for_subject(
-    connection: &Connection,
-    subject_key: &str,
-) -> AppResult<()> {
+pub fn clear_watch_source_for_subject(connection: &Connection, subject_key: &str) -> AppResult<()> {
     connection.execute(
         "DELETE FROM content_watch_sources WHERE subject_key = ?1",
         params![subject_key],
@@ -388,7 +385,8 @@ fn load_library_subject_row(
                 f.insights
              FROM files f
              LEFT JOIN creators c ON c.id = f.creator_id
-             WHERE f.id = ?1",
+             WHERE f.id = ?1
+               AND f.source_location <> 'downloads'",
             params![file_id],
             |row| {
                 Ok(SubjectFileRow {
@@ -1695,4 +1693,169 @@ fn prettify_token(value: &str) -> String {
 
 fn prettify_stem(value: &str) -> String {
     prettify_token(&normalize_stem(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clear_watch_source_for_library_file, save_watch_source_for_library_file};
+    use crate::{
+        database,
+        models::{FileInsights, LibrarySettings, VersionSignal, WatchSourceKind, WatchStatus},
+        seed::load_seed_pack,
+    };
+    use rusqlite::{params, Connection};
+
+    fn setup_watch_env() -> (Connection, crate::seed::SeedPack, LibrarySettings, i64) {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            version_hints: vec!["1.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "1.0".to_owned(),
+                normalized_value: "1.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("filename pattern".to_owned()),
+                confidence: 0.84,
+            }],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/TestCreator/watch_test_mod_v1.0.package",
+                    "watch_test_mod_v1.0.package",
+                    ".package",
+                    "Gameplay",
+                    0.94_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+        let file_id = connection.last_insert_rowid();
+
+        (connection, seed_pack, settings, file_id)
+    }
+
+    #[test]
+    fn saving_watch_source_for_library_file_returns_saved_not_checked_state() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        let watch = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("Test Watch".to_owned()),
+            "https://example.com/mod-page",
+        )
+        .expect("save watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.source_label.as_deref(), Some("Test Watch"));
+        assert_eq!(
+            watch.source_url.as_deref(),
+            Some("https://example.com/mod-page")
+        );
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("has not been checked yet")));
+    }
+
+    #[test]
+    fn clearing_watch_source_for_library_file_returns_not_watched_state() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::CreatorPage,
+            Some("Test Creator".to_owned()),
+            "https://example.com/creator-page",
+        )
+        .expect("save watch");
+
+        let watch =
+            clear_watch_source_for_library_file(&connection, &settings, &seed_pack, file_id)
+                .expect("clear watch")
+                .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert!(watch.source_kind.is_none());
+        assert!(watch.source_url.is_none());
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("No approved watch source")));
+    }
+
+    #[test]
+    fn saving_watch_source_for_download_file_is_rejected() {
+        let (connection, seed_pack, settings, _file_id) = setup_watch_env();
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Downloads/watch_test_mod_v1.0.package",
+                    "watch_test_mod_v1.0.package",
+                    ".package",
+                    "Gameplay",
+                    0.74_f64,
+                    "downloads",
+                    "[]",
+                    serde_json::to_string(&FileInsights::default()).expect("insights json"),
+                ],
+            )
+            .expect("insert download file");
+        let download_file_id = connection.last_insert_rowid();
+
+        let watch = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            download_file_id,
+            WatchSourceKind::ExactPage,
+            Some("Download row".to_owned()),
+            "https://example.com/download-row",
+        )
+        .expect("save watch");
+
+        assert!(watch.is_none());
+    }
 }

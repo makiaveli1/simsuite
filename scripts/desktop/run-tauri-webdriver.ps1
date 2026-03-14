@@ -75,6 +75,7 @@ function Initialize-SmokeFixtures {
     $installedLot51 = Join-Path $mods 'Lot51 Core Library'
     $installedToolbox = Join-Path $mods 'Lumpinou Toolbox'
     $installedSmartCore = Join-Path $mods 'Smart Core Script'
+    $installedGenericWatch = Join-Path $mods 'Generic Watch'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
     $xmlSameRoot = Join-Path $root 'incoming-xml-same'
@@ -99,6 +100,7 @@ function Initialize-SmokeFixtures {
     $toolboxOlderItem = "Toolbox_Older_Test_$token"
     $smartCoreSameItem = "Smart_Core_Same_Test_$token"
     $smartCoreOlderItem = "Smart_Core_Older_Test_$token"
+    $genericWatchFile = "Generic_Watch_Mod_v1.0.package"
 
     foreach ($path in @(
         $appData,
@@ -109,6 +111,7 @@ function Initialize-SmokeFixtures {
         $installedLot51,
         $installedToolbox,
         $installedSmartCore,
+        $installedGenericWatch,
         $incomingRoot,
         $blockedRoot,
         $xmlSameRoot,
@@ -175,6 +178,7 @@ function Initialize-SmokeFixtures {
 
     New-SmokeTs4script -Path (Join-Path $smartCoreOlderRoot 'SmartCoreScript.ts4script') -Version '2.8.0' -Marker 'Smart Core Script version'
     New-SmokeZip -SourceRoot $smartCoreOlderRoot -ZipPath (Join-Path $downloads "$smartCoreOlderItem.zip")
+    Write-SmokePackage -Path (Join-Path $installedGenericWatch $genericWatchFile) -Content 'generic watch fixture v1.0'
 
     return @{
         Root = $root
@@ -193,6 +197,7 @@ function Initialize-SmokeFixtures {
         ToolboxOlderItem = $toolboxOlderItem
         SmartCoreSameItem = $smartCoreSameItem
         SmartCoreOlderItem = $smartCoreOlderItem
+        GenericWatchFile = $genericWatchFile
     }
 }
 
@@ -310,6 +315,7 @@ $session = @{
                 toolboxOlderItem = $fixture.ToolboxOlderItem
                 smartCoreSameItem = $fixture.SmartCoreSameItem
                 smartCoreOlderItem = $fixture.SmartCoreOlderItem
+                genericWatchFile = $fixture.GenericWatchFile
             }
         } else {
             $null

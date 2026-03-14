@@ -306,6 +306,8 @@ export function LibraryScreen({
       setWatchEditing(false);
       setWatchMessage("Watch source saved.");
       await loadRows(updated.id);
+    } catch (error) {
+      setWatchMessage(watchActionError(error, "save the watch source"));
     } finally {
       setSavingWatch(false);
     }
@@ -331,6 +333,8 @@ export function LibraryScreen({
       setWatchSourceUrl("");
       setWatchMessage("Watch source cleared.");
       await loadRows(updated.id);
+    } catch (error) {
+      setWatchMessage(watchActionError(error, "clear the watch source"));
     } finally {
       setSavingWatch(false);
     }
@@ -1466,6 +1470,16 @@ function formatBytes(size: number) {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function watchActionError(error: unknown, action: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return `SimSuite could not ${action}.`;
 }
 
 function kindSlug(kind: string) {
