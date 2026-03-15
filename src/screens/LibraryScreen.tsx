@@ -42,10 +42,11 @@ interface LibraryScreenProps {
   userView: UserView;
 }
 
-interface PendingWatchSetup {
+interface PendingWatchIntent {
   fileId: number;
-  sourceKind: WatchSourceKind;
-  sourceLabel: string;
+  mode: "setup" | "review";
+  sourceKind?: WatchSourceKind;
+  sourceLabel?: string;
 }
 
 const PAGE_SIZE = 100;
@@ -132,7 +133,7 @@ export function LibraryScreen({
   const [loadingWatchList, setLoadingWatchList] = useState(false);
   const [watchSetupList, setWatchSetupList] = useState<LibraryWatchSetupResponse | null>(null);
   const [loadingWatchSetupList, setLoadingWatchSetupList] = useState(false);
-  const [pendingWatchSetup, setPendingWatchSetup] = useState<PendingWatchSetup | null>(null);
+  const [pendingWatchIntent, setPendingWatchIntent] = useState<PendingWatchIntent | null>(null);
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
@@ -183,7 +184,7 @@ export function LibraryScreen({
       setRefreshingWatch(false);
       setWatchMessage(null);
       setWatchCenterMessage(null);
-      setPendingWatchSetup(null);
+      setPendingWatchIntent(null);
       return;
     }
 
@@ -197,32 +198,37 @@ export function LibraryScreen({
     setCategoryMessage(null);
 
     const currentWatch = selected.watchResult;
-    if (currentWatch?.sourceKind && currentWatch.sourceUrl) {
-      setWatchSourceKind(currentWatch.sourceKind);
-      setWatchSourceLabel(currentWatch.sourceLabel ?? "");
-      setWatchSourceUrl(currentWatch.sourceUrl);
-    } else {
-      setWatchSourceKind("exact_page");
-      setWatchSourceLabel("");
-      setWatchSourceUrl("");
-    }
+    restoreWatchFields(selected);
     setRefreshingWatch(false);
-    if (pendingWatchSetup?.fileId === selected.id) {
-      setWatchSourceKind(pendingWatchSetup.sourceKind);
-      setWatchSourceLabel(pendingWatchSetup.sourceLabel);
-      setWatchSourceUrl("");
-      setWatchEditing(true);
-      setWatchMessage(
-        pendingWatchSetup.sourceKind === "creator_page"
-          ? "Add the official creator page URL to finish setup."
-          : "Add the official mod page URL to finish setup.",
-      );
-      setPendingWatchSetup(null);
+
+    if (pendingWatchIntent?.fileId === selected.id) {
+      if (pendingWatchIntent.mode === "setup") {
+        const sourceKind = pendingWatchIntent.sourceKind ?? "exact_page";
+        setWatchSourceKind(sourceKind);
+        setWatchSourceLabel(pendingWatchIntent.sourceLabel ?? "");
+        setWatchSourceUrl("");
+        setWatchEditing(true);
+        setWatchMessage(
+          sourceKind === "creator_page"
+            ? "Add the official creator page URL to finish setup."
+            : "Add the official mod page URL to finish setup.",
+        );
+      } else {
+        setWatchSourceKind(currentWatch?.sourceKind ?? pendingWatchIntent.sourceKind ?? "exact_page");
+        setWatchSourceLabel(currentWatch?.sourceLabel ?? pendingWatchIntent.sourceLabel ?? "");
+        setWatchSourceUrl(currentWatch?.sourceUrl ?? "");
+        setWatchEditing(true);
+        setWatchMessage(
+          currentWatch?.sourceKind
+            ? "Review or update this saved watch source."
+            : "No watch source is saved yet. Add one here.",
+        );
+      }
     } else {
       setWatchEditing(false);
       setWatchMessage(null);
     }
-  }, [selected, pendingWatchSetup]);
+  }, [selected, pendingWatchIntent]);
 
   async function loadWatchCenter() {
     try {
@@ -295,25 +301,119 @@ export function LibraryScreen({
     }
   }
 
-  async function openFile(row: LibraryFileRow) {
+  async function openFile(row: LibraryFileRow, preserveWatchIntent = false) {
+    if (!preserveWatchIntent) {
+      setPendingWatchIntent(null);
+      setWatchMessage(null);
+    }
     setSelected(await api.getFileDetail(row.id));
   }
 
-  async function openFileById(fileId: number) {
+  async function openFileById(fileId: number, preserveWatchIntent = false) {
+    if (!preserveWatchIntent) {
+      setPendingWatchIntent(null);
+      setWatchMessage(null);
+    }
     setSelected(await api.getFileDetail(fileId));
   }
 
+  function restoreWatchFields(file: FileDetail) {
+    const currentWatch = file.watchResult;
+    if (currentWatch?.sourceKind && currentWatch.sourceUrl) {
+      setWatchSourceKind(currentWatch.sourceKind);
+      setWatchSourceLabel(currentWatch.sourceLabel ?? "");
+      setWatchSourceUrl(currentWatch.sourceUrl);
+      return;
+    }
+
+    setWatchSourceKind("exact_page");
+    setWatchSourceLabel("");
+    setWatchSourceUrl("");
+  }
+
+  async function openWatchIntent(
+    intent: PendingWatchIntent,
+    centerMessage: string | null = null,
+  ) {
+    setPendingWatchIntent(intent);
+    setWatchCenterMessage(centerMessage);
+    await openFileById(intent.fileId, true);
+  }
+
   async function beginWatchSetup(item: LibraryWatchSetupItem) {
-    setPendingWatchSetup({
+    await openWatchIntent({
       fileId: item.fileId,
+      mode: "setup",
       sourceKind: item.suggestedSourceKind,
       sourceLabel:
         item.suggestedSourceKind === "creator_page"
           ? item.creator ?? item.subjectLabel
           : item.subjectLabel,
     });
-    setWatchCenterMessage(null);
-    await openFileById(item.fileId);
+  }
+
+  async function beginWatchReview(fileId: number) {
+    const item = watchList?.items.find((entry) => entry.fileId === fileId);
+    await openWatchIntent(
+      {
+        fileId,
+        mode: "review",
+        sourceKind: item?.watchResult.sourceKind ?? "exact_page",
+        sourceLabel: item?.watchResult.sourceLabel ?? item?.subjectLabel,
+      },
+      null,
+    );
+  }
+
+  function nextSetupSuggestion(currentFileId: number) {
+    return watchSetupList?.items.find((item) => item.fileId !== currentFileId) ?? null;
+  }
+
+  async function advanceWatchSetupFlow(currentFileId: number, reason: "saved" | "skipped") {
+    const nextItem = nextSetupSuggestion(currentFileId);
+    if (nextItem) {
+      await openWatchIntent(
+        {
+          fileId: nextItem.fileId,
+          mode: "setup",
+          sourceKind: nextItem.suggestedSourceKind,
+          sourceLabel:
+            nextItem.suggestedSourceKind === "creator_page"
+              ? nextItem.creator ?? nextItem.subjectLabel
+              : nextItem.subjectLabel,
+        },
+        reason === "saved"
+          ? "Watch source saved. Opening the next setup suggestion."
+          : "Skipped for now. Opening the next setup suggestion.",
+      );
+      return;
+    }
+
+    setPendingWatchIntent(null);
+    setWatchEditing(false);
+    setWatchMessage(null);
+    setWatchCenterMessage(
+      reason === "saved"
+        ? "Watch source saved. No more strong setup suggestions are waiting right now."
+        : "Skipped for now. No more strong setup suggestions are waiting right now.",
+    );
+  }
+
+  function closeWatchEditor() {
+    if (selected) {
+      restoreWatchFields(selected);
+    }
+    setWatchEditing(false);
+    setWatchMessage(null);
+    setPendingWatchIntent(null);
+  }
+
+  async function skipWatchSetup() {
+    if (!selected || pendingWatchIntent?.mode !== "setup" || pendingWatchIntent.fileId !== selected.id) {
+      return;
+    }
+
+    await advanceWatchSetupFlow(selected.id, "skipped");
   }
 
   async function saveCreatorOverride() {
@@ -425,6 +525,11 @@ export function LibraryScreen({
     setWatchMessage(null);
 
     try {
+      const currentIntent = pendingWatchIntent;
+      const nextSuggestion =
+        currentIntent?.mode === "setup" && currentIntent.fileId === selected.id
+          ? nextSetupSuggestion(selected.id)
+          : null;
       const updated = await api.saveWatchSourceForFile(
         selected.id,
         watchSourceKind,
@@ -437,14 +542,40 @@ export function LibraryScreen({
       }
 
       setSelected(updated);
-      setWatchEditing(false);
-      setWatchMessage("Watch source saved.");
       await Promise.all([
         loadRows(updated.id),
         loadWatchCenter(),
         loadWatchList(),
         loadWatchSetupList(),
       ]);
+
+      if (currentIntent?.mode === "setup" && currentIntent.fileId === selected.id) {
+        if (nextSuggestion) {
+          await openWatchIntent(
+            {
+              fileId: nextSuggestion.fileId,
+              mode: "setup",
+              sourceKind: nextSuggestion.suggestedSourceKind,
+              sourceLabel:
+                nextSuggestion.suggestedSourceKind === "creator_page"
+                  ? nextSuggestion.creator ?? nextSuggestion.subjectLabel
+                  : nextSuggestion.subjectLabel,
+            },
+            "Watch source saved. Opening the next setup suggestion.",
+          );
+        } else {
+          setPendingWatchIntent(null);
+          setWatchEditing(false);
+          setWatchMessage("Watch source saved.");
+          setWatchCenterMessage(
+            "Watch source saved. No more strong setup suggestions are waiting right now.",
+          );
+        }
+      } else {
+        setPendingWatchIntent(null);
+        setWatchEditing(false);
+        setWatchMessage("Watch source saved.");
+      }
     } catch (error) {
       setWatchMessage(watchActionError(error, "save the watch source"));
     } finally {
@@ -471,6 +602,7 @@ export function LibraryScreen({
       setWatchSourceLabel("");
       setWatchSourceUrl("");
       setWatchMessage("Watch source cleared.");
+      setPendingWatchIntent(null);
       await Promise.all([
         loadRows(updated.id),
         loadWatchCenter(),
@@ -499,6 +631,7 @@ export function LibraryScreen({
       }
 
       setSelected(updated);
+      setPendingWatchIntent(null);
       setWatchEditing(false);
       setWatchMessage("Watch result refreshed.");
       await Promise.all([
@@ -801,24 +934,34 @@ export function LibraryScreen({
                             >
                               {savingWatch ? "Saving..." : "Save watch"}
                             </button>
+                            {pendingWatchIntent?.mode === "setup" &&
+                            pendingWatchIntent.fileId === selected.id ? (
+                              <button
+                                type="button"
+                                className="secondary-action"
+                                disabled={watchBusy}
+                                onClick={() => void skipWatchSetup()}
+                              >
+                                {userView === "beginner" ? "Skip for now" : "Skip suggestion"}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="secondary-action"
                               disabled={watchBusy}
-                              onClick={() => {
-                                setWatchEditing(false);
-                                setWatchMessage(null);
-                                if (!selected.watchResult?.sourceKind) {
-                                  setWatchSourceLabel("");
-                                  setWatchSourceUrl("");
-                                } else if (selected.watchResult.sourceKind) {
-                                  setWatchSourceKind(selected.watchResult.sourceKind);
-                                  setWatchSourceLabel(selected.watchResult.sourceLabel ?? "");
-                                  setWatchSourceUrl(selected.watchResult.sourceUrl ?? "");
-                                }
-                              }}
+                              onClick={() => closeWatchEditor()}
                             >
-                              Cancel
+                              {pendingWatchIntent?.mode === "setup" &&
+                              pendingWatchIntent.fileId === selected.id
+                                ? userView === "beginner"
+                                  ? "Stop setup"
+                                  : "Stop queue"
+                                : pendingWatchIntent?.mode === "review" &&
+                                    pendingWatchIntent.fileId === selected.id
+                                  ? userView === "beginner"
+                                    ? "Done reviewing"
+                                    : "Close review"
+                                  : "Cancel"}
                             </button>
                             {watchMessage ? (
                               <span className="creator-learning-message">{watchMessage}</span>
@@ -1335,32 +1478,45 @@ export function LibraryScreen({
                   </div>
                 ) : watchList?.items.length ? (
                   watchList.items.map((item) => (
-                    <button
+                    <div
                       key={item.fileId}
-                      type="button"
-                      className="library-watch-list-item"
-                      onClick={() => void openFileById(item.fileId)}
+                      className="library-watch-list-entry"
                     >
-                      <div className="library-watch-list-copy">
-                        <strong>{item.subjectLabel}</strong>
-                        <span>
-                          {item.creator
-                            ? `${item.creator} · ${item.filename}`
-                            : item.filename}
-                        </span>
-                        <span>
-                          {watchListVersionLine(
-                            item.installedVersion,
-                            item.watchResult.latestVersion,
-                            userView,
-                          )}
-                        </span>
-                      </div>
-                      <div className="library-watch-list-state">
-                        <strong>{watchStatusLabel(item.watchResult, userView)}</strong>
-                        <span>{watchCapabilityLabel(item.watchResult, userView)}</span>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        className="library-watch-list-item library-watch-list-main"
+                        onClick={() => void openFileById(item.fileId)}
+                      >
+                        <div className="library-watch-list-copy">
+                          <strong>{item.subjectLabel}</strong>
+                          <span>
+                            {item.creator
+                              ? `${item.creator} · ${item.filename}`
+                              : item.filename}
+                          </span>
+                          <span>
+                            {watchListVersionLine(
+                              item.installedVersion,
+                              item.watchResult.latestVersion,
+                              userView,
+                            )}
+                          </span>
+                        </div>
+                        <div className="library-watch-list-state">
+                          <strong>{watchStatusLabel(item.watchResult, userView)}</strong>
+                          <span>{watchCapabilityLabel(item.watchResult, userView)}</span>
+                        </div>
+                      </button>
+                      {shouldShowWatchReviewAction(item.watchResult) ? (
+                        <button
+                          type="button"
+                          className="secondary-action library-watch-setup-action"
+                          onClick={() => void beginWatchReview(item.fileId)}
+                        >
+                          {userView === "beginner" ? "Review" : "Review source"}
+                        </button>
+                      ) : null}
+                    </div>
                   ))
                 ) : (
                   <div className="library-watch-empty">
@@ -1968,6 +2124,13 @@ function watchListEmptyMessage(filter: WatchListFilter, userView: UserView) {
         ? "No tracked watch items are set up yet."
         : "No tracked watch items yet.";
   }
+}
+
+function shouldShowWatchReviewAction(watchResult: WatchResult) {
+  return (
+    watchResult.sourceOrigin === "saved_by_user" &&
+    (watchResult.capability !== "can_refresh_now" || watchResult.status === "unknown")
+  );
 }
 
 function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {

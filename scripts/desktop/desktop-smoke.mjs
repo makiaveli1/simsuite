@@ -181,6 +181,34 @@ async function clickLibraryRow(driver, filename, timeoutMs = 30000) {
   throw new Error(`Could not find a visible Library row for "${filename}".`);
 }
 
+async function clickLibraryWatchEntryAction(driver, filename, labels, timeoutMs = 30000) {
+  const expectedLabels = Array.isArray(labels) ? labels : [labels];
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    for (const label of expectedLabels) {
+      const locator = By.xpath(
+        `//div[contains(@class, 'library-watch-list-entry')][contains(normalize-space(.), ${xpathString(
+          filename,
+        )})]//button[contains(normalize-space(.), ${xpathString(label)})]`,
+      );
+      const buttons = await driver.findElements(locator);
+      for (const button of buttons) {
+        if ((await button.isDisplayed()) && (await button.isEnabled())) {
+          await driver.executeScript("arguments[0].click()", button);
+          return label;
+        }
+      }
+    }
+
+    await driver.sleep(250);
+  }
+
+  throw new Error(
+    `Could not find a visible Library watch action for "${filename}" using any of: ${expectedLabels.join(", ")}`,
+  );
+}
+
 async function getBodyText(driver) {
   try {
     return await driver.findElement(By.css("body")).getText();
@@ -545,10 +573,16 @@ async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   await ensureLibraryIndexed(driver, [genericWatchFile]);
   await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
   await waitForText(driver, genericWatchFile, 30000);
-  await clickLibraryRow(driver, genericWatchFile, 30000);
+  await clickLibraryWatchEntryAction(driver, genericWatchFile, ["Set up", "Start setup"], 30000);
   await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
-  await waitForText(driver, "Watch status");
-  await clickButton(driver, "Add watch source");
+  await waitForAnyText(
+    driver,
+    [
+      "Add the official mod page URL to finish setup.",
+      "Add the official creator page URL to finish setup.",
+    ],
+    30000,
+  );
   await fillInputByPlaceholder(driver, "https://example.com/mod-page", "https://example.com/watch-test");
   await clickButton(driver, "Save watch");
   await waitForAnyText(
@@ -557,10 +591,20 @@ async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
     30000,
   );
   await waitForText(driver, "Exact mod page");
-  await waitForText(
+  await waitForAnyText(
     driver,
-    "This page is saved as a reference, but SimSuite cannot check it automatically yet.",
+    [
+      "This page is saved as a reference, but SimSuite cannot check it automatically yet.",
+      "Reference only",
+      "Saved as a reminder only",
+    ],
+    30000,
   );
+  await clickButton(driver, "All tracked");
+  await waitForText(driver, genericWatchFile, 30000);
+  await clickLibraryWatchEntryAction(driver, genericWatchFile, ["Review", "Review source"], 30000);
+  await waitForText(driver, "Review or update this saved watch source.", 30000);
+  await clickFirstVisibleButton(driver, ["Close review", "Done reviewing", "Cancel"], 30000);
   await clickFirstVisibleButton(driver, ["Clear watch source", "Stop watching"], 30000);
   await waitForAnyText(
     driver,

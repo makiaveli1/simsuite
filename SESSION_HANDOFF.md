@@ -2,6 +2,10 @@
 
 ## Current Priority
 
+- March 15, 2026: Library watch follow-up is smoother now:
+  - setup suggestions can move straight into the next suggestion after a save
+  - saved generic reminder or provider-needed links can be reviewed straight from the tracked list
+  - the next product focus should be broadening this into a stronger bulk setup flow without adding another crowded management screen
 - March 15, 2026: Library no longer runs its main load and save commands on the window thread. The next product focus should be checking the real app again and then trimming any Library work that is still slow now that the freezing path is gone.
 - March 15, 2026: Library now has a first real watch-setup shortlist for installed items that are strong enough to watch but are not set up yet. The next product focus should be turning that shortlist into a fuller setup flow:
   - bulk setup for the strongest exact-page candidates first
@@ -23,6 +27,23 @@
 
 ## What Changed This Session
 
+- March 15, 2026: Library watch follow-up now behaves more like a guided queue:
+  - `Set up` / `Start setup` still opens the existing watch editor
+  - after a save, SimSuite can move straight to the next strong setup suggestion instead of making the user go back and click around again
+  - setup mode now has `Skip for now` and `Stop setup` so the user can keep moving or leave the queue cleanly
+- March 15, 2026: tracked watch rows can now show a direct `Review` / `Review source` action for saved generic watch pages that still need human follow-up:
+  - reminder-only creator pages
+  - provider-needed exact pages such as CurseForge links
+  - other saved user links that still sit in an unclear state
+- March 15, 2026: the existing Library detail panel now handles both flows without adding a second watch-management screen:
+  - setup flow opens the editor with the suggested source type and label
+  - review flow opens the same editor with the saved watch source already loaded
+- March 15, 2026: the native desktop smoke now proves the new follow-up path in the real Tauri app:
+  - starts setup from the shortlist
+  - saves the watch page
+  - switches to `All tracked`
+  - opens `Review` for the saved generic watch source
+  - closes review and clears the watch source again
 - March 15, 2026: moved the heaviest Library command path onto background workers:
   - `get_home_overview`
   - `get_library_facets`
@@ -175,6 +196,13 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the Library watch follow-up changes.
+- March 15, 2026: `npm run build` passed after the new setup-queue and review actions were added to `Library`.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the native smoke was widened to prove:
+  - setup can start from the shortlist
+  - a generic watch page can be saved
+  - the saved generic watch row exposes `Review`
+  - the watch source can still be cleared afterward
 - March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the Library command threading fix.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after moving the Library hot path off the UI thread.
 - March 15, 2026: `npm run build` passed after the command-signature changes.
@@ -245,6 +273,9 @@
 
 ## What Worked
 
+- The watch center can now carry a user through more than one step without forcing them back out into the list after every save.
+- Saved generic watch links that still need a human look now have a direct review path from the tracked list instead of making the user hunt through the detail panel first.
+- The real desktop smoke still passed after this wider follow-up flow was added, so the new actions are proven in the actual Tauri app instead of only in preview.
 - Library now uses the same background-command pattern that already helped Inbox, so the app should stay responsive while Library work is running.
 - The command move did not break the real desktop smoke lane or the current watch-management flow.
 - The new watch-setup shortlist now gives `Library` a clear “not watched yet” lane without creating a second watch-management screen.
@@ -303,6 +334,10 @@
 
 ## Known Problems / Gaps
 
+- There is still no true multi-save bulk setup flow yet:
+  - the app can move to the next strong suggestion after a save
+  - but it still relies on the user to paste or confirm each watch URL one at a time
+- Saved provider-needed and reminder-only watch pages are easier to review now, but there is still no dedicated batch review lane for many of them at once.
 - The freeze path should be fixed, but Library may still have real slow work left underneath:
   - `get_home_overview` still computes watch counts and setup counts
   - `get_file_detail` still does deeper version and watch resolution
@@ -342,6 +377,9 @@
 
 ## Important Decisions
 
+- The fuller watch-management flow should keep reusing the existing Library detail panel instead of creating a separate watch-management screen.
+- Setup follow-up should reduce repeated clicks, but SimSuite still must not guess or invent watch URLs.
+- Review actions should be shown only for the saved user-managed watch sources that actually need follow-up, so the tracked list stays compact.
 - The first fuller watch-management step should stay inside the current Library screen:
   - summary counts
   - tracked watch list
@@ -371,6 +409,14 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Check the real Library watch flow again in the desktop app:
+  - start setup from the shortlist
+  - save a generic watch page
+  - use `Review` from the tracked list
+  - clear the watch source
+- Then move to the next watch-management gap:
+  - stronger bulk setup for exact-page candidates
+  - or a cleaner batch review flow for saved reminder/provider-needed sources
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
   - build the next watch-management step on top of the new tracked watch list:

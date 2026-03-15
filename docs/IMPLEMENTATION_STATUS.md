@@ -4,6 +4,37 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session made the Library watch follow-up feel less repetitive without adding a new management screen.
+
+Important changes and findings:
+
+- `Library` setup suggestions now behave more like a queue:
+  - `Set up` / `Start setup` still opens the existing watch editor
+  - after saving one suggestion, SimSuite can move straight to the next strong suggestion instead of making the user go back into the list first
+  - setup mode now includes `Skip for now` and `Stop setup`
+- tracked watch rows can now show a direct `Review` / `Review source` action for saved user-managed watch links that still need human follow-up:
+  - reminder-only creator pages
+  - provider-needed exact pages
+  - other saved watch rows that are still unclear
+- the same existing detail panel now handles both flows:
+  - setup opens the editor with the suggested source type and label
+  - review opens the editor with the saved watch source already loaded
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests
+- `npm run build` passed
+- the native desktop smoke passed after it was widened to prove:
+  - setup can start from the shortlist
+  - a generic watch page can be saved
+  - the tracked list can open `Review`
+  - the watch source can still be cleared after review
+
+Important remaining gap:
+
+- this is smoother, but it is not full bulk setup yet:
+  - users still confirm one watch URL at a time
+  - there is still no dedicated batch review lane for many saved reminder or provider-needed links
+
+## Current session note (March 15, 2026)
+
 This session focused on Library responsiveness first because the screen had started showing the same whole-app freezing behavior that Inbox used to have.
 
 Important changes and findings:

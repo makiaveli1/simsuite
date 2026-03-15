@@ -66,6 +66,25 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The Library watch center now has a more complete follow-up loop without turning into a second management screen.
+
+Important current follow-up behavior:
+
+- tracked watch rows can now expose a direct review action for saved user-managed watch links that still need human follow-up
+- the same existing Library detail panel now serves two follow-up modes:
+  - setup mode for unwatched installed items from the shortlist
+  - review mode for saved generic watch links from the tracked list
+- setup mode can continue to the next strong suggestion after a save, so the user does not have to keep bouncing back into the shortlist between each item
+- setup mode also lets the user:
+  - skip one suggestion for now
+  - stop the current setup queue cleanly
+- this keeps watch management flat and compact:
+  - no second watch-management screen
+  - no guessed URLs
+  - no separate wizard state outside the current Library surface
+
+## Current engineering note (March 15, 2026)
+
 Library now follows the same command-threading rule that stabilized Inbox:
 
 - the heavier Library-facing commands now run in background workers instead of on the window thread
