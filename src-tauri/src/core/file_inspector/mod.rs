@@ -24,6 +24,14 @@ const MAX_SCRIPT_HINT_BYTES: u64 = 128 * 1024;
 const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 const MAX_VERSION_SIGNALS: usize = 16;
+const MIN_FALLBACK_CREATOR_HINT_LEN: usize = 3;
+const TS4SCRIPT_NOISE_STEMS: &[&str] = &[
+    "__init__",
+    "__main__",
+    "_do_not_unzip_",
+    "readme",
+    "changelog",
+];
 
 const RESOURCE_NAME_MAP: u32 = 0x0166_038c;
 const RESOURCE_STRING_TABLE: u32 = 0x2205_57da;
@@ -83,7 +91,8 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         .map_err(|error| AppError::Message(format!("Invalid ts4script archive: {error}")))?;
 
     let mut namespaces = BTreeSet::new();
-    let mut stems = BTreeSet::new();
+    let mut version_stems = BTreeSet::new();
+    let mut identity_stems = BTreeSet::new();
     let mut payload_values = Vec::new();
     let mut archive_paths = Vec::new();
     let mut payload_reads = 0usize;
@@ -98,17 +107,17 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
 
         let entry_name = entry.name().replace('\\', "/");
         archive_paths.push(entry_name.clone());
-        for segment in entry_name.split('/').take(2) {
-            let cleaned = segment.trim();
-            if !cleaned.is_empty() {
-                namespaces.insert(cleaned.to_owned());
-            }
+        for namespace in ts4script_namespace_candidates(&entry_name) {
+            namespaces.insert(namespace);
         }
 
         if let Some(filename) = entry_name.rsplit('/').next() {
             let stem = filename.split('.').next().unwrap_or(filename).trim();
             if !stem.is_empty() {
-                stems.insert(stem.to_owned());
+                version_stems.insert(stem.to_owned());
+                if let Some(identity_stem) = clean_ts4script_identity_stem(stem) {
+                    identity_stems.insert(identity_stem);
+                }
             }
         }
 
@@ -138,14 +147,14 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
     );
     let raw_identity_values = namespaces
         .iter()
-        .chain(stems.iter())
+        .chain(identity_stems.iter())
         .chain(payload_identity_values.iter())
         .map(String::as_str)
         .collect::<Vec<_>>();
     let creator_hints = collect_creator_hints(raw_identity_values.iter().copied(), seed_pack);
     let version_signals = collect_ts4script_version_signals(
         path,
-        stems.iter().map(String::as_str),
+        version_stems.iter().map(String::as_str),
         archive_paths.iter().map(String::as_str),
         payload_values
             .iter()
@@ -159,11 +168,15 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         .take(MAX_DISPLAY_VALUES)
         .collect::<Vec<_>>();
     if script_namespaces.is_empty() {
-        script_namespaces = stems.iter().take(MAX_DISPLAY_VALUES).cloned().collect();
+        script_namespaces = identity_stems
+            .iter()
+            .take(MAX_DISPLAY_VALUES)
+            .cloned()
+            .collect();
     }
 
     let primary_creator = creator_hints.first().cloned();
-    let mut embedded_names = stems.into_iter().collect::<Vec<_>>();
+    let mut embedded_names = identity_stems.into_iter().collect::<Vec<_>>();
     embedded_names.extend(payload_identity_values);
     embedded_names = unique_display_values(embedded_names);
 
@@ -186,6 +199,44 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         subtype_hint: Some("Utilities".to_owned()),
         confidence_boost: 0.14,
     })
+}
+
+fn ts4script_namespace_candidates(entry_name: &str) -> Vec<String> {
+    let segments = entry_name
+        .split('/')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    if segments.len() <= 1 {
+        return Vec::new();
+    }
+    let directory_count = segments.len() - 1;
+
+    segments
+        .into_iter()
+        .take(directory_count)
+        .take(2)
+        .filter_map(clean_ts4script_identity_stem)
+        .collect()
+}
+
+fn clean_ts4script_identity_stem(value: &str) -> Option<String> {
+    let cleaned = value.trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    let stem = cleaned.split('.').next().unwrap_or(cleaned).trim();
+    if stem.is_empty() {
+        return None;
+    }
+
+    let lowered = stem.to_ascii_lowercase();
+    if TS4SCRIPT_NOISE_STEMS.contains(&lowered.as_str()) {
+        return None;
+    }
+
+    Some(stem.to_owned())
 }
 
 fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOutcome> {
@@ -1017,8 +1068,10 @@ where
                     .any(|existing| existing == &creator);
             if is_known {
                 known_hints.push(creator);
-            } else {
+            } else if creator.chars().count() >= MIN_FALLBACK_CREATOR_HINT_LEN {
                 fallback_hints.push(creator);
+            } else {
+                continue;
             }
         }
 
@@ -1495,6 +1548,49 @@ mod tests {
             .creator_hints
             .iter()
             .any(|value| value == "TwistedMexi"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn flat_ts4script_archives_skip_filename_noise_in_script_clues() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("mc_career.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("_DO_NOT_UNZIP_.txt", options)
+            .expect("start marker");
+        writer.write_all(b"Do not unzip").expect("write marker");
+        writer
+            .start_file("mc_career.pyc", options)
+            .expect("start main");
+        writer.write_all(b"pyc").expect("write main");
+        writer
+            .start_file("mc_career_version.pyc", options)
+            .expect("start version");
+        writer.write_all(b"pyc").expect("write version");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert!(outcome
+            .insights
+            .script_namespaces
+            .iter()
+            .all(|value| !value.ends_with(".pyc") && !value.ends_with(".txt")));
+        assert!(!outcome
+            .insights
+            .embedded_names
+            .iter()
+            .any(|value| value == "_DO_NOT_UNZIP_"));
+        assert!(!outcome
+            .insights
+            .creator_hints
+            .iter()
+            .any(|value| value.eq_ignore_ascii_case("mc")));
 
         fs::remove_file(filepath).expect("cleanup");
     }

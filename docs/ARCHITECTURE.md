@@ -66,6 +66,20 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The file-inspection layer now filters a real ts4script noise path that showed up in the live app database.
+
+Important current behavior:
+
+- flat ts4script archives no longer treat raw file names such as `.pyc` entries or `_DO_NOT_UNZIP_` markers as if they were clean script namespaces
+- that noise is now kept out of:
+  - `script_namespaces`
+  - `embedded_names`
+  - very short fallback creator hints
+- nested script archives still keep their real folder-based namespace clues
+- this keeps the script clue layer closer to what the archive is actually telling us instead of recycling packaging noise as identity
+
+## Current engineering note (March 15, 2026)
+
 The file-inspection layer now pulls a little more safe creator truth out of ts4script manifests.
 
 Important current behavior:

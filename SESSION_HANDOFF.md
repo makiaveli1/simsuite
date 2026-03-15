@@ -2,6 +2,16 @@
 
 ## Current Priority
 
+- March 15, 2026: real live-library validation found a noisy ts4script clue path and it is now tightened:
+  - a read-only check of the live app database showed at least `132` ts4script rows carrying filename-style namespace noise such as raw `.pyc` names or `_DO_NOT_UNZIP_`
+  - flat script archives now keep that noise out of:
+    - `script_namespaces`
+    - `embedded_names`
+    - fallback creator hints
+  - the next product focus should stay on stabilization:
+    - keep doing real live-library validation instead of guessing from fixtures alone
+    - keep trimming noisy local clues before they can weaken Inbox and watch confidence
+    - keep fixing watch and Inbox trust gaps before new features
 - March 15, 2026: safe inside-file extraction is a little stronger now for script mods that ship manifests:
   - manifest parsing now also reads safe author and creator fields, including simple string lists
   - this can improve creator matching when the mod already names its author inside the file
@@ -77,6 +87,19 @@
 
 ## What Changed This Session
 
+- March 15, 2026: continued the real-data cleanup pass for ts4script clue quality:
+  - a read-only query against the live app database found at least `132` ts4script rows carrying filename-style namespace noise such as raw `.pyc` names or `_DO_NOT_UNZIP_`
+  - flat script archives now keep that noise out of:
+    - `script_namespaces`
+    - `embedded_names`
+    - fallback creator hints
+  - added direct regression tests proving:
+    - flat script archives now skip filename noise in script clues
+    - nested script archives still keep the real namespace and creator path working
+  - full checks passed again:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `181` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: continued the safe inside-file extraction pass for script-mod manifests:
   - ts4script manifest parsing now also reads safe author and creator fields, including simple string lists in JSON and YAML-style manifest files
   - that means creator clues can now come from clean manifest author data, not only names, namespaces, stems, or saved creator learning

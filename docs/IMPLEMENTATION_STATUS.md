@@ -4,6 +4,32 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session used the live app database to find and tighten a real ts4script clue-quality problem.
+
+Important changes and findings:
+
+- a read-only query against the live app database found at least `132` ts4script rows carrying filename-style namespace noise such as raw `.pyc` names or `_DO_NOT_UNZIP_`
+- flat ts4script archives now keep that noise out of:
+  - `script_namespaces`
+  - `embedded_names`
+  - short fallback creator hints
+- this should make local matching less noisy for script mods that ship flat archive layouts
+- added direct regression tests for:
+  - flat script archives skipping filename noise in script clues
+  - nested script archives still keeping the real namespace and creator path
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `181` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- this removes one real script-noise path, but the wider stabilization pass still is not done:
+  - more live-library validation is still needed on mixed generic mods and CC
+  - there are probably more noisy local clue patterns hiding in real libraries
+  - watch bugs still need cleanup before feature work resumes
+
+## Current session note (March 15, 2026)
+
 This session kept the feature freeze in place and pulled one more safe creator clue out of script mods.
 
 Important changes and findings:
