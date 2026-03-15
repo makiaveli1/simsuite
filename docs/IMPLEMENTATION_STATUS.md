@@ -4,6 +4,41 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session made the Library watch flow more honest and easier to use without adding a crowded new screen.
+
+Important changes and findings:
+
+- `WatchResult` now carries where the current watch source came from:
+  - built-in official page for a supported special mod
+  - saved by the user
+  - not saved yet
+- supported special mods in `Library` no longer pretend their official page was manually saved
+- custom watch-source saves for supported special mods are now blocked with a plain explanation, because SimSuite does not yet have a safe merge rule for built-in plus custom watch pages
+- `Library` now has a compact watch center inside the existing table panel:
+  - confirmed updates
+  - possible updates
+  - unclear watched items
+  - automatic-check state
+  - last automatic run
+  - `Check watched pages now`
+  - quick jump to `Settings`
+- selected-item watch actions are now cleaner:
+  - built-in special-mod sources do not show misleading add/change/clear buttons
+  - user-saved generic sources still keep the normal save/clear flow
+- the browser-preview mocks now match the real backend better for built-in versus user-saved watch sources
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `165` tests
+- `npm run build` passed
+- the base native desktop smoke passed again
+
+Important remaining gap:
+
+- the next watch step should be fuller watch management, not more low-level source-capability plumbing:
+  - no watch list view yet
+  - no bulk setup flow yet
+  - no provider onboarding flow yet
+
+## Current session note (March 15, 2026)
+
 This session made the local Tauri dev loop more reliable.
 
 Important changes and findings:

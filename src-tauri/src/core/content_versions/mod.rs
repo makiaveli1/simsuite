@@ -13,7 +13,7 @@ use crate::{
     models::{
         FileInsights, InstalledVersionSummary, SpecialVersionStatus, VersionCompareStatus,
         VersionConfidence, VersionResolution, VersionSignal, WatchCapability, WatchResult,
-        WatchSourceKind, WatchStatus,
+        WatchSourceKind, WatchSourceOrigin, WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
 };
@@ -215,6 +215,13 @@ pub fn save_watch_source_for_library_file(
         file_row.id,
     )?;
     let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+
+    if find_supported_profile(seed_pack, &subject).is_some() {
+        return Err(
+            "Supported special mods already use their own built-in official page here. Custom watch pages are not wired up yet."
+                .into(),
+        );
+    }
 
     save_watch_source_for_subject(
         connection,
@@ -1636,6 +1643,7 @@ fn resolve_watch_result(
             return Ok(Some(WatchResult {
                 status,
                 source_kind: Some(WatchSourceKind::ExactPage),
+                source_origin: WatchSourceOrigin::BuiltInSpecial,
                 source_label: Some(profile.display_name.clone()),
                 source_url: source_url.or_else(|| {
                     profile
@@ -1660,6 +1668,7 @@ fn resolve_watch_result(
         return Ok(Some(WatchResult {
             status: WatchStatus::NotWatched,
             source_kind: Some(WatchSourceKind::ExactPage),
+            source_origin: WatchSourceOrigin::BuiltInSpecial,
             source_label: Some(profile.display_name.clone()),
             source_url: profile
                 .latest_check_url
@@ -1684,6 +1693,7 @@ fn resolve_watch_result(
             Ok(Some(WatchResult {
                 status: result.status,
                 source_kind: Some(source.source_kind),
+                source_origin: WatchSourceOrigin::SavedByUser,
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
                 capability: map_watch_capability_kind(capability.kind),
@@ -1704,6 +1714,7 @@ fn resolve_watch_result(
             Ok(Some(WatchResult {
                 status: WatchStatus::NotWatched,
                 source_kind: Some(source.source_kind),
+                source_origin: WatchSourceOrigin::SavedByUser,
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
                 capability: map_watch_capability_kind(capability.kind),
@@ -1722,6 +1733,7 @@ fn resolve_watch_result(
         (None, Some(result)) => Ok(Some(WatchResult {
             status: result.status,
             source_kind: None,
+            source_origin: WatchSourceOrigin::None,
             source_label: None,
             source_url: None,
             capability: WatchCapability::SavedReferenceOnly,
@@ -1736,6 +1748,7 @@ fn resolve_watch_result(
         (None, None) => Ok(Some(WatchResult {
             status: WatchStatus::NotWatched,
             source_kind: None,
+            source_origin: WatchSourceOrigin::None,
             source_label: None,
             source_url: None,
             capability: WatchCapability::SavedReferenceOnly,
@@ -2152,7 +2165,7 @@ mod tests {
         database,
         models::{
             FileInsights, LibrarySettings, VersionSignal, WatchCapability, WatchSourceKind,
-            WatchStatus,
+            WatchSourceOrigin, WatchStatus,
         },
         seed::load_seed_pack,
     };
@@ -2269,6 +2282,10 @@ mod tests {
         let watch_result = watch_result.expect("watch result");
 
         assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(
+            watch_result.source_origin,
+            WatchSourceOrigin::BuiltInSpecial
+        );
         assert_eq!(watch_result.capability, WatchCapability::CanRefreshNow);
         assert!(watch_result.can_refresh_now);
         assert!(watch_result
@@ -2341,6 +2358,10 @@ mod tests {
         let watch_result = watch_result.expect("watch result");
 
         assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(
+            watch_result.source_origin,
+            WatchSourceOrigin::BuiltInSpecial
+        );
         assert_eq!(watch_result.capability, WatchCapability::CanRefreshNow);
         assert!(watch_result.can_refresh_now);
     }
@@ -2363,6 +2384,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert_eq!(watch.provider_name, None);
         assert_eq!(watch.source_label.as_deref(), Some("Test Watch"));
@@ -2395,6 +2417,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::CanRefreshNow);
         assert!(watch.can_refresh_now);
         assert!(watch
@@ -2425,6 +2448,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
         assert!(watch
@@ -2455,6 +2479,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::ProviderRequired);
         assert_eq!(watch.provider_name.as_deref(), Some("CurseForge"));
         assert!(!watch.can_refresh_now);
@@ -2486,6 +2511,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::Unknown);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
         assert!(watch.checked_at.is_some());
@@ -2517,6 +2543,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert!(watch.source_kind.is_none());
+        assert_eq!(watch.source_origin, WatchSourceOrigin::None);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(watch.source_url.is_none());
         assert!(watch
@@ -2566,5 +2593,71 @@ mod tests {
         .expect("save watch");
 
         assert!(watch.is_none());
+    }
+
+    #[test]
+    fn saving_custom_watch_source_for_supported_special_mod_is_rejected() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            family_hints: vec!["s4cl".to_owned()],
+            version_hints: vec!["2.9.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.9.0".to_owned(),
+                normalized_value: "2.9.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/S4CL/S4CL.ts4script",
+                    "S4CL.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.97_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+        let file_id = connection.last_insert_rowid();
+
+        let error = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("Custom page".to_owned()),
+            "https://example.com/custom-page",
+        )
+        .expect_err("custom save should be rejected");
+
+        assert!(error.to_string().contains("built-in official page"));
     }
 }

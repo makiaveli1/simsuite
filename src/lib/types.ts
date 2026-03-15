@@ -271,6 +271,7 @@ export interface InstalledVersionSummary {
 }
 
 export type WatchSourceKind = "exact_page" | "creator_page";
+export type WatchSourceOrigin = "none" | "saved_by_user" | "built_in_special";
 export type WatchCapability =
   | "can_refresh_now"
   | "saved_reference_only"
@@ -286,6 +287,7 @@ export type WatchStatus =
 export interface WatchResult {
   status: WatchStatus;
   sourceKind: WatchSourceKind | null;
+  sourceOrigin: WatchSourceOrigin;
   sourceLabel: string | null;
   sourceUrl: string | null;
   capability: WatchCapability;

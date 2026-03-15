@@ -306,6 +306,7 @@ function buildMockWatchResult(
     return {
       status: "exact_update_available",
       sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
       sourceLabel: "MC Command Center",
       sourceUrl: "https://deaderpool-mccc.com/downloads.html",
       capability: "can_refresh_now",
@@ -325,6 +326,7 @@ function buildMockWatchResult(
     return {
       status: "current",
       sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
       sourceLabel: "XML Injector",
       sourceUrl: "https://scumbumbomods.com/xml-injector",
       capability: "can_refresh_now",
@@ -340,9 +342,84 @@ function buildMockWatchResult(
     };
   }
 
+  if (lowerName.includes("s4cl") || lowerName.includes("sims4communitylibrary")) {
+    return {
+      status: "current",
+      sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
+      sourceLabel: "Sims 4 Community Library",
+      sourceUrl: "https://github.com/ColonolNutty/Sims4CommunityLibrary/releases/latest",
+      capability: "can_refresh_now",
+      canRefreshNow: true,
+      providerName: null,
+      latestVersion: buildMockInstalledVersionSummary(file)?.version ?? null,
+      checkedAt: "2026-03-11T10:00:00.000Z",
+      confidence: "medium",
+      note: "SimSuite is using the built-in official page for this supported mod.",
+      evidence: [
+        "The built-in GitHub releases page lines up with the installed copy.",
+      ],
+    };
+  }
+
+  if (lowerName.includes("lot51") && lowerName.includes("core")) {
+    return {
+      status: "not_watched",
+      sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
+      sourceLabel: "Lot 51 Core Library",
+      sourceUrl: "https://lot51.cc/mods/core-library",
+      capability: "saved_reference_only",
+      canRefreshNow: false,
+      providerName: null,
+      latestVersion: null,
+      checkedAt: null,
+      confidence: "unknown",
+      note: "SimSuite is using the built-in official page for this supported mod, but this site is reference-only right now.",
+      evidence: [],
+    };
+  }
+
+  if (lowerName.includes("lumpinou") && lowerName.includes("toolbox")) {
+    return {
+      status: "not_watched",
+      sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
+      sourceLabel: "Lumpinou Toolbox",
+      sourceUrl: "https://www.curseforge.com/sims4/mods/lumpinous-toolbox-script-library",
+      capability: "provider_required",
+      canRefreshNow: false,
+      providerName: "CurseForge",
+      latestVersion: null,
+      checkedAt: null,
+      confidence: "unknown",
+      note: "SimSuite is using the built-in official page for this supported mod, but CurseForge needs a future approved API path.",
+      evidence: [],
+    };
+  }
+
+  if (lowerName.includes("smartcorescript") || lowerName.includes("smart core")) {
+    return {
+      status: "not_watched",
+      sourceKind: "exact_page",
+      sourceOrigin: "built_in_special",
+      sourceLabel: "Smart Core Script",
+      sourceUrl: "https://www.curseforge.com/sims4/mods/smart-core-script",
+      capability: "provider_required",
+      canRefreshNow: false,
+      providerName: "CurseForge",
+      latestVersion: null,
+      checkedAt: null,
+      confidence: "unknown",
+      note: "SimSuite is using the built-in official page for this supported mod, but CurseForge needs a future approved API path.",
+      evidence: [],
+    };
+  }
+
   return {
     status: "not_watched",
     sourceKind: null,
+    sourceOrigin: "none",
     sourceLabel: null,
     sourceUrl: null,
     capability: "saved_reference_only",
@@ -2216,9 +2293,7 @@ function createMockOverview(): HomeOverview {
     (file) => file.watchResult?.status === "possible_update",
   ).length;
   const unknownWatchItems = mockFiles.filter(
-    (file) =>
-      file.watchResult?.status === "unknown" ||
-      file.watchResult?.status === "not_watched",
+    (file) => file.watchResult?.status === "unknown",
   ).length;
 
   return {
@@ -4429,10 +4504,17 @@ async function mockInvoke<T>(
       }
 
       const next = structuredClone(mockFiles[fileIndex]);
+      const existingWatch = next.watchResult ?? buildMockWatchResult(next);
+      if (existingWatch?.sourceOrigin === "built_in_special") {
+        throw new Error(
+          "Supported special mods already use their own built-in official page here. Custom watch pages are not wired up yet.",
+        );
+      }
       const canRefreshNow = mockCanRefreshWatchSource(sourceKind, sourceUrl);
       next.watchResult = {
         status: "not_watched",
         sourceKind,
+        sourceOrigin: "saved_by_user",
         sourceLabel: sourceLabel || null,
         sourceUrl,
         capability: mockWatchCapability(sourceKind, sourceUrl),
@@ -4505,10 +4587,9 @@ async function mockInvoke<T>(
       const possibleUpdateItems = mockFiles.filter(
         (file) => file.watchResult?.status === "possible_update",
       ).length;
-      const unknownWatchItems = mockFiles.filter((file) => {
-        const status = file.watchResult?.status;
-        return status === "unknown" || status === "not_watched";
-      }).length;
+      const unknownWatchItems = mockFiles.filter(
+        (file) => file.watchResult?.status === "unknown",
+      ).length;
 
       mockAppBehaviorSettings = {
         ...mockAppBehaviorSettings,

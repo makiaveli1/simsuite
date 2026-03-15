@@ -15,9 +15,11 @@ import {
   unknownCreatorLabel,
 } from "../lib/uiLanguage";
 import type {
+  AppBehaviorSettings,
   CategoryOverrideInfo,
   CreatorLearningInfo,
   FileDetail,
+  HomeOverview,
   LibraryLayoutPreset,
   LibraryFacets,
   LibraryFileRow,
@@ -27,6 +29,7 @@ import type {
   VersionConfidence,
   WatchResult,
   WatchSourceKind,
+  WatchSourceOrigin,
 } from "../lib/types";
 
 interface LibraryScreenProps {
@@ -99,11 +102,19 @@ export function LibraryScreen({
   const [watchSourceUrl, setWatchSourceUrl] = useState("");
   const [savingWatch, setSavingWatch] = useState(false);
   const [refreshingWatch, setRefreshingWatch] = useState(false);
+  const [refreshingAllWatched, setRefreshingAllWatched] = useState(false);
   const [watchMessage, setWatchMessage] = useState<string | null>(null);
+  const [watchOverview, setWatchOverview] = useState<HomeOverview | null>(null);
+  const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
+  const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     void api.getLibraryFacets().then(setFacets);
+  }, [refreshVersion]);
+
+  useEffect(() => {
+    void loadWatchCenter();
   }, [refreshVersion]);
 
   useEffect(() => {
@@ -133,10 +144,11 @@ export function LibraryScreen({
       setWatchSourceKind("exact_page");
       setWatchSourceLabel("");
       setWatchSourceUrl("");
-      setRefreshingWatch(false);
-      setWatchMessage(null);
-      return;
-    }
+    setRefreshingWatch(false);
+    setWatchMessage(null);
+    setWatchCenterMessage(null);
+    return;
+  }
 
     setCreatorDraft(selected.creator ?? selected.insights.creatorHints[0] ?? "");
     setAliasDraft("");
@@ -161,6 +173,21 @@ export function LibraryScreen({
     setRefreshingWatch(false);
     setWatchMessage(null);
   }, [selected]);
+
+  async function loadWatchCenter() {
+    try {
+      const [overview, behavior] = await Promise.all([
+        api.getHomeOverview(),
+        api.getAppBehaviorSettings(),
+      ]);
+
+      setWatchOverview(overview);
+      setAppBehavior(behavior);
+    } catch {
+      setWatchOverview(null);
+      setAppBehavior(null);
+    }
+  }
 
   async function loadRows(preferredSelectedId?: number) {
     const result = await api.listLibraryFiles({
@@ -278,6 +305,9 @@ export function LibraryScreen({
   const hasVersionWatchInfo = Boolean(
     selected?.installedVersionSummary || selected?.watchResult,
   );
+  const selectedWatch = selected?.watchResult ?? null;
+  const watchSourceOrigin = selectedWatch?.sourceOrigin ?? "none";
+  const isBuiltInWatchSource = watchSourceOrigin === "built_in_special";
 
   async function saveWatchSource() {
     if (!selected) {
@@ -308,7 +338,7 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch source saved.");
-      await loadRows(updated.id);
+      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "save the watch source"));
     } finally {
@@ -335,7 +365,7 @@ export function LibraryScreen({
       setWatchSourceLabel("");
       setWatchSourceUrl("");
       setWatchMessage("Watch source cleared.");
-      await loadRows(updated.id);
+      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "clear the watch source"));
     } finally {
@@ -360,11 +390,35 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch result refreshed.");
-      await loadRows(updated.id);
+      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "refresh the watch source"));
     } finally {
       setRefreshingWatch(false);
+    }
+  }
+
+  async function refreshAllWatchedSources() {
+    setRefreshingAllWatched(true);
+    setWatchCenterMessage(null);
+
+    try {
+      const summary = await api.refreshWatchedSources();
+      const checkedLabel =
+        summary.checkedSubjects === 1
+          ? "Checked 1 watched page."
+          : `Checked ${summary.checkedSubjects} watched pages.`;
+      const updateLabel =
+        summary.exactUpdateItems === 1
+          ? "1 confirmed update found."
+          : `${summary.exactUpdateItems} confirmed updates found.`;
+
+      setWatchCenterMessage(`${checkedLabel} ${updateLabel}`);
+      await Promise.all([loadWatchCenter(), loadRows(selected?.id)]);
+    } catch (error) {
+      setWatchCenterMessage(watchActionError(error, "check watched pages"));
+    } finally {
+      setRefreshingAllWatched(false);
     }
   }
   const watchBusy = savingWatch || refreshingWatch;
@@ -453,30 +507,36 @@ export function LibraryScreen({
                       />
                       <DetailRow
                         label="Watch status"
-                        value={watchStatusLabel(selected.watchResult, userView)}
+                        value={watchStatusLabel(selectedWatch, userView)}
                       />
-                      {selected.watchResult?.sourceKind ? (
+                      {selectedWatch?.sourceKind ? (
                         <DetailRow
                           label="Watch source"
-                          value={watchSourceKindLabel(selected.watchResult)}
+                          value={watchSourceKindLabel(selectedWatch)}
                         />
                       ) : null}
-                      {selected.watchResult?.sourceKind ? (
+                      {selectedWatch?.sourceKind ? (
+                        <DetailRow
+                          label="Source origin"
+                          value={watchSourceOriginLabel(selectedWatch.sourceOrigin)}
+                        />
+                      ) : null}
+                      {selectedWatch?.sourceKind ? (
                         <DetailRow
                           label="Check method"
-                          value={watchCapabilityLabel(selected.watchResult, userView)}
+                          value={watchCapabilityLabel(selectedWatch, userView)}
                         />
                       ) : null}
-                      {selected.watchResult?.latestVersion ? (
+                      {selectedWatch?.latestVersion ? (
                         <DetailRow
                           label="Latest seen"
-                          value={selected.watchResult.latestVersion}
+                          value={selectedWatch.latestVersion}
                         />
                       ) : null}
-                      {selected.watchResult?.checkedAt ? (
+                      {selectedWatch?.checkedAt ? (
                         <DetailRow
                           label="Last checked"
-                          value={new Date(selected.watchResult.checkedAt).toLocaleString()}
+                          value={new Date(selectedWatch.checkedAt).toLocaleString()}
                         />
                       ) : null}
                     </div>
@@ -492,16 +552,16 @@ export function LibraryScreen({
                         </div>
                       </div>
                     ) : null}
-                    {selected.watchResult?.note || selected.watchResult?.evidence.length ? (
+                    {selectedWatch?.note || selectedWatch?.evidence.length ? (
                       <div className="detail-block">
                         <div className="section-label">Watch notes</div>
                         <div className="downloads-evidence-list">
-                          {selected.watchResult?.note ? (
+                          {selectedWatch?.note ? (
                             <div className="downloads-evidence-row">
-                              {selected.watchResult.note}
+                              {selectedWatch.note}
                             </div>
                           ) : null}
-                          {selected.watchResult?.evidence.map((line) => (
+                          {selectedWatch?.evidence.map((line) => (
                             <div key={line} className="downloads-evidence-row">
                               {line}
                             </div>
@@ -515,24 +575,25 @@ export function LibraryScreen({
                       </div>
                       {!watchEditing ? (
                         <div className="detail-row-actions">
-                          <button
-                            type="button"
-                            className="secondary-action"
-                            onClick={() => {
-                              setWatchEditing(true);
-                              setWatchMessage(null);
-                            }}
-                          >
-                            {selected.watchResult?.sourceKind
-                              ? userView === "beginner"
+                          {isBuiltInWatchSource ? (
+                            <span className="creator-learning-message">
+                              {builtInWatchSourceMessage(selectedWatch, appBehavior)}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="secondary-action"
+                              onClick={() => {
+                                setWatchEditing(true);
+                                setWatchMessage(null);
+                              }}
+                            >
+                              {selectedWatch?.sourceKind
                                 ? "Change watch source"
-                                : "Change watch source"
-                              : userView === "beginner"
-                                ? "Add watch source"
                                 : "Add watch source"}
-                          </button>
-                          {selected.watchResult?.sourceKind &&
-                          selected.watchResult.canRefreshNow ? (
+                            </button>
+                          )}
+                          {selectedWatch?.sourceKind && selectedWatch.canRefreshNow ? (
                             <button
                               type="button"
                               className="secondary-action"
@@ -542,15 +603,15 @@ export function LibraryScreen({
                               {refreshingWatch ? "Checking..." : "Check now"}
                             </button>
                           ) : null}
-                          {selected.watchResult?.sourceKind &&
-                          selected.watchResult.capability === "provider_required" ? (
+                          {selectedWatch?.sourceKind &&
+                          selectedWatch.capability === "provider_required" ? (
                             <span className="creator-learning-message">
-                              {selected.watchResult.providerName
-                                ? `${selected.watchResult.providerName} provider support is needed before SimSuite can check this page automatically.`
+                              {selectedWatch.providerName
+                                ? `${selectedWatch.providerName} provider support is needed before SimSuite can check this page automatically.`
                                 : "A provider setup is needed before SimSuite can check this page automatically."}
                             </span>
                           ) : null}
-                          {selected.watchResult?.sourceKind ? (
+                          {!isBuiltInWatchSource && selectedWatch?.sourceKind ? (
                             <button
                               type="button"
                               className="ghost-action"
@@ -1047,6 +1108,70 @@ export function LibraryScreen({
             </div>
           </div>
 
+          <div className="library-watch-toolbar">
+            <div className="library-watch-summary">
+              <div className="library-watch-summary-item">
+                <strong>
+                  {watchOverview
+                    ? watchOverview.exactUpdateItems.toLocaleString()
+                    : "0"}
+                </strong>
+                <span>{userView === "beginner" ? "confirmed updates" : "Exact updates"}</span>
+              </div>
+              <div className="library-watch-summary-item">
+                <strong>
+                  {watchOverview
+                    ? watchOverview.possibleUpdateItems.toLocaleString()
+                    : "0"}
+                </strong>
+                <span>{userView === "beginner" ? "possible updates" : "Possible updates"}</span>
+              </div>
+              <div className="library-watch-summary-item">
+                <strong>
+                  {watchOverview
+                    ? watchOverview.unknownWatchItems.toLocaleString()
+                    : "0"}
+                </strong>
+                <span>{userView === "beginner" ? "unclear watched items" : "Needs review"}</span>
+              </div>
+            </div>
+            <div className="library-watch-copy">
+              <strong>
+                {appBehavior?.automaticWatchChecks
+                  ? `Automatic checks are on every ${appBehavior.watchCheckIntervalHours} hours.`
+                  : "Automatic checks are off."}
+              </strong>
+              <span>
+                {appBehavior?.lastWatchCheckAt
+                  ? `Last run ${new Date(appBehavior.lastWatchCheckAt).toLocaleString()}.`
+                  : "No automatic watch check has run yet."}
+              </span>
+              {appBehavior?.lastWatchCheckError ? (
+                <span>{`Last error: ${appBehavior.lastWatchCheckError}`}</span>
+              ) : null}
+            </div>
+            <div className="library-watch-actions">
+              <button
+                type="button"
+                className="secondary-action"
+                disabled={refreshingAllWatched}
+                onClick={() => void refreshAllWatchedSources()}
+              >
+                {refreshingAllWatched ? "Checking watched pages..." : "Check watched pages now"}
+              </button>
+              <button
+                type="button"
+                className="ghost-action"
+                onClick={() => onNavigate("settings")}
+              >
+                Watch settings
+              </button>
+            </div>
+            {watchCenterMessage ? (
+              <div className="library-watch-message">{watchCenterMessage}</div>
+            ) : null}
+          </div>
+
           <div className="vertical-dock library-table-dock">
             <div className="table-scroll library-table-scroll">
               <table className="library-table">
@@ -1497,6 +1622,8 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
     return userView === "beginner" ? "Not watched yet" : "Not watched";
   }
 
+  const isBuiltIn = watchResult.sourceOrigin === "built_in_special";
+
   switch (watchResult.status) {
     case "exact_update_available":
       return userView === "beginner"
@@ -1511,17 +1638,29 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
     case "not_watched":
       if (watchResult.sourceKind) {
         if (watchResult.capability === "provider_required") {
-          return userView === "beginner"
-            ? "Saved, provider setup needed"
-            : "Saved, provider needed";
+          return isBuiltIn
+            ? userView === "beginner"
+              ? "Built-in page needs provider setup"
+              : "Built-in page needs provider"
+            : userView === "beginner"
+              ? "Saved, provider setup needed"
+              : "Saved, provider needed";
         }
         return watchResult.canRefreshNow
-          ? userView === "beginner"
-            ? "Saved and ready to check"
-            : "Saved and ready"
-          : userView === "beginner"
-            ? "Saved as a reference"
-            : "Saved as reference";
+          ? isBuiltIn
+            ? userView === "beginner"
+              ? "Built-in page ready to check"
+              : "Built-in page ready"
+            : userView === "beginner"
+              ? "Saved and ready to check"
+              : "Saved and ready"
+          : isBuiltIn
+            ? userView === "beginner"
+              ? "Built-in page is reference only"
+              : "Built-in reference only"
+            : userView === "beginner"
+              ? "Saved as a reference"
+              : "Saved as reference";
       }
       return userView === "beginner" ? "Not watched yet" : "Not watched";
     default:
@@ -1551,21 +1690,71 @@ function watchSourceKindLabel(watchResult: WatchResult | null) {
   }
 }
 
+function watchSourceOriginLabel(origin: WatchSourceOrigin) {
+  switch (origin) {
+    case "built_in_special":
+      return "Built-in official page";
+    case "saved_by_user":
+      return "Saved by you";
+    default:
+      return "Not saved";
+  }
+}
+
 function watchCapabilityLabel(watchResult: WatchResult | null, userView: UserView) {
   if (!watchResult?.sourceKind) {
     return userView === "beginner" ? "No watch source yet" : "Not set";
   }
 
+  const isBuiltIn = watchResult.sourceOrigin === "built_in_special";
+
   switch (watchResult.capability) {
     case "can_refresh_now":
-      return userView === "beginner" ? "SimSuite can check this now" : "Check now supported";
+      return isBuiltIn
+        ? userView === "beginner"
+          ? "Built-in page can be checked now"
+          : "Built-in check now supported"
+        : userView === "beginner"
+          ? "SimSuite can check this now"
+          : "Check now supported";
     case "provider_required":
       return watchResult.providerName
         ? `${watchResult.providerName} provider needed`
         : "Provider support needed";
     default:
-      return userView === "beginner" ? "Saved as a reminder only" : "Reference only";
+      return isBuiltIn
+        ? userView === "beginner"
+          ? "Built-in page is reference only"
+          : "Built-in reference only"
+        : userView === "beginner"
+          ? "Saved as a reminder only"
+          : "Reference only";
   }
+}
+
+function builtInWatchSourceMessage(
+  watchResult: WatchResult | null,
+  appBehavior: AppBehaviorSettings | null,
+) {
+  if (!watchResult) {
+    return "SimSuite is using the built-in official page for this supported mod.";
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return watchResult.providerName
+      ? `SimSuite is using the built-in official page for this supported mod. ${watchResult.providerName} support is still needed before automatic checks can work here.`
+      : "SimSuite is using the built-in official page for this supported mod, but automatic checks are not available here yet.";
+  }
+
+  if (!watchResult.canRefreshNow) {
+    return "SimSuite is using the built-in official page for this supported mod. This page is reference-only right now.";
+  }
+
+  if (appBehavior?.automaticWatchChecks) {
+    return `SimSuite is using the built-in official page for this supported mod. Automatic checks are on every ${appBehavior.watchCheckIntervalHours} hours.`;
+  }
+
+  return "SimSuite is using the built-in official page for this supported mod. Automatic checks are off, but you can still use Check now here.";
 }
 
 function formatBytes(size: number) {

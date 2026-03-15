@@ -2,6 +2,8 @@
 
 ## Current Priority
 
+- March 15, 2026: Library watch flow is more honest now. Built-in supported special-mod pages are shown as built-in, not as if the user saved them. The next product focus should be the fuller watch-management flow, not more backend watch guesswork.
+- March 15, 2026: the compact Library watch center is now in place and the base native desktop smoke passed again. The next product focus can move to broader watch management and provider planning.
 - March 15, 2026: the local dev loop is steadier now because `npm run tauri:dev` clears stale Vite listeners on port `1420` before it starts. The next product focus can go back to the fuller watch setup and provider flow.
 - March 15, 2026: `tauri:dev` startup no longer dies on the old watch-schema migration or on tray setup during normal launch. The next product focus can go back to the fuller watch setup and provider flow, but the desktop smoke wrapper still needs cleanup so it does not leave Vite running on port `1420`.
 - March 15, 2026: safe automatic watch checks now exist, but the next product focus should still be a fuller watch setup and provider flow. The current desktop smoke wrapper also timed out on startup in this session, so that harness needs another cleanup pass before it is treated as perfect signoff.
@@ -15,6 +17,29 @@
 
 ## What Changed This Session
 
+- March 15, 2026: tightened the watch-source truth layer:
+  - `WatchResult` now says whether the source is:
+    - built in for a supported special mod
+    - saved by the user
+    - not saved
+  - supported special mods now keep their built-in official page in Library without pretending it was saved manually
+  - custom watch pages for supported special mods are now rejected with a plain message instead of being saved and quietly ignored later
+- March 15, 2026: added a compact Library watch center:
+  - confirmed update count
+  - possible update count
+  - unclear watched-item count
+  - automatic-check state
+  - last automatic run
+  - `Check watched pages now`
+  - quick jump to `Settings`
+- March 15, 2026: cleaned up Library watch actions so they match reality:
+  - built-in supported special mods no longer show misleading `Add watch source`, `Change watch source`, or `Clear watch source` buttons
+  - built-in sources now explain that SimSuite is using the official page already
+  - `Check now` still appears where it is genuinely safe
+- March 15, 2026: updated the browser-preview mocks to match the new watch behavior:
+  - mock built-in supported mods now carry built-in source origin
+  - generic saved pages still show as user-saved
+  - mock Home watch counts now match the real backend better and no longer treat every not-yet-watched item as an unknown watch result
 - March 15, 2026: cleaned up the local dev loop:
   - `npm run tauri:dev` now uses a wrapper that clears stale Vite listeners on port `1420` before launch
   - the cleanup only auto-stops stale `node`/Vite listeners, not random apps
@@ -96,6 +121,12 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `165` tests after the watch-source-origin and Library watch-center changes.
+- March 15, 2026: `npm run build` passed after the Library watch-center and watch-origin UI changes.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed again:
+  - the real Tauri app launched
+  - the base native smoke completed successfully
+  - the watch-management changes did not break the current desktop proof lane
 - March 15, 2026: `npm run dev:cleanup` successfully stopped a real stale Vite `node` process that was still listening on port `1420`.
 - March 15, 2026: `npm run tauri:dev` now launches through the new wrapper, starts Vite cleanly, and reaches `simsuite.exe` without the old port-conflict failure.
 - March 15, 2026: `npm run dev:cleanup` reports `status=free` after the wrapper start check, so the cleanup path is working.
@@ -147,6 +178,13 @@
 
 ## What Worked
 
+- Library now tells the truth about where a watch source came from:
+  - built-in official page
+  - saved by you
+  - not saved
+- Built-in supported special mods no longer pretend their official page was manually saved.
+- Library now has a compact watch summary area without turning into a cluttered dashboard.
+- Global `Check watched pages now` works from Library and refreshes the summary plus the selected item.
 - the local dev loop now clears stale Vite listeners automatically before `tauri:dev` starts
 - there is now a safe manual cleanup helper for port `1420`
 - old databases with watch-source rows now upgrade cleanly instead of crashing on `anchor_file_id`
@@ -187,6 +225,12 @@
 
 ## Known Problems / Gaps
 
+- The next missing layer is fuller watch management:
+  - no watch list view yet
+  - no easy bulk setup flow yet
+  - no edit history or source audit trail yet
+  - no provider onboarding flow yet
+- Built-in supported special mods now use their own official page in Library, but custom override pages for those built-ins are intentionally blocked for now because there is no honest merge rule yet.
 - The watch system is readable now, but the user-facing management flow is still thin:
   - watch results can be shown
   - generic watch sources are stored in the database
@@ -207,10 +251,14 @@
 - The first curated expansion wave has not started yet.
 - `cargo clippy` still reports some older warnings that were not cleaned up in this checkpoint.
 - The raw native check is still best as a read-only spot check unless we are deliberately running fixture-backed apply flows.
-- The desktop smoke wrapper timed out on startup in this session, so the wrapper itself still needs more debug even though Rust tests and the frontend build are green.
+- The deeper native watch smoke still needs widening:
+  - the base smoke passed this session
+  - but richer Library watch scenarios should be added before we rely on it as the final signoff path for all watch features
 
 ## Important Decisions
 
+- Built-in supported special-mod pages and user-saved watch pages are different product states and must stay visibly different in Library.
+- SimSuite should block misleading custom watch-page saves for supported special mods until there is a real rule for how built-in and custom sources should coexist.
 - tray creation should be lazy:
   - normal startup must not fail just because the tray icon is unhappy
   - background mode can request the tray later when it actually needs it
@@ -235,8 +283,12 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - design the first fuller user-facing watch-source flow for installed content now that save, clear, check-now, and safe automatic polling basics are real
-  - debug the desktop smoke wrapper startup timeout so the watch checkpoint has a steadier native signoff path
+  - design the next fuller user-facing watch-management flow for installed content now that built-in versus saved source truth is clear
+  - decide what the first watch-management surface should be:
+    - a watch list
+    - bulk setup
+    - easier source editing
+  - widen the native Library watch smoke beyond the current base lane
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements
   - widen helper-only latest parsing only where there is a safe official endpoint
   - add the first small curated expansion wave through `docs/SPECIAL_MOD_CANDIDATES.json`

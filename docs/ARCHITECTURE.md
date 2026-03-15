@@ -71,8 +71,31 @@ Startup is now safer in two important ways:
 - database upgrades add the `content_watch_sources.anchor_file_id` column before they create the matching index, so older databases no longer crash during setup
 - tray creation is now lazy:
   - normal startup skips tray setup
-  - background mode creates the tray only when it actually needs it
+- background mode creates the tray only when it actually needs it
   - if Windows refuses the tray icon, the app stays open instead of panicking during launch
+
+## Current engineering note (March 15, 2026)
+
+Library watch sources now have a clearer product split so the app stops blurring built-in special-mod pages with user-saved pages.
+
+Important current watch-source behavior:
+
+- `WatchResult` now records where the source came from:
+  - built-in official page for a supported special mod
+  - user-saved page
+  - no saved page yet
+- supported special mods now show their built-in official page in `Library` without pretending the user saved it by hand
+- custom watch-page saves for supported special mods are intentionally blocked for now because there is no honest merge rule yet between:
+  - the built-in official page
+  - a user override page
+- `Library` now has a compact watch center inside the existing table area that shows:
+  - confirmed update count
+  - possible update count
+  - unclear watched-item count
+  - automatic-check state
+  - last run state
+  - one manual `Check watched pages now` action
+- that watch center stays summary-first so the screen does not turn into a second dashboard or a crowded settings page
 
 ## Current engineering note (March 15, 2026)
 

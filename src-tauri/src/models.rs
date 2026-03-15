@@ -307,11 +307,21 @@ pub enum WatchStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchSourceOrigin {
+    #[default]
+    None,
+    SavedByUser,
+    BuiltInSpecial,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WatchResult {
     pub status: WatchStatus,
     pub source_kind: Option<WatchSourceKind>,
+    pub source_origin: WatchSourceOrigin,
     pub source_label: Option<String>,
     pub source_url: Option<String>,
     pub capability: WatchCapability,

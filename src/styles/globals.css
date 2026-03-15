@@ -1981,6 +1981,55 @@ h2,
   background: var(--surface-4);
 }
 
+.library-watch-toolbar {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.library-watch-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.library-watch-summary-item {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.library-watch-summary-item strong {
+  font-size: 0.92rem;
+}
+
+.library-watch-summary-item span,
+.library-watch-copy span {
+  color: var(--text-soft);
+}
+
+.library-watch-copy {
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.74rem;
+}
+
+.library-watch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.library-watch-message {
+  color: var(--mint);
+  font-size: 0.72rem;
+}
+
 .table-scroll {
   overflow: auto;
   border: 1px solid var(--line);
@@ -4915,6 +4964,10 @@ h2,
   .scanner-meta,
   .summary-matrix,
   .table-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .library-watch-summary {
     grid-template-columns: 1fr;
   }
 
