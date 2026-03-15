@@ -28,6 +28,7 @@ const MAX_WATCH_REVIEW_LIMIT: usize = 24;
 const MAX_WATCH_SETUP_LIMIT: usize = 24;
 const MAX_WATCH_SETUP_EXACT_LIMIT: usize = 8;
 const WATCH_SETUP_SCAN_LIMIT: usize = 320;
+const WATCH_SETUP_QUERY_LIMIT: usize = WATCH_SETUP_SCAN_LIMIT * 4;
 const MATCH_SCORE_STRONG: f64 = 1.20;
 const MATCH_SCORE_MEDIUM: f64 = 0.80;
 const MATCH_SCORE_WEAK: f64 = 0.45;
@@ -590,20 +591,15 @@ fn load_saved_watch_anchor_file_ids(connection: &Connection) -> AppResult<Vec<i6
 
 fn load_watch_setup_candidate_file_ids(connection: &Connection) -> AppResult<Vec<i64>> {
     let mut statement = connection.prepare(
-        "SELECT f.id
+        "SELECT
+            f.id,
+            COALESCE(f.confidence, 0),
+            f.creator_id,
+            f.insights
          FROM files f
          WHERE f.source_location <> 'downloads'
            AND f.kind NOT LIKE 'Tray%'
            AND LOWER(LTRIM(COALESCE(f.extension, ''), '.')) IN ('package', 'ts4script')
-           AND (
-                f.creator_id IS NOT NULL
-                OR COALESCE(f.confidence, 0) >= 0.72
-                OR COALESCE(f.insights, '') LIKE '%versionHints%'
-                OR COALESCE(f.insights, '') LIKE '%versionSignals%'
-                OR COALESCE(f.insights, '') LIKE '%scriptNamespaces%'
-                OR COALESCE(f.insights, '') LIKE '%embeddedNames%'
-                OR COALESCE(f.insights, '') LIKE '%familyHints%'
-           )
          ORDER BY
            CASE WHEN f.kind = 'ScriptMods' THEN 0 ELSE 1 END,
            CASE WHEN f.creator_id IS NOT NULL THEN 0 ELSE 1 END,
@@ -618,12 +614,47 @@ fn load_watch_setup_candidate_file_ids(connection: &Connection) -> AppResult<Vec
     )?;
 
     let rows = statement
-        .query_map(params![WATCH_SETUP_SCAN_LIMIT as i64], |row| {
-            row.get::<_, i64>(0)
+        .query_map(params![WATCH_SETUP_QUERY_LIMIT as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, f64>(1)?,
+                row.get::<_, Option<i64>>(2)?.is_some(),
+                parse_file_insights(row.get(3)?),
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(rows)
+    let mut file_ids = Vec::new();
+    for (file_id, confidence, has_creator, insights) in rows {
+        if !file_has_watch_setup_seed_clues(has_creator, confidence, &insights) {
+            continue;
+        }
+
+        file_ids.push(file_id);
+        if file_ids.len() >= WATCH_SETUP_SCAN_LIMIT {
+            break;
+        }
+    }
+
+    Ok(file_ids)
+}
+
+fn file_has_watch_setup_seed_clues(
+    has_creator: bool,
+    confidence: f64,
+    insights: &FileInsights,
+) -> bool {
+    has_creator
+        || confidence >= SIGNAL_CONFLICT_CONFIDENCE
+        || !insights.creator_hints.is_empty()
+        || !insights.script_namespaces.is_empty()
+        || !insights.embedded_names.is_empty()
+        || !insights.family_hints.is_empty()
+        || !insights.version_hints.is_empty()
+        || insights
+            .version_signals
+            .iter()
+            .any(|signal| signal.confidence >= SIGNAL_CONFLICT_CONFIDENCE)
 }
 
 fn load_supported_special_watch_anchor_file_ids(
@@ -879,8 +910,7 @@ fn build_library_watch_review_item(
         return Ok(None);
     };
 
-    let Some((review_reason, review_hint)) =
-        watch_review_reason_and_hint(&list_item.watch_result)
+    let Some((review_reason, review_hint)) = watch_review_reason_and_hint(&list_item.watch_result)
     else {
         return Ok(None);
     };
@@ -901,31 +931,28 @@ fn watch_setup_suggestion_for_subject(
     subject: &VersionSubject,
 ) -> Option<(WatchSourceKind, String)> {
     let has_creator = !subject.creator_tokens.is_empty();
-    let has_version = subject.version.value.is_some();
+    let has_trusted_version = subject.version.value.is_some()
+        && matches!(
+            subject.version.confidence,
+            VersionConfidence::Exact | VersionConfidence::Strong | VersionConfidence::Medium
+        );
     let has_script = subject
         .files
         .iter()
         .any(|file| file.filename.to_lowercase().ends_with(".ts4script"))
         || !subject.namespace_tokens.is_empty();
-    let has_name_clue = !subject.embedded_tokens.is_empty() || subject.filename_tokens.len() >= 2;
+    let has_family = !subject.family_tokens.is_empty();
+    let has_name_clue =
+        has_family || !subject.embedded_tokens.is_empty() || subject.filename_tokens.len() >= 2;
 
-    let score = (has_creator as i32 * 2)
-        + (has_version as i32 * 2)
-        + (has_script as i32 * 2)
-        + (has_name_clue as i32);
-
-    if score < 3 || (!has_creator && !has_version && !has_script) {
-        return None;
-    }
-
-    if has_creator && has_version {
+    if has_creator && has_trusted_version && has_name_clue {
         return Some((
             WatchSourceKind::ExactPage,
             "Has creator and version clues, so an exact mod page should work well here.".to_owned(),
         ));
     }
 
-    if has_script && has_creator {
+    if has_script && has_creator && has_name_clue {
         return Some((
             WatchSourceKind::ExactPage,
             "Has script and creator clues, so an exact mod page is the safest next step."
@@ -933,7 +960,7 @@ fn watch_setup_suggestion_for_subject(
         ));
     }
 
-    if has_script && has_version {
+    if has_script && has_trusted_version && has_family {
         return Some((
             WatchSourceKind::ExactPage,
             "Has script and version clues, so an exact mod page should be the cleanest fit."
@@ -941,7 +968,7 @@ fn watch_setup_suggestion_for_subject(
         ));
     }
 
-    if has_creator {
+    if has_creator && (has_family || has_script || has_trusted_version) {
         return Some((
             WatchSourceKind::CreatorPage,
             "Has strong creator clues, so a creator page is a reasonable reminder if no exact page is handy."
@@ -949,17 +976,15 @@ fn watch_setup_suggestion_for_subject(
         ));
     }
 
-    if has_version {
+    if has_trusted_version && has_family && has_name_clue {
         return Some((
             WatchSourceKind::ExactPage,
-            "Has version clues, but no watch page is saved yet.".to_owned(),
+            "Has version and family clues, so an exact mod page is worth setting up here."
+                .to_owned(),
         ));
     }
 
-    Some((
-        WatchSourceKind::ExactPage,
-        "Has enough local clues to set up a watch page safely.".to_owned(),
-    ))
+    None
 }
 
 fn watch_review_reason_and_hint(
@@ -1652,6 +1677,12 @@ fn build_subject(
             file.creator
                 .iter()
                 .flat_map(|value| collect_tokens(value))
+                .chain(
+                    file.insights
+                        .creator_hints
+                        .iter()
+                        .flat_map(|value| collect_tokens(value)),
+                )
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -2854,9 +2885,8 @@ fn prettify_stem(value: &str) -> String {
 mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
-        list_library_watch_items, list_library_watch_review_items,
-        list_library_watch_setup_items, refresh_watch_source_for_library_file,
-        save_watch_source_for_library_file,
+        list_library_watch_items, list_library_watch_review_items, list_library_watch_setup_items,
+        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
     };
     use crate::{
         database,
@@ -2880,6 +2910,7 @@ mod tests {
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
         };
         let insights = FileInsights {
+            creator_hints: vec!["TestCreator".to_owned()],
             version_hints: vec!["1.0".to_owned()],
             version_signals: vec![VersionSignal {
                 raw_value: "1.0".to_owned(),
@@ -3172,6 +3203,98 @@ mod tests {
             WatchSourceKind::ExactPage
         );
         assert_eq!(response.exact_page_items[0].file_id, file_id);
+    }
+
+    #[test]
+    fn watch_setup_candidate_scan_skips_default_empty_insights() {
+        let (connection, _seed_pack, _settings, file_id) = setup_watch_env();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/Misc/plain_item.package",
+                    "plain_item.package",
+                    ".package",
+                    "Gameplay",
+                    0.22_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&FileInsights::default()).expect("insights json"),
+                ],
+            )
+            .expect("insert default insight file");
+
+        let candidate_ids =
+            super::load_watch_setup_candidate_file_ids(&connection).expect("candidate file ids");
+
+        assert_eq!(candidate_ids, vec![file_id]);
+    }
+
+    #[test]
+    fn watch_setup_list_skips_weak_version_only_candidates() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            version_hints: vec!["1.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "1.0".to_owned(),
+                normalized_value: "1.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("filename pattern".to_owned()),
+                confidence: 0.51,
+            }],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/Misc/weak_guess_v1.package",
+                    "weak_guess_v1.package",
+                    ".package",
+                    "Gameplay",
+                    0.41_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+
+        let response = list_library_watch_setup_items(&connection, &settings, &seed_pack, 6)
+            .expect("watch setup list");
+
+        assert_eq!(response.total, 0);
+        assert!(response.items.is_empty());
     }
 
     #[test]

@@ -131,9 +131,15 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         }
     }
 
+    let payload_identity_values = extract_ts4script_payload_identity_values(
+        payload_values
+            .iter()
+            .map(|(entry_name, payload)| (entry_name.as_str(), payload.as_str())),
+    );
     let raw_identity_values = namespaces
         .iter()
         .chain(stems.iter())
+        .chain(payload_identity_values.iter())
         .map(String::as_str)
         .collect::<Vec<_>>();
     let creator_hints = collect_creator_hints(raw_identity_values.iter().copied(), seed_pack);
@@ -157,6 +163,9 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
     }
 
     let primary_creator = creator_hints.first().cloned();
+    let mut embedded_names = stems.into_iter().collect::<Vec<_>>();
+    embedded_names.extend(payload_identity_values);
+    embedded_names = unique_display_values(embedded_names);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -166,7 +175,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
                 format!("Top-level namespaces: {}", script_namespaces.len()),
             ],
             script_namespaces,
-            embedded_names: stems.into_iter().take(MAX_DISPLAY_VALUES).collect(),
+            embedded_names,
             creator_hints: creator_hints.clone(),
             version_hints,
             version_signals,
@@ -409,6 +418,87 @@ fn should_read_ts4script_payload_for_hints(entry_name_lower: &str) -> bool {
         || entry_name_lower.ends_with("readme.md")
         || entry_name_lower.ends_with("changelog.txt")
         || entry_name_lower.ends_with("changelog.md")
+}
+
+fn extract_ts4script_payload_identity_values<'a>(
+    payload_values: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    let mut values = Vec::new();
+
+    for (entry_name, payload) in payload_values {
+        let entry_name_lower = entry_name.to_ascii_lowercase();
+        if !entry_name_lower.contains("manifest") {
+            continue;
+        }
+
+        values.extend(extract_ts4script_json_identity_values(payload));
+        values.extend(extract_ts4script_line_identity_values(payload));
+    }
+
+    unique_display_values(values)
+}
+
+fn extract_ts4script_json_identity_values(payload: &str) -> Vec<String> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return Vec::new();
+    };
+
+    let mut values = Vec::new();
+    for key in ["name", "mod_name", "mod-name", "modName", "title"] {
+        if let Some(value) = json.get(key).and_then(|candidate| candidate.as_str()) {
+            if let Some(cleaned) = clean_payload_identity_value(value) {
+                values.push(cleaned);
+            }
+        }
+    }
+
+    values
+}
+
+fn extract_ts4script_line_identity_values(payload: &str) -> Vec<String> {
+    let mut values = Vec::new();
+
+    for line in payload.lines().take(64) {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+
+        let lowered_key = key.trim().to_ascii_lowercase();
+        if !matches!(
+            lowered_key.as_str(),
+            "name" | "mod_name" | "mod-name" | "modname" | "title"
+        ) {
+            continue;
+        }
+
+        if let Some(cleaned) = clean_payload_identity_value(value) {
+            values.push(cleaned);
+        }
+    }
+
+    values
+}
+
+fn clean_payload_identity_value(value: &str) -> Option<String> {
+    let cleaned = value
+        .trim()
+        .trim_matches(|character| matches!(character, '"' | '\''))
+        .trim()
+        .trim_end_matches(',')
+        .trim();
+
+    if cleaned.is_empty()
+        || cleaned.len() > 96
+        || cleaned.eq_ignore_ascii_case("name")
+        || cleaned.eq_ignore_ascii_case("version")
+        || !cleaned
+            .chars()
+            .all(|character| character.is_ascii_graphic() || character.is_ascii_whitespace())
+    {
+        return None;
+    }
+
+    Some(cleaned.to_owned())
 }
 
 fn collect_family_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -1242,6 +1332,38 @@ mod tests {
             .version_hints
             .iter()
             .any(|value| value == "1.105.332"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn ts4script_manifest_names_feed_identity_hints() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("manifest_named_mod.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("manifest.json", options)
+            .expect("start manifest");
+        writer
+            .write_all(br#"{ "name": "Better Exceptions" }"#)
+            .expect("write manifest");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert!(outcome
+            .insights
+            .embedded_names
+            .iter()
+            .any(|value| value == "Better Exceptions"));
+        assert!(outcome
+            .insights
+            .family_hints
+            .iter()
+            .any(|value| value == "better exceptions"));
 
         fs::remove_file(filepath).expect("cleanup");
     }

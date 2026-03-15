@@ -2,6 +2,15 @@
 
 ## Current Priority
 
+- March 15, 2026: feature growth should pause until the shared matching and watch-confidence base feels trustworthy:
+  - `Library` watch setup is now stricter about what counts as a good setup candidate
+  - weak version-only guesses no longer get pushed toward exact-page setup
+  - inspected creator hints now feed the shared subject match layer instead of being left on the table
+  - ts4script manifest names can now add identity clues when they exist, but manifest files are still optional and not treated as required truth
+  - the next product focus should stay on stabilization:
+    - audit generic Inbox match thresholds with the same caution pass
+    - do more messy real-library validation on mod and CC matching
+    - keep fixing watch bugs before adding new watch features
 - March 15, 2026: `Library` now has the first compact bulk watch-management layer inside the existing watch center:
   - strongest exact-page candidates can be filled together in one exact-page strip
   - saved reminder-only and provider-needed links now have a real review queue lane
@@ -41,6 +50,15 @@
 
 ## What Changed This Session
 
+- March 15, 2026: started the first real confidence-hardening pass instead of adding more watch surface area:
+  - the watch-setup shortlist now checks real parsed clue data instead of only looking for JSON field names in stored `insights`
+  - weak version-only rows now stay out of watch setup suggestions instead of being nudged toward exact-page setup
+  - inspected `creator_hints` now feed the shared subject match tokens, so local matching can use creator clues already found inside the files
+  - ts4script manifest names now add optional identity hints when they exist, but script mods without manifests still use the older local clue paths
+  - full checks passed again:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `173` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: the `Library` watch center now carries the next real watch-management layer without adding another management screen:
   - strongest exact-page suggestions are split into a compact bulk exact-page strip
   - saved reminder-only and provider-needed links now get their own compact review queue lane
@@ -389,6 +407,13 @@
 
 ## Known Problems / Gaps
 
+- The first confidence-hardening pass is in, but the broader generic matching layer still needs the same audit treatment:
+  - Inbox and Library watch setup still depend on the same shared subject match and version-confidence rules
+  - this session tightened watch setup first because it was the safest user-facing place to start
+  - the next stabilization step should audit generic installed-match thresholds before more watch features land
+- ts4script manifest names are now helpful extra evidence, but they are not universal:
+  - many script mods do not ship a manifest at all
+  - SimSuite still has to rely on filenames, namespaces, creator hints, family hints, and other local clues for those mods
 - The real desktop smoke passes again, but there is still one test-harness caveat:
   - the Wry webdriver does not reliably select `Library` rows in this watch flow
   - the current generic watch smoke now uses the live Tauri command bridge to save and clear the source, then checks the real `Library` UI reaction
@@ -441,6 +466,8 @@
 
 ## Important Decisions
 
+- Stop adding new watch features until the shared matching and confidence base is tighter.
+- Treat ts4script manifest names as optional helper evidence only, not as required truth for script mods.
 - Keep watch follow-up inside the current `Library` watch center and detail panel instead of creating a separate watch-management screen.
 - `Home` watch rows should open `Library` with intent, not just with navigation.
 - Setup and review should both behave like guided follow-up queues where that reduces repeated clicks, but SimSuite still must not guess URLs or silently save links.
@@ -476,6 +503,10 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Start from stabilization, not feature growth:
+  - audit the generic Inbox installed-match thresholds and evidence rules next
+  - do a real live spot-check on mixed mods and CC where creator hints exist without a saved creator match
+  - keep watch setup suggestions cautious unless the local clues are genuinely strong
 - Check the wider watch flow again in the desktop app:
   - `Home` -> `Watch setup`
   - `Home` -> `Exact updates`

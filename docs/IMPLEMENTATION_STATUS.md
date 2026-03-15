@@ -4,6 +4,30 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session intentionally paused feature growth and started tightening the shared confidence base instead.
+
+Important changes and findings:
+
+- the first confidence-hardening pass landed in the shared Rust backend:
+  - the `Library` watch-setup shortlist now checks real parsed clue values instead of only checking whether JSON field names exist in stored `insights`
+  - weak version-only candidates now stay out of watch setup suggestions instead of being pushed toward exact-page setup
+  - inspected `creator_hints` now feed the shared subject match tokens, so both watch setup and broader local matching can use creator clues already found inside files
+- ts4script inspection now pulls optional identity names from manifest payloads when they exist:
+  - this helps matching when a script mod ships a clear internal `name`
+  - script mods without manifests still continue through the older local clue paths
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `173` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- this was only the first stabilization pass:
+  - the broader generic Inbox installed-match thresholds still need the same audit treatment
+  - real live validation is still needed on messy mixed mod and CC libraries, especially where creator hints exist but saved creator links do not
+  - watch bugs still need more cleanup before new watch features should resume
+
+## Current session note (March 15, 2026)
+
 This session pushed the watch system one step closer to a fuller `Library` workflow without adding another crowded management screen.
 
 Important changes and findings:
@@ -739,7 +763,14 @@ Missing:
 
 ## Recommended next effort
 
-The highest-value next step is to finish the first user-facing layer on top of the new shared version and update-watch foundation:
+The highest-value next step is now stabilization of the shared matching base before more feature growth:
+
+1. audit and tighten the generic Inbox installed-match thresholds and evidence rules
+2. do more messy real-world validation on generic mod and CC matching, not just supported special mods
+3. keep fixing watch bugs and watch setup edge cases until the current flow feels trustworthy
+4. only after that, return to broader watch-management growth such as bulk setup, batch review, and watch history
+
+After that hardening work is solid, the next product steps can go back to the fuller user-facing watch layer:
 
 1. add a fuller watch-source flow for installed content now that save, clear, and check-now basics are proven
 2. widen helper-only official latest parsing only where there is a safe official endpoint the app can fetch without brittle bypass work

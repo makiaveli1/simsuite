@@ -66,6 +66,22 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The shared matching and watch-setup foundation is now slightly stricter and less guessy.
+
+Important current behavior:
+
+- `Library` watch setup no longer shortlists candidates by looking for raw JSON field names inside stored `insights`
+- the shortlist now parses the stored `FileInsights` payload and checks for real populated clue values before a row can enter the watch-setup scan
+- exact-page setup suggestions now require stronger local clue combinations instead of letting weak version-only hints through
+- shared subject matching now uses both:
+  - saved creator matches from the database
+  - inspected `creator_hints` found inside files
+- ts4script manifest names can now add optional identity hints when they exist
+  - this is additive only
+  - script mods without manifests still rely on filenames, namespaces, family hints, creator hints, and other local clues
+
+## Current engineering note (March 15, 2026)
+
 The watch system now has a fuller compact flow inside `Library` without branching into another management screen.
 
 Important current watch-center behavior:
