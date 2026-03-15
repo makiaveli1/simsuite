@@ -291,6 +291,7 @@ pub struct WatchResult {
     pub source_kind: Option<WatchSourceKind>,
     pub source_label: Option<String>,
     pub source_url: Option<String>,
+    pub can_refresh_now: bool,
     pub latest_version: Option<String>,
     pub checked_at: Option<String>,
     pub confidence: VersionConfidence,

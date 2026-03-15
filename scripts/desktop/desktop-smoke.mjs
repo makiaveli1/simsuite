@@ -94,7 +94,15 @@ async function clickButton(driver, partialText, timeoutMs = 30000) {
   const button = await findVisibleButton(driver, partialText, timeoutMs);
   await driver.wait(until.elementIsVisible(button), timeoutMs);
   await driver.wait(until.elementIsEnabled(button), timeoutMs);
-  await button.click();
+  try {
+    await button.click();
+  } catch (error) {
+    if (String(error).toLowerCase().includes("click intercepted")) {
+      await driver.executeScript("arguments[0].click()", button);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function clickFirstVisibleButton(driver, labels, timeoutMs = 30000) {
@@ -144,6 +152,35 @@ async function findVisibleTextElement(driver, partialText, timeoutMs = 30000) {
   throw new Error(`Could not find visible text containing "${partialText}".`);
 }
 
+async function clickLibraryRow(driver, filename, timeoutMs = 30000) {
+  const exactLocator = By.xpath(
+    `//tr[@role='button'][.//div[contains(@class, 'file-title') and normalize-space(.) = ${xpathString(
+      filename,
+    )}]]`,
+  );
+  const partialLocator = By.xpath(
+    `//tr[@role='button'][.//div[contains(@class, 'file-title') and contains(normalize-space(.), ${xpathString(
+      filename,
+    )})]]`,
+  );
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    for (const locator of [exactLocator, partialLocator]) {
+      const rows = await driver.findElements(locator);
+      for (const row of rows) {
+        if (await row.isDisplayed()) {
+          await driver.executeScript("arguments[0].click()", row);
+          return;
+        }
+      }
+    }
+    await driver.sleep(250);
+  }
+
+  throw new Error(`Could not find a visible Library row for "${filename}".`);
+}
+
 async function getBodyText(driver) {
   try {
     return await driver.findElement(By.css("body")).getText();
@@ -161,7 +198,15 @@ async function clickVisibleText(driver, partialText, timeoutMs = 30000) {
 
   const element = await findVisibleTextElement(driver, partialText, timeoutMs);
   await driver.wait(until.elementIsVisible(element), timeoutMs);
-  await element.click();
+  try {
+    await element.click();
+  } catch (error) {
+    if (String(error).toLowerCase().includes("click intercepted")) {
+      await driver.executeScript("arguments[0].click()", element);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function findVisibleQueueRow(driver, partialText, timeoutMs = 30000) {
@@ -260,36 +305,82 @@ async function dumpBodyText(driver, label) {
   console.log(`\n===== ${label} =====\n${body}\n`);
 }
 
-async function ensureLibraryIndexed(driver, timeoutMs = 90000) {
-  await clickButton(driver, "Home");
-  await waitForText(driver, "Home");
+async function invokeTauriCommand(driver, command, payload = {}) {
+  return driver.executeAsyncScript(
+    async (tauriCommand, tauriPayload, done) => {
+      try {
+        const response = await window.__TAURI_INTERNALS__.invoke(tauriCommand, tauriPayload);
+        done({ ok: true, response });
+      } catch (error) {
+        done({
+          ok: false,
+          error:
+            typeof error === "string"
+              ? error
+              : error && typeof error === "object" && "message" in error
+                ? String(error.message)
+                : String(error),
+        });
+      }
+    },
+    command,
+    payload,
+  );
+}
 
-  const existingBody = await getBodyText(driver);
-  if (existingBody && !existingBody.includes("Not scanned")) {
-    return;
+async function ensureLibraryIndexed(driver, expectedRows = [], timeoutMs = 90000) {
+  await clickButton(driver, "Library");
+  await waitForText(driver, "Library");
+
+  for (const rowText of expectedRows) {
+    if (await hasVisibleText(driver, rowText)) {
+      return;
+    }
   }
 
-  await clickFirstVisibleButton(driver, ["Scan my CC", "Scan now", "Scan"], 30000);
+  const started = await invokeTauriCommand(driver, "start_scan");
+  if (!started.ok) {
+    await dumpBodyText(driver, "scan-start-failed");
+    throw new Error(`Could not start the installed Library scan: ${started.error}`);
+  }
+
   const startedAt = Date.now();
-  let sawScanning = false;
+  let lastStatus = started.response;
 
   while (Date.now() - startedAt < timeoutMs) {
-    const bodyText = await getBodyText(driver);
-    if (bodyText) {
-      if (bodyText.includes("Scanning...")) {
-        sawScanning = true;
-      }
+    const status = await invokeTauriCommand(driver, "get_scan_status");
+    if (!status.ok) {
+      await dumpBodyText(driver, "scan-status-failed");
+      throw new Error(`Could not read the installed Library scan state: ${status.error}`);
+    }
 
-      if (!bodyText.includes("Not scanned") && (!sawScanning || !bodyText.includes("Scanning..."))) {
-        return;
-      }
+    lastStatus = status.response;
+    if (lastStatus?.state && lastStatus.state !== "running") {
+      break;
     }
 
     await driver.sleep(500);
   }
 
-  await dumpBodyText(driver, "scan-timeout");
-  throw new Error("Timed out waiting for the installed Library scan to finish.");
+  if (lastStatus?.state === "running") {
+    await dumpBodyText(driver, "scan-timeout");
+    throw new Error("Timed out waiting for the installed Library scan to finish.");
+  }
+
+  if (lastStatus?.state !== "succeeded") {
+    await dumpBodyText(driver, "scan-failed");
+    throw new Error(
+      `The installed Library scan did not finish cleanly: ${lastStatus?.error ?? lastStatus?.state ?? "unknown state"}`,
+    );
+  }
+
+  await driver.sleep(1200);
+  await clickButton(driver, "Library");
+  await waitForText(driver, "Library");
+
+  if (expectedRows.length) {
+    await waitForAnyText(driver, expectedRows, 30000);
+  }
 }
 
 async function fillInputByPlaceholder(driver, placeholder, value, timeoutMs = 30000) {
@@ -430,24 +521,26 @@ async function verifyHomeWatchSummary(driver) {
 }
 
 async function verifyLibraryVersionWatch(driver) {
-  await ensureLibraryIndexed(driver);
-  await clickButton(driver, "Library");
-  await waitForText(driver, "Library");
+  await ensureLibraryIndexed(driver, ["S4CL.ts4script", "mc_cmd_center.ts4script"]);
   try {
-    await clickVisibleText(driver, "S4CL.ts4script", 30000);
+    await clickLibraryRow(driver, "S4CL.ts4script", 30000);
   } catch {
-    await clickVisibleText(driver, "mc_cmd_center.ts4script", 30000);
+    await clickLibraryRow(driver, "mc_cmd_center.ts4script", 30000);
   }
   await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
   await waitForText(driver, "Confidence");
   await waitForText(driver, "Watch status");
+  await clickButton(driver, "Check now");
+  await waitForAnyText(
+    driver,
+    ["Watch result refreshed.", "Looks current", "Exact update available"],
+    30000,
+  );
 }
 
 async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
-  await ensureLibraryIndexed(driver);
-  await clickButton(driver, "Library");
-  await waitForText(driver, "Library");
-  await clickVisibleText(driver, genericWatchFile, 30000);
+  await ensureLibraryIndexed(driver, [genericWatchFile]);
+  await clickLibraryRow(driver, genericWatchFile, 30000);
   await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
   await waitForText(driver, "Watch status");
   await clickButton(driver, "Add watch source");
@@ -455,11 +548,14 @@ async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   await clickButton(driver, "Save watch");
   await waitForAnyText(
     driver,
-    ["Watch source saved.", "Watch source is saved, but it has not been checked yet."],
+    ["Watch source saved.", "This page is saved as a reference, but SimSuite cannot check it automatically yet."],
     30000,
   );
   await waitForText(driver, "Exact mod page");
-  await waitForText(driver, "Watch source is saved, but it has not been checked yet.");
+  await waitForText(
+    driver,
+    "This page is saved as a reference, but SimSuite cannot check it automatically yet.",
+  );
   await clickFirstVisibleButton(driver, ["Clear watch source", "Stop watching"], 30000);
   await waitForAnyText(
     driver,

@@ -417,6 +417,62 @@ pub fn load_or_refresh_latest_info(
     Ok(Some(latest))
 }
 
+pub fn fetch_supported_watch_latest_from_url(
+    source_url: &str,
+    _label: Option<&str>,
+) -> AppResult<SpecialOfficialLatestInfo> {
+    let parsed = Url::parse(source_url).map_err(|_| {
+        AppError::Message("This watch page does not have a valid web address.".to_owned())
+    })?;
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    let path = parsed.path().to_ascii_lowercase();
+
+    if (host == "github.com" || host == "www.github.com") && path.contains("/releases") {
+        let response = client()?.get(source_url).send()?.error_for_status()?;
+        let final_url = response.url().to_string();
+        return Ok(parse_github_watch_url(source_url, &final_url));
+    }
+
+    if (host == "deaderpool-mccc.com" || host == "www.deaderpool-mccc.com")
+        && path.contains("downloads")
+    {
+        let response = client()?.get(source_url).send()?.error_for_status()?;
+        let body = response.text()?;
+        return Ok(parse_mccc_watch_html(source_url, &body));
+    }
+
+    if (host == "scumbumbomods.com" || host == "www.scumbumbomods.com")
+        && path.contains("xml-injector")
+    {
+        let response = client()?.get(source_url).send()?.error_for_status()?;
+        let final_url = response.url().to_string();
+        let body = response.text()?;
+        return Ok(parse_xml_injector_watch_html(&final_url, &body));
+    }
+
+    if host == "curseforge.com" || host == "www.curseforge.com" {
+        return Ok(SpecialOfficialLatestInfo {
+            source_url: Some(source_url.to_owned()),
+            download_url: None,
+            latest_version: None,
+            checked_at: Some(Utc::now().to_rfc3339()),
+            confidence: 0.0,
+            status: "unknown".to_owned(),
+            note: Some("CurseForge checks need a future approved API path.".to_owned()),
+        });
+    }
+
+    Ok(SpecialOfficialLatestInfo {
+        source_url: Some(source_url.to_owned()),
+        download_url: None,
+        latest_version: None,
+        checked_at: Some(Utc::now().to_rfc3339()),
+        confidence: 0.0,
+        status: "unknown".to_owned(),
+        note: Some("This saved page does not have a supported automatic checker yet.".to_owned()),
+    })
+}
+
 fn load_cached_latest_info(
     connection: &Connection,
     profile_key: &str,
@@ -617,6 +673,87 @@ fn parse_xml_injector_latest_html(
         status: "known".to_owned(),
         note: None,
     }
+}
+
+fn parse_mccc_watch_html(source_url: &str, body: &str) -> SpecialOfficialLatestInfo {
+    let version_re =
+        Regex::new(r"(?i)MC Command Center\s+([0-9]+(?:\.[0-9]+)+)").expect("mccc version regex");
+    let download_re = Regex::new(r#"(?i)href="([^"]*McCmdCenter_AllModules_[^"]+\.zip[^"]*)""#)
+        .expect("mccc download regex");
+
+    let latest_version = version_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| normalize_version_value(matched.as_str()));
+    let download_url = download_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| matched.as_str().to_owned());
+
+    SpecialOfficialLatestInfo {
+        source_url: Some(source_url.to_owned()),
+        download_url,
+        latest_version,
+        checked_at: Some(Utc::now().to_rfc3339()),
+        confidence: 0.94,
+        status: "known".to_owned(),
+        note: None,
+    }
+}
+
+fn parse_github_watch_url(source_url: &str, final_url: &str) -> SpecialOfficialLatestInfo {
+    let latest_version = Regex::new(r"/tag/v?([^/?#]+)$")
+        .expect("github tag regex")
+        .captures(final_url)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| normalize_version_value(matched.as_str()));
+
+    SpecialOfficialLatestInfo {
+        source_url: Some(final_url.to_owned()),
+        download_url: None,
+        latest_version,
+        checked_at: Some(Utc::now().to_rfc3339()),
+        confidence: 0.92,
+        status: "known".to_owned(),
+        note: if normalized_url(source_url) != normalized_url(final_url) {
+            Some("GitHub redirected this watch page to the latest release tag.".to_owned())
+        } else {
+            None
+        },
+    }
+}
+
+fn parse_xml_injector_watch_html(source_url: &str, body: &str) -> SpecialOfficialLatestInfo {
+    let version_re = Regex::new(
+        r"(?i)(?:current version of the xml injector is version\s*|xmlinjector_script_v)([0-9]+(?:\.[0-9]+)+)",
+    )
+    .expect("xml injector version regex");
+    let download_re =
+        Regex::new(r#"(?i)href=['"]([^'"]*XmlInjector_Script_v[^'"]+\.zip[^'"]*)['"]"#)
+            .expect("xml injector download regex");
+
+    let latest_version = version_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| normalize_version_value(matched.as_str()));
+    let download_url = download_re
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .and_then(|matched| resolve_url(source_url, matched.as_str()));
+
+    SpecialOfficialLatestInfo {
+        source_url: Some(source_url.to_owned()),
+        download_url,
+        latest_version,
+        checked_at: Some(Utc::now().to_rfc3339()),
+        confidence: 0.93,
+        status: "known".to_owned(),
+        note: None,
+    }
+}
+
+fn normalized_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_ascii_lowercase()
 }
 
 fn resolve_url(base_url: &str, value: &str) -> Option<String> {

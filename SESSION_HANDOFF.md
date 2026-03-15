@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: the first installed-content watch flow now works end to end in the real Tauri app, including `Check now` for safe supported pages. The next product focus should be a fuller watch setup and management flow, not more backend guesswork.
 - March 14, 2026: Library watch flow is now cleaner in the real app because Library queries now focus on installed content only. The next product focus should be the first fuller user-facing watch setup flow, not mixing Downloads rows into Library.
 - March 14, 2026: Lumpinou Toolbox same-version handling is now confirmed in the real desktop app. The next product focus can move back to broader watch flow and careful special-mod growth.
 - March 13, 2026: the shared version and update-watch foundation is now in place for all content, so the next product focus is making the watch flow more complete without slowing Inbox back down.
@@ -11,6 +12,19 @@
 
 ## What Changed This Session
 
+- March 15, 2026: finished the first real `Check now` watch path for installed Library items:
+  - supported installed special mods now expose their built-in official page in Library even if there is no older saved family-state row yet
+  - Library detail now shows whether a saved or built-in watch source can be checked right away
+  - Library detail can now refresh a supported watch result with a real backend command instead of only saving or clearing the source
+- March 15, 2026: improved watch-source capability handling:
+  - safe supported pages such as MCCC, XML Injector, and GitHub releases now show `Check now`
+  - creator pages still stay reminder-only
+  - protected or blocked pages such as CurseForge and Lot 51 still stay cautious and do not pretend they are auto-checkable
+- March 15, 2026: fixed the native desktop smoke harness so it follows the real app state better:
+  - it now starts the installed scan through the real backend command instead of guessing from Home labels
+  - it now waits on the real scan state
+  - it now clicks actual Library rows instead of loose matching page text
+  - it now handles webdriver click interception more safely during overlay transitions
 - March 14, 2026: fixed the first real Library watch-flow gap:
   - `Library` now excludes Downloads rows and stays focused on installed content
   - saving or clearing a watch source now only works for installed Library items
@@ -58,6 +72,19 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
+- March 15, 2026: `cargo check --manifest-path src-tauri/Cargo.toml` passed.
+- March 15, 2026: `cargo build --manifest-path src-tauri/Cargo.toml` passed.
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `158` tests.
+- March 15, 2026: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with warnings only.
+- March 15, 2026: `npm run build` passed.
+- March 15, 2026: real native desktop fixture smoke passed after the watch-capability and harness fixes:
+  - the app launched in Tauri
+  - the installed scan was triggered through the real backend command
+  - Library opened on real installed content
+  - a supported installed Library item showed `Check now`
+  - the watch result refreshed in the real app
+  - the generic installed fixture file could still save and clear a watch source
 - March 14, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
 - March 14, 2026: `cargo check --manifest-path src-tauri/Cargo.toml` passed.
 - March 14, 2026: `cargo build --manifest-path src-tauri/Cargo.toml` passed.
@@ -86,6 +113,9 @@
 
 ## What Worked
 
+- Built-in supported Library items no longer need an older saved family-state row before SimSuite knows their official page.
+- The first real `Check now` path works in the desktop app for safe supported pages.
+- The native desktop smoke is more honest now because it waits on the real scan state and clicks actual Library rows.
 - The real Library watch flow now works on the right kind of content:
   - installed files only
   - not Inbox or Downloads rows
@@ -115,8 +145,8 @@
 - The watch system is readable now, but the user-facing management flow is still thin:
   - watch results can be shown
   - generic watch sources are stored in the database
-  - Library can now save and clear a watch source for installed items
-  - but broader setup, editing, batch setup, and polling flows still need to grow carefully
+  - Library can now save, clear, and sometimes check a watch source for installed items
+  - but broader setup, editing, batch setup, provider setup, and polling flows still need to grow carefully
 - Helper-only official latest support is still intentionally narrow:
   - MCCC, GitHub release pages, and XML Injector are supported
   - Lot 51 and the CurseForge-backed sources still stay `unknown` because plain app requests hit challenge pages
@@ -151,7 +181,7 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - design the first fuller user-facing watch-source flow for installed content
+  - design the first fuller user-facing watch-source flow for installed content now that save, clear, and check-now basics are real
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements
   - widen helper-only latest parsing only where there is a safe official endpoint
   - add the first small curated expansion wave through `docs/SPECIAL_MOD_CANDIDATES.json`

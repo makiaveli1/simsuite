@@ -98,6 +98,7 @@ export function LibraryScreen({
   const [watchSourceLabel, setWatchSourceLabel] = useState("");
   const [watchSourceUrl, setWatchSourceUrl] = useState("");
   const [savingWatch, setSavingWatch] = useState(false);
+  const [refreshingWatch, setRefreshingWatch] = useState(false);
   const [watchMessage, setWatchMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
 
@@ -132,6 +133,7 @@ export function LibraryScreen({
       setWatchSourceKind("exact_page");
       setWatchSourceLabel("");
       setWatchSourceUrl("");
+      setRefreshingWatch(false);
       setWatchMessage(null);
       return;
     }
@@ -156,6 +158,7 @@ export function LibraryScreen({
       setWatchSourceUrl("");
     }
     setWatchEditing(false);
+    setRefreshingWatch(false);
     setWatchMessage(null);
   }, [selected]);
 
@@ -339,6 +342,32 @@ export function LibraryScreen({
       setSavingWatch(false);
     }
   }
+
+  async function refreshWatchSource() {
+    if (!selected) {
+      return;
+    }
+
+    setRefreshingWatch(true);
+    setWatchMessage(null);
+
+    try {
+      const updated = await api.refreshWatchSourceForFile(selected.id);
+      if (!updated) {
+        return;
+      }
+
+      setSelected(updated);
+      setWatchEditing(false);
+      setWatchMessage("Watch result refreshed.");
+      await loadRows(updated.id);
+    } catch (error) {
+      setWatchMessage(watchActionError(error, "refresh the watch source"));
+    } finally {
+      setRefreshingWatch(false);
+    }
+  }
+  const watchBusy = savingWatch || refreshingWatch;
   const libraryInspectorSections = selected
     ? [
         {
@@ -438,6 +467,12 @@ export function LibraryScreen({
                           value={selected.watchResult.latestVersion}
                         />
                       ) : null}
+                      {selected.watchResult?.checkedAt ? (
+                        <DetailRow
+                          label="Last checked"
+                          value={new Date(selected.watchResult.checkedAt).toLocaleString()}
+                        />
+                      ) : null}
                     </div>
                     {selected.installedVersionSummary?.evidence.length ? (
                       <div className="detail-block">
@@ -490,11 +525,22 @@ export function LibraryScreen({
                                 ? "Add watch source"
                                 : "Add watch source"}
                           </button>
+                          {selected.watchResult?.sourceKind &&
+                          selected.watchResult.canRefreshNow ? (
+                            <button
+                              type="button"
+                              className="secondary-action"
+                              disabled={watchBusy}
+                              onClick={() => void refreshWatchSource()}
+                            >
+                              {refreshingWatch ? "Checking..." : "Check now"}
+                            </button>
+                          ) : null}
                           {selected.watchResult?.sourceKind ? (
                             <button
                               type="button"
                               className="ghost-action"
-                              disabled={savingWatch}
+                              disabled={watchBusy}
                               onClick={() => void clearWatchSource()}
                             >
                               {userView === "beginner" ? "Stop watching" : "Clear watch source"}
@@ -538,11 +584,23 @@ export function LibraryScreen({
                               }
                             />
                           </label>
+                          <div className="learning-intro">
+                            <strong>
+                              {watchSourceKind === "creator_page"
+                                ? "Creator pages are reminder links for now."
+                                : "Exact pages work best when one page clearly belongs to one mod."}
+                            </strong>
+                            <span>
+                              {watchSourceKind === "creator_page"
+                                ? "SimSuite can save them now, but automatic creator-page checks are not built yet."
+                                : "Some sites can be checked right away, while others are saved only as references until a safe official path exists."}
+                            </span>
+                          </div>
                           <div className="creator-learning-actions">
                             <button
                               type="button"
                               className="primary-action"
-                              disabled={savingWatch || !watchSourceUrl.trim()}
+                              disabled={watchBusy || !watchSourceUrl.trim()}
                               onClick={() => void saveWatchSource()}
                             >
                               {savingWatch ? "Saving..." : "Save watch"}
@@ -550,7 +608,7 @@ export function LibraryScreen({
                             <button
                               type="button"
                               className="secondary-action"
-                              disabled={savingWatch}
+                              disabled={watchBusy}
                               onClick={() => {
                                 setWatchEditing(false);
                                 setWatchMessage(null);
@@ -1437,6 +1495,15 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
     case "current":
       return userView === "beginner" ? "Looks current" : "Looks current";
     case "not_watched":
+      if (watchResult.sourceKind) {
+        return watchResult.canRefreshNow
+          ? userView === "beginner"
+            ? "Saved and ready to check"
+            : "Saved and ready"
+          : userView === "beginner"
+            ? "Saved as a reference"
+            : "Saved as reference";
+      }
       return userView === "beginner" ? "Not watched yet" : "Not watched";
     default:
       return userView === "beginner"

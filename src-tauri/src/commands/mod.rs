@@ -1828,6 +1828,49 @@ pub fn clear_watch_source_for_file(
 }
 
 #[tauri::command]
+pub async fn refresh_watch_source_for_file(
+    app: AppHandle,
+    file_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<FileDetail>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("refresh_watch_source_for_file", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+
+        let Some(watch_result) = content_versions::refresh_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+        )
+        .map_err(map_error)?
+        else {
+            return Ok(None);
+        };
+
+        let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?
+            .ok_or_else(|| "Watch checks can only run for installed Library items.".to_owned())?;
+
+        emit_workspace_domains(
+            &app,
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            "watch-source-refreshed",
+            vec![file_id],
+            Vec::new(),
+        )?;
+
+        Ok(Some(FileDetail {
+            watch_result: Some(watch_result),
+            ..updated
+        }))
+    })
+    .await
+}
+
+#[tauri::command]
 pub fn save_creator_learning(
     app: AppHandle,
     file_id: i64,

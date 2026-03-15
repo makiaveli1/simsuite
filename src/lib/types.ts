@@ -272,6 +272,7 @@ export interface WatchResult {
   sourceKind: WatchSourceKind | null;
   sourceLabel: string | null;
   sourceUrl: string | null;
+  canRefreshNow: boolean;
   latestVersion: string | null;
   checkedAt: string | null;
   confidence: VersionConfidence;

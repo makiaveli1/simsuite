@@ -144,6 +144,7 @@ pub fn run() {
             commands::get_file_detail,
             commands::save_watch_source_for_file,
             commands::clear_watch_source_for_file,
+            commands::refresh_watch_source_for_file,
             commands::save_creator_learning,
             commands::apply_creator_audit,
             commands::apply_category_audit,

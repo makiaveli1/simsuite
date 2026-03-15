@@ -303,6 +303,7 @@ function buildMockWatchResult(
       sourceKind: "exact_page",
       sourceLabel: "MC Command Center",
       sourceUrl: "https://deaderpool-mccc.com/downloads.html",
+      canRefreshNow: true,
       latestVersion: "2026.4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
@@ -319,6 +320,7 @@ function buildMockWatchResult(
       sourceKind: "exact_page",
       sourceLabel: "XML Injector",
       sourceUrl: "https://scumbumbomods.com/xml-injector",
+      canRefreshNow: true,
       latestVersion: "4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
@@ -334,10 +336,137 @@ function buildMockWatchResult(
     sourceKind: null,
     sourceLabel: null,
     sourceUrl: null,
+    canRefreshNow: false,
     latestVersion: null,
     checkedAt: null,
     confidence: "unknown",
     note: "No approved watch source is saved for this content yet.",
+    evidence: [],
+  };
+}
+
+function mockCanRefreshWatchSource(
+  sourceKind: WatchSourceKind,
+  sourceUrl: string | null,
+) {
+  if (!sourceUrl || sourceKind !== "exact_page") {
+    return false;
+  }
+
+  const lowerUrl = sourceUrl.toLowerCase();
+  return (
+    lowerUrl.includes("deaderpool-mccc.com/downloads") ||
+    lowerUrl.includes("scumbumbomods.com/xml-injector") ||
+    (lowerUrl.includes("github.com/") && lowerUrl.includes("/releases"))
+  );
+}
+
+function mockSavedWatchNote(
+  sourceKind: WatchSourceKind,
+  sourceUrl: string | null,
+) {
+  const lowerUrl = sourceUrl?.toLowerCase() ?? "";
+
+  if (sourceKind === "creator_page") {
+    return "Creator pages are saved as reminders for now. Automatic creator-page checks are not built yet.";
+  }
+
+  if (lowerUrl.includes("curseforge.com/")) {
+    return "This page is saved, but CurseForge checks need a future approved API path.";
+  }
+
+  if (lowerUrl.includes("lot51.cc/")) {
+    return "This page is saved, but this site blocks safe automatic checks right now.";
+  }
+
+  if (mockCanRefreshWatchSource(sourceKind, sourceUrl)) {
+    if (lowerUrl.includes("github.com/") && lowerUrl.includes("/releases")) {
+      return "SimSuite can check this GitHub releases page now when you press Check now.";
+    }
+
+    return "SimSuite can check this official page now when you press Check now.";
+  }
+
+  return "This page is saved as a reference, but SimSuite cannot check it automatically yet.";
+}
+
+function buildMockRefreshedWatchResult(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+  currentWatch: WatchResult,
+): WatchResult {
+  const checkedAt = new Date().toISOString();
+  const lowerUrl = currentWatch.sourceUrl?.toLowerCase() ?? "";
+  const baseVersion =
+    buildMockInstalledVersionSummary(file)?.version ??
+    file.insights.versionHints[0] ??
+    null;
+
+  if (!currentWatch.canRefreshNow) {
+    return {
+      ...currentWatch,
+      status: "unknown",
+      latestVersion: null,
+      checkedAt,
+      confidence: "unknown",
+      note: mockSavedWatchNote(currentWatch.sourceKind ?? "exact_page", currentWatch.sourceUrl),
+      evidence: [],
+    };
+  }
+
+  if (lowerUrl.includes("deaderpool-mccc.com/downloads")) {
+    return {
+      ...currentWatch,
+      status: "exact_update_available",
+      latestVersion: "2026.4.0",
+      checkedAt,
+      confidence: "strong",
+      note: "Official latest is a helper check and does not replace local install truth.",
+      evidence: [
+        "The saved MCCC page shows a newer release than the installed copy.",
+      ],
+    };
+  }
+
+  if (lowerUrl.includes("scumbumbomods.com/xml-injector")) {
+    return {
+      ...currentWatch,
+      status: "current",
+      latestVersion: "4.0",
+      checkedAt,
+      confidence: "strong",
+      note: "The helper check agrees with the installed copy.",
+      evidence: [
+        "The saved XML Injector page matched the installed version.",
+      ],
+    };
+  }
+
+  if (lowerUrl.includes("github.com/") && lowerUrl.includes("/releases")) {
+    return {
+      ...currentWatch,
+      status: "current",
+      latestVersion: baseVersion,
+      checkedAt,
+      confidence: baseVersion ? "medium" : "unknown",
+      note: baseVersion
+        ? "The saved GitHub releases page lines up with the installed version."
+        : "The saved GitHub releases page was checked, but SimSuite could not line it up with a clear installed version yet.",
+      evidence: baseVersion
+        ? [`The latest visible release matches installed version ${baseVersion}.`]
+        : [],
+    };
+  }
+
+  return {
+    ...currentWatch,
+    status: "unknown",
+    latestVersion: null,
+    checkedAt,
+    confidence: "unknown",
+    note: mockSavedWatchNote(currentWatch.sourceKind ?? "exact_page", currentWatch.sourceUrl),
     evidence: [],
   };
 }
@@ -4255,15 +4384,17 @@ async function mockInvoke<T>(
       }
 
       const next = structuredClone(mockFiles[fileIndex]);
+      const canRefreshNow = mockCanRefreshWatchSource(sourceKind, sourceUrl);
       next.watchResult = {
         status: "not_watched",
         sourceKind,
         sourceLabel: sourceLabel || null,
         sourceUrl,
+        canRefreshNow,
         latestVersion: null,
         checkedAt: null,
         confidence: "unknown",
-        note: "Watch source is saved, but it has not been checked yet.",
+        note: mockSavedWatchNote(sourceKind, sourceUrl),
         evidence: [],
       };
 
@@ -4280,6 +4411,24 @@ async function mockInvoke<T>(
 
       const next = structuredClone(mockFiles[fileIndex]);
       next.watchResult = buildMockWatchResult(next);
+      mockFiles[fileIndex] = next;
+      return structuredClone(next) as T;
+    }
+    case "refresh_watch_source_for_file": {
+      const fileId = payload?.fileId as number;
+      const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
+
+      if (fileIndex === -1 || mockFiles[fileIndex].sourceLocation === "downloads") {
+        return null as T;
+      }
+
+      const next = structuredClone(mockFiles[fileIndex]);
+      const currentWatch = next.watchResult ?? buildMockWatchResult(next);
+      if (!currentWatch) {
+        return null as T;
+      }
+
+      next.watchResult = buildMockRefreshedWatchResult(next, currentWatch);
       mockFiles[fileIndex] = next;
       return structuredClone(next) as T;
     }
@@ -4785,6 +4934,10 @@ export const api = {
     }),
   clearWatchSourceForFile: (fileId: number) =>
     invoke<FileDetail | null>("clear_watch_source_for_file", {
+      fileId,
+    }),
+  refreshWatchSourceForFile: (fileId: number) =>
+    invoke<FileDetail | null>("refresh_watch_source_for_file", {
       fileId,
     }),
   saveCategoryOverride: (fileId: number, kind: string, subtype?: string) =>

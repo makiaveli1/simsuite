@@ -101,6 +101,16 @@ Important current version-and-watch architecture:
 - watch data is stored separately from local compare truth:
   - local compare still decides Inbox version truth
   - watch results stay helper-only
+- supported installed special mods can now expose a built-in exact-page watch source in `Library` even before the user saves anything manually
+- watch capabilities are now split into three product states:
+  - can check now
+  - saved as a reference
+  - provider required
+- the first live `Check now` path currently covers:
+  - MCCC official downloads page
+  - XML Injector official page
+  - safe GitHub releases pages such as Sims 4 Community Library
+- creator pages are still reminder-only
 - guided install is still special-mod-only
 - community lists and third-party indexes are still reference material only, not runtime truth
 - future provider integrations such as CurseForge should only use official approved APIs and user-approved sources; scraping protected pages is out of scope

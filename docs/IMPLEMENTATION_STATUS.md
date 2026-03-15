@@ -2,6 +2,42 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 15, 2026)
+
+This session finished the first real `Check now` watch path and tightened the native desktop proof so it follows the real app state instead of leaning on brittle screen guesses.
+
+Important changes and findings:
+
+- supported installed special mods now expose their built-in official watch page in `Library` even when there is no older saved family-state row yet
+- `Library` can now do three watch actions on installed items:
+  - save a watch source
+  - clear a watch source
+  - refresh a watch result when the source is one of the safe supported exact-page types
+- the watch resolver now separates three cases more clearly:
+  - `can check now`
+  - `saved as a reference`
+  - `provider required`
+- safe check-now coverage is now real for:
+  - MCCC official downloads page
+  - XML Injector official page
+  - GitHub releases pages such as Sims 4 Community Library
+- creator pages still stay reminder-only
+- CurseForge and similar protected pages still stay helper-only and cautious; they do not pretend to be auto-checkable without a proper provider
+- the native Tauri smoke harness is now more truthful:
+  - it starts the installed scan through the real backend command
+  - it waits on the real scan state instead of using the Home `Last scan` label
+  - it clicks actual Library rows instead of loose matching text
+  - it now proves both `Check now` and generic save or clear watch flows in the real desktop app
+
+Important remaining gap:
+
+- the first installed-content watch flow is now real, but it is still small:
+  - one item at a time
+  - no broader watch setup surface yet
+  - no watch-source editing history yet
+  - no provider onboarding flow yet
+- the next product step should be a fuller watch setup and management flow, not more low-level watch capability plumbing
+
 ## Current session note (March 14, 2026)
 
 This session tightened the first real user-facing watch flow and verified it in the real Tauri app.
@@ -412,7 +448,7 @@ Missing:
 
 The highest-value next step is to finish the first user-facing layer on top of the new shared version and update-watch foundation:
 
-1. add a careful watch-source flow for installed content
+1. add a fuller watch-source flow for installed content now that save, clear, and check-now basics are proven
 2. widen helper-only official latest parsing only where there is a safe official endpoint the app can fetch without brittle bypass work
 3. expand the real desktop special-mod fixture lane deeper for non-MCCC apply and blocked flows
 4. use `docs/SPECIAL_MOD_ONBOARDING.md` and `docs/SPECIAL_MOD_CANDIDATES.json` for the first small post-foundation expansion wave

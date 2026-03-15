@@ -6,11 +6,14 @@ use std::{
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 
 use crate::{
-    core::special_mod_versions::{build_signature, parse_version_parts, SignatureEntry},
+    core::special_mod_versions::{
+        self, build_signature, compare_versions, parse_version_parts, SignatureEntry,
+    },
     error::AppResult,
     models::{
-        FileInsights, InstalledVersionSummary, VersionCompareStatus, VersionConfidence,
-        VersionResolution, VersionSignal, WatchResult, WatchSourceKind, WatchStatus,
+        FileInsights, InstalledVersionSummary, SpecialVersionStatus, VersionCompareStatus,
+        VersionConfidence, VersionResolution, VersionSignal, WatchResult, WatchSourceKind,
+        WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
 };
@@ -115,6 +118,19 @@ struct WatchResultRow {
     confidence: VersionConfidence,
     note: Option<String>,
     evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchSourceCapabilityKind {
+    CanRefreshNow,
+    SavedReferenceOnly,
+    ProviderRequired,
+}
+
+#[derive(Debug, Clone)]
+struct WatchSourceCapability {
+    kind: WatchSourceCapabilityKind,
+    note: String,
 }
 
 pub fn resolve_download_item_version(
@@ -234,6 +250,61 @@ pub fn clear_watch_source_for_library_file(
     resolve_watch_result(connection, seed_pack, &subject)
 }
 
+pub fn refresh_watch_source_for_library_file(
+    connection: &Connection,
+    settings: &crate::models::LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+) -> AppResult<Option<WatchResult>> {
+    let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+        return Ok(None);
+    };
+
+    let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+    let subject_rows = load_subject_rows_for_locator(
+        connection,
+        settings.mods_path.as_deref(),
+        &locator,
+        file_row.id,
+    )?;
+    let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+
+    if let Some(profile) = find_supported_profile(seed_pack, &subject) {
+        let capability = special_profile_watch_capability(profile);
+        if matches!(capability.kind, WatchSourceCapabilityKind::CanRefreshNow) {
+            let _ = special_mod_versions::load_or_refresh_latest_info(connection, profile, true)?;
+        }
+        return resolve_watch_result(connection, seed_pack, &subject);
+    }
+
+    let Some(source) = load_watch_source_row(connection, &subject.key)? else {
+        return resolve_watch_result(connection, seed_pack, &subject);
+    };
+
+    let capability = watch_source_capability(seed_pack, Some(&subject), &source);
+    let result = match capability.kind {
+        WatchSourceCapabilityKind::CanRefreshNow => {
+            let latest = special_mod_versions::fetch_supported_watch_latest_from_url(
+                &source.source_url,
+                source.source_label.as_deref(),
+            )?;
+            build_generic_watch_result_row(&subject, latest, capability.note)
+        }
+        WatchSourceCapabilityKind::SavedReferenceOnly
+        | WatchSourceCapabilityKind::ProviderRequired => WatchResultRow {
+            status: WatchStatus::Unknown,
+            latest_version: None,
+            checked_at: Some(chrono::Utc::now().to_rfc3339()),
+            confidence: VersionConfidence::Unknown,
+            note: Some(capability.note),
+            evidence: Vec::new(),
+        },
+    };
+    save_watch_result_for_subject(connection, &subject.key, &result)?;
+
+    resolve_watch_result(connection, seed_pack, &subject)
+}
+
 pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> {
     let exact_generic = scalar(
         connection,
@@ -270,6 +341,43 @@ pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> 
         possible_generic,
         unknown_generic + unknown_special,
     ))
+}
+
+fn save_watch_result_for_subject(
+    connection: &Connection,
+    subject_key: &str,
+    result: &WatchResultRow,
+) -> AppResult<()> {
+    connection.execute(
+        "INSERT INTO content_watch_results (
+            subject_key,
+            status,
+            latest_version,
+            checked_at,
+            confidence,
+            note,
+            evidence,
+            updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)
+         ON CONFLICT(subject_key) DO UPDATE SET
+            status = excluded.status,
+            latest_version = excluded.latest_version,
+            checked_at = excluded.checked_at,
+            confidence = excluded.confidence,
+            note = excluded.note,
+            evidence = excluded.evidence,
+            updated_at = CURRENT_TIMESTAMP",
+        params![
+            subject_key,
+            watch_status_label(&result.status),
+            result.latest_version,
+            result.checked_at,
+            version_confidence_label(&result.confidence),
+            result.note,
+            serde_json::to_string(&result.evidence)?,
+        ],
+    )?;
+    Ok(())
 }
 
 fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {
@@ -1394,6 +1502,7 @@ fn resolve_watch_result(
     subject: &VersionSubject,
 ) -> AppResult<Option<WatchResult>> {
     if let Some(profile) = find_supported_profile(seed_pack, subject) {
+        let capability = special_profile_watch_capability(profile);
         let special = connection
             .query_row(
                 "SELECT
@@ -1451,7 +1560,16 @@ fn resolve_watch_result(
                 status,
                 source_kind: Some(WatchSourceKind::ExactPage),
                 source_label: Some(profile.display_name.clone()),
-                source_url,
+                source_url: source_url.or_else(|| {
+                    profile
+                        .latest_check_url
+                        .clone()
+                        .or_else(|| Some(profile.official_source_url.clone()))
+                }),
+                can_refresh_now: matches!(
+                    capability.kind,
+                    WatchSourceCapabilityKind::CanRefreshNow
+                ),
                 latest_version,
                 checked_at,
                 confidence: confidence_from_signal(confidence),
@@ -1459,38 +1577,69 @@ fn resolve_watch_result(
                 evidence,
             }));
         }
+
+        return Ok(Some(WatchResult {
+            status: WatchStatus::NotWatched,
+            source_kind: Some(WatchSourceKind::ExactPage),
+            source_label: Some(profile.display_name.clone()),
+            source_url: profile
+                .latest_check_url
+                .clone()
+                .or_else(|| Some(profile.official_source_url.clone())),
+            can_refresh_now: matches!(capability.kind, WatchSourceCapabilityKind::CanRefreshNow),
+            latest_version: None,
+            checked_at: None,
+            confidence: VersionConfidence::Unknown,
+            note: Some(capability.note),
+            evidence: Vec::new(),
+        }));
     }
 
     let source = load_watch_source_row(connection, &subject.key)?;
     let result = load_watch_result_row(connection, &subject.key)?;
     match (source, result) {
-        (Some(source), Some(result)) => Ok(Some(WatchResult {
-            status: result.status,
-            source_kind: Some(source.source_kind),
-            source_label: source.source_label,
-            source_url: Some(source.source_url),
-            latest_version: result.latest_version,
-            checked_at: result.checked_at,
-            confidence: result.confidence,
-            note: result.note,
-            evidence: result.evidence,
-        })),
-        (Some(source), None) => Ok(Some(WatchResult {
-            status: WatchStatus::NotWatched,
-            source_kind: Some(source.source_kind),
-            source_label: source.source_label,
-            source_url: Some(source.source_url),
-            latest_version: None,
-            checked_at: None,
-            confidence: VersionConfidence::Unknown,
-            note: Some("Watch source is saved, but it has not been checked yet.".to_owned()),
-            evidence: Vec::new(),
-        })),
+        (Some(source), Some(result)) => {
+            let capability = watch_source_capability(seed_pack, Some(subject), &source);
+            Ok(Some(WatchResult {
+                status: result.status,
+                source_kind: Some(source.source_kind),
+                source_label: source.source_label,
+                source_url: Some(source.source_url),
+                can_refresh_now: matches!(
+                    capability.kind,
+                    WatchSourceCapabilityKind::CanRefreshNow
+                ),
+                latest_version: result.latest_version,
+                checked_at: result.checked_at,
+                confidence: result.confidence,
+                note: result.note,
+                evidence: result.evidence,
+            }))
+        }
+        (Some(source), None) => {
+            let capability = watch_source_capability(seed_pack, Some(subject), &source);
+            Ok(Some(WatchResult {
+                status: WatchStatus::NotWatched,
+                source_kind: Some(source.source_kind),
+                source_label: source.source_label,
+                source_url: Some(source.source_url),
+                can_refresh_now: matches!(
+                    capability.kind,
+                    WatchSourceCapabilityKind::CanRefreshNow
+                ),
+                latest_version: None,
+                checked_at: None,
+                confidence: VersionConfidence::Unknown,
+                note: Some(capability.note),
+                evidence: Vec::new(),
+            }))
+        }
         (None, Some(result)) => Ok(Some(WatchResult {
             status: result.status,
             source_kind: None,
             source_label: None,
             source_url: None,
+            can_refresh_now: false,
             latest_version: result.latest_version,
             checked_at: result.checked_at,
             confidence: result.confidence,
@@ -1502,6 +1651,7 @@ fn resolve_watch_result(
             source_kind: None,
             source_label: None,
             source_url: None,
+            can_refresh_now: false,
             latest_version: None,
             checked_at: None,
             confidence: VersionConfidence::Unknown,
@@ -1511,6 +1661,177 @@ fn resolve_watch_result(
             evidence: Vec::new(),
         })),
     }
+}
+
+fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> WatchSourceCapability {
+    match profile.latest_check_strategy.as_deref().unwrap_or("manual") {
+        "mccc_downloads_page" | "xml_injector_page" | "github_releases" => WatchSourceCapability {
+            kind: WatchSourceCapabilityKind::CanRefreshNow,
+            note: "SimSuite can check this official page now when you press Check now.".to_owned(),
+        },
+        "protected_page" => {
+            if url_host_matches(
+                profile
+                    .latest_check_url
+                    .as_deref()
+                    .or(Some(profile.official_source_url.as_str())),
+                "curseforge.com",
+            ) {
+                WatchSourceCapability {
+                    kind: WatchSourceCapabilityKind::ProviderRequired,
+                    note:
+                        "This page is saved, but CurseForge checks need a future approved API path."
+                            .to_owned(),
+                }
+            } else {
+                WatchSourceCapability {
+                    kind: WatchSourceCapabilityKind::SavedReferenceOnly,
+                    note:
+                        "This page is saved, but this site blocks safe automatic checks right now."
+                            .to_owned(),
+                }
+            }
+        }
+        _ => WatchSourceCapability {
+            kind: WatchSourceCapabilityKind::SavedReferenceOnly,
+            note:
+                "This page is saved as a reference, but SimSuite cannot check it automatically yet."
+                    .to_owned(),
+        },
+    }
+}
+
+fn watch_source_capability(
+    seed_pack: &SeedPack,
+    subject: Option<&VersionSubject>,
+    source: &WatchSourceRow,
+) -> WatchSourceCapability {
+    if let (Some(subject), WatchSourceKind::ExactPage) = (subject, source.source_kind.clone()) {
+        if let Some(profile) = find_supported_profile(seed_pack, subject) {
+            if watch_url_matches_profile(&source.source_url, profile) {
+                return special_profile_watch_capability(profile);
+            }
+        }
+    }
+
+    match source.source_kind {
+        WatchSourceKind::CreatorPage => WatchSourceCapability {
+            kind: WatchSourceCapabilityKind::SavedReferenceOnly,
+            note: "Creator pages are saved as reminders for now. Automatic creator-page checks are not built yet."
+                .to_owned(),
+        },
+        WatchSourceKind::ExactPage => {
+            if is_supported_generic_github_release_url(&source.source_url) {
+                return WatchSourceCapability {
+                    kind: WatchSourceCapabilityKind::CanRefreshNow,
+                    note: "SimSuite can check this GitHub releases page now when you press Check now."
+                        .to_owned(),
+                };
+            }
+
+            if url_host_matches(Some(source.source_url.as_str()), "curseforge.com") {
+                return WatchSourceCapability {
+                    kind: WatchSourceCapabilityKind::ProviderRequired,
+                    note: "This page is saved, but CurseForge checks need a future approved API path."
+                        .to_owned(),
+                };
+            }
+
+            if url_host_matches(Some(source.source_url.as_str()), "lot51.cc") {
+                return WatchSourceCapability {
+                    kind: WatchSourceCapabilityKind::SavedReferenceOnly,
+                    note: "This page is saved, but this site blocks safe automatic checks right now."
+                        .to_owned(),
+                };
+            }
+
+            WatchSourceCapability {
+                kind: WatchSourceCapabilityKind::SavedReferenceOnly,
+                note: "This page is saved as a reference, but SimSuite cannot check it automatically yet."
+                    .to_owned(),
+            }
+        }
+    }
+}
+
+fn build_generic_watch_result_row(
+    subject: &VersionSubject,
+    latest: crate::models::SpecialOfficialLatestInfo,
+    fallback_note: String,
+) -> WatchResultRow {
+    let mut evidence = Vec::new();
+    if let Some(version) = latest.latest_version.as_deref() {
+        evidence.push(format!("Saved watch page last saw version {version}."));
+    }
+    if let Some(note) = latest.note.as_deref() {
+        evidence.push(note.to_owned());
+    }
+
+    let mut note = latest.note.clone().or(Some(fallback_note));
+    let status = if latest.status == "known" {
+        match compare_versions(
+            subject.version.value.is_some(),
+            subject.version.value.as_deref(),
+            None,
+            latest.latest_version.as_deref(),
+            None,
+        ) {
+            SpecialVersionStatus::SameVersion => WatchStatus::Current,
+            SpecialVersionStatus::IncomingNewer => WatchStatus::ExactUpdateAvailable,
+            SpecialVersionStatus::IncomingOlder => {
+                note = Some(
+                    "The saved page looks older than what is installed, so SimSuite is staying cautious."
+                        .to_owned(),
+                );
+                WatchStatus::Unknown
+            }
+            _ => WatchStatus::Unknown,
+        }
+    } else {
+        WatchStatus::Unknown
+    };
+
+    WatchResultRow {
+        status,
+        latest_version: latest.latest_version,
+        checked_at: latest
+            .checked_at
+            .or_else(|| Some(chrono::Utc::now().to_rfc3339())),
+        confidence: confidence_from_signal(latest.confidence),
+        note,
+        evidence,
+    }
+}
+
+fn watch_url_matches_profile(source_url: &str, profile: &GuidedInstallProfileSeed) -> bool {
+    normalized_url(source_url) == normalized_url(&profile.official_source_url)
+        || profile
+            .latest_check_url
+            .as_deref()
+            .is_some_and(|value| normalized_url(source_url) == normalized_url(value))
+}
+
+fn normalized_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+fn url_host_matches(value: Option<&str>, expected_host: &str) -> bool {
+    value
+        .and_then(|raw| reqwest::Url::parse(raw).ok())
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == expected_host || host == format!("www.{expected_host}"))
+}
+
+fn is_supported_generic_github_release_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value) else {
+        return false;
+    };
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if host != "github.com" && host != "www.github.com" {
+        return false;
+    }
+    let path = url.path().to_ascii_lowercase();
+    path.contains("/releases")
 }
 
 fn load_watch_source_row(
@@ -1628,6 +1949,16 @@ fn parse_watch_status(value: &str) -> WatchStatus {
     }
 }
 
+fn watch_status_label(value: &WatchStatus) -> &'static str {
+    match value {
+        WatchStatus::NotWatched => "not_watched",
+        WatchStatus::Current => "current",
+        WatchStatus::ExactUpdateAvailable => "exact_update_available",
+        WatchStatus::PossibleUpdate => "possible_update",
+        WatchStatus::Unknown => "unknown",
+    }
+}
+
 fn parse_watch_source_kind(value: &str) -> WatchSourceKind {
     match value {
         "creator_page" => WatchSourceKind::CreatorPage,
@@ -1642,6 +1973,16 @@ fn parse_version_confidence(value: &str) -> VersionConfidence {
         "medium" => VersionConfidence::Medium,
         "weak" => VersionConfidence::Weak,
         _ => VersionConfidence::Unknown,
+    }
+}
+
+fn version_confidence_label(value: &VersionConfidence) -> &'static str {
+    match value {
+        VersionConfidence::Exact => "exact",
+        VersionConfidence::Strong => "strong",
+        VersionConfidence::Medium => "medium",
+        VersionConfidence::Weak => "weak",
+        VersionConfidence::Unknown => "unknown",
     }
 }
 
@@ -1697,7 +2038,10 @@ fn prettify_stem(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_watch_source_for_library_file, save_watch_source_for_library_file};
+    use super::{
+        clear_watch_source_for_library_file, refresh_watch_source_for_library_file,
+        save_watch_source_for_library_file,
+    };
     use crate::{
         database,
         models::{FileInsights, LibrarySettings, VersionSignal, WatchSourceKind, WatchStatus},
@@ -1759,7 +2103,139 @@ mod tests {
     }
 
     #[test]
-    fn saving_watch_source_for_library_file_returns_saved_not_checked_state() {
+    fn supported_library_profile_exposes_check_now_when_source_is_safe() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            family_hints: vec!["s4cl".to_owned()],
+            version_hints: vec!["2.9.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.9.0".to_owned(),
+                normalized_value: "2.9.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/S4CL/S4CL.ts4script",
+                    "S4CL.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.97_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+        let file_id = connection.last_insert_rowid();
+
+        let (_, watch_result) =
+            super::resolve_library_file_version(&connection, &settings, &seed_pack, file_id)
+                .expect("resolve version");
+        let watch_result = watch_result.expect("watch result");
+
+        assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert!(watch_result.can_refresh_now);
+        assert!(watch_result
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("Check now")));
+    }
+
+    #[test]
+    fn supported_library_profile_can_match_from_filename_without_family_hint() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            family_hints: vec![
+                "version".to_owned(),
+                "version txt".to_owned(),
+                "version.txt".to_owned(),
+                "versiontxt".to_owned(),
+            ],
+            version_hints: vec!["2.9.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.9.0".to_owned(),
+                normalized_value: "2.9.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            script_namespaces: vec!["version.txt".to_owned()],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/S4CL/S4CL.ts4script",
+                    "S4CL.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.97_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+        let file_id = connection.last_insert_rowid();
+
+        let (_, watch_result) =
+            super::resolve_library_file_version(&connection, &settings, &seed_pack, file_id)
+                .expect("resolve version");
+        let watch_result = watch_result.expect("watch result");
+
+        assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert!(watch_result.can_refresh_now);
+    }
+
+    #[test]
+    fn saving_generic_exact_watch_source_marks_reference_only_state() {
         let (connection, seed_pack, settings, file_id) = setup_watch_env();
 
         let watch = save_watch_source_for_library_file(
@@ -1781,10 +2257,91 @@ mod tests {
             watch.source_url.as_deref(),
             Some("https://example.com/mod-page")
         );
+        assert!(!watch.can_refresh_now);
         assert!(watch
             .note
             .as_deref()
-            .is_some_and(|note| note.contains("has not been checked yet")));
+            .is_some_and(|note| note.contains("saved as a reference")));
+    }
+
+    #[test]
+    fn saving_github_release_watch_source_allows_check_now() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        let watch = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("GitHub Release".to_owned()),
+            "https://github.com/example/mod/releases",
+        )
+        .expect("save watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert!(watch.can_refresh_now);
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("Check now")));
+    }
+
+    #[test]
+    fn saving_creator_page_marks_reminder_only_state() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        let watch = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::CreatorPage,
+            Some("Creator".to_owned()),
+            "https://example.com/creator-page",
+        )
+        .expect("save watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert!(!watch.can_refresh_now);
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("reminders")));
+    }
+
+    #[test]
+    fn refreshing_creator_page_watch_stays_cautious_without_network_guessing() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::CreatorPage,
+            Some("Creator".to_owned()),
+            "https://example.com/creator-page",
+        )
+        .expect("save watch");
+
+        let watch =
+            refresh_watch_source_for_library_file(&connection, &settings, &seed_pack, file_id)
+                .expect("refresh watch")
+                .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::Unknown);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert!(!watch.can_refresh_now);
+        assert!(watch.checked_at.is_some());
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("creator-page checks are not built yet")));
     }
 
     #[test]
