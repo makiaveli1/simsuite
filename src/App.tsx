@@ -15,6 +15,8 @@ import { getScreenFrameMotion } from "./lib/motion";
 import type {
   ExperienceMode,
   LibrarySettings,
+  LibraryWatchFocusRequest,
+  LibraryWatchFocusTarget,
   ScanProgress,
   ScanStatus,
   Screen,
@@ -150,7 +152,10 @@ function AppShell({
     createInitialWorkspaceVersions,
   );
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [libraryWatchFocusRequest, setLibraryWatchFocusRequest] =
+    useState<LibraryWatchFocusRequest | null>(null);
   const lastTerminalScanKey = useRef<string | null>(null);
+  const libraryWatchFocusRequestId = useRef(0);
   const userView: UserView = experienceModeToLegacyView(experienceMode);
 
   useEffect(() => {
@@ -200,6 +205,21 @@ function AppShell({
 
   const bumpWorkspaceDomains = useEffectEvent((domains: WorkspaceDomain[]) => {
     setWorkspaceVersions((current) => bumpWorkspaceVersions(current, domains));
+  });
+
+  const openLibraryWatchFocus = useEffectEvent(
+    (target: LibraryWatchFocusTarget) => {
+      libraryWatchFocusRequestId.current += 1;
+      setLibraryWatchFocusRequest({
+        id: libraryWatchFocusRequestId.current,
+        target,
+      });
+      setScreen("library");
+    },
+  );
+
+  const consumeLibraryWatchFocus = useEffectEvent(() => {
+    setLibraryWatchFocusRequest(null);
   });
 
   const handleScanStatus = useEffectEvent((status: ScanStatus) => {
@@ -356,6 +376,7 @@ function AppShell({
         settings={settings}
         onSettingsChange={saveLibraryPaths}
         onNavigate={setScreen}
+        onOpenLibraryWatchFocus={openLibraryWatchFocus}
         onScan={startScan}
         isScanning={isScanning}
         userView={userView}
@@ -383,6 +404,8 @@ function AppShell({
       <LibraryScreen
         refreshVersion={workspaceVersions.library}
         onNavigate={setScreen}
+        watchFocusRequest={libraryWatchFocusRequest}
+        onConsumeWatchFocus={consumeLibraryWatchFocus}
         userView={userView}
       />
     ) : screen === "creatorAudit" ? (

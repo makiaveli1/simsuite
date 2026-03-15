@@ -195,6 +195,19 @@ export type WatchListFilter =
   | "unclear"
   | "all";
 
+export type LibraryWatchFocusTarget =
+  | "tracked_attention"
+  | "tracked_exact_updates"
+  | "tracked_possible_updates"
+  | "tracked_unclear"
+  | "tracked_all"
+  | "setup";
+
+export interface LibraryWatchFocusRequest {
+  id: number;
+  target: LibraryWatchFocusTarget;
+}
+
 export interface LibraryWatchListItem {
   fileId: number;
   filename: string;

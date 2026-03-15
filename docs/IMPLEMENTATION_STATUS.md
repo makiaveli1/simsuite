@@ -4,6 +4,36 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session connected the watch system more cleanly across `Home` and `Library`.
+
+Important changes and findings:
+
+- `Home` watch rows now open `Library` with intent instead of only opening the generic Library screen:
+  - `Watch setup` lands on the setup suggestions lane
+  - `Exact updates` / `Updates ready` lands on the tracked confirmed-updates lane
+- the `Library` watch center now highlights and scrolls to the right section when that focused handoff happens, so the user does not have to hunt around the screen
+- review flow now moves more like setup flow:
+  - if a saved review item no longer needs review after save, clear, or refresh, SimSuite can move on to the next review item
+  - review mode now also has a skip action
+- the watch center now has direct “start from here” actions inside the existing surface:
+  - `Work through setup` / `Set up watched pages`
+  - `Work through review` / `Review watched pages`
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests
+- `npm run build` passed
+- the native desktop smoke passed after it was widened to prove:
+  - `Home` can land on the setup lane
+  - `Home` can land on the confirmed-updates lane
+  - the earlier Library watch save/clear path still works in the real Tauri app
+
+Important remaining gap:
+
+- the watch flow is smoother now, but it is still not true bulk setup or true batch review:
+  - users still add one real watch URL at a time
+  - there is still no full review lane for many reminder-only or provider-needed links at once
+  - there is still no watch history or source audit trail yet
+
+## Current session note (March 15, 2026)
+
 This session made the Library watch follow-up feel less repetitive without adding a new management screen.
 
 Important changes and findings:

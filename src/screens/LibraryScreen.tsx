@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { m } from "motion/react";
 import { CornerUpLeft, LibraryBig } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
@@ -23,6 +23,7 @@ import type {
   LibraryLayoutPreset,
   LibraryFacets,
   LibraryFileRow,
+  LibraryWatchFocusRequest,
   LibraryListResponse,
   LibraryWatchListResponse,
   LibraryWatchSetupItem,
@@ -39,6 +40,8 @@ import type {
 interface LibraryScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
+  watchFocusRequest?: LibraryWatchFocusRequest | null;
+  onConsumeWatchFocus?: () => void;
   userView: UserView;
 }
 
@@ -87,6 +90,8 @@ const WATCH_LIST_FILTERS: Array<{
 export function LibraryScreen({
   refreshVersion,
   onNavigate,
+  watchFocusRequest,
+  onConsumeWatchFocus,
   userView,
 }: LibraryScreenProps) {
   const {
@@ -136,7 +141,16 @@ export function LibraryScreen({
   const [pendingWatchIntent, setPendingWatchIntent] = useState<PendingWatchIntent | null>(null);
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
+  const [queuedWatchCenterAction, setQueuedWatchCenterAction] = useState<"review" | null>(
+    null,
+  );
+  const [focusedWatchSection, setFocusedWatchSection] = useState<"tracked" | "setup" | null>(
+    null,
+  );
   const deferredSearch = useDeferredValue(search);
+  const trackedWatchSectionRef = useRef<HTMLDivElement | null>(null);
+  const setupWatchSectionRef = useRef<HTMLDivElement | null>(null);
+  const watchFocusTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     void api.getLibraryFacets().then(setFacets);
@@ -230,6 +244,97 @@ export function LibraryScreen({
     }
   }, [selected, pendingWatchIntent]);
 
+  useEffect(() => {
+    return () => {
+      if (watchFocusTimerRef.current !== null) {
+        globalThis.clearTimeout(watchFocusTimerRef.current);
+      }
+    };
+  }, []);
+
+  function focusWatchSection(section: "tracked" | "setup") {
+    setFocusedWatchSection(section);
+
+    if (watchFocusTimerRef.current !== null) {
+      globalThis.clearTimeout(watchFocusTimerRef.current);
+    }
+
+    globalThis.setTimeout(() => {
+      const sectionElement =
+        section === "setup"
+          ? setupWatchSectionRef.current
+          : trackedWatchSectionRef.current;
+      sectionElement?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 80);
+
+    watchFocusTimerRef.current = globalThis.setTimeout(() => {
+      setFocusedWatchSection(null);
+      watchFocusTimerRef.current = null;
+    }, 2200);
+  }
+
+  useEffect(() => {
+    if (!watchFocusRequest) {
+      return;
+    }
+
+    const focusTarget =
+      watchFocusRequest.target === "setup" ? "setup" : "tracked";
+
+    setQueuedWatchCenterAction(null);
+    setPendingWatchIntent(null);
+    setWatchEditing(false);
+    setWatchMessage(null);
+    focusWatchSection(focusTarget);
+
+    if (watchFocusRequest.target === "tracked_attention") {
+      setWatchListFilter("attention");
+      setWatchCenterMessage("Showing watched items that still need attention.");
+    } else if (watchFocusRequest.target === "tracked_exact_updates") {
+      setWatchListFilter("exact_updates");
+      setWatchCenterMessage("Showing watched items with confirmed updates.");
+    } else if (watchFocusRequest.target === "tracked_possible_updates") {
+      setWatchListFilter("possible_updates");
+      setWatchCenterMessage("Showing watched items with possible updates.");
+    } else if (watchFocusRequest.target === "tracked_unclear") {
+      setWatchListFilter("unclear");
+      setWatchCenterMessage("Showing watched items that still look unclear.");
+    } else if (watchFocusRequest.target === "tracked_all") {
+      setWatchListFilter("all");
+      setWatchCenterMessage("Showing every tracked watch item.");
+    } else {
+      setWatchCenterMessage("Showing the strongest watch setup suggestions.");
+    }
+
+    onConsumeWatchFocus?.();
+  }, [watchFocusRequest, onConsumeWatchFocus]);
+
+  useEffect(() => {
+    if (queuedWatchCenterAction !== "review" || loadingWatchList || watchListFilter !== "attention") {
+      return;
+    }
+
+    const nextReview =
+      watchList?.items.find((item) => shouldShowWatchReviewAction(item.watchResult)) ??
+      null;
+
+    if (nextReview) {
+      setQueuedWatchCenterAction(null);
+      void beginWatchReview(nextReview.fileId);
+      return;
+    }
+
+    if (watchList) {
+      setQueuedWatchCenterAction(null);
+      setWatchCenterMessage("Nothing needs watch review right now.");
+    }
+  }, [
+    queuedWatchCenterAction,
+    loadingWatchList,
+    watchListFilter,
+    watchList,
+  ]);
+
   async function loadWatchCenter() {
     try {
       const [overview, behavior] = await Promise.all([
@@ -302,6 +407,7 @@ export function LibraryScreen({
   }
 
   async function openFile(row: LibraryFileRow, preserveWatchIntent = false) {
+    setQueuedWatchCenterAction(null);
     if (!preserveWatchIntent) {
       setPendingWatchIntent(null);
       setWatchMessage(null);
@@ -310,6 +416,7 @@ export function LibraryScreen({
   }
 
   async function openFileById(fileId: number, preserveWatchIntent = false) {
+    setQueuedWatchCenterAction(null);
     if (!preserveWatchIntent) {
       setPendingWatchIntent(null);
       setWatchMessage(null);
@@ -335,6 +442,7 @@ export function LibraryScreen({
     intent: PendingWatchIntent,
     centerMessage: string | null = null,
   ) {
+    setQueuedWatchCenterAction(null);
     setPendingWatchIntent(intent);
     setWatchCenterMessage(centerMessage);
     await openFileById(intent.fileId, true);
@@ -369,6 +477,16 @@ export function LibraryScreen({
     return watchSetupList?.items.find((item) => item.fileId !== currentFileId) ?? null;
   }
 
+  function nextReviewItem(currentFileId: number) {
+    return (
+      watchList?.items.find(
+        (item) =>
+          item.fileId !== currentFileId &&
+          shouldShowWatchReviewAction(item.watchResult),
+      ) ?? null
+    );
+  }
+
   async function advanceWatchSetupFlow(currentFileId: number, reason: "saved" | "skipped") {
     const nextItem = nextSetupSuggestion(currentFileId);
     if (nextItem) {
@@ -399,10 +517,49 @@ export function LibraryScreen({
     );
   }
 
+  async function advanceWatchReviewFlow(
+    currentFileId: number,
+    reason: "saved" | "cleared" | "refreshed" | "skipped",
+  ) {
+    const nextItem = nextReviewItem(currentFileId);
+    if (nextItem) {
+      await openWatchIntent(
+        {
+          fileId: nextItem.fileId,
+          mode: "review",
+          sourceKind: nextItem.watchResult.sourceKind ?? "exact_page",
+          sourceLabel: nextItem.watchResult.sourceLabel ?? nextItem.subjectLabel,
+        },
+        reason === "saved"
+          ? "Watch source saved. Opening the next review item."
+          : reason === "cleared"
+            ? "Watch source cleared. Opening the next review item."
+            : reason === "refreshed"
+              ? "Watch result refreshed. Opening the next review item."
+              : "Skipped for now. Opening the next review item.",
+      );
+      return;
+    }
+
+    setPendingWatchIntent(null);
+    setWatchEditing(false);
+    setWatchMessage(null);
+    setWatchCenterMessage(
+      reason === "saved"
+        ? "Watch source saved. No more watched items need review right now."
+        : reason === "cleared"
+          ? "Watch source cleared. No more watched items need review right now."
+          : reason === "refreshed"
+            ? "Watch result refreshed. No more watched items need review right now."
+            : "Skipped for now. No more watched items need review right now.",
+    );
+  }
+
   function closeWatchEditor() {
     if (selected) {
       restoreWatchFields(selected);
     }
+    setQueuedWatchCenterAction(null);
     setWatchEditing(false);
     setWatchMessage(null);
     setPendingWatchIntent(null);
@@ -414,6 +571,14 @@ export function LibraryScreen({
     }
 
     await advanceWatchSetupFlow(selected.id, "skipped");
+  }
+
+  async function skipWatchReview() {
+    if (!selected || pendingWatchIntent?.mode !== "review" || pendingWatchIntent.fileId !== selected.id) {
+      return;
+    }
+
+    await advanceWatchReviewFlow(selected.id, "skipped");
   }
 
   async function saveCreatorOverride() {
@@ -509,6 +674,13 @@ export function LibraryScreen({
   const selectedWatch = selected?.watchResult ?? null;
   const watchSourceOrigin = selectedWatch?.sourceOrigin ?? "none";
   const isBuiltInWatchSource = watchSourceOrigin === "built_in_special";
+  const firstSetupSuggestion = watchSetupList?.items[0] ?? null;
+  const firstReviewItem =
+    watchList?.items.find((item) => shouldShowWatchReviewAction(item.watchResult)) ?? null;
+  const isSetupQueueActive =
+    pendingWatchIntent?.mode === "setup" && pendingWatchIntent.fileId === selected?.id;
+  const isReviewQueueActive =
+    pendingWatchIntent?.mode === "review" && pendingWatchIntent.fileId === selected?.id;
 
   async function saveWatchSource() {
     if (!selected) {
@@ -530,6 +702,11 @@ export function LibraryScreen({
         currentIntent?.mode === "setup" && currentIntent.fileId === selected.id
           ? nextSetupSuggestion(selected.id)
           : null;
+      const reviewResolved =
+        currentIntent?.mode === "review" &&
+        currentIntent.fileId === selected.id;
+      const nextReview =
+        reviewResolved ? nextReviewItem(selected.id) : null;
       const updated = await api.saveWatchSourceForFile(
         selected.id,
         watchSourceKind,
@@ -571,6 +748,33 @@ export function LibraryScreen({
             "Watch source saved. No more strong setup suggestions are waiting right now.",
           );
         }
+      } else if (reviewResolved) {
+        if (!updated.watchResult || !shouldShowWatchReviewAction(updated.watchResult)) {
+          if (nextReview) {
+            await openWatchIntent(
+              {
+                fileId: nextReview.fileId,
+                mode: "review",
+                sourceKind: nextReview.watchResult.sourceKind ?? "exact_page",
+                sourceLabel:
+                  nextReview.watchResult.sourceLabel ?? nextReview.subjectLabel,
+              },
+              "Watch source saved. Opening the next review item.",
+            );
+          } else {
+            setPendingWatchIntent(null);
+            setWatchEditing(false);
+            setWatchMessage("Watch source saved.");
+            setWatchCenterMessage(
+              "Watch source saved. No more watched items need review right now.",
+            );
+          }
+        } else {
+          setWatchEditing(true);
+          setWatchMessage(
+            "Watch source saved. This link still needs review before SimSuite can rely on it.",
+          );
+        }
       } else {
         setPendingWatchIntent(null);
         setWatchEditing(false);
@@ -592,6 +796,12 @@ export function LibraryScreen({
     setWatchMessage(null);
 
     try {
+      const currentIntent = pendingWatchIntent;
+      const reviewResolved =
+        currentIntent?.mode === "review" &&
+        currentIntent.fileId === selected.id;
+      const nextReview =
+        reviewResolved ? nextReviewItem(selected.id) : null;
       const updated = await api.clearWatchSourceForFile(selected.id);
       if (!updated) {
         return;
@@ -609,6 +819,25 @@ export function LibraryScreen({
         loadWatchList(),
         loadWatchSetupList(),
       ]);
+
+      if (reviewResolved) {
+        if (nextReview) {
+          await openWatchIntent(
+            {
+              fileId: nextReview.fileId,
+              mode: "review",
+              sourceKind: nextReview.watchResult.sourceKind ?? "exact_page",
+              sourceLabel:
+                nextReview.watchResult.sourceLabel ?? nextReview.subjectLabel,
+            },
+            "Watch source cleared. Opening the next review item.",
+          );
+        } else {
+          setWatchCenterMessage(
+            "Watch source cleared. No more watched items need review right now.",
+          );
+        }
+      }
     } catch (error) {
       setWatchMessage(watchActionError(error, "clear the watch source"));
     } finally {
@@ -625,6 +854,12 @@ export function LibraryScreen({
     setWatchMessage(null);
 
     try {
+      const currentIntent = pendingWatchIntent;
+      const reviewResolved =
+        currentIntent?.mode === "review" &&
+        currentIntent.fileId === selected.id;
+      const nextReview =
+        reviewResolved ? nextReviewItem(selected.id) : null;
       const updated = await api.refreshWatchSourceForFile(selected.id);
       if (!updated) {
         return;
@@ -640,6 +875,33 @@ export function LibraryScreen({
         loadWatchList(),
         loadWatchSetupList(),
       ]);
+
+      if (reviewResolved) {
+        if (!updated.watchResult || !shouldShowWatchReviewAction(updated.watchResult)) {
+          if (nextReview) {
+            await openWatchIntent(
+              {
+                fileId: nextReview.fileId,
+                mode: "review",
+                sourceKind: nextReview.watchResult.sourceKind ?? "exact_page",
+                sourceLabel:
+                  nextReview.watchResult.sourceLabel ?? nextReview.subjectLabel,
+              },
+              "Watch result refreshed. Opening the next review item.",
+            );
+          } else {
+            setWatchCenterMessage(
+              "Watch result refreshed. No more watched items need review right now.",
+            );
+          }
+        } else {
+          setPendingWatchIntent(currentIntent);
+          setWatchEditing(true);
+          setWatchMessage(
+            "Watch result refreshed. This source still needs review before SimSuite can rely on it.",
+          );
+        }
+      }
     } catch (error) {
       setWatchMessage(watchActionError(error, "refresh the watch source"));
     } finally {
@@ -675,6 +937,26 @@ export function LibraryScreen({
       setRefreshingAllWatched(false);
     }
   }
+
+  async function startWatchSetupFlow() {
+    focusWatchSection("setup");
+    if (firstSetupSuggestion) {
+      await beginWatchSetup(firstSetupSuggestion);
+      return;
+    }
+
+    if (!loadingWatchSetupList) {
+      setWatchCenterMessage("Nothing strong enough needs watch setup right now.");
+    }
+  }
+
+  function startWatchReviewFlow() {
+    focusWatchSection("tracked");
+    setWatchListFilter("attention");
+    setQueuedWatchCenterAction("review");
+    setWatchCenterMessage("Opening the next watched item that still needs review.");
+  }
+
   const watchBusy = savingWatch || refreshingWatch;
   const libraryInspectorSections = selected
     ? [
@@ -934,8 +1216,7 @@ export function LibraryScreen({
                             >
                               {savingWatch ? "Saving..." : "Save watch"}
                             </button>
-                            {pendingWatchIntent?.mode === "setup" &&
-                            pendingWatchIntent.fileId === selected.id ? (
+                            {isSetupQueueActive ? (
                               <button
                                 type="button"
                                 className="secondary-action"
@@ -944,6 +1225,15 @@ export function LibraryScreen({
                               >
                                 {userView === "beginner" ? "Skip for now" : "Skip suggestion"}
                               </button>
+                            ) : isReviewQueueActive ? (
+                              <button
+                                type="button"
+                                className="secondary-action"
+                                disabled={watchBusy}
+                                onClick={() => void skipWatchReview()}
+                              >
+                                {userView === "beginner" ? "Skip for now" : "Skip review"}
+                              </button>
                             ) : null}
                             <button
                               type="button"
@@ -951,13 +1241,11 @@ export function LibraryScreen({
                               disabled={watchBusy}
                               onClick={() => closeWatchEditor()}
                             >
-                              {pendingWatchIntent?.mode === "setup" &&
-                              pendingWatchIntent.fileId === selected.id
+                              {isSetupQueueActive
                                 ? userView === "beginner"
                                   ? "Stop setup"
                                   : "Stop queue"
-                                : pendingWatchIntent?.mode === "review" &&
-                                    pendingWatchIntent.fileId === selected.id
+                                : isReviewQueueActive
                                   ? userView === "beginner"
                                     ? "Done reviewing"
                                     : "Close review"
@@ -1415,6 +1703,39 @@ export function LibraryScreen({
               ) : null}
             </div>
             <div className="library-watch-actions">
+              {firstSetupSuggestion ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => void startWatchSetupFlow()}
+                >
+                  {isSetupQueueActive
+                    ? userView === "beginner"
+                      ? "Resume setup"
+                      : "Resume setup"
+                    : userView === "beginner"
+                      ? "Set up watched pages"
+                      : "Work through setup"}
+                </button>
+              ) : null}
+              {watchOverview &&
+              (watchOverview.possibleUpdateItems > 0 ||
+                watchOverview.unknownWatchItems > 0) ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  disabled={loadingWatchList}
+                  onClick={() => startWatchReviewFlow()}
+                >
+                  {isReviewQueueActive
+                    ? userView === "beginner"
+                      ? "Resume review"
+                      : "Resume review"
+                    : userView === "beginner"
+                      ? "Review watched pages"
+                      : "Work through review"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="secondary-action"
@@ -1434,7 +1755,14 @@ export function LibraryScreen({
             {watchCenterMessage ? (
               <div className="library-watch-message">{watchCenterMessage}</div>
             ) : null}
-            <div className="library-watch-focus">
+            <div
+              ref={trackedWatchSectionRef}
+              className={
+                focusedWatchSection === "tracked"
+                  ? "library-watch-focus is-focused"
+                  : "library-watch-focus"
+              }
+            >
               <div className="library-watch-filter-row">
                 {WATCH_LIST_FILTERS.map((filterOption) => (
                   <button
@@ -1525,7 +1853,14 @@ export function LibraryScreen({
                 )}
               </div>
 
-              <div className="library-watch-setup">
+              <div
+                ref={setupWatchSectionRef}
+                className={
+                  focusedWatchSection === "setup"
+                    ? "library-watch-setup is-focused"
+                    : "library-watch-setup"
+                }
+              >
                 <div className="library-watch-setup-heading">
                   <strong>
                     {userView === "beginner" ? "Ready to set up" : "Setup suggestions"}

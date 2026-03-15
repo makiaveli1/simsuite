@@ -66,6 +66,28 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The watch system now has a cleaner cross-screen handoff and a more complete follow-up loop without adding another management surface.
+
+Important current watch-center behavior:
+
+- `Home` watch summary rows can now open `Library` with a focused watch intent instead of only navigating to the generic Library screen
+- `Library` can respond to that focused intent by:
+  - switching to the right tracked-watch filter when needed
+  - highlighting and scrolling the right section into view
+  - showing a plain message about what lane the user is seeing
+- the watch center now has small “start from here” actions inside the same surface:
+  - setup flow can start from the strongest setup suggestion
+  - review flow can start from the first tracked item that still needs human follow-up
+- review flow now reuses the same queue-like follow-up pattern as setup:
+  - save / clear / refresh can move forward to the next review item when the current one is resolved
+  - review mode also has a skip action
+- this keeps the watch system inside the current `Library` table area and detail panel:
+  - no second watch-management screen
+  - no separate wizard surface
+  - no guessed URLs
+
+## Current engineering note (March 15, 2026)
+
 The Library watch center now has a more complete follow-up loop without turning into a second management screen.
 
 Important current follow-up behavior:

@@ -2048,6 +2048,7 @@ h2,
 .library-watch-focus {
   display: grid;
   gap: 0.4rem;
+  scroll-margin-top: 0.8rem;
 }
 
 .library-watch-filter-row {
@@ -2096,6 +2097,15 @@ h2,
   gap: 0.32rem;
   padding-top: 0.16rem;
   border-top: 1px solid var(--line);
+  scroll-margin-top: 0.8rem;
+}
+
+.library-watch-focus.is-focused,
+.library-watch-setup.is-focused {
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  background:
+    linear-gradient(120deg, var(--accent-soft), transparent 82%),
+    rgba(255, 255, 255, 0.01);
 }
 
 .library-watch-setup-heading {

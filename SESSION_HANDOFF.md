@@ -2,6 +2,13 @@
 
 ## Current Priority
 
+- March 15, 2026: the watch system now feels more connected across `Home` and `Library`:
+  - `Home` watch rows can land on the right Library watch lane
+  - `Library` can highlight the right watch section and keep setup/review moving forward
+  - the next product focus should be the real next layer after that:
+    - stronger bulk setup for exact-page candidates
+    - a cleaner batch review lane for reminder-only and provider-needed links
+    - watch history and source audit after the setup/review flow feels complete
 - March 15, 2026: Library watch follow-up is smoother now:
   - setup suggestions can move straight into the next suggestion after a save
   - saved generic reminder or provider-needed links can be reviewed straight from the tracked list
@@ -27,6 +34,21 @@
 
 ## What Changed This Session
 
+- March 15, 2026: `Home` watch rows now open `Library` with a real watch focus request instead of only opening the generic Library screen:
+  - `Watch setup` lands on the setup suggestions lane
+  - `Exact updates` / `Updates ready` lands on the tracked confirmed-updates lane
+  - the watch center now shows a clear focus message and highlights the right section
+- March 15, 2026: `Library` review flow now behaves more like the setup flow:
+  - review mode can move to the next saved review item after save, clear, or refresh when the current item no longer needs review
+  - review mode now has its own skip action so the user can keep moving without closing the editor and manually reopening the next row
+- March 15, 2026: the watch center now has direct “start from here” actions inside the existing surface:
+  - `Work through setup` / `Set up watched pages`
+  - `Work through review` / `Review watched pages`
+  - these reuse the current watch editor and do not create another management screen
+- March 15, 2026: the native desktop smoke now proves the wider app flow too:
+  - `Home` -> `Watch setup` lands on the setup lane
+  - `Home` -> `Exact updates` lands on the tracked confirmed-updates lane
+  - the earlier real Tauri watch save/clear flow still passes after these additions
 - March 15, 2026: Library watch follow-up now behaves more like a guided queue:
   - `Set up` / `Start setup` still opens the existing watch editor
   - after a save, SimSuite can move straight to the next strong setup suggestion instead of making the user go back and click around again
@@ -196,6 +218,11 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the Home-to-Library watch focus and review-queue changes.
+- March 15, 2026: `npm run build` passed after the App, Home, Library, style, and desktop-smoke updates.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the native smoke was widened to prove:
+  - `Home` watch rows can land on the right Library watch lane
+  - the wider watch-center flow still works in the real Tauri app
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the Library watch follow-up changes.
 - March 15, 2026: `npm run build` passed after the new setup-queue and review actions were added to `Library`.
 - March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the native smoke was widened to prove:
@@ -273,6 +300,10 @@
 
 ## What Worked
 
+- `Home` and `Library` now feel more like one watch workflow instead of separate summary and detail pockets.
+- The watch center can now guide both setup work and saved review work without adding another crowded manager page.
+- Review flow now has the same “keep moving” feel that setup flow already had.
+- The real desktop smoke now proves the wider Home-to-Library watch handoff, not just single-item Library actions.
 - The watch center can now carry a user through more than one step without forcing them back out into the list after every save.
 - Saved generic watch links that still need a human look now have a direct review path from the tracked list instead of making the user hunt through the detail panel first.
 - The real desktop smoke still passed after this wider follow-up flow was added, so the new actions are proven in the actual Tauri app instead of only in preview.
@@ -334,6 +365,11 @@
 
 ## Known Problems / Gaps
 
+- The watch system is much smoother now, but it is still not true bulk setup:
+  - users still add one real watch URL at a time
+  - SimSuite still intentionally avoids inventing or guessing watch URLs
+- There is still no true batch review lane for many reminder-only or provider-needed links at once.
+- There is still no watch history or source audit trail yet.
 - There is still no true multi-save bulk setup flow yet:
   - the app can move to the next strong suggestion after a save
   - but it still relies on the user to paste or confirm each watch URL one at a time
@@ -377,6 +413,9 @@
 
 ## Important Decisions
 
+- Keep watch follow-up inside the current `Library` watch center and detail panel instead of creating a separate watch-management screen.
+- `Home` watch rows should open `Library` with intent, not just with navigation.
+- Setup and review should both behave like guided follow-up queues where that reduces repeated clicks, but SimSuite still must not guess URLs or silently save links.
 - The fuller watch-management flow should keep reusing the existing Library detail panel instead of creating a separate watch-management screen.
 - Setup follow-up should reduce repeated clicks, but SimSuite still must not guess or invent watch URLs.
 - Review actions should be shown only for the saved user-managed watch sources that actually need follow-up, so the tracked list stays compact.
@@ -409,14 +448,17 @@
 
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
-- Check the real Library watch flow again in the desktop app:
+- Check the wider watch flow again in the desktop app:
+  - `Home` -> `Watch setup`
+  - `Home` -> `Exact updates`
   - start setup from the shortlist
   - save a generic watch page
-  - use `Review` from the tracked list
+  - review a saved generic watch source
   - clear the watch source
 - Then move to the next watch-management gap:
   - stronger bulk setup for exact-page candidates
-  - or a cleaner batch review flow for saved reminder/provider-needed sources
+  - a cleaner batch review lane for saved reminder/provider-needed sources
+  - then watch history / source audit after that
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
   - build the next watch-management step on top of the new tracked watch list:

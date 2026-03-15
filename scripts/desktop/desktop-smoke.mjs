@@ -548,6 +548,20 @@ async function verifyHomeWatchSummary(driver) {
   await waitForAnyText(driver, ["Possible updates", "Watch review"], 30000);
 }
 
+async function verifyHomeWatchFocus(driver) {
+  await clickButton(driver, "Home");
+  await waitForText(driver, "Home");
+
+  await clickVisibleText(driver, "Watch setup");
+  await waitForText(driver, "Showing the strongest watch setup suggestions.", 30000);
+  await waitForAnyText(driver, ["Setup suggestions", "Ready to set up"], 30000);
+
+  await clickButton(driver, "Home");
+  await waitForText(driver, "Home");
+  await clickVisibleText(driver, "Exact updates");
+  await waitForText(driver, "Showing watched items with confirmed updates.", 30000);
+}
+
 async function verifyLibraryVersionWatch(driver) {
   await ensureLibraryIndexed(driver, ["S4CL.ts4script", "mc_cmd_center.ts4script"]);
   await waitForText(driver, "Needs attention");
@@ -753,6 +767,7 @@ async function run() {
     }
 
     await verifyHomeWatchSummary(driver);
+    await verifyHomeWatchFocus(driver);
     await verifyLibraryVersionWatch(driver);
     await verifyLibraryWatchSaveClear(driver, fixtureGenericWatchFile);
 

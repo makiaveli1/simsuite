@@ -22,6 +22,7 @@ import type {
   DetectedLibraryPaths,
   HomeOverview,
   LibrarySettings,
+  LibraryWatchFocusTarget,
   Screen,
   UserView,
 } from "../lib/types";
@@ -31,6 +32,7 @@ interface HomeScreenProps {
   settings: LibrarySettings | null;
   onSettingsChange: (settings: LibrarySettings) => Promise<void>;
   onNavigate: (screen: Screen) => void;
+  onOpenLibraryWatchFocus: (target: LibraryWatchFocusTarget) => void;
   onScan: () => Promise<void>;
   isScanning: boolean;
   userView: UserView;
@@ -41,6 +43,7 @@ export function HomeScreen({
   settings,
   onSettingsChange,
   onNavigate,
+  onOpenLibraryWatchFocus,
   onScan,
   isScanning,
   userView,
@@ -200,19 +203,19 @@ export function HomeScreen({
           {
             label: "Updates ready",
             value: `${overview?.exactUpdateItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("tracked_exact_updates"),
           },
           {
             label: "Watch review",
             value: `${overview?.possibleUpdateItems ?? 0} possible / ${
               overview?.unknownWatchItems ?? 0
             } unclear`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("tracked_attention"),
           },
           {
             label: "Watch setup",
             value: `${overview?.watchSetupItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("setup"),
           },
           {
             label: "Last check",
@@ -228,22 +231,22 @@ export function HomeScreen({
           {
             label: "Exact updates",
             value: `${overview?.exactUpdateItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("tracked_exact_updates"),
           },
           {
             label: "Possible updates",
             value: `${overview?.possibleUpdateItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("tracked_possible_updates"),
           },
           {
             label: "Watch unknown",
             value: `${overview?.unknownWatchItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("tracked_unclear"),
           },
           {
             label: "Watch setup",
             value: `${overview?.watchSetupItems ?? 0}`,
-            onClick: () => onNavigate("library"),
+            onClick: () => onOpenLibraryWatchFocus("setup"),
           },
           {
             label: "Last scan",
