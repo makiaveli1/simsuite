@@ -66,6 +66,24 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The file-inspection layer now pulls a little more safe creator truth out of ts4script manifests.
+
+Important current behavior:
+
+- ts4script manifest parsing now reads:
+  - name-style fields
+  - author / creator fields
+  - simple string lists for authors and creators
+- those values feed the same local clue pipeline as the older script hints:
+  - embedded names
+  - creator hints
+  - family hints
+- this is still additive only:
+  - script mods without manifests still rely on namespaces, filenames, family hints, creator hints, and other local clues
+  - manifest data is not treated as required truth
+
+## Current engineering note (March 15, 2026)
+
 The shared generic compare layer now uses stronger family clues during installed-candidate gathering too.
 
 Important current behavior:

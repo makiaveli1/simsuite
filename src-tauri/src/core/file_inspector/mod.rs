@@ -444,21 +444,61 @@ fn extract_ts4script_json_identity_values(payload: &str) -> Vec<String> {
     };
 
     let mut values = Vec::new();
-    for key in ["name", "mod_name", "mod-name", "modName", "title"] {
-        if let Some(value) = json.get(key).and_then(|candidate| candidate.as_str()) {
-            if let Some(cleaned) = clean_payload_identity_value(value) {
-                values.push(cleaned);
-            }
+    for key in [
+        "name",
+        "mod_name",
+        "mod-name",
+        "modName",
+        "title",
+        "author",
+        "authors",
+        "creator",
+        "creators",
+        "author_name",
+        "author-name",
+        "authorName",
+    ] {
+        if let Some(candidate) = json.get(key) {
+            values.extend(extract_ts4script_json_identity_field_values(candidate));
         }
     }
 
     values
 }
 
+fn extract_ts4script_json_identity_field_values(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(value) => {
+            clean_payload_identity_value(value).into_iter().collect()
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(|candidate| candidate.as_str())
+            .filter_map(clean_payload_identity_value)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn extract_ts4script_line_identity_values(payload: &str) -> Vec<String> {
     let mut values = Vec::new();
+    let mut pending_list_key = false;
 
     for line in payload.lines().take(64) {
+        let trimmed = line.trim();
+        if pending_list_key {
+            if let Some(value) = trimmed.strip_prefix('-') {
+                if let Some(cleaned) = clean_payload_identity_value(value) {
+                    values.push(cleaned);
+                }
+                continue;
+            }
+            if trimmed.is_empty() {
+                continue;
+            }
+            pending_list_key = false;
+        }
+
         let Some((key, value)) = line.split_once(':') else {
             continue;
         };
@@ -466,14 +506,47 @@ fn extract_ts4script_line_identity_values(payload: &str) -> Vec<String> {
         let lowered_key = key.trim().to_ascii_lowercase();
         if !matches!(
             lowered_key.as_str(),
-            "name" | "mod_name" | "mod-name" | "modname" | "title"
+            "name"
+                | "mod_name"
+                | "mod-name"
+                | "modname"
+                | "title"
+                | "author"
+                | "authors"
+                | "creator"
+                | "creators"
+                | "author_name"
+                | "author-name"
+                | "authorname"
         ) {
+            pending_list_key = false;
             continue;
         }
 
-        if let Some(cleaned) = clean_payload_identity_value(value) {
+        let trimmed_value = value.trim();
+        if trimmed_value.is_empty() {
+            pending_list_key = matches!(lowered_key.as_str(), "authors" | "creators");
+            continue;
+        }
+
+        if trimmed_value.starts_with('[') && trimmed_value.ends_with(']') {
+            for part in trimmed_value
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+            {
+                if let Some(cleaned) = clean_payload_identity_value(part) {
+                    values.push(cleaned);
+                }
+            }
+            pending_list_key = false;
+            continue;
+        }
+
+        if let Some(cleaned) = clean_payload_identity_value(trimmed_value) {
             values.push(cleaned);
         }
+        pending_list_key = false;
     }
 
     values
@@ -1364,6 +1437,64 @@ mod tests {
             .family_hints
             .iter()
             .any(|value| value == "better exceptions"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn ts4script_manifest_authors_feed_creator_hints() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("manifest_author_mod.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("manifest.json", options)
+            .expect("start manifest");
+        writer
+            .write_all(
+                br#"{ "name": "Mystery Utility", "authors": ["TwistedMexi", "Helper Friend"] }"#,
+            )
+            .expect("write manifest");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert_eq!(outcome.creator_hint.as_deref(), Some("TwistedMexi"));
+        assert!(outcome
+            .insights
+            .creator_hints
+            .iter()
+            .any(|value| value == "TwistedMexi"));
+
+        fs::remove_file(filepath).expect("cleanup");
+    }
+
+    #[test]
+    fn ts4script_manifest_author_lists_feed_creator_hints() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let temp = tempdir().expect("tempdir");
+        let filepath = temp.path().join("manifest_author_list_mod.ts4script");
+        let file = File::create(&filepath).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        writer
+            .start_file("manifest.yml", options)
+            .expect("start manifest");
+        writer
+            .write_all(b"name: Mystery Utility\nauthors:\n  - TwistedMexi\n  - Helper Friend\n")
+            .expect("write manifest");
+        writer.finish().expect("finish");
+
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        assert_eq!(outcome.creator_hint.as_deref(), Some("TwistedMexi"));
+        assert!(outcome
+            .insights
+            .creator_hints
+            .iter()
+            .any(|value| value == "TwistedMexi"));
 
         fs::remove_file(filepath).expect("cleanup");
     }

@@ -4,6 +4,31 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session kept the feature freeze in place and pulled one more safe creator clue out of script mods.
+
+Important changes and findings:
+
+- ts4script manifest parsing now also reads safe author and creator fields, including simple string lists in JSON and YAML-style manifests
+- this can improve creator matching when a script mod already names its author inside the file itself
+- this is additive only:
+  - script mods without manifests still continue through the older clue paths
+  - manifests are still not required truth
+- added direct regression tests for:
+  - JSON manifest author lists feeding creator hints
+  - YAML-style manifest author lists feeding creator hints
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `180` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- this makes local script clues a bit better, but the wider stabilization pass still is not done:
+  - more messy live-library validation is still needed on generic mods and CC
+  - there is still room to inspect more safe inside-file identity clues, especially beyond manifest-heavy cases
+  - watch bugs still need cleanup before feature work resumes
+
+## Current session note (March 15, 2026)
+
 This session kept the feature freeze in place and hardened the next missing generic compare path too.
 
 Important changes and findings:

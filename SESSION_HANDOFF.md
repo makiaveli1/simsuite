@@ -2,6 +2,16 @@
 
 ## Current Priority
 
+- March 15, 2026: safe inside-file extraction is a little stronger now for script mods that ship manifests:
+  - manifest parsing now also reads safe author and creator fields, including simple string lists
+  - this can improve creator matching when the mod already names its author inside the file
+  - this is additive only:
+    - script mods without manifests still use the older clue paths
+    - manifests are still not required truth
+  - the next product focus should stay on stabilization:
+    - do more messy live-library validation on generic mods and CC
+    - keep looking for more safe inside-file clues that help confidence without widening weak guesses
+    - keep fixing watch and Inbox trust gaps before new features
 - March 15, 2026: generic Inbox matching now has the next missing candidate-search bridge too:
   - full compare can now search installed rows using inspected `family_hints`, not just hashes, filenames, saved creators, or inspected creator hints
   - that family-based widening is still kept cautious:
@@ -67,6 +77,19 @@
 
 ## What Changed This Session
 
+- March 15, 2026: continued the safe inside-file extraction pass for script-mod manifests:
+  - ts4script manifest parsing now also reads safe author and creator fields, including simple string lists in JSON and YAML-style manifest files
+  - that means creator clues can now come from clean manifest author data, not only names, namespaces, stems, or saved creator learning
+  - this is additive only:
+    - script mods without manifests still use the older local clue paths
+    - manifests are still optional and not treated as required truth
+  - added direct regression tests proving:
+    - JSON manifest author lists feed creator hints
+    - YAML-style manifest author lists feed creator hints
+  - full checks passed again:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `180` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: continued the shared confidence-hardening pass with a careful family-hint candidate-search fix:
   - full compare can now search installed rows using inspected `family_hints`, so real local family clues can actually pull likely installed matches into the scoring pass
   - that widening stays cautious:
