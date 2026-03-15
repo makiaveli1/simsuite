@@ -11,8 +11,9 @@ use crate::{
     },
     error::AppResult,
     models::{
-        FileInsights, InstalledVersionSummary, SpecialVersionStatus, VersionCompareStatus,
-        VersionConfidence, VersionResolution, VersionSignal, WatchCapability, WatchResult,
+        FileInsights, InstalledVersionSummary, LibrarySettings, LibraryWatchListItem,
+        LibraryWatchListResponse, SpecialVersionStatus, VersionCompareStatus, VersionConfidence,
+        VersionResolution, VersionSignal, WatchCapability, WatchListFilter, WatchResult,
         WatchSourceKind, WatchSourceOrigin, WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
@@ -20,6 +21,7 @@ use crate::{
 
 const MAX_CANDIDATE_ROWS: usize = 96;
 const MAX_SEARCH_TOKENS: usize = 4;
+const MAX_WATCH_LIST_LIMIT: usize = 48;
 const MATCH_SCORE_STRONG: f64 = 1.20;
 const MATCH_SCORE_MEDIUM: f64 = 0.80;
 const MATCH_SCORE_WEAK: f64 = 0.45;
@@ -165,7 +167,7 @@ pub fn resolve_download_item_version(
 
 pub fn resolve_library_file_version(
     connection: &Connection,
-    settings: &crate::models::LibrarySettings,
+    settings: &LibrarySettings,
     seed_pack: &SeedPack,
     file_id: i64,
 ) -> AppResult<(Option<InstalledVersionSummary>, Option<WatchResult>)> {
@@ -194,9 +196,54 @@ pub fn resolve_library_file_version(
     Ok((installed_summary, watch_result))
 }
 
+pub fn list_library_watch_items(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    filter: WatchListFilter,
+    limit: usize,
+) -> AppResult<LibraryWatchListResponse> {
+    let mut seen_file_ids = HashSet::new();
+    let mut candidate_file_ids = Vec::new();
+
+    for file_id in load_saved_watch_anchor_file_ids(connection)? {
+        if seen_file_ids.insert(file_id) {
+            candidate_file_ids.push(file_id);
+        }
+    }
+
+    for file_id in load_supported_special_watch_anchor_file_ids(connection, settings, seed_pack)? {
+        if seen_file_ids.insert(file_id) {
+            candidate_file_ids.push(file_id);
+        }
+    }
+
+    let mut items = Vec::new();
+    for file_id in candidate_file_ids {
+        let Some(item) = build_library_watch_list_item(connection, settings, seed_pack, file_id)?
+        else {
+            continue;
+        };
+
+        if watch_result_matches_filter(&item.watch_result, filter) {
+            items.push(item);
+        }
+    }
+
+    items.sort_by(compare_library_watch_items);
+    let total = items.len() as i64;
+    items.truncate(limit.clamp(1, MAX_WATCH_LIST_LIMIT));
+
+    Ok(LibraryWatchListResponse {
+        filter,
+        total,
+        items,
+    })
+}
+
 pub fn save_watch_source_for_library_file(
     connection: &Connection,
-    settings: &crate::models::LibrarySettings,
+    settings: &LibrarySettings,
     seed_pack: &SeedPack,
     file_id: i64,
     source_kind: WatchSourceKind,
@@ -237,7 +284,7 @@ pub fn save_watch_source_for_library_file(
 
 pub fn clear_watch_source_for_library_file(
     connection: &Connection,
-    settings: &crate::models::LibrarySettings,
+    settings: &LibrarySettings,
     seed_pack: &SeedPack,
     file_id: i64,
 ) -> AppResult<Option<WatchResult>> {
@@ -261,7 +308,7 @@ pub fn clear_watch_source_for_library_file(
 
 pub fn refresh_watch_source_for_library_file(
     connection: &Connection,
-    settings: &crate::models::LibrarySettings,
+    settings: &LibrarySettings,
     seed_pack: &SeedPack,
     file_id: i64,
 ) -> AppResult<Option<WatchResult>> {
@@ -421,6 +468,249 @@ pub fn list_auto_refreshable_special_profile_keys(
                 })
         })
         .collect())
+}
+
+fn load_saved_watch_anchor_file_ids(connection: &Connection) -> AppResult<Vec<i64>> {
+    let mut statement = connection.prepare(
+        "SELECT DISTINCT cws.anchor_file_id
+         FROM content_watch_sources cws
+         JOIN files f ON f.id = cws.anchor_file_id
+         WHERE cws.approved_by_user = 1
+           AND cws.anchor_file_id IS NOT NULL
+           AND f.source_location <> 'downloads'
+         ORDER BY cws.updated_at DESC",
+    )?;
+
+    let rows = statement
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(rows)
+}
+
+fn load_supported_special_watch_anchor_file_ids(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+) -> AppResult<Vec<i64>> {
+    let mut statement = connection.prepare(
+        "SELECT profile_key, install_path
+         FROM special_mod_family_state
+         WHERE install_state <> 'not_installed'
+           AND (installed_version IS NOT NULL OR install_path IS NOT NULL)
+         ORDER BY updated_at DESC",
+    )?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut seen = HashSet::new();
+    let mut seen_profiles = HashSet::new();
+    let mut anchor_ids = Vec::new();
+    for (profile_key, install_path) in rows {
+        let Some(anchor_id) = find_watch_anchor_file_id_for_special_profile(
+            connection,
+            settings,
+            seed_pack,
+            &profile_key,
+            install_path.as_deref(),
+        )?
+        else {
+            continue;
+        };
+
+        if seen.insert(anchor_id) {
+            anchor_ids.push(anchor_id);
+        }
+        seen_profiles.insert(profile_key);
+    }
+
+    let mut statement = connection.prepare(
+        "SELECT id
+         FROM files
+         WHERE source_location <> 'downloads'
+           AND (kind = 'ScriptMods' OR extension IN ('.ts4script', '.package'))
+         ORDER BY filename COLLATE NOCASE",
+    )?;
+    let candidate_ids = statement
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut seen_locators = BTreeSet::new();
+    for file_id in candidate_ids {
+        let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+            continue;
+        };
+
+        let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+        if !seen_locators.insert(locator.clone()) {
+            continue;
+        }
+
+        let subject_rows = load_subject_rows_for_locator(
+            connection,
+            settings.mods_path.as_deref(),
+            &locator,
+            file_id,
+        )?;
+        let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+        let Some(profile) = find_supported_profile(seed_pack, &subject) else {
+            continue;
+        };
+
+        if seen_profiles.insert(profile.key.clone()) && seen.insert(file_id) {
+            anchor_ids.push(file_id);
+        }
+    }
+
+    Ok(anchor_ids)
+}
+
+fn find_watch_anchor_file_id_for_special_profile(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    profile_key: &str,
+    install_path: Option<&str>,
+) -> AppResult<Option<i64>> {
+    if let Some(install_path) = install_path {
+        let direct_match = connection
+            .query_row(
+                "SELECT id
+                 FROM files
+                 WHERE source_location <> 'downloads'
+                   AND (path = ?1 OR path LIKE ?2)
+                 ORDER BY CASE WHEN path = ?1 THEN 0 ELSE 1 END,
+                          relative_depth ASC,
+                          filename COLLATE NOCASE
+                 LIMIT 1",
+                params![install_path, format!("{install_path}%")],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+
+        if direct_match.is_some() {
+            return Ok(direct_match);
+        }
+    }
+
+    let mut statement = connection.prepare(
+        "SELECT id
+         FROM files
+         WHERE source_location <> 'downloads'
+           AND (kind = 'ScriptMods' OR extension IN ('.ts4script', '.package'))
+         ORDER BY filename COLLATE NOCASE",
+    )?;
+    let candidate_ids = statement
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut seen_locators = BTreeSet::new();
+    for file_id in candidate_ids {
+        let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+            continue;
+        };
+
+        let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+        if !seen_locators.insert(locator.clone()) {
+            continue;
+        }
+
+        let subject_rows = load_subject_rows_for_locator(
+            connection,
+            settings.mods_path.as_deref(),
+            &locator,
+            file_id,
+        )?;
+        let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+        if find_supported_profile(seed_pack, &subject)
+            .is_some_and(|profile| profile.key == profile_key)
+        {
+            return Ok(Some(file_id));
+        }
+    }
+
+    Ok(None)
+}
+
+fn build_library_watch_list_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+) -> AppResult<Option<LibraryWatchListItem>> {
+    let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+        return Ok(None);
+    };
+
+    let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+    let subject_rows = load_subject_rows_for_locator(
+        connection,
+        settings.mods_path.as_deref(),
+        &locator,
+        file_id,
+    )?;
+    let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+    let Some(watch_result) = resolve_watch_result(connection, seed_pack, &subject)? else {
+        return Ok(None);
+    };
+
+    if watch_result.source_origin == WatchSourceOrigin::None {
+        return Ok(None);
+    }
+
+    Ok(Some(LibraryWatchListItem {
+        file_id,
+        filename: file_row.filename,
+        creator: file_row.creator,
+        subject_label: subject.label,
+        installed_version: subject.version.value,
+        watch_result,
+    }))
+}
+
+fn watch_result_matches_filter(watch_result: &WatchResult, filter: WatchListFilter) -> bool {
+    match filter {
+        WatchListFilter::Attention => matches!(
+            watch_result.status,
+            WatchStatus::ExactUpdateAvailable | WatchStatus::PossibleUpdate | WatchStatus::Unknown
+        ),
+        WatchListFilter::ExactUpdates => watch_result.status == WatchStatus::ExactUpdateAvailable,
+        WatchListFilter::PossibleUpdates => watch_result.status == WatchStatus::PossibleUpdate,
+        WatchListFilter::Unclear => watch_result.status == WatchStatus::Unknown,
+        WatchListFilter::All => true,
+    }
+}
+
+fn compare_library_watch_items(
+    left: &LibraryWatchListItem,
+    right: &LibraryWatchListItem,
+) -> std::cmp::Ordering {
+    watch_status_priority(&left.watch_result.status)
+        .cmp(&watch_status_priority(&right.watch_result.status))
+        .then_with(|| {
+            left.subject_label
+                .to_lowercase()
+                .cmp(&right.subject_label.to_lowercase())
+        })
+        .then_with(|| {
+            left.filename
+                .to_lowercase()
+                .cmp(&right.filename.to_lowercase())
+        })
+}
+
+fn watch_status_priority(status: &WatchStatus) -> usize {
+    match status {
+        WatchStatus::ExactUpdateAvailable => 0,
+        WatchStatus::PossibleUpdate => 1,
+        WatchStatus::Unknown => 2,
+        WatchStatus::NotWatched => 3,
+        WatchStatus::Current => 4,
+    }
 }
 
 fn save_watch_result_for_subject(
@@ -2159,13 +2449,14 @@ fn prettify_stem(value: &str) -> String {
 mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
-        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
+        list_library_watch_items, refresh_watch_source_for_library_file,
+        save_watch_source_for_library_file,
     };
     use crate::{
         database,
         models::{
-            FileInsights, LibrarySettings, VersionSignal, WatchCapability, WatchSourceKind,
-            WatchSourceOrigin, WatchStatus,
+            FileInsights, LibrarySettings, VersionSignal, WatchCapability, WatchListFilter,
+            WatchSourceKind, WatchSourceOrigin, WatchStatus,
         },
         seed::load_seed_pack,
     };
@@ -2431,6 +2722,33 @@ mod tests {
     }
 
     #[test]
+    fn watch_list_returns_saved_watch_rows() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("GitHub Release".to_owned()),
+            "https://github.com/example/mod/releases",
+        )
+        .expect("save watch");
+
+        let response =
+            list_library_watch_items(&connection, &settings, &seed_pack, WatchListFilter::All, 12)
+                .expect("watch list");
+
+        assert_eq!(response.total, 1);
+        assert_eq!(response.items[0].file_id, file_id);
+        assert_eq!(
+            response.items[0].watch_result.source_origin,
+            WatchSourceOrigin::SavedByUser
+        );
+    }
+
+    #[test]
     fn saving_creator_page_marks_reminder_only_state() {
         let (connection, seed_pack, settings, file_id) = setup_watch_env();
 
@@ -2519,6 +2837,38 @@ mod tests {
             .note
             .as_deref()
             .is_some_and(|note| note.contains("creator-page checks are not built yet")));
+    }
+
+    #[test]
+    fn attention_watch_list_keeps_unknown_watch_rows() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::CreatorPage,
+            Some("Creator".to_owned()),
+            "https://example.com/creator-page",
+        )
+        .expect("save watch");
+
+        refresh_watch_source_for_library_file(&connection, &settings, &seed_pack, file_id)
+            .expect("refresh watch");
+
+        let response = list_library_watch_items(
+            &connection,
+            &settings,
+            &seed_pack,
+            WatchListFilter::Attention,
+            12,
+        )
+        .expect("watch list");
+
+        assert_eq!(response.total, 1);
+        assert_eq!(response.items[0].file_id, file_id);
+        assert_eq!(response.items[0].watch_result.status, WatchStatus::Unknown);
     }
 
     #[test]
@@ -2659,5 +3009,69 @@ mod tests {
         .expect_err("custom save should be rejected");
 
         assert!(error.to_string().contains("built-in official page"));
+    }
+
+    #[test]
+    fn watch_list_returns_built_in_special_rows() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+        let insights = FileInsights {
+            family_hints: vec!["s4cl".to_owned()],
+            version_hints: vec!["2.9.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.9.0".to_owned(),
+                normalized_value: "2.9.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/S4CL/S4CL.ts4script",
+                    "S4CL.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.97_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&insights).expect("insights json"),
+                ],
+            )
+            .expect("insert file");
+        let file_id = connection.last_insert_rowid();
+
+        let response =
+            list_library_watch_items(&connection, &settings, &seed_pack, WatchListFilter::All, 12)
+                .expect("watch list");
+
+        assert_eq!(response.total, 1);
+        assert_eq!(response.items[0].file_id, file_id);
+        assert_eq!(
+            response.items[0].watch_result.source_origin,
+            WatchSourceOrigin::BuiltInSpecial
+        );
     }
 }

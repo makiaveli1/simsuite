@@ -390,6 +390,36 @@ pub struct LibraryListResponse {
     pub items: Vec<LibraryFileRow>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchListFilter {
+    #[default]
+    Attention,
+    ExactUpdates,
+    PossibleUpdates,
+    Unclear,
+    All,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchListItem {
+    pub file_id: i64,
+    pub filename: String,
+    pub creator: Option<String>,
+    pub subject_label: String,
+    pub installed_version: Option<String>,
+    pub watch_result: WatchResult,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchListResponse {
+    pub filter: WatchListFilter,
+    pub total: i64,
+    pub items: Vec<LibraryWatchListItem>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryFacets {

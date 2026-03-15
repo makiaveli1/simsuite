@@ -2030,6 +2030,78 @@ h2,
   font-size: 0.72rem;
 }
 
+.library-watch-focus {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.library-watch-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.watch-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.34rem 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.watch-filter-chip strong {
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.watch-filter-chip.is-active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.library-watch-list {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.library-watch-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.58rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-watch-list-copy,
+.library-watch-list-state {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.library-watch-list-copy span,
+.library-watch-list-state span,
+.library-watch-empty {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+}
+
+.library-watch-list-state {
+  justify-items: end;
+}
+
+.library-watch-empty {
+  padding: 0.48rem 0.12rem 0.06rem;
+}
+
 .table-scroll {
   overflow: auto;
   border: 1px solid var(--line);
@@ -4969,6 +5041,14 @@ h2,
 
   .library-watch-summary {
     grid-template-columns: 1fr;
+  }
+
+  .library-watch-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .library-watch-list-state {
+    justify-items: start;
   }
 
   .screen-header-row,

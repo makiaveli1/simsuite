@@ -187,6 +187,28 @@ export interface LibraryListResponse {
   items: LibraryFileRow[];
 }
 
+export type WatchListFilter =
+  | "attention"
+  | "exact_updates"
+  | "possible_updates"
+  | "unclear"
+  | "all";
+
+export interface LibraryWatchListItem {
+  fileId: number;
+  filename: string;
+  creator: string | null;
+  subjectLabel: string;
+  installedVersion: string | null;
+  watchResult: WatchResult;
+}
+
+export interface LibraryWatchListResponse {
+  filter: WatchListFilter;
+  total: number;
+  items: LibraryWatchListItem[];
+}
+
 export interface LibraryFacets {
   creators: string[];
   kinds: string[];

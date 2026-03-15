@@ -71,8 +71,28 @@ Startup is now safer in two important ways:
 - database upgrades add the `content_watch_sources.anchor_file_id` column before they create the matching index, so older databases no longer crash during setup
 - tray creation is now lazy:
   - normal startup skips tray setup
-- background mode creates the tray only when it actually needs it
+  - background mode creates the tray only when it actually needs it
   - if Windows refuses the tray icon, the app stays open instead of panicking during launch
+
+## Current engineering note (March 15, 2026)
+
+The Library watch center is no longer summary-only. It now doubles as the first real watch-management surface for tracked items.
+
+Important current watch-center behavior:
+
+- the watch center still stays inside the existing Library table panel instead of opening a new management screen
+- it now has filter chips for:
+  - needs attention
+  - confirmed updates
+  - possible updates
+  - unclear
+  - all tracked
+- tracked rows can come from:
+  - user-saved watch pages
+  - built-in official pages for supported special mods
+- built-in supported special mods do not need an older helper latest row before they can appear in that tracked list
+- clicking a tracked row reuses the existing Library inspector instead of branching into a second watch-details surface
+- this keeps watch management flat and compact while still making the summary counts actionable
 
 ## Current engineering note (March 15, 2026)
 

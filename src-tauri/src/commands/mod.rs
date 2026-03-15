@@ -31,10 +31,10 @@ use crate::{
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
         HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
-        ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchRefreshSummary, WatchSourceKind, WorkspaceChange,
-        WorkspaceDomain,
+        LibraryWatchListResponse, OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction,
+        ReviewPlanActionKind, ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus,
+        ScanSummary, SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary,
+        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -1703,6 +1703,30 @@ pub fn list_library_files(
     let response = library_index::list_library_files(&connection, query).map_err(map_error)?;
     log_slow_command("list_library_files", started_at, || {
         format!("for {} visible file row(s)", response.items.len())
+    });
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn list_library_watch_items(
+    filter: Option<WatchListFilter>,
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<LibraryWatchListResponse, String> {
+    let started_at = Instant::now();
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    let response = content_versions::list_library_watch_items(
+        &connection,
+        &settings,
+        &seed_pack,
+        filter.unwrap_or_default(),
+        limit.unwrap_or(12).clamp(1, 48) as usize,
+    )
+    .map_err(map_error)?;
+    log_slow_command("list_library_watch_items", started_at, || {
+        format!("for {} tracked watch item(s)", response.items.len())
     });
     Ok(response)
 }

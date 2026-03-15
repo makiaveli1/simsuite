@@ -24,9 +24,11 @@ import type {
   LibraryFacets,
   LibraryFileRow,
   LibraryListResponse,
+  LibraryWatchListResponse,
   Screen,
   UserView,
   VersionConfidence,
+  WatchListFilter,
   WatchResult,
   WatchSourceKind,
   WatchSourceOrigin,
@@ -59,6 +61,18 @@ const LIBRARY_LAYOUT_PRESETS: Array<{
     label: "Catalog",
     hint: "Puts more space on the table and hides filters until needed.",
   },
+];
+
+const WATCH_LIST_FILTERS: Array<{
+  id: WatchListFilter;
+  label: string;
+  beginnerLabel: string;
+}> = [
+  { id: "attention", label: "Needs attention", beginnerLabel: "Needs attention" },
+  { id: "exact_updates", label: "Confirmed updates", beginnerLabel: "Confirmed updates" },
+  { id: "possible_updates", label: "Possible updates", beginnerLabel: "Possible updates" },
+  { id: "unclear", label: "Unclear", beginnerLabel: "Unclear" },
+  { id: "all", label: "All tracked", beginnerLabel: "All tracked" },
 ];
 
 export function LibraryScreen({
@@ -105,6 +119,9 @@ export function LibraryScreen({
   const [refreshingAllWatched, setRefreshingAllWatched] = useState(false);
   const [watchMessage, setWatchMessage] = useState<string | null>(null);
   const [watchOverview, setWatchOverview] = useState<HomeOverview | null>(null);
+  const [watchList, setWatchList] = useState<LibraryWatchListResponse | null>(null);
+  const [watchListFilter, setWatchListFilter] = useState<WatchListFilter>("attention");
+  const [loadingWatchList, setLoadingWatchList] = useState(false);
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
@@ -116,6 +133,10 @@ export function LibraryScreen({
   useEffect(() => {
     void loadWatchCenter();
   }, [refreshVersion]);
+
+  useEffect(() => {
+    void loadWatchList();
+  }, [refreshVersion, watchListFilter]);
 
   useEffect(() => {
     void loadRows();
@@ -189,6 +210,23 @@ export function LibraryScreen({
     }
   }
 
+  async function loadWatchList() {
+    setLoadingWatchList(true);
+
+    try {
+      const next = await api.listLibraryWatchItems(watchListFilter, 12);
+      setWatchList(next);
+    } catch {
+      setWatchList({
+        filter: watchListFilter,
+        total: 0,
+        items: [],
+      });
+    } finally {
+      setLoadingWatchList(false);
+    }
+  }
+
   async function loadRows(preferredSelectedId?: number) {
     const result = await api.listLibraryFiles({
       search: deferredSearch || undefined,
@@ -213,6 +251,10 @@ export function LibraryScreen({
 
   async function openFile(row: LibraryFileRow) {
     setSelected(await api.getFileDetail(row.id));
+  }
+
+  async function openFileById(fileId: number) {
+    setSelected(await api.getFileDetail(fileId));
   }
 
   async function saveCreatorOverride() {
@@ -338,7 +380,7 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch source saved.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
+      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "save the watch source"));
     } finally {
@@ -365,7 +407,7 @@ export function LibraryScreen({
       setWatchSourceLabel("");
       setWatchSourceUrl("");
       setWatchMessage("Watch source cleared.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
+      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "clear the watch source"));
     } finally {
@@ -390,7 +432,7 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch result refreshed.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter()]);
+      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "refresh the watch source"));
     } finally {
@@ -414,7 +456,7 @@ export function LibraryScreen({
           : `${summary.exactUpdateItems} confirmed updates found.`;
 
       setWatchCenterMessage(`${checkedLabel} ${updateLabel}`);
-      await Promise.all([loadWatchCenter(), loadRows(selected?.id)]);
+      await Promise.all([loadWatchCenter(), loadWatchList(), loadRows(selected?.id)]);
     } catch (error) {
       setWatchCenterMessage(watchActionError(error, "check watched pages"));
     } finally {
@@ -1170,6 +1212,84 @@ export function LibraryScreen({
             {watchCenterMessage ? (
               <div className="library-watch-message">{watchCenterMessage}</div>
             ) : null}
+            <div className="library-watch-focus">
+              <div className="library-watch-filter-row">
+                {WATCH_LIST_FILTERS.map((filterOption) => (
+                  <button
+                    key={filterOption.id}
+                    type="button"
+                    className={
+                      watchListFilter === filterOption.id
+                        ? "watch-filter-chip is-active"
+                        : "watch-filter-chip"
+                    }
+                    onClick={() => setWatchListFilter(filterOption.id)}
+                  >
+                    <span>
+                      {userView === "beginner"
+                        ? filterOption.beginnerLabel
+                        : filterOption.label}
+                    </span>
+                    {watchFilterCount(
+                      filterOption.id,
+                      watchOverview,
+                      watchList,
+                    ) !== null ? (
+                      <strong>
+                        {watchFilterCount(
+                          filterOption.id,
+                          watchOverview,
+                          watchList,
+                        )?.toLocaleString()}
+                      </strong>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+
+              <div className="library-watch-list">
+                {loadingWatchList ? (
+                  <div className="library-watch-empty">
+                    {userView === "beginner"
+                      ? "Loading the tracked watch items..."
+                      : "Loading tracked watch items..."}
+                  </div>
+                ) : watchList?.items.length ? (
+                  watchList.items.map((item) => (
+                    <button
+                      key={item.fileId}
+                      type="button"
+                      className="library-watch-list-item"
+                      onClick={() => void openFileById(item.fileId)}
+                    >
+                      <div className="library-watch-list-copy">
+                        <strong>{item.subjectLabel}</strong>
+                        <span>
+                          {item.creator
+                            ? `${item.creator} · ${item.filename}`
+                            : item.filename}
+                        </span>
+                        <span>
+                          {watchListVersionLine(
+                            item.installedVersion,
+                            item.watchResult.latestVersion,
+                            userView,
+                          )}
+                        </span>
+                      </div>
+                      <div className="library-watch-list-state">
+                        <strong>{watchStatusLabel(item.watchResult, userView)}</strong>
+                        <span>{watchCapabilityLabel(item.watchResult, userView)}</span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="library-watch-empty">
+                    {watchListEmptyMessage(watchListFilter, userView)}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="vertical-dock library-table-dock">
@@ -1614,6 +1734,75 @@ function versionConfidenceLabel(confidence: VersionConfidence) {
       return "Weak";
     default:
       return "Unknown";
+  }
+}
+
+function watchFilterCount(
+  filter: WatchListFilter,
+  watchOverview: HomeOverview | null,
+  watchList: LibraryWatchListResponse | null,
+) {
+  if (!watchOverview) {
+    return filter === "all" && watchList?.filter === "all" ? watchList.total : null;
+  }
+
+  switch (filter) {
+    case "attention":
+      return (
+        watchOverview.exactUpdateItems +
+        watchOverview.possibleUpdateItems +
+        watchOverview.unknownWatchItems
+      );
+    case "exact_updates":
+      return watchOverview.exactUpdateItems;
+    case "possible_updates":
+      return watchOverview.possibleUpdateItems;
+    case "unclear":
+      return watchOverview.unknownWatchItems;
+    case "all":
+      return watchList?.filter === "all" ? watchList.total : null;
+  }
+}
+
+function watchListVersionLine(
+  installedVersion: string | null,
+  latestVersion: string | null,
+  userView: UserView,
+) {
+  const installedLabel = installedVersion?.trim() ? installedVersion : "not clear";
+  if (latestVersion?.trim()) {
+    return userView === "beginner"
+      ? `Installed ${installedLabel}. Latest helper check ${latestVersion}.`
+      : `Installed ${installedLabel} · Latest helper ${latestVersion}`;
+  }
+
+  return userView === "beginner"
+    ? `Installed ${installedLabel}. No helper version recorded yet.`
+    : `Installed ${installedLabel} · No helper version yet`;
+}
+
+function watchListEmptyMessage(filter: WatchListFilter, userView: UserView) {
+  switch (filter) {
+    case "attention":
+      return userView === "beginner"
+        ? "Nothing in the tracked watch list needs attention right now."
+        : "No tracked watch items need attention right now.";
+    case "exact_updates":
+      return userView === "beginner"
+        ? "No confirmed updates are tracked right now."
+        : "No tracked exact updates right now.";
+    case "possible_updates":
+      return userView === "beginner"
+        ? "No possible updates are waiting right now."
+        : "No tracked possible updates right now.";
+    case "unclear":
+      return userView === "beginner"
+        ? "No tracked items are unclear right now."
+        : "No tracked unclear watch results right now.";
+    case "all":
+      return userView === "beginner"
+        ? "No tracked watch items are set up yet."
+        : "No tracked watch items yet.";
   }
 }
 

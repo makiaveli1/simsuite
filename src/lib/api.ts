@@ -40,6 +40,7 @@ import type {
   LibraryListResponse,
   LibraryQuery,
   LibrarySettings,
+  LibraryWatchListResponse,
   RestoreSnapshotResult,
   ReviewPlanAction,
   ReviewQueueItem,
@@ -52,6 +53,7 @@ import type {
   SnapshotSummary,
   VersionResolution,
   VersionSignal,
+  WatchListFilter,
   WatchSourceKind,
   WatchResult,
   WorkspaceChange,
@@ -581,6 +583,100 @@ function buildMockRefreshedWatchResult(
     confidence: "unknown",
     note: mockSavedWatchNote(currentWatch.sourceKind ?? "exact_page", currentWatch.sourceUrl),
     evidence: [],
+  };
+}
+
+function mockWatchMatchesFilter(
+  watchResult: WatchResult,
+  filter: WatchListFilter,
+) {
+  switch (filter) {
+    case "attention":
+      return (
+        watchResult.status === "exact_update_available" ||
+        watchResult.status === "possible_update" ||
+        watchResult.status === "unknown"
+      );
+    case "exact_updates":
+      return watchResult.status === "exact_update_available";
+    case "possible_updates":
+      return watchResult.status === "possible_update";
+    case "unclear":
+      return watchResult.status === "unknown";
+    case "all":
+      return true;
+  }
+}
+
+function mockWatchStatusPriority(status: WatchResult["status"]) {
+  switch (status) {
+    case "exact_update_available":
+      return 0;
+    case "possible_update":
+      return 1;
+    case "unknown":
+      return 2;
+    case "not_watched":
+      return 3;
+    case "current":
+      return 4;
+  }
+}
+
+function buildMockLibraryWatchList(
+  filter: WatchListFilter,
+  limit = 12,
+): LibraryWatchListResponse {
+  const items = mockFiles
+    .filter((file) => file.sourceLocation !== "downloads")
+    .map((file) => ({
+      file,
+      installedVersionSummary:
+        file.installedVersionSummary ?? buildMockInstalledVersionSummary(file),
+      watchResult: file.watchResult ?? buildMockWatchResult(file),
+    }))
+    .filter(
+      (entry): entry is typeof entry & { watchResult: WatchResult } =>
+        entry.watchResult !== null && entry.watchResult.sourceOrigin !== "none",
+    )
+    .filter((entry) => mockWatchMatchesFilter(entry.watchResult, filter))
+    .sort((left, right) => {
+      const statusOrder =
+        mockWatchStatusPriority(left.watchResult.status) -
+        mockWatchStatusPriority(right.watchResult.status);
+      if (statusOrder !== 0) {
+        return statusOrder;
+      }
+
+      const subjectCompare = (left.installedVersionSummary?.subjectLabel ?? left.file.filename)
+        .localeCompare(
+          right.installedVersionSummary?.subjectLabel ?? right.file.filename,
+          undefined,
+          { sensitivity: "base" },
+        );
+      if (subjectCompare !== 0) {
+        return subjectCompare;
+      }
+
+      return left.file.filename.localeCompare(right.file.filename, undefined, {
+        sensitivity: "base",
+      });
+    });
+
+  return {
+    filter,
+    total: items.length,
+    items: items.slice(0, limit).map((entry) => ({
+      fileId: entry.file.id,
+      filename: entry.file.filename,
+      creator: entry.file.creator,
+      subjectLabel:
+        entry.installedVersionSummary?.subjectLabel ??
+        entry.file.bundleName ??
+        entry.file.filename,
+      installedVersion: entry.installedVersionSummary?.version ?? null,
+      watchResult: entry.watchResult,
+    })),
   };
 }
 
@@ -4479,6 +4575,14 @@ async function mockInvoke<T>(
       const query = (payload?.query as LibraryQuery | undefined) ?? {};
       return filterMockFiles(query) as T;
     }
+    case "list_library_watch_items": {
+      const filter = (payload?.filter as WatchListFilter | undefined) ?? "attention";
+      const rawLimit = Number(payload?.limit ?? 12);
+      const limit = Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(48, Math.trunc(rawLimit)))
+        : 12;
+      return buildMockLibraryWatchList(filter, limit) as T;
+    }
     case "get_file_detail": {
       const fileId = payload?.fileId as number;
       return (
@@ -5098,6 +5202,11 @@ export const api = {
     invoke<boolean>("ignore_download_item", { itemId }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
+  listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>
+    invoke<LibraryWatchListResponse>("list_library_watch_items", {
+      filter,
+      limit,
+    }),
   getFileDetail: (fileId: number) =>
     invoke<FileDetail | null>("get_file_detail", { fileId }),
   saveWatchSourceForFile: (

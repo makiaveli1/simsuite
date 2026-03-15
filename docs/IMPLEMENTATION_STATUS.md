@@ -4,6 +4,36 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session turned the Library watch center into a real tracked watch surface instead of a summary-only strip.
+
+Important changes and findings:
+
+- `Library` now has tracked watch filters inside the existing watch center:
+  - needs attention
+  - confirmed updates
+  - possible updates
+  - unclear
+  - all tracked
+- the watch center now shows the actual tracked items behind those counts, not just the counts themselves
+- clicking a tracked watch row opens that item in the existing Library inspector
+- the backend now builds tracked watch rows from:
+  - user-saved watch pages
+  - built-in official pages for supported special mods
+- built-in supported special mods now show up in that tracked list even before a helper latest row exists, so the UI does not depend on older saved family-state history to notice them
+- the browser-preview mocks now expose the same tracked watch list shape
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `168` tests
+- `npm run build` passed
+- the native desktop smoke passed after it was widened to verify the tracked watch list in the real Tauri app
+
+Important remaining gap:
+
+- the next watch-management step should be setup and review, not another summary layer:
+  - bulk setup for unwatched installed items
+  - easier editing for generic saved watch sources
+  - a clearer review surface for items that could be watched but are not set up yet
+
+## Current session note (March 15, 2026)
+
 This session made the Library watch flow more honest and easier to use without adding a crowded new screen.
 
 Important changes and findings:

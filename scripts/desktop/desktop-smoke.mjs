@@ -522,6 +522,9 @@ async function verifyHomeWatchSummary(driver) {
 
 async function verifyLibraryVersionWatch(driver) {
   await ensureLibraryIndexed(driver, ["S4CL.ts4script", "mc_cmd_center.ts4script"]);
+  await waitForText(driver, "Needs attention");
+  await clickButton(driver, "All tracked");
+  await waitForAnyText(driver, ["mc_cmd_center.ts4script", "S4CL.ts4script"], 30000);
   try {
     await clickLibraryRow(driver, "S4CL.ts4script", 30000);
   } catch {

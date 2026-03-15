@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: Library now has a real tracked watch list inside the existing watch center, and the native desktop smoke now proves that list is visible in the real app. The next product focus should be better watch management, especially bulk setup and a clearer way to review items that still do not have a watch source.
 - March 15, 2026: Library watch flow is more honest now. Built-in supported special-mod pages are shown as built-in, not as if the user saved them. The next product focus should be the fuller watch-management flow, not more backend watch guesswork.
 - March 15, 2026: the compact Library watch center is now in place and the base native desktop smoke passed again. The next product focus can move to broader watch management and provider planning.
 - March 15, 2026: the local dev loop is steadier now because `npm run tauri:dev` clears stale Vite listeners on port `1420` before it starts. The next product focus can go back to the fuller watch setup and provider flow.
@@ -17,6 +18,23 @@
 
 ## What Changed This Session
 
+- March 15, 2026: added the first real tracked watch list in `Library`:
+  - the watch center now includes filter chips for:
+    - needs attention
+    - confirmed updates
+    - possible updates
+    - unclear
+    - all tracked
+  - the watch list now shows the actual tracked items behind those counts instead of only showing summary numbers
+  - clicking a tracked watch row opens that item in the existing Library inspector
+- March 15, 2026: the backend now builds tracked watch rows from two honest sources:
+  - user-saved watch pages
+  - built-in supported special-mod official pages
+- March 15, 2026: built-in supported special mods now appear in the tracked watch list even before a helper latest-check row exists, so the watch list does not depend on older saved family-state history to notice them
+- March 15, 2026: the browser-preview mocks now expose the same tracked watch list shape as the real app
+- March 15, 2026: the native desktop smoke now checks the new watch list itself:
+  - it switches Library to `All tracked`
+  - it confirms tracked file names are visible there before it continues with the older detail checks
 - March 15, 2026: tightened the watch-source truth layer:
   - `WatchResult` now says whether the source is:
     - built in for a supported special mod
@@ -121,6 +139,9 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `168` tests after the tracked watch-list work.
+- March 15, 2026: `npm run build` passed after the Library watch-list UI and mock updates.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the smoke script was widened to check the new Library tracked watch list in the real Tauri app.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `165` tests after the watch-source-origin and Library watch-center changes.
 - March 15, 2026: `npm run build` passed after the Library watch-center and watch-origin UI changes.
 - March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed again:
@@ -178,6 +199,9 @@
 
 ## What Worked
 
+- The Library watch center now points to real items, not just counts.
+- Built-in supported special mods now appear in the tracked watch list even when no helper latest row has been written yet.
+- The tracked watch list stays inside the existing Library surface, so the screen is still flat and compact instead of growing a separate management page too early.
 - Library now tells the truth about where a watch source came from:
   - built-in official page
   - saved by you
@@ -225,8 +249,11 @@
 
 ## Known Problems / Gaps
 
+- Watch management is better, but still not complete:
+  - there is still no bulk setup flow for unwatched installed items
+  - there is still no dedicated review surface for items that could be watched but are not set up yet
+  - there is still no edit history or source audit trail
 - The next missing layer is fuller watch management:
-  - no watch list view yet
   - no easy bulk setup flow yet
   - no edit history or source audit trail yet
   - no provider onboarding flow yet
@@ -257,6 +284,11 @@
 
 ## Important Decisions
 
+- The first fuller watch-management step should stay inside the current Library screen:
+  - summary counts
+  - tracked watch list
+  - existing detail panel
+  - not a new heavy dashboard page
 - Built-in supported special-mod pages and user-saved watch pages are different product states and must stay visibly different in Library.
 - SimSuite should block misleading custom watch-page saves for supported special mods until there is a real rule for how built-in and custom sources should coexist.
 - tray creation should be lazy:
@@ -283,11 +315,10 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - design the next fuller user-facing watch-management flow for installed content now that built-in versus saved source truth is clear
-  - decide what the first watch-management surface should be:
-    - a watch list
-    - bulk setup
-    - easier source editing
+  - build the next watch-management step on top of the new tracked watch list:
+    - bulk setup for unwatched installed items
+    - easier source editing for generic watched items
+    - a better way to review items that still need a watch source
   - widen the native Library watch smoke beyond the current base lane
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements
   - widen helper-only latest parsing only where there is a safe official endpoint
