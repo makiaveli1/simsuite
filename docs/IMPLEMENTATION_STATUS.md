@@ -4,6 +4,24 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session made the local Tauri dev loop more reliable.
+
+Important changes and findings:
+
+- `npm run tauri:dev` now runs through a small PowerShell wrapper
+- that wrapper clears stale Vite listeners on port `1420` before launch
+- the cleanup is cautious:
+  - it only auto-stops stale `node`/Vite listeners
+  - if some other app is using `1420`, it stops and tells the user instead of killing it
+- `npm run dev:cleanup` now exists as a manual helper too
+- the wrapper was proven against a real stale Vite listener and a real app start
+
+Important remaining gap:
+
+- the broader desktop smoke harness still needs its own cleanup and signoff polish, but the normal local `tauri:dev` loop is in much better shape now
+
+## Current session note (March 15, 2026)
+
 This session fixed the two startup regressions that were blocking `npm run tauri:dev`.
 
 Important changes and findings:

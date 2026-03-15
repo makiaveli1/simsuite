@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: the local dev loop is steadier now because `npm run tauri:dev` clears stale Vite listeners on port `1420` before it starts. The next product focus can go back to the fuller watch setup and provider flow.
 - March 15, 2026: `tauri:dev` startup no longer dies on the old watch-schema migration or on tray setup during normal launch. The next product focus can go back to the fuller watch setup and provider flow, but the desktop smoke wrapper still needs cleanup so it does not leave Vite running on port `1420`.
 - March 15, 2026: safe automatic watch checks now exist, but the next product focus should still be a fuller watch setup and provider flow. The current desktop smoke wrapper also timed out on startup in this session, so that harness needs another cleanup pass before it is treated as perfect signoff.
 - March 15, 2026: the first installed-content watch flow now works end to end in the real Tauri app, including `Check now` for safe supported pages. The next product focus should be a fuller watch setup and management flow, not more backend guesswork.
@@ -14,6 +15,10 @@
 
 ## What Changed This Session
 
+- March 15, 2026: cleaned up the local dev loop:
+  - `npm run tauri:dev` now uses a wrapper that clears stale Vite listeners on port `1420` before launch
+  - the cleanup only auto-stops stale `node`/Vite listeners, not random apps
+  - `npm run dev:cleanup` now exists as a manual cleanup helper too
 - March 15, 2026: fixed two real startup regressions:
   - older databases now add `anchor_file_id` before creating the watch-source index, so migrated apps no longer crash during setup
   - tray creation is now lazy, so normal app startup does not depend on Windows accepting the tray icon right away
@@ -91,6 +96,9 @@
 
 ## What Was Tested
 
+- March 15, 2026: `npm run dev:cleanup` successfully stopped a real stale Vite `node` process that was still listening on port `1420`.
+- March 15, 2026: `npm run tauri:dev` now launches through the new wrapper, starts Vite cleanly, and reaches `simsuite.exe` without the old port-conflict failure.
+- March 15, 2026: `npm run dev:cleanup` reports `status=free` after the wrapper start check, so the cleanup path is working.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `164` tests after the schema-order and lazy-tray startup fix.
 - March 15, 2026: `npm run build` passed after the lazy-tray startup fix.
 - March 15, 2026: direct `cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --color always --` reached normal app startup and Downloads watcher work without the old database or tray panic.
@@ -139,6 +147,8 @@
 
 ## What Worked
 
+- the local dev loop now clears stale Vite listeners automatically before `tauri:dev` starts
+- there is now a safe manual cleanup helper for port `1420`
 - old databases with watch-source rows now upgrade cleanly instead of crashing on `anchor_file_id`
 - normal app startup no longer depends on creating the tray icon first
 - background mode still has a tray path, but that tray is created only when needed
@@ -177,7 +187,6 @@
 
 ## Known Problems / Gaps
 
-- the dev wrapper can still leave Vite running on port `1420` when a check is interrupted, which makes the next `tauri:dev` run look broken until that leftover process is cleared
 - The watch system is readable now, but the user-facing management flow is still thin:
   - watch results can be shown
   - generic watch sources are stored in the database
@@ -226,7 +235,6 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - clean up the desktop smoke wrapper so it stops leaving port `1420` busy after interrupted runs
   - design the first fuller user-facing watch-source flow for installed content now that save, clear, check-now, and safe automatic polling basics are real
   - debug the desktop smoke wrapper startup timeout so the watch checkpoint has a steadier native signoff path
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements

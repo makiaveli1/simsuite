@@ -6,10 +6,11 @@
   "description": "Local-first Sims content management suite built with Tauri, React, Rust, and SQLite.",
   "scripts": {
     "dev": "vite",
+    "dev:cleanup": "pwsh -NoProfile -File scripts/dev/cleanup-dev-port.ps1",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "pwsh -NoProfile -File scripts/dev/run-tauri-dev.ps1",
     "tauri:build": "tauri build",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "desktop:driver": "pwsh -NoProfile -File scripts/desktop/run-tauri-webdriver.ps1",
