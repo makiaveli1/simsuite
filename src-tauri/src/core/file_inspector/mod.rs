@@ -41,6 +41,47 @@ const RESOURCE_CATALOG: u32 = 0x319e_4f1d;
 const RESOURCE_DEFINITION: u32 = 0xc0db_5ae7;
 const RESOURCE_HOTSPOT: u32 = 0x8b18_ff6e;
 const RESOURCE_SCRIPT: u32 = 0x073f_aa07;
+const BUILD_SURFACE_RESOURCE_TYPES: &[u32] = &[
+    0x01d0_e75d,
+    0xb4f7_62c9,
+    0xd5f0_f921,
+    0xebcb_b16c,
+    0xf1ed_bd86,
+];
+const BUILD_STRUCTURE_RESOURCE_TYPES: &[u32] = &[
+    0x0201_9972,
+    0x2fae_983e,
+    0x76bc_f80c,
+    0x0418_fe2a,
+    0xd382_bf57,
+    0x1c1c_f1f7,
+    0x3f0c_529a,
+    0x9a20_cd1c,
+    0xa057_811c,
+    0x84c2_3219,
+];
+const GAMEPLAY_RESOURCE_WEIGHTS: &[(u32, usize)] = &[
+    (0x0c77_2e27, 3),
+    (0x545a_c67a, 2),
+    (0x6017_e896, 2),
+    (0x03b3_3ddf, 1),
+    (0x03e9_d964, 1),
+    (0x0069_453e, 1),
+    (0x0e4d_15fb, 1),
+    (0x2553_f435, 1),
+    (0x28b6_4675, 1),
+    (0x2c70_adf8, 1),
+    (0x339b_c5bd, 1),
+    (0x5107_7643, 1),
+    (0x5806_f5ba, 1),
+    (0x5b02_819e, 1),
+    (0x6e0d_da9f, 1),
+    (0x7df2_169c, 1),
+    (0x7fb6_ad8a, 1),
+    (0xb61d_e6b4, 1),
+    (0xcb5f_ddc7, 1),
+    (0xe882_d22f, 1),
+];
 
 #[derive(Debug, Clone, Default)]
 pub struct InspectionOutcome {
@@ -49,6 +90,7 @@ pub struct InspectionOutcome {
     pub kind_hint: Option<String>,
     pub subtype_hint: Option<String>,
     pub confidence_boost: f64,
+    pub kind_confidence_floor: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -198,6 +240,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
         kind_hint: Some("ScriptMods".to_owned()),
         subtype_hint: Some("Utilities".to_owned()),
         confidence_boost: 0.14,
+        kind_confidence_floor: 0.7,
     })
 }
 
@@ -277,7 +320,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             .map(String::as_str)
             .chain(creator_hints.iter().map(String::as_str)),
     );
-    let (kind_hint, subtype_hint) = infer_kind_from_resources(&type_counts);
+    let resource_kind = infer_kind_from_resources(&type_counts);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -291,9 +334,10 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             family_hints,
         },
         creator_hint: creator_hints.first().cloned(),
-        kind_hint,
-        subtype_hint,
+        kind_hint: resource_kind.kind_hint,
+        subtype_hint: resource_kind.subtype_hint,
         confidence_boost: 0.12,
+        kind_confidence_floor: resource_kind.confidence_floor,
     })
 }
 
@@ -994,9 +1038,14 @@ fn build_resource_summary(
     summary
 }
 
-fn infer_kind_from_resources(
-    type_counts: &BTreeMap<u32, usize>,
-) -> (Option<String>, Option<String>) {
+#[derive(Debug, Clone, Default)]
+struct ResourceKindHint {
+    kind_hint: Option<String>,
+    subtype_hint: Option<String>,
+    confidence_floor: f64,
+}
+
+fn infer_kind_from_resources(type_counts: &BTreeMap<u32, usize>) -> ResourceKindHint {
     let cas_score = type_counts
         .get(&RESOURCE_CAS_PART)
         .copied()
@@ -1005,6 +1054,10 @@ fn infer_kind_from_resources(
             .get(&RESOURCE_SKINTONE)
             .copied()
             .unwrap_or_default();
+    let has_build_surfaces =
+        count_present_resource_types(type_counts, BUILD_SURFACE_RESOURCE_TYPES) > 0;
+    let has_build_structures =
+        count_present_resource_types(type_counts, BUILD_STRUCTURE_RESOURCE_TYPES) > 0;
     let build_buy_score = type_counts
         .get(&RESOURCE_CATALOG)
         .copied()
@@ -1012,7 +1065,9 @@ fn infer_kind_from_resources(
         + type_counts
             .get(&RESOURCE_DEFINITION)
             .copied()
-            .unwrap_or_default();
+            .unwrap_or_default()
+        + if has_build_surfaces { 4 } else { 0 }
+        + if has_build_structures { 4 } else { 0 };
     let preset_score = type_counts
         .get(&RESOURCE_HOTSPOT)
         .copied()
@@ -1021,6 +1076,7 @@ fn infer_kind_from_resources(
         .get(&RESOURCE_SCRIPT)
         .copied()
         .unwrap_or_default();
+    let gameplay_score = gameplay_resource_score(type_counts);
 
     let mut candidates = vec![
         (
@@ -1031,20 +1087,62 @@ fn infer_kind_from_resources(
             } else {
                 None
             },
+            0.72,
         ),
-        ("BuildBuy", build_buy_score, None),
-        ("PresetsAndSliders", preset_score, Some("Sliders")),
-        ("ScriptMods", script_score, Some("Utilities")),
+        (
+            "BuildBuy",
+            build_buy_score,
+            if has_build_surfaces || has_build_structures {
+                Some("Build Surfaces")
+            } else {
+                None
+            },
+            if has_build_surfaces || has_build_structures {
+                0.7
+            } else {
+                0.68
+            },
+        ),
+        ("PresetsAndSliders", preset_score, Some("Sliders"), 0.68),
+        ("ScriptMods", script_score, Some("Utilities"), 0.7),
     ];
+    if gameplay_score >= 4 {
+        candidates.push((
+            "Gameplay",
+            gameplay_score,
+            Some("Gameplay"),
+            if gameplay_score >= 8 { 0.64 } else { 0.58 },
+        ));
+    }
     candidates.sort_by(|left, right| right.1.cmp(&left.1));
 
     match candidates.first() {
-        Some((kind, score, subtype)) if *score > 0 => (
-            Some((*kind).to_owned()),
-            subtype.map(|value| value.to_owned()),
-        ),
-        _ => (None, None),
+        Some((kind, score, subtype, confidence_floor)) if *score > 0 => ResourceKindHint {
+            kind_hint: Some((*kind).to_owned()),
+            subtype_hint: subtype.map(|value| value.to_owned()),
+            confidence_floor: *confidence_floor,
+        },
+        _ => ResourceKindHint::default(),
     }
+}
+
+fn count_present_resource_types(
+    type_counts: &BTreeMap<u32, usize>,
+    resource_types: &[u32],
+) -> usize {
+    resource_types
+        .iter()
+        .filter(|resource_type| type_counts.contains_key(resource_type))
+        .count()
+}
+
+fn gameplay_resource_score(type_counts: &BTreeMap<u32, usize>) -> usize {
+    GAMEPLAY_RESOURCE_WEIGHTS
+        .iter()
+        .filter_map(|(resource_type, weight)| {
+            type_counts.contains_key(resource_type).then_some(*weight)
+        })
+        .sum()
 }
 
 fn collect_creator_hints<'a, I>(values: I, seed_pack: &SeedPack) -> Vec<String>
@@ -1286,7 +1384,7 @@ fn read_u32(bytes: &[u8]) -> AppResult<u32> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, fs::File, io::Write};
+    use std::{collections::BTreeMap, fs, fs::File, io::Write};
 
     use flate2::{write::ZlibEncoder, Compression};
     use tempfile::tempdir;
@@ -1295,8 +1393,9 @@ mod tests {
     use crate::seed::load_seed_pack;
 
     use super::{
-        decompress_legacy, decompress_record_bytes, inspect_file, parse_name_map_entries,
-        parse_stbl_entries, read_seven_bit_string_be, DbpfRecord, RESOURCE_STRING_TABLE,
+        decompress_legacy, decompress_record_bytes, infer_kind_from_resources, inspect_file,
+        parse_name_map_entries, parse_stbl_entries, read_seven_bit_string_be, DbpfRecord,
+        RESOURCE_STRING_TABLE,
     };
 
     #[test]
@@ -1619,5 +1718,34 @@ mod tests {
         ];
         let payload = decompress_legacy(&compressed, 5).expect("payload");
         assert_eq!(payload, b"Hello");
+    }
+
+    #[test]
+    fn infers_build_surfaces_from_structural_resource_clusters() {
+        let type_counts = BTreeMap::from([
+            (0x0201_9972, 1_usize),
+            (0x2FAE_983E, 12_usize),
+            (0x76BC_F80C, 1_usize),
+        ]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("BuildBuy"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Build Surfaces"));
+        assert!(hint.confidence_floor >= 0.68);
+    }
+
+    #[test]
+    fn infers_gameplay_from_repeated_tuning_resource_clusters() {
+        let type_counts = BTreeMap::from([
+            (0x0C77_2E27, 24_usize),
+            (0x545A_C67A, 18_usize),
+            (0x6017_E896, 6_usize),
+            (0x7DF2_169C, 4_usize),
+        ]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.58);
     }
 }

@@ -848,8 +848,14 @@ fn build_buy_subtype(token: &str) -> &'static str {
     match token {
         "sofa" | "chair" | "table" | "desk" | "bed" | "dresser" | "bench" | "couch"
         | "armchair" | "cabinet" | "bookcase" | "counter" => "Furniture",
-        "lamp" | "rug" | "clutter" | "decor" | "plant" | "shelf" | "frame" => "Decor",
-        "wall" | "floor" | "door" | "window" | "wallpaper" | "tile" => "Build Surfaces",
+        "lamp" | "rug" | "clutter" | "decor" | "plant" | "shelf" | "shelves" | "frame"
+        | "mirror" | "mirrors" => "Decor",
+        "wall" | "walls" | "floor" | "floors" | "door" | "doors" | "window" | "windows"
+        | "wallpaper" | "wallpapers" | "tile" | "tiles" | "paint" | "paints" | "foundation"
+        | "foundations" | "terrain" | "roof" | "roofs" | "stair" | "stairs" | "staircase"
+        | "fence" | "fences" | "railing" | "railings" | "spandrel" | "spandrels" | "frieze"
+        | "friezes" | "trim" | "trims" | "ceiling" | "ceilings" | "panel" | "panels"
+        | "panelling" | "paneling" => "Build Surfaces",
         "bathroom" | "kitchen" | "bedroom" | "living" | "dining" => "Room Sets",
         _ => "BuildBuy",
     }
@@ -858,12 +864,16 @@ fn build_buy_subtype(token: &str) -> &'static str {
 fn gameplay_subtype(token: &str) -> &'static str {
     match token {
         "trait" | "traits" => "Traits",
-        "career" => "Careers",
-        "aspiration" => "Aspirations",
+        "career" | "careers" => "Careers",
+        "aspiration" | "aspirations" => "Aspirations",
         "relationship" => "Relationship Systems",
         "pregnancy" | "childbirth" => "Pregnancy",
         "school" | "education" => "Education",
         "business" | "banking" | "taxes" => "Business",
+        "recipe" | "recipes" => "Gameplay",
+        "interaction" | "interactions" => "Gameplay",
+        "lottrait" | "lottraits" | "lotchallenge" | "lotchallenges" => "Gameplay",
+        "cheat" | "cheats" => "Gameplay",
         "autonomy" => "Autonomy",
         "npc" => "NPC Behavior",
         "healthcare" => "Healthcare",
@@ -1088,6 +1098,15 @@ mod tests {
     }
 
     #[test]
+    fn detects_plural_build_surface_terms() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let parsed = parse_filename("Aesthetic Walls.package", &seed_pack);
+
+        assert_eq!(parsed.kind, "BuildBuy");
+        assert_eq!(parsed.subtype.as_deref(), Some("Build Surfaces"));
+    }
+
+    #[test]
     fn detects_gameplay_sets_without_hiding_the_mod_name() {
         let seed_pack = load_seed_pack().expect("seed pack");
         let parsed = parse_filename("adeepindigo_HealthcareRedux.package", &seed_pack);
@@ -1095,6 +1114,15 @@ mod tests {
         assert_eq!(parsed.possible_creator.as_deref(), Some("adeepindigo"));
         assert_eq!(parsed.kind, "Gameplay");
         assert_eq!(parsed.set_name.as_deref(), Some("Healthcare Redux"));
+    }
+
+    #[test]
+    fn detects_plural_gameplay_terms() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let parsed = parse_filename("BosseladyTV_Child_Aspirations_Bundle.package", &seed_pack);
+
+        assert_eq!(parsed.kind, "Gameplay");
+        assert_eq!(parsed.subtype.as_deref(), Some("Aspirations"));
     }
 
     #[test]

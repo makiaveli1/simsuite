@@ -101,7 +101,7 @@ const MAX_HASH_WORKERS: usize = 4;
 const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
-const SCAN_CACHE_VERSION: &str = "scanner-v9";
+const SCAN_CACHE_VERSION: &str = "scanner-v10";
 
 pub fn scan_library(state: &AppState, app: &AppHandle) -> AppResult<ScanSummary> {
     scan_library_with_progress(state, |progress| {
@@ -1033,12 +1033,18 @@ fn apply_inspection_hints(
     }
 
     if let Some(kind_hint) = inspection.kind_hint.as_deref() {
+        let inspection_supported_kind = matches!(
+            kind_hint,
+            "CAS"
+                | "BuildBuy"
+                | "Gameplay"
+                | "PresetsAndSliders"
+                | "ScriptMods"
+                | "OverridesAndDefaults"
+        );
+        let confirms_current_kind = classification.kind == kind_hint;
         let can_override = classification.kind == "Unknown"
-            || (classification.confidence < 0.7
-                && matches!(
-                    kind_hint,
-                    "CAS" | "BuildBuy" | "PresetsAndSliders" | "ScriptMods"
-                ));
+            || (classification.confidence < 0.7 && inspection_supported_kind);
 
         if can_override {
             classification.kind = kind_hint.to_owned();
@@ -1048,6 +1054,15 @@ fn apply_inspection_hints(
                     classification.subtype = Some(subtype.to_owned());
                 }
             }
+        }
+
+        if inspection_supported_kind && (can_override || confirms_current_kind) {
+            classification.confidence = classification
+                .confidence
+                .max(inspection.kind_confidence_floor);
+            classification.warning_flags.retain(|warning| {
+                warning != "no_category_detected" && warning != "conflicting_category_signals"
+            });
         }
     }
 }
@@ -1479,6 +1494,78 @@ mod tests {
         assert_eq!(listing.items.len(), 1);
         assert_eq!(listing.items[0].creator.as_deref(), Some("LittleMsSam"));
         assert_eq!(listing.items[0].kind, "Gameplay");
+    }
+
+    #[test]
+    fn inspection_hints_clear_stale_category_warnings_and_raise_confidence() {
+        let mut classification = crate::core::filename_parser::FilenameClassification {
+            normalized: "aesthetic_walls".to_owned(),
+            tokens: vec!["aesthetic".to_owned(), "walls".to_owned()],
+            possible_creator: None,
+            kind: "Unknown".to_owned(),
+            subtype: None,
+            set_name: None,
+            version_label: None,
+            support_tokens: Vec::new(),
+            warning_flags: vec![
+                "no_category_detected".to_owned(),
+                "conflicting_category_signals".to_owned(),
+            ],
+            confidence: 0.18,
+        };
+        let inspection = crate::core::file_inspector::InspectionOutcome {
+            kind_hint: Some("BuildBuy".to_owned()),
+            subtype_hint: Some("Build Surfaces".to_owned()),
+            kind_confidence_floor: 0.7,
+            ..Default::default()
+        };
+
+        apply_inspection_hints(&mut classification, &inspection);
+
+        assert_eq!(classification.kind, "BuildBuy");
+        assert_eq!(classification.subtype.as_deref(), Some("Build Surfaces"));
+        assert!(classification.confidence >= 0.7);
+        assert!(!classification
+            .warning_flags
+            .contains(&"no_category_detected".to_owned()));
+        assert!(!classification
+            .warning_flags
+            .contains(&"conflicting_category_signals".to_owned()));
+    }
+
+    #[test]
+    fn inspection_hints_can_promote_unknown_files_to_gameplay() {
+        let mut classification = crate::core::filename_parser::FilenameClassification {
+            normalized: "plumlace_mental_wellness".to_owned(),
+            tokens: vec![
+                "plumlace".to_owned(),
+                "mental".to_owned(),
+                "wellness".to_owned(),
+            ],
+            possible_creator: Some("Plumlace".to_owned()),
+            kind: "Unknown".to_owned(),
+            subtype: None,
+            set_name: None,
+            version_label: None,
+            support_tokens: Vec::new(),
+            warning_flags: vec!["no_category_detected".to_owned()],
+            confidence: 0.24,
+        };
+        let inspection = crate::core::file_inspector::InspectionOutcome {
+            kind_hint: Some("Gameplay".to_owned()),
+            subtype_hint: Some("Gameplay".to_owned()),
+            kind_confidence_floor: 0.58,
+            ..Default::default()
+        };
+
+        apply_inspection_hints(&mut classification, &inspection);
+
+        assert_eq!(classification.kind, "Gameplay");
+        assert_eq!(classification.subtype.as_deref(), Some("Gameplay"));
+        assert!(classification.confidence >= 0.58);
+        assert!(!classification
+            .warning_flags
+            .contains(&"no_category_detected".to_owned()));
     }
 
     #[test]

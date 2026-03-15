@@ -66,6 +66,26 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The local package-classification layer is now stronger and more honest after a deep live-library audit.
+
+Important current behavior:
+
+- many `.package` files were already being parsed correctly as `dbpf-package`, but the earlier category inference was too thin
+- inside-file package inspection now recognizes more safe Sims resource clusters for:
+  - Build/Buy surfaces
+  - Build/Buy structures
+  - stronger gameplay tuning groups
+- package inspection can now return a confidence floor along with the inferred kind and subtype
+- the scanner uses that inspection confidence floor when it applies inspection hints
+- the scanner also clears stale category warnings when inspection truth confirms the final kind, so older `no_category_detected` and `conflicting_category_signals` warnings do not linger after a rebuild
+- filename keyword coverage is also wider for common Build/Buy and gameplay terms, so filename parsing and inside-file inspection now reinforce each other more often instead of leaving obvious files in low-confidence buckets
+- this strengthened local classification matters to more than one surface because it feeds the same stored file-evidence layer used by:
+  - `Library` installed facts
+  - Inbox compare confidence
+  - watch setup suggestions
+
+## Current engineering note (March 15, 2026)
+
 The stale local-clue rebuild path now works on both installed-library data and Inbox download data.
 
 Important current behavior:

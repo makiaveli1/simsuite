@@ -2,6 +2,26 @@
 
 ## Current Priority
 
+- March 15, 2026: the first deep live package-and-CC confidence sweep found a real foundation gap and tightened it with live proof:
+  - the real issue was not that many `.package` files were unreadable
+  - many low-confidence installed rows were already being parsed as real `dbpf-package` files, but the inside-file resource inference and filename keyword coverage were too thin to confidently classify them
+  - package inspection now recognizes more safe Sims package patterns for:
+    - Build/Buy surfaces and structures
+    - stronger gameplay tuning clusters
+  - filename keyword coverage is now wider for common real-world terms such as:
+    - walls, floors, tiles, foundation, stairs, fence, railing, spandrel
+    - aspirations, careers, recipes, interactions, lot traits, lot challenges, cheats
+  - the scanner now clears stale category warnings when inside-file inspection confirms the final kind, so old `no_category_detected` and `conflicting_category_signals` warnings stop lingering after a true rebuild
+  - real live desktop validation on the app database showed:
+    - installed low-confidence `Unknown` rows dropped from `304` to `81`
+    - installed low-confidence `BuildBuy` rows dropped from `104` to `0`
+    - installed low-confidence `CAS` rows dropped from `643` to `1`
+    - installed low-confidence `Gameplay` rows dropped from `7` to `4`
+    - installed review-item join count dropped from about `3788` to `2082`
+  - the next product focus should stay on stabilization:
+    - audit `conflicting_creator_signals`, now the biggest remaining review reason by far
+    - keep doing live validation on ugly real mod and CC libraries instead of trusting fixtures alone
+    - keep watch bug cleanup behind this same confidence-hardening pass
 - March 15, 2026: the stale ts4script clue cleanup is now proven end to end in the real app data:
   - `Library` scan cache now bumps when stored inspection meaning changes, so unchanged installed files get one true rebuild instead of silently keeping stale clues
   - the downloads Inbox assessment path now does the same kind of one-time rebuild for unchanged download items when the assessment version changes
@@ -98,6 +118,42 @@
 
 ## What Changed This Session
 
+- March 15, 2026: finished the first deep live package-and-CC confidence sweep and used it to harden the shared local-classification base:
+  - started with a read-only live-database audit instead of guessing from fixtures
+  - confirmed many weak `.package` rows were already being parsed as real `dbpf-package` files with resource summaries
+  - found the real classification gaps:
+    - too few inside-file DBPF resource patterns for Build/Buy and gameplay packages
+    - too-thin filename keyword coverage for common real-world Build/Buy and gameplay labels
+    - stale category warnings lingering even after the final category had become known
+  - widened package inspection to recognize more safe resource clusters for:
+    - Build surfaces
+    - Build structures
+    - stronger gameplay tuning groups
+  - widened keyword and subtype coverage for common plural and structural names such as:
+    - walls, floors, tiles, paint, foundation, terrain, roof, stairs, fence, railing, spandrel, frieze, trim, ceiling, paneling
+    - careers, aspirations, recipes, interactions, lot traits, lot challenges, cheats
+  - the scanner now:
+    - accepts inspection-driven `Gameplay` promotions
+    - raises confidence using inspection confidence floors
+    - clears stale `no_category_detected` and `conflicting_category_signals` warnings when inspection truth wins
+  - bumped rebuild versions again so the live app truly refreshed stored meaning:
+    - library scan cache -> `scanner-v10`
+    - downloads assessment -> `downloads-assessment-v4`
+  - real live desktop validation on the app data then showed:
+    - full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, `updatedFiles = 13010`, `sessionId = 31`
+    - live Inbox refresh completed and settled at `6 ready / 1 review`
+    - installed low-confidence rows improved:
+      - `Unknown 304 -> 81`
+      - `BuildBuy 104 -> 0`
+      - `CAS 643 -> 1`
+      - `Gameplay 7 -> 4`
+    - installed review queue join count improved from about `3788` to `2082`
+    - the current dominant remaining installed review reason is now clearly `conflicting_creator_signals` at `1856`
+  - full checks passed again after the code change:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `187` tests
+    - `cargo fmt --manifest-path src-tauri/Cargo.toml --all` passed
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: finished the live stale-clue rebuild pass for both `Library` and `Inbox`:
   - bumped the library scan cache version so a real parser change forces one true installed-library rebuild instead of reusing stale rows
   - confirmed the first blocking full-scan command path was a bad fit for the desktop driver, then switched the live scan to the safer background `start_scan` path
@@ -461,6 +517,12 @@
 
 ## What Worked
 
+- The first deep live package-and-CC audit turned into a real foundation win instead of another surface tweak:
+  - many real installed `.package` rows now land on stronger, cleaner categories
+  - stale category-warning noise dropped sharply after the true rebuild
+  - live Inbox and Library both benefited because they share the same stored local clue base
+- package classification is now better at recognizing real Build/Buy and gameplay files from what is inside the package, not only from filenames
+- common Build/Buy and gameplay names now classify more honestly even when creators use plural or structural terms
 - `Home` and `Library` now feel more like one watch workflow instead of separate summary and detail pockets.
 - The watch center can now guide both setup work and saved review work without adding another crowded manager page.
 - Review flow now has the same “keep moving” feel that setup flow already had.
@@ -526,6 +588,14 @@
 
 ## Known Problems / Gaps
 
+- The biggest remaining installed-library trust problem is now much clearer:
+  - `conflicting_creator_signals` is still the dominant review reason at `1856`
+  - that likely means harmless creator aliases, path hints, and inside-file creator clues are still disagreeing too often
+  - the next stabilization pass should audit creator-conflict rules before more feature growth
+- Generic package confidence is much better now, but it is still not at the final trust goal:
+  - `81` installed rows still sit in low-confidence `Unknown`
+  - some gameplay packages are still only medium-confidence because their inside-file clues are weaker or noisier
+  - more live validation is still needed on messy mixed CC libraries, not just script-heavy mods
 - Generic compare is now stricter, but it is still not at the final confidence goal yet:
   - family-hint loading is still narrower than the new creator-hint loading
   - some generic CC and mod cases still need live validation outside fixture tests
@@ -589,6 +659,9 @@
 
 ## Important Decisions
 
+- Treat inside-file DBPF resource clusters as stronger category evidence for `.package` files when they match safe known Sims patterns.
+- If inspection truth confirms the final file kind, stale category warnings should be cleared instead of left behind as fake review noise.
+- Keep feature freeze in place until creator-conflict noise is audited, because that is now the biggest remaining foundation problem.
 - Generic compare should prefer `unknown` over `not installed` unless the incoming local identity is at least medium-strength.
 - Inspected `creator_hints` are allowed to help candidate search during full compare because they come from local file inspection, not from network guesswork.
 - Stop adding new watch features until the shared matching and confidence base is tighter.
@@ -629,9 +702,9 @@
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Start from stabilization, not feature growth:
-  - audit whether family-hint candidate loading needs the same kind of careful widening as creator hints just got
-  - re-check generic Inbox queue summaries against the stricter compare results
-  - do a real live spot-check on mixed mods and CC where creator hints exist without a saved creator match
+  - audit `conflicting_creator_signals` first, because it is now the biggest remaining installed review reason by far
+  - compare path creator hints, filename creator hints, and inside-file creator hints to find where harmless alias noise is being over-penalized
+  - re-check generic Inbox queue summaries against the stronger package classification results
   - keep watch setup suggestions cautious unless the local clues are genuinely strong
 - Check the wider watch flow again in the desktop app:
   - `Home` -> `Watch setup`

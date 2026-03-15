@@ -4,6 +4,49 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session used the live app database to do a deeper package-and-CC trust audit and fixed a real classification gap in the shared local foundation.
+
+Important changes and findings:
+
+- the weak-confidence problem was not mainly unreadable `.package` files
+- many weak installed rows were already being parsed as real `dbpf-package` files with resource summaries, but the category inference was too narrow
+- package inspection now recognizes more safe inside-file Sims patterns for:
+  - Build/Buy surfaces
+  - Build/Buy structures
+  - stronger gameplay tuning clusters
+- filename and subtype keyword coverage is now wider for common real-world terms such as:
+  - walls, floors, tiles, foundation, stairs, fence, railing, spandrel
+  - aspirations, careers, recipes, interactions, lot traits, lot challenges, cheats
+- the scanner now:
+  - promotes unknown rows to `Gameplay` when inspection truth is strong enough
+  - raises confidence from inspection confidence floors
+  - clears stale `no_category_detected` and `conflicting_category_signals` warnings when inspection confirms the final category
+- rebuild versions were bumped again so the live app truly refreshed stored meaning:
+  - `scanner-v10`
+  - `downloads-assessment-v4`
+- real live validation on the app data showed:
+  - full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, and `updatedFiles = 13010`
+  - installed low-confidence rows improved from:
+    - `Unknown 304 -> 81`
+    - `BuildBuy 104 -> 0`
+    - `CAS 643 -> 1`
+    - `Gameplay 7 -> 4`
+  - installed review-item join count improved from about `3788` to `2082`
+  - the biggest remaining installed review reason is now clearly `conflicting_creator_signals` at `1856`
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `187` tests
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --all` passed
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- this was a real foundation fix, but the trust pass is still not done:
+  - creator-conflict noise is now the next biggest target by far
+  - more live validation is still needed on mixed real-world mods and CC
+  - watch bugs still need cleanup before feature work resumes
+
+## Current session note (March 15, 2026)
+
 This session finished the stale ts4script clue rebuild path across both installed library data and Inbox download data.
 
 Important changes and findings:
