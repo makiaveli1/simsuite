@@ -12,9 +12,10 @@ use crate::{
     error::AppResult,
     models::{
         FileInsights, InstalledVersionSummary, LibrarySettings, LibraryWatchListItem,
-        LibraryWatchListResponse, SpecialVersionStatus, VersionCompareStatus, VersionConfidence,
-        VersionResolution, VersionSignal, WatchCapability, WatchListFilter, WatchResult,
-        WatchSourceKind, WatchSourceOrigin, WatchStatus,
+        LibraryWatchListResponse, LibraryWatchSetupItem, LibraryWatchSetupResponse,
+        SpecialVersionStatus, VersionCompareStatus, VersionConfidence, VersionResolution,
+        VersionSignal, WatchCapability, WatchListFilter, WatchResult, WatchSourceKind,
+        WatchSourceOrigin, WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
 };
@@ -22,6 +23,8 @@ use crate::{
 const MAX_CANDIDATE_ROWS: usize = 96;
 const MAX_SEARCH_TOKENS: usize = 4;
 const MAX_WATCH_LIST_LIMIT: usize = 48;
+const MAX_WATCH_SETUP_LIMIT: usize = 24;
+const WATCH_SETUP_SCAN_LIMIT: usize = 320;
 const MATCH_SCORE_STRONG: f64 = 1.20;
 const MATCH_SCORE_MEDIUM: f64 = 0.80;
 const MATCH_SCORE_WEAK: f64 = 0.45;
@@ -237,6 +240,42 @@ pub fn list_library_watch_items(
     Ok(LibraryWatchListResponse {
         filter,
         total,
+        items,
+    })
+}
+
+pub fn list_library_watch_setup_items(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    limit: usize,
+) -> AppResult<LibraryWatchSetupResponse> {
+    let mut seen_subjects = HashSet::new();
+    let mut items = Vec::new();
+
+    for file_id in load_watch_setup_candidate_file_ids(connection)? {
+        let Some(item) = build_library_watch_setup_item(
+            connection,
+            settings,
+            seed_pack,
+            file_id,
+            &mut seen_subjects,
+        )?
+        else {
+            continue;
+        };
+        items.push(item);
+    }
+
+    items.sort_by(compare_library_watch_setup_items);
+    let total = items.len() as i64;
+    let max_limit = limit.clamp(1, MAX_WATCH_SETUP_LIMIT);
+    let truncated = items.len() > max_limit;
+    items.truncate(max_limit);
+
+    Ok(LibraryWatchSetupResponse {
+        total,
+        truncated,
         items,
     })
 }
@@ -488,6 +527,44 @@ fn load_saved_watch_anchor_file_ids(connection: &Connection) -> AppResult<Vec<i6
     Ok(rows)
 }
 
+fn load_watch_setup_candidate_file_ids(connection: &Connection) -> AppResult<Vec<i64>> {
+    let mut statement = connection.prepare(
+        "SELECT f.id
+         FROM files f
+         WHERE f.source_location <> 'downloads'
+           AND f.kind NOT LIKE 'Tray%'
+           AND LOWER(LTRIM(COALESCE(f.extension, ''), '.')) IN ('package', 'ts4script')
+           AND (
+                f.creator_id IS NOT NULL
+                OR COALESCE(f.confidence, 0) >= 0.72
+                OR COALESCE(f.insights, '') LIKE '%versionHints%'
+                OR COALESCE(f.insights, '') LIKE '%versionSignals%'
+                OR COALESCE(f.insights, '') LIKE '%scriptNamespaces%'
+                OR COALESCE(f.insights, '') LIKE '%embeddedNames%'
+                OR COALESCE(f.insights, '') LIKE '%familyHints%'
+           )
+         ORDER BY
+           CASE WHEN f.kind = 'ScriptMods' THEN 0 ELSE 1 END,
+           CASE WHEN f.creator_id IS NOT NULL THEN 0 ELSE 1 END,
+           CASE
+             WHEN COALESCE(f.confidence, 0) >= 0.95 THEN 0
+             WHEN COALESCE(f.confidence, 0) >= 0.8 THEN 1
+             ELSE 2
+           END,
+           COALESCE(f.modified_at, '') DESC,
+           f.filename COLLATE NOCASE
+         LIMIT ?1",
+    )?;
+
+    let rows = statement
+        .query_map(params![WATCH_SETUP_SCAN_LIMIT as i64], |row| {
+            row.get::<_, i64>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(rows)
+}
+
 fn load_supported_special_watch_anchor_file_ids(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -532,7 +609,10 @@ fn load_supported_special_watch_anchor_file_ids(
         "SELECT id
          FROM files
          WHERE source_location <> 'downloads'
-           AND (kind = 'ScriptMods' OR extension IN ('.ts4script', '.package'))
+           AND (
+                kind = 'ScriptMods'
+                OR LOWER(LTRIM(COALESCE(extension, ''), '.')) IN ('ts4script', 'package')
+           )
          ORDER BY filename COLLATE NOCASE",
     )?;
     let candidate_ids = statement
@@ -601,7 +681,10 @@ fn find_watch_anchor_file_id_for_special_profile(
         "SELECT id
          FROM files
          WHERE source_location <> 'downloads'
-           AND (kind = 'ScriptMods' OR extension IN ('.ts4script', '.package'))
+           AND (
+                kind = 'ScriptMods'
+                OR LOWER(LTRIM(COALESCE(extension, ''), '.')) IN ('ts4script', 'package')
+           )
          ORDER BY filename COLLATE NOCASE",
     )?;
     let candidate_ids = statement
@@ -634,6 +717,58 @@ fn find_watch_anchor_file_id_for_special_profile(
     }
 
     Ok(None)
+}
+
+fn build_library_watch_setup_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+    seen_subjects: &mut HashSet<String>,
+) -> AppResult<Option<LibraryWatchSetupItem>> {
+    let Some(file_row) = load_library_subject_row(connection, file_id)? else {
+        return Ok(None);
+    };
+
+    let locator = subject_locator_for_row(&file_row, settings.mods_path.as_deref());
+    let subject_rows = load_subject_rows_for_locator(
+        connection,
+        settings.mods_path.as_deref(),
+        &locator,
+        file_id,
+    )?;
+    let subject = build_subject(subject_rows, locator, settings.mods_path.as_deref());
+
+    if !seen_subjects.insert(subject.key.clone()) {
+        return Ok(None);
+    }
+
+    if find_supported_profile(seed_pack, &subject).is_some() {
+        return Ok(None);
+    }
+
+    let watch_result = resolve_watch_result(connection, seed_pack, &subject)?;
+    if watch_result
+        .as_ref()
+        .is_some_and(|result| result.source_origin != WatchSourceOrigin::None)
+    {
+        return Ok(None);
+    }
+
+    let Some((suggested_source_kind, setup_hint)) = watch_setup_suggestion_for_subject(&subject)
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(LibraryWatchSetupItem {
+        file_id,
+        filename: file_row.filename,
+        creator: file_row.creator,
+        subject_label: subject.label,
+        installed_version: subject.version.value,
+        suggested_source_kind,
+        setup_hint,
+    }))
 }
 
 fn build_library_watch_list_item(
@@ -672,6 +807,71 @@ fn build_library_watch_list_item(
     }))
 }
 
+fn watch_setup_suggestion_for_subject(
+    subject: &VersionSubject,
+) -> Option<(WatchSourceKind, String)> {
+    let has_creator = !subject.creator_tokens.is_empty();
+    let has_version = subject.version.value.is_some();
+    let has_script = subject
+        .files
+        .iter()
+        .any(|file| file.filename.to_lowercase().ends_with(".ts4script"))
+        || !subject.namespace_tokens.is_empty();
+    let has_name_clue = !subject.embedded_tokens.is_empty() || subject.filename_tokens.len() >= 2;
+
+    let score = (has_creator as i32 * 2)
+        + (has_version as i32 * 2)
+        + (has_script as i32 * 2)
+        + (has_name_clue as i32);
+
+    if score < 3 || (!has_creator && !has_version && !has_script) {
+        return None;
+    }
+
+    if has_creator && has_version {
+        return Some((
+            WatchSourceKind::ExactPage,
+            "Has creator and version clues, so an exact mod page should work well here.".to_owned(),
+        ));
+    }
+
+    if has_script && has_creator {
+        return Some((
+            WatchSourceKind::ExactPage,
+            "Has script and creator clues, so an exact mod page is the safest next step."
+                .to_owned(),
+        ));
+    }
+
+    if has_script && has_version {
+        return Some((
+            WatchSourceKind::ExactPage,
+            "Has script and version clues, so an exact mod page should be the cleanest fit."
+                .to_owned(),
+        ));
+    }
+
+    if has_creator {
+        return Some((
+            WatchSourceKind::CreatorPage,
+            "Has strong creator clues, so a creator page is a reasonable reminder if no exact page is handy."
+                .to_owned(),
+        ));
+    }
+
+    if has_version {
+        return Some((
+            WatchSourceKind::ExactPage,
+            "Has version clues, but no watch page is saved yet.".to_owned(),
+        ));
+    }
+
+    Some((
+        WatchSourceKind::ExactPage,
+        "Has enough local clues to set up a watch page safely.".to_owned(),
+    ))
+}
+
 fn watch_result_matches_filter(watch_result: &WatchResult, filter: WatchListFilter) -> bool {
     match filter {
         WatchListFilter::Attention => matches!(
@@ -701,6 +901,48 @@ fn compare_library_watch_items(
                 .to_lowercase()
                 .cmp(&right.filename.to_lowercase())
         })
+}
+
+fn compare_library_watch_setup_items(
+    left: &LibraryWatchSetupItem,
+    right: &LibraryWatchSetupItem,
+) -> std::cmp::Ordering {
+    watch_setup_priority(right)
+        .cmp(&watch_setup_priority(left))
+        .then_with(|| {
+            left.subject_label
+                .to_lowercase()
+                .cmp(&right.subject_label.to_lowercase())
+        })
+        .then_with(|| {
+            left.filename
+                .to_lowercase()
+                .cmp(&right.filename.to_lowercase())
+        })
+}
+
+fn watch_setup_priority(item: &LibraryWatchSetupItem) -> i32 {
+    let mut priority = 0;
+
+    if item.suggested_source_kind == WatchSourceKind::ExactPage {
+        priority += 2;
+    }
+    if item
+        .installed_version
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        priority += 2;
+    }
+    if item
+        .creator
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        priority += 1;
+    }
+
+    priority
 }
 
 fn watch_status_priority(status: &WatchStatus) -> usize {
@@ -2449,8 +2691,8 @@ fn prettify_stem(value: &str) -> String {
 mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
-        list_library_watch_items, refresh_watch_source_for_library_file,
-        save_watch_source_for_library_file,
+        list_library_watch_items, list_library_watch_setup_items,
+        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
     };
     use crate::{
         database,
@@ -2746,6 +2988,44 @@ mod tests {
             response.items[0].watch_result.source_origin,
             WatchSourceOrigin::SavedByUser
         );
+    }
+
+    #[test]
+    fn watch_setup_list_returns_unwatched_candidates() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        let response = list_library_watch_setup_items(&connection, &settings, &seed_pack, 6)
+            .expect("watch setup list");
+
+        assert_eq!(response.total, 1);
+        assert!(!response.truncated);
+        assert_eq!(response.items[0].file_id, file_id);
+        assert_eq!(
+            response.items[0].suggested_source_kind,
+            WatchSourceKind::ExactPage
+        );
+    }
+
+    #[test]
+    fn watch_setup_list_skips_tracked_items() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("GitHub Release".to_owned()),
+            "https://github.com/example/mod/releases",
+        )
+        .expect("save watch");
+
+        let response = list_library_watch_setup_items(&connection, &settings, &seed_pack, 6)
+            .expect("watch setup list");
+
+        assert_eq!(response.total, 0);
+        assert!(response.items.is_empty());
     }
 
     #[test]

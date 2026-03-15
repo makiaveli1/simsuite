@@ -10,7 +10,11 @@ use crate::{
     seed::{SeedPack, TaxonomySeed},
 };
 
-pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
+pub fn get_home_overview(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+) -> AppResult<HomeOverview> {
     let total_files = scalar(connection, "SELECT COUNT(*) FROM files")?;
     let mods_count = scalar(
         connection,
@@ -41,6 +45,8 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
     )?;
     let (exact_update_items, possible_update_items, unknown_watch_items) =
         content_versions::load_watch_counts(connection)?;
+    let watch_setup_items =
+        content_versions::list_library_watch_setup_items(connection, settings, seed_pack, 1)?.total;
     let last_scan_at = connection
         .query_row(
             "SELECT completed_at
@@ -67,6 +73,7 @@ pub fn get_home_overview(connection: &Connection) -> AppResult<HomeOverview> {
         exact_update_items,
         possible_update_items,
         unknown_watch_items,
+        watch_setup_items,
         last_scan_at,
         read_only_mode: true,
     })

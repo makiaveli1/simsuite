@@ -156,6 +156,7 @@ pub fn run() {
             commands::ignore_download_item,
             commands::list_library_files,
             commands::list_library_watch_items,
+            commands::list_library_watch_setup_items,
             commands::get_creator_audit,
             commands::get_category_audit,
             commands::get_creator_audit_group_files,

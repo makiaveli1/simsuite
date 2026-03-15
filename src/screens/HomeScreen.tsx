@@ -200,12 +200,19 @@ export function HomeScreen({
           {
             label: "Updates ready",
             value: `${overview?.exactUpdateItems ?? 0}`,
+            onClick: () => onNavigate("library"),
           },
           {
             label: "Watch review",
             value: `${overview?.possibleUpdateItems ?? 0} possible / ${
               overview?.unknownWatchItems ?? 0
             } unclear`,
+            onClick: () => onNavigate("library"),
+          },
+          {
+            label: "Watch setup",
+            value: `${overview?.watchSetupItems ?? 0}`,
+            onClick: () => onNavigate("library"),
           },
           {
             label: "Last check",
@@ -221,14 +228,22 @@ export function HomeScreen({
           {
             label: "Exact updates",
             value: `${overview?.exactUpdateItems ?? 0}`,
+            onClick: () => onNavigate("library"),
           },
           {
             label: "Possible updates",
             value: `${overview?.possibleUpdateItems ?? 0}`,
+            onClick: () => onNavigate("library"),
           },
           {
             label: "Watch unknown",
             value: `${overview?.unknownWatchItems ?? 0}`,
+            onClick: () => onNavigate("library"),
+          },
+          {
+            label: "Watch setup",
+            value: `${overview?.watchSetupItems ?? 0}`,
+            onClick: () => onNavigate("library"),
           },
           {
             label: "Last scan",
@@ -421,7 +436,12 @@ export function HomeScreen({
 
           <div className="system-ledger">
             {stateRows.map((row) => (
-              <LedgerRow key={row.label} label={row.label} value={row.value} />
+              <LedgerRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                onClick={row.onClick}
+              />
             ))}
           </div>
         </div>
@@ -536,10 +556,21 @@ function ActionCard({
 function LedgerRow({
   label,
   value,
+  onClick,
 }: {
   label: string;
   value: string;
+  onClick?: () => void;
 }) {
+  if (onClick) {
+    return (
+      <button type="button" className="ledger-row ledger-row-action" onClick={onClick}>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </button>
+    );
+  }
+
   return (
     <div className="ledger-row">
       <span>{label}</span>

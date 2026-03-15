@@ -1392,7 +1392,10 @@ mod tests {
         let summary = scan_library_with_progress(&state, |_| Ok(())).expect("scan");
 
         let connection = state.connection().expect("connection");
-        let overview = library_index::get_home_overview(&connection).expect("overview");
+        let settings = database::get_library_settings(&connection).expect("settings");
+        let seed_pack = state.seed_pack();
+        let overview =
+            library_index::get_home_overview(&connection, &settings, &seed_pack).expect("overview");
         assert_eq!(summary.scan_mode, ScanMode::Full);
         assert_eq!(overview.total_files, 4);
         assert!(overview.unsafe_count >= 1);

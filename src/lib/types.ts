@@ -70,6 +70,7 @@ export interface HomeOverview {
   exactUpdateItems: number;
   possibleUpdateItems: number;
   unknownWatchItems: number;
+  watchSetupItems: number;
   lastScanAt: string | null;
   readOnlyMode: boolean;
 }
@@ -207,6 +208,22 @@ export interface LibraryWatchListResponse {
   filter: WatchListFilter;
   total: number;
   items: LibraryWatchListItem[];
+}
+
+export interface LibraryWatchSetupItem {
+  fileId: number;
+  filename: string;
+  creator: string | null;
+  subjectLabel: string;
+  installedVersion: string | null;
+  suggestedSourceKind: WatchSourceKind;
+  setupHint: string;
+}
+
+export interface LibraryWatchSetupResponse {
+  total: number;
+  truncated: boolean;
+  items: LibraryWatchSetupItem[];
 }
 
 export interface LibraryFacets {

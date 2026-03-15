@@ -543,6 +543,8 @@ async function verifyLibraryVersionWatch(driver) {
 
 async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   await ensureLibraryIndexed(driver, [genericWatchFile]);
+  await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
+  await waitForText(driver, genericWatchFile, 30000);
   await clickLibraryRow(driver, genericWatchFile, 30000);
   await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
   await waitForText(driver, "Watch status");

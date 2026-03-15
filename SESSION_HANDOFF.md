@@ -2,6 +2,10 @@
 
 ## Current Priority
 
+- March 15, 2026: Library now has a first real watch-setup shortlist for installed items that are strong enough to watch but are not set up yet. The next product focus should be turning that shortlist into a fuller setup flow:
+  - bulk setup for the strongest exact-page candidates first
+  - easier edit and review for saved generic watch sources
+  - keep `Home`, `Library`, and automatic watch polling in sync without adding more screen clutter
 - March 15, 2026: Library now has a real tracked watch list inside the existing watch center, and the native desktop smoke now proves that list is visible in the real app. The next product focus should be better watch management, especially bulk setup and a clearer way to review items that still do not have a watch source.
 - March 15, 2026: Library watch flow is more honest now. Built-in supported special-mod pages are shown as built-in, not as if the user saved them. The next product focus should be the fuller watch-management flow, not more backend watch guesswork.
 - March 15, 2026: the compact Library watch center is now in place and the base native desktop smoke passed again. The next product focus can move to broader watch management and provider planning.
@@ -18,6 +22,26 @@
 
 ## What Changed This Session
 
+- March 15, 2026: added the first real watch-setup shortlist in `Library`:
+  - the existing watch center now includes a compact `Ready to set up` / `Setup suggestions` block
+  - it shows installed items with strong local clues but no saved or built-in watch source yet
+  - each suggestion can open the existing Library inspector instead of sending the user to a new management screen
+- March 15, 2026: setup suggestions are now more actionable:
+  - each suggestion row still opens the existing Library inspector
+  - `Set up` / `Start setup` now opens the same inspector with the watch editor already prefilled to the suggested source type
+  - SimSuite still does not guess URLs; it only saves the suggested watch type and label so the user can finish the setup safely
+- March 15, 2026: `Home` now shows a matching `Watch setup` count from real backend truth instead of relying on a separate frontend guess.
+- March 15, 2026: `Home` watch rows now jump straight to `Library`, so users can move from summary counts into real watch follow-up in one click.
+- March 15, 2026: the backend now builds watch-setup suggestions from installed files that have enough local clues:
+  - creator clues
+  - version clues
+  - script clues
+  - strong filename or embedded-name clues
+- March 15, 2026: fixed a real watch-setup filter bug:
+  - the setup scan now treats both `.package` / `.ts4script` and `package` / `ts4script` extension styles as valid
+  - this keeps valid installed items from being skipped just because older rows store extensions a little differently
+- March 15, 2026: the browser-preview mocks now include the same watch-setup response shape so preview work stays closer to the real app.
+- March 15, 2026: the native desktop smoke now proves the new setup block is visible in the real Tauri app before it continues with the older watch checks.
 - March 15, 2026: added the first real tracked watch list in `Library`:
   - the watch center now includes filter chips for:
     - needs attention
@@ -139,6 +163,12 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the watch-setup shortlist backend changes.
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the watch-setup shortlist and extension-normalization fix.
+- March 15, 2026: `npm run build` passed after the Home and Library watch-setup UI changes.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the smoke flow was widened to wait for the new setup section in the real Tauri app.
+- March 15, 2026: `npm run build` passed again after the `Home` jump links and the prefilled `Start setup` flow were added.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed again after the wider-app watch follow-up wiring.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `168` tests after the tracked watch-list work.
 - March 15, 2026: `npm run build` passed after the Library watch-list UI and mock updates.
 - March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the smoke script was widened to check the new Library tracked watch list in the real Tauri app.
@@ -199,6 +229,12 @@
 
 ## What Worked
 
+- The new watch-setup shortlist now gives `Library` a clear “not watched yet” lane without creating a second watch-management screen.
+- `Home` and `Library` now agree on the `Watch setup` count because they both use the same backend truth.
+- `Home` can now send users straight into `Library` when a watch summary row needs follow-up.
+- setup suggestions now shave off an extra step because the existing watch editor can open already prefilled with the suggested watch type and label.
+- Installed items are no longer skipped from the setup shortlist just because their stored extension includes a leading dot.
+- The new setup block stayed compatible with the real desktop smoke flow, so the wider app integration is still intact.
 - The Library watch center now points to real items, not just counts.
 - Built-in supported special mods now appear in the tracked watch list even when no helper latest row has been written yet.
 - The tracked watch list stays inside the existing Library surface, so the screen is still flat and compact instead of growing a separate management page too early.

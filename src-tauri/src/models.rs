@@ -52,6 +52,7 @@ pub struct HomeOverview {
     pub exact_update_items: i64,
     pub possible_update_items: i64,
     pub unknown_watch_items: i64,
+    pub watch_setup_items: i64,
     pub last_scan_at: Option<String>,
     pub read_only_mode: bool,
 }
@@ -418,6 +419,26 @@ pub struct LibraryWatchListResponse {
     pub filter: WatchListFilter,
     pub total: i64,
     pub items: Vec<LibraryWatchListItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchSetupItem {
+    pub file_id: i64,
+    pub filename: String,
+    pub creator: Option<String>,
+    pub subject_label: String,
+    pub installed_version: Option<String>,
+    pub suggested_source_kind: WatchSourceKind,
+    pub setup_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchSetupResponse {
+    pub total: i64,
+    pub truncated: bool,
+    pub items: Vec<LibraryWatchSetupItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]

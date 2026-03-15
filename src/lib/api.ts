@@ -41,6 +41,7 @@ import type {
   LibraryQuery,
   LibrarySettings,
   LibraryWatchListResponse,
+  LibraryWatchSetupResponse,
   RestoreSnapshotResult,
   ReviewPlanAction,
   ReviewQueueItem,
@@ -677,6 +678,87 @@ function buildMockLibraryWatchList(
       installedVersion: entry.installedVersionSummary?.version ?? null,
       watchResult: entry.watchResult,
     })),
+  };
+}
+
+function buildMockLibraryWatchSetupList(limit = 6): LibraryWatchSetupResponse {
+  const items = mockFiles
+    .filter((file) => file.sourceLocation !== "downloads")
+    .map((file) => {
+      const installedVersionSummary =
+        file.installedVersionSummary ?? buildMockInstalledVersionSummary(file);
+      const watchResult = file.watchResult ?? buildMockWatchResult(file);
+      const hasCreator = Boolean(file.creator?.trim());
+      const hasVersion = Boolean(installedVersionSummary?.version?.trim());
+      const hasScript =
+        file.filename.toLowerCase().endsWith(".ts4script") ||
+        normalizeMockInsights(file.insights).scriptNamespaces.length > 0;
+      const hasNameClue =
+        normalizeMockInsights(file.insights).embeddedNames.length > 0 ||
+        normalizeMockInsights(file.insights).familyHints.length > 0;
+
+      if (watchResult && watchResult.sourceOrigin !== "none") {
+        return null;
+      }
+
+      const score =
+        Number(hasCreator) * 2 +
+        Number(hasVersion) * 2 +
+        Number(hasScript) * 2 +
+        Number(hasNameClue);
+
+      if (score < 3 || (!hasCreator && !hasVersion && !hasScript)) {
+        return null;
+      }
+
+      const suggestedSourceKind: WatchSourceKind =
+        hasCreator && !hasVersion && !hasScript ? "creator_page" : "exact_page";
+      const setupHint =
+        hasCreator && hasVersion
+          ? "Has creator and version clues, so an exact mod page should work well here."
+          : hasScript && hasCreator
+            ? "Has script and creator clues, so an exact mod page is the safest next step."
+            : hasScript && hasVersion
+              ? "Has script and version clues, so an exact mod page should be the cleanest fit."
+              : hasCreator
+                ? "Has strong creator clues, so a creator page is a reasonable reminder if no exact page is handy."
+                : "Has version clues, but no watch page is saved yet.";
+
+      return {
+        fileId: file.id,
+        filename: file.filename,
+        creator: file.creator,
+        subjectLabel:
+          installedVersionSummary?.subjectLabel ?? file.bundleName ?? file.filename,
+        installedVersion: installedVersionSummary?.version ?? null,
+        suggestedSourceKind,
+        setupHint,
+        score,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      const subjectCompare = left.subjectLabel.localeCompare(right.subjectLabel, undefined, {
+        sensitivity: "base",
+      });
+      if (subjectCompare !== 0) {
+        return subjectCompare;
+      }
+
+      return left.filename.localeCompare(right.filename, undefined, {
+        sensitivity: "base",
+      });
+    });
+
+  const maxLimit = Math.max(1, Math.min(24, Math.trunc(limit || 6)));
+  return {
+    total: items.length,
+    truncated: items.length > maxLimit,
+    items: items.slice(0, maxLimit).map(({ score, ...item }) => item),
   };
 }
 
@@ -2391,6 +2473,7 @@ function createMockOverview(): HomeOverview {
   const unknownWatchItems = mockFiles.filter(
     (file) => file.watchResult?.status === "unknown",
   ).length;
+  const watchSetupItems = buildMockLibraryWatchSetupList(24).total;
 
   return {
     totalFiles: 1_834,
@@ -2409,6 +2492,7 @@ function createMockOverview(): HomeOverview {
     exactUpdateItems,
     possibleUpdateItems,
     unknownWatchItems,
+    watchSetupItems,
     lastScanAt: mockLastScanAt,
     readOnlyMode: true,
   };
@@ -4583,6 +4667,13 @@ async function mockInvoke<T>(
         : 12;
       return buildMockLibraryWatchList(filter, limit) as T;
     }
+    case "list_library_watch_setup_items": {
+      const rawLimit = Number(payload?.limit ?? 6);
+      const limit = Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(24, Math.trunc(rawLimit)))
+        : 6;
+      return buildMockLibraryWatchSetupList(limit) as T;
+    }
     case "get_file_detail": {
       const fileId = payload?.fileId as number;
       return (
@@ -5205,6 +5296,10 @@ export const api = {
   listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>
     invoke<LibraryWatchListResponse>("list_library_watch_items", {
       filter,
+      limit,
+    }),
+  listLibraryWatchSetupItems: (limit?: number) =>
+    invoke<LibraryWatchSetupResponse>("list_library_watch_setup_items", {
       limit,
     }),
   getFileDetail: (fileId: number) =>

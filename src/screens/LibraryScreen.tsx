@@ -25,6 +25,8 @@ import type {
   LibraryFileRow,
   LibraryListResponse,
   LibraryWatchListResponse,
+  LibraryWatchSetupItem,
+  LibraryWatchSetupResponse,
   Screen,
   UserView,
   VersionConfidence,
@@ -38,6 +40,12 @@ interface LibraryScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
   userView: UserView;
+}
+
+interface PendingWatchSetup {
+  fileId: number;
+  sourceKind: WatchSourceKind;
+  sourceLabel: string;
 }
 
 const PAGE_SIZE = 100;
@@ -122,6 +130,9 @@ export function LibraryScreen({
   const [watchList, setWatchList] = useState<LibraryWatchListResponse | null>(null);
   const [watchListFilter, setWatchListFilter] = useState<WatchListFilter>("attention");
   const [loadingWatchList, setLoadingWatchList] = useState(false);
+  const [watchSetupList, setWatchSetupList] = useState<LibraryWatchSetupResponse | null>(null);
+  const [loadingWatchSetupList, setLoadingWatchSetupList] = useState(false);
+  const [pendingWatchSetup, setPendingWatchSetup] = useState<PendingWatchSetup | null>(null);
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
@@ -137,6 +148,10 @@ export function LibraryScreen({
   useEffect(() => {
     void loadWatchList();
   }, [refreshVersion, watchListFilter]);
+
+  useEffect(() => {
+    void loadWatchSetupList();
+  }, [refreshVersion]);
 
   useEffect(() => {
     void loadRows();
@@ -165,11 +180,12 @@ export function LibraryScreen({
       setWatchSourceKind("exact_page");
       setWatchSourceLabel("");
       setWatchSourceUrl("");
-    setRefreshingWatch(false);
-    setWatchMessage(null);
-    setWatchCenterMessage(null);
-    return;
-  }
+      setRefreshingWatch(false);
+      setWatchMessage(null);
+      setWatchCenterMessage(null);
+      setPendingWatchSetup(null);
+      return;
+    }
 
     setCreatorDraft(selected.creator ?? selected.insights.creatorHints[0] ?? "");
     setAliasDraft("");
@@ -190,10 +206,23 @@ export function LibraryScreen({
       setWatchSourceLabel("");
       setWatchSourceUrl("");
     }
-    setWatchEditing(false);
     setRefreshingWatch(false);
-    setWatchMessage(null);
-  }, [selected]);
+    if (pendingWatchSetup?.fileId === selected.id) {
+      setWatchSourceKind(pendingWatchSetup.sourceKind);
+      setWatchSourceLabel(pendingWatchSetup.sourceLabel);
+      setWatchSourceUrl("");
+      setWatchEditing(true);
+      setWatchMessage(
+        pendingWatchSetup.sourceKind === "creator_page"
+          ? "Add the official creator page URL to finish setup."
+          : "Add the official mod page URL to finish setup.",
+      );
+      setPendingWatchSetup(null);
+    } else {
+      setWatchEditing(false);
+      setWatchMessage(null);
+    }
+  }, [selected, pendingWatchSetup]);
 
   async function loadWatchCenter() {
     try {
@@ -227,6 +256,23 @@ export function LibraryScreen({
     }
   }
 
+  async function loadWatchSetupList() {
+    setLoadingWatchSetupList(true);
+
+    try {
+      const next = await api.listLibraryWatchSetupItems(6);
+      setWatchSetupList(next);
+    } catch {
+      setWatchSetupList({
+        total: 0,
+        truncated: false,
+        items: [],
+      });
+    } finally {
+      setLoadingWatchSetupList(false);
+    }
+  }
+
   async function loadRows(preferredSelectedId?: number) {
     const result = await api.listLibraryFiles({
       search: deferredSearch || undefined,
@@ -255,6 +301,19 @@ export function LibraryScreen({
 
   async function openFileById(fileId: number) {
     setSelected(await api.getFileDetail(fileId));
+  }
+
+  async function beginWatchSetup(item: LibraryWatchSetupItem) {
+    setPendingWatchSetup({
+      fileId: item.fileId,
+      sourceKind: item.suggestedSourceKind,
+      sourceLabel:
+        item.suggestedSourceKind === "creator_page"
+          ? item.creator ?? item.subjectLabel
+          : item.subjectLabel,
+    });
+    setWatchCenterMessage(null);
+    await openFileById(item.fileId);
   }
 
   async function saveCreatorOverride() {
@@ -380,7 +439,12 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch source saved.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
+      await Promise.all([
+        loadRows(updated.id),
+        loadWatchCenter(),
+        loadWatchList(),
+        loadWatchSetupList(),
+      ]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "save the watch source"));
     } finally {
@@ -407,7 +471,12 @@ export function LibraryScreen({
       setWatchSourceLabel("");
       setWatchSourceUrl("");
       setWatchMessage("Watch source cleared.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
+      await Promise.all([
+        loadRows(updated.id),
+        loadWatchCenter(),
+        loadWatchList(),
+        loadWatchSetupList(),
+      ]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "clear the watch source"));
     } finally {
@@ -432,7 +501,12 @@ export function LibraryScreen({
       setSelected(updated);
       setWatchEditing(false);
       setWatchMessage("Watch result refreshed.");
-      await Promise.all([loadRows(updated.id), loadWatchCenter(), loadWatchList()]);
+      await Promise.all([
+        loadRows(updated.id),
+        loadWatchCenter(),
+        loadWatchList(),
+        loadWatchSetupList(),
+      ]);
     } catch (error) {
       setWatchMessage(watchActionError(error, "refresh the watch source"));
     } finally {
@@ -456,7 +530,12 @@ export function LibraryScreen({
           : `${summary.exactUpdateItems} confirmed updates found.`;
 
       setWatchCenterMessage(`${checkedLabel} ${updateLabel}`);
-      await Promise.all([loadWatchCenter(), loadWatchList(), loadRows(selected?.id)]);
+      await Promise.all([
+        loadWatchCenter(),
+        loadWatchList(),
+        loadWatchSetupList(),
+        loadRows(selected?.id),
+      ]);
     } catch (error) {
       setWatchCenterMessage(watchActionError(error, "check watched pages"));
     } finally {
@@ -1288,6 +1367,91 @@ export function LibraryScreen({
                     {watchListEmptyMessage(watchListFilter, userView)}
                   </div>
                 )}
+              </div>
+
+              <div className="library-watch-setup">
+                <div className="library-watch-setup-heading">
+                  <strong>
+                    {userView === "beginner" ? "Ready to set up" : "Setup suggestions"}
+                  </strong>
+                  <span>
+                    {watchSetupList
+                      ? `${watchSetupList.total.toLocaleString()} ${
+                          userView === "beginner" ? "items" : "candidates"
+                        }`
+                      : "Loading..."}
+                  </span>
+                </div>
+
+                <div className="library-watch-list">
+                  {loadingWatchSetupList ? (
+                    <div className="library-watch-empty">
+                      {userView === "beginner"
+                        ? "Finding installed items that still need a watch page..."
+                        : "Finding watch setup suggestions..."}
+                    </div>
+                  ) : watchSetupList?.items.length ? (
+                    watchSetupList.items.map((item) => (
+                      <div
+                        key={`setup-${item.fileId}`}
+                        className="library-watch-list-entry"
+                      >
+                        <button
+                          type="button"
+                          className="library-watch-list-item library-watch-list-main"
+                          onClick={() => void openFileById(item.fileId)}
+                        >
+                          <div className="library-watch-list-copy">
+                            <strong>{item.subjectLabel}</strong>
+                            <span>
+                              {item.creator
+                                ? `${item.creator} · ${item.filename}`
+                                : item.filename}
+                            </span>
+                            <span>
+                              {item.installedVersion?.trim()
+                                ? userView === "beginner"
+                                  ? `Installed version ${item.installedVersion}.`
+                                  : `Installed ${item.installedVersion}.`
+                                : userView === "beginner"
+                                  ? "Installed version is still not clear."
+                                  : "Installed version is still unclear."}
+                            </span>
+                          </div>
+                          <div className="library-watch-list-state">
+                            <strong>
+                              {item.suggestedSourceKind === "creator_page"
+                                ? "Creator page"
+                                : "Exact page"}
+                            </strong>
+                            <span>{item.setupHint}</span>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-action library-watch-setup-action"
+                          onClick={() => void beginWatchSetup(item)}
+                        >
+                          {userView === "beginner" ? "Set up" : "Start setup"}
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="library-watch-empty">
+                      {userView === "beginner"
+                        ? "Nothing strong enough needs watch setup right now."
+                        : "No strong watch setup suggestions right now."}
+                    </div>
+                  )}
+                </div>
+
+                {watchSetupList?.truncated ? (
+                  <div className="library-watch-empty">
+                    {userView === "beginner"
+                      ? "This is the strongest shortlist for now. Open Library items to set up more watch pages."
+                      : "Showing the strongest local setup suggestions first."}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

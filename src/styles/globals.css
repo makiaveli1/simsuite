@@ -1901,6 +1901,21 @@ h2,
   text-align: right;
 }
 
+.ledger-row-action {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ledger-row-action:hover strong,
+.ledger-row-action:focus-visible strong {
+  text-decoration: underline;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2069,6 +2084,32 @@ h2,
   gap: 0.28rem;
 }
 
+.library-watch-list-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.42rem;
+  align-items: stretch;
+}
+
+.library-watch-setup {
+  display: grid;
+  gap: 0.32rem;
+  padding-top: 0.16rem;
+  border-top: 1px solid var(--line);
+}
+
+.library-watch-setup-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+}
+
+.library-watch-setup-heading span {
+  color: var(--text-soft);
+}
+
 .library-watch-list-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2079,6 +2120,15 @@ h2,
   background: var(--surface);
   text-align: left;
   cursor: pointer;
+}
+
+.library-watch-list-main {
+  width: 100%;
+}
+
+.library-watch-setup-action {
+  align-self: stretch;
+  white-space: nowrap;
 }
 
 .library-watch-list-copy,
@@ -5044,6 +5094,10 @@ h2,
   }
 
   .library-watch-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .library-watch-list-entry {
     grid-template-columns: 1fr;
   }
 

@@ -31,10 +31,10 @@ use crate::{
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
         HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        LibraryWatchListResponse, OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction,
-        ReviewPlanActionKind, ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus,
-        ScanSummary, SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary,
-        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        LibraryWatchListResponse, LibraryWatchSetupResponse, OrganizationPreview,
+        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -526,7 +526,9 @@ pub fn pick_folder(title: Option<String>) -> Option<String> {
 #[tauri::command]
 pub fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, String> {
     let connection = state.connection().map_err(map_error)?;
-    library_index::get_home_overview(&connection).map_err(map_error)
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let seed_pack = state.seed_pack();
+    library_index::get_home_overview(&connection, &settings, &seed_pack).map_err(map_error)
 }
 
 #[tauri::command]
@@ -1729,6 +1731,36 @@ pub fn list_library_watch_items(
         format!("for {} tracked watch item(s)", response.items.len())
     });
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn list_library_watch_setup_items(
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<LibraryWatchSetupResponse, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_library_watch_setup_items", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let response = content_versions::list_library_watch_setup_items(
+            &connection,
+            &settings,
+            &seed_pack,
+            limit.unwrap_or(6).clamp(1, 24) as usize,
+        )
+        .map_err(map_error)?;
+        log_slow_command("list_library_watch_setup_items", started_at, || {
+            format!(
+                "for {} setup suggestion(s) (truncated: {})",
+                response.items.len(),
+                response.truncated
+            )
+        });
+        Ok(response)
+    })
+    .await
 }
 
 #[tauri::command]

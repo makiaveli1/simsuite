@@ -4,6 +4,49 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session added the first real watch-setup shortlist for installed content and wired it into the wider app instead of treating it like a Library-only side feature.
+
+Important changes and findings:
+
+- `Library` now shows a compact watch-setup shortlist inside the existing watch center:
+  - beginner label: `Ready to set up`
+  - standard label: `Setup suggestions`
+- the shortlist only shows installed items that have enough local clues to be worth setting up, but do not already have:
+  - a user-saved watch page
+  - a built-in supported special-mod watch page
+- each setup suggestion includes:
+  - subject label
+  - creator when known
+  - installed version summary
+  - suggested watch type
+  - a short setup hint
+- clicking a setup suggestion opens the existing Library inspector instead of branching into a second watch workflow
+- setup suggestions now also have a direct `Set up` / `Start setup` action:
+  - it opens the existing watch editor for that installed item
+  - it prefills the suggested watch type and label
+  - it still leaves the URL to the user, so SimSuite does not invent or guess watch links
+- `Home` now shows a real `Watch setup` count from the backend so the wider app can point users toward that unfinished work without extra guesswork in the UI
+- `Home` watch rows now jump straight to `Library`, so update and watch summaries can lead directly into the real follow-up surface
+- the backend setup scan now accepts both extension styles:
+  - `.package` / `.ts4script`
+  - `package` / `ts4script`
+  - this fixed a real bug where valid installed items could be skipped from the setup shortlist
+- the browser-preview mocks now match the real watch-setup response shape
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests
+- `npm run build` passed
+- the native desktop smoke passed after it was widened to wait for the new setup section in the real Tauri app
+- `npm run build` passed again after the `Home` jump links and prefilled setup flow were added
+- the native desktop smoke passed again after the wider watch follow-up wiring
+
+Important remaining gap:
+
+- the next step should be a fuller setup flow, not a second summary layer:
+  - bulk apply for the strongest exact-page suggestions
+  - easier edit and review for saved generic watch pages
+  - a cleaner decision flow for creator-page suggestions
+
+## Current session note (March 15, 2026)
+
 This session turned the Library watch center into a real tracked watch surface instead of a summary-only strip.
 
 Important changes and findings:

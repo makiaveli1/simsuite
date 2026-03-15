@@ -66,6 +66,30 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The Library watch center now has two compact lanes instead of one:
+
+- a tracked-items lane for pages that are already being watched
+- a setup-suggestions lane for installed items that look watch-worthy but are not set up yet
+
+Important current setup-lane behavior:
+
+- the setup lane stays inside the existing Library table panel
+- it only uses local installed-file clues to shortlist candidates
+- it skips anything that already has:
+  - a saved watch page
+  - a built-in supported special-mod watch page
+- it can suggest:
+  - exact page
+  - creator page
+- suggestion rows can now do two safe things:
+  - open the existing Library inspector
+  - open the existing watch editor already prefilled to the suggested source type and label
+- `Home` now gets a matching `watch_setup_items` count from the same backend truth, so the wider app can point users to unfinished watch setup without separate frontend counting logic
+- `Home` watch summary rows now jump straight to `Library`, so the summary layer can hand users off to the real watch-management surface without adding another screen
+- the backend setup scan now normalizes stored file extensions before filtering, so older rows with `.package` / `.ts4script` do not get dropped from the shortlist
+
+## Current engineering note (March 15, 2026)
+
 Startup is now safer in two important ways:
 
 - database upgrades add the `content_watch_sources.anchor_file_id` column before they create the matching index, so older databases no longer crash during setup
