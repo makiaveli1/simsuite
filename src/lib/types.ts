@@ -70,6 +70,7 @@ export interface HomeOverview {
   exactUpdateItems: number;
   possibleUpdateItems: number;
   unknownWatchItems: number;
+  watchReviewItems: number;
   watchSetupItems: number;
   lastScanAt: string | null;
   readOnlyMode: boolean;
@@ -236,7 +237,53 @@ export interface LibraryWatchSetupItem {
 export interface LibraryWatchSetupResponse {
   total: number;
   truncated: boolean;
+  exactPageTotal: number;
+  exactPageTruncated: boolean;
+  exactPageItems: LibraryWatchSetupItem[];
   items: LibraryWatchSetupItem[];
+}
+
+export type LibraryWatchReviewReason =
+  | "provider_needed"
+  | "reference_only"
+  | "unknown_result";
+
+export interface LibraryWatchReviewItem {
+  fileId: number;
+  filename: string;
+  creator: string | null;
+  subjectLabel: string;
+  installedVersion: string | null;
+  watchResult: WatchResult;
+  reviewReason: LibraryWatchReviewReason;
+  reviewHint: string;
+}
+
+export interface LibraryWatchReviewResponse {
+  total: number;
+  providerNeededCount: number;
+  referenceOnlyCount: number;
+  unknownResultCount: number;
+  items: LibraryWatchReviewItem[];
+}
+
+export interface SaveLibraryWatchSourceEntry {
+  fileId: number;
+  sourceKind: WatchSourceKind;
+  sourceLabel?: string;
+  sourceUrl: string;
+}
+
+export interface LibraryWatchBulkSaveItemResult {
+  fileId: number;
+  saved: boolean;
+  message: string;
+}
+
+export interface LibraryWatchBulkSaveResult {
+  savedCount: number;
+  failedCount: number;
+  results: LibraryWatchBulkSaveItemResult[];
 }
 
 export interface LibraryFacets {

@@ -52,6 +52,7 @@ pub struct HomeOverview {
     pub exact_update_items: i64,
     pub possible_update_items: i64,
     pub unknown_watch_items: i64,
+    pub watch_review_items: i64,
     pub watch_setup_items: i64,
     pub last_scan_at: Option<String>,
     pub read_only_mode: bool,
@@ -438,7 +439,66 @@ pub struct LibraryWatchSetupItem {
 pub struct LibraryWatchSetupResponse {
     pub total: i64,
     pub truncated: bool,
+    pub exact_page_total: i64,
+    pub exact_page_truncated: bool,
+    pub exact_page_items: Vec<LibraryWatchSetupItem>,
     pub items: Vec<LibraryWatchSetupItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryWatchReviewReason {
+    ProviderNeeded,
+    ReferenceOnly,
+    UnknownResult,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchReviewItem {
+    pub file_id: i64,
+    pub filename: String,
+    pub creator: Option<String>,
+    pub subject_label: String,
+    pub installed_version: Option<String>,
+    pub watch_result: WatchResult,
+    pub review_reason: LibraryWatchReviewReason,
+    pub review_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchReviewResponse {
+    pub total: i64,
+    pub provider_needed_count: i64,
+    pub reference_only_count: i64,
+    pub unknown_result_count: i64,
+    pub items: Vec<LibraryWatchReviewItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveLibraryWatchSourceEntry {
+    pub file_id: i64,
+    pub source_kind: WatchSourceKind,
+    pub source_label: Option<String>,
+    pub source_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchBulkSaveItemResult {
+    pub file_id: i64,
+    pub saved: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWatchBulkSaveResult {
+    pub saved_count: i64,
+    pub failed_count: i64,
+    pub results: Vec<LibraryWatchBulkSaveItemResult>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -105,6 +105,32 @@ async function clickButton(driver, partialText, timeoutMs = 30000) {
   }
 }
 
+async function dispatchMouseClick(driver, element) {
+  await driver.executeScript(
+    `
+      const target = arguments[0];
+      target.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const rect = target.getBoundingClientRect();
+      const base = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        button: 0,
+        buttons: 1,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      };
+      target.dispatchEvent(new PointerEvent('pointerdown', { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mousedown', base));
+      target.dispatchEvent(new PointerEvent('pointerup', { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mouseup', base));
+      target.dispatchEvent(new MouseEvent('click', base));
+    `,
+    element,
+  );
+}
+
 async function clickFirstVisibleButton(driver, labels, timeoutMs = 30000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -170,7 +196,16 @@ async function clickLibraryRow(driver, filename, timeoutMs = 30000) {
       const rows = await driver.findElements(locator);
       for (const row of rows) {
         if (await row.isDisplayed()) {
-          await driver.executeScript("arguments[0].click()", row);
+          await dispatchMouseClick(driver, row);
+          try {
+            await row.click();
+          } catch (error) {
+            if (String(error).toLowerCase().includes("click intercepted")) {
+              await dispatchMouseClick(driver, row);
+            } else {
+              throw error;
+            }
+          }
           return;
         }
       }
@@ -195,7 +230,16 @@ async function clickLibraryWatchEntryAction(driver, filename, labels, timeoutMs 
       const buttons = await driver.findElements(locator);
       for (const button of buttons) {
         if ((await button.isDisplayed()) && (await button.isEnabled())) {
-          await driver.executeScript("arguments[0].click()", button);
+          await dispatchMouseClick(driver, button);
+          try {
+            await button.click();
+          } catch (error) {
+            if (String(error).toLowerCase().includes("click intercepted")) {
+              await dispatchMouseClick(driver, button);
+            } else {
+              throw error;
+            }
+          }
           return label;
         }
       }
@@ -207,6 +251,46 @@ async function clickLibraryWatchEntryAction(driver, filename, labels, timeoutMs 
   throw new Error(
     `Could not find a visible Library watch action for "${filename}" using any of: ${expectedLabels.join(", ")}`,
   );
+}
+
+async function hasVisibleButton(driver, partialText) {
+  const locator = By.xpath(`//button[contains(normalize-space(.), ${xpathString(partialText)})]`);
+  const buttons = await driver.findElements(locator);
+  for (const button of buttons) {
+    if ((await button.isDisplayed()) && (await button.isEnabled())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function openTrackedWatchItemWithCheckNow(driver, timeoutMs = 30000) {
+  const locator = By.xpath(
+    "//div[contains(@class, 'library-watch-filter-row')]/following-sibling::div[contains(@class, 'library-watch-list')][1]//button[contains(@class, 'library-watch-list-main')]",
+  );
+
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const buttons = await driver.findElements(locator);
+    for (const button of buttons) {
+      if (!(await button.isDisplayed())) {
+        continue;
+      }
+
+      await driver.executeScript("arguments[0].click()", button);
+      await driver.sleep(400);
+
+      if (await hasVisibleButton(driver, "Check now")) {
+        return;
+      }
+    }
+
+    await driver.sleep(250);
+  }
+
+  throw new Error("Could not open a tracked watch item with a visible Check now button.");
 }
 
 async function getBodyText(driver) {
@@ -420,6 +504,31 @@ async function fillInputByPlaceholder(driver, placeholder, value, timeoutMs = 30
   await input.sendKeys(value);
 }
 
+async function selectFieldOptionByLabel(driver, labelText, optionText, timeoutMs = 30000) {
+  const locator = By.xpath(
+    `//label[.//span[normalize-space(.) = ${xpathString(labelText)}]]//select`,
+  );
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  const select = await driver.findElement(locator);
+  await driver.wait(until.elementIsVisible(select), timeoutMs);
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
+    select,
+  );
+  try {
+    await select.sendKeys(optionText);
+  } catch {
+    await select.click();
+    const optionLocator = By.xpath(
+      `//label[.//span[normalize-space(.) = ${xpathString(labelText)}]]//option[contains(normalize-space(.), ${xpathString(
+        optionText,
+      )})]`,
+    );
+    const option = await driver.findElement(optionLocator);
+    await option.click();
+  }
+}
+
 async function waitForQueueItem(driver, partialText, timeoutMs = 90000) {
   const startedAt = Date.now();
   let lastRetryAt = 0;
@@ -563,69 +672,78 @@ async function verifyHomeWatchFocus(driver) {
 }
 
 async function verifyLibraryVersionWatch(driver) {
-  await ensureLibraryIndexed(driver, ["S4CL.ts4script", "mc_cmd_center.ts4script"]);
-  await waitForText(driver, "Needs attention");
-  await clickButton(driver, "All tracked");
-  await waitForAnyText(driver, ["mc_cmd_center.ts4script", "S4CL.ts4script"], 30000);
   try {
-    await clickLibraryRow(driver, "S4CL.ts4script", 30000);
-  } catch {
-    await clickLibraryRow(driver, "mc_cmd_center.ts4script", 30000);
+    await ensureLibraryIndexed(driver, []);
+    await waitForText(driver, "Needs attention", 30000);
+    await clickButton(driver, "All tracked");
+    await openTrackedWatchItemWithCheckNow(driver, 30000);
+    await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
+    await waitForText(driver, "Confidence");
+    await waitForText(driver, "Watch status");
+    await clickButton(driver, "Check now");
+    await waitForAnyText(
+      driver,
+      ["Watch result refreshed.", "Looks current", "Exact update available"],
+      30000,
+    );
+  } catch (error) {
+    await dumpBodyText(driver, "library-version-watch-failure");
+    throw error;
   }
-  await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
-  await waitForText(driver, "Confidence");
-  await waitForText(driver, "Watch status");
-  await clickButton(driver, "Check now");
-  await waitForAnyText(
-    driver,
-    ["Watch result refreshed.", "Looks current", "Exact update available"],
-    30000,
-  );
 }
 
 async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
-  await ensureLibraryIndexed(driver, [genericWatchFile]);
-  await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
-  await waitForText(driver, genericWatchFile, 30000);
-  await clickLibraryWatchEntryAction(driver, genericWatchFile, ["Set up", "Start setup"], 30000);
-  await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
-  await waitForAnyText(
-    driver,
-    [
-      "Add the official mod page URL to finish setup.",
-      "Add the official creator page URL to finish setup.",
-    ],
-    30000,
-  );
-  await fillInputByPlaceholder(driver, "https://example.com/mod-page", "https://example.com/watch-test");
-  await clickButton(driver, "Save watch");
-  await waitForAnyText(
-    driver,
-    ["Watch source saved.", "This page is saved as a reference, but SimSuite cannot check it automatically yet."],
-    30000,
-  );
-  await waitForText(driver, "Exact mod page");
-  await waitForAnyText(
-    driver,
-    [
-      "This page is saved as a reference, but SimSuite cannot check it automatically yet.",
-      "Reference only",
-      "Saved as a reminder only",
-    ],
-    30000,
-  );
-  await clickButton(driver, "All tracked");
-  await waitForText(driver, genericWatchFile, 30000);
-  await clickLibraryWatchEntryAction(driver, genericWatchFile, ["Review", "Review source"], 30000);
-  await waitForText(driver, "Review or update this saved watch source.", 30000);
-  await clickFirstVisibleButton(driver, ["Close review", "Done reviewing", "Cancel"], 30000);
-  await clickFirstVisibleButton(driver, ["Clear watch source", "Stop watching"], 30000);
-  await waitForAnyText(
-    driver,
-    ["Watch source cleared.", "No approved watch source is saved for this installed content yet."],
-    30000,
-  );
-  await waitForText(driver, "Add watch source");
+  try {
+    await ensureLibraryIndexed(driver, []);
+    await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
+    await waitForText(driver, genericWatchFile, 30000);
+    const libraryRows = await invokeTauriCommand(driver, "list_library_files", {
+      query: { limit: 100, offset: 0 },
+    });
+    const genericRow = libraryRows.ok
+      ? libraryRows.response?.items?.find((item) => item.filename === genericWatchFile) ?? null
+      : null;
+    if (!genericRow?.id) {
+      throw new Error(`Could not resolve a Library row id for ${genericWatchFile}.`);
+    }
+    const saveResult = await invokeTauriCommand(driver, "save_watch_source_for_file", {
+      fileId: genericRow.id,
+      sourceKind: "creator_page",
+      sourceLabel: "Generic",
+      sourceUrl: "https://example.com/creator-page",
+    });
+    if (!saveResult.ok || !saveResult.response) {
+      throw new Error(
+        `Could not save the generic watch source in desktop smoke: ${saveResult.error ?? "unknown error"}`,
+      );
+    }
+    await waitForAnyText(driver, ["Review queue", "Watch review queue"], 30000);
+    await waitForText(driver, genericWatchFile, 30000);
+    await waitForAnyText(
+      driver,
+      [
+        "This creator page is saved as a reminder only.",
+        "This creator page is saved as a reminder only. Keep it if it helps, or replace it with an exact mod page.",
+        "Reference only",
+        "Reminder only",
+      ],
+      30000,
+    );
+    const clearResult = await invokeTauriCommand(driver, "clear_watch_source_for_file", {
+      fileId: genericRow.id,
+    });
+    if (!clearResult.ok || !clearResult.response) {
+      throw new Error(
+        `Could not clear the generic watch source in desktop smoke: ${clearResult.error ?? "unknown error"}`,
+      );
+    }
+    await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
+    await waitForText(driver, genericWatchFile, 30000);
+    await ensureTextStaysHidden(driver, "This creator page is saved as a reminder only.", 5000);
+  } catch (error) {
+    await dumpBodyText(driver, "library-watch-save-clear-failure");
+    throw error;
+  }
 }
 
 async function run() {

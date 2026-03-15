@@ -2,6 +2,7 @@ use chrono::Utc;
 use reqwest::Url;
 use rusqlite::Connection;
 use std::{
+    collections::HashSet,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -31,10 +32,12 @@ use crate::{
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
         HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        LibraryWatchListResponse, LibraryWatchSetupResponse, OrganizationPreview,
+        LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult, LibraryWatchListResponse,
+        LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
+        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary,
+        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -1802,6 +1805,32 @@ pub async fn list_library_watch_setup_items(
 }
 
 #[tauri::command]
+pub async fn list_library_watch_review_items(
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<LibraryWatchReviewResponse, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_library_watch_review_items", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let response = content_versions::list_library_watch_review_items(
+            &connection,
+            &settings,
+            &seed_pack,
+            limit.unwrap_or(8).clamp(1, 24) as usize,
+        )
+        .map_err(map_error)?;
+        log_slow_command("list_library_watch_review_items", started_at, || {
+            format!("for {} watch review item(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
+}
+
+#[tauri::command]
 pub fn get_creator_audit(
     query: Option<CreatorAuditQuery>,
     state: State<'_, AppState>,
@@ -1946,6 +1975,106 @@ pub async fn save_watch_source_for_file(
             format!("for file_id={file_id}")
         });
         Ok(Some(updated))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn save_watch_sources_for_files(
+    app: AppHandle,
+    entries: Vec<SaveLibraryWatchSourceEntry>,
+    state: State<'_, AppState>,
+) -> Result<LibraryWatchBulkSaveResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("save_watch_sources_for_files", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let mut changed_file_ids = HashSet::new();
+        let mut results = Vec::new();
+
+        for entry in entries {
+            let file_id = entry.file_id;
+            let cleaned_label = entry.source_label.and_then(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_owned())
+                }
+            });
+
+            let approved_url = match approved_watch_source_url(&entry.source_url) {
+                Ok(url) => url,
+                Err(message) => {
+                    results.push(LibraryWatchBulkSaveItemResult {
+                        file_id,
+                        saved: false,
+                        message,
+                    });
+                    continue;
+                }
+            };
+
+            match content_versions::save_watch_source_for_library_file(
+                &connection,
+                &settings,
+                &seed_pack,
+                file_id,
+                entry.source_kind,
+                cleaned_label,
+                approved_url.as_str(),
+            ) {
+                Ok(Some(_)) => {
+                    changed_file_ids.insert(file_id);
+                    results.push(LibraryWatchBulkSaveItemResult {
+                        file_id,
+                        saved: true,
+                        message: "Watch source saved.".to_owned(),
+                    });
+                }
+                Ok(None) => {
+                    results.push(LibraryWatchBulkSaveItemResult {
+                        file_id,
+                        saved: false,
+                        message:
+                            "Watch sources can only be saved for installed Library items."
+                                .to_owned(),
+                    });
+                }
+                Err(error) => {
+                    results.push(LibraryWatchBulkSaveItemResult {
+                        file_id,
+                        saved: false,
+                        message: map_error(error),
+                    });
+                }
+            }
+        }
+
+        if !changed_file_ids.is_empty() {
+            emit_workspace_domains(
+                &app,
+                vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+                "watch-sources-saved",
+                changed_file_ids.into_iter().collect(),
+                Vec::new(),
+            )?;
+        }
+
+        let saved_count = results.iter().filter(|item| item.saved).count() as i64;
+        let failed_count = results.len() as i64 - saved_count;
+
+        log_slow_command("save_watch_sources_for_files", started_at, || {
+            format!("saved {saved_count} of {} watch source(s)", results.len())
+        });
+
+        Ok(LibraryWatchBulkSaveResult {
+            saved_count,
+            failed_count,
+            results,
+        })
     })
     .await
 }

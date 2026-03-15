@@ -2045,6 +2045,35 @@ h2,
   font-size: 0.72rem;
 }
 
+.library-watch-review-lane {
+  display: grid;
+  gap: 0.32rem;
+  padding-bottom: 0.18rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.library-watch-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.watch-review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.46rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.watch-review-chip strong {
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
 .library-watch-focus {
   display: grid;
   gap: 0.4rem;
@@ -2118,6 +2147,77 @@ h2,
 
 .library-watch-setup-heading span {
   color: var(--text-soft);
+}
+
+.library-watch-bulk-panel {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.48rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.library-watch-bulk-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+}
+
+.library-watch-bulk-heading span,
+.library-watch-bulk-copy,
+.library-watch-bulk-actions span,
+.library-watch-bulk-subject span,
+.library-watch-bulk-error {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+}
+
+.library-watch-bulk-copy {
+  margin: 0;
+}
+
+.library-watch-bulk-list {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.library-watch-bulk-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 0.42rem;
+  align-items: start;
+}
+
+.library-watch-bulk-subject {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.42rem 0.48rem;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-watch-bulk-fields {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.library-watch-bulk-fields input {
+  width: 100%;
+}
+
+.library-watch-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  align-items: center;
+}
+
+.library-watch-bulk-error {
+  color: var(--danger);
 }
 
 .library-watch-list-item {
@@ -5103,6 +5203,10 @@ h2,
     grid-template-columns: 1fr;
   }
 
+  .library-watch-bulk-row {
+    grid-template-columns: 1fr;
+  }
+
   .library-watch-list-item {
     grid-template-columns: 1fr;
   }
@@ -5113,6 +5217,11 @@ h2,
 
   .library-watch-list-state {
     justify-items: start;
+  }
+
+  .library-watch-bulk-actions,
+  .library-watch-review-summary {
+    align-items: flex-start;
   }
 
   .screen-header-row,

@@ -26,8 +26,11 @@ import type {
   LibraryWatchFocusRequest,
   LibraryListResponse,
   LibraryWatchListResponse,
+  LibraryWatchReviewReason,
+  LibraryWatchReviewResponse,
   LibraryWatchSetupItem,
   LibraryWatchSetupResponse,
+  SaveLibraryWatchSourceEntry,
   Screen,
   UserView,
   VersionConfidence,
@@ -136,8 +139,18 @@ export function LibraryScreen({
   const [watchList, setWatchList] = useState<LibraryWatchListResponse | null>(null);
   const [watchListFilter, setWatchListFilter] = useState<WatchListFilter>("attention");
   const [loadingWatchList, setLoadingWatchList] = useState(false);
+  const [watchReviewList, setWatchReviewList] = useState<LibraryWatchReviewResponse | null>(
+    null,
+  );
+  const [loadingWatchReviewList, setLoadingWatchReviewList] = useState(false);
   const [watchSetupList, setWatchSetupList] = useState<LibraryWatchSetupResponse | null>(null);
   const [loadingWatchSetupList, setLoadingWatchSetupList] = useState(false);
+  const [bulkExactWatchUrls, setBulkExactWatchUrls] = useState<Record<number, string>>({});
+  const [bulkExactWatchErrors, setBulkExactWatchErrors] = useState<Record<number, string>>(
+    {},
+  );
+  const [bulkExactWatchMessage, setBulkExactWatchMessage] = useState<string | null>(null);
+  const [savingBulkExactWatch, setSavingBulkExactWatch] = useState(false);
   const [pendingWatchIntent, setPendingWatchIntent] = useState<PendingWatchIntent | null>(null);
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [watchCenterMessage, setWatchCenterMessage] = useState<string | null>(null);
@@ -165,8 +178,35 @@ export function LibraryScreen({
   }, [refreshVersion, watchListFilter]);
 
   useEffect(() => {
+    void loadWatchReviewList();
+  }, [refreshVersion]);
+
+  useEffect(() => {
     void loadWatchSetupList();
   }, [refreshVersion]);
+
+  useEffect(() => {
+    const exactItems = watchSetupList?.exactPageItems ?? [];
+    setBulkExactWatchUrls((current) => {
+      const next: Record<number, string> = {};
+      for (const item of exactItems) {
+        next[item.fileId] = current[item.fileId] ?? "";
+      }
+      return next;
+    });
+    setBulkExactWatchErrors((current) => {
+      const next: Record<number, string> = {};
+      for (const item of exactItems) {
+        if (current[item.fileId]) {
+          next[item.fileId] = current[item.fileId];
+        }
+      }
+      return next;
+    });
+    if (!exactItems.length) {
+      setBulkExactWatchMessage(null);
+    }
+  }, [watchSetupList]);
 
   useEffect(() => {
     void loadRows();
@@ -310,13 +350,11 @@ export function LibraryScreen({
   }, [watchFocusRequest, onConsumeWatchFocus]);
 
   useEffect(() => {
-    if (queuedWatchCenterAction !== "review" || loadingWatchList || watchListFilter !== "attention") {
+    if (queuedWatchCenterAction !== "review" || loadingWatchReviewList) {
       return;
     }
 
-    const nextReview =
-      watchList?.items.find((item) => shouldShowWatchReviewAction(item.watchResult)) ??
-      null;
+    const nextReview = watchReviewList?.items[0] ?? null;
 
     if (nextReview) {
       setQueuedWatchCenterAction(null);
@@ -324,15 +362,14 @@ export function LibraryScreen({
       return;
     }
 
-    if (watchList) {
+    if (watchReviewList) {
       setQueuedWatchCenterAction(null);
       setWatchCenterMessage("Nothing needs watch review right now.");
     }
   }, [
     queuedWatchCenterAction,
-    loadingWatchList,
-    watchListFilter,
-    watchList,
+    loadingWatchReviewList,
+    watchReviewList,
   ]);
 
   async function loadWatchCenter() {
@@ -367,6 +404,25 @@ export function LibraryScreen({
     }
   }
 
+  async function loadWatchReviewList() {
+    setLoadingWatchReviewList(true);
+
+    try {
+      const next = await api.listLibraryWatchReviewItems(8);
+      setWatchReviewList(next);
+    } catch {
+      setWatchReviewList({
+        total: 0,
+        providerNeededCount: 0,
+        referenceOnlyCount: 0,
+        unknownResultCount: 0,
+        items: [],
+      });
+    } finally {
+      setLoadingWatchReviewList(false);
+    }
+  }
+
   async function loadWatchSetupList() {
     setLoadingWatchSetupList(true);
 
@@ -377,6 +433,9 @@ export function LibraryScreen({
       setWatchSetupList({
         total: 0,
         truncated: false,
+        exactPageTotal: 0,
+        exactPageTruncated: false,
+        exactPageItems: [],
         items: [],
       });
     } finally {
@@ -421,7 +480,9 @@ export function LibraryScreen({
       setPendingWatchIntent(null);
       setWatchMessage(null);
     }
-    setSelected(await api.getFileDetail(fileId));
+    const detail = await api.getFileDetail(fileId);
+    setSelected(detail);
+    return detail;
   }
 
   function restoreWatchFields(file: FileDetail) {
@@ -443,9 +504,14 @@ export function LibraryScreen({
     centerMessage: string | null = null,
   ) {
     setQueuedWatchCenterAction(null);
-    setPendingWatchIntent(intent);
+    const detail = await openFileById(intent.fileId, true);
+    if (!detail) {
+      setPendingWatchIntent(null);
+      setWatchMessage("That Library item could not be opened.");
+      return;
+    }
     setWatchCenterMessage(centerMessage);
-    await openFileById(intent.fileId, true);
+    setPendingWatchIntent(intent);
   }
 
   async function beginWatchSetup(item: LibraryWatchSetupItem) {
@@ -461,7 +527,9 @@ export function LibraryScreen({
   }
 
   async function beginWatchReview(fileId: number) {
-    const item = watchList?.items.find((entry) => entry.fileId === fileId);
+    const item =
+      watchReviewList?.items.find((entry) => entry.fileId === fileId) ??
+      watchList?.items.find((entry) => entry.fileId === fileId);
     await openWatchIntent(
       {
         fileId,
@@ -478,13 +546,7 @@ export function LibraryScreen({
   }
 
   function nextReviewItem(currentFileId: number) {
-    return (
-      watchList?.items.find(
-        (item) =>
-          item.fileId !== currentFileId &&
-          shouldShowWatchReviewAction(item.watchResult),
-      ) ?? null
-    );
+    return watchReviewList?.items.find((item) => item.fileId !== currentFileId) ?? null;
   }
 
   async function advanceWatchSetupFlow(currentFileId: number, reason: "saved" | "skipped") {
@@ -674,9 +736,12 @@ export function LibraryScreen({
   const selectedWatch = selected?.watchResult ?? null;
   const watchSourceOrigin = selectedWatch?.sourceOrigin ?? "none";
   const isBuiltInWatchSource = watchSourceOrigin === "built_in_special";
+  const bulkExactSetupItems = watchSetupList?.exactPageItems ?? [];
+  const bulkExactSetupItemIds = new Set(bulkExactSetupItems.map((item) => item.fileId));
+  const visibleSetupItems =
+    watchSetupList?.items.filter((item) => !bulkExactSetupItemIds.has(item.fileId)) ?? [];
   const firstSetupSuggestion = watchSetupList?.items[0] ?? null;
-  const firstReviewItem =
-    watchList?.items.find((item) => shouldShowWatchReviewAction(item.watchResult)) ?? null;
+  const firstReviewItem = watchReviewList?.items[0] ?? null;
   const isSetupQueueActive =
     pendingWatchIntent?.mode === "setup" && pendingWatchIntent.fileId === selected?.id;
   const isReviewQueueActive =
@@ -723,6 +788,7 @@ export function LibraryScreen({
         loadRows(updated.id),
         loadWatchCenter(),
         loadWatchList(),
+        loadWatchReviewList(),
         loadWatchSetupList(),
       ]);
 
@@ -817,6 +883,7 @@ export function LibraryScreen({
         loadRows(updated.id),
         loadWatchCenter(),
         loadWatchList(),
+        loadWatchReviewList(),
         loadWatchSetupList(),
       ]);
 
@@ -873,6 +940,7 @@ export function LibraryScreen({
         loadRows(updated.id),
         loadWatchCenter(),
         loadWatchList(),
+        loadWatchReviewList(),
         loadWatchSetupList(),
       ]);
 
@@ -928,6 +996,7 @@ export function LibraryScreen({
       await Promise.all([
         loadWatchCenter(),
         loadWatchList(),
+        loadWatchReviewList(),
         loadWatchSetupList(),
         loadRows(selected?.id),
       ]);
@@ -935,6 +1004,152 @@ export function LibraryScreen({
       setWatchCenterMessage(watchActionError(error, "check watched pages"));
     } finally {
       setRefreshingAllWatched(false);
+    }
+  }
+
+  async function saveBulkExactWatchSources() {
+    const entries = (watchSetupList?.exactPageItems ?? [])
+      .map((item) => ({
+        fileId: item.fileId,
+        sourceKind: "exact_page" as const,
+        sourceLabel: item.subjectLabel,
+        sourceUrl: bulkExactWatchUrls[item.fileId]?.trim() ?? "",
+      }))
+      .filter((entry) => entry.sourceUrl.length > 0) satisfies SaveLibraryWatchSourceEntry[];
+
+    if (!entries.length) {
+      setBulkExactWatchMessage("Paste at least one official exact page URL first.");
+      return;
+    }
+
+    setSavingBulkExactWatch(true);
+    setBulkExactWatchMessage(null);
+    setWatchCenterMessage(null);
+
+    try {
+      const results: Array<{
+        fileId: number;
+        saved: boolean;
+        message: string;
+      }> = [];
+
+      for (const entry of entries) {
+        try {
+          const updated = await api.saveWatchSourceForFile(
+            entry.fileId,
+            entry.sourceKind,
+            entry.sourceLabel,
+            entry.sourceUrl,
+          );
+
+          results.push(
+            updated
+              ? {
+                  fileId: entry.fileId,
+                  saved: true,
+                  message: "Watch source saved.",
+                }
+              : {
+                  fileId: entry.fileId,
+                  saved: false,
+                  message: "Watch sources can only be saved for installed Library items.",
+                },
+          );
+        } catch (error) {
+          results.push({
+            fileId: entry.fileId,
+            saved: false,
+            message: watchActionError(error, "save the watch source"),
+          });
+        }
+      }
+
+      const savedCount = results.filter((item) => item.saved).length;
+      const failedCount = results.length - savedCount;
+      const result = {
+        savedCount,
+        failedCount,
+        results,
+      };
+
+      const nextErrors: Record<number, string> = {};
+      for (const item of result.results) {
+        if (!item.saved) {
+          nextErrors[item.fileId] = item.message;
+        }
+      }
+      setBulkExactWatchErrors(nextErrors);
+      setBulkExactWatchUrls((current) => {
+        const next = { ...current };
+        for (const item of result.results) {
+          if (item.saved) {
+            delete next[item.fileId];
+          }
+        }
+        return next;
+      });
+
+      if (
+        selected &&
+        result.results.some((item) => item.saved && item.fileId === selected.id)
+      ) {
+        setPendingWatchIntent(null);
+        setWatchEditing(false);
+        setWatchMessage(null);
+      }
+
+      await Promise.all([
+        loadRows(selected?.id),
+        loadWatchCenter(),
+        loadWatchList(),
+        loadWatchReviewList(),
+        loadWatchSetupList(),
+      ]);
+
+      const singleSavedItem =
+        result.savedCount === 1 && result.failedCount === 0
+          ? result.results.find((item) => item.saved) ?? null
+          : null;
+
+      if (singleSavedItem) {
+        const savedDetail = await api.getFileDetail(singleSavedItem.fileId);
+        if (savedDetail?.watchResult && shouldShowWatchReviewAction(savedDetail.watchResult)) {
+          await openWatchIntent(
+            {
+              fileId: savedDetail.id,
+              mode: "review",
+              sourceKind: savedDetail.watchResult.sourceKind ?? "exact_page",
+              sourceLabel:
+                savedDetail.watchResult.sourceLabel ??
+                savedDetail.installedVersionSummary?.subjectLabel ??
+                savedDetail.bundleName ??
+                savedDetail.filename,
+            },
+            "Watch source saved. Review this source before SimSuite can rely on it.",
+          );
+          return;
+        }
+      }
+
+      if (result.savedCount > 0) {
+        setWatchCenterMessage(
+          result.failedCount > 0
+            ? `Saved ${result.savedCount} exact watch page${
+                result.savedCount === 1 ? "" : "s"
+              }. ${result.failedCount} still need attention.`
+            : `Saved ${result.savedCount} exact watch page${
+                result.savedCount === 1 ? "" : "s"
+              }.`,
+        );
+      } else {
+        setBulkExactWatchMessage(
+          result.results[0]?.message ?? "SimSuite could not save these watch sources.",
+        );
+      }
+    } catch (error) {
+      setBulkExactWatchMessage(watchActionError(error, "save the watch sources"));
+    } finally {
+      setSavingBulkExactWatch(false);
     }
   }
 
@@ -1718,13 +1933,11 @@ export function LibraryScreen({
                       : "Work through setup"}
                 </button>
               ) : null}
-              {watchOverview &&
-              (watchOverview.possibleUpdateItems > 0 ||
-                watchOverview.unknownWatchItems > 0) ? (
+              {loadingWatchReviewList || (watchReviewList?.total ?? 0) > 0 ? (
                 <button
                   type="button"
                   className="secondary-action"
-                  disabled={loadingWatchList}
+                  disabled={loadingWatchReviewList}
                   onClick={() => startWatchReviewFlow()}
                 >
                   {isReviewQueueActive
@@ -1755,18 +1968,124 @@ export function LibraryScreen({
             {watchCenterMessage ? (
               <div className="library-watch-message">{watchCenterMessage}</div>
             ) : null}
-            <div
-              ref={trackedWatchSectionRef}
-              className={
-                focusedWatchSection === "tracked"
-                  ? "library-watch-focus is-focused"
-                  : "library-watch-focus"
-              }
-            >
-              <div className="library-watch-filter-row">
-                {WATCH_LIST_FILTERS.map((filterOption) => (
-                  <button
-                    key={filterOption.id}
+              <div
+                ref={trackedWatchSectionRef}
+                className={
+                  focusedWatchSection === "tracked"
+                    ? "library-watch-focus is-focused"
+                    : "library-watch-focus"
+                }
+              >
+                {loadingWatchReviewList || (watchReviewList?.total ?? 0) > 0 ? (
+                  <div className="library-watch-review-lane">
+                    <div className="library-watch-setup-heading">
+                      <strong>
+                        {userView === "beginner"
+                          ? "Review queue"
+                          : "Watch review queue"}
+                      </strong>
+                      <span>
+                        {watchReviewList
+                          ? `${watchReviewList.total.toLocaleString()} ${
+                              userView === "beginner" ? "items" : "saved pages"
+                            }`
+                          : "Loading..."}
+                      </span>
+                    </div>
+
+                    {watchReviewList ? (
+                      <div className="library-watch-review-summary">
+                        {watchReviewList.providerNeededCount > 0 ? (
+                          <span className="watch-review-chip">
+                            Provider needed{" "}
+                            <strong>
+                              {watchReviewList.providerNeededCount.toLocaleString()}
+                            </strong>
+                          </span>
+                        ) : null}
+                        {watchReviewList.referenceOnlyCount > 0 ? (
+                          <span className="watch-review-chip">
+                            Reminder only{" "}
+                            <strong>
+                              {watchReviewList.referenceOnlyCount.toLocaleString()}
+                            </strong>
+                          </span>
+                        ) : null}
+                        {watchReviewList.unknownResultCount > 0 ? (
+                          <span className="watch-review-chip">
+                            Still unclear{" "}
+                            <strong>
+                              {watchReviewList.unknownResultCount.toLocaleString()}
+                            </strong>
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="library-watch-list">
+                      {loadingWatchReviewList ? (
+                        <div className="library-watch-empty">
+                          {userView === "beginner"
+                            ? "Loading the watch review queue..."
+                            : "Loading watch review items..."}
+                        </div>
+                      ) : watchReviewList?.items.length ? (
+                        watchReviewList.items.map((item) => (
+                          <div
+                            key={`review-${item.fileId}`}
+                            className="library-watch-list-entry"
+                          >
+                            <button
+                              type="button"
+                              className="library-watch-list-item library-watch-list-main"
+                              onClick={() => void openFileById(item.fileId)}
+                            >
+                              <div className="library-watch-list-copy">
+                                <strong>{item.subjectLabel}</strong>
+                                <span>
+                                  {item.creator
+                                    ? `${item.creator} · ${item.filename}`
+                                    : item.filename}
+                                </span>
+                                <span>
+                                  {item.installedVersion?.trim()
+                                    ? userView === "beginner"
+                                      ? `Installed version ${item.installedVersion}.`
+                                      : `Installed ${item.installedVersion}.`
+                                    : userView === "beginner"
+                                      ? "Installed version is still not clear."
+                                      : "Installed version is still unclear."}
+                                </span>
+                              </div>
+                              <div className="library-watch-list-state">
+                                <strong>
+                                  {watchReviewReasonLabel(item.reviewReason, userView)}
+                                </strong>
+                                <span>{item.reviewHint}</span>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-action library-watch-setup-action"
+                              onClick={() => void beginWatchReview(item.fileId)}
+                            >
+                              {userView === "beginner" ? "Review" : "Review source"}
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="library-watch-empty">
+                          Nothing needs watch review right now.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="library-watch-filter-row">
+                  {WATCH_LIST_FILTERS.map((filterOption) => (
+                    <button
+                      key={filterOption.id}
                     type="button"
                     className={
                       watchListFilter === filterOption.id
@@ -1874,6 +2193,99 @@ export function LibraryScreen({
                   </span>
                 </div>
 
+                {bulkExactSetupItems.length ? (
+                  <div className="library-watch-bulk-panel">
+                    <div className="library-watch-bulk-heading">
+                      <strong>
+                        {userView === "beginner"
+                          ? "Save exact pages in one pass"
+                          : "Bulk exact-page setup"}
+                      </strong>
+                      <span>
+                        {watchSetupList?.exactPageTotal.toLocaleString() ?? "0"} exact page
+                        {watchSetupList?.exactPageTotal === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <p className="library-watch-bulk-copy">
+                      {userView === "beginner"
+                        ? "Paste the official mod pages you already know. SimSuite will save every filled row at once."
+                        : "Paste the strongest official exact-page links here and save the filled rows together."}
+                    </p>
+                    <div className="library-watch-bulk-list">
+                      {bulkExactSetupItems.map((item) => (
+                        <div
+                          key={`bulk-exact-${item.fileId}`}
+                          className="library-watch-bulk-row"
+                        >
+                          <button
+                            type="button"
+                            className="library-watch-bulk-subject"
+                            onClick={() => void openFileById(item.fileId)}
+                          >
+                            <strong>{item.subjectLabel}</strong>
+                            <span>
+                              {item.creator
+                                ? `${item.creator} · ${item.filename}`
+                                : item.filename}
+                            </span>
+                          </button>
+                          <div className="library-watch-bulk-fields">
+                            <input
+                              type="url"
+                              value={bulkExactWatchUrls[item.fileId] ?? ""}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setBulkExactWatchUrls((current) => ({
+                                  ...current,
+                                  [item.fileId]: nextValue,
+                                }));
+                                setBulkExactWatchErrors((current) => {
+                                  if (!current[item.fileId]) {
+                                    return current;
+                                  }
+
+                                  const next = { ...current };
+                                  delete next[item.fileId];
+                                  return next;
+                                });
+                              }}
+                              placeholder="https://example.com/mod-page"
+                              disabled={savingBulkExactWatch}
+                            />
+                            {bulkExactWatchErrors[item.fileId] ? (
+                              <span className="library-watch-bulk-error">
+                                {bulkExactWatchErrors[item.fileId]}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="library-watch-bulk-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={savingBulkExactWatch}
+                        onClick={() => void saveBulkExactWatchSources()}
+                      >
+                        {savingBulkExactWatch
+                          ? "Saving exact pages..."
+                          : "Save filled exact pages"}
+                      </button>
+                      <span>
+                        {watchSetupList?.exactPageTruncated
+                          ? "Showing the strongest exact-page candidates first."
+                          : "Exact-page suggestions are the easiest batch win right now."}
+                      </span>
+                    </div>
+                    {bulkExactWatchMessage ? (
+                      <div className="library-watch-message">
+                        {bulkExactWatchMessage}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="library-watch-list">
                   {loadingWatchSetupList ? (
                     <div className="library-watch-empty">
@@ -1881,8 +2293,8 @@ export function LibraryScreen({
                         ? "Finding installed items that still need a watch page..."
                         : "Finding watch setup suggestions..."}
                     </div>
-                  ) : watchSetupList?.items.length ? (
-                    watchSetupList.items.map((item) => (
+                  ) : visibleSetupItems.length ? (
+                    visibleSetupItems.map((item) => (
                       <div
                         key={`setup-${item.fileId}`}
                         className="library-watch-list-entry"
@@ -1927,6 +2339,12 @@ export function LibraryScreen({
                         </button>
                       </div>
                     ))
+                  ) : bulkExactSetupItems.length ? (
+                    <div className="library-watch-empty">
+                      {userView === "beginner"
+                        ? "The strongest exact-page items are ready above."
+                        : "The strongest exact-page suggestions are ready in the bulk setup strip above."}
+                    </div>
                   ) : (
                     <div className="library-watch-empty">
                       {userView === "beginner"
@@ -2466,6 +2884,22 @@ function shouldShowWatchReviewAction(watchResult: WatchResult) {
     watchResult.sourceOrigin === "saved_by_user" &&
     (watchResult.capability !== "can_refresh_now" || watchResult.status === "unknown")
   );
+}
+
+function watchReviewReasonLabel(
+  reason: LibraryWatchReviewReason,
+  userView: UserView,
+) {
+  switch (reason) {
+    case "provider_needed":
+      return userView === "beginner" ? "Provider needed" : "Provider needed";
+    case "reference_only":
+      return userView === "beginner" ? "Reminder only" : "Reference only";
+    case "unknown_result":
+      return userView === "beginner" ? "Still unclear" : "Still unclear";
+    default:
+      return userView === "beginner" ? "Needs review" : "Needs review";
+  }
 }
 
 function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {

@@ -2,6 +2,13 @@
 
 ## Current Priority
 
+- March 15, 2026: `Library` now has the first compact bulk watch-management layer inside the existing watch center:
+  - strongest exact-page candidates can be filled together in one exact-page strip
+  - saved reminder-only and provider-needed links now have a real review queue lane
+  - the next product focus should stay on finishing that flow cleanly:
+    - stronger multi-item setup for many exact-page rows
+    - a cleaner batch review lane for many reminder/provider-needed items
+    - watch history and source audit only after setup and review feel solid
 - March 15, 2026: the watch system now feels more connected across `Home` and `Library`:
   - `Home` watch rows can land on the right Library watch lane
   - `Library` can highlight the right watch section and keep setup/review moving forward
@@ -34,6 +41,17 @@
 
 ## What Changed This Session
 
+- March 15, 2026: the `Library` watch center now carries the next real watch-management layer without adding another management screen:
+  - strongest exact-page suggestions are split into a compact bulk exact-page strip
+  - saved reminder-only and provider-needed links now get their own compact review queue lane
+  - `Home` now gets a real review count from backend truth instead of a frontend guess
+- March 15, 2026: fixed a real Library handoff bug:
+  - starting watch setup or review while the inspector was empty could drop the pending handoff before the file detail opened
+  - `Library` now opens the target file first and then applies the pending watch intent, so setup/review can survive that empty-inspector state
+- March 15, 2026: the generic watch smoke path had to be adjusted for the real desktop driver:
+  - the Wry webdriver can still miss `Library` row selection clicks even though the file detail exists
+  - the smoke now proves the generic save/review/clear flow through the live Tauri command bridge plus the real `Library` UI reaction
+  - this keeps a real desktop proof lane in place while leaving row-click behavior available for later manual follow-up
 - March 15, 2026: `Home` watch rows now open `Library` with a real watch focus request instead of only opening the generic Library screen:
   - `Watch setup` lands on the setup suggestions lane
   - `Exact updates` / `Updates ready` lands on the tracked confirmed-updates lane
@@ -218,6 +236,12 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the new bulk setup, review queue, and watch-intent handoff changes.
+- March 15, 2026: `npm run build` passed after the `Library` watch-center, handoff, and smoke updates.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the real Tauri smoke was widened to prove:
+  - the broader watch-center flow still works in the real app
+  - a generic creator-page watch source can surface into the review queue
+  - clearing that watch source returns the item to setup suggestions
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the Home-to-Library watch focus and review-queue changes.
 - March 15, 2026: `npm run build` passed after the App, Home, Library, style, and desktop-smoke updates.
 - March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the native smoke was widened to prove:
@@ -365,6 +389,10 @@
 
 ## Known Problems / Gaps
 
+- The real desktop smoke passes again, but there is still one test-harness caveat:
+  - the Wry webdriver does not reliably select `Library` rows in this watch flow
+  - the current generic watch smoke now uses the live Tauri command bridge to save and clear the source, then checks the real `Library` UI reaction
+  - if future work changes `Library` row selection or the detail panel, do one manual desktop click-through too
 - The watch system is much smoother now, but it is still not true bulk setup:
   - users still add one real watch URL at a time
   - SimSuite still intentionally avoids inventing or guessing watch URLs
@@ -455,6 +483,7 @@
   - save a generic watch page
   - review a saved generic watch source
   - clear the watch source
+- If the next session touches `Library` row selection or the smoke again, do one manual real-app click-through too because the current Wry webdriver is still shaky there.
 - Then move to the next watch-management gap:
   - stronger bulk setup for exact-page candidates
   - a cleaner batch review lane for saved reminder/provider-needed sources

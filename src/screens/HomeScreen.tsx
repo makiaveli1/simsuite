@@ -207,9 +207,7 @@ export function HomeScreen({
           },
           {
             label: "Watch review",
-            value: `${overview?.possibleUpdateItems ?? 0} possible / ${
-              overview?.unknownWatchItems ?? 0
-            } unclear`,
+            value: `${overview?.watchReviewItems ?? 0}`,
             onClick: () => onOpenLibraryWatchFocus("tracked_attention"),
           },
           {
@@ -239,9 +237,9 @@ export function HomeScreen({
             onClick: () => onOpenLibraryWatchFocus("tracked_possible_updates"),
           },
           {
-            label: "Watch unknown",
-            value: `${overview?.unknownWatchItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_unclear"),
+            label: "Watch review",
+            value: `${overview?.watchReviewItems ?? 0}`,
+            onClick: () => onOpenLibraryWatchFocus("tracked_attention"),
           },
           {
             label: "Watch setup",

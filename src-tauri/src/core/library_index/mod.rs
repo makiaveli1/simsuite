@@ -45,6 +45,9 @@ pub fn get_home_overview(
     )?;
     let (exact_update_items, possible_update_items, unknown_watch_items) =
         content_versions::load_watch_counts(connection)?;
+    let watch_review_items =
+        content_versions::list_library_watch_review_items(connection, settings, seed_pack, 1)?
+            .total;
     let watch_setup_items =
         content_versions::list_library_watch_setup_items(connection, settings, seed_pack, 1)?.total;
     let last_scan_at = connection
@@ -73,6 +76,7 @@ pub fn get_home_overview(
         exact_update_items,
         possible_update_items,
         unknown_watch_items,
+        watch_review_items,
         watch_setup_items,
         last_scan_at,
         read_only_mode: true,

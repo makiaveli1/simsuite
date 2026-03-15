@@ -66,6 +66,22 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The watch system now has a fuller compact flow inside `Library` without branching into another management screen.
+
+Important current watch-center behavior:
+
+- the watch center now has three compact follow-up lanes inside the same `Library` table area:
+  - tracked watched items
+  - setup suggestions for unwatched installed items
+  - review queue items for saved reminder-only or provider-needed links
+- strongest exact-page setup suggestions are split into their own small bulk strip above the normal setup list so the easiest exact-page wins stay visible together
+- `Home` now gets both setup-count and review-count truth from the same backend watch data, so the summary layer and `Library` stay aligned
+- pending watch setup or review intent is now applied only after the target file detail opens:
+  - this avoids losing the handoff when the `Library` inspector starts empty
+  - it keeps the existing detail panel as the single editor for both setup and review
+
+## Current engineering note (March 15, 2026)
+
 The watch system now has a cleaner cross-screen handoff and a more complete follow-up loop without adding another management surface.
 
 Important current watch-center behavior:

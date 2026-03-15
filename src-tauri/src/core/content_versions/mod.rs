@@ -12,7 +12,8 @@ use crate::{
     error::AppResult,
     models::{
         FileInsights, InstalledVersionSummary, LibrarySettings, LibraryWatchListItem,
-        LibraryWatchListResponse, LibraryWatchSetupItem, LibraryWatchSetupResponse,
+        LibraryWatchListResponse, LibraryWatchReviewItem, LibraryWatchReviewReason,
+        LibraryWatchReviewResponse, LibraryWatchSetupItem, LibraryWatchSetupResponse,
         SpecialVersionStatus, VersionCompareStatus, VersionConfidence, VersionResolution,
         VersionSignal, WatchCapability, WatchListFilter, WatchResult, WatchSourceKind,
         WatchSourceOrigin, WatchStatus,
@@ -23,7 +24,9 @@ use crate::{
 const MAX_CANDIDATE_ROWS: usize = 96;
 const MAX_SEARCH_TOKENS: usize = 4;
 const MAX_WATCH_LIST_LIMIT: usize = 48;
+const MAX_WATCH_REVIEW_LIMIT: usize = 24;
 const MAX_WATCH_SETUP_LIMIT: usize = 24;
+const MAX_WATCH_SETUP_EXACT_LIMIT: usize = 8;
 const WATCH_SETUP_SCAN_LIMIT: usize = 320;
 const MATCH_SCORE_STRONG: f64 = 1.20;
 const MATCH_SCORE_MEDIUM: f64 = 0.80;
@@ -269,6 +272,14 @@ pub fn list_library_watch_setup_items(
 
     items.sort_by(compare_library_watch_setup_items);
     let total = items.len() as i64;
+    let mut exact_page_items: Vec<_> = items
+        .iter()
+        .filter(|item| item.suggested_source_kind == WatchSourceKind::ExactPage)
+        .cloned()
+        .collect();
+    let exact_page_total = exact_page_items.len() as i64;
+    let exact_page_truncated = exact_page_items.len() > MAX_WATCH_SETUP_EXACT_LIMIT;
+    exact_page_items.truncate(MAX_WATCH_SETUP_EXACT_LIMIT);
     let max_limit = limit.clamp(1, MAX_WATCH_SETUP_LIMIT);
     let truncated = items.len() > max_limit;
     items.truncate(max_limit);
@@ -276,6 +287,56 @@ pub fn list_library_watch_setup_items(
     Ok(LibraryWatchSetupResponse {
         total,
         truncated,
+        exact_page_total,
+        exact_page_truncated,
+        exact_page_items,
+        items,
+    })
+}
+
+pub fn list_library_watch_review_items(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    limit: usize,
+) -> AppResult<LibraryWatchReviewResponse> {
+    let mut seen_file_ids = HashSet::new();
+    let mut items = Vec::new();
+
+    for file_id in load_saved_watch_anchor_file_ids(connection)? {
+        if !seen_file_ids.insert(file_id) {
+            continue;
+        }
+
+        let Some(item) = build_library_watch_review_item(connection, settings, seed_pack, file_id)?
+        else {
+            continue;
+        };
+
+        items.push(item);
+    }
+
+    items.sort_by(compare_library_watch_review_items);
+    let total = items.len() as i64;
+    let provider_needed_count = items
+        .iter()
+        .filter(|item| item.review_reason == LibraryWatchReviewReason::ProviderNeeded)
+        .count() as i64;
+    let reference_only_count = items
+        .iter()
+        .filter(|item| item.review_reason == LibraryWatchReviewReason::ReferenceOnly)
+        .count() as i64;
+    let unknown_result_count = items
+        .iter()
+        .filter(|item| item.review_reason == LibraryWatchReviewReason::UnknownResult)
+        .count() as i64;
+    items.truncate(limit.clamp(1, MAX_WATCH_REVIEW_LIMIT));
+
+    Ok(LibraryWatchReviewResponse {
+        total,
+        provider_needed_count,
+        reference_only_count,
+        unknown_result_count,
         items,
     })
 }
@@ -807,6 +868,35 @@ fn build_library_watch_list_item(
     }))
 }
 
+fn build_library_watch_review_item(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+) -> AppResult<Option<LibraryWatchReviewItem>> {
+    let Some(list_item) = build_library_watch_list_item(connection, settings, seed_pack, file_id)?
+    else {
+        return Ok(None);
+    };
+
+    let Some((review_reason, review_hint)) =
+        watch_review_reason_and_hint(&list_item.watch_result)
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(LibraryWatchReviewItem {
+        file_id: list_item.file_id,
+        filename: list_item.filename,
+        creator: list_item.creator,
+        subject_label: list_item.subject_label,
+        installed_version: list_item.installed_version,
+        watch_result: list_item.watch_result,
+        review_reason,
+        review_hint,
+    }))
+}
+
 fn watch_setup_suggestion_for_subject(
     subject: &VersionSubject,
 ) -> Option<(WatchSourceKind, String)> {
@@ -872,6 +962,53 @@ fn watch_setup_suggestion_for_subject(
     ))
 }
 
+fn watch_review_reason_and_hint(
+    watch_result: &WatchResult,
+) -> Option<(LibraryWatchReviewReason, String)> {
+    if watch_result.source_origin != WatchSourceOrigin::SavedByUser {
+        return None;
+    }
+
+    if watch_result.capability == WatchCapability::ProviderRequired {
+        let provider_label = watch_result
+            .provider_name
+            .clone()
+            .unwrap_or_else(|| "A provider".to_owned());
+        return Some((
+            LibraryWatchReviewReason::ProviderNeeded,
+            format!(
+                "{provider_label} support is still needed before SimSuite can check this saved page automatically."
+            ),
+        ));
+    }
+
+    if watch_result.capability == WatchCapability::SavedReferenceOnly {
+        let hint = match watch_result.source_kind {
+            Some(WatchSourceKind::CreatorPage) => {
+                "This creator page is saved as a reminder only. Keep it if it helps, or replace it with an exact mod page."
+                    .to_owned()
+            }
+            Some(WatchSourceKind::ExactPage) => {
+                "This saved page is still reference-only. Review whether it should stay a reminder or be replaced with a safer exact page."
+                    .to_owned()
+            }
+            None => "This saved watch source still needs a manual decision.".to_owned(),
+        };
+
+        return Some((LibraryWatchReviewReason::ReferenceOnly, hint));
+    }
+
+    if watch_result.status == WatchStatus::Unknown {
+        return Some((
+            LibraryWatchReviewReason::UnknownResult,
+            "SimSuite checked this source, but the result is still unclear. Review the page or replace the link."
+                .to_owned(),
+        ));
+    }
+
+    None
+}
+
 fn watch_result_matches_filter(watch_result: &WatchResult, filter: WatchListFilter) -> bool {
     match filter {
         WatchListFilter::Attention => matches!(
@@ -891,6 +1028,24 @@ fn compare_library_watch_items(
 ) -> std::cmp::Ordering {
     watch_status_priority(&left.watch_result.status)
         .cmp(&watch_status_priority(&right.watch_result.status))
+        .then_with(|| {
+            left.subject_label
+                .to_lowercase()
+                .cmp(&right.subject_label.to_lowercase())
+        })
+        .then_with(|| {
+            left.filename
+                .to_lowercase()
+                .cmp(&right.filename.to_lowercase())
+        })
+}
+
+fn compare_library_watch_review_items(
+    left: &LibraryWatchReviewItem,
+    right: &LibraryWatchReviewItem,
+) -> std::cmp::Ordering {
+    watch_review_priority(&left.review_reason)
+        .cmp(&watch_review_priority(&right.review_reason))
         .then_with(|| {
             left.subject_label
                 .to_lowercase()
@@ -943,6 +1098,14 @@ fn watch_setup_priority(item: &LibraryWatchSetupItem) -> i32 {
     }
 
     priority
+}
+
+fn watch_review_priority(reason: &LibraryWatchReviewReason) -> i32 {
+    match reason {
+        LibraryWatchReviewReason::ProviderNeeded => 0,
+        LibraryWatchReviewReason::ReferenceOnly => 1,
+        LibraryWatchReviewReason::UnknownResult => 2,
+    }
 }
 
 fn watch_status_priority(status: &WatchStatus) -> usize {
@@ -2691,14 +2854,15 @@ fn prettify_stem(value: &str) -> String {
 mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
-        list_library_watch_items, list_library_watch_setup_items,
-        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
+        list_library_watch_items, list_library_watch_review_items,
+        list_library_watch_setup_items, refresh_watch_source_for_library_file,
+        save_watch_source_for_library_file,
     };
     use crate::{
         database,
         models::{
-            FileInsights, LibrarySettings, VersionSignal, WatchCapability, WatchListFilter,
-            WatchSourceKind, WatchSourceOrigin, WatchStatus,
+            FileInsights, LibrarySettings, LibraryWatchReviewReason, VersionSignal,
+            WatchCapability, WatchListFilter, WatchSourceKind, WatchSourceOrigin, WatchStatus,
         },
         seed::load_seed_pack,
     };
@@ -2999,11 +3163,15 @@ mod tests {
 
         assert_eq!(response.total, 1);
         assert!(!response.truncated);
+        assert_eq!(response.exact_page_total, 1);
+        assert!(!response.exact_page_truncated);
+        assert_eq!(response.exact_page_items.len(), 1);
         assert_eq!(response.items[0].file_id, file_id);
         assert_eq!(
             response.items[0].suggested_source_kind,
             WatchSourceKind::ExactPage
         );
+        assert_eq!(response.exact_page_items[0].file_id, file_id);
     }
 
     #[test]
@@ -3057,6 +3225,15 @@ mod tests {
         let refreshable =
             list_auto_refreshable_watch_file_ids(&connection, &seed_pack).expect("targets");
         assert!(!refreshable.contains(&file_id));
+
+        let review = list_library_watch_review_items(&connection, &settings, &seed_pack, 8)
+            .expect("watch review list");
+        assert_eq!(review.total, 1);
+        assert_eq!(review.reference_only_count, 1);
+        assert_eq!(
+            review.items[0].review_reason,
+            LibraryWatchReviewReason::ReferenceOnly
+        );
     }
 
     #[test]
@@ -3085,6 +3262,16 @@ mod tests {
             .note
             .as_deref()
             .is_some_and(|note| note.contains("approved API path")));
+
+        let review = list_library_watch_review_items(&connection, &settings, &seed_pack, 8)
+            .expect("watch review list");
+        assert_eq!(review.total, 1);
+        assert_eq!(review.provider_needed_count, 1);
+        assert_eq!(review.items[0].file_id, file_id);
+        assert_eq!(
+            review.items[0].review_reason,
+            LibraryWatchReviewReason::ProviderNeeded
+        );
     }
 
     #[test]

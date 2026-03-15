@@ -37,15 +37,20 @@ import type {
   InstalledVersionSummary,
   OrganizationPreview,
   LibraryFacets,
+  LibraryWatchBulkSaveResult,
   LibraryListResponse,
   LibraryQuery,
   LibrarySettings,
   LibraryWatchListResponse,
+  LibraryWatchReviewItem,
+  LibraryWatchReviewReason,
+  LibraryWatchReviewResponse,
   LibraryWatchSetupResponse,
   RestoreSnapshotResult,
   ReviewPlanAction,
   ReviewQueueItem,
   RulePreset,
+  SaveLibraryWatchSourceEntry,
   ScanProgress,
   ScanStatus,
   ScanSummary,
@@ -624,6 +629,67 @@ function mockWatchStatusPriority(status: WatchResult["status"]) {
   }
 }
 
+function mockWatchNeedsReview(watchResult: WatchResult) {
+  return (
+    watchResult.sourceOrigin === "saved_by_user" &&
+    (watchResult.capability !== "can_refresh_now" || watchResult.status === "unknown")
+  );
+}
+
+function mockWatchReviewReason(
+  watchResult: WatchResult,
+): LibraryWatchReviewReason | null {
+  if (!mockWatchNeedsReview(watchResult)) {
+    return null;
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return "provider_needed";
+  }
+
+  if (watchResult.capability === "saved_reference_only") {
+    return "reference_only";
+  }
+
+  if (watchResult.status === "unknown") {
+    return "unknown_result";
+  }
+
+  return null;
+}
+
+function mockWatchReviewHint(watchResult: WatchResult) {
+  const reviewReason = mockWatchReviewReason(watchResult);
+  if (reviewReason === "provider_needed") {
+    return `${
+      watchResult.providerName ?? "Provider"
+    } support is still needed before SimSuite can check this saved page automatically.`;
+  }
+
+  if (reviewReason === "reference_only") {
+    return watchResult.sourceKind === "creator_page"
+      ? "This creator page is saved as a reminder only. Keep it if it helps, or replace it with an exact mod page."
+      : "This saved page is still reference-only. Review whether it should stay a reminder or be replaced with a safer exact page.";
+  }
+
+  if (reviewReason === "unknown_result") {
+    return "SimSuite checked this source, but the result is still unclear. Review the page or replace the link.";
+  }
+
+  return "This saved source still needs a manual decision.";
+}
+
+function mockWatchReviewPriority(reason: LibraryWatchReviewReason) {
+  switch (reason) {
+    case "provider_needed":
+      return 0;
+    case "reference_only":
+      return 1;
+    case "unknown_result":
+      return 2;
+  }
+}
+
 function buildMockLibraryWatchList(
   filter: WatchListFilter,
   limit = 12,
@@ -678,6 +744,65 @@ function buildMockLibraryWatchList(
       installedVersion: entry.installedVersionSummary?.version ?? null,
       watchResult: entry.watchResult,
     })),
+  };
+}
+
+function buildMockLibraryWatchReviewList(limit = 8): LibraryWatchReviewResponse {
+  const items = mockFiles
+    .filter((file) => file.sourceLocation !== "downloads")
+    .map((file) => {
+      const installedVersionSummary =
+        file.installedVersionSummary ?? buildMockInstalledVersionSummary(file);
+      const watchResult = file.watchResult ?? buildMockWatchResult(file);
+      const reviewReason = watchResult ? mockWatchReviewReason(watchResult) : null;
+
+      if (!watchResult || !reviewReason) {
+        return null;
+      }
+
+      return {
+        fileId: file.id,
+        filename: file.filename,
+        creator: file.creator,
+        subjectLabel:
+          installedVersionSummary?.subjectLabel ?? file.bundleName ?? file.filename,
+        installedVersion: installedVersionSummary?.version ?? null,
+        watchResult,
+        reviewReason,
+        reviewHint: mockWatchReviewHint(watchResult),
+      } satisfies LibraryWatchReviewItem;
+    })
+    .filter((item): item is LibraryWatchReviewItem => item !== null)
+    .sort((left, right) => {
+      const reasonOrder =
+        mockWatchReviewPriority(left.reviewReason) -
+        mockWatchReviewPriority(right.reviewReason);
+      if (reasonOrder !== 0) {
+        return reasonOrder;
+      }
+
+      const subjectCompare = left.subjectLabel.localeCompare(right.subjectLabel, undefined, {
+        sensitivity: "base",
+      });
+      if (subjectCompare !== 0) {
+        return subjectCompare;
+      }
+
+      return left.filename.localeCompare(right.filename, undefined, {
+        sensitivity: "base",
+      });
+    });
+
+  const maxLimit = Math.max(1, Math.min(24, Math.trunc(limit || 8)));
+  return {
+    total: items.length,
+    providerNeededCount: items.filter((item) => item.reviewReason === "provider_needed")
+      .length,
+    referenceOnlyCount: items.filter((item) => item.reviewReason === "reference_only")
+      .length,
+    unknownResultCount: items.filter((item) => item.reviewReason === "unknown_result")
+      .length,
+    items: items.slice(0, maxLimit),
   };
 }
 
@@ -755,9 +880,15 @@ function buildMockLibraryWatchSetupList(limit = 6): LibraryWatchSetupResponse {
     });
 
   const maxLimit = Math.max(1, Math.min(24, Math.trunc(limit || 6)));
+  const exactPageItems = items
+    .filter((item) => item.suggestedSourceKind === "exact_page")
+    .map(({ score, ...item }) => item);
   return {
     total: items.length,
     truncated: items.length > maxLimit,
+    exactPageTotal: exactPageItems.length,
+    exactPageTruncated: exactPageItems.length > 8,
+    exactPageItems: exactPageItems.slice(0, 8),
     items: items.slice(0, maxLimit).map(({ score, ...item }) => item),
   };
 }
@@ -2473,6 +2604,7 @@ function createMockOverview(): HomeOverview {
   const unknownWatchItems = mockFiles.filter(
     (file) => file.watchResult?.status === "unknown",
   ).length;
+  const watchReviewItems = buildMockLibraryWatchReviewList(24).total;
   const watchSetupItems = buildMockLibraryWatchSetupList(24).total;
 
   return {
@@ -2492,6 +2624,7 @@ function createMockOverview(): HomeOverview {
     exactUpdateItems,
     possibleUpdateItems,
     unknownWatchItems,
+    watchReviewItems,
     watchSetupItems,
     lastScanAt: mockLastScanAt,
     readOnlyMode: true,
@@ -4674,6 +4807,13 @@ async function mockInvoke<T>(
         : 6;
       return buildMockLibraryWatchSetupList(limit) as T;
     }
+    case "list_library_watch_review_items": {
+      const rawLimit = Number(payload?.limit ?? 8);
+      const limit = Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(24, Math.trunc(rawLimit)))
+        : 8;
+      return buildMockLibraryWatchReviewList(limit) as T;
+    }
     case "get_file_detail": {
       const fileId = payload?.fileId as number;
       return (
@@ -4724,6 +4864,81 @@ async function mockInvoke<T>(
 
       mockFiles[fileIndex] = next;
       return structuredClone(next) as T;
+    }
+    case "save_watch_sources_for_files": {
+      const entries = Array.isArray(payload?.entries)
+        ? (payload?.entries as Array<{
+            fileId?: number;
+            sourceKind?: WatchSourceKind;
+            sourceLabel?: string;
+            sourceUrl?: string;
+          }>)
+        : [];
+      const results: LibraryWatchBulkSaveResult["results"] = [];
+
+      for (const entry of entries) {
+        const fileId = Number(entry.fileId ?? 0);
+        const sourceKind = String(entry.sourceKind ?? "") as WatchSourceKind;
+        const sourceUrl = String(entry.sourceUrl ?? "").trim();
+        const sourceLabel = entry.sourceLabel ? String(entry.sourceLabel).trim() : "";
+        const fileIndex = mockFiles.findIndex((item) => item.id === fileId);
+
+        if (
+          fileIndex === -1 ||
+          mockFiles[fileIndex].sourceLocation === "downloads" ||
+          !sourceUrl ||
+          (sourceKind !== "exact_page" && sourceKind !== "creator_page")
+        ) {
+          results.push({
+            fileId,
+            saved: false,
+            message: "Watch sources can only be saved for installed Library items.",
+          });
+          continue;
+        }
+
+        const next = structuredClone(mockFiles[fileIndex]);
+        const existingWatch = next.watchResult ?? buildMockWatchResult(next);
+        if (existingWatch?.sourceOrigin === "built_in_special") {
+          results.push({
+            fileId,
+            saved: false,
+            message:
+              "Supported special mods already use their own built-in official page here. Custom watch pages are not wired up yet.",
+          });
+          continue;
+        }
+
+        next.watchResult = {
+          status: "not_watched",
+          sourceKind,
+          sourceOrigin: "saved_by_user",
+          sourceLabel: sourceLabel || null,
+          sourceUrl,
+          capability: mockWatchCapability(sourceKind, sourceUrl),
+          canRefreshNow: mockCanRefreshWatchSource(sourceKind, sourceUrl),
+          providerName: mockWatchProviderName(sourceKind, sourceUrl),
+          latestVersion: null,
+          checkedAt: null,
+          confidence: "unknown",
+          note: mockSavedWatchNote(sourceKind, sourceUrl),
+          evidence: [],
+        };
+
+        mockFiles[fileIndex] = next;
+        results.push({
+          fileId,
+          saved: true,
+          message: "Watch source saved.",
+        });
+      }
+
+      const savedCount = results.filter((item) => item.saved).length;
+      return {
+        savedCount,
+        failedCount: results.length - savedCount,
+        results,
+      } as T;
     }
     case "clear_watch_source_for_file": {
       const fileId = payload?.fileId as number;
@@ -5302,6 +5517,10 @@ export const api = {
     invoke<LibraryWatchSetupResponse>("list_library_watch_setup_items", {
       limit,
     }),
+  listLibraryWatchReviewItems: (limit?: number) =>
+    invoke<LibraryWatchReviewResponse>("list_library_watch_review_items", {
+      limit,
+    }),
   getFileDetail: (fileId: number) =>
     invoke<FileDetail | null>("get_file_detail", { fileId }),
   saveWatchSourceForFile: (
@@ -5315,6 +5534,10 @@ export const api = {
       sourceKind,
       sourceLabel,
       sourceUrl,
+    }),
+  saveWatchSourcesForFiles: (entries: SaveLibraryWatchSourceEntry[]) =>
+    invoke<LibraryWatchBulkSaveResult>("save_watch_sources_for_files", {
+      entries,
     }),
   clearWatchSourceForFile: (fileId: number) =>
     invoke<FileDetail | null>("clear_watch_source_for_file", {

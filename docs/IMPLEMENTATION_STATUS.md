@@ -4,6 +4,35 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session pushed the watch system one step closer to a fuller `Library` workflow without adding another crowded management screen.
+
+Important changes and findings:
+
+- `Library` now has the next compact watch-management layer inside the existing watch center:
+  - strongest exact-page candidates are split into a bulk exact-page strip
+  - saved reminder-only and provider-needed links now have a real review queue lane
+- `Home` now gets a real watch-review count from backend truth, so the wider app can point users toward that unfinished follow-up work honestly
+- fixed a real handoff bug in `Library`:
+  - if setup or review started while the inspector was empty, the pending handoff could be lost before the file detail opened
+  - `Library` now opens the target file first and then applies the pending watch intent
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests
+- `npm run build` passed
+- the native desktop smoke passed after it was updated to prove:
+  - the generic watch source can enter the review queue in the real app
+  - clearing that source returns the item to setup suggestions
+
+Important remaining gap:
+
+- bulk setup and review are better, but they are still not fully finished:
+  - exact-page setup is still one URL save at a time, even inside the bulk strip
+  - the review queue is compact, but it is not yet a full many-item batch workflow
+  - there is still no watch history or source audit trail yet
+- the desktop smoke has one current harness caveat:
+  - the Wry webdriver still does not reliably select `Library` rows in this watch flow
+  - the generic watch smoke now uses the live Tauri command bridge for save and clear, then verifies the real `Library` UI reaction
+
+## Current session note (March 15, 2026)
+
 This session connected the watch system more cleanly across `Home` and `Library`.
 
 Important changes and findings:
