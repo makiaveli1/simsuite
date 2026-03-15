@@ -66,6 +66,25 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The stale local-clue rebuild path now works on both installed-library data and Inbox download data.
+
+Important current behavior:
+
+- installed-library truth now depends on the scanner cache version as part of the stored-inspection contract:
+  - when stored inspection meaning changes, the scanner cache version is bumped
+  - unchanged installed files then get one real rebuild on the next scan instead of silently reusing stale rows
+- Inbox truth now does the same thing through the downloads assessment version:
+  - unchanged download sources no longer only rerun cached assessment logic on a version bump
+  - they are reprocessed through the real ingest path so stored `files` rows refresh too
+- this matters because both major trust surfaces depend on the same stored file-evidence layer:
+  - `Library` installed facts and watch setup
+  - `Inbox` compare and intake confidence
+- the result is a more honest local-first pipeline:
+  - parser changes can now propagate into stored truth
+  - higher-level compare decisions are less likely to sit on stale evidence
+
+## Current engineering note (March 15, 2026)
+
 The file-inspection layer now filters a real ts4script noise path that showed up in the live app database.
 
 Important current behavior:

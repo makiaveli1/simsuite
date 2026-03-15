@@ -4,6 +4,34 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session finished the stale ts4script clue rebuild path across both installed library data and Inbox download data.
+
+Important changes and findings:
+
+- the library scan cache now bumps when stored inspection meaning changes, so unchanged installed files get one true rebuild instead of silently keeping old clue rows
+- the downloads assessment path now does the same kind of one-time rebuild for unchanged Inbox items when the assessment version changes
+- real live-app validation was completed instead of relying on fixtures only:
+  - a full live `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, and `updatedFiles = 13010`
+  - the live Inbox refresh then rebuilt unchanged download items under the newer rules
+  - Inbox state improved from `5 ready / 2 review` to `6 ready / 1 review`
+- strict JSON-array checks on the live app database now show:
+  - `0` bad `.pyc` / `_DO_NOT_UNZIP_` namespace values in stored ts4script clue fields for `mods`
+  - `0` bad `.pyc` / `_DO_NOT_UNZIP_` namespace values in stored ts4script clue fields for `downloads`
+  - `0` `_DO_NOT_UNZIP_` embedded-name marker values in those stored clue fields
+  - `0` weak `mc` creator hints in those stored clue fields
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `181` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- this closes a real stale-clue trust problem, but the wider stabilization pass still is not done:
+  - more live validation is still needed on generic mods and CC that do not have as many strong script clues
+  - more watch bugs still need cleanup before feature work resumes
+  - deeper long-run Inbox validation is still needed on messy real Downloads folders
+
+## Current session note (March 15, 2026)
+
 This session used the live app database to find and tighten a real ts4script clue-quality problem.
 
 Important changes and findings:

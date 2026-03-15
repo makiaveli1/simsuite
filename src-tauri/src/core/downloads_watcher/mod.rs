@@ -37,7 +37,8 @@ use crate::{
 };
 
 const WATCHER_DEBOUNCE_MS: u64 = 900;
-const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v1";
+// Bump when download-side evidence rules change so existing inbox items get reassessed once.
+const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v3";
 const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
 const SLOW_DOWNLOADS_LOG_THRESHOLD_MS: u128 = 40;
 const HELD_ARCHIVE_SAFETY_NOTE: &str =
@@ -1602,6 +1603,23 @@ fn process_downloads_once_for_paths(
             let existing_item = existing_item.expect("existing item");
             update_last_seen(&connection, existing_item.id)?;
             unchanged_items += 1;
+            // Version bumps need a true rebuild so stored file clues refresh too.
+            if assessment_version_changed {
+                process_source(
+                    &mut connection,
+                    state,
+                    &watched_root,
+                    &runtime_seed_pack,
+                    &category_overrides,
+                    source,
+                    Some(existing_item),
+                    &mut special_context,
+                )?;
+                mark_item_rechecked_with_new_rules(&connection, existing_item.id)?;
+                changed = true;
+                processed_items += 1;
+                continue;
+            }
             if should_reassess_unchanged {
                 reassess_existing_item(
                     &connection,
@@ -1610,9 +1628,6 @@ fn process_downloads_once_for_paths(
                     existing_item.id,
                     &mut special_context,
                 )?;
-                if assessment_version_changed {
-                    mark_item_rechecked_with_new_rules(&connection, existing_item.id)?;
-                }
                 reassessed_existing = true;
             }
             continue;

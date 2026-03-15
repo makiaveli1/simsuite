@@ -2,6 +2,17 @@
 
 ## Current Priority
 
+- March 15, 2026: the stale ts4script clue cleanup is now proven end to end in the real app data:
+  - `Library` scan cache now bumps when stored inspection meaning changes, so unchanged installed files get one true rebuild instead of silently keeping stale clues
+  - the downloads Inbox assessment path now does the same kind of one-time rebuild for unchanged download items when the assessment version changes
+  - real desktop validation on the live app data showed:
+    - a full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, and `updatedFiles = 13010`
+    - the live Inbox refresh then rebuilt unchanged download items under the newer rules
+    - strict JSON-array checks now show `0` bad `.pyc` / `_DO_NOT_UNZIP_` namespace values, `0` bad embedded-name marker values, and `0` weak `mc` creator hints in stored ts4script clue fields for both `mods` and `downloads`
+  - the next product focus should stay on stabilization:
+    - keep doing live validation on ugly real mod and CC libraries instead of trusting fixtures alone
+    - keep tightening generic compare confidence before adding new feature surface area
+    - keep fixing watch bugs before resuming watch feature growth
 - March 15, 2026: real live-library validation found a noisy ts4script clue path and it is now tightened:
   - a read-only check of the live app database showed at least `132` ts4script rows carrying filename-style namespace noise such as raw `.pyc` names or `_DO_NOT_UNZIP_`
   - flat script archives now keep that noise out of:
@@ -87,6 +98,27 @@
 
 ## What Changed This Session
 
+- March 15, 2026: finished the live stale-clue rebuild pass for both `Library` and `Inbox`:
+  - bumped the library scan cache version so a real parser change forces one true installed-library rebuild instead of reusing stale rows
+  - confirmed the first blocking full-scan command path was a bad fit for the desktop driver, then switched the live scan to the safer background `start_scan` path
+  - a real live-library rebuild completed successfully:
+    - `scanMode = full`
+    - `reusedFiles = 0`
+    - `updatedFiles = 13010`
+    - `sessionId = 30`
+  - confirmed the next stale-data gap was on the Inbox side:
+    - unchanged download items were being reassessed with newer rules
+    - but their stored file rows were not being rebuilt
+  - fixed that by changing the Inbox version-bump path so unchanged download sources are reprocessed through the real ingest path, not only the cached assessment path
+  - bumped the downloads assessment version again so the live app would actually rerun that deeper rebuild after the first partial pass
+  - real desktop validation on the live app data then showed:
+    - the downloads assessment version moved to `downloads-assessment-v3`
+    - Inbox state improved from `5 ready / 2 review` to `6 ready / 1 review`
+    - strict JSON-array checks now show `0` bad `.pyc` / `_DO_NOT_UNZIP_` namespace values, `0` bad embedded-name marker values, and `0` weak `mc` creator hints in stored ts4script clue fields for both `mods` and `downloads`
+  - full checks passed again after the code change:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `181` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: continued the real-data cleanup pass for ts4script clue quality:
   - a read-only query against the live app database found at least `132` ts4script rows carrying filename-style namespace noise such as raw `.pyc` names or `_DO_NOT_UNZIP_`
   - flat script archives now keep that noise out of:
