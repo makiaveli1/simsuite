@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: `tauri:dev` startup no longer dies on the old watch-schema migration or on tray setup during normal launch. The next product focus can go back to the fuller watch setup and provider flow, but the desktop smoke wrapper still needs cleanup so it does not leave Vite running on port `1420`.
 - March 15, 2026: safe automatic watch checks now exist, but the next product focus should still be a fuller watch setup and provider flow. The current desktop smoke wrapper also timed out on startup in this session, so that harness needs another cleanup pass before it is treated as perfect signoff.
 - March 15, 2026: the first installed-content watch flow now works end to end in the real Tauri app, including `Check now` for safe supported pages. The next product focus should be a fuller watch setup and management flow, not more backend guesswork.
 - March 14, 2026: Library watch flow is now cleaner in the real app because Library queries now focus on installed content only. The next product focus should be the first fuller user-facing watch setup flow, not mixing Downloads rows into Library.
@@ -13,6 +14,14 @@
 
 ## What Changed This Session
 
+- March 15, 2026: fixed two real startup regressions:
+  - older databases now add `anchor_file_id` before creating the watch-source index, so migrated apps no longer crash during setup
+  - tray creation is now lazy, so normal app startup does not depend on Windows accepting the tray icon right away
+- March 15, 2026: background mode now creates the tray only when it is actually needed:
+  - normal launches skip tray setup
+  - turning background mode on still prepares the tray
+  - close-to-tray still works when the tray can be created
+  - if Windows refuses the tray, the app stays open instead of panicking on launch
 - March 15, 2026: added the first safe automatic watch-check loop:
   - `Settings` now has automatic watch checks and a check interval
   - users can run `Check watched pages now`
@@ -82,6 +91,10 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `164` tests after the schema-order and lazy-tray startup fix.
+- March 15, 2026: `npm run build` passed after the lazy-tray startup fix.
+- March 15, 2026: direct `cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --color always --` reached normal app startup and Downloads watcher work without the old database or tray panic.
+- March 15, 2026: `npm run tauri:dev` now gets through Vite and launches `simsuite.exe` without the old setup panic. The wrapper still needs cleanup because interrupted runs can leave port `1420` busy.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `163` tests after the automatic-watch schema and provider-state work.
 - March 15, 2026: `npm run build` passed after the Library and Settings watch-state updates.
 - March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` timed out waiting for startup text, so the desktop smoke wrapper still needs more work before it can be treated as steady signoff for this new watch checkpoint.
@@ -126,6 +139,9 @@
 
 ## What Worked
 
+- old databases with watch-source rows now upgrade cleanly instead of crashing on `anchor_file_id`
+- normal app startup no longer depends on creating the tray icon first
+- background mode still has a tray path, but that tray is created only when needed
 - The app can now poll safe saved watch pages automatically while it is running.
 - The watch result now says more clearly what kind of source it is:
   - can check now
@@ -161,6 +177,7 @@
 
 ## Known Problems / Gaps
 
+- the dev wrapper can still leave Vite running on port `1420` when a check is interrupted, which makes the next `tauri:dev` run look broken until that leftover process is cleared
 - The watch system is readable now, but the user-facing management flow is still thin:
   - watch results can be shown
   - generic watch sources are stored in the database
@@ -185,6 +202,9 @@
 
 ## Important Decisions
 
+- tray creation should be lazy:
+  - normal startup must not fail just because the tray icon is unhappy
+  - background mode can request the tray later when it actually needs it
 - Local installed-vs-downloaded truth stays first.
 - Official latest stays helper-only.
 - Automatic watch checks should only touch safe exact-page sources and approved providers.
@@ -206,6 +226,7 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
+  - clean up the desktop smoke wrapper so it stops leaving port `1420` busy after interrupted runs
   - design the first fuller user-facing watch-source flow for installed content now that save, clear, check-now, and safe automatic polling basics are real
   - debug the desktop smoke wrapper startup timeout so the watch checkpoint has a steadier native signoff path
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements

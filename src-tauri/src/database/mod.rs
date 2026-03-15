@@ -766,7 +766,6 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             FOREIGN KEY(subject_key) REFERENCES content_watch_sources(subject_key) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_content_watch_sources_kind ON content_watch_sources (source_kind);
-        CREATE INDEX IF NOT EXISTS idx_content_watch_sources_anchor_file_id ON content_watch_sources (anchor_file_id);
         CREATE INDEX IF NOT EXISTS idx_content_watch_results_status ON content_watch_results (status);
         CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1548,5 +1547,85 @@ mod tests {
             .optional()
             .expect("index lookup");
         assert_eq!(index_exists.as_deref(), Some("idx_files_download_item_id"));
+    }
+
+    #[test]
+    fn initialize_upgrades_watch_sources_before_creating_anchor_index() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        connection
+            .execute_batch(
+                "CREATE TABLE files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL UNIQUE,
+                    filename TEXT NOT NULL,
+                    extension TEXT NOT NULL,
+                    hash TEXT,
+                    size INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT,
+                    modified_at TEXT,
+                    bundle_id INTEGER,
+                    creator_id INTEGER,
+                    kind TEXT NOT NULL DEFAULT 'Unknown',
+                    subtype TEXT,
+                    confidence REAL NOT NULL DEFAULT 0,
+                    source_location TEXT NOT NULL,
+                    scan_session_id INTEGER,
+                    relative_depth INTEGER NOT NULL DEFAULT 0,
+                    safety_notes TEXT NOT NULL DEFAULT '[]',
+                    parser_warnings TEXT NOT NULL DEFAULT '[]',
+                    indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'seed',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE content_watch_sources (
+                    subject_key TEXT PRIMARY KEY,
+                    source_kind TEXT NOT NULL DEFAULT 'exact_page',
+                    source_label TEXT,
+                    source_url TEXT NOT NULL,
+                    approved_by_user INTEGER NOT NULL DEFAULT 0 CHECK (approved_by_user IN (0, 1)),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE content_watch_results (
+                    subject_key TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'unknown',
+                    latest_version TEXT,
+                    checked_at TEXT,
+                    confidence TEXT NOT NULL DEFAULT 'unknown',
+                    note TEXT,
+                    evidence TEXT NOT NULL DEFAULT '[]',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );",
+            )
+            .expect("legacy watch schema");
+
+        initialize(&mut connection).expect("upgrade schema");
+
+        let columns = connection
+            .prepare("PRAGMA table_info(content_watch_sources)")
+            .expect("pragma")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("column rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("columns");
+        assert!(columns.contains(&"anchor_file_id".to_owned()));
+
+        let index_exists: Option<String> = connection
+            .query_row(
+                "SELECT name
+                 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_content_watch_sources_anchor_file_id'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("index lookup");
+        assert_eq!(
+            index_exists.as_deref(),
+            Some("idx_content_watch_sources_anchor_file_id")
+        );
     }
 }

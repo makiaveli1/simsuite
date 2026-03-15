@@ -4,6 +4,27 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session fixed the two startup regressions that were blocking `npm run tauri:dev`.
+
+Important changes and findings:
+
+- older databases now upgrade the watch-source table in the safe order:
+  - add `anchor_file_id`
+  - then create the `anchor_file_id` index
+- a regression test now covers that older-database upgrade path
+- tray creation is now lazy:
+  - normal startup does not build the tray anymore
+  - background mode asks for the tray only when it is actually needed
+  - if Windows refuses the tray, SimSuite stays open instead of panicking during setup
+- direct Rust startup now gets into normal app work again instead of dying during setup
+- `tauri:dev` now gets past the old setup panic too
+
+Important remaining gap:
+
+- the desktop smoke and ad hoc dev checks can still leave Vite running on port `1420` when a run is interrupted, so the wrapper cleanup still needs a small follow-up
+
+## Current session note (March 15, 2026)
+
 This session added the first safe automatic watch-check loop and made the watch state easier to understand in the UI.
 
 Important changes and findings:

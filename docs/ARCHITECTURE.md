@@ -61,9 +61,18 @@ Implemented screens:
 
 Not yet implemented:
 
-- Tray
 - Patch Recovery
 - Tools
+
+## Current engineering note (March 15, 2026)
+
+Startup is now safer in two important ways:
+
+- database upgrades add the `content_watch_sources.anchor_file_id` column before they create the matching index, so older databases no longer crash during setup
+- tray creation is now lazy:
+  - normal startup skips tray setup
+  - background mode creates the tray only when it actually needs it
+  - if Windows refuses the tray icon, the app stays open instead of panicking during launch
 
 ## Current engineering note (March 15, 2026)
 

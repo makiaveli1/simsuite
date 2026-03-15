@@ -20,7 +20,7 @@ use crate::{
         category_audit, content_versions, creator_audit, downloads_watcher, install_profile_engine,
         library_index, move_engine, rule_engine, scanner, snapshot_manager, watch_polling,
     },
-    database,
+    database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
@@ -36,7 +36,7 @@ use crate::{
         SnapshotSummary, SpecialReviewPlan, WatchRefreshSummary, WatchSourceKind, WorkspaceChange,
         WorkspaceDomain,
     },
-    MAIN_TRAY_ID,
+    sync_tray_visibility,
 };
 
 fn map_error(error: AppError) -> String {
@@ -406,6 +406,14 @@ pub fn save_app_behavior_settings(
     settings: AppBehaviorSettings,
     state: State<'_, AppState>,
 ) -> Result<AppBehaviorSettings, String> {
+    if settings.keep_running_in_background {
+        ensure_tray(&app).map_err(|error| {
+            format!(
+                "Background mode could not start because SimSuite could not create the tray icon. {error}"
+            )
+        })?;
+    }
+
     let mut connection = state.connection().map_err(map_error)?;
     database::save_app_setting(
         &mut connection,
@@ -445,10 +453,8 @@ pub fn save_app_behavior_settings(
     state
         .set_watch_check_interval_hours(settings.watch_check_interval_hours)
         .map_err(map_error)?;
-    if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
-        tray.set_visible(settings.keep_running_in_background)
-            .map_err(|error| error.to_string())?;
-    }
+    sync_tray_visibility(&app, settings.keep_running_in_background)
+        .map_err(|error| error.to_string())?;
     watch_polling::restart_poller(&app, state.inner()).map_err(map_error)?;
     get_app_behavior_settings(state)
 }

@@ -26,7 +26,11 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-fn build_tray(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn ensure_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if app.tray_by_id(MAIN_TRAY_ID).is_some() {
+        return Ok(());
+    }
+
     let menu = MenuBuilder::new(app)
         .text(TRAY_OPEN_ID, "Open SimSuite")
         .separator()
@@ -59,8 +63,19 @@ fn build_tray(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn st
         tray_builder = tray_builder.icon(icon);
     }
 
-    let tray = tray_builder.build(app)?;
-    tray.set_visible(state.keep_running_in_background())?;
+    let _tray = tray_builder.build(app)?;
+    Ok(())
+}
+
+pub(crate) fn sync_tray_visibility(app: &tauri::AppHandle, visible: bool) -> tauri::Result<()> {
+    if visible {
+        ensure_tray(app)?;
+    }
+
+    if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
+        tray.set_visible(visible)?;
+    }
+
     Ok(())
 }
 
@@ -78,7 +93,6 @@ pub fn run() {
         .setup(|app| {
             let state = AppState::initialise(app.handle())?;
             downloads_watcher::restart_watcher(app.handle(), &state)?;
-            build_tray(app.handle(), &state)?;
             watch_polling::restart_poller(app.handle(), &state)?;
             app.manage(state);
             Ok(())
@@ -95,10 +109,13 @@ pub fn run() {
                     return;
                 }
 
-                if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
-                    let _ = tray.set_visible(true);
+                if sync_tray_visibility(&app, true).is_ok() {
                     api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    tracing::warn!(
+                        "Background mode is enabled, but the tray icon could not be created."
+                    );
                 }
             }
         })
