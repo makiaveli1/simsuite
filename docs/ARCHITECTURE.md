@@ -66,6 +66,23 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+Library now follows the same command-threading rule that stabilized Inbox:
+
+- the heavier Library-facing commands now run in background workers instead of on the window thread
+- this includes:
+  - Home overview loading when Library asks for watch counts
+  - Library facets
+  - Library list rows
+  - Library tracked-watch rows
+  - selected-item detail
+  - save and clear watch actions
+  - creator-learning and category-override saves
+- this change is about responsiveness, not changing Library truth:
+  - the backend work still happens
+  - it just stops blocking the whole desktop window while it runs
+
+## Current engineering note (March 15, 2026)
+
 The Library watch center now has two compact lanes instead of one:
 
 - a tracked-items lane for pages that are already being watched

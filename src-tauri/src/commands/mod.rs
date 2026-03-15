@@ -524,11 +524,26 @@ pub fn pick_folder(title: Option<String>) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_home_overview(&connection, &settings, &seed_pack).map_err(map_error)
+pub async fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_home_overview", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let overview = library_index::get_home_overview(&connection, &settings, &seed_pack)
+            .map_err(map_error)?;
+        log_slow_command("get_home_overview", started_at, || {
+            format!(
+                "for {} exact update item(s), {} possible item(s), {} setup item(s)",
+                overview.exact_update_items,
+                overview.possible_update_items,
+                overview.watch_setup_items
+            )
+        });
+        Ok(overview)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -861,10 +876,25 @@ pub async fn preview_download_item(
 }
 
 #[tauri::command]
-pub fn get_library_facets(state: State<'_, AppState>) -> Result<LibraryFacets, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_library_facets(&connection, &seed_pack.taxonomy).map_err(map_error)
+pub async fn get_library_facets(state: State<'_, AppState>) -> Result<LibraryFacets, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_library_facets", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let facets = library_index::get_library_facets(&connection, &seed_pack.taxonomy)
+            .map_err(map_error)?;
+        log_slow_command("get_library_facets", started_at, || {
+            format!(
+                "for {} creator facet(s), {} kind facet(s), {} source facet(s)",
+                facets.creators.len(),
+                facets.kinds.len(),
+                facets.sources.len()
+            )
+        });
+        Ok(facets)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1696,41 +1726,49 @@ pub async fn ignore_download_item(
 }
 
 #[tauri::command]
-pub fn list_library_files(
+pub async fn list_library_files(
     query: LibraryQuery,
     state: State<'_, AppState>,
 ) -> Result<LibraryListResponse, String> {
-    let started_at = Instant::now();
-    let connection = state.connection().map_err(map_error)?;
-    let response = library_index::list_library_files(&connection, query).map_err(map_error)?;
-    log_slow_command("list_library_files", started_at, || {
-        format!("for {} visible file row(s)", response.items.len())
-    });
-    Ok(response)
+    let state = state.inner().clone();
+    run_blocking_command("list_library_files", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let response = library_index::list_library_files(&connection, query).map_err(map_error)?;
+        log_slow_command("list_library_files", started_at, || {
+            format!("for {} visible file row(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn list_library_watch_items(
+pub async fn list_library_watch_items(
     filter: Option<WatchListFilter>,
     limit: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<LibraryWatchListResponse, String> {
-    let started_at = Instant::now();
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    let response = content_versions::list_library_watch_items(
-        &connection,
-        &settings,
-        &seed_pack,
-        filter.unwrap_or_default(),
-        limit.unwrap_or(12).clamp(1, 48) as usize,
-    )
-    .map_err(map_error)?;
-    log_slow_command("list_library_watch_items", started_at, || {
-        format!("for {} tracked watch item(s)", response.items.len())
-    });
-    Ok(response)
+    let state = state.inner().clone();
+    run_blocking_command("list_library_watch_items", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let response = content_versions::list_library_watch_items(
+            &connection,
+            &settings,
+            &seed_pack,
+            filter.unwrap_or_default(),
+            limit.unwrap_or(12).clamp(1, 48) as usize,
+        )
+        .map_err(map_error)?;
+        log_slow_command("list_library_watch_items", started_at, || {
+            format!("for {} tracked watch item(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1832,18 +1870,32 @@ pub fn get_category_audit_group_files(
 }
 
 #[tauri::command]
-pub fn get_file_detail(
+pub async fn get_file_detail(
     file_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+    let state = state.inner().clone();
+    run_blocking_command("get_file_detail", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let detail = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?;
+        log_slow_command("get_file_detail", started_at, || {
+            let label = detail
+                .as_ref()
+                .map(|item| item.filename.clone())
+                .unwrap_or_else(|| "missing item".to_owned());
+            format!("for file_id={file_id} ({label})")
+        });
+        Ok(detail)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn save_watch_source_for_file(
+pub async fn save_watch_source_for_file(
     app: AppHandle,
     file_id: i64,
     source_kind: WatchSourceKind,
@@ -1851,9 +1903,6 @@ pub fn save_watch_source_for_file(
     source_url: String,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
     let approved_url = approved_watch_source_url(&source_url)?;
     let cleaned_label = source_label.and_then(|value| {
         let trimmed = value.trim();
@@ -1863,62 +1912,83 @@ pub fn save_watch_source_for_file(
             Some(trimmed.to_owned())
         }
     });
+    let state = state.inner().clone();
+    run_blocking_command("save_watch_source_for_file", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
 
-    content_versions::save_watch_source_for_library_file(
-        &connection,
-        &settings,
-        &seed_pack,
-        file_id,
-        source_kind,
-        cleaned_label,
-        approved_url.as_str(),
-    )
-    .map_err(map_error)?;
-    let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
-        .map_err(map_error)?
-        .ok_or_else(|| "Watch sources can only be saved for installed Library items.".to_owned())?;
+        content_versions::save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            source_kind,
+            cleaned_label,
+            approved_url.as_str(),
+        )
+        .map_err(map_error)?;
+        let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?
+            .ok_or_else(|| {
+                "Watch sources can only be saved for installed Library items.".to_owned()
+            })?;
 
-    emit_workspace_domains(
-        &app,
-        vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
-        "watch-source-saved",
-        vec![file_id],
-        Vec::new(),
-    )?;
-    Ok(Some(updated))
+        emit_workspace_domains(
+            &app,
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            "watch-source-saved",
+            vec![file_id],
+            Vec::new(),
+        )?;
+        log_slow_command("save_watch_source_for_file", started_at, || {
+            format!("for file_id={file_id}")
+        });
+        Ok(Some(updated))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn clear_watch_source_for_file(
+pub async fn clear_watch_source_for_file(
     app: AppHandle,
     file_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
+    let state = state.inner().clone();
+    run_blocking_command("clear_watch_source_for_file", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
 
-    content_versions::clear_watch_source_for_library_file(
-        &connection,
-        &settings,
-        &seed_pack,
-        file_id,
-    )
-    .map_err(map_error)?;
-    let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
-        .map_err(map_error)?
-        .ok_or_else(|| {
-            "Watch sources can only be managed for installed Library items.".to_owned()
-        })?;
+        content_versions::clear_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+        )
+        .map_err(map_error)?;
+        let updated = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?
+            .ok_or_else(|| {
+                "Watch sources can only be managed for installed Library items.".to_owned()
+            })?;
 
-    emit_workspace_domains(
-        &app,
-        vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
-        "watch-source-cleared",
-        vec![file_id],
-        Vec::new(),
-    )?;
-    Ok(Some(updated))
+        emit_workspace_domains(
+            &app,
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            "watch-source-cleared",
+            vec![file_id],
+            Vec::new(),
+        )?;
+        log_slow_command("clear_watch_source_for_file", started_at, || {
+            format!("for file_id={file_id}")
+        });
+        Ok(Some(updated))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1977,7 +2047,7 @@ pub async fn refresh_watched_sources(
 }
 
 #[tauri::command]
-pub fn save_creator_learning(
+pub async fn save_creator_learning(
     app: AppHandle,
     file_id: i64,
     creator_name: String,
@@ -1986,35 +2056,45 @@ pub fn save_creator_learning(
     preferred_path: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
-    let mut connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    database::save_creator_learning(
-        &mut connection,
-        &settings,
-        file_id,
-        &creator_name,
-        alias_name.as_deref(),
-        lock_preference.unwrap_or(false),
-        preferred_path.as_deref(),
-    )
-    .map_err(map_error)?;
+    let state = state.inner().clone();
+    run_blocking_command("save_creator_learning", move || {
+        let started_at = Instant::now();
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        database::save_creator_learning(
+            &mut connection,
+            &settings,
+            file_id,
+            &creator_name,
+            alias_name.as_deref(),
+            lock_preference.unwrap_or(false),
+            preferred_path.as_deref(),
+        )
+        .map_err(map_error)?;
 
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Library,
-            WorkspaceDomain::Organize,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::CreatorAudit,
-        ],
-        "creator-learning-saved",
-        vec![file_id],
-        Vec::new(),
-    )?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::CreatorAudit,
+            ],
+            "creator-learning-saved",
+            vec![file_id],
+            Vec::new(),
+        )?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let detail = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?;
+        log_slow_command("save_creator_learning", started_at, || {
+            format!("for file_id={file_id}")
+        });
+        Ok(detail)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -2113,7 +2193,7 @@ pub fn apply_category_audit(
 }
 
 #[tauri::command]
-pub fn save_category_override(
+pub async fn save_category_override(
     app: AppHandle,
     file_id: i64,
     kind: String,
@@ -2121,6 +2201,7 @@ pub fn save_category_override(
     state: State<'_, AppState>,
 ) -> Result<Option<FileDetail>, String> {
     let normalized_kind = kind.trim().to_owned();
+    let state = state.inner().clone();
     let seed_pack = state.seed_pack();
     let is_known_kind = seed_pack
         .taxonomy
@@ -2133,31 +2214,40 @@ pub fn save_category_override(
         return Err(format!("Unsupported kind override: {normalized_kind}"));
     }
 
-    let mut connection = state.connection().map_err(map_error)?;
-    database::save_category_override(
-        &mut connection,
-        file_id,
-        &normalized_kind,
-        subtype.as_deref(),
-    )
-    .map_err(map_error)?;
+    run_blocking_command("save_category_override", move || {
+        let started_at = Instant::now();
+        let mut connection = state.connection().map_err(map_error)?;
+        database::save_category_override(
+            &mut connection,
+            file_id,
+            &normalized_kind,
+            subtype.as_deref(),
+        )
+        .map_err(map_error)?;
 
-    emit_workspace_domains(
-        &app,
-        vec![
-            WorkspaceDomain::Home,
-            WorkspaceDomain::Library,
-            WorkspaceDomain::Organize,
-            WorkspaceDomain::Review,
-            WorkspaceDomain::CategoryAudit,
-        ],
-        "category-override-saved",
-        vec![file_id],
-        Vec::new(),
-    )?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let seed_pack = state.seed_pack();
-    library_index::get_file_detail(&connection, &settings, &seed_pack, file_id).map_err(map_error)
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::CategoryAudit,
+            ],
+            "category-override-saved",
+            vec![file_id],
+            Vec::new(),
+        )?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+        let detail = library_index::get_file_detail(&connection, &settings, &seed_pack, file_id)
+            .map_err(map_error)?;
+        log_slow_command("save_category_override", started_at, || {
+            format!("for file_id={file_id}")
+        });
+        Ok(detail)
+    })
+    .await
 }
 
 pub fn emit_scan_progress(

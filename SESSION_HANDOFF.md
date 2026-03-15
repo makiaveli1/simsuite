@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: Library no longer runs its main load and save commands on the window thread. The next product focus should be checking the real app again and then trimming any Library work that is still slow now that the freezing path is gone.
 - March 15, 2026: Library now has a first real watch-setup shortlist for installed items that are strong enough to watch but are not set up yet. The next product focus should be turning that shortlist into a fuller setup flow:
   - bulk setup for the strongest exact-page candidates first
   - easier edit and review for saved generic watch sources
@@ -22,6 +23,17 @@
 
 ## What Changed This Session
 
+- March 15, 2026: moved the heaviest Library command path onto background workers:
+  - `get_home_overview`
+  - `get_library_facets`
+  - `list_library_files`
+  - `list_library_watch_items`
+  - `get_file_detail`
+  - `save_watch_source_for_file`
+  - `clear_watch_source_for_file`
+  - `save_creator_learning`
+  - `save_category_override`
+- March 15, 2026: this mirrors the earlier Inbox threading fix, so Library actions should stop freezing the whole app just because Rust is busy.
 - March 15, 2026: added the first real watch-setup shortlist in `Library`:
   - the existing watch center now includes a compact `Ready to set up` / `Setup suggestions` block
   - it shows installed items with strong local clues but no saved or built-in watch source yet
@@ -163,6 +175,10 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the Library command threading fix.
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after moving the Library hot path off the UI thread.
+- March 15, 2026: `npm run build` passed after the command-signature changes.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed after the Library threading fix.
 - March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed after the watch-setup shortlist backend changes.
 - March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests after the watch-setup shortlist and extension-normalization fix.
 - March 15, 2026: `npm run build` passed after the Home and Library watch-setup UI changes.
@@ -229,6 +245,8 @@
 
 ## What Worked
 
+- Library now uses the same background-command pattern that already helped Inbox, so the app should stay responsive while Library work is running.
+- The command move did not break the real desktop smoke lane or the current watch-management flow.
 - The new watch-setup shortlist now gives `Library` a clear “not watched yet” lane without creating a second watch-management screen.
 - `Home` and `Library` now agree on the `Watch setup` count because they both use the same backend truth.
 - `Home` can now send users straight into `Library` when a watch summary row needs follow-up.
@@ -285,6 +303,10 @@
 
 ## Known Problems / Gaps
 
+- The freeze path should be fixed, but Library may still have real slow work left underneath:
+  - `get_home_overview` still computes watch counts and setup counts
+  - `get_file_detail` still does deeper version and watch resolution
+  - if the real app still feels slow after this threading fix, the next step is trimming those code paths instead of moving more commands around
 - Watch management is better, but still not complete:
   - there is still no bulk setup flow for unwatched installed items
   - there is still no dedicated review surface for items that could be watched but are not set up yet

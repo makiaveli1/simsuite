@@ -4,6 +4,34 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session focused on Library responsiveness first because the screen had started showing the same whole-app freezing behavior that Inbox used to have.
+
+Important changes and findings:
+
+- the main Library hot path now runs on background workers instead of the window thread:
+  - `get_home_overview`
+  - `get_library_facets`
+  - `list_library_files`
+  - `list_library_watch_items`
+  - `get_file_detail`
+  - `save_watch_source_for_file`
+  - `clear_watch_source_for_file`
+  - `save_creator_learning`
+  - `save_category_override`
+- this matches the earlier Inbox fix pattern, so Library work can still be busy without locking the whole desktop window while Rust is working
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `170` tests
+- `npm run build` passed
+- the native desktop smoke passed after the threading fix
+
+Important remaining gap:
+
+- this should remove the freezing path, but it does not automatically make every Library action fast:
+  - `get_home_overview` still does real watch-summary work
+  - `get_file_detail` still does deeper version and watch resolution
+  - if the real app still feels sluggish after this fix, the next step is trimming those workloads instead of changing the threading layer again
+
+## Current session note (March 15, 2026)
+
 This session added the first real watch-setup shortlist for installed content and wired it into the wider app instead of treating it like a Library-only side feature.
 
 Important changes and findings:
