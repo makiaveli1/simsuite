@@ -4,6 +4,30 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session kept the feature freeze in place and hardened the next missing generic compare path too.
+
+Important changes and findings:
+
+- full compare can now use inspected `family_hints` to search installed rows, so strong local family clues no longer get left out of the candidate-search step
+- this widening still stays cautious:
+  - very short family labels are skipped
+  - only stronger normalized family clues are used to widen the installed candidate pool
+- added direct regression tests for:
+  - the family-hint shortlist itself staying picky about short values
+  - family hints finding the right installed match during full compare even when hashes, filenames, and creators do not line up first
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `178` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- generic compare is firmer again, but the confidence hardening is still not finished:
+  - more messy live-library validation is still needed on generic mods and CC
+  - there is still room to inspect more safe inside-file identity clues, especially when filenames are weak
+  - watch bugs still need cleanup before feature work resumes
+
+## Current session note (March 15, 2026)
+
 This session kept the feature freeze in place and tightened the generic Inbox compare rules too.
 
 Important changes and findings:

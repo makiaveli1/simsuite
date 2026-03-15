@@ -2,6 +2,15 @@
 
 ## Current Priority
 
+- March 15, 2026: generic Inbox matching now has the next missing candidate-search bridge too:
+  - full compare can now search installed rows using inspected `family_hints`, not just hashes, filenames, saved creators, or inspected creator hints
+  - that family-based widening is still kept cautious:
+    - very short family labels are skipped
+    - only the stronger normalized family clues are used to widen the installed candidate pool
+  - the next product focus should stay on stabilization:
+    - do more messy live-library validation on generic mods and CC
+    - audit whether more safe inside-file identity clues can help matching without making it more guessy
+    - keep fixing watch and Inbox trust gaps before new features
 - March 15, 2026: generic Inbox matching is now in the middle of a confidence-hardening pass too:
   - generic compare now only says `not installed` when the incoming local identity is genuinely stronger
   - a creator clue plus a version clue by themselves now stay `unknown`
@@ -58,6 +67,18 @@
 
 ## What Changed This Session
 
+- March 15, 2026: continued the shared confidence-hardening pass with a careful family-hint candidate-search fix:
+  - full compare can now search installed rows using inspected `family_hints`, so real local family clues can actually pull likely installed matches into the scoring pass
+  - that widening stays cautious:
+    - very short family labels are skipped
+    - only the stronger normalized family clues are used to widen the installed candidate pool
+  - added direct regression tests proving:
+    - the family-hint shortlist itself stays picky about short values
+    - family hints can now pull in the right installed match during full compare even when hashes, filenames, and creators do not line up first
+  - full checks passed again:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `178` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: continued the shared confidence-hardening pass with the next generic compare fix:
   - generic compare now requires a medium-strength incoming identity before it will say `not installed`
   - trusted version clues now count toward incoming identity only when the version confidence is at least medium

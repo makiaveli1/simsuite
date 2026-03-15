@@ -23,6 +23,7 @@ use crate::{
 
 const MAX_CANDIDATE_ROWS: usize = 96;
 const MAX_SEARCH_TOKENS: usize = 4;
+const MAX_SEARCH_FAMILY_HINTS: usize = 4;
 const MAX_WATCH_LIST_LIMIT: usize = 48;
 const MAX_WATCH_REVIEW_LIMIT: usize = 24;
 const MAX_WATCH_SETUP_LIMIT: usize = 24;
@@ -33,6 +34,7 @@ const MATCH_SCORE_STRONG: f64 = 1.20;
 const MATCH_SCORE_MEDIUM: f64 = 0.80;
 const MATCH_SCORE_WEAK: f64 = 0.45;
 const SIGNAL_CONFLICT_CONFIDENCE: f64 = 0.72;
+const MIN_FAMILY_HINT_SEARCH_LEN: usize = 4;
 const GENERIC_SOURCE_ORDER: [&str; 5] = [
     "payload",
     "embedded_name",
@@ -1455,6 +1457,39 @@ fn load_subject_rows_by_family_hint(
         .collect())
 }
 
+fn load_installed_rows_by_family_hints(
+    connection: &Connection,
+    family_hints: &[String],
+) -> AppResult<Vec<SubjectFileRow>> {
+    if family_hints.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut rows_by_id = HashMap::<i64, SubjectFileRow>::new();
+    for family_hint in family_hints {
+        for row in load_subject_rows_by_family_hint(connection, family_hint)? {
+            rows_by_id.entry(row.id).or_insert(row);
+        }
+    }
+
+    Ok(rows_by_id.into_values().collect())
+}
+
+fn collect_candidate_family_hints(subject: &VersionSubject) -> Vec<String> {
+    let mut family_hints = subject
+        .files
+        .iter()
+        .flat_map(|file| file.insights.family_hints.iter())
+        .map(|hint| normalize_token(hint))
+        .filter(|hint| hint.len() >= MIN_FAMILY_HINT_SEARCH_LEN)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    family_hints.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    family_hints.truncate(MAX_SEARCH_FAMILY_HINTS);
+    family_hints
+}
+
 fn load_installed_candidate_rows(
     connection: &Connection,
     incoming_subject: &VersionSubject,
@@ -1500,6 +1535,11 @@ fn load_installed_candidate_rows(
             .into_iter()
             .collect::<Vec<_>>();
         for row in load_installed_rows_by_creators(connection, &creators)? {
+            rows_by_id.entry(row.id).or_insert(row);
+        }
+
+        let family_hints = collect_candidate_family_hints(incoming_subject);
+        for row in load_installed_rows_by_family_hints(connection, &family_hints)? {
             rows_by_id.entry(row.id).or_insert(row);
         }
 
@@ -2890,6 +2930,8 @@ fn prettify_stem(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
         list_library_watch_items, list_library_watch_review_items, list_library_watch_setup_items,
@@ -3465,6 +3507,127 @@ mod tests {
 
         assert_eq!(resolution.status, VersionCompareStatus::NotInstalled);
         assert_eq!(resolution.confidence, VersionConfidence::Medium);
+    }
+
+    #[test]
+    fn candidate_family_hints_skip_short_values_and_prefer_stronger_clues() {
+        let subject = super::VersionSubject {
+            key: "download-item:1".to_owned(),
+            label: "Alpha Suite".to_owned(),
+            aggregate_signature: None,
+            all_hashes_present: false,
+            creator_tokens: BTreeSet::new(),
+            family_tokens: BTreeSet::new(),
+            namespace_tokens: BTreeSet::new(),
+            embedded_tokens: BTreeSet::new(),
+            filename_tokens: BTreeSet::new(),
+            version: super::SubjectVersion::default(),
+            files: vec![super::SubjectFileRow {
+                id: 1,
+                filename: "mystery.package".to_owned(),
+                path: "C:/Users/Test/Downloads/mystery.package".to_owned(),
+                hash: None,
+                size: 42,
+                creator: None,
+                source_location: "downloads".to_owned(),
+                insights: FileInsights {
+                    family_hints: vec![
+                        "abc".to_owned(),
+                        "alpha suite".to_owned(),
+                        "alphasuite".to_owned(),
+                        "beta".to_owned(),
+                    ],
+                    ..FileInsights::default()
+                },
+            }],
+        };
+
+        assert_eq!(
+            super::collect_candidate_family_hints(&subject),
+            vec![
+                "alpha suite".to_owned(),
+                "alphasuite".to_owned(),
+                "beta".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn full_compare_uses_family_hints_to_find_installed_candidates() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+
+        let installed_insights = FileInsights {
+            family_hints: vec!["alpha suite".to_owned()],
+            version_hints: vec!["2.3".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.3".to_owned(),
+                normalized_value: "2.3".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/FamilyOnly/hidden_core.package",
+            "hidden_core.package",
+            "mods",
+            None,
+            None,
+            &installed_insights,
+        );
+
+        insert_compare_download_item(&connection, 1, "mystery_bundle.package");
+        let incoming_insights = FileInsights {
+            family_hints: vec!["alpha suite".to_owned()],
+            version_hints: vec!["2.3".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.3".to_owned(),
+                normalized_value: "2.3".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Downloads/mystery_bundle.package",
+            "mystery_bundle.package",
+            "downloads",
+            None,
+            Some(1),
+            &incoming_insights,
+        );
+
+        let resolution = resolve_download_item_version(
+            &connection,
+            &settings,
+            &seed_pack,
+            1,
+            CompareDetailLevel::Full,
+        )
+        .expect("resolution")
+        .expect("version resolution");
+
+        assert_eq!(resolution.status, VersionCompareStatus::SameVersion);
+        assert_eq!(
+            resolution.matched_subject_label.as_deref(),
+            Some("alpha suite")
+        );
+        assert_eq!(resolution.installed_version.as_deref(), Some("2.3"));
     }
 
     #[test]

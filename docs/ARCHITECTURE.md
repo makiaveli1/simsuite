@@ -66,6 +66,24 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The shared generic compare layer now uses stronger family clues during installed-candidate gathering too.
+
+Important current behavior:
+
+- full compare candidate gathering can now widen the installed search using inspected `family_hints`
+- that widening stays cautious:
+  - very short family labels are skipped
+  - only the stronger normalized family clues are used to widen the installed candidate pool
+- this means the generic compare layer now gathers candidates from:
+  - exact hashes
+  - exact filenames
+  - creator assignments and inspected `creator_hints`
+  - stronger inspected `family_hints`
+  - filename tokens
+- scoring still happens afterward, so widening the candidate pool does not bypass the later confidence checks
+
+## Current engineering note (March 15, 2026)
+
 The shared generic compare layer is now stricter about when it will claim that a download is simply missing from the installed library.
 
 Important current behavior:
