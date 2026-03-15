@@ -66,6 +66,18 @@ Not yet implemented:
 
 ## Current engineering note (March 15, 2026)
 
+The shared generic compare layer is now stricter about when it will claim that a download is simply missing from the installed library.
+
+Important current behavior:
+
+- generic compare now requires a medium-strength incoming local identity before it can return `not installed`
+- creator plus version alone is now treated as too thin and stays `unknown`
+- trusted version clues only contribute to that incoming identity when the version clue itself is at least medium-confidence
+- full compare can now search installed rows using inspected `creator_hints`, not just creator assignments that were already saved into the database
+- this keeps the generic compare layer cautious while still letting stronger local creator evidence help it find the right installed subject
+
+## Current engineering note (March 15, 2026)
+
 The shared matching and watch-setup foundation is now slightly stricter and less guessy.
 
 Important current behavior:

@@ -2,6 +2,14 @@
 
 ## Current Priority
 
+- March 15, 2026: generic Inbox matching is now in the middle of a confidence-hardening pass too:
+  - generic compare now only says `not installed` when the incoming local identity is genuinely stronger
+  - a creator clue plus a version clue by themselves now stay `unknown`
+  - full compare can now use inspected `creator_hints` to find installed candidates even when no saved creator match exists yet
+  - the next product focus should stay on this stabilization track:
+    - audit whether family-hint candidate loading needs the same kind of careful tightening or widening
+    - do more messy live-library validation on generic mods and CC
+    - keep fixing watch and Inbox trust gaps before new features
 - March 15, 2026: feature growth should pause until the shared matching and watch-confidence base feels trustworthy:
   - `Library` watch setup is now stricter about what counts as a good setup candidate
   - weak version-only guesses no longer get pushed toward exact-page setup
@@ -50,6 +58,18 @@
 
 ## What Changed This Session
 
+- March 15, 2026: continued the shared confidence-hardening pass with the next generic compare fix:
+  - generic compare now requires a medium-strength incoming identity before it will say `not installed`
+  - trusted version clues now count toward incoming identity only when the version confidence is at least medium
+  - full compare can now search installed rows using inspected `creator_hints`, not only saved creator assignments
+  - added direct regression tests proving:
+    - creator plus version alone now stays `unknown`
+    - creator plus family plus version can still report `not installed`
+    - creator hints can pull in the right installed match during full compare
+  - full checks passed again:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `176` tests
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: started the first real confidence-hardening pass instead of adding more watch surface area:
   - the watch-setup shortlist now checks real parsed clue data instead of only looking for JSON field names in stored `insights`
   - weak version-only rows now stay out of watch setup suggestions instead of being nudged toward exact-page setup
@@ -407,6 +427,10 @@
 
 ## Known Problems / Gaps
 
+- Generic compare is now stricter, but it is still not at the final confidence goal yet:
+  - family-hint loading is still narrower than the new creator-hint loading
+  - some generic CC and mod cases still need live validation outside fixture tests
+  - the queue summary wording may need a follow-up pass once more real-world generic compare cases are checked
 - The first confidence-hardening pass is in, but the broader generic matching layer still needs the same audit treatment:
   - Inbox and Library watch setup still depend on the same shared subject match and version-confidence rules
   - this session tightened watch setup first because it was the safest user-facing place to start
@@ -466,6 +490,8 @@
 
 ## Important Decisions
 
+- Generic compare should prefer `unknown` over `not installed` unless the incoming local identity is at least medium-strength.
+- Inspected `creator_hints` are allowed to help candidate search during full compare because they come from local file inspection, not from network guesswork.
 - Stop adding new watch features until the shared matching and confidence base is tighter.
 - Treat ts4script manifest names as optional helper evidence only, not as required truth for script mods.
 - Keep watch follow-up inside the current `Library` watch center and detail panel instead of creating a separate watch-management screen.
@@ -504,7 +530,8 @@
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Start from stabilization, not feature growth:
-  - audit the generic Inbox installed-match thresholds and evidence rules next
+  - audit whether family-hint candidate loading needs the same kind of careful widening as creator hints just got
+  - re-check generic Inbox queue summaries against the stricter compare results
   - do a real live spot-check on mixed mods and CC where creator hints exist without a saved creator match
   - keep watch setup suggestions cautious unless the local clues are genuinely strong
 - Check the wider watch flow again in the desktop app:

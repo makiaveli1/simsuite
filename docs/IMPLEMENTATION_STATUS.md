@@ -4,6 +4,32 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session kept the feature freeze in place and tightened the generic Inbox compare rules too.
+
+Important changes and findings:
+
+- generic compare is now slower to say `not installed`:
+  - creator plus version alone now stays `unknown`
+  - generic compare now requires a medium-strength incoming identity before it will report `not installed`
+  - trusted version clues now only count toward that incoming identity when the version confidence is at least medium
+- full compare can now use inspected `creator_hints` to search installed rows, so generic matching can still find good installed candidates even when a creator has not been saved into the database yet
+- added direct regression tests for:
+  - creator plus version only => `unknown`
+  - creator plus family plus version => still `not installed`
+  - creator hints can find the right installed match during full compare
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed with `176` tests
+- `npm run build` passed
+- the native desktop smoke passed again
+
+Important remaining gap:
+
+- generic compare is more trustworthy now, but it is still not fully proven:
+  - family-hint candidate loading may still need a careful follow-up pass
+  - more real-world live validation is still needed on generic mods and CC, not just fixtures
+  - Inbox queue wording may need a small polish pass after more live compare cases are reviewed
+
+## Current session note (March 15, 2026)
+
 This session intentionally paused feature growth and started tightening the shared confidence base instead.
 
 Important changes and findings:
@@ -765,7 +791,7 @@ Missing:
 
 The highest-value next step is now stabilization of the shared matching base before more feature growth:
 
-1. audit and tighten the generic Inbox installed-match thresholds and evidence rules
+1. audit whether family-hint candidate loading needs the same kind of careful widening that creator-hint loading just got
 2. do more messy real-world validation on generic mod and CC matching, not just supported special mods
 3. keep fixing watch bugs and watch setup edge cases until the current flow feels trustworthy
 4. only after that, return to broader watch-management growth such as bulk setup, batch review, and watch history

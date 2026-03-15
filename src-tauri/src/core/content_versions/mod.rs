@@ -1488,7 +1488,13 @@ fn load_installed_candidate_rows(
         let creators = incoming_subject
             .files
             .iter()
-            .filter_map(|file| file.creator.clone())
+            .flat_map(|file| {
+                file.creator
+                    .iter()
+                    .cloned()
+                    .chain(file.insights.creator_hints.iter().cloned())
+                    .collect::<Vec<_>>()
+            })
             .filter(|value| !value.trim().is_empty())
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -1994,13 +2000,9 @@ fn build_resolution(
     let incoming_identity_score = incoming_identity_score(&incoming_subject);
 
     let Some((installed_subject, breakdown)) = best_match else {
-        if incoming_identity_score >= MATCH_SCORE_WEAK {
+        if incoming_identity_score >= MATCH_SCORE_MEDIUM {
             resolution.status = VersionCompareStatus::NotInstalled;
-            resolution.confidence = if incoming_identity_score >= MATCH_SCORE_MEDIUM {
-                VersionConfidence::Medium
-            } else {
-                VersionConfidence::Weak
-            };
+            resolution.confidence = confidence_from_match_score(incoming_identity_score);
             resolution.evidence = vec![
                 "SimSuite could not find an installed copy that matched this download.".to_owned(),
             ];
@@ -2264,7 +2266,12 @@ fn incoming_identity_score(subject: &VersionSubject) -> f64 {
     if !subject.filename_tokens.is_empty() {
         score += 0.24;
     }
-    if subject.version.value.is_some() {
+    if subject.version.value.is_some()
+        && matches!(
+            subject.version.confidence,
+            VersionConfidence::Exact | VersionConfidence::Strong | VersionConfidence::Medium
+        )
+    {
         score += 0.20;
     }
     score
@@ -2886,13 +2893,15 @@ mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
         list_library_watch_items, list_library_watch_review_items, list_library_watch_setup_items,
-        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
+        refresh_watch_source_for_library_file, resolve_download_item_version,
+        save_watch_source_for_library_file, CompareDetailLevel,
     };
     use crate::{
         database,
         models::{
-            FileInsights, LibrarySettings, LibraryWatchReviewReason, VersionSignal,
-            WatchCapability, WatchListFilter, WatchSourceKind, WatchSourceOrigin, WatchStatus,
+            FileInsights, LibrarySettings, LibraryWatchReviewReason, VersionCompareStatus,
+            VersionConfidence, VersionSignal, WatchCapability, WatchListFilter, WatchSourceKind,
+            WatchSourceOrigin, WatchStatus,
         },
         seed::load_seed_pack,
     };
@@ -2950,6 +2959,62 @@ mod tests {
         let file_id = connection.last_insert_rowid();
 
         (connection, seed_pack, settings, file_id)
+    }
+
+    fn insert_compare_download_item(connection: &Connection, item_id: i64, display_name: &str) {
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id, source_path, display_name, source_kind, status
+                 ) VALUES (?1, ?2, ?3, 'file', 'ready')",
+                params![
+                    item_id,
+                    format!("C:/Users/Test/Downloads/{display_name}"),
+                    display_name
+                ],
+            )
+            .expect("insert download item");
+    }
+
+    fn insert_compare_file(
+        connection: &Connection,
+        path: &str,
+        filename: &str,
+        source_location: &str,
+        creator_id: Option<i64>,
+        download_item_id: Option<i64>,
+        insights: &FileInsights,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    creator_id,
+                    download_item_id,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    path,
+                    filename,
+                    ".package",
+                    "Gameplay",
+                    0.86_f64,
+                    source_location,
+                    creator_id,
+                    download_item_id,
+                    "[]",
+                    serde_json::to_string(insights).expect("insights json"),
+                ],
+            )
+            .expect("insert compare file");
+
+        connection.last_insert_rowid()
     }
 
     #[test]
@@ -3295,6 +3360,199 @@ mod tests {
 
         assert_eq!(response.total, 0);
         assert!(response.items.is_empty());
+    }
+
+    #[test]
+    fn creator_and_version_only_download_stays_unknown_without_installed_match() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+
+        insert_compare_download_item(&connection, 1, "creator_version_only.package");
+        let insights = FileInsights {
+            creator_hints: vec!["TestCreator".to_owned()],
+            version_hints: vec!["1.0".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "1.0".to_owned(),
+                normalized_value: "1.0".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Downloads/creator_version_only.package",
+            "creator_version_only.package",
+            "downloads",
+            None,
+            Some(1),
+            &insights,
+        );
+
+        let resolution = resolve_download_item_version(
+            &connection,
+            &settings,
+            &seed_pack,
+            1,
+            CompareDetailLevel::Full,
+        )
+        .expect("resolution")
+        .expect("version resolution");
+
+        assert_eq!(resolution.status, VersionCompareStatus::Unknown);
+        assert_eq!(resolution.confidence, VersionConfidence::Unknown);
+    }
+
+    #[test]
+    fn creator_family_and_version_download_can_still_report_not_installed() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+
+        insert_compare_download_item(&connection, 1, "identified_family.package");
+        let insights = FileInsights {
+            creator_hints: vec!["TestCreator".to_owned()],
+            family_hints: vec!["alpha suite".to_owned()],
+            version_hints: vec!["2.3".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.3".to_owned(),
+                normalized_value: "2.3".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Downloads/identified_family.package",
+            "identified_family.package",
+            "downloads",
+            None,
+            Some(1),
+            &insights,
+        );
+
+        let resolution = resolve_download_item_version(
+            &connection,
+            &settings,
+            &seed_pack,
+            1,
+            CompareDetailLevel::Full,
+        )
+        .expect("resolution")
+        .expect("version resolution");
+
+        assert_eq!(resolution.status, VersionCompareStatus::NotInstalled);
+        assert_eq!(resolution.confidence, VersionConfidence::Medium);
+    }
+
+    #[test]
+    fn full_compare_uses_creator_hints_to_find_installed_candidates() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let seed_pack = load_seed_pack().expect("seed pack");
+        database::seed_database(&mut connection, &seed_pack).expect("seed db");
+
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
+            tray_path: None,
+            downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+        };
+
+        connection
+            .execute(
+                "INSERT INTO creators (canonical_name, notes, created_by_user)
+                 VALUES (?1, ?2, 1)",
+                params!["HintMaker", "Test creator"],
+            )
+            .expect("insert creator");
+        let creator_id = connection.last_insert_rowid();
+
+        let installed_insights = FileInsights {
+            family_hints: vec!["alpha suite".to_owned()],
+            version_hints: vec!["2.3".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.3".to_owned(),
+                normalized_value: "2.3".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/HintMaker/installed_alpha_core.package",
+            "installed_alpha_core.package",
+            "mods",
+            Some(creator_id),
+            None,
+            &installed_insights,
+        );
+
+        insert_compare_download_item(&connection, 1, "fresh_bundle.package");
+        let incoming_insights = FileInsights {
+            creator_hints: vec!["HintMaker".to_owned()],
+            family_hints: vec!["alpha suite".to_owned()],
+            version_hints: vec!["2.3".to_owned()],
+            version_signals: vec![VersionSignal {
+                raw_value: "2.3".to_owned(),
+                normalized_value: "2.3".to_owned(),
+                source_kind: "filename".to_owned(),
+                source_path: None,
+                matched_by: Some("fixture".to_owned()),
+                confidence: 0.88,
+            }],
+            ..FileInsights::default()
+        };
+        insert_compare_file(
+            &connection,
+            "C:/Users/Test/Downloads/fresh_bundle.package",
+            "fresh_bundle.package",
+            "downloads",
+            None,
+            Some(1),
+            &incoming_insights,
+        );
+
+        let resolution = resolve_download_item_version(
+            &connection,
+            &settings,
+            &seed_pack,
+            1,
+            CompareDetailLevel::Full,
+        )
+        .expect("resolution")
+        .expect("version resolution");
+
+        assert_eq!(resolution.status, VersionCompareStatus::SameVersion);
+        assert_eq!(
+            resolution.matched_subject_label.as_deref(),
+            Some("alpha suite")
+        );
+        assert_eq!(resolution.installed_version.as_deref(), Some("2.3"));
     }
 
     #[test]
