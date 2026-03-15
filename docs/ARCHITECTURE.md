@@ -65,6 +65,28 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (March 15, 2026)
+
+The watch system now has a safe automatic polling layer on top of the earlier shared version-and-watch foundation.
+
+Important current watch behavior:
+
+- automatic watch checks are controlled from `Settings`
+- the background poller only runs for:
+  - safe exact pages SimSuite already knows how to read directly
+  - future approved providers
+- protected pages are still stored, but they stay outside the automatic polling path
+- the watch result now carries a clearer product state:
+  - `can check now`
+  - `saved as a reference`
+  - `provider required`
+- `Library` now shows that watch method directly in the detail panel so the user can tell whether:
+  - SimSuite can check the page now
+  - the link is only a reminder
+  - a provider such as CurseForge still needs an approved integration path
+- `Home` and `Library` stay in sync through a `watch-refresh-finished` workspace change event after watch polling completes
+- the watch schema now exists in both fresh and migrated databases, so new installs and test databases behave the same way
+
 ## Current engineering note (March 13, 2026)
 
 The current app is no longer just a scan-and-sort shell. It already has a real Downloads Inbox, a real guided special-mod pipeline, real snapshot-backed apply flows, and one shared version-and-watch foundation for all content.

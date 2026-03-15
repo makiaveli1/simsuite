@@ -17,7 +17,12 @@ import {
 } from "../lib/experienceMode";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
-import type { AppBehaviorSettings, ExperienceMode, UiDensity } from "../lib/types";
+import type {
+  AppBehaviorSettings,
+  ExperienceMode,
+  UiDensity,
+  WatchRefreshSummary,
+} from "../lib/types";
 import { screenHelperLine } from "../lib/uiLanguage";
 
 const EXPERIENCE_CARDS: Record<
@@ -93,6 +98,8 @@ export function SettingsScreen({
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
+  const [isRefreshingWatchedSources, setIsRefreshingWatchedSources] = useState(false);
+  const [watchAutomationMessage, setWatchAutomationMessage] = useState<string | null>(null);
   const activeTheme = getThemeDefinition(theme);
   const activeView = {
     ...EXPERIENCE_MODE_PROFILES[experienceMode],
@@ -101,6 +108,8 @@ export function SettingsScreen({
   const activeDensity =
     DENSITIES.find((item) => item.id === density) ?? DENSITIES[1];
   const keepRunningInBackground = appBehavior?.keepRunningInBackground ?? false;
+  const automaticWatchChecks = appBehavior?.automaticWatchChecks ?? false;
+  const watchCheckIntervalHours = appBehavior?.watchCheckIntervalHours ?? 12;
 
   useEffect(() => {
     let cancelled = false;
@@ -123,8 +132,8 @@ export function SettingsScreen({
     };
   }, []);
 
-  async function updateBackgroundMode(keepRunning: boolean) {
-    if (appBehavior?.keepRunningInBackground === keepRunning) {
+  async function saveBehaviorSettings(nextValues: Partial<AppBehaviorSettings>) {
+    if (!appBehavior) {
       return;
     }
 
@@ -133,13 +142,77 @@ export function SettingsScreen({
 
     try {
       const nextSettings = await api.saveAppBehaviorSettings({
-        keepRunningInBackground: keepRunning,
+        ...appBehavior,
+        ...nextValues,
       });
       setAppBehavior(nextSettings);
     } catch (error) {
       setBackgroundModeError(toErrorMessage(error));
     } finally {
       setIsSavingBackgroundMode(false);
+    }
+  }
+
+  async function updateBackgroundMode(keepRunning: boolean) {
+    if (appBehavior?.keepRunningInBackground === keepRunning) {
+      return;
+    }
+
+    await saveBehaviorSettings({
+      keepRunningInBackground: keepRunning,
+    });
+  }
+
+  async function updateAutomaticWatchChecks(enabled: boolean) {
+    if (appBehavior?.automaticWatchChecks === enabled) {
+      return;
+    }
+
+    await saveBehaviorSettings({
+      automaticWatchChecks: enabled,
+    });
+  }
+
+  async function updateWatchCheckInterval(hours: number) {
+    if (appBehavior?.watchCheckIntervalHours === hours) {
+      return;
+    }
+
+    await saveBehaviorSettings({
+      watchCheckIntervalHours: hours,
+    });
+  }
+
+  async function refreshWatchedSources() {
+    setIsRefreshingWatchedSources(true);
+    setWatchAutomationMessage(null);
+    setBackgroundModeError(null);
+
+    try {
+      const summary = await api.refreshWatchedSources();
+      setAppBehavior((current) =>
+        current
+          ? {
+              ...current,
+              lastWatchCheckAt: summary.checkedAt,
+              lastWatchCheckError: null,
+            }
+          : current,
+      );
+      setWatchAutomationMessage(formatWatchRefreshMessage(summary));
+    } catch (error) {
+      const message = toErrorMessage(error);
+      setBackgroundModeError(message);
+      setAppBehavior((current) =>
+        current
+          ? {
+              ...current,
+              lastWatchCheckError: message,
+            }
+          : current,
+      );
+    } finally {
+      setIsRefreshingWatchedSources(false);
     }
   }
 
@@ -329,13 +402,13 @@ export function SettingsScreen({
               <div>
                 <span className="section-label">
                   <Workflow size={14} strokeWidth={2} />
-                  Background mode
+                  Background and updates
                 </span>
-                <h2>Choose what happens on close</h2>
+                <h2>Keep watching after the window closes</h2>
               </div>
               <p className="workspace-toolbar-copy">
-                Keep SimSuite alive in the tray only if you want Downloads watching to
-                keep going after you close the main window.
+                Use the tray if you want SimSuite to keep watching Downloads and safely
+                checking saved mod pages while the main window is hidden.
               </p>
             </div>
 
@@ -399,6 +472,99 @@ export function SettingsScreen({
                   {backgroundModeError}
                 </p>
               ) : null}
+            </div>
+
+            <div className="settings-summary-card">
+              <span className="section-label">Automatic update checks</span>
+              <strong>{automaticWatchChecks ? "On" : "Off"}</strong>
+              <p className="workspace-toolbar-copy">
+                SimSuite only checks saved pages that are safe to read directly. It does
+                not try to break through protected sites, logins, or anti-bot walls.
+              </p>
+
+              <div className="segmented-control" role="tablist" aria-label="Automatic update checks">
+                <m.button
+                  type="button"
+                  className={`segment-button ${
+                    !automaticWatchChecks ? "is-active" : ""
+                  }`}
+                  onClick={() => void updateAutomaticWatchChecks(false)}
+                  disabled={!appBehavior || isSavingBackgroundMode}
+                  whileHover={hoverLift}
+                  whileTap={tapPress}
+                >
+                  Off
+                </m.button>
+                <m.button
+                  type="button"
+                  className={`segment-button ${
+                    automaticWatchChecks ? "is-active" : ""
+                  }`}
+                  onClick={() => void updateAutomaticWatchChecks(true)}
+                  disabled={!appBehavior || isSavingBackgroundMode}
+                  whileHover={hoverLift}
+                  whileTap={tapPress}
+                >
+                  On
+                </m.button>
+              </div>
+
+              <label className="field">
+                <span>How often</span>
+                <select
+                  value={String(watchCheckIntervalHours)}
+                  onChange={(event) =>
+                    void updateWatchCheckInterval(Number(event.target.value))
+                  }
+                  disabled={!appBehavior || isSavingBackgroundMode}
+                >
+                  <option value="1">Every hour</option>
+                  <option value="6">Every 6 hours</option>
+                  <option value="12">Every 12 hours</option>
+                  <option value="24">Every day</option>
+                </select>
+              </label>
+
+              <div className="settings-action-row">
+                <m.button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => void refreshWatchedSources()}
+                  disabled={isRefreshingWatchedSources}
+                  whileHover={hoverLift}
+                  whileTap={tapPress}
+                >
+                  {isRefreshingWatchedSources ? "Checking watched pages..." : "Check watched pages now"}
+                </m.button>
+                <p className="workspace-toolbar-copy settings-inline-note">
+                  {automaticWatchChecks
+                    ? `Automatic checks are set to ${watchIntervalLabel(
+                        watchCheckIntervalHours,
+                      )}.`
+                    : "While this is off, SimSuite only checks watched pages when you ask it to."}
+                </p>
+              </div>
+
+              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                Last watch check:{" "}
+                {appBehavior?.lastWatchCheckAt
+                  ? new Date(appBehavior.lastWatchCheckAt).toLocaleString()
+                  : "Not checked yet"}
+              </p>
+              {appBehavior?.lastWatchCheckError ? (
+                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                  Last watch-check problem: {appBehavior.lastWatchCheckError}
+                </p>
+              ) : null}
+              {watchAutomationMessage ? (
+                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                  {watchAutomationMessage}
+                </p>
+              ) : null}
+              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+                Exact mod pages are best. Creator pages are still reminder links, and
+                protected services like CurseForge need an approved provider path first.
+              </p>
             </div>
           </m.section>
 
@@ -486,4 +652,37 @@ function toErrorMessage(error: unknown) {
   }
 
   return String(error);
+}
+
+function watchIntervalLabel(hours: number) {
+  if (hours <= 1) {
+    return "every hour";
+  }
+
+  if (hours === 24) {
+    return "every day";
+  }
+
+  return `every ${hours} hours`;
+}
+
+function formatWatchRefreshMessage(summary: WatchRefreshSummary) {
+  const parts = [
+    `${summary.checkedSubjects} watched item${
+      summary.checkedSubjects === 1 ? "" : "s"
+    } checked`,
+    `${summary.exactUpdateItems} confirmed update${
+      summary.exactUpdateItems === 1 ? "" : "s"
+    }`,
+  ];
+
+  if (summary.possibleUpdateItems > 0) {
+    parts.push(
+      `${summary.possibleUpdateItems} possible update${
+        summary.possibleUpdateItems === 1 ? "" : "s"
+      }`,
+    );
+  }
+
+  return `${parts.join(", ")}.`;
 }

@@ -2,6 +2,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import type {
   AppBehaviorSettings,
+  WatchRefreshSummary,
   ApplyReviewPlanActionResult,
   ApplyCategoryAuditResult,
   ApplyCreatorAuditResult,
@@ -108,6 +109,10 @@ let mockDownloadsWatcherStatus: DownloadsWatcherStatus = {
 };
 let mockAppBehaviorSettings: AppBehaviorSettings = {
   keepRunningInBackground: false,
+  automaticWatchChecks: false,
+  watchCheckIntervalHours: 12,
+  lastWatchCheckAt: null,
+  lastWatchCheckError: null,
 };
 const emptyInsights = {
   format: null,
@@ -303,7 +308,9 @@ function buildMockWatchResult(
       sourceKind: "exact_page",
       sourceLabel: "MC Command Center",
       sourceUrl: "https://deaderpool-mccc.com/downloads.html",
+      capability: "can_refresh_now",
       canRefreshNow: true,
+      providerName: null,
       latestVersion: "2026.4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
@@ -320,7 +327,9 @@ function buildMockWatchResult(
       sourceKind: "exact_page",
       sourceLabel: "XML Injector",
       sourceUrl: "https://scumbumbomods.com/xml-injector",
+      capability: "can_refresh_now",
       canRefreshNow: true,
+      providerName: null,
       latestVersion: "4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
@@ -336,7 +345,9 @@ function buildMockWatchResult(
     sourceKind: null,
     sourceLabel: null,
     sourceUrl: null,
+    capability: "saved_reference_only",
     canRefreshNow: false,
+    providerName: null,
     latestVersion: null,
     checkedAt: null,
     confidence: "unknown",
@@ -359,6 +370,31 @@ function mockCanRefreshWatchSource(
     lowerUrl.includes("scumbumbomods.com/xml-injector") ||
     (lowerUrl.includes("github.com/") && lowerUrl.includes("/releases"))
   );
+}
+
+function mockWatchCapability(
+  sourceKind: WatchSourceKind,
+  sourceUrl: string | null,
+): WatchResult["capability"] {
+  const lowerUrl = sourceUrl?.toLowerCase() ?? "";
+  if (mockCanRefreshWatchSource(sourceKind, sourceUrl)) {
+    return "can_refresh_now";
+  }
+  if (sourceKind === "exact_page" && lowerUrl.includes("curseforge.com/")) {
+    return "provider_required";
+  }
+  return "saved_reference_only";
+}
+
+function mockWatchProviderName(
+  sourceKind: WatchSourceKind,
+  sourceUrl: string | null,
+): string | null {
+  const lowerUrl = sourceUrl?.toLowerCase() ?? "";
+  if (sourceKind === "exact_page" && lowerUrl.includes("curseforge.com/")) {
+    return "CurseForge";
+  }
+  return null;
 }
 
 function mockSavedWatchNote(
@@ -3384,6 +3420,12 @@ function emitMockStatus(status: ScanStatus) {
   }
 }
 
+function emitMockWorkspaceChange(change: WorkspaceChange) {
+  for (const listener of mockWorkspaceChangeListeners) {
+    listener(change);
+  }
+}
+
 function queueMockScan() {
   const totalFiles = createMockOverview().totalFiles;
   const startedAt = new Date().toISOString();
@@ -3699,7 +3741,10 @@ async function mockInvoke<T>(
       return structuredClone(mockAppBehaviorSettings) as T;
     case "save_app_behavior_settings": {
       const settings = payload?.settings as AppBehaviorSettings;
-      mockAppBehaviorSettings = structuredClone(settings);
+      mockAppBehaviorSettings = {
+        ...structuredClone(mockAppBehaviorSettings),
+        ...structuredClone(settings),
+      };
       return structuredClone(mockAppBehaviorSettings) as T;
     }
     case "refresh_downloads_inbox":
@@ -4390,7 +4435,9 @@ async function mockInvoke<T>(
         sourceKind,
         sourceLabel: sourceLabel || null,
         sourceUrl,
+        capability: mockWatchCapability(sourceKind, sourceUrl),
         canRefreshNow,
+        providerName: mockWatchProviderName(sourceKind, sourceUrl),
         latestVersion: null,
         checkedAt: null,
         confidence: "unknown",
@@ -4431,6 +4478,58 @@ async function mockInvoke<T>(
       next.watchResult = buildMockRefreshedWatchResult(next, currentWatch);
       mockFiles[fileIndex] = next;
       return structuredClone(next) as T;
+    }
+    case "refresh_watched_sources": {
+      const checkedAt = new Date().toISOString();
+      let checkedSubjects = 0;
+
+      for (let index = 0; index < mockFiles.length; index += 1) {
+        if (mockFiles[index].sourceLocation === "downloads") {
+          continue;
+        }
+
+        const currentWatch = mockFiles[index].watchResult ?? buildMockWatchResult(mockFiles[index]);
+        if (!currentWatch?.canRefreshNow) {
+          continue;
+        }
+
+        const next = structuredClone(mockFiles[index]);
+        next.watchResult = buildMockRefreshedWatchResult(next, currentWatch);
+        mockFiles[index] = next;
+        checkedSubjects += 1;
+      }
+
+      const exactUpdateItems = mockFiles.filter(
+        (file) => file.watchResult?.status === "exact_update_available",
+      ).length;
+      const possibleUpdateItems = mockFiles.filter(
+        (file) => file.watchResult?.status === "possible_update",
+      ).length;
+      const unknownWatchItems = mockFiles.filter((file) => {
+        const status = file.watchResult?.status;
+        return status === "unknown" || status === "not_watched";
+      }).length;
+
+      mockAppBehaviorSettings = {
+        ...mockAppBehaviorSettings,
+        lastWatchCheckAt: checkedAt,
+        lastWatchCheckError: null,
+      };
+
+      emitMockWorkspaceChange({
+        domains: ["home", "library"],
+        reason: "watch-refresh-finished",
+        itemIds: [],
+        familyKeys: [],
+      });
+
+      return {
+        checkedSubjects,
+        exactUpdateItems,
+        possibleUpdateItems,
+        unknownWatchItems,
+        checkedAt,
+      } as T;
     }
     case "save_creator_learning": {
       const fileId = payload?.fileId as number;
@@ -4940,6 +5039,8 @@ export const api = {
     invoke<FileDetail | null>("refresh_watch_source_for_file", {
       fileId,
     }),
+  refreshWatchedSources: () =>
+    invoke<WatchRefreshSummary>("refresh_watched_sources"),
   saveCategoryOverride: (fileId: number, kind: string, subtype?: string) =>
     invoke<FileDetail | null>("save_category_override", {
       fileId,

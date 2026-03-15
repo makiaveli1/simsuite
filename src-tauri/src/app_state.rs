@@ -20,6 +20,11 @@ pub struct DownloadsWatcherControl {
     pub stop_sender: Option<mpsc::Sender<()>>,
 }
 
+#[derive(Default)]
+pub struct WatchPollingControl {
+    pub stop_sender: Option<mpsc::Sender<()>>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub database_path: PathBuf,
@@ -27,7 +32,10 @@ pub struct AppState {
     pub scan_status: Arc<Mutex<ScanStatus>>,
     pub downloads_status: Arc<Mutex<DownloadsWatcherStatus>>,
     pub keep_running_in_background: Arc<Mutex<bool>>,
+    pub automatic_watch_checks: Arc<Mutex<bool>>,
+    pub watch_check_interval_hours: Arc<Mutex<i64>>,
     pub downloads_watcher_control: Arc<Mutex<DownloadsWatcherControl>>,
+    pub watch_polling_control: Arc<Mutex<WatchPollingControl>>,
     pub downloads_processing_lock: Arc<Mutex<()>>,
     #[allow(dead_code)]
     pub app_data_dir: PathBuf,
@@ -55,6 +63,13 @@ impl AppState {
             &connection,
             "keep_running_in_background",
         )?);
+        let automatic_watch_checks = parse_watch_checks_setting(database::get_app_setting(
+            &connection,
+            "automatic_watch_checks",
+        )?);
+        let watch_check_interval_hours = parse_watch_check_interval_hours(
+            database::get_app_setting(&connection, "watch_check_interval_hours")?,
+        );
         let initial_downloads_status = build_initial_downloads_status(&library_settings);
 
         Ok(Self {
@@ -63,7 +78,10 @@ impl AppState {
             scan_status: Arc::new(Mutex::new(ScanStatus::default())),
             downloads_status: Arc::new(Mutex::new(initial_downloads_status)),
             keep_running_in_background: Arc::new(Mutex::new(keep_running_in_background)),
+            automatic_watch_checks: Arc::new(Mutex::new(automatic_watch_checks)),
+            watch_check_interval_hours: Arc::new(Mutex::new(watch_check_interval_hours)),
             downloads_watcher_control: Arc::new(Mutex::new(DownloadsWatcherControl::default())),
+            watch_polling_control: Arc::new(Mutex::new(WatchPollingControl::default())),
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir,
         })
@@ -101,8 +119,44 @@ impl AppState {
         Ok(())
     }
 
+    pub fn automatic_watch_checks(&self) -> bool {
+        self.automatic_watch_checks
+            .lock()
+            .map(|value| *value)
+            .unwrap_or(false)
+    }
+
+    pub fn set_automatic_watch_checks(&self, enabled: bool) -> AppResult<()> {
+        let automatic_watch_checks = Arc::clone(&self.automatic_watch_checks);
+        let mut guard = automatic_watch_checks
+            .lock()
+            .map_err(|_| AppError::Message("Automatic watch-check lock poisoned".to_owned()))?;
+        *guard = enabled;
+        Ok(())
+    }
+
+    pub fn watch_check_interval_hours(&self) -> i64 {
+        self.watch_check_interval_hours
+            .lock()
+            .map(|value| *value)
+            .unwrap_or_else(|_| default_watch_check_interval_hours())
+    }
+
+    pub fn set_watch_check_interval_hours(&self, hours: i64) -> AppResult<()> {
+        let watch_check_interval_hours = Arc::clone(&self.watch_check_interval_hours);
+        let mut guard = watch_check_interval_hours
+            .lock()
+            .map_err(|_| AppError::Message("Watch-check interval lock poisoned".to_owned()))?;
+        *guard = clamp_watch_check_interval_hours(hours);
+        Ok(())
+    }
+
     pub fn downloads_watcher_control(&self) -> Arc<Mutex<DownloadsWatcherControl>> {
         Arc::clone(&self.downloads_watcher_control)
+    }
+
+    pub fn watch_polling_control(&self) -> Arc<Mutex<WatchPollingControl>> {
+        Arc::clone(&self.watch_polling_control)
     }
 
     pub fn downloads_processing_lock(&self) -> Arc<Mutex<()>> {
@@ -132,6 +186,28 @@ fn parse_bool_setting(value: Option<String>) -> bool {
         .as_deref()
         .map(|value| value.trim().to_ascii_lowercase())
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+}
+
+fn default_watch_check_interval_hours() -> i64 {
+    12
+}
+
+fn clamp_watch_check_interval_hours(value: i64) -> i64 {
+    value.clamp(1, 168)
+}
+
+fn parse_watch_checks_setting(value: Option<String>) -> bool {
+    value
+        .map(|value| value.trim().to_ascii_lowercase())
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn parse_watch_check_interval_hours(value: Option<String>) -> i64 {
+    value
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .map(clamp_watch_check_interval_hours)
+        .unwrap_or_else(default_watch_check_interval_hours)
 }
 
 fn build_initial_downloads_status(settings: &LibrarySettings) -> DownloadsWatcherStatus {
@@ -235,5 +311,24 @@ mod tests {
             Some("C:/Temp/SimSuiteSmoke".to_owned())
         );
         assert_eq!(clean_override_path("   ".to_owned()), None);
+    }
+
+    #[test]
+    fn watch_check_settings_default_safely() {
+        assert!(!parse_watch_checks_setting(None));
+        assert_eq!(
+            parse_watch_check_interval_hours(None),
+            default_watch_check_interval_hours()
+        );
+    }
+
+    #[test]
+    fn watch_check_interval_is_clamped() {
+        assert_eq!(parse_watch_check_interval_hours(Some("0".to_owned())), 1);
+        assert_eq!(
+            parse_watch_check_interval_hours(Some("999".to_owned())),
+            168
+        );
+        assert_eq!(parse_watch_check_interval_hours(Some("24".to_owned())), 24);
     }
 }

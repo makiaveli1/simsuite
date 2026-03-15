@@ -18,7 +18,7 @@ use crate::{
     app_state::AppState,
     core::{
         category_audit, content_versions, creator_audit, downloads_watcher, install_profile_engine,
-        library_index, move_engine, rule_engine, scanner, snapshot_manager,
+        library_index, move_engine, rule_engine, scanner, snapshot_manager, watch_polling,
     },
     database,
     error::AppError,
@@ -33,7 +33,8 @@ use crate::{
         HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
         OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
         ReviewQueueItem, RulePreset, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, WatchRefreshSummary, WatchSourceKind, WorkspaceChange,
+        WorkspaceDomain,
     },
     MAIN_TRAY_ID,
 };
@@ -387,8 +388,15 @@ pub fn get_library_settings(state: State<'_, AppState>) -> Result<LibrarySetting
 pub fn get_app_behavior_settings(
     state: State<'_, AppState>,
 ) -> Result<AppBehaviorSettings, String> {
+    let connection = state.connection().map_err(map_error)?;
     Ok(AppBehaviorSettings {
         keep_running_in_background: state.keep_running_in_background(),
+        automatic_watch_checks: state.automatic_watch_checks(),
+        watch_check_interval_hours: state.watch_check_interval_hours(),
+        last_watch_check_at: database::get_app_setting(&connection, "watch_auto_last_run_at")
+            .map_err(map_error)?,
+        last_watch_check_error: database::get_app_setting(&connection, "watch_auto_last_error")
+            .map_err(map_error)?,
     })
 }
 
@@ -399,26 +407,50 @@ pub fn save_app_behavior_settings(
     state: State<'_, AppState>,
 ) -> Result<AppBehaviorSettings, String> {
     let mut connection = state.connection().map_err(map_error)?;
-    let raw_value = if settings.keep_running_in_background {
-        "true"
-    } else {
-        "false"
-    };
     database::save_app_setting(
         &mut connection,
         "keep_running_in_background",
-        Some(raw_value),
+        Some(if settings.keep_running_in_background {
+            "true"
+        } else {
+            "false"
+        }),
+        "user",
+    )
+    .map_err(map_error)?;
+    database::save_app_setting(
+        &mut connection,
+        "automatic_watch_checks",
+        Some(if settings.automatic_watch_checks {
+            "true"
+        } else {
+            "false"
+        }),
+        "user",
+    )
+    .map_err(map_error)?;
+    database::save_app_setting(
+        &mut connection,
+        "watch_check_interval_hours",
+        Some(&settings.watch_check_interval_hours.to_string()),
         "user",
     )
     .map_err(map_error)?;
     state
         .set_keep_running_in_background(settings.keep_running_in_background)
         .map_err(map_error)?;
+    state
+        .set_automatic_watch_checks(settings.automatic_watch_checks)
+        .map_err(map_error)?;
+    state
+        .set_watch_check_interval_hours(settings.watch_check_interval_hours)
+        .map_err(map_error)?;
     if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
         tray.set_visible(settings.keep_running_in_background)
             .map_err(|error| error.to_string())?;
     }
-    Ok(settings)
+    watch_polling::restart_poller(&app, state.inner()).map_err(map_error)?;
+    get_app_behavior_settings(state)
 }
 
 #[tauri::command]
@@ -1866,6 +1898,18 @@ pub async fn refresh_watch_source_for_file(
             watch_result: Some(watch_result),
             ..updated
         }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn refresh_watched_sources(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WatchRefreshSummary, String> {
+    let state = state.inner().clone();
+    run_blocking_command("refresh_watched_sources", move || {
+        watch_polling::refresh_watched_sources_now(&app, &state).map_err(map_error)
     })
     .await
 }

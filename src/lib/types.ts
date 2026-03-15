@@ -36,6 +36,18 @@ export interface LibrarySettings {
 
 export interface AppBehaviorSettings {
   keepRunningInBackground: boolean;
+  automaticWatchChecks: boolean;
+  watchCheckIntervalHours: number;
+  lastWatchCheckAt: string | null;
+  lastWatchCheckError: string | null;
+}
+
+export interface WatchRefreshSummary {
+  checkedSubjects: number;
+  exactUpdateItems: number;
+  possibleUpdateItems: number;
+  unknownWatchItems: number;
+  checkedAt: string;
 }
 
 export interface DetectedLibraryPaths {
@@ -259,6 +271,10 @@ export interface InstalledVersionSummary {
 }
 
 export type WatchSourceKind = "exact_page" | "creator_page";
+export type WatchCapability =
+  | "can_refresh_now"
+  | "saved_reference_only"
+  | "provider_required";
 
 export type WatchStatus =
   | "not_watched"
@@ -272,7 +288,9 @@ export interface WatchResult {
   sourceKind: WatchSourceKind | null;
   sourceLabel: string | null;
   sourceUrl: string | null;
+  capability: WatchCapability;
   canRefreshNow: boolean;
+  providerName: string | null;
   latestVersion: string | null;
   checkedAt: string | null;
   confidence: VersionConfidence;

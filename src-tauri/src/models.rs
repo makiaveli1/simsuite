@@ -12,6 +12,20 @@ pub struct LibrarySettings {
 #[serde(rename_all = "camelCase")]
 pub struct AppBehaviorSettings {
     pub keep_running_in_background: bool,
+    pub automatic_watch_checks: bool,
+    pub watch_check_interval_hours: i64,
+    pub last_watch_check_at: Option<String>,
+    pub last_watch_check_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchRefreshSummary {
+    pub checked_subjects: i64,
+    pub exact_update_items: i64,
+    pub possible_update_items: i64,
+    pub unknown_watch_items: i64,
+    pub checked_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -275,6 +289,15 @@ pub enum WatchSourceKind {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum WatchCapability {
+    CanRefreshNow,
+    #[default]
+    SavedReferenceOnly,
+    ProviderRequired,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum WatchStatus {
     #[default]
     NotWatched,
@@ -291,7 +314,9 @@ pub struct WatchResult {
     pub source_kind: Option<WatchSourceKind>,
     pub source_label: Option<String>,
     pub source_url: Option<String>,
+    pub capability: WatchCapability,
     pub can_refresh_now: bool,
+    pub provider_name: Option<String>,
     pub latest_version: Option<String>,
     pub checked_at: Option<String>,
     pub confidence: VersionConfidence,

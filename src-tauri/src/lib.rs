@@ -7,7 +7,7 @@ mod models;
 mod seed;
 
 use app_state::AppState;
-use core::downloads_watcher;
+use core::{downloads_watcher, watch_polling};
 use tauri::{
     menu::MenuBuilder,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -79,6 +79,7 @@ pub fn run() {
             let state = AppState::initialise(app.handle())?;
             downloads_watcher::restart_watcher(app.handle(), &state)?;
             build_tray(app.handle(), &state)?;
+            watch_polling::restart_poller(app.handle(), &state)?;
             app.manage(state);
             Ok(())
         })
@@ -145,6 +146,7 @@ pub fn run() {
             commands::save_watch_source_for_file,
             commands::clear_watch_source_for_file,
             commands::refresh_watch_source_for_file,
+            commands::refresh_watched_sources,
             commands::save_creator_learning,
             commands::apply_creator_audit,
             commands::apply_category_audit,

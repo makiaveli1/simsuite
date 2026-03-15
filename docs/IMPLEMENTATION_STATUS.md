@@ -4,6 +4,34 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 15, 2026)
 
+This session added the first safe automatic watch-check loop and made the watch state easier to understand in the UI.
+
+Important changes and findings:
+
+- `Settings` now lets users:
+  - turn automatic watch checks on or off
+  - choose a watch-check interval
+  - run `Check watched pages now`
+- the Rust side now has a background watch poller for safe exact-page sources:
+  - it only checks pages SimSuite already knows are safe to read directly
+  - it updates `Home` and `Library` through one `watch-refresh-finished` workspace change event
+  - it keeps CurseForge and other protected pages out of the automatic check path
+- brand-new databases now create the watch tables correctly, so watch features no longer depend on older migration state
+- `Library` now shows a clearer watch method:
+  - `Check now supported`
+  - `Reference only`
+  - `Provider needed`
+- CurseForge exact pages now land in the honest `provider needed` state instead of looking like a vague unsupported watch link
+
+Important remaining gap:
+
+- the desktop smoke wrapper timed out on startup in this session, so the wrapper itself still needs cleanup even though:
+  - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `163` tests
+  - `npm run build` passed
+- the next product step should still be a fuller watch setup and management flow, plus a cleaner provider onboarding path
+
+## Current session note (March 15, 2026)
+
 This session finished the first real `Check now` watch path and tightened the native desktop proof so it follows the real app state instead of leaning on brittle screen guesses.
 
 Important changes and findings:

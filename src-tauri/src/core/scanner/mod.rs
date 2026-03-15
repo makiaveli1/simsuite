@@ -1269,8 +1269,13 @@ mod tests {
                 Mutex::new(crate::models::DownloadsWatcherStatus::default()),
             ),
             keep_running_in_background: Arc::new(Mutex::new(false)),
+            automatic_watch_checks: Arc::new(Mutex::new(false)),
+            watch_check_interval_hours: Arc::new(Mutex::new(12)),
             downloads_watcher_control: Arc::new(Mutex::new(
                 crate::app_state::DownloadsWatcherControl::default(),
+            )),
+            watch_polling_control: Arc::new(Mutex::new(
+                crate::app_state::WatchPollingControl::default(),
             )),
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir: temp.path().to_path_buf(),

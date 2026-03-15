@@ -15,3 +15,4 @@ pub mod scanner;
 pub mod snapshot_manager;
 pub mod special_mod_versions;
 pub mod validator;
+pub mod watch_polling;

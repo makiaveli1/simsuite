@@ -12,8 +12,8 @@ use crate::{
     error::AppResult,
     models::{
         FileInsights, InstalledVersionSummary, SpecialVersionStatus, VersionCompareStatus,
-        VersionConfidence, VersionResolution, VersionSignal, WatchResult, WatchSourceKind,
-        WatchStatus,
+        VersionConfidence, VersionResolution, VersionSignal, WatchCapability, WatchResult,
+        WatchSourceKind, WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
 };
@@ -131,6 +131,7 @@ enum WatchSourceCapabilityKind {
 struct WatchSourceCapability {
     kind: WatchSourceCapabilityKind,
     note: String,
+    provider_name: Option<String>,
 }
 
 pub fn resolve_download_item_version(
@@ -218,6 +219,7 @@ pub fn save_watch_source_for_library_file(
     save_watch_source_for_subject(
         connection,
         &subject.key,
+        Some(file_id),
         source_kind,
         source_label,
         source_url,
@@ -343,6 +345,77 @@ pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> 
     ))
 }
 
+pub fn list_auto_refreshable_watch_file_ids(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+) -> AppResult<Vec<i64>> {
+    let mut statement = connection.prepare(
+        "SELECT DISTINCT anchor_file_id, source_kind, source_label, source_url
+         FROM content_watch_sources
+         WHERE approved_by_user = 1
+           AND anchor_file_id IS NOT NULL
+         ORDER BY updated_at DESC",
+    )?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                WatchSourceRow {
+                    source_kind: parse_watch_source_kind(&row.get::<_, String>(1)?),
+                    source_label: row.get(2)?,
+                    source_url: row.get(3)?,
+                },
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|(_, source)| {
+            matches!(
+                watch_source_capability(seed_pack, None, source).kind,
+                WatchSourceCapabilityKind::CanRefreshNow
+            )
+        })
+        .map(|(file_id, _)| file_id)
+        .collect())
+}
+
+pub fn list_auto_refreshable_special_profile_keys(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+) -> AppResult<Vec<String>> {
+    let mut statement = connection.prepare(
+        "SELECT profile_key
+         FROM special_mod_family_state
+         WHERE install_state <> 'not_installed'
+           AND (installed_version IS NOT NULL OR install_path IS NOT NULL)
+         ORDER BY updated_at DESC",
+    )?;
+
+    let keys = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(keys
+        .into_iter()
+        .filter(|key| {
+            seed_pack
+                .install_catalog
+                .guided_profiles
+                .iter()
+                .find(|profile| profile.key == *key)
+                .is_some_and(|profile| {
+                    matches!(
+                        special_profile_watch_capability(profile).kind,
+                        WatchSourceCapabilityKind::CanRefreshNow
+                    )
+                })
+        })
+        .collect())
+}
+
 fn save_watch_result_for_subject(
     connection: &Connection,
     subject_key: &str,
@@ -387,6 +460,7 @@ fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {
 pub fn save_watch_source_for_subject(
     connection: &Connection,
     subject_key: &str,
+    anchor_file_id: Option<i64>,
     source_kind: WatchSourceKind,
     source_label: Option<String>,
     source_url: &str,
@@ -394,13 +468,15 @@ pub fn save_watch_source_for_subject(
     connection.execute(
         "INSERT INTO content_watch_sources (
             subject_key,
+            anchor_file_id,
             source_kind,
             source_label,
             source_url,
             approved_by_user,
             updated_at
-        ) VALUES (?1, ?2, ?3, ?4, 1, CURRENT_TIMESTAMP)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, 1, CURRENT_TIMESTAMP)
         ON CONFLICT(subject_key) DO UPDATE SET
+            anchor_file_id = excluded.anchor_file_id,
             source_kind = excluded.source_kind,
             source_label = excluded.source_label,
             source_url = excluded.source_url,
@@ -408,6 +484,7 @@ pub fn save_watch_source_for_subject(
             updated_at = CURRENT_TIMESTAMP",
         params![
             subject_key,
+            anchor_file_id,
             match source_kind {
                 WatchSourceKind::ExactPage => "exact_page",
                 WatchSourceKind::CreatorPage => "creator_page",
@@ -1566,10 +1643,12 @@ fn resolve_watch_result(
                         .clone()
                         .or_else(|| Some(profile.official_source_url.clone()))
                 }),
+                capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
                     WatchSourceCapabilityKind::CanRefreshNow
                 ),
+                provider_name: capability.provider_name.clone(),
                 latest_version,
                 checked_at,
                 confidence: confidence_from_signal(confidence),
@@ -1586,7 +1665,9 @@ fn resolve_watch_result(
                 .latest_check_url
                 .clone()
                 .or_else(|| Some(profile.official_source_url.clone())),
+            capability: map_watch_capability_kind(capability.kind),
             can_refresh_now: matches!(capability.kind, WatchSourceCapabilityKind::CanRefreshNow),
+            provider_name: capability.provider_name.clone(),
             latest_version: None,
             checked_at: None,
             confidence: VersionConfidence::Unknown,
@@ -1605,10 +1686,12 @@ fn resolve_watch_result(
                 source_kind: Some(source.source_kind),
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
+                capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
                     WatchSourceCapabilityKind::CanRefreshNow
                 ),
+                provider_name: capability.provider_name.clone(),
                 latest_version: result.latest_version,
                 checked_at: result.checked_at,
                 confidence: result.confidence,
@@ -1623,10 +1706,12 @@ fn resolve_watch_result(
                 source_kind: Some(source.source_kind),
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
+                capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
                     WatchSourceCapabilityKind::CanRefreshNow
                 ),
+                provider_name: capability.provider_name.clone(),
                 latest_version: None,
                 checked_at: None,
                 confidence: VersionConfidence::Unknown,
@@ -1639,7 +1724,9 @@ fn resolve_watch_result(
             source_kind: None,
             source_label: None,
             source_url: None,
+            capability: WatchCapability::SavedReferenceOnly,
             can_refresh_now: false,
+            provider_name: None,
             latest_version: result.latest_version,
             checked_at: result.checked_at,
             confidence: result.confidence,
@@ -1651,7 +1738,9 @@ fn resolve_watch_result(
             source_kind: None,
             source_label: None,
             source_url: None,
+            capability: WatchCapability::SavedReferenceOnly,
             can_refresh_now: false,
+            provider_name: None,
             latest_version: None,
             checked_at: None,
             confidence: VersionConfidence::Unknown,
@@ -1668,6 +1757,7 @@ fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> Watch
         "mccc_downloads_page" | "xml_injector_page" | "github_releases" => WatchSourceCapability {
             kind: WatchSourceCapabilityKind::CanRefreshNow,
             note: "SimSuite can check this official page now when you press Check now.".to_owned(),
+            provider_name: None,
         },
         "protected_page" => {
             if url_host_matches(
@@ -1682,6 +1772,7 @@ fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> Watch
                     note:
                         "This page is saved, but CurseForge checks need a future approved API path."
                             .to_owned(),
+                    provider_name: Some("CurseForge".to_owned()),
                 }
             } else {
                 WatchSourceCapability {
@@ -1689,6 +1780,7 @@ fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> Watch
                     note:
                         "This page is saved, but this site blocks safe automatic checks right now."
                             .to_owned(),
+                    provider_name: None,
                 }
             }
         }
@@ -1697,6 +1789,7 @@ fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> Watch
             note:
                 "This page is saved as a reference, but SimSuite cannot check it automatically yet."
                     .to_owned(),
+            provider_name: None,
         },
     }
 }
@@ -1719,6 +1812,7 @@ fn watch_source_capability(
             kind: WatchSourceCapabilityKind::SavedReferenceOnly,
             note: "Creator pages are saved as reminders for now. Automatic creator-page checks are not built yet."
                 .to_owned(),
+            provider_name: None,
         },
         WatchSourceKind::ExactPage => {
             if is_supported_generic_github_release_url(&source.source_url) {
@@ -1726,6 +1820,7 @@ fn watch_source_capability(
                     kind: WatchSourceCapabilityKind::CanRefreshNow,
                     note: "SimSuite can check this GitHub releases page now when you press Check now."
                         .to_owned(),
+                    provider_name: None,
                 };
             }
 
@@ -1734,6 +1829,7 @@ fn watch_source_capability(
                     kind: WatchSourceCapabilityKind::ProviderRequired,
                     note: "This page is saved, but CurseForge checks need a future approved API path."
                         .to_owned(),
+                    provider_name: Some("CurseForge".to_owned()),
                 };
             }
 
@@ -1742,6 +1838,7 @@ fn watch_source_capability(
                     kind: WatchSourceCapabilityKind::SavedReferenceOnly,
                     note: "This page is saved, but this site blocks safe automatic checks right now."
                         .to_owned(),
+                    provider_name: None,
                 };
             }
 
@@ -1749,8 +1846,17 @@ fn watch_source_capability(
                 kind: WatchSourceCapabilityKind::SavedReferenceOnly,
                 note: "This page is saved as a reference, but SimSuite cannot check it automatically yet."
                     .to_owned(),
+                provider_name: None,
             }
         }
+    }
+}
+
+fn map_watch_capability_kind(kind: WatchSourceCapabilityKind) -> WatchCapability {
+    match kind {
+        WatchSourceCapabilityKind::CanRefreshNow => WatchCapability::CanRefreshNow,
+        WatchSourceCapabilityKind::SavedReferenceOnly => WatchCapability::SavedReferenceOnly,
+        WatchSourceCapabilityKind::ProviderRequired => WatchCapability::ProviderRequired,
     }
 }
 
@@ -2039,12 +2145,15 @@ fn prettify_stem(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_watch_source_for_library_file, refresh_watch_source_for_library_file,
-        save_watch_source_for_library_file,
+        clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
+        refresh_watch_source_for_library_file, save_watch_source_for_library_file,
     };
     use crate::{
         database,
-        models::{FileInsights, LibrarySettings, VersionSignal, WatchSourceKind, WatchStatus},
+        models::{
+            FileInsights, LibrarySettings, VersionSignal, WatchCapability, WatchSourceKind,
+            WatchStatus,
+        },
         seed::load_seed_pack,
     };
     use rusqlite::{params, Connection};
@@ -2160,6 +2269,7 @@ mod tests {
         let watch_result = watch_result.expect("watch result");
 
         assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch_result.capability, WatchCapability::CanRefreshNow);
         assert!(watch_result.can_refresh_now);
         assert!(watch_result
             .note
@@ -2231,6 +2341,7 @@ mod tests {
         let watch_result = watch_result.expect("watch result");
 
         assert_eq!(watch_result.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch_result.capability, WatchCapability::CanRefreshNow);
         assert!(watch_result.can_refresh_now);
     }
 
@@ -2252,6 +2363,8 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
+        assert_eq!(watch.provider_name, None);
         assert_eq!(watch.source_label.as_deref(), Some("Test Watch"));
         assert_eq!(
             watch.source_url.as_deref(),
@@ -2282,11 +2395,16 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.capability, WatchCapability::CanRefreshNow);
         assert!(watch.can_refresh_now);
         assert!(watch
             .note
             .as_deref()
             .is_some_and(|note| note.contains("Check now")));
+
+        let refreshable =
+            list_auto_refreshable_watch_file_ids(&connection, &seed_pack).expect("targets");
+        assert_eq!(refreshable, vec![file_id]);
     }
 
     #[test]
@@ -2307,11 +2425,43 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
         assert!(watch
             .note
             .as_deref()
             .is_some_and(|note| note.contains("reminders")));
+
+        let refreshable =
+            list_auto_refreshable_watch_file_ids(&connection, &seed_pack).expect("targets");
+        assert!(!refreshable.contains(&file_id));
+    }
+
+    #[test]
+    fn saving_curseforge_exact_page_marks_provider_required_state() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        let watch = save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("CurseForge page".to_owned()),
+            "https://www.curseforge.com/sims4/mods/example-mod",
+        )
+        .expect("save watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.capability, WatchCapability::ProviderRequired);
+        assert_eq!(watch.provider_name.as_deref(), Some("CurseForge"));
+        assert!(!watch.can_refresh_now);
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("approved API path")));
     }
 
     #[test]
@@ -2336,6 +2486,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::Unknown);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
+        assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
         assert!(watch.checked_at.is_some());
         assert!(watch
@@ -2366,6 +2517,7 @@ mod tests {
 
         assert_eq!(watch.status, WatchStatus::NotWatched);
         assert!(watch.source_kind.is_none());
+        assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(watch.source_url.is_none());
         assert!(watch
             .note

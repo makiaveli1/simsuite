@@ -461,6 +461,12 @@ export function LibraryScreen({
                           value={watchSourceKindLabel(selected.watchResult)}
                         />
                       ) : null}
+                      {selected.watchResult?.sourceKind ? (
+                        <DetailRow
+                          label="Check method"
+                          value={watchCapabilityLabel(selected.watchResult, userView)}
+                        />
+                      ) : null}
                       {selected.watchResult?.latestVersion ? (
                         <DetailRow
                           label="Latest seen"
@@ -535,6 +541,14 @@ export function LibraryScreen({
                             >
                               {refreshingWatch ? "Checking..." : "Check now"}
                             </button>
+                          ) : null}
+                          {selected.watchResult?.sourceKind &&
+                          selected.watchResult.capability === "provider_required" ? (
+                            <span className="creator-learning-message">
+                              {selected.watchResult.providerName
+                                ? `${selected.watchResult.providerName} provider support is needed before SimSuite can check this page automatically.`
+                                : "A provider setup is needed before SimSuite can check this page automatically."}
+                            </span>
                           ) : null}
                           {selected.watchResult?.sourceKind ? (
                             <button
@@ -1496,6 +1510,11 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
       return userView === "beginner" ? "Looks current" : "Looks current";
     case "not_watched":
       if (watchResult.sourceKind) {
+        if (watchResult.capability === "provider_required") {
+          return userView === "beginner"
+            ? "Saved, provider setup needed"
+            : "Saved, provider needed";
+        }
         return watchResult.canRefreshNow
           ? userView === "beginner"
             ? "Saved and ready to check"
@@ -1506,6 +1525,11 @@ function watchStatusLabel(watchResult: WatchResult | null, userView: UserView) {
       }
       return userView === "beginner" ? "Not watched yet" : "Not watched";
     default:
+      if (watchResult.capability === "provider_required") {
+        return userView === "beginner"
+          ? "Provider setup still needed"
+          : "Provider needed";
+      }
       return userView === "beginner"
         ? "Watch result is still unclear"
         : "Unknown";
@@ -1524,6 +1548,23 @@ function watchSourceKindLabel(watchResult: WatchResult | null) {
       return "Creator page";
     default:
       return "Saved source";
+  }
+}
+
+function watchCapabilityLabel(watchResult: WatchResult | null, userView: UserView) {
+  if (!watchResult?.sourceKind) {
+    return userView === "beginner" ? "No watch source yet" : "Not set";
+  }
+
+  switch (watchResult.capability) {
+    case "can_refresh_now":
+      return userView === "beginner" ? "SimSuite can check this now" : "Check now supported";
+    case "provider_required":
+      return watchResult.providerName
+        ? `${watchResult.providerName} provider needed`
+        : "Provider support needed";
+    default:
+      return userView === "beginner" ? "Saved as a reminder only" : "Reference only";
   }
 }
 

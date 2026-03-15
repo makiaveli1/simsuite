@@ -2,6 +2,7 @@
 
 ## Current Priority
 
+- March 15, 2026: safe automatic watch checks now exist, but the next product focus should still be a fuller watch setup and provider flow. The current desktop smoke wrapper also timed out on startup in this session, so that harness needs another cleanup pass before it is treated as perfect signoff.
 - March 15, 2026: the first installed-content watch flow now works end to end in the real Tauri app, including `Check now` for safe supported pages. The next product focus should be a fuller watch setup and management flow, not more backend guesswork.
 - March 14, 2026: Library watch flow is now cleaner in the real app because Library queries now focus on installed content only. The next product focus should be the first fuller user-facing watch setup flow, not mixing Downloads rows into Library.
 - March 14, 2026: Lumpinou Toolbox same-version handling is now confirmed in the real desktop app. The next product focus can move back to broader watch flow and careful special-mod growth.
@@ -12,6 +13,15 @@
 
 ## What Changed This Session
 
+- March 15, 2026: added the first safe automatic watch-check loop:
+  - `Settings` now has automatic watch checks and a check interval
+  - users can run `Check watched pages now`
+  - the Rust side now polls only safe exact-page sources while the app is open or hidden in the tray
+  - Home and Library update through one `watch-refresh-finished` workspace change event after a watch pass completes
+- March 15, 2026: tightened watch-source truth and messaging:
+  - brand-new databases now create the watch tables correctly
+  - `Library` now shows whether a source is `Check now supported`, `Reference only`, or `Provider needed`
+  - CurseForge exact pages now save as `provider required` instead of looking like vague unsupported links
 - March 15, 2026: finished the first real `Check now` watch path for installed Library items:
   - supported installed special mods now expose their built-in official page in Library even if there is no older saved family-state row yet
   - Library detail now shows whether a saved or built-in watch source can be checked right away
@@ -72,6 +82,9 @@
 
 ## What Was Tested
 
+- March 15, 2026: `cargo test --manifest-path src-tauri/Cargo.toml` passed with `163` tests after the automatic-watch schema and provider-state work.
+- March 15, 2026: `npm run build` passed after the Library and Settings watch-state updates.
+- March 15, 2026: `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` timed out waiting for startup text, so the desktop smoke wrapper still needs more work before it can be treated as steady signoff for this new watch checkpoint.
 - March 15, 2026: `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
 - March 15, 2026: `cargo check --manifest-path src-tauri/Cargo.toml` passed.
 - March 15, 2026: `cargo build --manifest-path src-tauri/Cargo.toml` passed.
@@ -113,6 +126,12 @@
 
 ## What Worked
 
+- The app can now poll safe saved watch pages automatically while it is running.
+- The watch result now says more clearly what kind of source it is:
+  - can check now
+  - reference only
+  - provider needed
+- CurseForge links now land in the honest `provider needed` state instead of looking like a generic unclear failure.
 - Built-in supported Library items no longer need an older saved family-state row before SimSuite knows their official page.
 - The first real `Check now` path works in the desktop app for safe supported pages.
 - The native desktop smoke is more honest now because it waits on the real scan state and clicks actual Library rows.
@@ -147,6 +166,10 @@
   - generic watch sources are stored in the database
   - Library can now save, clear, and sometimes check a watch source for installed items
   - but broader setup, editing, batch setup, provider setup, and polling flows still need to grow carefully
+- The safe automatic watch loop exists now, but it still needs a fuller management story:
+  - no watch history view yet
+  - no provider onboarding UI yet
+  - no clear watch list screen yet
 - Helper-only official latest support is still intentionally narrow:
   - MCCC, GitHub release pages, and XML Injector are supported
   - Lot 51 and the CurseForge-backed sources still stay `unknown` because plain app requests hit challenge pages
@@ -158,11 +181,13 @@
 - The first curated expansion wave has not started yet.
 - `cargo clippy` still reports some older warnings that were not cleaned up in this checkpoint.
 - The raw native check is still best as a read-only spot check unless we are deliberately running fixture-backed apply flows.
+- The desktop smoke wrapper timed out on startup in this session, so the wrapper itself still needs more debug even though Rust tests and the frontend build are green.
 
 ## Important Decisions
 
 - Local installed-vs-downloaded truth stays first.
 - Official latest stays helper-only.
+- Automatic watch checks should only touch safe exact-page sources and approved providers.
 - Weak content matches must stay cautious and return `unknown`.
 - Guided install stays special-mod-only.
 - Library watch actions should only attach to installed Library items, not Downloads rows.
@@ -181,7 +206,8 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then use `docs/SPECIAL_MOD_ONBOARDING.md` before adding any new supported special mod.
 - Next best product steps:
-  - design the first fuller user-facing watch-source flow for installed content now that save, clear, and check-now basics are real
+  - design the first fuller user-facing watch-source flow for installed content now that save, clear, check-now, and safe automatic polling basics are real
+  - debug the desktop smoke wrapper startup timeout so the watch checkpoint has a steadier native signoff path
   - decide whether SimSuite should add provider adapters after that, starting with a CurseForge feasibility check against their API terms and key requirements
   - widen helper-only latest parsing only where there is a safe official endpoint
   - add the first small curated expansion wave through `docs/SPECIAL_MOD_CANDIDATES.json`
