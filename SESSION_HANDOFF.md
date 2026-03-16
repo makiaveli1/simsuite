@@ -2,6 +2,56 @@
 
 ## Current Priority
 
+- March 16, 2026: the next deep trust pass stayed in feature freeze and tightened the last real category edge cases instead of adding anything new:
+  - two narrow package-inspection fixes were added:
+    - `uicheats`-style helper packages can now use one more context-only gameplay resource clue
+    - lean CAS appearance packages can now use a narrow inside-file CAS fallback when they look like simple appearance/default-replacement content instead of mixed gameplay or Build/Buy packages
+  - one narrow filename-confidence cleanup also stayed in place for common real-world patterns that were already clearly named:
+    - override/default replacement packages
+    - pose packs
+    - childbirth / pregnancy packages
+  - this keeps those files out of low-confidence review when the filename evidence is already strong enough to trust
+  - important guardrail:
+    - the new gameplay clue is still context-only
+    - a file like `Colorful_Var_Pink.package` does **not** get forced into a category just because it contains one weak resource type
+  - regression coverage was added for all three cases:
+    - the `UI Cheats` helper path now promotes safely
+    - lean CAS appearance packages now classify safely
+    - a single ambiguous resource with no other context still stays unknown
+  - rebuild versions moved forward again because stored meaning changed:
+    - library scan cache -> `scanner-v17`
+    - downloads assessment -> `downloads-assessment-v11`
+  - real live verification now passed on the user profile again, not just fixtures:
+    - the real user-profile database now reports `scanner-v17`
+    - a real full startup-triggered scan completed as `sessionId = 41`
+    - `filesScanned = 13010`
+    - scan duration was about 9 minutes
+    - open installed review rows are now:
+      - `unsafe_script_depth = 20`
+      - `low_confidence_parse = 1`
+      - `no_category_detected = 1`
+      - `conflicting_category_signals = 0`
+    - true installed `Unknown` rows are now down to `1`
+    - the last honest unknown is:
+      - `Colorful_Var_Pink.package`
+      - it still only exposes one weak compressed package resource and no safe creator, version, or in-game-name clues
+      - it should stay unknown until we can prove more from real inside-file evidence
+  - important truth about the remaining review lane:
+    - the last `20` `unsafe_script_depth` rows are not parser mistakes
+    - they are real deep-installed script mods and should stay flagged unless we explicitly redesign that rule
+  - checks passed:
+    - `cargo check --manifest-path src-tauri/Cargo.toml`
+    - `cargo build --manifest-path src-tauri/Cargo.toml`
+    - `cargo test --manifest-path src-tauri/Cargo.toml` with `209` tests
+    - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+    - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+    - `npm run build`
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+    - real desktop launch against the live profile, with a completed `scanner-v17` full scan
+  - next best step:
+    - keep the feature freeze
+    - decide whether `unsafe_script_depth` should stay as a hard review flag or move to a calmer but still visible warning
+    - then move into the postponed watch-system bug sweep on top of this stronger local-truth base
 - March 16, 2026: the stale live-rescan gap is now closed with real app proof:
   - `Home` now gets one simple truth flag from the backend:
     - whether the stored library facts were built with the current scan rules or not

@@ -102,7 +102,7 @@ const MAX_HASH_WORKERS: usize = 4;
 const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
-const SCAN_CACHE_VERSION: &str = "scanner-v15";
+const SCAN_CACHE_VERSION: &str = "scanner-v17";
 
 pub fn library_scan_needs_refresh(
     connection: &Connection,

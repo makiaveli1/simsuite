@@ -66,6 +66,30 @@ Not yet implemented:
 
 ## Current engineering note (March 16, 2026)
 
+The local package-classification layer now uses two extra narrow fallbacks for the last real edge cases, while still keeping one deliberately ambiguous package unknown.
+
+Important current behavior:
+
+- gameplay helper packages can now use one more context-only inside-file clue:
+  - the extra resource signal only matters when the surrounding filename or path already clearly says gameplay-helper context such as `uicheats`
+  - this keeps generic one-resource packages from being pushed into `Gameplay` without enough proof
+- lean CAS appearance/default-replacement style packages can now use a narrow CAS fallback when:
+  - the inside-file resource mix stays small
+  - there are no Build/Buy catalog signals
+  - there are no string-table or script signals
+- the filename-classification layer also keeps a few already-clear filename families out of low-confidence review:
+  - override/default replacements
+  - pose packs
+  - childbirth / pregnancy packages
+- this was added specifically to stop clearly CAS appearance files from lingering in category-conflict review just because the filename also says `default`
+- the remaining honest unknown case is still preserved:
+  - `Colorful_Var_Pink.package` stays `Unknown` because it still does not expose enough safe local evidence
+- because this changed stored evidence meaning again, the rebuild contract moved forward to:
+  - scanner cache version -> `scanner-v17`
+  - downloads assessment version -> `downloads-assessment-v11`
+
+## Current engineering note (March 16, 2026)
+
 `Home` now participates directly in scan-truth ownership instead of only echoing the last scan timestamp.
 
 Important current behavior:

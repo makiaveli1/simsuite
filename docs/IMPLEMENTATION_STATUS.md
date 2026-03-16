@@ -4,6 +4,60 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session stayed in feature freeze and finished another live-data trust pass on the last real installed-content category edge cases.
+
+Important changes and findings:
+
+- package inspection now has two more narrow fallback paths:
+  - `uicheats`-style helper packages can use one more context-only gameplay resource clue
+  - lean CAS appearance/default-replacement style packages can use a narrow CAS resource fallback when their inside-file mix stays small and clean
+- filename confidence also has one more narrow cleanup layer for already-clear real filenames:
+  - override/default replacements
+  - pose packs
+  - childbirth / pregnancy packages
+- important guardrail:
+  - ambiguous one-resource packages still stay unknown when there is no safe supporting context
+  - `Colorful_Var_Pink.package` is the proof case for that rule
+- rebuild versions were bumped again so old stored meaning could not linger:
+  - `scanner-v17`
+  - `downloads-assessment-v11`
+- checks passed:
+  - `cargo check --manifest-path src-tauri/Cargo.toml`
+  - `cargo build --manifest-path src-tauri/Cargo.toml`
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `209` tests
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Real live validation also passed again:
+
+- the real user-profile database now reports `scanner-v17`
+- the app completed a real automatic full scan as `sessionId 41`
+- `filesScanned 13010`
+- scan time was about `9` minutes
+- true installed `Unknown` rows are now down to `1`
+- open installed review rows are now:
+  - `unsafe_script_depth 20`
+  - `low_confidence_parse 1`
+  - `no_category_detected 1`
+  - `conflicting_category_signals 0`
+- the only remaining real unknown is `Colorful_Var_Pink.package`
+  - it still has only one weak package resource clue and no safe supporting creator, version, or human-readable inside-file evidence
+  - keeping it `Unknown` is currently the honest outcome, not a missed easy rule
+
+Important remaining gap:
+
+- the remaining installed review lane is now mostly real placement safety, not category uncertainty:
+  - `20` rows are `unsafe_script_depth`
+  - only `1` file is still truly unknown
+- before more feature work, the next decision should be whether deep script installs should:
+  - keep living in `Review` as a hard safety flag
+  - or move to a calmer visible warning without pretending the risk is gone
+- after that, the next stabilization pass should move back to the postponed watch-system bug sweep
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and closed the stale live-rescan gap that was leaving real library facts behind after scan-rule changes.
 
 Important changes and findings:

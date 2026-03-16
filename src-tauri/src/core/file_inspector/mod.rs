@@ -62,6 +62,7 @@ const GAMEPLAY_CONTEXT_HINT_TOKENS: &[&str] = &[
     "motive",
     "motives",
     "phone",
+    "uicheats",
 ];
 const TS4SCRIPT_NOISE_STEMS: &[&str] = &[
     "__init__",
@@ -98,6 +99,7 @@ const BUILD_STRUCTURE_RESOURCE_TYPES: &[u32] = &[
     0xa057_811c,
     0x84c2_3219,
 ];
+const LEAN_CAS_APPEARANCE_RESOURCE_TYPES: &[u32] = &[0x015a_1849, 0xac16_fbec];
 const GAMEPLAY_RESOURCE_WEIGHTS: &[(u32, usize)] = &[
     (0x0c77_2e27, 3),
     (0x545a_c67a, 2),
@@ -118,7 +120,8 @@ const GAMEPLAY_RESOURCE_WEIGHTS: &[(u32, usize)] = &[
     (0x7fb6_ad8a, 1),
     (0xb61d_e6b4, 1),
     (0xcb5f_ddc7, 1),
-    (0xe882_d22f, 1),
+    (0xe882_d22f, 2),
+    (0xec6a_8fc6, 1),
 ];
 
 #[derive(Debug, Clone, Default)]
@@ -1111,7 +1114,8 @@ fn infer_kind_from_resources(type_counts: &BTreeMap<u32, usize>) -> ResourceKind
         + type_counts
             .get(&RESOURCE_SKINTONE)
             .copied()
-            .unwrap_or_default();
+            .unwrap_or_default()
+        + lean_cas_appearance_score(type_counts);
     let has_build_surfaces =
         count_present_resource_types(type_counts, BUILD_SURFACE_RESOURCE_TYPES) > 0;
     let has_build_structures =
@@ -1194,6 +1198,35 @@ fn count_present_resource_types(
         .count()
 }
 
+fn lean_cas_appearance_score(type_counts: &BTreeMap<u32, usize>) -> usize {
+    if type_counts.len() > 4
+        || type_counts.contains_key(&RESOURCE_CATALOG)
+        || type_counts.contains_key(&RESOURCE_DEFINITION)
+        || type_counts.contains_key(&RESOURCE_STRING_TABLE)
+        || type_counts.contains_key(&RESOURCE_SCRIPT)
+    {
+        return 0;
+    }
+
+    let appearance_signals =
+        count_present_resource_types(type_counts, LEAN_CAS_APPEARANCE_RESOURCE_TYPES);
+    if appearance_signals == 0 {
+        return 0;
+    }
+
+    if type_counts
+        .keys()
+        .any(|resource_type| BUILD_SURFACE_RESOURCE_TYPES.contains(resource_type))
+        || type_counts
+            .keys()
+            .any(|resource_type| BUILD_STRUCTURE_RESOURCE_TYPES.contains(resource_type))
+    {
+        return 0;
+    }
+
+    4
+}
+
 fn gameplay_resource_score(type_counts: &BTreeMap<u32, usize>) -> usize {
     GAMEPLAY_RESOURCE_WEIGHTS
         .iter()
@@ -1269,7 +1302,8 @@ fn infer_gameplay_context_kind(
         return ResourceKindHint::default();
     }
 
-    let gameplay_score = gameplay_resource_score(type_counts);
+    let gameplay_score =
+        gameplay_resource_score(type_counts) + usize::from(type_counts.contains_key(&0x62ec_c59a));
 
     if gameplay_score >= 1 || has_dense_lot_price_cluster {
         return ResourceKindHint {
@@ -1287,13 +1321,46 @@ fn infer_gameplay_context_kind(
 }
 
 fn package_context_tokens(path: &Path) -> Vec<String> {
-    path.components()
+    let mut tokens = Vec::new();
+
+    for component in path
+        .components()
         .rev()
         .take(4)
         .filter_map(|component| component.as_os_str().to_str())
-        .flat_map(tokenize_context_component)
-        .filter(|token| !token.is_empty())
-        .collect()
+    {
+        let component_tokens = tokenize_context_component(component);
+        for token in &component_tokens {
+            if !token.is_empty() && !tokens.contains(token) {
+                tokens.push(token.clone());
+            }
+        }
+        for compact in compact_context_windows(&component_tokens) {
+            if !tokens.contains(&compact) {
+                tokens.push(compact);
+            }
+        }
+    }
+
+    tokens
+}
+
+fn compact_context_windows(tokens: &[String]) -> Vec<String> {
+    let mut compact = Vec::new();
+    for start in 0..tokens.len() {
+        for width in 2..=3 {
+            if start + width > tokens.len() {
+                break;
+            }
+
+            let candidate = tokens[start..(start + width)].join("");
+            if candidate.len() >= 6 {
+                compact.push(candidate);
+            }
+        }
+    }
+
+    compact
 }
 
 fn tokenize_context_component(value: &str) -> Vec<String> {
@@ -1957,6 +2024,16 @@ mod tests {
     }
 
     #[test]
+    fn paired_gameplay_resource_types_can_promote_unknown_packages() {
+        let type_counts = BTreeMap::from([(0xE882_D22F, 1_usize), (0xEC6A_8FC6, 1_usize)]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
     fn string_support_packages_in_strings_paths_hint_gameplay_utilities() {
         let type_counts = BTreeMap::from([(RESOURCE_STRING_TABLE, 18_usize)]);
 
@@ -2010,6 +2087,70 @@ mod tests {
         assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
         assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
         assert!(hint.confidence_floor >= 0.56);
+    }
+
+    #[test]
+    fn split_main_mod_context_tokens_can_promote_gameplay_packages() {
+        let type_counts = BTreeMap::from([(0x7DF2_169C, 1_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/SrslySims_SCCOR-MainMod.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.56);
+    }
+
+    #[test]
+    fn uicheats_context_tokens_can_promote_gameplay_packages() {
+        let type_counts = BTreeMap::from([(0x62EC_C59A, 1_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/SimMattically_BetterSimologyPanel_withUICheatsExtension.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.56);
+    }
+
+    #[test]
+    fn ambiguous_single_resource_without_context_stays_unknown() {
+        let type_counts = BTreeMap::from([(0x62EC_C59A, 1_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/Colorful_Var_Pink.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint, None);
+        assert_eq!(hint.subtype_hint, None);
+    }
+
+    #[test]
+    fn lean_cas_appearance_resources_can_hint_cas_packages() {
+        let type_counts = BTreeMap::from([
+            (0x015A_1849, 24_usize),
+            (0x7FB6_AD8A, 1_usize),
+            (0xAC16_FBEC, 5_usize),
+        ]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("CAS"));
+        assert!(hint.confidence_floor >= 0.68);
+    }
+
+    #[test]
+    fn mixed_buildbuy_packages_do_not_take_lean_cas_shortcut() {
+        let type_counts = BTreeMap::from([
+            (0x015A_1849, 24_usize),
+            (0x319E_4F1D, 3_usize),
+            (0x01D0_E75D, 6_usize),
+            (0xAC16_FBEC, 5_usize),
+        ]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("BuildBuy"));
     }
 
     #[test]

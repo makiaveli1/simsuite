@@ -917,6 +917,20 @@ fn apply_confidence_floors(result: &mut FilenameClassification) {
     {
         result.confidence = result.confidence.max(0.58);
     }
+
+    if result.kind == "OverridesAndDefaults"
+        && matches!(result.subtype.as_deref(), Some("Overrides" | "Defaults"))
+    {
+        result.confidence = result.confidence.max(0.56);
+    }
+
+    if result.kind == "PosesAndAnimation" && matches!(result.subtype.as_deref(), Some("Poses")) {
+        result.confidence = result.confidence.max(0.56);
+    }
+
+    if result.kind == "Gameplay" && matches!(result.subtype.as_deref(), Some("Pregnancy")) {
+        result.confidence = result.confidence.max(0.56);
+    }
 }
 
 fn push_unique(values: &mut Vec<String>, candidate: String) {
@@ -1170,6 +1184,39 @@ mod tests {
         assert_eq!(parsed.subtype.as_deref(), Some("Nose Presets"));
         assert_eq!(parsed.set_name.as_deref(), Some("Nose"));
         assert!(parsed.confidence >= 0.58);
+    }
+
+    #[test]
+    fn pose_pack_keywords_clear_the_low_confidence_floor() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let parsed = parse_filename("SWIClingToYouPosePack.package", &seed_pack);
+
+        assert_eq!(parsed.kind, "PosesAndAnimation");
+        assert_eq!(parsed.subtype.as_deref(), Some("Poses"));
+        assert!(parsed.confidence >= 0.56);
+    }
+
+    #[test]
+    fn replacement_keywords_clear_the_low_confidence_floor() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let parsed = parse_filename("Royalty Mod Easel Replacements Large.package", &seed_pack);
+
+        assert_eq!(parsed.kind, "OverridesAndDefaults");
+        assert_eq!(parsed.subtype.as_deref(), Some("Overrides"));
+        assert!(parsed.confidence >= 0.56);
+    }
+
+    #[test]
+    fn childbirth_packages_clear_the_low_confidence_floor() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let parsed = parse_filename(
+            "z_Pandasama_ChildBirth_mod_v1.95_SPA_ES_Dareksimmer.package",
+            &seed_pack,
+        );
+
+        assert_eq!(parsed.kind, "Gameplay");
+        assert_eq!(parsed.subtype.as_deref(), Some("Pregnancy"));
+        assert!(parsed.confidence >= 0.56);
     }
 
     #[test]

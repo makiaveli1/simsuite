@@ -38,7 +38,7 @@ use crate::{
 
 const WATCHER_DEBOUNCE_MS: u64 = 900;
 // Bump when download-side evidence rules change so existing inbox items get reassessed once.
-const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v9";
+const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v11";
 const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
 const SLOW_DOWNLOADS_LOG_THRESHOLD_MS: u128 = 40;
 const HELD_ARCHIVE_SAFETY_NOTE: &str =
