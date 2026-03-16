@@ -66,6 +66,32 @@ Not yet implemented:
 
 ## Current engineering note (March 16, 2026)
 
+The `Library` inspector now has a harder split between regular simmer views and creator mode.
+
+Important current behavior:
+
+- beginner and seasoned views now only show calmer player-facing facts:
+  - creator
+  - type
+  - subtype when present
+  - file format
+  - filtered in-game names when they look user-facing
+  - installed version and update state
+  - grouped-file and safety notes when they matter
+- beginner and seasoned views no longer surface the heavier internal tool layers:
+  - inside-file evidence
+  - creator-learning controls
+  - type-override controls
+  - raw path panel
+  - local version evidence dumps
+  - watch evidence dumps
+- creator mode still owns the deeper evidence and correction surfaces
+- player-facing version display is now stricter:
+  - exact and strong installed versions can be shown directly
+  - weaker installed-version clues are withheld from beginner and seasoned views and shown only as unconfirmed
+
+## Current engineering note (March 16, 2026)
+
 `Library` now has a player-facing summary layer on top of the stored local clue system, while the shared filename-classification layer has one more safe Build/Buy widening pass.
 
 Important current behavior:

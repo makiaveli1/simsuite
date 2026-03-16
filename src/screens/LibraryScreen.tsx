@@ -20,6 +20,7 @@ import type {
   CreatorLearningInfo,
   FileDetail,
   HomeOverview,
+  InstalledVersionSummary,
   LibraryLayoutPreset,
   LibraryFacets,
   LibraryFileRow,
@@ -33,7 +34,6 @@ import type {
   SaveLibraryWatchSourceEntry,
   Screen,
   UserView,
-  VersionSignal,
   VersionConfidence,
   WatchListFilter,
   WatchResult,
@@ -722,6 +722,7 @@ export function LibraryScreen({
       : userView === "power"
         ? ["name", "creator", "kind", "root", "depth", "confidence"]
         : ["name", "creator", "kind", "root", "confidence"];
+  const isPowerView = userView === "power";
   const hasInspectionSignals = Boolean(
     selected &&
       (selected.insights.format ||
@@ -749,7 +750,14 @@ export function LibraryScreen({
     pendingWatchIntent?.mode === "setup" && pendingWatchIntent.fileId === selected?.id;
   const isReviewQueueActive =
     pendingWatchIntent?.mode === "review" && pendingWatchIntent.fileId === selected?.id;
-  const simmerSummary = selected ? buildSimmerSummary(selected, userView) : null;
+  const playerFacingNames = selected ? collectPlayerFacingNames(selected) : [];
+  const showSafetySection = Boolean(
+    selected &&
+      (isPowerView ||
+        selected.bundleName ||
+        selected.safetyNotes.length ||
+        selected.parserWarnings.length),
+  );
 
   async function saveWatchSource() {
     if (!selected) {
@@ -1181,12 +1189,17 @@ export function LibraryScreen({
     ? [
         {
           id: "facts",
-          label: userView === "beginner" ? "File facts" : "File details",
-          hint:
+          label:
             userView === "beginner"
-              ? "The basics SimSuite knows about this file."
-              : "Core classification, file metadata, and confidence.",
-          children: (
+              ? "What matters"
+              : isPowerView
+                ? "File details"
+                : "Overview",
+          hint:
+            isPowerView
+              ? "Core classification, file metadata, and confidence."
+              : "Only the details most simmers usually care about.",
+          children: isPowerView ? (
             <div className="detail-list">
               <DetailRow
                 label="Creator"
@@ -1200,164 +1213,116 @@ export function LibraryScreen({
                 label="Subtype"
                 value={
                   selected.subtype ??
-                  (userView === "beginner" ? "Not set" : "Unspecified")
+                  "Unspecified"
                 }
               />
-              {userView !== "beginner" ? (
-                <DetailRow label="Root" value={selected.sourceLocation} />
-              ) : null}
-              {userView !== "beginner" ? (
-                <DetailRow label="Depth" value={`${selected.relativeDepth}`} />
-              ) : null}
-              {userView === "power" ? (
-                <DetailRow label="Size" value={formatBytes(selected.size)} />
-              ) : null}
-              {userView === "power" ? (
-                <DetailRow
-                  label="Modified"
-                  value={
-                    selected.modifiedAt
-                      ? new Date(selected.modifiedAt).toLocaleString()
-                      : "Unknown"
-                  }
-                />
-              ) : null}
-              {userView === "power" ? (
-                <DetailRow label="Hash" value={selected.hash ?? "Not available"} mono />
-              ) : null}
+              <DetailRow label="Format" value={formatLibraryFileFormat(selected)} />
+              <DetailRow label="Root" value={selected.sourceLocation} />
+              <DetailRow label="Depth" value={`${selected.relativeDepth}`} />
+              <DetailRow label="Size" value={formatBytes(selected.size)} />
+              <DetailRow
+                label="Modified"
+                value={
+                  selected.modifiedAt
+                    ? new Date(selected.modifiedAt).toLocaleString()
+                    : "Unknown"
+                }
+              />
+              <DetailRow label="Hash" value={selected.hash ?? "Not available"} mono />
             </div>
+          ) : (
+            <>
+              <div className="detail-list">
+                <DetailRow
+                  label="Creator"
+                  value={selected.creator ?? unknownCreatorLabel(userView)}
+                />
+                <DetailRow
+                  label="Type"
+                  value={friendlyTypeLabel(selected.kind)}
+                />
+                {selected.subtype?.trim() ? (
+                  <DetailRow label="Subtype" value={selected.subtype} />
+                ) : null}
+                <DetailRow label="File format" value={formatLibraryFileFormat(selected)} />
+              </div>
+              {playerFacingNames.length ? (
+                <div className="detail-block">
+                  <div className="section-label">Found in game as</div>
+                  {playerFacingNames.length === 1 ? (
+                    <p>{playerFacingNames[0]}</p>
+                  ) : (
+                    <div className="tag-list">
+                      {playerFacingNames.map((item) => (
+                        <span key={item} className="ghost-chip">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </>
           ),
         },
-        ...(simmerSummary
-          ? [
-              {
-                id: "summary",
-                label: userView === "beginner" ? "At a glance" : "Simmer summary",
-                hint:
-                  userView === "beginner"
-                    ? "Plain-English clues about what this file seems to be."
-                    : "Player-friendly summary built from local file clues.",
-                children: (
-                  <>
-                    <div className="detail-list">
-                      <DetailRow label="Looks like" value={simmerSummary.looksLike} />
-                      <DetailRow label="File format" value={simmerSummary.formatLabel} />
-                      {simmerSummary.bestVersionLine ? (
-                        <DetailRow label="Best version clue" value={simmerSummary.bestVersionLine} />
-                      ) : null}
-                      {selected.bundleName ? (
-                        <DetailRow label="Moves with" value={selected.bundleName} />
-                      ) : null}
-                    </div>
-                    {simmerSummary.roleTags.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">
-                          {userView === "beginner" ? "Useful tags" : "Useful tags"}
-                        </div>
-                        <div className="tag-list">
-                          {simmerSummary.roleTags.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.embeddedNames.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">In-game names</div>
-                        <div className="tag-list">
-                          {selected.insights.embeddedNames.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.familyHints.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">
-                          {userView === "beginner" ? "Related family" : "Related family"}
-                        </div>
-                        <div className="tag-list">
-                          {selected.insights.familyHints.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.versionSignals.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Version evidence</div>
-                        <div className="downloads-evidence-list">
-                          {selected.insights.versionSignals.slice(0, 4).map((signal) => (
-                            <div
-                              key={`${signal.normalizedValue}-${signal.sourceKind}-${signal.sourcePath ?? "none"}`}
-                              className="downloads-evidence-row"
-                            >
-                              {formatVersionSignalLine(signal)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ),
-              },
-            ]
-          : []),
         ...(hasVersionWatchInfo
           ? [
               {
                 id: "versionWatch",
-                label:
-                  userView === "beginner" ? "Version and updates" : "Installed version",
+                label: userView === "beginner" ? "Updates" : "Version and updates",
                 hint:
-                  userView === "beginner"
-                    ? "What SimSuite knows about this installed item and any saved watch result."
-                    : "Installed version summary, local evidence, and watch status.",
+                  isPowerView
+                    ? "Installed version summary, local evidence, and watch status."
+                    : "The installed version and any saved update tracking.",
                 children: (
                   <>
                     <div className="detail-list">
-                      <DetailRow
-                        label="Subject"
-                        value={
-                          selected.installedVersionSummary?.subjectLabel ??
-                          selected.filename
-                        }
-                      />
+                      {isPowerView ? (
+                        <DetailRow
+                          label="Subject"
+                          value={
+                            selected.installedVersionSummary?.subjectLabel ??
+                            selected.filename
+                          }
+                        />
+                      ) : null}
                       <DetailRow
                         label="Installed version"
-                        value={formatInstalledVersionValue(
-                          selected.installedVersionSummary?.version ?? null,
-                        )}
+                        value={
+                          isPowerView
+                            ? formatInstalledVersionValue(
+                                selected.installedVersionSummary?.version ?? null,
+                              )
+                            : formatPlayerInstalledVersion(
+                                selected.installedVersionSummary,
+                              )
+                        }
                       />
-                      <DetailRow
-                        label="Confidence"
-                        value={versionConfidenceLabel(
-                          selected.installedVersionSummary?.confidence ?? "unknown",
-                        )}
-                      />
+                      {isPowerView ? (
+                        <DetailRow
+                          label="Confidence"
+                          value={versionConfidenceLabel(
+                            selected.installedVersionSummary?.confidence ?? "unknown",
+                          )}
+                        />
+                      ) : null}
                       <DetailRow
                         label="Watch status"
                         value={watchStatusLabel(selectedWatch, userView)}
                       />
-                      {selectedWatch?.sourceKind ? (
+                      {isPowerView && selectedWatch?.sourceKind ? (
                         <DetailRow
                           label="Watch source"
                           value={watchSourceKindLabel(selectedWatch)}
                         />
                       ) : null}
-                      {selectedWatch?.sourceKind ? (
+                      {isPowerView && selectedWatch?.sourceKind ? (
                         <DetailRow
                           label="Source origin"
                           value={watchSourceOriginLabel(selectedWatch.sourceOrigin)}
                         />
                       ) : null}
-                      {selectedWatch?.sourceKind ? (
+                      {isPowerView && selectedWatch?.sourceKind ? (
                         <DetailRow
                           label="Check method"
                           value={watchCapabilityLabel(selectedWatch, userView)}
@@ -1376,7 +1341,18 @@ export function LibraryScreen({
                         />
                       ) : null}
                     </div>
-                    {selected.installedVersionSummary?.evidence.length ? (
+                    {!isPowerView &&
+                    selected.installedVersionSummary?.version &&
+                    !hasConfirmedInstalledVersion(selected.installedVersionSummary) ? (
+                      <div className="detail-block">
+                        <div className="section-label">Version note</div>
+                        <p>
+                          SimSuite found a possible version clue, but it is not strong enough
+                          to trust yet.
+                        </p>
+                      </div>
+                    ) : null}
+                    {isPowerView && selected.installedVersionSummary?.evidence.length ? (
                       <div className="detail-block">
                         <div className="section-label">Local version evidence</div>
                         <div className="downloads-evidence-list">
@@ -1388,7 +1364,7 @@ export function LibraryScreen({
                         </div>
                       </div>
                     ) : null}
-                    {selectedWatch?.note || selectedWatch?.evidence.length ? (
+                    {isPowerView && (selectedWatch?.note || selectedWatch?.evidence.length) ? (
                       <div className="detail-block">
                         <div className="section-label">Watch notes</div>
                         <div className="downloads-evidence-list">
@@ -1407,7 +1383,7 @@ export function LibraryScreen({
                     ) : null}
                     <div className="detail-block">
                       <div className="section-label">
-                        {userView === "beginner" ? "Watch source" : "Watch settings"}
+                        {isPowerView ? "Watch settings" : "Update check"}
                       </div>
                       {!watchEditing ? (
                         <div className="detail-row-actions">
@@ -1563,75 +1539,88 @@ export function LibraryScreen({
               },
             ]
           : []),
-        {
-          id: "safety",
-          label: userView === "beginner" ? "Move rules" : "Bundle and warnings",
-          hint:
-            userView === "beginner"
-              ? "Shows what should stay together and any safety warnings."
-              : "Bundle grouping, warnings, and parser notes.",
-          badge:
-            selected.safetyNotes.length > 0
-              ? `${selected.safetyNotes.length} warning${selected.safetyNotes.length === 1 ? "" : "s"}`
-              : selected.bundleName
-                ? "bundled"
-                : null,
-          children: (
-            <>
-              <div className="detail-block">
-                <div className="section-label">
-                  {userView === "beginner" ? "Move with" : "Bundle"}
-                </div>
-                <p>
-                  {selected.bundleName
-                    ? `${selected.bundleName} (${selected.bundleType ?? "bundle"})`
-                    : "None"}
-                </p>
-              </div>
+        ...(showSafetySection
+          ? [
+              {
+                id: "safety",
+                label:
+                  userView === "beginner"
+                    ? "Keep together"
+                    : isPowerView
+                      ? "Bundle and warnings"
+                      : "Care and bundle",
+                hint: isPowerView
+                  ? "Bundle grouping, warnings, and parser notes."
+                  : "Shows grouped files and any warning notes that matter for normal play.",
+                badge:
+                  selected.safetyNotes.length > 0
+                    ? `${selected.safetyNotes.length} warning${selected.safetyNotes.length === 1 ? "" : "s"}`
+                    : selected.bundleName
+                      ? "bundled"
+                      : null,
+                children: (
+                  <>
+                    {selected.bundleName ? (
+                      <div className="detail-block">
+                        <div className="section-label">
+                          {userView === "beginner" ? "Keep with" : "Bundle"}
+                        </div>
+                        <p>
+                          {selected.bundleName}
+                          {isPowerView && selected.bundleType
+                            ? ` (${selected.bundleType})`
+                            : ""}
+                        </p>
+                      </div>
+                    ) : null}
 
-              <div className="detail-block">
-                <div className="section-label">
-                  {userView === "beginner" ? "Safety notes" : "Warnings"}
-                </div>
-                {selected.safetyNotes.length ? (
-                  <div className="tag-list">
-                    {selected.safetyNotes.map((note) => (
-                      <span key={note} className="warning-tag">
-                        {note}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p>No safety warnings.</p>
-                )}
-              </div>
+                    {selected.safetyNotes.length || isPowerView ? (
+                      <div className="detail-block">
+                        <div className="section-label">
+                          {userView === "beginner" ? "Safety notes" : "Warnings"}
+                        </div>
+                        {selected.safetyNotes.length ? (
+                          <div className="tag-list">
+                            {selected.safetyNotes.map((note) => (
+                              <span key={note} className="warning-tag">
+                                {note}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>No safety warnings.</p>
+                        )}
+                      </div>
+                    ) : null}
 
-              {userView !== "beginner" ? (
-                <div className="detail-block">
-                  <div className="section-label">Parser</div>
-                  {selected.parserWarnings.length ? (
-                    <div className="tag-list">
-                      {selected.parserWarnings.map((note) => (
-                        <span key={note} className="ghost-chip">
-                          {note}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p>No parser warnings.</p>
-                  )}
-                </div>
-              ) : null}
-            </>
-          ),
-        },
-        ...(userView !== "beginner" && hasInspectionSignals
+                    {isPowerView ? (
+                      <div className="detail-block">
+                        <div className="section-label">Parser</div>
+                        {selected.parserWarnings.length ? (
+                          <div className="tag-list">
+                            {selected.parserWarnings.map((note) => (
+                              <span key={note} className="ghost-chip">
+                                {note}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>No parser warnings.</p>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
+                ),
+              },
+            ]
+          : []),
+        ...(isPowerView && hasInspectionSignals
           ? [
               {
                 id: "inspection",
                 label: "Inside the file",
                 hint: "Signals pulled from package or script contents.",
-                defaultCollapsed: userView !== "power",
+                defaultCollapsed: false,
                 badge: selected.insights.format ?? null,
                 children: (
                   <>
@@ -1715,90 +1704,85 @@ export function LibraryScreen({
               },
             ]
           : []),
-        {
-          id: "creator",
-          label: userView === "beginner" ? "Set creator" : "Creator learning",
-          hint:
-            userView === "beginner"
-              ? "Save the creator once and reuse it later."
-              : "Save creator matches and optional folder preferences.",
-          defaultCollapsed: false,
-          children: (
-            <CreatorLearningBlock
-              userView={userView}
-              creatorDraft={creatorDraft}
-              aliasDraft={aliasDraft}
-              lockPreference={lockPreference}
-              preferredPathDraft={preferredPathDraft}
-              savingCreator={savingCreator}
-              creatorMessage={creatorMessage}
-              suggestions={creatorSuggestions}
-              creatorLearning={selected.creatorLearning}
-              onCreatorDraftChange={(value) => {
-                setCreatorDraft(value);
-                setCreatorMessage(null);
-              }}
-              onAliasDraftChange={(value) => {
-                setAliasDraft(value);
-                setCreatorMessage(null);
-              }}
-              onLockPreferenceChange={(value) => {
-                setLockPreference(value);
-                setCreatorMessage(null);
-              }}
-              onPreferredPathChange={(value) => {
-                setPreferredPathDraft(value);
-                setCreatorMessage(null);
-              }}
-              onSelectSuggestion={(value) => {
-                setCreatorDraft(value);
-                setCreatorMessage(null);
-              }}
-              onSave={() => void saveCreatorOverride()}
-              onOpenAudit={() => onNavigate("creatorAudit")}
-            />
-          ),
-        },
-        {
-          id: "category",
-          label: userView === "beginner" ? "Set type" : "Type override",
-          hint:
-            userView === "beginner"
-              ? "Correct the type label without moving the file."
-              : "Override type and subtype for later scans and previews.",
-          defaultCollapsed: false,
-          children: (
-            <CategoryOverrideBlock
-              userView={userView}
-              kindOptions={categoryKindOptions}
-              categoryKindDraft={categoryKindDraft}
-              categorySubtypeDraft={categorySubtypeDraft}
-              categoryMessage={categoryMessage}
-              savingCategory={savingCategory}
-              categoryOverride={selected.categoryOverride}
-              onKindChange={(value) => {
-                setCategoryKindDraft(value);
-                setCategoryMessage(null);
-              }}
-              onSubtypeChange={(value) => {
-                setCategorySubtypeDraft(value);
-                setCategoryMessage(null);
-              }}
-              onSave={() => void saveCategoryClassification()}
-              onOpenAudit={() => onNavigate("categoryAudit")}
-            />
-          ),
-        },
-        {
-          id: "path",
-          label: userView === "beginner" ? "Full file path" : "Path",
-          hint:
-            userView === "beginner"
-              ? "Where the file lives right now."
-              : "Absolute path for this indexed file.",
-          defaultCollapsed: userView === "beginner",
-          children: <div className="path-card">{selected.path}</div>,
-        },
+        ...(isPowerView
+          ? [
+              {
+                id: "creator",
+                label: "Creator learning",
+                hint: "Save creator matches and optional folder preferences.",
+                defaultCollapsed: false,
+                children: (
+                  <CreatorLearningBlock
+                    userView={userView}
+                    creatorDraft={creatorDraft}
+                    aliasDraft={aliasDraft}
+                    lockPreference={lockPreference}
+                    preferredPathDraft={preferredPathDraft}
+                    savingCreator={savingCreator}
+                    creatorMessage={creatorMessage}
+                    suggestions={creatorSuggestions}
+                    creatorLearning={selected.creatorLearning}
+                    onCreatorDraftChange={(value) => {
+                      setCreatorDraft(value);
+                      setCreatorMessage(null);
+                    }}
+                    onAliasDraftChange={(value) => {
+                      setAliasDraft(value);
+                      setCreatorMessage(null);
+                    }}
+                    onLockPreferenceChange={(value) => {
+                      setLockPreference(value);
+                      setCreatorMessage(null);
+                    }}
+                    onPreferredPathChange={(value) => {
+                      setPreferredPathDraft(value);
+                      setCreatorMessage(null);
+                    }}
+                    onSelectSuggestion={(value) => {
+                      setCreatorDraft(value);
+                      setCreatorMessage(null);
+                    }}
+                    onSave={() => void saveCreatorOverride()}
+                    onOpenAudit={() => onNavigate("creatorAudit")}
+                  />
+                ),
+              },
+              {
+                id: "category",
+                label: "Type override",
+                hint: "Override type and subtype for later scans and previews.",
+                defaultCollapsed: false,
+                children: (
+                  <CategoryOverrideBlock
+                    userView={userView}
+                    kindOptions={categoryKindOptions}
+                    categoryKindDraft={categoryKindDraft}
+                    categorySubtypeDraft={categorySubtypeDraft}
+                    categoryMessage={categoryMessage}
+                    savingCategory={savingCategory}
+                    categoryOverride={selected.categoryOverride}
+                    onKindChange={(value) => {
+                      setCategoryKindDraft(value);
+                      setCategoryMessage(null);
+                    }}
+                    onSubtypeChange={(value) => {
+                      setCategorySubtypeDraft(value);
+                      setCategoryMessage(null);
+                    }}
+                    onSave={() => void saveCategoryClassification()}
+                    onOpenAudit={() => onNavigate("categoryAudit")}
+                  />
+                ),
+              },
+              {
+                id: "path",
+                label: "Path",
+                hint: "Absolute path for this indexed file.",
+                defaultCollapsed: true,
+                children: <div className="path-card">{selected.path}</div>,
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -2888,138 +2872,7 @@ function DetailRow({
   );
 }
 
-function buildSimmerSummary(detail: FileDetail, userView: UserView) {
-  const formatLabel = simmerFormatLabel(detail);
-  const roleTags = collectSimmerRoleTags(detail, userView);
-
-  return {
-    looksLike: describeSimmerFile(detail),
-    formatLabel,
-    roleTags,
-    bestVersionLine: detail.insights.versionSignals[0]
-      ? formatVersionSignalLine(detail.insights.versionSignals[0])
-      : detail.installedVersionSummary?.version?.trim()
-        ? `${detail.installedVersionSummary.version} from installed file checks`
-        : null,
-  };
-}
-
-function describeSimmerFile(detail: FileDetail) {
-  if (isStringSupportPackage(detail)) {
-    return "Translation or text support package";
-  }
-
-  if (detail.kind === "ScriptMods") {
-    if (looksLikeCoreLibrary(detail)) {
-      return "Script mod helper or core library";
-    }
-    if (looksLikeAddon(detail)) {
-      return "Script mod add-on or module";
-    }
-    return "Script mod archive";
-  }
-
-  if (detail.kind === "Gameplay") {
-    if (looksLikeCoreLibrary(detail)) {
-      return "Gameplay helper or core package";
-    }
-    if (looksLikeAddon(detail)) {
-      return "Gameplay add-on package";
-    }
-    return "Gameplay tuning package";
-  }
-
-  if (detail.kind === "BuildBuy") {
-    if (looksLikeTextureOnlyPackage(detail)) {
-      return "Build/Buy texture or recolor package";
-    }
-    if (detail.subtype === "Build Surfaces") {
-      return "Build mode surface package";
-    }
-    if (detail.subtype === "Room Sets") {
-      return "Build/Buy room set package";
-    }
-    if (detail.subtype === "Furniture" || detail.subtype === "Decor") {
-      return "Build/Buy object package";
-    }
-    return "Build/Buy package";
-  }
-
-  if (detail.kind === "CAS") {
-    if (detail.subtype?.trim()) {
-      return `${detail.subtype} CAS package`;
-    }
-    return "CAS package";
-  }
-
-  if (detail.kind === "OverridesAndDefaults") {
-    return "Default replacement or override";
-  }
-
-  if (detail.kind === "PresetsAndSliders") {
-    return detail.subtype?.trim()
-      ? `${detail.subtype} package`
-      : "Preset or slider package";
-  }
-
-  if (detail.kind === "PosesAndAnimation") {
-    return "Pose or animation package";
-  }
-
-  if (detail.extension === ".package") {
-    return "Package file with no clear type yet";
-  }
-
-  return "File with no clear type yet";
-}
-
-function collectSimmerRoleTags(detail: FileDetail, userView: UserView) {
-  const tags: string[] = [];
-  const addTag = (value: string | null | undefined) => {
-    if (!value) {
-      return;
-    }
-    if (tags.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
-      return;
-    }
-    tags.push(value);
-  };
-
-  if (detail.subtype?.trim()) {
-    addTag(detail.subtype);
-  }
-  if (looksLikeTextureOnlyPackage(detail)) {
-    addTag("Texture/recolor");
-  }
-  if (isStringSupportPackage(detail)) {
-    addTag(userView === "beginner" ? "Text support" : "Translation/text support");
-  }
-  if (looksLikeAddon(detail)) {
-    addTag("Add-on/module");
-  }
-  if (
-    (detail.kind === "Gameplay" || detail.kind === "ScriptMods") &&
-    looksLikeCoreLibrary(detail)
-  ) {
-    addTag("Core/helper");
-  }
-  if (looksLikeStandaloneObject(detail)) {
-    addTag("Standalone object");
-  }
-  if (detail.bundleName) {
-    addTag("Bundle member");
-  }
-  if (detail.watchResult?.sourceKind) {
-    addTag("Watched");
-  }
-  if (detail.insights.versionHints.length) {
-    addTag("Version clue found");
-  }
-
-  return tags.slice(0, 6);
-}
-
-function simmerFormatLabel(detail: FileDetail) {
+function formatLibraryFileFormat(detail: FileDetail) {
   if (detail.insights.format === "ts4script-zip" || detail.extension === ".ts4script") {
     return "Script archive (.ts4script)";
   }
@@ -3029,123 +2882,56 @@ function simmerFormatLabel(detail: FileDetail) {
   return detail.insights.format ?? detail.extension ?? "Unknown";
 }
 
-function looksLikeStandaloneObject(detail: FileDetail) {
-  return (
-    detail.kind === "BuildBuy" &&
-    hasResourcePrefix(detail, "Catalog x") &&
-    hasResourcePrefix(detail, "0x01661233 x")
+function collectPlayerFacingNames(detail: FileDetail) {
+  const normalizedFilename = normalizeForNameComparison(detail.filename);
+
+  return detail.insights.embeddedNames
+    .map((value) => value.trim())
+    .filter((value) => {
+      if (!value || value.length < 3 || value.length > 72) {
+        return false;
+      }
+      if (/^0x[0-9a-f]+$/i.test(value) || /[\\/]/.test(value)) {
+        return false;
+      }
+
+      const normalizedValue = normalizeForNameComparison(value);
+      if (!normalizedValue || normalizedValue === normalizedFilename) {
+        return false;
+      }
+
+      const letters = value.match(/[a-z]/gi)?.length ?? 0;
+      return letters >= 3;
+    })
+    .filter((value, index, values) =>
+      values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index,
+    )
+    .slice(0, 4);
+}
+
+function normalizeForNameComparison(value: string) {
+  return value
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_\-\s]+/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function formatPlayerInstalledVersion(summary: InstalledVersionSummary | null) {
+  if (!summary?.version?.trim()) {
+    return "Not confirmed yet";
+  }
+
+  return hasConfirmedInstalledVersion(summary)
+    ? summary.version
+    : "Not confirmed yet";
+}
+
+function hasConfirmedInstalledVersion(summary: InstalledVersionSummary | null) {
+  return Boolean(
+    summary?.version?.trim() &&
+      (summary.confidence === "exact" || summary.confidence === "strong"),
   );
-}
-
-function looksLikeTextureOnlyPackage(detail: FileDetail) {
-  if (detail.kind !== "BuildBuy") {
-    return false;
-  }
-
-  const entries = detail.insights.resourceSummary.filter(
-    (item) => !item.startsWith("Compressed resources present:"),
-  );
-  if (!entries.length) {
-    return false;
-  }
-
-  return entries.every((item) => item.startsWith("0x00B2D882 x"));
-}
-
-function isStringSupportPackage(detail: FileDetail) {
-  if (!hasResourcePrefix(detail, "StringTable x")) {
-    return false;
-  }
-
-  if (
-    hasResourcePrefix(detail, "CASPart x") ||
-    hasResourcePrefix(detail, "Catalog x") ||
-    hasResourcePrefix(detail, "Definition x") ||
-    hasResourcePrefix(detail, "HotSpotControl x") ||
-    hasResourcePrefix(detail, "ScriptResource x")
-  ) {
-    return false;
-  }
-
-  const haystack = simmerSearchBlob(detail);
-  return [
-    "string",
-    "strings",
-    "translation",
-    "translations",
-    "translate",
-    "localization",
-    "localized",
-    "locale",
-  ].some((token) => haystack.includes(token));
-}
-
-function looksLikeAddon(detail: FileDetail) {
-  const haystack = simmerSearchBlob(detail);
-  return [
-    "addon",
-    "add on",
-    "module",
-    "modules",
-    "integration",
-    "patch",
-    "compatibility",
-  ].some((token) => haystack.includes(token));
-}
-
-function looksLikeCoreLibrary(detail: FileDetail) {
-  const haystack = simmerSearchBlob(detail);
-  return [
-    "core",
-    "library",
-    "toolbox",
-    "injector",
-    "framework",
-    "helper",
-  ].some((token) => haystack.includes(token));
-}
-
-function simmerSearchBlob(detail: FileDetail) {
-  return [
-    detail.filename,
-    detail.path,
-    detail.creator ?? "",
-    detail.bundleName ?? "",
-    detail.insights.creatorHints.join(" "),
-    detail.insights.embeddedNames.join(" "),
-    detail.insights.familyHints.join(" "),
-    detail.insights.scriptNamespaces.join(" "),
-    detail.insights.resourceSummary.join(" "),
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-function hasResourcePrefix(detail: FileDetail, prefix: string) {
-  return detail.insights.resourceSummary.some((item) => item.startsWith(prefix));
-}
-
-function formatVersionSignalLine(signal: VersionSignal) {
-  const source = signal.matchedBy ?? humanizeVersionSourceKind(signal.sourceKind);
-  const confidence = Math.round(signal.confidence * 100);
-  return `${signal.normalizedValue} from ${source} (${confidence}% clue strength)`;
-}
-
-function humanizeVersionSourceKind(sourceKind: string) {
-  switch (sourceKind) {
-    case "filename":
-      return "file name";
-    case "embedded_name":
-      return "in-game name";
-    case "archive_path":
-      return "script path";
-    case "payload":
-      return "readable file text";
-    case "resource_summary":
-      return "package summary";
-    default:
-      return sourceKind.replace(/_/g, " ");
-  }
 }
 
 function formatInstalledVersionValue(value: string | null) {

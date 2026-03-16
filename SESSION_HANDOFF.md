@@ -2,6 +2,44 @@
 
 ## Current Priority
 
+- March 16, 2026: the next stabilization pass stayed on `Library` polish and tightened the player-facing detail rules:
+  - beginner and seasoned `Library` inspector views were simplified on purpose
+  - the goal of this pass was:
+    - show regular simmers only the information they actually need
+    - stop surfacing heuristic labels that can sound more certain than they are
+    - keep the heavier receipts and correction tools in creator mode only
+  - beginner and seasoned views now show only calmer, player-facing sections:
+    - creator
+    - type
+    - subtype when it really exists
+    - file format
+    - filtered in-game names when they look human-readable
+    - installed version and update state
+    - grouped-file and safety notes only when they matter
+  - beginner and seasoned views no longer surface the heavy debug-feeling sections by default:
+    - no inside-file evidence section
+    - no creator-learning tool
+    - no type-override tool
+    - no raw path panel
+    - no local version evidence / watch evidence dumps
+    - no heuristic summary tags like add-on, core helper, or texture recolor
+  - creator mode still keeps the deeper proof and correction tools
+  - important trust rule change:
+    - regular simmer views now only surface direct facts or carefully filtered exact file clues
+    - if an installed version is not strong enough to trust, the UI now says it is not confirmed yet instead of presenting the value like a real confirmed version
+  - checks passed:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` with `198` tests
+    - `npm run build`
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+  - outside research this pass reinforced the same user needs:
+    - creator name
+    - update state
+    - easy broken-CC identification
+    - clear file type
+    - thumbnails or in-game names when available
+  - next best step:
+    - do the real live in-app rescan trigger cleanup so `scanner-v15` actually refreshes the user-profile database
+    - then keep tightening the last true unknown files and watch bugs
 - March 16, 2026: the next stabilization pass focused on two things at once:
   - a few last obvious Build/Buy filenames
   - making `Library` show file details in a way simmers actually care about

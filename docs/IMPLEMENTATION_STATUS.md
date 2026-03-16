@@ -4,6 +4,50 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session stayed in feature freeze and tightened the `Library` inspector so regular simmers see calmer, more trustworthy file details instead of a debug-style panel.
+
+Important changes and findings:
+
+- beginner and seasoned `Library` views were simplified on purpose
+- those views now focus on direct player-facing facts only:
+  - creator
+  - type
+  - subtype when present
+  - file format
+  - filtered in-game names when they look human-readable
+  - installed version and update state
+  - safety notes and grouped-file info only when they matter
+- beginner and seasoned views no longer show the heavier internal sections:
+  - inside-file evidence
+  - creator-learning tools
+  - type-override tools
+  - raw path panel
+  - local version evidence dumps
+  - watch evidence dumps
+  - heuristic summary tags like add-on, core helper, or texture recolor
+- creator mode still keeps the deeper receipts and correction tools
+- one important trust rule changed in the UI:
+  - if an installed version is not strong enough to trust, the player-facing view now says it is not confirmed yet
+  - the uncertain value is no longer surfaced like a confirmed version in beginner or seasoned views
+- outside research aligned with the same priorities:
+  - creator name
+  - update status
+  - easy broken-CC identification
+  - clear mod / CC type
+  - thumbnails or in-game names when available
+- checks passed:
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `198` tests
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- the player-facing cleanup is in place, but the live-profile rebuild verification gap still exists from the prior pass:
+  - the user-profile database still needs a deliberate in-app rescan path for `scanner-v15`
+  - the last true unknown cluster and watch bugs still need more stabilization work after that
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and focused on two stabilization goals: better player-facing mod details in `Library`, and one more safe cleanup pass for the last obvious Build/Buy filename cluster.
 
 Important changes and findings:
