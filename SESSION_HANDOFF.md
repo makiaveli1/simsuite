@@ -2,6 +2,42 @@
 
 ## Current Priority
 
+- March 16, 2026: a research-only product audit was done before any more player-facing `Library` detail work:
+  - important honesty call:
+    - SimSuite is **not** ready to claim 100% accuracy across every simmer's library
+    - the right production standard is:
+      - confirmed facts as facts
+      - strong clues marked carefully
+      - true unknowns left unknown
+  - outside research was checked against:
+    - the linked `r/thesimscc` organizer discussion
+    - broken-CC and missing-mesh threads on `r/sims4cc`
+    - Scarlet's mod list help pages
+    - TS4 Mod Hound
+    - Sims 4 Mod Manager / Overwolf feature pages
+    - SimSweep feature notes
+  - the strongest repeated player needs were:
+    - visual preview / thumbnail
+    - creator name
+    - one clear "what is this?" label
+    - broken / outdated / unknown / duplicate / conflict status
+    - missing mesh or missing requirement clues
+    - quick path to the file so it can be removed
+    - "what sim or lot is using this?" style usage tracing
+    - update tracking and notes
+  - current product direction from this audit:
+    - beginner and seasoned views should not grow into debug panels again
+    - `type + subtype + file format` should likely collapse into one stronger player-facing summary line
+    - the next valuable simmer-facing fields are probably:
+      - preview
+      - status
+      - needs / dependency / missing-mesh hints
+      - used-by tracing later through tray analysis
+      - source / creator / open-folder actions
+  - next best step after the current confidence freeze:
+    - decide how to handle `unsafe_script_depth`
+    - then do the postponed watch bug sweep
+    - after that, do a focused player-facing info pass guided by this audit instead of adding raw parser detail
 - March 16, 2026: the next deep trust pass stayed in feature freeze and tightened the last real category edge cases instead of adding anything new:
   - two narrow package-inspection fixes were added:
     - `uicheats`-style helper packages can now use one more context-only gameplay resource clue

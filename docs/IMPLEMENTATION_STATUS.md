@@ -4,6 +4,55 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session did not add features. It was a research-backed product audit for player-facing mod information, so later `Library` polish stays useful instead of turning back into a debug screen.
+
+Important findings:
+
+- SimSuite should not claim universal 100% accuracy yet across all simmer libraries
+- the right production rule is:
+  - confirmed facts as facts
+  - strong clues marked carefully
+  - true unknowns left unknown
+- outside research was checked against:
+  - the linked `r/thesimscc` organizer discussion
+  - broken-CC and missing-mesh help threads on `r/sims4cc`
+  - Scarlet's mod list help pages
+  - TS4 Mod Hound
+  - Sims 4 Mod Manager / Overwolf feature pages
+  - SimSweep feature notes
+
+What players most consistently seemed to want:
+
+- preview thumbnails
+- creator name
+- one clear "what is this?" summary
+- broken / outdated / unknown / duplicate / conflict status
+- missing mesh / missing requirement clues
+- quick file location and removal path
+- "used by this Sim / lot" style tracing
+- update tracking and notes
+
+Resulting product direction:
+
+- beginner and seasoned `Library` views should stay tightly player-facing
+- raw resource and parser detail should remain hidden in creator mode or deeper receipts
+- `type`, `subtype`, and `file format` likely need to become one clearer player-facing summary instead of three separate labels
+- the next useful simmer-facing info fields are likely:
+  - preview
+  - status
+  - needs / dependency / missing-mesh hints
+  - source / creator / open-folder actions
+  - later, tray-based used-by tracing
+
+Important remaining gap:
+
+- this audit did not change app behavior yet
+- the next implementation pass should come only after:
+  - the `unsafe_script_depth` review decision
+  - the postponed watch bug sweep
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and finished another live-data trust pass on the last real installed-content category edge cases.
 
 Important changes and findings:
