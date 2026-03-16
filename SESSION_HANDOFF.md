@@ -2,6 +2,34 @@
 
 ## Current Priority
 
+- March 16, 2026: the creator-conflict stabilization pass closed the biggest remaining review-noise source with real live proof:
+  - the earlier `1856` installed `conflicting_creator_signals` rows were mostly not real creator disagreements
+  - the main root causes were:
+    - weak filename fallback names like `ESTATE` or `SOHO` being treated like real creators
+    - unknown nearby folder names like `Strings` or `Nightwork` being treated like creator truth
+    - co-author script-mod hints being over-penalized when the current creator was already present in the full hint list
+  - the scanner now handles creator signals more carefully:
+    - nearby path hints only count when they resolve to a known creator profile
+    - a known folder creator can replace a weak unknown filename fallback
+    - a real conflict is only raised when two known creators truly disagree
+    - inspection hints now look at the full creator-hint list, not only the first hint
+  - rebuild versions were bumped again so old creator-noise rows could not linger:
+    - library scan cache -> `scanner-v12`
+    - downloads assessment -> `downloads-assessment-v6`
+  - real live desktop validation on the app database showed:
+    - full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, `updatedFiles = 13010`, `sessionId = 34`
+    - installed `conflicting_creator_signals` dropped from `1856` to `0`
+    - download-side `conflicting_creator_signals` also settled at `0`
+    - open review rows are now down to:
+      - `low_confidence_parse = 119`
+      - `no_category_detected = 81`
+      - `unsafe_script_depth = 20`
+      - `conflicting_category_signals = 7`
+    - live Inbox refresh finished cleanly and settled at `6 ready / 1 review`
+  - the next product focus should stay on stabilization:
+    - audit the remaining `low_confidence_parse` and `no_category_detected` rows with the same live-data approach
+    - keep fixing watch bugs before any new watch features land
+    - keep validating against the real app database instead of trusting fixtures alone
 - March 15, 2026: the first deep live package-and-CC confidence sweep found a real foundation gap and tightened it with live proof:
   - the real issue was not that many `.package` files were unreadable
   - many low-confidence installed rows were already being parsed as real `dbpf-package` files, but the inside-file resource inference and filename keyword coverage were too thin to confidently classify them
@@ -118,6 +146,46 @@
 
 ## What Changed This Session
 
+- March 16, 2026: finished the live creator-conflict audit and hardened the shared creator-signal rules with real app proof:
+  - started with a read-only live-database audit instead of assuming the remaining review noise was watch-related
+  - confirmed the `1856` installed creator conflicts were almost entirely fake disagreements from the scanner layer
+  - found three real causes:
+    - weak filename fallback labels being treated like creator truth
+    - unknown folder names being treated like creator truth
+    - inspection only looking at the first creator hint instead of the whole hint list
+  - changed the scanner so creator signals now behave more like a ranked identity check:
+    - known path creators can help
+    - unknown path names are ignored
+    - weak unknown creator guesses do not fight stronger known creators
+    - only two known creators can create a real creator-conflict warning
+    - co-author or shared-code cases no longer false-flag when the current creator is already in the hint list
+  - bumped rebuild versions again so the real app had to refresh stored creator meaning:
+    - library scan cache -> `scanner-v12`
+    - downloads assessment -> `downloads-assessment-v6`
+  - added direct regression tests proving:
+    - a known folder creator can replace a weak filename creator
+    - unknown nearest-folder names are skipped
+    - two known creators still keep a real conflict
+    - inspection hints do not raise a conflict when the current creator already exists in the hint list
+  - real live desktop validation on the app data then showed:
+    - full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, `updatedFiles = 13010`, `sessionId = 34`
+    - installed creator conflicts dropped from `1856` to `0`
+    - download-side creator conflicts also settled at `0`
+    - the live Inbox refresh completed and stored `downloads-assessment-v6`
+    - Inbox finished at `6 ready / 1 review`
+    - open review rows are now:
+      - `low_confidence_parse 119`
+      - `no_category_detected 81`
+      - `unsafe_script_depth 20`
+      - `conflicting_category_signals 7`
+  - full checks passed again after the code change:
+    - `cargo check --manifest-path src-tauri/Cargo.toml` passed
+    - `cargo build --manifest-path src-tauri/Cargo.toml` passed
+    - `cargo test --manifest-path src-tauri/Cargo.toml` passed with `191` tests
+    - `cargo fmt --manifest-path src-tauri/Cargo.toml --all` passed
+    - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` passed with older warnings only
+    - `npm run build` passed
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1` passed
 - March 15, 2026: finished the first deep live package-and-CC confidence sweep and used it to harden the shared local-classification base:
   - started with a read-only live-database audit instead of guessing from fixtures
   - confirmed many weak `.package` rows were already being parsed as real `dbpf-package` files with resource summaries
@@ -517,6 +585,14 @@
 
 ## What Worked
 
+- The creator-conflict audit turned out to be a real shared-foundation fix, not a watch-only cleanup:
+  - installed creator-conflict review noise dropped from `1856` to `0`
+  - download-side creator conflicts also dropped to `0`
+  - Inbox and Library both benefited because they share the same stored creator clues
+- Creator signal handling is more trustworthy now:
+  - known creators can reinforce each other even when their text casing or formatting differs
+  - weak fallback labels no longer override stronger known creator evidence
+  - co-author script-mod cases no longer create fake creator conflicts just because the first hint is not the saved creator
 - The first deep live package-and-CC audit turned into a real foundation win instead of another surface tweak:
   - many real installed `.package` rows now land on stronger, cleaner categories
   - stale category-warning noise dropped sharply after the true rebuild
@@ -588,10 +664,10 @@
 
 ## Known Problems / Gaps
 
-- The biggest remaining installed-library trust problem is now much clearer:
-  - `conflicting_creator_signals` is still the dominant review reason at `1856`
-  - that likely means harmless creator aliases, path hints, and inside-file creator clues are still disagreeing too often
-  - the next stabilization pass should audit creator-conflict rules before more feature growth
+- The biggest remaining installed-library trust problems are now the lower-confidence rows that are still honestly unresolved:
+  - open review rows are now `119 low_confidence_parse`, `81 no_category_detected`, `20 unsafe_script_depth`, and `7 conflicting_category_signals`
+  - creator-conflict noise is no longer the main blocker
+  - the next stabilization pass should audit the remaining unknown and low-confidence package rows with the same live-data method
 - Generic package confidence is much better now, but it is still not at the final trust goal:
   - `81` installed rows still sit in low-confidence `Unknown`
   - some gameplay packages are still only medium-confidence because their inside-file clues are weaker or noisier
@@ -702,8 +778,9 @@
 - Read this file first.
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Start from stabilization, not feature growth:
-  - audit `conflicting_creator_signals` first, because it is now the biggest remaining installed review reason by far
-  - compare path creator hints, filename creator hints, and inside-file creator hints to find where harmless alias noise is being over-penalized
+  - audit the remaining `low_confidence_parse` and `no_category_detected` rows first, because creator-conflict noise is now cleared
+  - compare the remaining weak `.package` and `.ts4script` rows against their stored `resourceSummary`, creator clues, and family clues to see what safe signal is still missing
+  - keep an eye on `unsafe_script_depth` and `conflicting_category_signals`, but do not let those distract from the much larger low-confidence bucket
   - re-check generic Inbox queue summaries against the stronger package classification results
   - keep watch setup suggestions cautious unless the local clues are genuinely strong
 - Check the wider watch flow again in the desktop app:

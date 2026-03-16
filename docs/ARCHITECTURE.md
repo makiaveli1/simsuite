@@ -64,6 +64,25 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (March 16, 2026)
+
+The scanner now reconciles creator signals more carefully, so harmless creator-noise does not turn into fake review work.
+
+Important current behavior:
+
+- nearby path hints only count when they resolve to a known creator profile
+- a known folder creator can replace a weak unknown filename fallback instead of creating a fake conflict
+- unknown folder names are ignored instead of being treated like creator truth
+- inspection hints now compare against the full creator-hint list, not only the first hint
+- a real `conflicting_creator_signals` warning is now only raised when two known creators genuinely disagree
+- this behavior sits in the shared stored-evidence layer used by:
+  - `Library` installed facts
+  - Inbox compare confidence
+  - watch setup and watch review surfaces
+- because this changed stored evidence meaning, the rebuild contract was bumped again:
+  - scanner cache version -> `scanner-v12`
+  - downloads assessment version -> `downloads-assessment-v6`
+
 ## Current engineering note (March 15, 2026)
 
 The local package-classification layer is now stronger and more honest after a deep live-library audit.

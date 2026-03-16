@@ -25,6 +25,7 @@ use crate::{
     database,
     error::{AppError, AppResult},
     models::{ScanMode, ScanPhase, ScanProgress, ScanSummary},
+    seed::normalize_key,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -101,7 +102,7 @@ const MAX_HASH_WORKERS: usize = 4;
 const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
-const SCAN_CACHE_VERSION: &str = "scanner-v10";
+const SCAN_CACHE_VERSION: &str = "scanner-v12";
 
 pub fn scan_library(state: &AppState, app: &AppHandle) -> AppResult<ScanSummary> {
     scan_library_with_progress(state, |progress| {
@@ -862,7 +863,7 @@ pub(crate) fn insert_parsed_file(
     let mut classification = parse_filename(&file.filename, seed_pack);
     let inspection = inspect_file(&file.path, &file.extension, seed_pack).unwrap_or_default();
     apply_folder_creator_hint(&mut classification, file, seed_pack);
-    apply_inspection_hints(&mut classification, &inspection);
+    apply_inspection_hints(&mut classification, &inspection, seed_pack);
     apply_creator_profile_hints(&mut classification, seed_pack);
     apply_category_override(&mut classification, file, category_overrides);
 
@@ -912,26 +913,8 @@ fn apply_folder_creator_hint(
 ) {
     let path_hint = detect_creator_from_path(file, seed_pack);
 
-    match (&classification.possible_creator, path_hint) {
-        (None, Some(creator)) => {
-            classification.possible_creator = Some(creator);
-            classification.confidence += 0.12;
-        }
-        (Some(current), Some(folder_creator)) if current == &folder_creator => {
-            classification.confidence += 0.04;
-        }
-        (Some(_), Some(_)) => {
-            if !classification
-                .warning_flags
-                .iter()
-                .any(|flag| flag == "conflicting_creator_signals")
-            {
-                classification
-                    .warning_flags
-                    .push("conflicting_creator_signals".to_owned());
-            }
-        }
-        _ => {}
+    if let Some(folder_creator) = path_hint.as_deref() {
+        apply_creator_signal(classification, folder_creator, 0.12, seed_pack);
     }
 }
 
@@ -953,7 +936,9 @@ fn detect_creator_from_path(
         }
 
         if let Some(creator) = detect_creator_hint(&segment, seed_pack) {
-            return Some(creator);
+            if is_known_creator_name(&creator, seed_pack) {
+                return Some(creator);
+            }
         }
     }
 
@@ -1006,30 +991,49 @@ fn is_generic_folder_name(value: &str) -> bool {
 fn apply_inspection_hints(
     classification: &mut FilenameClassification,
     inspection: &InspectionOutcome,
+    seed_pack: &crate::seed::SeedPack,
 ) {
-    match (
-        &classification.possible_creator,
-        inspection.creator_hint.as_deref(),
-    ) {
-        (None, Some(creator)) => {
-            classification.possible_creator = Some(creator.to_owned());
-            classification.confidence += inspection.confidence_boost;
-        }
-        (Some(current), Some(creator)) if current == creator => {
-            classification.confidence += 0.04;
-        }
-        (Some(_), Some(_)) => {
-            if !classification
-                .warning_flags
-                .iter()
-                .any(|flag| flag == "conflicting_creator_signals")
-            {
-                classification
-                    .warning_flags
-                    .push("conflicting_creator_signals".to_owned());
+    let inspection_creator_hints = if inspection.insights.creator_hints.is_empty() {
+        inspection
+            .creator_hint
+            .as_deref()
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        inspection
+            .insights
+            .creator_hints
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    };
+
+    if let Some(current) = classification.possible_creator.as_deref() {
+        if let Some(matching_hint) = inspection_creator_hints
+            .iter()
+            .copied()
+            .find(|hint| same_creator_identity(current, hint))
+        {
+            if is_known_creator_name(matching_hint, seed_pack) && current != matching_hint {
+                classification.possible_creator = Some(matching_hint.to_owned());
             }
+            classification.confidence += 0.04;
+        } else if let Some(creator) = preferred_creator_signal(&inspection_creator_hints, seed_pack)
+        {
+            apply_creator_signal(
+                classification,
+                creator,
+                inspection.confidence_boost,
+                seed_pack,
+            );
         }
-        _ => {}
+    } else if let Some(creator) = preferred_creator_signal(&inspection_creator_hints, seed_pack) {
+        apply_creator_signal(
+            classification,
+            creator,
+            inspection.confidence_boost,
+            seed_pack,
+        );
     }
 
     if let Some(kind_hint) = inspection.kind_hint.as_deref() {
@@ -1064,6 +1068,70 @@ fn apply_inspection_hints(
                 warning != "no_category_detected" && warning != "conflicting_category_signals"
             });
         }
+    }
+}
+
+fn apply_creator_signal(
+    classification: &mut FilenameClassification,
+    creator_signal: &str,
+    set_boost: f64,
+    seed_pack: &crate::seed::SeedPack,
+) {
+    match classification.possible_creator.as_deref() {
+        None => {
+            classification.possible_creator = Some(creator_signal.to_owned());
+            classification.confidence += set_boost;
+        }
+        Some(current) if same_creator_identity(current, creator_signal) => {
+            if is_known_creator_name(creator_signal, seed_pack) && current != creator_signal {
+                classification.possible_creator = Some(creator_signal.to_owned());
+            }
+            classification.confidence += 0.04;
+        }
+        Some(current) => {
+            let current_is_known = is_known_creator_name(current, seed_pack);
+            let signal_is_known = is_known_creator_name(creator_signal, seed_pack);
+
+            match (current_is_known, signal_is_known) {
+                (false, true) => {
+                    classification.possible_creator = Some(creator_signal.to_owned());
+                    classification.confidence += (set_boost * 0.75).max(0.04);
+                }
+                (true, false) | (false, false) => {}
+                (true, true) => push_creator_conflict_warning(classification),
+            }
+        }
+    }
+}
+
+fn preferred_creator_signal<'a>(
+    creator_signals: &[&'a str],
+    seed_pack: &crate::seed::SeedPack,
+) -> Option<&'a str> {
+    creator_signals
+        .iter()
+        .copied()
+        .find(|value| is_known_creator_name(value, seed_pack))
+        .or_else(|| creator_signals.first().copied())
+}
+
+fn same_creator_identity(left: &str, right: &str) -> bool {
+    normalize_key(left) == normalize_key(right)
+}
+
+fn is_known_creator_name(value: &str, seed_pack: &crate::seed::SeedPack) -> bool {
+    seed_pack.creator_profiles.contains_key(value)
+}
+
+fn push_creator_conflict_warning(classification: &mut FilenameClassification) {
+    if !classification
+        .warning_flags
+        .iter()
+        .any(|flag| flag == "conflicting_creator_signals")
+    {
+        classification
+            .warning_flags
+            .push("conflicting_creator_signals".to_owned());
     }
 }
 
@@ -1497,6 +1565,89 @@ mod tests {
     }
 
     #[test]
+    fn folder_creator_hint_prefers_known_folder_creator_over_weak_filename_creator() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let mut classification = parse_filename("ESTATE_Brick_Wall.package", &seed_pack);
+        let file = DiscoveredFile {
+            root_path: PathBuf::from("C:/Mods"),
+            source_location: "mods".to_owned(),
+            path: PathBuf::from("C:/Mods/Felixandre ESTATE Part 1/ESTATE_Brick_Wall.package"),
+            filename: "ESTATE_Brick_Wall.package".to_owned(),
+            extension: ".package".to_owned(),
+            size: 1,
+            created_at: None,
+            modified_at: None,
+            relative_depth: 1,
+        };
+
+        apply_folder_creator_hint(&mut classification, &file, &seed_pack);
+
+        assert_eq!(
+            classification.possible_creator.as_deref(),
+            Some("Felixandre")
+        );
+        assert!(!classification
+            .warning_flags
+            .contains(&"conflicting_creator_signals".to_owned()));
+    }
+
+    #[test]
+    fn folder_creator_hint_skips_unknown_nearest_folder_names() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let mut classification = parse_filename("LittleMsSam_SendSimsToBed.package", &seed_pack);
+        let file = DiscoveredFile {
+            root_path: PathBuf::from("C:/Mods"),
+            source_location: "mods".to_owned(),
+            path: PathBuf::from(
+                "C:/Mods/LittleMsSam_Mods/SleepOverhaul/LittleMsSam_SendSimsToBed.package",
+            ),
+            filename: "LittleMsSam_SendSimsToBed.package".to_owned(),
+            extension: ".package".to_owned(),
+            size: 1,
+            created_at: None,
+            modified_at: None,
+            relative_depth: 2,
+        };
+
+        apply_folder_creator_hint(&mut classification, &file, &seed_pack);
+
+        assert_eq!(
+            classification.possible_creator.as_deref(),
+            Some("LittleMsSam")
+        );
+        assert!(!classification
+            .warning_flags
+            .contains(&"conflicting_creator_signals".to_owned()));
+    }
+
+    #[test]
+    fn folder_creator_hint_keeps_conflict_for_two_known_creators() {
+        let seed_pack = load_seed_pack().expect("seed");
+        let mut classification = parse_filename("LittleMsSam_SendSimsToBed.package", &seed_pack);
+        let file = DiscoveredFile {
+            root_path: PathBuf::from("C:/Mods"),
+            source_location: "mods".to_owned(),
+            path: PathBuf::from("C:/Mods/Deaderpool_Collection/LittleMsSam_SendSimsToBed.package"),
+            filename: "LittleMsSam_SendSimsToBed.package".to_owned(),
+            extension: ".package".to_owned(),
+            size: 1,
+            created_at: None,
+            modified_at: None,
+            relative_depth: 1,
+        };
+
+        apply_folder_creator_hint(&mut classification, &file, &seed_pack);
+
+        assert_eq!(
+            classification.possible_creator.as_deref(),
+            Some("LittleMsSam")
+        );
+        assert!(classification
+            .warning_flags
+            .contains(&"conflicting_creator_signals".to_owned()));
+    }
+
+    #[test]
     fn inspection_hints_clear_stale_category_warnings_and_raise_confidence() {
         let mut classification = crate::core::filename_parser::FilenameClassification {
             normalized: "aesthetic_walls".to_owned(),
@@ -1520,7 +1671,8 @@ mod tests {
             ..Default::default()
         };
 
-        apply_inspection_hints(&mut classification, &inspection);
+        let seed_pack = load_seed_pack().expect("seed");
+        apply_inspection_hints(&mut classification, &inspection, &seed_pack);
 
         assert_eq!(classification.kind, "BuildBuy");
         assert_eq!(classification.subtype.as_deref(), Some("Build Surfaces"));
@@ -1531,6 +1683,42 @@ mod tests {
         assert!(!classification
             .warning_flags
             .contains(&"conflicting_category_signals".to_owned()));
+    }
+
+    #[test]
+    fn inspection_hints_do_not_flag_conflict_when_current_creator_is_in_hint_list() {
+        let mut classification = crate::core::filename_parser::FilenameClassification {
+            normalized: "thepancake1_spiralstaircases".to_owned(),
+            tokens: vec!["thepancake1".to_owned(), "spiralstaircases".to_owned()],
+            possible_creator: Some("thepancake1".to_owned()),
+            kind: "ScriptMods".to_owned(),
+            subtype: Some("Utilities".to_owned()),
+            set_name: None,
+            version_label: None,
+            support_tokens: Vec::new(),
+            warning_flags: Vec::new(),
+            confidence: 0.9,
+        };
+        let inspection = crate::core::file_inspector::InspectionOutcome {
+            creator_hint: Some("MizoreYukii".to_owned()),
+            confidence_boost: 0.16,
+            insights: crate::models::FileInsights {
+                creator_hints: vec!["MizoreYukii".to_owned(), "thepancake1".to_owned()],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let seed_pack = load_seed_pack().expect("seed");
+
+        apply_inspection_hints(&mut classification, &inspection, &seed_pack);
+
+        assert_eq!(
+            classification.possible_creator.as_deref(),
+            Some("thepancake1")
+        );
+        assert!(!classification
+            .warning_flags
+            .contains(&"conflicting_creator_signals".to_owned()));
     }
 
     #[test]
@@ -1558,7 +1746,8 @@ mod tests {
             ..Default::default()
         };
 
-        apply_inspection_hints(&mut classification, &inspection);
+        let seed_pack = load_seed_pack().expect("seed");
+        apply_inspection_hints(&mut classification, &inspection, &seed_pack);
 
         assert_eq!(classification.kind, "Gameplay");
         assert_eq!(classification.subtype.as_deref(), Some("Gameplay"));

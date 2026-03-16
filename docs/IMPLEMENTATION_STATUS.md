@@ -2,6 +2,47 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 16, 2026)
+
+This session stayed in feature freeze and finished the live creator-conflict audit against the real app database.
+
+Important changes and findings:
+
+- the earlier `1856` installed `conflicting_creator_signals` rows were mostly fake disagreements, not real creator uncertainty
+- the scanner now handles creator signals more carefully:
+  - path-based creator hints only count when they resolve to a known creator profile
+  - a known folder creator can replace a weak unknown filename fallback
+  - unknown folder names no longer create fake creator conflicts
+  - inspection creator hints now look at the full hint list, so co-author cases do not false-flag when the current creator is already present
+- rebuild versions were bumped again so the real app had to refresh stored creator meaning:
+  - `scanner-v12`
+  - `downloads-assessment-v6`
+- real live validation on the app data showed:
+  - full `Library` rebuild completed with `scanMode = full`, `reusedFiles = 0`, and `updatedFiles = 13010`
+  - installed creator conflicts dropped from `1856` to `0`
+  - download-side creator conflicts also settled at `0`
+  - open review rows are now:
+    - `low_confidence_parse 119`
+    - `no_category_detected 81`
+    - `unsafe_script_depth 20`
+    - `conflicting_category_signals 7`
+  - the live Inbox refresh completed and settled at `6 ready / 1 review`
+- full checks passed again:
+  - `cargo check --manifest-path src-tauri/Cargo.toml`
+  - `cargo build --manifest-path src-tauri/Cargo.toml`
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `191` tests
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features` with older warnings only
+  - `npm run build`
+  - the native desktop smoke
+
+Important remaining gap:
+
+- creator-conflict noise is no longer the main trust blocker, but the broader stabilization pass is still not done:
+  - the next live audit target should be the remaining `low_confidence_parse` and `no_category_detected` rows
+  - watch bugs still need cleanup before feature work resumes
+  - the old Clippy warning backlog still exists and should be cleaned up separately from product-behavior stabilization
+
 ## Current session note (March 15, 2026)
 
 This session used the live app database to do a deeper package-and-CC trust audit and fixed a real classification gap in the shared local foundation.
@@ -935,10 +976,10 @@ Missing:
 
 ## Recommended next effort
 
-The highest-value next step is now stabilization of the shared matching base before more feature growth:
+The highest-value next step is still stabilization of the shared matching base before more feature growth:
 
-1. audit whether family-hint candidate loading needs the same kind of careful widening that creator-hint loading just got
-2. do more messy real-world validation on generic mod and CC matching, not just supported special mods
+1. audit the remaining `low_confidence_parse` and `no_category_detected` rows with the same live-database method used for creator conflicts
+2. do more messy real-world validation on generic mod and CC matching, especially the unresolved `.package` rows
 3. keep fixing watch bugs and watch setup edge cases until the current flow feels trustworthy
 4. only after that, return to broader watch-management growth such as bulk setup, batch review, and watch history
 
