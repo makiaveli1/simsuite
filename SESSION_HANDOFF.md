@@ -2,6 +2,35 @@
 
 ## Current Priority
 
+- March 16, 2026: the live low-confidence and no-category stabilization pass closed another big chunk of noisy review work with real app proof:
+  - a real bug was hiding obvious package context words:
+    - package path token parsing was normalizing names too early and smashing words together
+    - that meant clear names like `..._Strings.package` were not being read as separate clues
+  - package inspection is now a little better at safe context-based classification:
+    - support and translation packages can now stay classifiable even when they include a small helper-resource mix instead of only pure `StringTable`
+    - add-on, module, integration, and dense lot-price packages can now promote to `Gameplay` when their inside-file signals already lean that way
+  - rebuild versions were bumped again so old stored meaning could not linger:
+    - library scan cache -> `scanner-v14`
+    - downloads assessment -> `downloads-assessment-v8`
+  - real live desktop validation on the app database showed:
+    - full `Library` rebuild completed cleanly with `sessionId = 37`, `filesScanned = 13010`, `reusedFiles = 0`, `updatedFiles = 13010`
+    - full-scan review work dropped again from `80` to `50`
+    - open review rows are now down to:
+      - `unsafe_script_depth = 20`
+      - `low_confidence_parse = 18`
+      - `no_category_detected = 10`
+      - `conflicting_category_signals = 2`
+    - remaining true `Unknown` rows are down to `10`
+    - live Inbox refresh still settled cleanly at `6 ready / 1 review`
+  - the remaining weak bucket is much smaller and clearer now:
+    - `4` CountryCrafter texture packages
+    - `2` Bistro Expanded barback packages
+    - `1` likely unreadable fireplace package with no parsed DBPF format
+    - `3` isolated gameplay-ish edge cases
+  - the next product focus should stay on stabilization:
+    - target the remaining Build/Buy texture and object package cluster with the same live-data method
+    - keep watch bug cleanup behind this trust pass
+    - keep validating against the real app database, not just fixtures
 - March 16, 2026: the creator-conflict stabilization pass closed the biggest remaining review-noise source with real live proof:
   - the earlier `1856` installed `conflicting_creator_signals` rows were mostly not real creator disagreements
   - the main root causes were:
@@ -146,6 +175,41 @@
 
 ## What Changed This Session
 
+- March 16, 2026: finished the live low-confidence and no-category audit with another real package-classification hardening pass:
+  - started from the real rebuilt app database instead of guessing from fixtures
+  - confirmed the remaining weak bucket had become small enough to inspect file-by-file
+  - found a real path-token bug in package inspection:
+    - package context words were being normalized before splitting
+    - that hid clear support words like `Strings`, `Thai`, and `LotPrices`
+  - changed the file inspector so package context tokens are now read as real separate words
+  - widened the safe support-package fallback:
+    - pure `StringTable` packages still classify
+    - support and translation packages with a small helper-resource mix can now classify too
+  - added a narrow gameplay-context fallback for packages that already have gameplay-style inside-file signals and clear add-on/module/integration or dense lot-price context
+  - bumped rebuild contracts again so the new parser meaning forced one real rebuild:
+    - `scanner-v14`
+    - `downloads-assessment-v8`
+  - real live desktop validation on the app database showed:
+    - full `Library` rebuild completed with `sessionId = 37`, `filesScanned = 13010`, `reusedFiles = 0`, `updatedFiles = 13010`
+    - full-scan review work improved from `80` to `50`
+    - review reasons are now:
+      - `unsafe_script_depth = 20`
+      - `low_confidence_parse = 18`
+      - `no_category_detected = 10`
+      - `conflicting_category_signals = 2`
+    - true `Unknown` installed rows are now only `10`
+    - live Inbox refresh still settled at `6 ready / 1 review`
+  - the leftover unknown rows are now concentrated enough to target directly next:
+    - a small Build/Buy texture/object cluster
+    - one unreadable package
+    - a few isolated gameplay edge cases
+  - checks run:
+    - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+    - `cargo test --manifest-path src-tauri/Cargo.toml` with `197` tests
+    - `cargo build --manifest-path src-tauri/Cargo.toml`
+    - `npm run build`
+    - `npm run tauri:build -- --debug`
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
 - March 16, 2026: finished the live creator-conflict audit and hardened the shared creator-signal rules with real app proof:
   - started with a read-only live-database audit instead of assuming the remaining review noise was watch-related
   - confirmed the `1856` installed creator conflicts were almost entirely fake disagreements from the scanner layer

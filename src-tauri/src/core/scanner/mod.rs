@@ -102,7 +102,7 @@ const MAX_HASH_WORKERS: usize = 4;
 const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
-const SCAN_CACHE_VERSION: &str = "scanner-v12";
+const SCAN_CACHE_VERSION: &str = "scanner-v14";
 
 pub fn scan_library(state: &AppState, app: &AppHandle) -> AppResult<ScanSummary> {
     scan_library_with_progress(state, |progress| {

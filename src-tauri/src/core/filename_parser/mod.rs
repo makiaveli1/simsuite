@@ -96,6 +96,7 @@ pub fn parse_filename(filename: &str, seed_pack: &SeedPack) -> FilenameClassific
     );
     apply_creator_defaults(&mut result, seed_pack);
     derive_set_name(&mut result, &blocked_indices, creator_match.as_ref());
+    apply_confidence_floors(&mut result);
 
     if result.kind == "Unknown" {
         result.warning_flags.push("no_category_detected".to_owned());
@@ -902,6 +903,19 @@ fn preset_subtype(token: &str) -> &'static str {
     }
 }
 
+fn apply_confidence_floors(result: &mut FilenameClassification) {
+    if result.kind == "PresetsAndSliders"
+        && matches!(
+            result.subtype.as_deref(),
+            Some(
+                "Body Presets" | "Facial Presets" | "Nose Presets" | "Lip Presets" | "Eye Presets"
+            )
+        )
+    {
+        result.confidence = result.confidence.max(0.58);
+    }
+}
+
 fn push_unique(values: &mut Vec<String>, candidate: String) {
     if !values
         .iter()
@@ -1134,6 +1148,7 @@ mod tests {
         assert_eq!(parsed.kind, "PresetsAndSliders");
         assert_eq!(parsed.subtype.as_deref(), Some("Nose Presets"));
         assert_eq!(parsed.set_name.as_deref(), Some("Nose"));
+        assert!(parsed.confidence >= 0.58);
     }
 
     #[test]

@@ -4,6 +4,51 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session stayed in feature freeze and finished the next deep live-data trust pass on the remaining low-confidence and no-category rows.
+
+Important changes and findings:
+
+- a real file-inspection bug was found and fixed:
+  - package context words were being normalized too early, which merged words together and hid obvious support clues like `Strings`, `Thai`, and `LotPrices`
+- package inspection is now a little stronger in three careful ways:
+  - package path and filename context words are split correctly
+  - support and translation packages can still classify when they contain a small helper-resource mix instead of only pure `StringTable`
+  - add-on, module, integration, and dense lot-price packages can promote to `Gameplay` when their inside-file resource signals already lean that way
+- rebuild versions were bumped again so the real app had to refresh stored meaning:
+  - `scanner-v14`
+  - `downloads-assessment-v8`
+- real live validation on the app data showed:
+  - full `Library` rebuild completed with `sessionId 37`, `filesScanned 13010`, `reusedFiles 0`, and `updatedFiles 13010`
+  - full-scan review work improved from `80` to `50`
+  - open review rows are now:
+    - `unsafe_script_depth 20`
+    - `low_confidence_parse 18`
+    - `no_category_detected 10`
+    - `conflicting_category_signals 2`
+  - true `Unknown` installed rows are now down to `10`
+  - the live Inbox refresh still completed cleanly at `6 ready / 1 review`
+- the remaining weak rows are now concentrated instead of scattered:
+  - `4` CountryCrafter texture packages
+  - `2` Bistro Expanded barback packages
+  - `1` unreadable fireplace package with no parsed DBPF format
+  - `3` isolated gameplay-style edge cases
+- checks passed again:
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `197` tests
+  - `cargo build --manifest-path src-tauri/Cargo.toml`
+  - `npm run build`
+  - `npm run tauri:build -- --debug`
+  - the native desktop smoke
+
+Important remaining gap:
+
+- the trust pass is much closer now, but it is still not done:
+  - the remaining unknown bucket is now mostly a small Build/Buy object-and-texture cluster
+  - one unreadable package still needs a safer fallback story
+  - watch bugs still need cleanup before feature work resumes
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and finished the live creator-conflict audit against the real app database.
 
 Important changes and findings:

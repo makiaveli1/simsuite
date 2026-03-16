@@ -25,6 +25,44 @@ const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 const MAX_VERSION_SIGNALS: usize = 16;
 const MIN_FALLBACK_CREATOR_HINT_LEN: usize = 3;
+const STRING_SUPPORT_HINT_TOKENS: &[&str] = &[
+    "string",
+    "strings",
+    "translation",
+    "translations",
+    "translate",
+    "localization",
+    "localized",
+    "locale",
+    "thai",
+    "spanish",
+    "french",
+    "german",
+    "italian",
+    "polish",
+    "russian",
+    "japanese",
+    "korean",
+    "chinese",
+    "portuguese",
+    "brazilian",
+];
+const GAMEPLAY_CONTEXT_HINT_TOKENS: &[&str] = &[
+    "addon",
+    "addons",
+    "friendship",
+    "greeting",
+    "greetings",
+    "integration",
+    "lag",
+    "lagfix",
+    "mainmod",
+    "module",
+    "modules",
+    "motive",
+    "motives",
+    "phone",
+];
 const TS4SCRIPT_NOISE_STEMS: &[&str] = &[
     "__init__",
     "__main__",
@@ -320,7 +358,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             .map(String::as_str)
             .chain(creator_hints.iter().map(String::as_str)),
     );
-    let resource_kind = infer_kind_from_resources(&type_counts);
+    let resource_kind = infer_kind_from_package_signals(path, &type_counts);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -1045,6 +1083,26 @@ struct ResourceKindHint {
     confidence_floor: f64,
 }
 
+fn infer_kind_from_package_signals(
+    path: &Path,
+    type_counts: &BTreeMap<u32, usize>,
+) -> ResourceKindHint {
+    let mut resource_kind = infer_kind_from_resources(type_counts);
+    if resource_kind.kind_hint.is_none() {
+        let support_hint = infer_string_support_kind(path, type_counts);
+        if support_hint.kind_hint.is_some() {
+            resource_kind = support_hint;
+        }
+    }
+    if resource_kind.kind_hint.is_none() {
+        let gameplay_hint = infer_gameplay_context_kind(path, type_counts);
+        if gameplay_hint.kind_hint.is_some() {
+            resource_kind = gameplay_hint;
+        }
+    }
+    resource_kind
+}
+
 fn infer_kind_from_resources(type_counts: &BTreeMap<u32, usize>) -> ResourceKindHint {
     let cas_score = type_counts
         .get(&RESOURCE_CAS_PART)
@@ -1106,7 +1164,7 @@ fn infer_kind_from_resources(type_counts: &BTreeMap<u32, usize>) -> ResourceKind
         ("PresetsAndSliders", preset_score, Some("Sliders"), 0.68),
         ("ScriptMods", script_score, Some("Utilities"), 0.7),
     ];
-    if gameplay_score >= 4 {
+    if gameplay_score >= 3 {
         candidates.push((
             "Gameplay",
             gameplay_score,
@@ -1140,9 +1198,147 @@ fn gameplay_resource_score(type_counts: &BTreeMap<u32, usize>) -> usize {
     GAMEPLAY_RESOURCE_WEIGHTS
         .iter()
         .filter_map(|(resource_type, weight)| {
-            type_counts.contains_key(resource_type).then_some(*weight)
+            let count = type_counts.get(resource_type).copied().unwrap_or_default();
+            (count > 0).then_some(
+                *weight
+                    + match count {
+                        0 | 1 => 0,
+                        2..=3 => 1,
+                        4..=11 => 2,
+                        _ => 3,
+                    },
+            )
         })
         .sum()
+}
+
+fn infer_string_support_kind(path: &Path, type_counts: &BTreeMap<u32, usize>) -> ResourceKindHint {
+    if !is_string_support_focused_package(type_counts) {
+        return ResourceKindHint::default();
+    }
+
+    let context_tokens = package_context_tokens(path);
+    if context_tokens.iter().any(|token| {
+        STRING_SUPPORT_HINT_TOKENS
+            .iter()
+            .any(|candidate| candidate == &token.as_str())
+    }) {
+        return ResourceKindHint {
+            kind_hint: Some("Gameplay".to_owned()),
+            subtype_hint: Some("Utilities".to_owned()),
+            confidence_floor: 0.58,
+        };
+    }
+
+    ResourceKindHint::default()
+}
+
+fn is_string_table_only_package(type_counts: &BTreeMap<u32, usize>) -> bool {
+    type_counts.len() == 1 && type_counts.contains_key(&RESOURCE_STRING_TABLE)
+}
+
+fn is_string_support_focused_package(type_counts: &BTreeMap<u32, usize>) -> bool {
+    if is_string_table_only_package(type_counts) {
+        return true;
+    }
+
+    type_counts.contains_key(&RESOURCE_STRING_TABLE)
+        && !type_counts.contains_key(&RESOURCE_CAS_PART)
+        && !type_counts.contains_key(&RESOURCE_SKINTONE)
+        && !type_counts.contains_key(&RESOURCE_CATALOG)
+        && !type_counts.contains_key(&RESOURCE_DEFINITION)
+        && !type_counts.contains_key(&RESOURCE_HOTSPOT)
+        && !type_counts.contains_key(&RESOURCE_SCRIPT)
+}
+
+fn infer_gameplay_context_kind(
+    path: &Path,
+    type_counts: &BTreeMap<u32, usize>,
+) -> ResourceKindHint {
+    let context_tokens = package_context_tokens(path);
+    let has_gameplay_context_token = context_tokens.iter().any(|token| {
+        GAMEPLAY_CONTEXT_HINT_TOKENS
+            .iter()
+            .any(|candidate| candidate == &token.as_str())
+    });
+    let has_dense_lot_price_cluster = context_tokens.iter().any(|token| {
+        token == "lot" || token == "price" || token == "prices" || token == "lotprices"
+    }) && type_counts.len() == 1
+        && type_counts.values().next().copied().unwrap_or_default() >= 64;
+    if !has_gameplay_context_token && !has_dense_lot_price_cluster {
+        return ResourceKindHint::default();
+    }
+
+    let gameplay_score = gameplay_resource_score(type_counts);
+
+    if gameplay_score >= 1 || has_dense_lot_price_cluster {
+        return ResourceKindHint {
+            kind_hint: Some("Gameplay".to_owned()),
+            subtype_hint: Some("Gameplay".to_owned()),
+            confidence_floor: if gameplay_score >= 2 || has_dense_lot_price_cluster {
+                0.58
+            } else {
+                0.56
+            },
+        };
+    }
+
+    ResourceKindHint::default()
+}
+
+fn package_context_tokens(path: &Path) -> Vec<String> {
+    path.components()
+        .rev()
+        .take(4)
+        .filter_map(|component| component.as_os_str().to_str())
+        .flat_map(tokenize_context_component)
+        .filter(|token| !token.is_empty())
+        .collect()
+}
+
+fn tokenize_context_component(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let characters = value.chars().collect::<Vec<_>>();
+
+    for index in 0..characters.len() {
+        let current_char = characters[index];
+        if !current_char.is_ascii_alphanumeric() {
+            flush_context_token(&mut current, &mut tokens);
+            continue;
+        }
+
+        if should_split_context_token_before(&characters, index) {
+            flush_context_token(&mut current, &mut tokens);
+        }
+
+        current.push(current_char.to_ascii_lowercase());
+    }
+
+    flush_context_token(&mut current, &mut tokens);
+    tokens
+}
+
+fn should_split_context_token_before(characters: &[char], index: usize) -> bool {
+    if index == 0 {
+        return false;
+    }
+
+    let current = characters[index];
+    let previous = characters[index - 1];
+    current.is_ascii_uppercase()
+        && (previous.is_ascii_lowercase()
+            || (previous.is_ascii_uppercase()
+                && characters
+                    .get(index + 1)
+                    .copied()
+                    .is_some_and(|next| next.is_ascii_lowercase())))
+}
+
+fn flush_context_token(current: &mut String, tokens: &mut Vec<String>) {
+    if !current.is_empty() {
+        tokens.push(std::mem::take(current));
+    }
 }
 
 fn collect_creator_hints<'a, I>(values: I, seed_pack: &SeedPack) -> Vec<String>
@@ -1384,7 +1580,7 @@ fn read_u32(bytes: &[u8]) -> AppResult<u32> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs, fs::File, io::Write};
+    use std::{collections::BTreeMap, fs, fs::File, io::Write, path::Path};
 
     use flate2::{write::ZlibEncoder, Compression};
     use tempfile::tempdir;
@@ -1393,9 +1589,9 @@ mod tests {
     use crate::seed::load_seed_pack;
 
     use super::{
-        decompress_legacy, decompress_record_bytes, infer_kind_from_resources, inspect_file,
-        parse_name_map_entries, parse_stbl_entries, read_seven_bit_string_be, DbpfRecord,
-        RESOURCE_STRING_TABLE,
+        decompress_legacy, decompress_record_bytes, infer_kind_from_package_signals,
+        infer_kind_from_resources, inspect_file, parse_name_map_entries, parse_stbl_entries,
+        read_seven_bit_string_be, DbpfRecord, RESOURCE_STRING_TABLE,
     };
 
     #[test]
@@ -1744,6 +1940,88 @@ mod tests {
         ]);
 
         let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
+    fn repeated_gameplay_resource_counts_can_promote_unknown_packages() {
+        let type_counts =
+            BTreeMap::from([(RESOURCE_STRING_TABLE, 17_usize), (0xE882_D22F, 6_usize)]);
+
+        let hint = infer_kind_from_resources(&type_counts);
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
+    fn string_support_packages_in_strings_paths_hint_gameplay_utilities() {
+        let type_counts = BTreeMap::from([(RESOURCE_STRING_TABLE, 18_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/llazyneiph_royalty_mod/Strings/STRINGS_Coronation.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Utilities"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
+    fn string_support_packages_can_match_filename_tokens_without_folder_help() {
+        let type_counts = BTreeMap::from([(RESOURCE_STRING_TABLE, 18_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/Marquillo_SBO_Strings.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Utilities"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
+    fn support_focused_string_packages_allow_small_helper_resource_mix() {
+        let type_counts = BTreeMap::from([
+            (RESOURCE_STRING_TABLE, 18_usize),
+            (0x00B2_D882, 124_usize),
+            (0x3C2A_8647, 24_usize),
+        ]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/[xosdr] Road to Wealth v2.2/xosdr_RTW_M1_Strings.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Utilities"));
+        assert!(hint.confidence_floor >= 0.58);
+    }
+
+    #[test]
+    fn gameplay_context_tokens_can_promote_addon_packages_with_known_gameplay_resources() {
+        let type_counts = BTreeMap::from([(0x7DF2_169C, 1_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new("C:/Mods/AddOns/Andirz_PSO_OnlineStore_Addon_Remove_FromPhone.package"),
+            &type_counts,
+        );
+        assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
+        assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
+        assert!(hint.confidence_floor >= 0.56);
+    }
+
+    #[test]
+    fn lot_price_context_can_promote_dense_single_resource_packages() {
+        let type_counts = BTreeMap::from([(0x0194_2E2C, 416_usize)]);
+
+        let hint = infer_kind_from_package_signals(
+            Path::new(
+                "C:/Mods/[xosdr] Road to Wealth v2.2/Open Me (optional)/LotPrices (choose one)/xosdr_RTW_M0_LotPrices_10.package",
+            ),
+            &type_counts,
+        );
         assert_eq!(hint.kind_hint.as_deref(), Some("Gameplay"));
         assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
         assert!(hint.confidence_floor >= 0.58);

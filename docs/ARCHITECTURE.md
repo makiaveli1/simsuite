@@ -66,6 +66,25 @@ Not yet implemented:
 
 ## Current engineering note (March 16, 2026)
 
+The local package-classification layer now reads package context words correctly and uses them in a more careful fallback path.
+
+Important current behavior:
+
+- package context tokenization now splits real words before normalization, so path clues like `Strings`, `Thai`, `Integration`, and `LotPrices` are no longer mashed together into one unusable token
+- support and translation packages can now still classify when they include a small helper-resource mix alongside `StringTable`, instead of only classifying the pure-string-table case
+- a narrow gameplay-context fallback can now promote packages to `Gameplay` when:
+  - the inside-file resource signals already lean gameplay
+  - and the surrounding path or filename context clearly says add-on, module, integration, or dense lot-price style content
+- this strengthened local package logic feeds the same stored-evidence layer used by:
+  - `Library` installed facts
+  - Inbox compare confidence
+  - watch setup suggestions and watch review
+- because this changed stored evidence meaning again, the rebuild contract moved forward to:
+  - scanner cache version -> `scanner-v14`
+  - downloads assessment version -> `downloads-assessment-v8`
+
+## Current engineering note (March 16, 2026)
+
 The scanner now reconciles creator signals more carefully, so harmless creator-noise does not turn into fake review work.
 
 Important current behavior:
