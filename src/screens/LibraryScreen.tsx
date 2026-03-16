@@ -33,6 +33,7 @@ import type {
   SaveLibraryWatchSourceEntry,
   Screen,
   UserView,
+  VersionSignal,
   VersionConfidence,
   WatchListFilter,
   WatchResult,
@@ -725,7 +726,9 @@ export function LibraryScreen({
     selected &&
       (selected.insights.format ||
         selected.insights.creatorHints.length ||
+        selected.insights.familyHints.length ||
         selected.insights.versionHints.length ||
+        selected.insights.versionSignals.length ||
         selected.insights.embeddedNames.length ||
         selected.insights.scriptNamespaces.length ||
         selected.insights.resourceSummary.length),
@@ -746,6 +749,7 @@ export function LibraryScreen({
     pendingWatchIntent?.mode === "setup" && pendingWatchIntent.fileId === selected?.id;
   const isReviewQueueActive =
     pendingWatchIntent?.mode === "review" && pendingWatchIntent.fileId === selected?.id;
+  const simmerSummary = selected ? buildSimmerSummary(selected, userView) : null;
 
   async function saveWatchSource() {
     if (!selected) {
@@ -1224,6 +1228,87 @@ export function LibraryScreen({
             </div>
           ),
         },
+        ...(simmerSummary
+          ? [
+              {
+                id: "summary",
+                label: userView === "beginner" ? "At a glance" : "Simmer summary",
+                hint:
+                  userView === "beginner"
+                    ? "Plain-English clues about what this file seems to be."
+                    : "Player-friendly summary built from local file clues.",
+                children: (
+                  <>
+                    <div className="detail-list">
+                      <DetailRow label="Looks like" value={simmerSummary.looksLike} />
+                      <DetailRow label="File format" value={simmerSummary.formatLabel} />
+                      {simmerSummary.bestVersionLine ? (
+                        <DetailRow label="Best version clue" value={simmerSummary.bestVersionLine} />
+                      ) : null}
+                      {selected.bundleName ? (
+                        <DetailRow label="Moves with" value={selected.bundleName} />
+                      ) : null}
+                    </div>
+                    {simmerSummary.roleTags.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">
+                          {userView === "beginner" ? "Useful tags" : "Useful tags"}
+                        </div>
+                        <div className="tag-list">
+                          {simmerSummary.roleTags.map((item) => (
+                            <span key={item} className="ghost-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.insights.embeddedNames.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">In-game names</div>
+                        <div className="tag-list">
+                          {selected.insights.embeddedNames.map((item) => (
+                            <span key={item} className="ghost-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.insights.familyHints.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">
+                          {userView === "beginner" ? "Related family" : "Related family"}
+                        </div>
+                        <div className="tag-list">
+                          {selected.insights.familyHints.map((item) => (
+                            <span key={item} className="ghost-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.insights.versionSignals.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">Version evidence</div>
+                        <div className="downloads-evidence-list">
+                          {selected.insights.versionSignals.slice(0, 4).map((signal) => (
+                            <div
+                              key={`${signal.normalizedValue}-${signal.sourceKind}-${signal.sourcePath ?? "none"}`}
+                              className="downloads-evidence-row"
+                            >
+                              {formatVersionSignalLine(signal)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ),
+              },
+            ]
+          : []),
         ...(hasVersionWatchInfo
           ? [
               {
@@ -1555,7 +1640,7 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.creatorHints.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Creator hints</div>
+                        <div className="section-label">Creator names found</div>
                         <div className="tag-list">
                           {selected.insights.creatorHints.map((hint) => (
                             <span key={hint} className="ghost-chip">
@@ -1567,7 +1652,7 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.versionHints.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Version hints</div>
+                        <div className="section-label">Version numbers found</div>
                         <div className="tag-list">
                           {selected.insights.versionHints.map((item) => (
                             <span key={item} className="ghost-chip">
@@ -1579,7 +1664,7 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.resourceSummary.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Resources</div>
+                        <div className="section-label">Package contents</div>
                         <div className="tag-list">
                           {selected.insights.resourceSummary.map((item) => (
                             <span key={item} className="ghost-chip">
@@ -1591,7 +1676,7 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.scriptNamespaces.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Namespaces</div>
+                        <div className="section-label">Script folders</div>
                         <div className="tag-list">
                           {selected.insights.scriptNamespaces.map((item) => (
                             <span key={item} className="ghost-chip">
@@ -1603,9 +1688,21 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.embeddedNames.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Embedded names</div>
+                        <div className="section-label">In-game names</div>
                         <div className="tag-list">
                           {selected.insights.embeddedNames.map((item) => (
+                            <span key={item} className="ghost-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.insights.familyHints.length ? (
+                      <div className="detail-block">
+                        <div className="section-label">Family hints</div>
+                        <div className="tag-list">
+                          {selected.insights.familyHints.map((item) => (
                             <span key={item} className="ghost-chip">
                               {item}
                             </span>
@@ -2789,6 +2886,266 @@ function DetailRow({
       <strong className={mono ? "mono-text" : ""}>{value}</strong>
     </div>
   );
+}
+
+function buildSimmerSummary(detail: FileDetail, userView: UserView) {
+  const formatLabel = simmerFormatLabel(detail);
+  const roleTags = collectSimmerRoleTags(detail, userView);
+
+  return {
+    looksLike: describeSimmerFile(detail),
+    formatLabel,
+    roleTags,
+    bestVersionLine: detail.insights.versionSignals[0]
+      ? formatVersionSignalLine(detail.insights.versionSignals[0])
+      : detail.installedVersionSummary?.version?.trim()
+        ? `${detail.installedVersionSummary.version} from installed file checks`
+        : null,
+  };
+}
+
+function describeSimmerFile(detail: FileDetail) {
+  if (isStringSupportPackage(detail)) {
+    return "Translation or text support package";
+  }
+
+  if (detail.kind === "ScriptMods") {
+    if (looksLikeCoreLibrary(detail)) {
+      return "Script mod helper or core library";
+    }
+    if (looksLikeAddon(detail)) {
+      return "Script mod add-on or module";
+    }
+    return "Script mod archive";
+  }
+
+  if (detail.kind === "Gameplay") {
+    if (looksLikeCoreLibrary(detail)) {
+      return "Gameplay helper or core package";
+    }
+    if (looksLikeAddon(detail)) {
+      return "Gameplay add-on package";
+    }
+    return "Gameplay tuning package";
+  }
+
+  if (detail.kind === "BuildBuy") {
+    if (looksLikeTextureOnlyPackage(detail)) {
+      return "Build/Buy texture or recolor package";
+    }
+    if (detail.subtype === "Build Surfaces") {
+      return "Build mode surface package";
+    }
+    if (detail.subtype === "Room Sets") {
+      return "Build/Buy room set package";
+    }
+    if (detail.subtype === "Furniture" || detail.subtype === "Decor") {
+      return "Build/Buy object package";
+    }
+    return "Build/Buy package";
+  }
+
+  if (detail.kind === "CAS") {
+    if (detail.subtype?.trim()) {
+      return `${detail.subtype} CAS package`;
+    }
+    return "CAS package";
+  }
+
+  if (detail.kind === "OverridesAndDefaults") {
+    return "Default replacement or override";
+  }
+
+  if (detail.kind === "PresetsAndSliders") {
+    return detail.subtype?.trim()
+      ? `${detail.subtype} package`
+      : "Preset or slider package";
+  }
+
+  if (detail.kind === "PosesAndAnimation") {
+    return "Pose or animation package";
+  }
+
+  if (detail.extension === ".package") {
+    return "Package file with no clear type yet";
+  }
+
+  return "File with no clear type yet";
+}
+
+function collectSimmerRoleTags(detail: FileDetail, userView: UserView) {
+  const tags: string[] = [];
+  const addTag = (value: string | null | undefined) => {
+    if (!value) {
+      return;
+    }
+    if (tags.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
+      return;
+    }
+    tags.push(value);
+  };
+
+  if (detail.subtype?.trim()) {
+    addTag(detail.subtype);
+  }
+  if (looksLikeTextureOnlyPackage(detail)) {
+    addTag("Texture/recolor");
+  }
+  if (isStringSupportPackage(detail)) {
+    addTag(userView === "beginner" ? "Text support" : "Translation/text support");
+  }
+  if (looksLikeAddon(detail)) {
+    addTag("Add-on/module");
+  }
+  if (
+    (detail.kind === "Gameplay" || detail.kind === "ScriptMods") &&
+    looksLikeCoreLibrary(detail)
+  ) {
+    addTag("Core/helper");
+  }
+  if (looksLikeStandaloneObject(detail)) {
+    addTag("Standalone object");
+  }
+  if (detail.bundleName) {
+    addTag("Bundle member");
+  }
+  if (detail.watchResult?.sourceKind) {
+    addTag("Watched");
+  }
+  if (detail.insights.versionHints.length) {
+    addTag("Version clue found");
+  }
+
+  return tags.slice(0, 6);
+}
+
+function simmerFormatLabel(detail: FileDetail) {
+  if (detail.insights.format === "ts4script-zip" || detail.extension === ".ts4script") {
+    return "Script archive (.ts4script)";
+  }
+  if (detail.insights.format === "dbpf-package" || detail.extension === ".package") {
+    return "Package file (.package)";
+  }
+  return detail.insights.format ?? detail.extension ?? "Unknown";
+}
+
+function looksLikeStandaloneObject(detail: FileDetail) {
+  return (
+    detail.kind === "BuildBuy" &&
+    hasResourcePrefix(detail, "Catalog x") &&
+    hasResourcePrefix(detail, "0x01661233 x")
+  );
+}
+
+function looksLikeTextureOnlyPackage(detail: FileDetail) {
+  if (detail.kind !== "BuildBuy") {
+    return false;
+  }
+
+  const entries = detail.insights.resourceSummary.filter(
+    (item) => !item.startsWith("Compressed resources present:"),
+  );
+  if (!entries.length) {
+    return false;
+  }
+
+  return entries.every((item) => item.startsWith("0x00B2D882 x"));
+}
+
+function isStringSupportPackage(detail: FileDetail) {
+  if (!hasResourcePrefix(detail, "StringTable x")) {
+    return false;
+  }
+
+  if (
+    hasResourcePrefix(detail, "CASPart x") ||
+    hasResourcePrefix(detail, "Catalog x") ||
+    hasResourcePrefix(detail, "Definition x") ||
+    hasResourcePrefix(detail, "HotSpotControl x") ||
+    hasResourcePrefix(detail, "ScriptResource x")
+  ) {
+    return false;
+  }
+
+  const haystack = simmerSearchBlob(detail);
+  return [
+    "string",
+    "strings",
+    "translation",
+    "translations",
+    "translate",
+    "localization",
+    "localized",
+    "locale",
+  ].some((token) => haystack.includes(token));
+}
+
+function looksLikeAddon(detail: FileDetail) {
+  const haystack = simmerSearchBlob(detail);
+  return [
+    "addon",
+    "add on",
+    "module",
+    "modules",
+    "integration",
+    "patch",
+    "compatibility",
+  ].some((token) => haystack.includes(token));
+}
+
+function looksLikeCoreLibrary(detail: FileDetail) {
+  const haystack = simmerSearchBlob(detail);
+  return [
+    "core",
+    "library",
+    "toolbox",
+    "injector",
+    "framework",
+    "helper",
+  ].some((token) => haystack.includes(token));
+}
+
+function simmerSearchBlob(detail: FileDetail) {
+  return [
+    detail.filename,
+    detail.path,
+    detail.creator ?? "",
+    detail.bundleName ?? "",
+    detail.insights.creatorHints.join(" "),
+    detail.insights.embeddedNames.join(" "),
+    detail.insights.familyHints.join(" "),
+    detail.insights.scriptNamespaces.join(" "),
+    detail.insights.resourceSummary.join(" "),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasResourcePrefix(detail: FileDetail, prefix: string) {
+  return detail.insights.resourceSummary.some((item) => item.startsWith(prefix));
+}
+
+function formatVersionSignalLine(signal: VersionSignal) {
+  const source = signal.matchedBy ?? humanizeVersionSourceKind(signal.sourceKind);
+  const confidence = Math.round(signal.confidence * 100);
+  return `${signal.normalizedValue} from ${source} (${confidence}% clue strength)`;
+}
+
+function humanizeVersionSourceKind(sourceKind: string) {
+  switch (sourceKind) {
+    case "filename":
+      return "file name";
+    case "embedded_name":
+      return "in-game name";
+    case "archive_path":
+      return "script path";
+    case "payload":
+      return "readable file text";
+    case "resource_summary":
+      return "package summary";
+    default:
+      return sourceKind.replace(/_/g, " ");
+  }
 }
 
 function formatInstalledVersionValue(value: string | null) {

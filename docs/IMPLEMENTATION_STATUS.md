@@ -4,6 +4,50 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session stayed in feature freeze and focused on two stabilization goals: better player-facing mod details in `Library`, and one more safe cleanup pass for the last obvious Build/Buy filename cluster.
+
+Important changes and findings:
+
+- `Library` now has a new plain-English summary layer for installed files:
+  - it explains what the file seems to be in simmer-friendly language instead of only showing parser-style fields
+  - it now surfaces:
+    - a plain-English summary
+    - file format
+    - best version clue
+    - useful role tags
+    - in-game names
+    - related family hints
+    - friendlier version evidence lines
+- the older technical inspection block is still available, but several labels are now clearer for humans:
+  - `Creator hints` -> `Creator names found`
+  - `Version hints` -> `Version numbers found`
+  - `Resources` -> `Package contents`
+  - `Namespaces` -> `Script folders`
+  - `Embedded names` -> `In-game names`
+- filename classification was widened again for a small safe Build/Buy cluster:
+  - added `entryway`, `entrance`, `barback`, and `fireplace`
+  - subtype mapping now treats those as:
+    - `Build Surfaces` for entryway / entrance
+    - `Furniture` for barback / fireplace
+- rebuild versions were bumped again so old stored meaning cannot linger:
+  - `scanner-v15`
+  - `downloads-assessment-v9`
+- checks passed again:
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `198` tests
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- real live verification is not complete yet for this exact pass:
+  - the user-profile database still reports the older `scanner-v14` fingerprint
+  - a headless app launch did not trigger the fresh live-library rebuild path
+  - because of that, the stored live `Unknown` count is still unchanged at `10`
+  - the next session should trigger a deliberate in-app rescan path and then re-measure the remaining Build/Buy object cluster
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and finished the next deep live-data trust pass on the remaining low-confidence and no-category rows.
 
 Important changes and findings:

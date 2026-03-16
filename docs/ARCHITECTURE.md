@@ -66,6 +66,35 @@ Not yet implemented:
 
 ## Current engineering note (March 16, 2026)
 
+`Library` now has a player-facing summary layer on top of the stored local clue system, while the shared filename-classification layer has one more safe Build/Buy widening pass.
+
+Important current behavior:
+
+- the `Library` inspector now translates stored local clues into a simmer-friendly summary section:
+  - plain-English file summary
+  - file format
+  - best version clue
+  - useful role tags
+  - in-game names
+  - family hints
+  - friendly version evidence
+- this summary is derived from the same local-first stored evidence already used elsewhere:
+  - filename classification
+  - inside-file inspection
+  - installed version evidence
+  - watch state
+- the technical inspection block still exists for deeper review, but its labels are now a little clearer
+- the filename-classification layer now also recognizes a few more safe Build/Buy object terms:
+  - `entryway`
+  - `entrance`
+  - `barback`
+  - `fireplace`
+- because that changes stored classification meaning again, the rebuild contract moved forward to:
+  - scanner cache version -> `scanner-v15`
+  - downloads assessment version -> `downloads-assessment-v9`
+
+## Current engineering note (March 16, 2026)
+
 The local package-classification layer now reads package context words correctly and uses them in a more careful fallback path.
 
 Important current behavior:

@@ -2,6 +2,51 @@
 
 ## Current Priority
 
+- March 16, 2026: the next stabilization pass focused on two things at once:
+  - a few last obvious Build/Buy filenames
+  - making `Library` show file details in a way simmers actually care about
+  - the `Library` inspector now has a new plain-English summary layer:
+    - `At a glance` / `Simmer summary` explains what a file seems to be, not just how the parser saw it
+    - it now surfaces:
+      - a plain-English file summary such as Build/Buy object, texture/recolor package, add-on/module, or text-support package
+      - file format
+      - the best version clue
+      - useful tags
+      - in-game names
+      - related family hints
+      - friendly version evidence lines
+    - the older technical inspection section is still there, but some labels are now clearer:
+      - `Creator hints` -> `Creator names found`
+      - `Version hints` -> `Version numbers found`
+      - `Resources` -> `Package contents`
+      - `Namespaces` -> `Script folders`
+      - `Embedded names` -> `In-game names`
+  - filename keyword coverage was widened again for a small safe Build/Buy cluster:
+    - `entryway`
+    - `entrance`
+    - `barback`
+    - `fireplace`
+  - subtype mapping now treats those names more usefully:
+    - entryway / entrance -> `Build Surfaces`
+    - barback / fireplace -> `Furniture`
+  - rebuild versions were bumped again so old stored meaning cannot linger:
+    - library scan cache -> `scanner-v15`
+    - downloads assessment -> `downloads-assessment-v9`
+  - checks passed:
+    - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+    - `cargo test --manifest-path src-tauri/Cargo.toml` with `198` tests
+    - `npm run build`
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+  - important open gap:
+    - the real app database still shows the old `scanner-v14` fingerprint
+    - a headless launch of the built app did not trigger a live-library rebuild against the user profile
+    - because of that, the real stored `Unknown` count is still sitting at the old `10` rows until a deliberate in-app rescan path is triggered
+    - this needs to be treated as unfinished verification, not as proof that the classifier change failed
+  - outside research check for simmer-facing details matched the product instinct:
+    - simmers mostly care about what a file is, who made it, whether it is an add-on or standalone file, whether it has version/update clues, and whether it is likely support text / recolor / helper content
+  - the next best step should stay in stabilization:
+    - trigger a real in-app rescan against the live profile and confirm the small Build/Buy cluster actually drops
+    - then keep tightening the remaining true unknowns and watch bugs before any new feature work
 - March 16, 2026: the live low-confidence and no-category stabilization pass closed another big chunk of noisy review work with real app proof:
   - a real bug was hiding obvious package context words:
     - package path token parsing was normalizing names too early and smashing words together

@@ -848,7 +848,8 @@ fn clothing_subtype(token: &str) -> &'static str {
 fn build_buy_subtype(token: &str) -> &'static str {
     match token {
         "sofa" | "chair" | "table" | "desk" | "bed" | "dresser" | "bench" | "couch"
-        | "armchair" | "cabinet" | "bookcase" | "counter" => "Furniture",
+        | "armchair" | "cabinet" | "bookcase" | "counter" | "barback" | "barbacks"
+        | "fireplace" | "fireplaces" => "Furniture",
         "lamp" | "rug" | "clutter" | "decor" | "plant" | "shelf" | "shelves" | "frame"
         | "mirror" | "mirrors" => "Decor",
         "wall" | "walls" | "floor" | "floors" | "door" | "doors" | "window" | "windows"
@@ -856,7 +857,9 @@ fn build_buy_subtype(token: &str) -> &'static str {
         | "foundations" | "terrain" | "roof" | "roofs" | "stair" | "stairs" | "staircase"
         | "fence" | "fences" | "railing" | "railings" | "spandrel" | "spandrels" | "frieze"
         | "friezes" | "trim" | "trims" | "ceiling" | "ceilings" | "panel" | "panels"
-        | "panelling" | "paneling" => "Build Surfaces",
+        | "panelling" | "paneling" | "entryway" | "entryways" | "entrance" | "entrances" => {
+            "Build Surfaces"
+        }
         "bathroom" | "kitchen" | "bedroom" | "living" | "dining" => "Room Sets",
         _ => "BuildBuy",
     }
@@ -1118,6 +1121,24 @@ mod tests {
 
         assert_eq!(parsed.kind, "BuildBuy");
         assert_eq!(parsed.subtype.as_deref(), Some("Build Surfaces"));
+    }
+
+    #[test]
+    fn detects_more_real_world_build_buy_object_terms() {
+        let seed_pack = load_seed_pack().expect("seed pack");
+        let entryway = parse_filename(
+            "PC-TS4-CountryCrafter-GrandEntrywayTextures.package",
+            &seed_pack,
+        );
+        let barback = parse_filename("PC-TS4-CBK-TrattoriaLargeBarback-DR.package", &seed_pack);
+        let fireplace = parse_filename("SYB_Advent2022_Fireplace_medium.package", &seed_pack);
+
+        assert_eq!(entryway.kind, "BuildBuy");
+        assert_eq!(entryway.subtype.as_deref(), Some("Build Surfaces"));
+        assert_eq!(barback.kind, "BuildBuy");
+        assert_eq!(barback.subtype.as_deref(), Some("Furniture"));
+        assert_eq!(fireplace.kind, "BuildBuy");
+        assert_eq!(fireplace.subtype.as_deref(), Some("Furniture"));
     }
 
     #[test]
