@@ -4,6 +4,49 @@ This document maps the current implementation to the active product requirements
 
 ## Current session note (March 16, 2026)
 
+This session stayed in feature freeze and closed the stale live-rescan gap that was leaving real library facts behind after scan-rule changes.
+
+Important changes and findings:
+
+- the backend now tells `Home` whether the stored library facts are stale under the current scan rules
+- the app now starts one automatic library refresh per app session when:
+  - library folders are configured
+  - no scan is already running
+  - the stored scan fingerprint is older than the current scan fingerprint
+- `Home` now surfaces that state in a calm player-facing way:
+  - `Library check` / `Library facts`
+  - one compact refresh banner
+- this closes the earlier trust gap where old indexed library facts could still be shown after a scan-rule change without any clear warning
+- a small regression test pass was added for the stale-flag helper:
+  - empty fresh database -> no stale warning
+  - existing indexed data with an older fingerprint -> stale warning
+- checks passed:
+  - `cargo test --manifest-path src-tauri/Cargo.toml` with `200` tests
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Real live validation also passed:
+
+- the real user-profile database now reports `scanner-v15`
+- the app completed a real automatic full scan as `sessionId 39`
+- `filesScanned 13010`
+- scan time was about `9` minutes
+- true installed `Unknown` rows are now down to `3`
+- open review rows are now:
+  - `unsafe_script_depth 20`
+  - `low_confidence_parse 11`
+  - `no_category_detected 3`
+  - `conflicting_category_signals 2`
+
+Important remaining gap:
+
+- the stale-scan foundation problem is fixed, but stabilization is not done yet:
+  - the last real `Unknown` cluster still needs targeted inspection
+  - the remaining low-confidence parse rows still need another live-data pass
+  - watch-system bugs still need cleanup before feature growth resumes
+
+## Current session note (March 16, 2026)
+
 This session stayed in feature freeze and tightened the `Library` inspector so regular simmers see calmer, more trustworthy file details instead of a debug-style panel.
 
 Important changes and findings:
@@ -42,9 +85,8 @@ Important changes and findings:
 
 Important remaining gap:
 
-- the player-facing cleanup is in place, but the live-profile rebuild verification gap still exists from the prior pass:
-  - the user-profile database still needs a deliberate in-app rescan path for `scanner-v15`
-  - the last true unknown cluster and watch bugs still need more stabilization work after that
+- the player-facing cleanup is in place, and the later stale-profile rebuild gap has now been closed
+- the next stabilization work should stay focused on the last unknown files and watch bugs
 
 ## Current session note (March 16, 2026)
 

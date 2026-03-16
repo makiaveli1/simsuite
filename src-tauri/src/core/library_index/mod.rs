@@ -1,7 +1,7 @@
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 
 use crate::{
-    core::content_versions,
+    core::{content_versions, scanner},
     error::AppResult,
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, HomeOverview,
@@ -61,6 +61,7 @@ pub fn get_home_overview(
             |row| row.get::<_, String>(0),
         )
         .optional()?;
+    let scan_needs_refresh = scanner::library_scan_needs_refresh(connection, seed_pack)?;
 
     Ok(HomeOverview {
         total_files,
@@ -79,6 +80,7 @@ pub fn get_home_overview(
         watch_review_items,
         watch_setup_items,
         last_scan_at,
+        scan_needs_refresh,
         read_only_mode: true,
     })
 }

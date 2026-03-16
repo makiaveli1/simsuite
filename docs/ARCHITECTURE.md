@@ -66,6 +66,27 @@ Not yet implemented:
 
 ## Current engineering note (March 16, 2026)
 
+`Home` now participates directly in scan-truth ownership instead of only echoing the last scan timestamp.
+
+Important current behavior:
+
+- the backend now compares:
+  - the saved scan fingerprint in `app_settings`
+  - the currently expected fingerprint derived from:
+    - scanner cache version
+    - current seed version
+    - creator-learning version
+    - category-override version
+- `library_index::get_home_overview` now returns a simple stale/fresh flag for library facts
+- the React app shell now uses that flag to trigger one automatic refresh per app session when:
+  - mods or tray folders are configured
+  - no scan is already running
+  - the saved fingerprint is stale
+- `Home` shows this in one compact status banner and one status row, rather than exposing raw fingerprint data
+- this keeps the user-facing flow simple while preventing stale indexed library facts from quietly masquerading as current truth after scan-rule changes
+
+## Current engineering note (March 16, 2026)
+
 The `Library` inspector now has a harder split between regular simmer views and creator mode.
 
 Important current behavior:

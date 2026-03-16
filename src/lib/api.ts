@@ -2627,6 +2627,7 @@ function createMockOverview(): HomeOverview {
     watchReviewItems,
     watchSetupItems,
     lastScanAt: mockLastScanAt,
+    scanNeedsRefresh: false,
     readOnlyMode: true,
   };
 }

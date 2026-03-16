@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 use tracing::{info, warn};
@@ -103,6 +103,39 @@ const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
 const SCAN_CACHE_VERSION: &str = "scanner-v15";
+
+pub fn library_scan_needs_refresh(
+    connection: &Connection,
+    seed_pack: &crate::seed::SeedPack,
+) -> AppResult<bool> {
+    let expected_fingerprint = current_cache_fingerprint(connection, seed_pack)?;
+    let saved_fingerprint = database::get_app_setting(connection, SCAN_CACHE_FINGERPRINT_KEY)?;
+
+    if saved_fingerprint.as_deref() == Some(expected_fingerprint.as_str()) {
+        return Ok(false);
+    }
+
+    let has_completed_scan: bool = connection.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM scan_sessions
+            WHERE completed_at IS NOT NULL
+        )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    let has_library_rows: bool = connection.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM files
+            WHERE source_location <> 'downloads'
+        )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+
+    Ok(has_completed_scan || has_library_rows)
+}
 
 pub fn scan_library(state: &AppState, app: &AppHandle) -> AppResult<ScanSummary> {
     scan_library_with_progress(state, |progress| {
@@ -1300,6 +1333,19 @@ fn cache_fingerprint(
     )
 }
 
+fn current_cache_fingerprint(
+    connection: &Connection,
+    seed_pack: &crate::seed::SeedPack,
+) -> AppResult<String> {
+    let creator_learning_version = database::get_creator_learning_version(connection)?;
+    let category_override_version = database::get_category_override_version(connection)?;
+    Ok(cache_fingerprint(
+        seed_pack,
+        creator_learning_version.as_deref(),
+        category_override_version.as_deref(),
+    ))
+}
+
 fn normalize_override_key(value: &str) -> String {
     value.replace('\\', "/").to_ascii_lowercase()
 }
@@ -1364,6 +1410,55 @@ mod tests {
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir: temp.path().to_path_buf(),
         }
+    }
+
+    #[test]
+    fn stale_refresh_flag_stays_off_for_a_brand_new_database() {
+        let temp = tempdir().expect("tempdir");
+        let seed_pack = load_seed_pack().expect("seed");
+        let state = build_state(&temp, seed_pack, |_| {});
+        let connection = state.connection().expect("connection");
+        let seed_pack = state.seed_pack();
+
+        let needs_refresh =
+            library_scan_needs_refresh(&connection, seed_pack.as_ref()).expect("refresh flag");
+
+        assert!(!needs_refresh);
+    }
+
+    #[test]
+    fn stale_refresh_flag_turns_on_for_existing_data_with_an_old_fingerprint() {
+        let temp = tempdir().expect("tempdir");
+        let seed_pack = load_seed_pack().expect("seed");
+        let state = build_state(&temp, seed_pack, |connection| {
+            connection
+                .execute(
+                    "INSERT INTO scan_sessions (scan_type, started_at, completed_at, files_scanned, errors)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        "full",
+                        "2026-03-16T00:00:00+00:00",
+                        "2026-03-16T00:10:00+00:00",
+                        10_i64,
+                        ""
+                    ],
+                )
+                .expect("scan session");
+            database::save_app_setting(
+                connection,
+                SCAN_CACHE_FINGERPRINT_KEY,
+                Some("scanner-v14:test:test:test"),
+                "user",
+            )
+            .expect("save old fingerprint");
+        });
+        let connection = state.connection().expect("connection");
+        let seed_pack = state.seed_pack();
+
+        let needs_refresh =
+            library_scan_needs_refresh(&connection, seed_pack.as_ref()).expect("refresh flag");
+
+        assert!(needs_refresh);
     }
 
     #[test]

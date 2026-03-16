@@ -155,6 +155,7 @@ function AppShell({
   const [libraryWatchFocusRequest, setLibraryWatchFocusRequest] =
     useState<LibraryWatchFocusRequest | null>(null);
   const lastTerminalScanKey = useRef<string | null>(null);
+  const startupRefreshAttempted = useRef(false);
   const libraryWatchFocusRequestId = useRef(0);
   const userView: UserView = experienceModeToLegacyView(experienceMode);
 
@@ -368,6 +369,49 @@ function AppShell({
       throw error;
     }
   }
+
+  const attemptStartupRefresh = useEffectEvent(() => {
+    void startScan().catch((error) => {
+      console.error("Startup library refresh failed.", error);
+      startupRefreshAttempted.current = false;
+    });
+  });
+
+  useEffect(() => {
+    if (startupRefreshAttempted.current || isScanning) {
+      return;
+    }
+
+    if (!settings?.modsPath && !settings?.trayPath) {
+      return;
+    }
+
+    let cancelled = false;
+    void api
+      .getHomeOverview()
+      .then((overview) => {
+        if (cancelled || startupRefreshAttempted.current) {
+          return;
+        }
+
+        if (!overview.scanNeedsRefresh) {
+          startupRefreshAttempted.current = true;
+          return;
+        }
+
+        startupRefreshAttempted.current = true;
+        attemptStartupRefresh();
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Could not check library refresh state.", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptStartupRefresh, isScanning, settings?.modsPath, settings?.trayPath]);
 
   const currentScreen =
     screen === "home" ? (

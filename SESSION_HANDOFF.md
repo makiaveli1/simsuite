@@ -2,6 +2,39 @@
 
 ## Current Priority
 
+- March 16, 2026: the stale live-rescan gap is now closed with real app proof:
+  - `Home` now gets one simple truth flag from the backend:
+    - whether the stored library facts were built with the current scan rules or not
+  - the app shell now uses that flag to start one automatic library refresh per app session when all of these are true:
+    - game folders are configured
+    - no scan is already running
+    - the stored scan fingerprint is stale
+  - `Home` now shows that state in calmer player language instead of hiding it:
+    - `Library check` / `Library facts`
+    - a single compact refresh banner when the stored library facts are stale
+  - this fixes the earlier trust hole where the app could quietly show old library facts as if they were current after a scan-rule change
+  - regression coverage was added for the stale-scan helper:
+    - a brand-new empty database does not nag for a refresh
+    - existing indexed data with an older fingerprint is marked stale
+  - real live verification now passed, not just fixture smoke:
+    - the real user-profile database now reports `scanner-v15`
+    - a real full startup-triggered scan completed as `sessionId = 39`
+    - `filesScanned = 13010`
+    - scan duration was about 9 minutes
+    - true installed `Unknown` rows are now down to `3`
+    - open review rows are now:
+      - `unsafe_script_depth = 20`
+      - `low_confidence_parse = 11`
+      - `no_category_detected = 3`
+      - `conflicting_category_signals = 2`
+  - checks passed:
+    - `cargo test --manifest-path src-tauri/Cargo.toml` with `200` tests
+    - `npm run build`
+    - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+    - real desktop launch against the live profile, with a completed `scanner-v15` full scan
+  - next best step:
+    - stay in feature freeze
+    - target the remaining `Unknown`, `low_confidence_parse`, and watch-bug edge cases with the same live-data method
 - March 16, 2026: the next stabilization pass stayed on `Library` polish and tightened the player-facing detail rules:
   - beginner and seasoned `Library` inspector views were simplified on purpose
   - the goal of this pass was:

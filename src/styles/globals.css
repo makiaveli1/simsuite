@@ -4463,6 +4463,31 @@ h2,
   color: #ffc4c4;
 }
 
+.home-refresh-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.home-refresh-banner-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.home-refresh-banner-copy strong {
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-refresh-banner-copy span {
+  color: var(--text-soft);
+  font-size: 0.77rem;
+  line-height: 1.4;
+}
+
 .compact-empty {
   min-height: 160px;
 }
@@ -4496,6 +4521,13 @@ h2,
   border-color: var(--danger-line);
   background: var(--danger-soft);
   color: #ffc7c7;
+}
+
+@media (max-width: 1024px) {
+  .home-refresh-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .confidence-badge.good {

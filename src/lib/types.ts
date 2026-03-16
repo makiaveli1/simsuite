@@ -73,6 +73,7 @@ export interface HomeOverview {
   watchReviewItems: number;
   watchSetupItems: number;
   lastScanAt: string | null;
+  scanNeedsRefresh: boolean;
   readOnlyMode: boolean;
 }
 

@@ -55,6 +55,7 @@ pub struct HomeOverview {
     pub watch_review_items: i64,
     pub watch_setup_items: i64,
     pub last_scan_at: Option<String>,
+    pub scan_needs_refresh: bool,
     pub read_only_mode: bool,
 }
 

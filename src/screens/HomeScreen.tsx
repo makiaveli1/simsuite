@@ -110,6 +110,17 @@ export function HomeScreen({
     Number(Boolean(settings?.modsPath)) +
     Number(Boolean(settings?.trayPath)) +
     Number(Boolean(settings?.downloadsPath));
+  const libraryRefreshValue = isScanning
+    ? userView === "beginner"
+      ? "Refreshing now"
+      : "Refresh running"
+    : overview?.scanNeedsRefresh
+      ? userView === "beginner"
+        ? "Needs refresh"
+        : "Needs refresh"
+      : overview?.lastScanAt
+        ? "Current"
+        : "Not scanned";
   const metricItems =
     userView === "beginner"
       ? [
@@ -200,6 +211,7 @@ export function HomeScreen({
     userView === "beginner"
       ? [
           { label: "Moves", value: "Ask first" },
+          { label: "Library check", value: libraryRefreshValue },
           {
             label: "Updates ready",
             value: `${overview?.exactUpdateItems ?? 0}`,
@@ -226,6 +238,7 @@ export function HomeScreen({
       : [
           { label: "Mode", value: "Approval-first" },
           { label: "Moves", value: "Validator + snapshot" },
+          { label: "Library facts", value: libraryRefreshValue },
           {
             label: "Exact updates",
             value: `${overview?.exactUpdateItems ?? 0}`,
@@ -317,6 +330,39 @@ export function HomeScreen({
           />
         ))}
       </div>
+
+      {overview?.scanNeedsRefresh ? (
+        <div className="status-banner home-refresh-banner" role="status">
+          <div className="home-refresh-banner-copy">
+            <strong>
+              {isScanning
+                ? "Library details are refreshing."
+                : "Library details need one refresh."}
+            </strong>
+            <span>
+              {isScanning
+                ? "SimSuite found newer scan rules and is rechecking your installed files now."
+                : canScan
+                  ? "SimSuite found newer scan rules, so some saved library details are out of date until this refresh finishes."
+                  : "SimSuite found newer scan rules. Choose your game folders, then run one refresh so the library uses the newer results."}
+            </span>
+          </div>
+          {isScanning ? (
+            <span className="ghost-chip">Refreshing</span>
+          ) : (
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => void onScan()}
+              disabled={!canScan}
+              title="Refresh library details with the newer scan rules"
+            >
+              <ScanSearch size={14} strokeWidth={2} />
+              {userView === "beginner" ? "Refresh library" : "Refresh now"}
+            </button>
+          )}
+        </div>
+      ) : null}
 
       <div className="home-layout">
         <ResizableEdgeHandle
