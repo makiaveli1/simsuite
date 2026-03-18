@@ -10,8 +10,6 @@ import {
   Workflow,
 } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
-import { LayoutPresetBar } from "../components/LayoutPresetBar";
-import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
@@ -65,9 +63,7 @@ export function ReviewScreen({
 }: ReviewScreenProps) {
   const {
     reviewDetailWidth,
-    reviewQueueHeight,
     setReviewDetailWidth,
-    setReviewQueueHeight,
     reviewLayoutPreset,
     applyReviewLayoutPreset,
   } = useUiPreferences();
@@ -100,6 +96,17 @@ export function ReviewScreen({
   }
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
+  const reasonCounts = items.reduce<Record<string, number>>((counts, item) => {
+    counts[item.reason] = (counts[item.reason] ?? 0) + 1;
+    return counts;
+  }, {});
+  const reasonRows = Object.entries(reasonCounts).sort((left, right) => right[1] - left[1]);
+  const maxReasonCount = reasonRows[0]?.[1] ?? 0;
+  const highConfidenceCount = items.filter((item) => item.confidence >= 0.85).length;
+  const mediumConfidenceCount = items.filter(
+    (item) => item.confidence >= 0.6 && item.confidence < 0.85,
+  ).length;
+  const lowConfidenceCount = items.filter((item) => item.confidence < 0.6).length;
   const reviewInspectorSections = selected
     ? [
         {
@@ -187,10 +194,17 @@ export function ReviewScreen({
     : [];
 
   return (
-    <section className="screen-shell workbench">
-      {/* Slim strip */}
-      <div className="slim-strip">
-        <div className="slim-strip-group">
+    <section className="screen-shell workbench workbench-screen">
+      <div className="screen-header-row">
+        <div className="screen-heading">
+          <p className="eyebrow">{reviewLabel(userView)}</p>
+          <div className="screen-title-row">
+            <ShieldAlert size={18} strokeWidth={2} />
+            <h1>{userView === "beginner" ? "Needs review" : "Review queue"}</h1>
+          </div>
+          <p className="workspace-toolbar-copy">{screenHelperLine("review", userView)}</p>
+        </div>
+        <div className="header-actions">
           <button
             type="button"
             className="secondary-action"
@@ -200,8 +214,6 @@ export function ReviewScreen({
             <RefreshCw size={14} strokeWidth={2} />
             {isLoading ? "Refreshing..." : "Refresh"}
           </button>
-        </div>
-        <div className="slim-strip-group">
           <button
             type="button"
             className="secondary-action"
@@ -231,7 +243,112 @@ export function ReviewScreen({
 
       {items.length ? (
         <div className="review-layout review-layout-screen">
-          <div className="panel-card queue-panel review-queue-panel workbench-rail">
+          <div className="review-rail">
+            <div className="panel-card">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">
+                    {userView === "beginner" ? "Queue health" : "Manual backlog"}
+                  </p>
+                  <h2>{userView === "beginner" ? "What needs a closer look" : "Review health"}</h2>
+                </div>
+                <span className="ghost-chip">{items.length} items</span>
+              </div>
+
+              <div className="summary-matrix review-summary-grid">
+                <SummaryStat
+                  label={userView === "beginner" ? "Strong clues" : "High confidence"}
+                  value={highConfidenceCount}
+                  tone="good"
+                />
+                <SummaryStat
+                  label={userView === "beginner" ? "Needs checking" : "Medium confidence"}
+                  value={mediumConfidenceCount}
+                  tone="neutral"
+                />
+                <SummaryStat
+                  label={userView === "beginner" ? "Very unclear" : "Low confidence"}
+                  value={lowConfidenceCount}
+                  tone="low"
+                />
+              </div>
+
+              <div className="review-rail-note">
+                <strong>
+                  {userView === "beginner"
+                    ? "Nothing moves from this screen."
+                    : "Review is still a stop sign, not an action lane."}
+                </strong>
+                <p>
+                  {userView === "beginner"
+                    ? "Use this queue to see why a file stopped before you fix creators, save types, or head back to Organize."
+                    : "Use this queue to inspect why a file stopped, then batch-fix creators or types before running another tidy pass."}
+                </p>
+              </div>
+            </div>
+
+            <div className="panel-card">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">
+                    {userView === "beginner" ? "Main reasons" : "Reason groups"}
+                  </p>
+                  <h2>{userView === "beginner" ? "Why files stopped" : "Top reasons"}</h2>
+                </div>
+              </div>
+
+              <div className="review-reason-list">
+                {reasonRows.map(([reason, count]) => (
+                  <div
+                    key={reason}
+                    className={`review-reason-row review-reason-row-${reviewReasonTone(
+                      count,
+                      maxReasonCount,
+                    )}`}
+                  >
+                    <div className="review-reason-copy">
+                      <strong>{humanize(reason)}</strong>
+                      <span>
+                        {userView === "beginner"
+                          ? "These files need a manual check before SimSuite can move them."
+                          : "Grouped by the main rule or validator stop reason."}
+                      </span>
+                    </div>
+                    <span className="ghost-chip">{count}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="review-rail-actions">
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => onNavigate("creatorAudit")}
+                >
+                  <Fingerprint size={14} strokeWidth={2} />
+                  Creators
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => onNavigate("categoryAudit")}
+                >
+                  <Shapes size={14} strokeWidth={2} />
+                  Types
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => onNavigate("organize")}
+                >
+                  <Workflow size={14} strokeWidth={2} />
+                  {userView === "beginner" ? "Tidy Up" : "Organize"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-card queue-panel review-stage-panel workbench-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">
@@ -242,53 +359,56 @@ export function ReviewScreen({
               <span className="ghost-chip">{items.length} items</span>
             </div>
 
-            <div className="vertical-dock queue-dock">
-              <div className="queue-list review-queue-list">
-                {items.map((item, index) => (
-                  <m.button
-                    key={item.id}
-                    type="button"
-                    className={`queue-row ${selectedId === item.id ? "is-selected" : ""}`}
-                    onClick={() => setSelectedId(item.id)}
-                    title={item.reason}
-                    whileHover={rowHover}
-                    whileTap={rowPress}
-                    {...stagedListItem(index)}
-                  >
-                    <div className="queue-main">
-                        <strong>{item.filename}</strong>
-                        <span>
+            <div className="workspace-toggles review-layout-toggles">
+              {REVIEW_LAYOUT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`workspace-toggle ${reviewLayoutPreset === preset.id ? "is-active" : ""}`}
+                  onClick={() => applyReviewLayoutPreset(preset.id)}
+                  title={preset.hint}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="queue-list review-queue-list">
+              {items.map((item, index) => (
+                <m.button
+                  key={item.id}
+                  type="button"
+                  className={`queue-row ${selectedId === item.id ? "is-selected" : ""}`}
+                  onClick={() => setSelectedId(item.id)}
+                  title={item.reason}
+                  whileHover={rowHover}
+                  whileTap={rowPress}
+                  {...stagedListItem(index)}
+                >
+                  <div className="queue-main">
+                    <strong>{item.filename}</strong>
+                    <span>
                         {item.creator ?? unknownCreatorLabel(userView)} · {friendlyTypeLabel(item.kind)}
                         {userView === "power" && item.subtype
                           ? ` · ${item.subtype}`
                           : ""}
-                      </span>
-                    </div>
-                    <div className="queue-meta">
-                      <span className="warning-tag">{humanize(item.reason)}</span>
-                      {userView !== "beginner" ? (
-                        <span className="ghost-chip">{item.sourceLocation}</span>
-                      ) : null}
-                      <span
-                        className={`confidence-badge ${confidenceTone(
-                          item.confidence,
-                        )}`}
-                      >
-                        {Math.round(item.confidence * 100)}%
-                      </span>
-                    </div>
-                  </m.button>
-                ))}
-              </div>
-              <ResizableEdgeHandle
-                label="Resize review queue height"
-                value={reviewQueueHeight}
-                min={260}
-                max={860}
-                onChange={setReviewQueueHeight}
-                side="bottom"
-                className="dock-resize-handle review-queue-height-handle"
-              />
+                    </span>
+                  </div>
+                  <div className="queue-meta">
+                    <span className="warning-tag">{humanize(item.reason)}</span>
+                    {userView !== "beginner" ? (
+                      <span className="ghost-chip">{item.sourceLocation}</span>
+                    ) : null}
+                    <span
+                      className={`confidence-badge ${confidenceTone(
+                        item.confidence,
+                      )}`}
+                    >
+                      {Math.round(item.confidence * 100)}%
+                    </span>
+                  </div>
+                </m.button>
+              ))}
             </div>
           </div>
 
@@ -365,6 +485,23 @@ export function ReviewScreen({
   );
 }
 
+function SummaryStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "good" | "neutral" | "low";
+}) {
+  return (
+    <div className={`summary-stat summary-stat-${tone}`}>
+      <span>{label}</span>
+      <strong>{value.toLocaleString()}</strong>
+    </div>
+  );
+}
+
 function DetailRow({
   label,
   value,
@@ -385,6 +522,16 @@ function confidenceTone(confidence: number) {
     return "good";
   }
   if (confidence >= 0.6) {
+    return "medium";
+  }
+  return "low";
+}
+
+function reviewReasonTone(count: number, maxCount: number) {
+  if (count >= Math.max(2, maxCount)) {
+    return "good";
+  }
+  if (count >= 2) {
     return "medium";
   }
   return "low";

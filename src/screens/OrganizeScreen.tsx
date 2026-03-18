@@ -1,12 +1,9 @@
-import { type ReactNode, startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { m } from "motion/react";
 import {
-  CheckCircle2,
-  ClipboardCheck,
   FolderTree,
   RefreshCw,
   ShieldAlert,
-  Sparkles,
   Workflow,
 } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
@@ -284,7 +281,7 @@ export function OrganizeScreen({
     null;
 
   return (
-    <section className="screen-shell workbench">
+    <section className="screen-shell workbench workbench-screen">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Guided cleanup" : "Workflow"}</p>
@@ -319,111 +316,6 @@ export function OrganizeScreen({
       {errorMessage ? (
         <div className="status-banner status-banner-error">{errorMessage}</div>
       ) : null}
-
-      <div className="panel-card organize-guide-card">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">How this pass works</p>
-            <h2>{userView === "beginner" ? "Tidy in three steps" : "Safe organize flow"}</h2>
-          </div>
-          <span className="ghost-chip">
-            {safeCount} ready · {reviewCount} needs review
-          </span>
-        </div>
-        <div className="organize-step-grid">
-          <WorkflowStep
-            icon={<Sparkles size={16} strokeWidth={2} />}
-            step="Step 1"
-            title={userView === "beginner" ? "Pick a tidy style" : "Choose a rule set"}
-            copy={
-              userView === "beginner"
-                ? `${selectedPresetCopy.title} is active right now.`
-                : `${selectedPresetCopy.title} is generating this preview.`
-            }
-            tone="good"
-          />
-          <WorkflowStep
-            icon={<ClipboardCheck size={16} strokeWidth={2} />}
-            step="Step 2"
-            title={userView === "beginner" ? "Check a sample" : "Inspect the preview"}
-            copy={
-              userView === "beginner"
-                ? sampleCountLabel(
-                    filteredSuggestions.length,
-                    (filteredTotalCount || preview?.totalConsidered) ?? 0,
-                    !isSamplingRows,
-                  )
-                : `${sampleCountLabel(
-                    filteredSuggestions.length,
-                    (filteredTotalCount || preview?.totalConsidered) ?? 0,
-                    !isSamplingRows,
-                  )}.`
-            }
-            tone="neutral"
-          />
-          <WorkflowStep
-            icon={<CheckCircle2 size={16} strokeWidth={2} />}
-            step="Step 3"
-            title={
-              userView === "beginner"
-                ? "Move only the ready files"
-                : "Apply the safe subset"
-            }
-            copy={
-              reviewCount > 0
-                ? `${reviewCount.toLocaleString()} files stay in review until you check them.`
-                : "Everything checked in this pass is ready or already tidy."
-            }
-            tone={reviewCount > 0 ? "warn" : "good"}
-          />
-        </div>
-      </div>
-
-      <div className="panel-card organize-next-step-card">
-        <div className="organize-next-step-copy">
-          <p className="eyebrow">{userView === "beginner" ? "Safe next step" : "Next action"}</p>
-          <h2>{organizeNextStepHeading(safeCount, reviewCount, userView)}</h2>
-          <p>{organizeNextStepBody(safeCount, reviewCount, preview?.recommendedPreset, userView)}</p>
-        </div>
-        <div className="organize-next-step-actions">
-          {!isRecommendedSelected && preview?.recommendedPreset ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => {
-                setStatusMessage(null);
-                setSelectedPreset(preview.recommendedPreset);
-              }}
-            >
-              <FolderTree size={14} strokeWidth={2} />
-              {userView === "beginner" ? "Use the safest style" : "Use recommended rule set"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="primary-action"
-            onClick={() => void handleApply()}
-            disabled={!preview || safeCount === 0 || isApplying}
-          >
-            {isApplying
-              ? "Applying..."
-              : userView === "beginner"
-                ? `Move ${safeCount} ready files`
-                : `Apply ${safeCount} safe moves`}
-          </button>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => onNavigate("review")}
-            disabled={reviewCount === 0}
-          >
-            <ShieldAlert size={14} strokeWidth={2} />
-            {userView === "beginner"
-              ? `Check ${reviewCount} files in review`
-              : `Open ${reviewCount} review items`}
-          </button>
-        </div>
-      </div>
 
       <div className="organize-layout">
         <ResizableEdgeHandle
@@ -1029,31 +921,6 @@ function SummaryStat({
   );
 }
 
-function WorkflowStep({
-  icon,
-  step,
-  title,
-  copy,
-  tone,
-}: {
-  icon: ReactNode;
-  step: string;
-  title: string;
-  copy: string;
-  tone: "good" | "warn" | "neutral";
-}) {
-  return (
-    <div className={`organize-step-card organize-step-card-${tone}`}>
-      <div className="organize-step-icon">{icon}</div>
-      <div className="organize-step-copy">
-        <span>{step}</span>
-        <strong>{title}</strong>
-        <p>{copy}</p>
-      </div>
-    </div>
-  );
-}
-
 function LedgerRow({
   label,
   value,
@@ -1260,63 +1127,6 @@ function previewSupportCopy(
   return userView === "beginner"
     ? "Uses the current tidy style."
     : "Uses the selected rule set.";
-}
-
-function organizeNextStepHeading(
-  safeCount: number,
-  reviewCount: number,
-  userView: UserView,
-) {
-  if (safeCount > 0 && reviewCount > 0) {
-    return userView === "beginner"
-      ? "Move the ready files, then check the rest"
-      : "Apply the safe batch and leave the rest for review";
-  }
-
-  if (safeCount > 0) {
-    return userView === "beginner"
-      ? "Everything shown here is ready to tidy"
-      : "The current pass is ready to apply";
-  }
-
-  if (reviewCount > 0) {
-    return userView === "beginner"
-      ? "Nothing moves until review is cleared"
-      : "Review is still blocking this pass";
-  }
-
-  return userView === "beginner"
-    ? "SimSuite is still building the pass"
-    : "Preview is still loading";
-}
-
-function organizeNextStepBody(
-  safeCount: number,
-  reviewCount: number,
-  recommendedPreset?: string | null,
-  userView?: UserView,
-) {
-  if (safeCount > 0 && reviewCount > 0) {
-    return userView === "beginner"
-      ? `${safeCount.toLocaleString()} files are ready right now. ${reviewCount.toLocaleString()} files still need review and will stay put.`
-      : `${safeCount.toLocaleString()} files can move now, while ${reviewCount.toLocaleString()} files stay visible in review.`;
-  }
-
-  if (safeCount > 0) {
-    return userView === "beginner"
-      ? `${safeCount.toLocaleString()} files are ready to move. SimSuite will still create a restore point first.`
-      : `${safeCount.toLocaleString()} files are ready for the approved batch, and restore points will still be created first.`;
-  }
-
-  if (reviewCount > 0) {
-    return userView === "beginner"
-      ? `${reviewCount.toLocaleString()} files still need a person to check them before anything can move.`
-      : `${reviewCount.toLocaleString()} files still need review, so this pass cannot move anything yet.`;
-  }
-
-  return recommendedPreset
-    ? `SimSuite is still reading this library. ${recommendedPreset} is the current best fit so far.`
-    : "SimSuite is still reading the library and building the safest tidy pass.";
 }
 
 function getPresetCopy(name: string | null | undefined): PresetCopy {

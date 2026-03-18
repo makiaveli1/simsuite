@@ -1,5 +1,127 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Late Night)
+
+- **Mode**: code
+- **Focus**: screenshot-driven cleanup across the remaining desktop workbench screens
+
+### Progress Made
+
+1. **Fixed a shared layout bug that was distorting several screens**:
+   - `Review`, `Organize`, `Duplicates`, `Creator Audit`, and `Category Audit` were all using the shared `.workbench` class directly on the page shell
+   - that class was built for the split-pane `Workbench` component and quietly forced a three-column page grid
+   - the result was the strange dead space and off-balance composition we kept seeing in screenshots
+   - those screens now also use a new `workbench-screen` page-shell override so they keep the calmer workbench styling without inheriting the wrong outer grid
+
+2. **Rebuilt `Review` into a fuller desktop workbench**:
+   - added a real header row instead of the old top button strip
+   - added a left rail with:
+     - queue health
+     - top reason groups
+     - direct jumps into creator/type cleanup and organize
+   - moved the queue into a proper center stage with layout toggles above it
+   - kept the right inspector for selected detail
+
+3. **Filled the middle of `Updates` so it stops feeling hollow**:
+   - kept the left controls and right inspector
+   - added a center-side spotlight panel beside the tracked/setup/review table
+   - the spotlight now shows:
+     - current selected-file focus
+     - mode-specific counts
+     - a short explanation of how to read that lane
+   - this makes `Updates` feel more like a working desktop tool and less like one row floating in a large empty panel
+
+4. **Ran fresh live visual checks after the changes**:
+   - `Review`
+   - `Updates`
+   - `Organize`
+   - `Creator Audit`
+   - `Duplicates`
+   - screenshot files saved locally:
+     - `tmp-ui-pass-3-review.png`
+     - `tmp-ui-pass-3-updates.png`
+     - `tmp-ui-pass-3-organize.png`
+
+5. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- The weird left-side dead zones were not individual screen design failures after all; they were one shared page-shell bug.
+- `Organize`, `Creator Audit`, `Duplicates`, and `Review` now read much more like proper desktop workspaces because their panels finally sit in normal rows and columns again.
+- `Updates` feels meaningfully better because the center area now explains the selected file and the lane at the same time.
+
+### Known Problems / Gaps
+
+- `Updates` is much better, but when there is only one tracked row the lower part of the table area still feels visually quiet.
+- `Review` is cleaner and more tool-like now, but the center stage can still feel a little empty when the queue is tiny.
+- `Library` did not get a fresh visual pass this session.
+- `Types` was not re-screenshotted after the shared workbench-shell fix, even though the same bug fix should help it too.
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Continue the screenshot-driven pass on:
+  - `Library`
+  - `Types`
+  - `Downloads` quick sanity check after the newer shared cleanup
+- If those look stable, do one more taste pass on:
+  - `Updates` small-list empty-space handling
+  - `Review` tiny-queue composition
+
+## Current Session (March 18, 2026 - Evening)
+
+- **Mode**: code
+- **Focus**: visual cleanup pass on the new `Downloads` workbench
+
+### Progress Made
+
+1. **Calmed the `Downloads` rail**:
+   - narrowed the rail a bit
+   - changed the filter stack into a cleaner vertical form
+   - turned the secondary rail actions into calmer action rows instead of more heavy buttons
+   - flattened the lane summary cards so they read like a quick status list instead of a second dashboard
+
+2. **Reduced chrome in the center stage**:
+   - replaced the boxed stage stats with compact status chips
+   - removed the extra corner accents and heavy shadow feel from the `Downloads` workbench panels
+   - softened queue rows so the selected batch stands out without every row shouting
+
+3. **Quieted the right inspector**:
+   - compressed the signal cards into lighter inline callouts
+   - made the main next-step card the clear focus instead of one more equal-weight box
+   - flattened the dock sections so the inspector reads more like one tool panel and less like a stack of separate widgets
+
+4. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- The screen should now feel less like a wall of cards and more like one connected desktop workspace.
+- The selected batch should read as the main story faster because the surrounding chrome is quieter.
+- The rail should now support the work instead of competing with it.
+
+### Known Problems / Gaps
+
+- No fresh real desktop click-through or screenshot signoff was run after this visual pass.
+- `Downloads` may still want one more polish pass after a real visual check, especially around spacing and how the preview feels in guided/review cases.
+- `Home` still has a placeholder right inspector.
+- `Review`, `Duplicates`, `Creator Audit`, and `Category Audit` still need the same cleanup treatment.
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Do a real desktop check of `Downloads` in a few real cases:
+  - ready batch
+  - waiting batch
+  - guided setup batch
+  - blocked or review batch
+- If it looks solid, move to:
+  - `Home` right inspector
+  - `Review` or `Duplicates` workbench cleanup
+
 ## Current Session (March 18, 2026 - Late Afternoon)
 
 - **Mode**: code

@@ -92,19 +92,165 @@ export function HomeScreen({
     }
   }
 
+  async function chooseFirstMissingFolder() {
+    if (!settings) {
+      return;
+    }
+
+    if (!settings.modsPath) {
+      await chooseFolder("modsPath");
+      return;
+    }
+
+    if (!settings.trayPath) {
+      await chooseFolder("trayPath");
+      return;
+    }
+
+    if (!settings.downloadsPath) {
+      await chooseFolder("downloadsPath");
+    }
+  }
+
   const canScan = Boolean(settings?.modsPath || settings?.trayPath);
   const sourceCount =
     Number(Boolean(settings?.modsPath)) +
     Number(Boolean(settings?.trayPath)) +
     Number(Boolean(settings?.downloadsPath));
+  const hasDetectedPathSuggestion = Boolean(
+    detectedPaths &&
+      ((!settings?.modsPath && detectedPaths.modsPath) ||
+        (!settings?.trayPath && detectedPaths.trayPath) ||
+        (!settings?.downloadsPath && detectedPaths.downloadsPath)),
+  );
+  const nextActions = [
+    {
+      id: "inbox",
+      label: "Inbox",
+      description: "Fresh downloads and staged batches waiting for a safe hand-off.",
+      count: overview?.downloadsCount ?? 0,
+      icon: <Download size={14} strokeWidth={2} className="action-item-icon" />,
+      onClick: () => onNavigate("downloads"),
+    },
+    {
+      id: "review",
+      label: "Review",
+      description: "Files that still need a human check before SimSuite can move them.",
+      count: overview?.reviewCount ?? 0,
+      icon: <ShieldAlert size={14} strokeWidth={2} className="action-item-icon" />,
+      onClick: () => onNavigate("review"),
+    },
+    {
+      id: "updates",
+      label: "Updates",
+      description: "Tracked pages that already look like confirmed update matches.",
+      count: overview?.exactUpdateItems ?? 0,
+      icon: <LibraryBig size={14} strokeWidth={2} className="action-item-icon" />,
+      onClick: () =>
+        onNavigateWithParams("updates", "tracked", "exact_updates"),
+    },
+    {
+      id: "setup",
+      label: "Track setup",
+      description: "Library items that still need a page saved before SimSuite can watch them.",
+      count: overview?.watchSetupItems ?? 0,
+      icon: <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />,
+      onClick: () => onNavigateWithParams("updates", "setup", "all"),
+    },
+  ];
+  const busiestAction = nextActions.find((item) => item.count > 0) ?? null;
+
+  const primaryAction =
+    sourceCount < 3
+      ? {
+          title: "Finish folder setup",
+          body:
+            "Pick the last missing folders so scans, inbox watching, and tray checks all have the right places to read from.",
+          cta:
+            hasDetectedPathSuggestion && !isSaving
+              ? "Use detected folders"
+              : "Choose next folder",
+          disabled: isSaving,
+          onClick: () =>
+            hasDetectedPathSuggestion && !isSaving
+              ? void applyDetectedPaths()
+              : void chooseFirstMissingFolder(),
+        }
+      : (busiestAction
+          ? {
+              title: busiestAction.label,
+              body: busiestAction.description,
+              cta: `Open ${busiestAction.label}`,
+              disabled: false,
+              onClick: busiestAction.onClick,
+            }
+          : overview?.scanNeedsRefresh
+            ? {
+                title: "Refresh library facts",
+                body:
+                  "The stored library picture is older than the current scan rules, so a fresh scan is the safest next move.",
+                cta: isScanning ? "Scanning..." : "Run scan",
+                disabled: isScanning || !canScan,
+                onClick: () => void onScan(),
+              }
+            : {
+                title: "Everything looks steady",
+                body:
+                  "There is no hot queue right now, so this is a good time to skim the library or tune your tracked pages.",
+                cta: "Browse library",
+                disabled: false,
+                onClick: () => onNavigate("library"),
+              });
+
+  const watchRows = [
+    {
+      label: "Confirmed updates",
+      value: String(overview?.exactUpdateItems ?? 0),
+    },
+    {
+      label: "Possible updates",
+      value: String(overview?.possibleUpdateItems ?? 0),
+    },
+    {
+      label: "Unclear watch results",
+      value: String(overview?.unknownWatchItems ?? 0),
+    },
+    {
+      label: "Need source setup",
+      value: String(overview?.watchSetupItems ?? 0),
+    },
+  ];
+  const systemRows = [
+    {
+      label: "Last scan",
+      value: formatTimestamp(overview?.lastScanAt),
+    },
+    {
+      label: "Library facts",
+      value: overview?.scanNeedsRefresh ? "Need refresh" : "Current",
+    },
+    {
+      label: "Safety mode",
+      value: overview?.readOnlyMode ? "Read-only on" : "Read-only off",
+    },
+    {
+      label: "Duplicates found",
+      value: (overview?.duplicatesCount ?? 0).toLocaleString(),
+    },
+    {
+      label: "Creators seen",
+      value: (overview?.creatorCount ?? 0).toLocaleString(),
+    },
+    {
+      label: "Bundles seen",
+      value: (overview?.bundlesCount ?? 0).toLocaleString(),
+    },
+  ];
 
   return (
-    <Workbench threePanel fullHeight>
-      {/* Left rail for navigation - using existing Sidebar from App shell */}
-      {/* Central work area */}
-      <WorkbenchStage>
-        {/* Slim utility strip instead of second page header */}
-        <div className="slim-strip">
+    <Workbench threePanel fullHeight className="home-workbench">
+      <WorkbenchStage className="home-stage">
+        <div className="slim-strip home-slim-strip">
           <div className="slim-strip-group">
             <span className="health-chip is-good">
               <span className="health-chip-dot"></span>
@@ -131,132 +277,227 @@ export function HomeScreen({
           </div>
         </div>
 
-        {/* Command Board: Two fixed columns */}
-        <div className="command-board">
-          {/* Left column: Do next items */}
-          <div className="command-column">
-            <div className="command-column-title">Do next</div>
-            <button
-              type="button"
-              className="action-item"
-              onClick={() => onNavigate("downloads")}
-            >
-              <Download size={14} strokeWidth={2} className="action-item-icon" />
-              <span className="action-item-label">Inbox</span>
-              <span className="action-item-badge">{overview?.downloadsCount ?? 0}</span>
-            </button>
-            <button
-              type="button"
-              className="action-item"
-              onClick={() => onNavigate("review")}
-            >
-              <ShieldAlert size={14} strokeWidth={2} className="action-item-icon" />
-              <span className="action-item-label">Review</span>
-              <span className="action-item-badge">{overview?.reviewCount ?? 0}</span>
-            </button>
-            <button
-              type="button"
-              className="action-item"
-              onClick={() => onNavigateWithParams("updates", "tracked", "exact_updates")}
-            >
-              <LibraryBig size={14} strokeWidth={2} className="action-item-icon" />
-              <span className="action-item-label">Updates</span>
-              <span className="action-item-badge">{overview?.exactUpdateItems ?? 0}</span>
-            </button>
-            <button
-              type="button"
-              className="action-item"
-              onClick={() => onNavigateWithParams("updates", "setup", "all")}
-            >
-              <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />
-              <span className="action-item-label">Scan setup</span>
-              <span className="action-item-badge">{overview?.watchSetupItems ?? 0}</span>
-            </button>
-          </div>
-
-          {/* Right column: System health chips */}
-          <div className="command-column">
-            <div className="command-column-title">System health</div>
-            <div className="health-chip-group">
-              <span className={`health-chip ${overview?.scanNeedsRefresh ? 'is-warn' : 'is-good'}`}>
-                <span className="health-chip-dot"></span>
-                {overview?.scanNeedsRefresh ? 'Needs refresh' : 'Scan current'}
+        <div className="home-stage-grid">
+          <section className="panel-card home-command-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Do next</p>
+                <h2>Keep the day moving</h2>
+              </div>
+              <span className="ghost-chip">
+                {nextActions.reduce((total, item) => total + item.count, 0)} open
               </span>
-              <span className={`health-chip ${(overview?.unsafeCount ?? 0) > 0 ? 'is-danger' : 'is-good'}`}>
+            </div>
+            <div className="home-command-list">
+              {nextActions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`action-item home-action-item ${
+                    primaryAction.title === item.label ? "is-active" : ""
+                  }`}
+                  onClick={item.onClick}
+                >
+                  {item.icon}
+                  <span className="home-action-copy">
+                    <span className="action-item-label">{item.label}</span>
+                    <span className="home-action-note">{item.description}</span>
+                  </span>
+                  <span className="action-item-badge">{item.count}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel-card home-health-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">System health</p>
+                <h2>Truth before action</h2>
+              </div>
+            </div>
+            <div className="health-chip-group home-health-chips">
+              <span
+                className={`health-chip ${
+                  overview?.scanNeedsRefresh ? "is-warn" : "is-good"
+                }`}
+              >
+                <span className="health-chip-dot"></span>
+                {overview?.scanNeedsRefresh ? "Scan needs refresh" : "Scan current"}
+              </span>
+              <span
+                className={`health-chip ${
+                  (overview?.unsafeCount ?? 0) > 0 ? "is-danger" : "is-good"
+                }`}
+              >
                 <span className="health-chip-dot"></span>
                 {overview?.unsafeCount ?? 0} risky
               </span>
-              <span className={`health-chip ${sourceCount < 3 ? 'is-warn' : 'is-good'}`}>
+              <span
+                className={`health-chip ${
+                  sourceCount < 3 ? "is-warn" : "is-good"
+                }`}
+              >
                 <span className="health-chip-dot"></span>
                 {sourceCount}/3 folders ready
               </span>
             </div>
-          </div>
-        </div>
+            <div className="detail-list home-health-ledger">
+              <HomeDetailRow
+                label="Possible updates"
+                value={(overview?.possibleUpdateItems ?? 0).toLocaleString()}
+              />
+              <HomeDetailRow
+                label="Unclear watch results"
+                value={(overview?.unknownWatchItems ?? 0).toLocaleString()}
+              />
+              <HomeDetailRow
+                label="Script mods"
+                value={(overview?.scriptModsCount ?? 0).toLocaleString()}
+              />
+              <HomeDetailRow
+                label="Duplicates"
+                value={(overview?.duplicatesCount ?? 0).toLocaleString()}
+              />
+            </div>
+          </section>
 
-        {/* Compact folder setup section */}
-        <div className="folder-setup-compact">
-          <div className="folder-setup-header">
-            <FolderCog size={14} strokeWidth={2} />
-            <span>Folders</span>
-            <span className="folder-setup-status">{sourceCount}/3 set</span>
-          </div>
-          <div className="folder-setup-items">
-            <div className="folder-item">
-              <span className="folder-label">Mods</span>
-              <span className="folder-path">{settings?.modsPath || "Not chosen yet"}</span>
-              <button
-                type="button"
-                className="folder-action secondary-action"
-                onClick={() => void chooseFolder("modsPath")}
-                disabled={isSaving}
-                title="Browse for the Mods folder"
-              >
-                <FolderOpen size={12} strokeWidth={2} />
-                Choose
-              </button>
+          <section className="panel-card home-folders-panel">
+            <div className="panel-heading">
+              <div className="home-folders-heading">
+                <p className="eyebrow">Folders</p>
+                <h2>Library roots</h2>
+              </div>
+              <div className="home-folders-toolbar">
+                <span className="ghost-chip">{sourceCount}/3 set</span>
+                {hasDetectedPathSuggestion ? (
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => void applyDetectedPaths()}
+                    disabled={isSaving}
+                  >
+                    <FolderCog size={14} strokeWidth={2} />
+                    Use detected folders
+                  </button>
+                ) : null}
+              </div>
             </div>
-            <div className="folder-item">
-              <span className="folder-label">Tray</span>
-              <span className="folder-path">{settings?.trayPath || "Not chosen yet"}</span>
-              <button
-                type="button"
-                className="folder-action secondary-action"
-                onClick={() => void chooseFolder("trayPath")}
-                disabled={isSaving}
-                title="Browse for the Tray folder"
-              >
-                <FolderOpen size={12} strokeWidth={2} />
-                Choose
-              </button>
+            <div className="folder-setup-items home-folder-grid">
+              <div className="folder-item">
+                <span className="folder-label">Mods</span>
+                <span className="folder-path">{settings?.modsPath || "Not chosen yet"}</span>
+                <button
+                  type="button"
+                  className="folder-action secondary-action"
+                  onClick={() => void chooseFolder("modsPath")}
+                  disabled={isSaving}
+                  title="Browse for the Mods folder"
+                >
+                  <FolderOpen size={12} strokeWidth={2} />
+                  Choose
+                </button>
+              </div>
+              <div className="folder-item">
+                <span className="folder-label">Tray</span>
+                <span className="folder-path">{settings?.trayPath || "Not chosen yet"}</span>
+                <button
+                  type="button"
+                  className="folder-action secondary-action"
+                  onClick={() => void chooseFolder("trayPath")}
+                  disabled={isSaving}
+                  title="Browse for the Tray folder"
+                >
+                  <FolderOpen size={12} strokeWidth={2} />
+                  Choose
+                </button>
+              </div>
+              <div className="folder-item">
+                <span className="folder-label">Downloads</span>
+                <span className="folder-path">
+                  {settings?.downloadsPath || "Not chosen yet"}
+                </span>
+                <button
+                  type="button"
+                  className="folder-action secondary-action"
+                  onClick={() => void chooseFolder("downloadsPath")}
+                  disabled={isSaving}
+                  title="Browse for the Downloads folder"
+                >
+                  <FolderOpen size={12} strokeWidth={2} />
+                  Choose
+                </button>
+              </div>
             </div>
-            <div className="folder-item">
-              <span className="folder-label">Downloads</span>
-              <span className="folder-path">{settings?.downloadsPath || "Not chosen yet"}</span>
-              <button
-                type="button"
-                className="folder-action secondary-action"
-                onClick={() => void chooseFolder("downloadsPath")}
-                disabled={isSaving}
-                title="Browse for the Downloads folder"
-              >
-                <FolderOpen size={12} strokeWidth={2} />
-                Choose
-              </button>
-            </div>
-          </div>
+          </section>
         </div>
       </WorkbenchStage>
 
-      {/* Right inspector panel */}
-      <WorkbenchInspector>
-        {/* Inspector content can be added here if needed */}
-        <div className="inspector-placeholder">
-          <p className="inspector-hint">Select an item to see details</p>
+      <WorkbenchInspector className="home-inspector-shell" ariaLabel="Home details">
+        <div className="home-inspector">
+          <div className="detail-header">
+            <div>
+              <p className="eyebrow">Control room</p>
+              <h2>{primaryAction.title}</h2>
+            </div>
+            <span className="ghost-chip">Home</span>
+          </div>
+
+          <div className="home-focus-card">
+            <p>{primaryAction.body}</p>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+            >
+              {primaryAction.cta}
+            </button>
+          </div>
+
+          <div className="detail-block">
+            <div className="section-label">Update watch</div>
+            <div className="detail-list">
+              {watchRows.map((row) => (
+                <HomeDetailRow key={row.label} label={row.label} value={row.value} />
+              ))}
+            </div>
+          </div>
+
+          <div className="detail-block">
+            <div className="section-label">System truth</div>
+            <div className="detail-list">
+              {systemRows.map((row) => (
+                <HomeDetailRow key={row.label} label={row.label} value={row.value} />
+              ))}
+            </div>
+          </div>
         </div>
       </WorkbenchInspector>
     </Workbench>
   );
+}
+
+function HomeDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="detail-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return "Not scanned yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
 }
 
 function FolderRow({

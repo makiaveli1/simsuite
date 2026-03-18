@@ -200,8 +200,6 @@ export function UpdatesScreen({
   initialFileId,
 }: UpdatesScreenProps) {
   const {
-    sidebarWidth,
-    setSidebarWidth,
     updatesFiltersCollapsed,
     setUpdatesFiltersCollapsed,
   } = useUiPreferences();
@@ -481,12 +479,21 @@ export function UpdatesScreen({
     reviewList?.items.filter(
       (item) => reviewFilter === "all" || item.reviewReason === reviewFilter,
     ) ?? [];
+  const trackedTotal = trackedList?.total ?? 0;
+  const setupTotal = setupList?.total ?? 0;
+  const reviewTotal = reviewList?.total ?? 0;
   const currentModeCount =
     mode === "tracked"
-      ? trackedList?.total ?? 0
+      ? trackedTotal
       : mode === "setup"
-        ? setupList?.total ?? 0
+        ? setupTotal
         : filteredReviewItems.length;
+  const visibleRows =
+    mode === "tracked"
+      ? trackedList?.items ?? []
+      : mode === "setup"
+        ? setupList?.items ?? []
+        : filteredReviewItems;
   const canEditSelectedSource =
     selectedItem?.watchResult?.sourceOrigin !== "built_in_special";
   const canClearSelectedSource =
@@ -494,25 +501,184 @@ export function UpdatesScreen({
   const canRefreshSelectedSource = Boolean(
     selectedItem?.watchResult?.sourceUrl && selectedItem.watchResult.canRefreshNow,
   );
+  const currentFilterLabel =
+    mode === "review"
+      ? REVIEW_FILTERS.find((item) => item.id === reviewFilter)?.label ?? "Review"
+      : WATCH_LIST_FILTERS.find((item) => item.id === filter)?.label ?? "Tracked";
+  const modeCopy: Record<
+    UpdateMode,
+    { title: string; body: string }
+  > = {
+    tracked: {
+      title: "Tracked pages",
+      body:
+        "Confirmed updates, possible changes, and unclear results stay in one calm list so the next follow-up is easy to spot.",
+    },
+    setup: {
+      title: "Source setup",
+      body:
+        "Pick the right page once, save it, and let SimSuite reuse that source on later checks.",
+    },
+    review: {
+      title: "Needs review",
+      body:
+        "These pages still need provider setup, are reminder-only, or came back too unclear to trust yet.",
+    },
+  };
+  const trackedExactCount =
+    trackedList?.items.filter((item) => item.watchResult.status === "exact_update_available")
+      .length ?? 0;
+  const trackedPossibleCount =
+    trackedList?.items.filter((item) => item.watchResult.status === "possible_update").length ??
+    0;
+  const trackedUnclearCount =
+    trackedList?.items.filter((item) => item.watchResult.status === "unknown").length ?? 0;
+  const setupExactPageCount = setupList?.exactPageTotal ?? 0;
+  const setupCreatorPageCount = Math.max(0, setupTotal - setupExactPageCount);
+  const stageSummaryCards =
+    mode === "tracked"
+      ? [
+          {
+            label: "Confirmed",
+            value: trackedExactCount,
+            tone: "good" as const,
+            note:
+              userView === "beginner"
+                ? "These have a clear update waiting."
+                : "Exact pages with a confirmed newer version.",
+          },
+          {
+            label: "Possible",
+            value: trackedPossibleCount,
+            tone: "warn" as const,
+            note:
+              userView === "beginner"
+                ? "These probably changed, but still need a look."
+                : "The page changed, but the version clue is still cautious.",
+          },
+          {
+            label: "Unclear",
+            value: trackedUnclearCount,
+            tone: "muted" as const,
+            note:
+              userView === "beginner"
+                ? "These still need a better page or more context."
+                : "Saved pages that still do not produce a trustworthy result.",
+          },
+        ]
+      : mode === "setup"
+        ? [
+            {
+              label: "Exact pages",
+              value: setupExactPageCount,
+              tone: "good" as const,
+              note:
+                userView === "beginner"
+                  ? "Best when one file clearly belongs to one page."
+                  : "Best fit when one installed file maps to one exact release page.",
+            },
+            {
+              label: "Creator pages",
+              value: setupCreatorPageCount,
+              tone: "muted" as const,
+              note:
+                userView === "beginner"
+                  ? "Useful when a creator has many related files."
+                  : "Safer when one source covers a whole creator family.",
+            },
+            {
+              label: "Still waiting",
+              value: setupTotal,
+              tone: "warn" as const,
+              note:
+                userView === "beginner"
+                  ? "Everything here still needs a saved source."
+                  : "These items stay untracked until a source is saved.",
+            },
+          ]
+        : [
+            {
+              label: "Provider needed",
+              value: reviewList?.providerNeededCount ?? 0,
+              tone: "warn" as const,
+              note:
+                userView === "beginner"
+                  ? "These pages need a provider before SimSuite can check them."
+                  : "Saved pages that need a provider or login-backed helper path.",
+            },
+            {
+              label: "Reminder only",
+              value: reviewList?.referenceOnlyCount ?? 0,
+              tone: "muted" as const,
+              note:
+                userView === "beginner"
+                  ? "These are saved as reminders, not live checks."
+                  : "Reference pages that stay as bookmarks instead of refreshable sources.",
+            },
+            {
+              label: "Unknown result",
+              value: reviewList?.unknownResultCount ?? 0,
+              tone: "low" as const,
+              note:
+                userView === "beginner"
+                  ? "These still came back too unclear to trust."
+                  : "Saved pages that refresh, but still do not return a safe update answer.",
+            },
+          ];
+  const stageDetailRows = selectedItem
+    ? [
+        {
+          label: "Status",
+          value: selectedItem.watchResult
+            ? watchStatusLabel(selectedItem.watchResult.status, userView)
+            : "No source saved",
+        },
+        {
+          label: mode === "setup" ? "Suggested source" : "Watching",
+          value:
+            mode === "setup"
+              ? watchSourceKindLabel(watchSourceKind)
+              : selectedItem.watchResult?.sourceLabel ?? "No source saved",
+        },
+        {
+          label: "Installed",
+          value: formatVersion(selectedItem.installedVersionSummary?.version),
+        },
+      ]
+    : [];
+
+  useEffect(() => {
+    if (!visibleRows.length) {
+      setSelectedItem(null);
+      setWatchEditing(mode === "setup");
+      return;
+    }
+
+    if (selectedItem && visibleRows.some((item) => item.fileId === selectedItem.id)) {
+      return;
+    }
+
+    if (mode === "tracked") {
+      void handleSelectTrackedItem(visibleRows[0] as LibraryWatchListItem);
+      return;
+    }
+
+    if (mode === "setup") {
+      void handleSelectSetupItem(visibleRows[0] as LibraryWatchSetupItem);
+      return;
+    }
+
+    void handleSelectReviewItem(visibleRows[0] as LibraryWatchReviewItem);
+  }, [mode, selectedItem, visibleRows]);
 
   return (
     <Workbench threePanel fullHeight className="updates-workbench">
       <WorkbenchRail
         ariaLabel="Updates controls"
-        width={updatesFiltersCollapsed ? 0 : sidebarWidth}
-        onWidthChange={(width) => {
-          if (width < 196) {
-            setUpdatesFiltersCollapsed(true);
-            return;
-          }
-
-          setUpdatesFiltersCollapsed(false);
-          setSidebarWidth(width);
-        }}
-        minWidth={220}
-        maxWidth={360}
-        resizable
+        className={`updates-rail-shell ${updatesFiltersCollapsed ? "is-collapsed" : ""}`}
         noBorder
+        noPadding={updatesFiltersCollapsed}
+        hideHandle
       >
         {!updatesFiltersCollapsed ? (
           <div className="updates-rail">
@@ -627,14 +793,22 @@ export function UpdatesScreen({
 
       <WorkbenchStage className="updates-stage">
         <div className="table-header updates-stage-header">
-          <div className="table-meta">
+          <div className="updates-stage-copy">
             <div>
-              <strong>{currentModeCount.toLocaleString()}</strong>
-              <span>{mode === "tracked" ? "in this view" : mode}</span>
+              <p className="eyebrow">Workspace</p>
+              <h2>{modeCopy[mode].title}</h2>
+              <p className="text-muted">{modeCopy[mode].body}</p>
             </div>
-            <div>
-              <strong>{selectedItem ? "1" : "0"}</strong>
-              <span>selected</span>
+            <div className="health-chip-group updates-stage-metrics">
+              <span className={`health-chip ${mode === "tracked" ? "is-good" : ""}`}>
+                {trackedTotal} tracked
+              </span>
+              <span className={`health-chip ${mode === "setup" ? "is-good" : ""}`}>
+                {setupTotal} setup
+              </span>
+              <span className={`health-chip ${mode === "review" ? "is-warn" : ""}`}>
+                {reviewTotal} review
+              </span>
             </div>
           </div>
           <div className="workspace-toggles">
@@ -653,43 +827,106 @@ export function UpdatesScreen({
           </div>
         </div>
 
+        <div className="updates-stage-toolbar">
+          <span className="ghost-chip">{currentModeCount.toLocaleString()} in view</span>
+          <span className="ghost-chip">{currentFilterLabel}</span>
+          <span className="ghost-chip">
+            {selectedItem ? `Selected: ${selectedItem.filename}` : "Nothing selected"}
+          </span>
+        </div>
+
         {message ? <div className="updates-inline-message">{message}</div> : null}
 
-        <div className="table-scroll workbench-panel updates-table-scroll">
-          {mode === "tracked" ? (
-            <UpdatesTrackedTable
-              items={trackedList?.items ?? []}
-              loading={loadingTracked}
-              selectedId={selectedItem?.id ?? null}
-              onSelect={handleSelectTrackedItem}
-              userView={userView}
-              filter={filter}
-            />
-          ) : null}
+        <div className="updates-stage-body">
+          <div className="table-scroll workbench-panel updates-table-scroll">
+            {mode === "tracked" ? (
+              <UpdatesTrackedTable
+                items={trackedList?.items ?? []}
+                loading={loadingTracked}
+                selectedId={selectedItem?.id ?? null}
+                onSelect={handleSelectTrackedItem}
+                userView={userView}
+                filter={filter}
+              />
+            ) : null}
 
-          {mode === "setup" ? (
-            <UpdatesSetupTable
-              items={setupList?.items ?? []}
-              loading={loadingSetup}
-              selectedId={selectedItem?.id ?? null}
-              onSelect={handleSelectSetupItem}
-              userView={userView}
-            />
-          ) : null}
+            {mode === "setup" ? (
+              <UpdatesSetupTable
+                items={setupList?.items ?? []}
+                loading={loadingSetup}
+                selectedId={selectedItem?.id ?? null}
+                onSelect={handleSelectSetupItem}
+                userView={userView}
+              />
+            ) : null}
 
-          {mode === "review" ? (
-            <UpdatesReviewTable
-              items={filteredReviewItems}
-              loading={loadingReview}
-              selectedId={selectedItem?.id ?? null}
-              onSelect={handleSelectReviewItem}
-              userView={userView}
-            />
-          ) : null}
+            {mode === "review" ? (
+              <UpdatesReviewTable
+                items={filteredReviewItems}
+                loading={loadingReview}
+                selectedId={selectedItem?.id ?? null}
+                onSelect={handleSelectReviewItem}
+                userView={userView}
+              />
+            ) : null}
+          </div>
+
+          <div className="workbench-panel updates-stage-spotlight">
+            <div className="updates-stage-focus">
+              <p className="eyebrow">
+                {mode === "setup"
+                  ? userView === "beginner"
+                    ? "Next source"
+                    : "Source focus"
+                  : selectedItem
+                    ? userView === "beginner"
+                      ? "Selected file"
+                      : "Selection focus"
+                    : "Queue focus"}
+              </p>
+              <h3>{selectedItem ? selectedItem.filename : modeCopy[mode].title}</h3>
+              <p className="updates-stage-note">
+                {selectedItem
+                  ? describeUpdatesStageFocus(selectedItem, mode, userView)
+                  : mode === "setup"
+                    ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
+                    : mode === "review"
+                      ? "This side panel helps explain why some saved pages still need a calmer follow-up instead of a live result."
+                      : "Tracked pages stay here so confirmed updates, cautious matches, and unclear checks all live in one steady workspace."}
+              </p>
+              {stageDetailRows.length ? (
+                <div className="detail-list">
+                  {stageDetailRows.map((row) => (
+                    <DetailRow key={row.label} label={row.label} value={row.value} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="updates-stage-summary-grid">
+              {stageSummaryCards.map((card) => (
+                <UpdatesStageStatCard
+                  key={card.label}
+                  label={card.label}
+                  value={card.value}
+                  tone={card.tone}
+                  note={card.note}
+                />
+              ))}
+            </div>
+
+            <div className="updates-stage-guidance">
+              <strong>{updatesGuidanceTitle(mode, userView)}</strong>
+              <p>{updatesGuidanceBody(mode, userView)}</p>
+            </div>
+          </div>
         </div>
       </WorkbenchStage>
 
-      <WorkbenchInspector ariaLabel="Update details">
+      <WorkbenchInspector
+        ariaLabel="Update details"
+        className="updates-inspector-shell"
+      >
         {selectedItem ? (
           <div className="updates-inspector">
             <div className="detail-header">
@@ -893,7 +1130,7 @@ export function UpdatesScreen({
             )}
           </div>
         ) : (
-          <div className="detail-empty">
+          <div className="detail-empty updates-empty-state">
             <p className="eyebrow">{userView === "beginner" ? "Selected item" : "Inspector"}</p>
             <h2>Select an item</h2>
             <p>
@@ -906,6 +1143,82 @@ export function UpdatesScreen({
       </WorkbenchInspector>
     </Workbench>
   );
+}
+
+function UpdatesStageStatCard({
+  label,
+  value,
+  tone,
+  note,
+}: {
+  label: string;
+  value: number;
+  tone: "good" | "warn" | "low" | "muted";
+  note: string;
+}) {
+  return (
+    <div className={`updates-stage-stat updates-stage-stat-${tone}`}>
+      <span>{label}</span>
+      <strong>{value.toLocaleString()}</strong>
+      <p>{note}</p>
+    </div>
+  );
+}
+
+function describeUpdatesStageFocus(
+  item: FileDetail,
+  mode: UpdateMode,
+  userView: UserView,
+) {
+  if (mode === "setup") {
+    return userView === "beginner"
+      ? "This file still needs one saved page before SimSuite can keep checking it for you."
+      : "Save one exact or creator page here so this file can move from setup into the tracked lane.";
+  }
+
+  if (mode === "review") {
+    return item.watchResult?.note?.trim()
+      ? item.watchResult.note
+      : userView === "beginner"
+        ? "This saved source still needs a calmer manual follow-up before you can trust the result."
+        : "This saved source is still in a cautious state, so it stays in the review lane.";
+  }
+
+  return item.watchResult?.note?.trim()
+    ? item.watchResult.note
+    : userView === "beginner"
+      ? "This tracked file has the clearest next update story in the current view."
+      : "This tracked file is the clearest current follow-up in the selected watch lane.";
+}
+
+function updatesGuidanceTitle(mode: UpdateMode, userView: UserView) {
+  if (mode === "setup") {
+    return userView === "beginner" ? "How to pick the page" : "Choosing the source";
+  }
+
+  if (mode === "review") {
+    return userView === "beginner" ? "Why it stays here" : "Why this lane exists";
+  }
+
+  return userView === "beginner" ? "How tracked checks work" : "Reading tracked results";
+}
+
+function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
+  if (mode === "setup") {
+    return userView === "beginner"
+      ? "Use an exact page when one file clearly belongs to one download page. Use a creator page when that source covers a whole set from the same creator."
+      : "Exact pages work best for one-to-one matches. Creator pages are better when several related files share one release stream.";
+  }
+
+  if (mode === "review") {
+    return userView === "beginner"
+      ? "Review keeps reminder pages, provider-backed sources, and unclear checks in one place so they do not get mixed up with confirmed updates."
+      : "This lane keeps low-trust follow-up work visible without pretending that reminder pages or helper-limited checks are clean live answers.";
+  }
+
+  return userView === "beginner"
+    ? "Built-in exact pages can often be checked directly. Creator pages stay more careful because one source may cover several files or versions."
+    : "Tracked results stay together here so exact updates, possible changes, and low-trust checks can be compared side by side without burying the queue.";
 }
 
 function UpdatesTrackedTable({

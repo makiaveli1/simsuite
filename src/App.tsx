@@ -188,6 +188,7 @@ function AppShell({
   const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
+  const screenFrameRef = useRef<HTMLDivElement | null>(null);
   const userView: UserView = experienceModeToLegacyView(experienceMode);
 
   useEffect(() => {
@@ -217,6 +218,11 @@ function AppShell({
       }
     });
   }, []);
+
+  useEffect(() => {
+    globalThis.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    screenFrameRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [screen]);
 
   useEffect(() => {
     globalThis.localStorage?.setItem("simsuite:user-view", experienceMode);
@@ -598,6 +604,7 @@ function AppShell({
         <AnimatePresence mode="wait" initial={false}>
           <m.div
             key={screen}
+            ref={screenFrameRef}
             className="screen-frame"
             initial={screenFrameMotion.initial}
             animate={screenFrameMotion.animate}

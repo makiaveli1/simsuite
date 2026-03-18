@@ -37,7 +37,7 @@ export function Workbench({
     <div 
       className={classes}
       style={{ 
-        minHeight: fullHeight ? "100vh" : undefined,
+        height: fullHeight ? "100%" : undefined,
         padding: noPadding ? "0" : undefined 
       }}
     >

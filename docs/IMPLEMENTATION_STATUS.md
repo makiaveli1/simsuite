@@ -2,6 +2,72 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 18, 2026 - later night)
+
+This session kept the desktop-first redesign moving, but the most important result was finding and fixing one shared page-shell layout bug that was quietly making several screens look much stranger than their actual screen structure.
+
+Important changes and findings:
+
+- `Review`, `Organize`, `Duplicates`, `Creator Audit`, and `Category Audit` were using the shared `.workbench` class directly on the page shell
+- that class belongs to the split-pane `Workbench` component and was forcing a three-column outer page grid
+- that bug was a big reason those screens still looked awkward in screenshots:
+  - dead left space
+  - off-balance headers
+  - panels appearing shifted or top-heavy
+- a new `workbench-screen` override now lets those page shells keep the quieter workbench look without inheriting the wrong outer grid
+- `Review` also got a real desktop cleanup:
+  - proper header row
+  - left rail with queue health and reason groups
+  - central queue stage
+  - right inspector kept for selected detail
+- `Updates` got a stronger center stage:
+  - selected-file spotlight
+  - mode-specific counts
+  - short lane guidance
+  - this reduces the “one row in a huge empty panel” feeling
+- fresh live visual checks were run after the changes for:
+  - `Review`
+  - `Updates`
+  - `Organize`
+  - `Creator Audit`
+  - `Duplicates`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- `Updates` and `Review` are much better, but both can still feel a little visually quiet when their lists are very short
+- `Library` still needs a fresh screenshot-driven pass in the newer desktop shell
+- `Types` should be visually rechecked after the shared page-shell fix even though the structural bug fix should already help it
+
+## Current session note (March 18, 2026 - visual cleanup)
+
+This session did not change ownership or flow. It was a visual cleanup pass on the new `Downloads` workbench so the screen stops feeling like a stack of equal-weight cards.
+
+Important changes and findings:
+
+- the `Downloads` rail was quieted:
+  - slightly narrower
+  - vertical filter stack
+  - calmer secondary actions
+  - lane summaries flattened into a quicker status list
+- the center stage was cleaned up:
+  - boxed stage stats became compact chips
+  - extra corner accents and heavier panel feel were removed from the `Downloads` workbench surfaces
+  - queue rows were softened so the selected batch can lead the screen
+- the right inspector was simplified:
+  - signal cards are lighter
+  - the main next-step card is more clearly the primary focus
+  - docked detail sections read more like one inspector and less like many separate mini-panels
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- no fresh real desktop click-through or screenshot signoff was run after this visual pass
+- `Downloads` still needs a real-eye check in guided/review states
+- the same cleanup still needs to reach `Home`, `Review`, `Duplicates`, and the audit screens
+
 ## Current session note (March 18, 2026 - later)
 
 This session pushed the desktop-first redesign into `Downloads`, which was still one of the most crowded workspaces.

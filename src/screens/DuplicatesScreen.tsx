@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { m } from "motion/react";
 import { Copy, RefreshCw, Search, SearchX } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
-import { LayoutPresetBar } from "../components/LayoutPresetBar";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { StatePanel } from "../components/StatePanel";
@@ -198,7 +197,7 @@ export function DuplicatesScreen({
     : [];
 
   return (
-    <section className="screen-shell workbench">
+    <section className="screen-shell workbench workbench-screen">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Lookalikes" : "Analysis"}</p>
@@ -229,68 +228,6 @@ export function DuplicatesScreen({
         </div>
       </div>
 
-      <div className="summary-matrix">
-        <SummaryStat
-          label={userView === "beginner" ? "Matches" : "Pairs"}
-          value={overview?.totalPairs ?? 0}
-          tone="neutral"
-        />
-        <SummaryStat label="Exact" value={overview?.exactPairs ?? 0} tone="good" />
-        <SummaryStat label="Filename" value={overview?.filenamePairs ?? 0} tone="neutral" />
-        <SummaryStat label="Version" value={overview?.versionPairs ?? 0} tone="low" />
-      </div>
-
-      <LayoutPresetBar
-        title={userView === "beginner" ? "Quick view" : "Duplicates layout"}
-        summary={
-          userView === "beginner"
-            ? "Keep the match list and the compare panel easy to read while you look through repeats."
-            : userView === "power"
-              ? "Saved layouts for broad sweeps or deeper path comparison."
-              : "Saved layouts for broad sweeps or deeper path comparison."
-        }
-        presets={userView === "beginner" ? [] : DUPLICATES_LAYOUT_PRESETS}
-        activePreset={duplicatesLayoutPreset}
-        onApplyPreset={(preset) =>
-          applyDuplicatesLayoutPreset(preset as DuplicatesLayoutPreset)
-        }
-        filterToggle={{
-          collapsed: duplicatesFiltersCollapsed,
-          onToggle: () =>
-            setDuplicatesFiltersCollapsed(!duplicatesFiltersCollapsed),
-          hiddenLabel: "Show filters",
-          shownLabel: "Hide filters",
-        }}
-      />
-
-      {!duplicatesFiltersCollapsed ? (
-        <div className="panel-card filter-panel">
-          <div className="filter-grid">
-            <label className="field">
-              <span>Search</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Filename or creator"
-              />
-            </label>
-
-            <label className="field">
-              <span>{userView === "beginner" ? "Match type" : "Type"}</span>
-              <select
-                value={duplicateType}
-                onChange={(event) => setDuplicateType(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="exact">Exact</option>
-                <option value="filename">Filename</option>
-                <option value="version">Version</option>
-              </select>
-            </label>
-          </div>
-        </div>
-      ) : null}
-
       {filteredPairs.length ? (
         <div className="review-layout duplicates-layout">
           <div className="panel-card queue-panel duplicates-queue-panel">
@@ -299,8 +236,88 @@ export function DuplicatesScreen({
                 <p className="eyebrow">Pairs</p>
                 <h2>{userView === "beginner" ? "Possible repeats" : "Detected duplicates"}</h2>
               </div>
-              <span className="ghost-chip">{filteredPairs.length} shown</span>
+              <div className="header-actions">
+                <span className="ghost-chip">{filteredPairs.length} shown</span>
+                <button
+                  type="button"
+                  className="workspace-toggle"
+                  onClick={() =>
+                    setDuplicatesFiltersCollapsed(!duplicatesFiltersCollapsed)
+                  }
+                >
+                  {duplicatesFiltersCollapsed ? "Show controls" : "Hide controls"}
+                </button>
+              </div>
             </div>
+
+            {!duplicatesFiltersCollapsed ? (
+              <div className="duplicates-control-stack">
+                <div className="summary-matrix duplicates-summary-matrix">
+                  <SummaryStat
+                    label={userView === "beginner" ? "Matches" : "Pairs"}
+                    value={overview?.totalPairs ?? 0}
+                    tone="neutral"
+                  />
+                  <SummaryStat
+                    label="Exact"
+                    value={overview?.exactPairs ?? 0}
+                    tone="good"
+                  />
+                  <SummaryStat
+                    label="Filename"
+                    value={overview?.filenamePairs ?? 0}
+                    tone="neutral"
+                  />
+                  <SummaryStat
+                    label="Version"
+                    value={overview?.versionPairs ?? 0}
+                    tone="low"
+                  />
+                </div>
+
+                <div className="duplicates-filter-grid">
+                  <label className="field">
+                    <span>Search</span>
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Filename or creator"
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>{userView === "beginner" ? "Match type" : "Type"}</span>
+                    <select
+                      value={duplicateType}
+                      onChange={(event) => setDuplicateType(event.target.value)}
+                    >
+                      <option value="">All</option>
+                      <option value="exact">Exact</option>
+                      <option value="filename">Filename</option>
+                      <option value="version">Version</option>
+                    </select>
+                  </label>
+                </div>
+
+                {userView !== "beginner" ? (
+                  <div className="duplicates-layout-presets">
+                    {DUPLICATES_LAYOUT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`workspace-toggle ${
+                          duplicatesLayoutPreset === preset.id ? "is-active" : ""
+                        }`}
+                        onClick={() => applyDuplicatesLayoutPreset(preset.id)}
+                        title={preset.hint}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="vertical-dock queue-dock">
               <div className="queue-list duplicates-queue-list">

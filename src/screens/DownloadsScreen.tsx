@@ -1261,7 +1261,10 @@ export function DownloadsScreen({
                 <div className="section-label">Queue lanes</div>
                 <div className="downloads-lane-summary-list">
                   {DOWNLOAD_LANE_ORDER.map((lane) => (
-                    <div key={lane} className="downloads-lane-summary">
+                    <div
+                      key={lane}
+                      className={`downloads-lane-summary downloads-lane-summary-${lane}`}
+                    >
                       <div>
                         <strong>{queueLaneLabel(lane, userView)}</strong>
                         <span>{queueLaneHint(lane, userView)}</span>
@@ -1288,19 +1291,27 @@ export function DownloadsScreen({
                   </button>
                   <button
                     type="button"
-                    className="secondary-action"
+                    className="action-item"
                     onClick={() => onNavigate("review")}
                   >
-                    <ShieldAlert size={14} strokeWidth={2} />
-                    {reviewLabel(userView)}
+                    <ShieldAlert
+                      size={14}
+                      strokeWidth={2}
+                      className="action-item-icon"
+                    />
+                    <span className="action-item-label">{reviewLabel(userView)}</span>
                   </button>
                   <button
                     type="button"
-                    className="secondary-action"
+                    className="action-item"
                     onClick={() => onNavigate("home")}
                   >
-                    <FolderSearch size={14} strokeWidth={2} />
-                    Home folders
+                    <FolderSearch
+                      size={14}
+                      strokeWidth={2}
+                      className="action-item-icon"
+                    />
+                    <span className="action-item-label">Home folders</span>
                   </button>
                 </div>
               </div>
@@ -1309,19 +1320,16 @@ export function DownloadsScreen({
 
           <WorkbenchStage className="downloads-stage-panel">
             <div className="table-header downloads-stage-header">
-              <div className="table-meta">
-                <div>
-                  <strong>{(inbox?.items.length ?? 0).toLocaleString()}</strong>
-                  <span>visible</span>
-                </div>
-                <div>
-                  <strong>{selectedItem ? "1" : "0"}</strong>
-                  <span>selected</span>
-                </div>
-                <div>
-                  <strong>{selectedPreset}</strong>
-                  <span>{userView === "beginner" ? "tidy style" : "rule set"}</span>
-                </div>
+              <div className="health-chip-group downloads-stage-metrics">
+                <span className="health-chip">
+                  {(inbox?.items.length ?? 0).toLocaleString()} visible
+                </span>
+                <span className={`health-chip${selectedItem ? " is-good" : ""}`}>
+                  {selectedItem ? "1 selected" : "No selection"}
+                </span>
+                <span className="health-chip">
+                  {userView === "beginner" ? "Tidy" : "Rule"}: {selectedPreset}
+                </span>
               </div>
               <div className="downloads-stage-status">
                 <span className="ghost-chip">{stageStatusMessage}</span>
