@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { m } from "motion/react";
+import { AnimatePresence, m } from "motion/react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
   ScanSearch,
   Settings2,
   Trash2,
+  X,
 } from "lucide-react";
 import { Workbench } from "../components/layout/Workbench";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
@@ -21,7 +22,13 @@ import { WorkbenchRail } from "../components/layout/WorkbenchRail";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import {
+  overlayTransition,
+  panelSpring,
+  rowHover,
+  rowPress,
+  stagedListItem,
+} from "../lib/motion";
 import {
   friendlyTypeLabel,
   screenHelperLine,
@@ -365,6 +372,11 @@ export function UpdatesScreen({
     await loadSelectedFile(item.fileId);
   }
 
+  function closeWatchEditor() {
+    syncWatchFields(selectedItem);
+    setWatchEditing(false);
+  }
+
   async function handleSaveWatchSource() {
     if (!selectedItem) {
       return;
@@ -648,9 +660,27 @@ export function UpdatesScreen({
     : [];
 
   useEffect(() => {
+    if (!watchEditing) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      closeWatchEditor();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [watchEditing, selectedItem]);
+
+  useEffect(() => {
     if (!visibleRows.length) {
       setSelectedItem(null);
-      setWatchEditing(mode === "setup");
+      setWatchEditing(false);
       return;
     }
 
@@ -1026,11 +1056,145 @@ export function UpdatesScreen({
               </div>
             ) : null}
 
-            {mode === "setup" || watchEditing ? (
-              <div className="detail-block">
-                <div className="section-label">
-                  {userView === "beginner" ? "Set source" : "Source setup"}
+            <div className="detail-block">
+              <div className="section-label">Actions</div>
+              <div className="updates-action-grid">
+                {canEditSelectedSource ? (
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => setWatchEditing(true)}
+                  >
+                    <Settings2 size={14} strokeWidth={2} />
+                    {selectedItem.watchResult?.sourceUrl || selectedItem.watchResult?.sourceLabel
+                      ? "Edit source"
+                      : "Set source"}
+                  </button>
+                ) : (
+                  <div className="updates-built-in-note">
+                    SimSuite is using its built-in page for this item.
+                  </div>
+                )}
+
+                {selectedItem.watchResult ? (
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => void handleRefreshWatchSource()}
+                    disabled={refreshingWatch || !canRefreshSelectedSource}
+                  >
+                    <RefreshCw
+                      size={14}
+                      strokeWidth={2}
+                      className={refreshingWatch ? "spin" : undefined}
+                    />
+                    {refreshingWatch ? "Checking..." : "Check selected"}
+                  </button>
+                ) : null}
+              </div>
+              <p className="updates-action-note">
+                {mode === "setup"
+                  ? "Source editing opens in a side sheet so you can keep the queue and status details in view while you save the page."
+                  : "Keep the item details open here, then slide in the source editor only when you need to change or save a page."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="detail-empty updates-empty-state">
+            <p className="eyebrow">{userView === "beginner" ? "Selected item" : "Inspector"}</p>
+            <h2>Select an item</h2>
+            <p>
+              {userView === "beginner"
+                ? "Pick something from the list to set a source or check its update state."
+                : "Select a row to inspect its current source, status, and next action."}
+            </p>
+          </div>
+        )}
+      </WorkbenchInspector>
+
+      <AnimatePresence>
+        {selectedItem && watchEditing ? (
+          <m.div
+            className="workbench-sheet-shell"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={overlayTransition}
+            onClick={closeWatchEditor}
+          >
+            <m.aside
+              className="workbench-sheet updates-watch-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="updates-watch-sheet-title"
+              initial={{ opacity: 0, x: 52 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 58 }}
+              transition={panelSpring}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="workbench-sheet-header">
+                <div>
+                  <p className="eyebrow">
+                    {mode === "setup" ? "Save source" : "Source editor"}
+                  </p>
+                  <h2 id="updates-watch-sheet-title">
+                    {selectedItem.watchResult?.sourceLabel
+                      ? "Update this saved page"
+                      : "Save a watch page"}
+                  </h2>
+                  <p className="workbench-sheet-copy">
+                    {mode === "setup"
+                      ? "Pick the page here, save it once, and let SimSuite reuse it on the next check."
+                      : "Change the saved page here without losing sight of the item details behind it."}
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  className="workspace-toggle"
+                  onClick={closeWatchEditor}
+                  aria-label="Close watch source editor"
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
+
+              <div className="workbench-sheet-body">
+                <div className="updates-watch-sheet-lead">
+                  <div>
+                    <span className="section-label">Editing</span>
+                    <strong>{selectedItem.filename}</strong>
+                    <p className="workspace-toolbar-copy">
+                      {selectedItem.creator ?? unknownCreatorLabel(userView)} ·{" "}
+                      {friendlyTypeLabel(selectedItem.kind)}
+                    </p>
+                  </div>
+
+                  <div className="updates-watch-sheet-meta">
+                    <span className="ghost-chip">
+                      {watchSourceKindLabel(watchSourceKind)}
+                    </span>
+                    <span className="ghost-chip">
+                      {selectedItem.watchResult?.sourceLabel
+                        ? "Saved source"
+                        : "Needs source"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="updates-watch-sheet-guidance">
+                  <strong>
+                    {userView === "beginner"
+                      ? "Pick the clearest page you trust"
+                      : "Save the source that gives the cleanest follow-up"}
+                  </strong>
+                  <p>
+                    {userView === "beginner"
+                      ? "Exact pages are best when one file clearly maps to one download page. Creator pages work better when one page covers a whole creator set."
+                      : "Use exact pages for one-to-one release tracking. Use creator pages when several related files share one release stream."}
+                  </p>
+                </div>
+
                 <div className="updates-form-grid">
                   <label className="field">
                     <span>Source type</span>
@@ -1065,61 +1229,13 @@ export function UpdatesScreen({
                     />
                   </label>
                 </div>
-                <div className="updates-action-row">
-                  <button
-                    type="button"
-                    className="primary-action"
-                    onClick={() => void handleSaveWatchSource()}
-                    disabled={savingWatch || !watchSourceUrl.trim()}
-                  >
-                    {savingWatch ? "Saving..." : "Save source"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => {
-                      syncWatchFields(selectedItem);
-                      setWatchEditing(false);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="detail-block">
-                <div className="section-label">Actions</div>
-                <div className="updates-action-grid">
-                  {canEditSelectedSource ? (
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => setWatchEditing(true)}
-                    >
-                      <Settings2 size={14} strokeWidth={2} />
-                      Edit source
-                    </button>
-                  ) : (
-                    <div className="updates-built-in-note">
-                      SimSuite is using its built-in page for this item.
-                    </div>
-                  )}
 
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => void handleRefreshWatchSource()}
-                    disabled={refreshingWatch || !canRefreshSelectedSource}
-                  >
-                    <RefreshCw
-                      size={14}
-                      strokeWidth={2}
-                      className={refreshingWatch ? "spin" : undefined}
-                    />
-                    {refreshingWatch ? "Checking..." : "Check selected"}
-                  </button>
-
-                  {canClearSelectedSource ? (
+                {canClearSelectedSource ? (
+                  <div className="updates-watch-sheet-danger">
+                    <strong>Remove the saved page</strong>
+                    <p>
+                      Clear it if this page is wrong and you want the item back in setup.
+                    </p>
                     <button
                       type="button"
                       className="secondary-action"
@@ -1129,23 +1245,31 @@ export function UpdatesScreen({
                       <Trash2 size={14} strokeWidth={2} />
                       {clearingWatch ? "Clearing..." : "Clear source"}
                     </button>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="detail-empty updates-empty-state">
-            <p className="eyebrow">{userView === "beginner" ? "Selected item" : "Inspector"}</p>
-            <h2>Select an item</h2>
-            <p>
-              {userView === "beginner"
-                ? "Pick something from the list to set a source or check its update state."
-                : "Select a row to inspect its current source, status, and next action."}
-            </p>
-          </div>
-        )}
-      </WorkbenchInspector>
+
+              <div className="workbench-sheet-footer">
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={closeWatchEditor}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => void handleSaveWatchSource()}
+                  disabled={savingWatch || !watchSourceUrl.trim()}
+                >
+                  {savingWatch ? "Saving..." : "Save source"}
+                </button>
+              </div>
+            </m.aside>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
     </Workbench>
   );
 }

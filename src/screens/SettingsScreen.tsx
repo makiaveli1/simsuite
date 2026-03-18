@@ -84,6 +84,13 @@ const DENSITIES: Array<{
   },
 ];
 
+type SettingsSectionId =
+  | "experience"
+  | "appearance"
+  | "density"
+  | "automation"
+  | "layout";
+
 interface SettingsScreenProps {
   experienceMode: ExperienceMode;
   onExperienceModeChange: (view: ExperienceMode) => void;
@@ -100,6 +107,8 @@ export function SettingsScreen({
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
   const [isRefreshingWatchedSources, setIsRefreshingWatchedSources] = useState(false);
   const [watchAutomationMessage, setWatchAutomationMessage] = useState<string | null>(null);
+  const [activeSection, setActiveSection] =
+    useState<SettingsSectionId>("experience");
   const activeTheme = getThemeDefinition(theme);
   const activeView = {
     ...EXPERIENCE_MODE_PROFILES[experienceMode],
@@ -110,6 +119,55 @@ export function SettingsScreen({
   const keepRunningInBackground = appBehavior?.keepRunningInBackground ?? false;
   const automaticWatchChecks = appBehavior?.automaticWatchChecks ?? false;
   const watchCheckIntervalHours = appBehavior?.watchCheckIntervalHours ?? 12;
+  const settingsSections = [
+    {
+      id: "experience" as const,
+      label: "Experience",
+      title: "How the app talks to you",
+      summary: `${activeView.label} mode`,
+      hint: "Choose how much help and proof stays open while you sort.",
+      icon: Sparkles,
+    },
+    {
+      id: "appearance" as const,
+      label: "Appearance",
+      title: "Color and mood",
+      summary: activeTheme.label,
+      hint: "Pick the skin that makes long cleanup sessions easier on your eyes.",
+      icon: Palette,
+    },
+    {
+      id: "density" as const,
+      label: "Workspace size",
+      title: "How tight the layout feels",
+      summary: activeDensity.label,
+      hint: "Change how much fits on screen before anything feels cramped.",
+      icon: LayoutPanelLeft,
+    },
+    {
+      id: "automation" as const,
+      label: "Background and updates",
+      title: "What keeps running quietly",
+      summary: automaticWatchChecks
+        ? `Checks ${watchIntervalLabel(watchCheckIntervalHours)}`
+        : keepRunningInBackground
+          ? "Tray stays awake"
+          : "Manual only",
+      hint: "Control tray behavior and safe watched-page checks.",
+      icon: Workflow,
+    },
+    {
+      id: "layout" as const,
+      label: "Layout memory",
+      title: "Reset saved panel sizes",
+      summary: "Restore defaults",
+      hint: "Use this if the workspace starts feeling over-tuned or awkward.",
+      icon: RotateCcw,
+    },
+  ];
+  const activeSectionMeta =
+    settingsSections.find((section) => section.id === activeSection) ??
+    settingsSections[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -239,370 +297,53 @@ export function SettingsScreen({
         </div>
       </header>
 
-      <div className="settings-layout">
-        <div className="settings-stack">
-          <m.section className="panel-card" {...stagedListItem(0)}>
+      <div className="settings-layout settings-preferences-layout">
+        <aside className="settings-nav-column">
+          <m.section className="panel-card settings-nav-panel" {...stagedListItem(0)}>
             <div className="panel-heading">
               <div>
                 <span className="section-label">
-                  <Sparkles size={14} strokeWidth={2} />
-                  Experience
+                  <SlidersHorizontal size={14} strokeWidth={2} />
+                  Preferences
                 </span>
-                <h2>Pick your household vibe</h2>
+                <h2>Pick one section at a time</h2>
               </div>
               <p className="workspace-toolbar-copy">
-                Each view changes how loud or quiet the app feels while you sort.
+                Only the group you are changing stays open, so the screen feels more like
+                a proper desktop preferences window.
               </p>
             </div>
 
-            <div className="settings-view-grid" role="tablist" aria-label="User view">
-              {EXPERIENCE_MODE_ORDER.map((mode) => {
-                const profile = EXPERIENCE_MODE_PROFILES[mode];
-                const card = EXPERIENCE_CARDS[mode];
+            <div className="settings-section-list" aria-label="Settings sections">
+              {settingsSections.map((section) => {
+                const Icon = section.icon;
                 return (
-                <m.button
-                  key={mode}
-                  type="button"
-                  className={`settings-view-card ${experienceMode === mode ? "is-active" : ""}`}
-                  onClick={() => onExperienceModeChange(mode)}
-                  title={card.hint}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  <div className="settings-view-card-topline">
-                    <strong>{profile.label}</strong>
-                    <span className="ghost-chip">{profile.badge}</span>
-                  </div>
-                  <span className="settings-view-headline">{card.headline}</span>
-                  <p className="workspace-toolbar-copy">{card.hint}</p>
-                  <div className="settings-view-traits">
-                    {card.traits.map((trait) => (
-                      <span key={trait} className="settings-view-trait">
-                        {trait}
+                  <m.button
+                    key={section.id}
+                    type="button"
+                    className={`settings-section-button ${
+                      activeSection === section.id ? "is-active" : ""
+                    }`}
+                    onClick={() => setActiveSection(section.id)}
+                    whileHover={hoverLift}
+                    whileTap={tapPress}
+                    aria-pressed={activeSection === section.id}
+                  >
+                    <div className="settings-section-button-topline">
+                      <span className="section-label">
+                        <Icon size={14} strokeWidth={2} />
+                        {section.label}
                       </span>
-                    ))}
-                  </div>
-                </m.button>
+                      <span className="ghost-chip">{section.summary}</span>
+                    </div>
+                    <strong>{section.title}</strong>
+                    <p className="workspace-toolbar-copy">{section.hint}</p>
+                  </m.button>
                 );
               })}
             </div>
-
-            <div className="settings-summary-card">
-              <span className="section-label">Current fit</span>
-              <strong>{activeView.label} mode</strong>
-              <p className="workspace-toolbar-copy">{activeView.hint}</p>
-              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                {activeView.workspaceSummary}
-              </p>
-            </div>
           </m.section>
 
-          <m.section className="panel-card" {...stagedListItem(1)}>
-            <div className="panel-heading">
-              <div>
-                <span className="section-label">
-                  <Palette size={14} strokeWidth={2} />
-                  Appearance
-                </span>
-                <h2>Pick a skin</h2>
-              </div>
-              <p className="workspace-toolbar-copy">
-                Themes change color, surface tone, motion feel, and backdrop mood.
-              </p>
-            </div>
-
-            <div className="theme-strip settings-theme-strip">
-              {UI_THEMES.map((item) => (
-                <m.button
-                  key={item.id}
-                  type="button"
-                  className={`theme-chip ${theme === item.id ? "is-active" : ""}`}
-                  onClick={() => setTheme(item.id)}
-                  title={`${item.label}: ${item.hint}`}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  <div className="theme-chip-swatches" aria-hidden="true">
-                    {item.swatch.map((value) => (
-                      <span
-                        key={value}
-                        className="theme-chip-swatch"
-                        style={{ background: value }}
-                      />
-                    ))}
-                  </div>
-                  <div className="theme-chip-copy">
-                    <strong>{item.label}</strong>
-                    <span>{item.mood}</span>
-                  </div>
-                </m.button>
-              ))}
-            </div>
-
-            <div className="settings-theme-summary">
-              <div className="workspace-toolbar-summary-swatch" aria-hidden="true">
-                {activeTheme.swatch.map((value) => (
-                  <span
-                    key={value}
-                    className="theme-chip-swatch"
-                    style={{ background: value }}
-                  />
-                ))}
-              </div>
-              <div className="settings-theme-copy">
-                <strong>{activeTheme.label}</strong>
-                <p className="workspace-toolbar-copy">{activeTheme.hint}</p>
-                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                  Signature: {activeTheme.signature}
-                </p>
-              </div>
-            </div>
-          </m.section>
-
-          <m.section className="panel-card" {...stagedListItem(2)}>
-            <div className="panel-heading">
-              <div>
-                <span className="section-label">
-                  <LayoutPanelLeft size={14} strokeWidth={2} />
-                  Workspace size
-                </span>
-                <h2>Choose panel density</h2>
-              </div>
-              <p className="workspace-toolbar-copy">
-                Density changes row spacing, panel padding, and how tightly the app
-                packs information.
-              </p>
-            </div>
-
-            <div className="segmented-control" role="tablist" aria-label="Density">
-              {DENSITIES.map((item) => (
-                <m.button
-                  key={item.id}
-                  type="button"
-                  className={`segment-button ${density === item.id ? "is-active" : ""}`}
-                  onClick={() => setDensity(item.id)}
-                  title={item.hint}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  {item.label}
-                </m.button>
-              ))}
-            </div>
-
-            <div className="settings-summary-card">
-              <span className="section-label">Current spacing</span>
-              <strong>{activeDensity.label}</strong>
-              <p className="workspace-toolbar-copy">{activeDensity.hint}</p>
-            </div>
-          </m.section>
-
-          <m.section className="panel-card" {...stagedListItem(3)}>
-            <div className="panel-heading">
-              <div>
-                <span className="section-label">
-                  <Workflow size={14} strokeWidth={2} />
-                  Background and updates
-                </span>
-                <h2>Keep watching after the window closes</h2>
-              </div>
-              <p className="workspace-toolbar-copy">
-                Use the tray if you want SimSuite to keep watching Downloads and safely
-                checking saved mod pages while the main window is hidden.
-              </p>
-            </div>
-
-            <div className="segmented-control" role="tablist" aria-label="Close behavior">
-              <m.button
-                type="button"
-                className={`segment-button ${
-                  appBehavior && !keepRunningInBackground ? "is-active" : ""
-                }`}
-                onClick={() => void updateBackgroundMode(false)}
-                disabled={!appBehavior || isSavingBackgroundMode}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                Close app
-              </m.button>
-              <m.button
-                type="button"
-                className={`segment-button ${
-                  keepRunningInBackground ? "is-active" : ""
-                }`}
-                onClick={() => void updateBackgroundMode(true)}
-                disabled={!appBehavior || isSavingBackgroundMode}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                Hide to tray
-              </m.button>
-            </div>
-
-            <div className="settings-summary-card">
-              <span className="section-label">Current close action</span>
-              <strong>
-                {!appBehavior
-                  ? "Loading close behavior"
-                  : keepRunningInBackground
-                    ? "Hide to tray"
-                    : "Close app"}
-              </strong>
-              <p className="workspace-toolbar-copy">
-                {!appBehavior
-                  ? "Reading your saved preference."
-                  : keepRunningInBackground
-                    ? "Closing the main window keeps SimSuite running in the tray so the Downloads watcher can stay awake."
-                    : "Closing the main window exits SimSuite completely, so Downloads watching stops until you open the app again."}
-              </p>
-              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                {isSavingBackgroundMode ? (
-                  <span className="settings-inline-status">
-                    <LoaderCircle size={14} strokeWidth={2} className="spin" />
-                    Saving close behavior...
-                  </span>
-                ) : keepRunningInBackground ? (
-                  "The tray menu gives you Open SimSuite and Exit SimSuite."
-                ) : (
-                  "Best if you only want SimSuite running while the window is open."
-                )}
-              </p>
-              {backgroundModeError ? (
-                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                  {backgroundModeError}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="settings-summary-card">
-              <span className="section-label">Automatic update checks</span>
-              <strong>{automaticWatchChecks ? "On" : "Off"}</strong>
-              <p className="workspace-toolbar-copy">
-                SimSuite only checks saved pages that are safe to read directly. It does
-                not try to break through protected sites, logins, or anti-bot walls.
-              </p>
-
-              <div className="segmented-control" role="tablist" aria-label="Automatic update checks">
-                <m.button
-                  type="button"
-                  className={`segment-button ${
-                    !automaticWatchChecks ? "is-active" : ""
-                  }`}
-                  onClick={() => void updateAutomaticWatchChecks(false)}
-                  disabled={!appBehavior || isSavingBackgroundMode}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  Off
-                </m.button>
-                <m.button
-                  type="button"
-                  className={`segment-button ${
-                    automaticWatchChecks ? "is-active" : ""
-                  }`}
-                  onClick={() => void updateAutomaticWatchChecks(true)}
-                  disabled={!appBehavior || isSavingBackgroundMode}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  On
-                </m.button>
-              </div>
-
-              <label className="field">
-                <span>How often</span>
-                <select
-                  value={String(watchCheckIntervalHours)}
-                  onChange={(event) =>
-                    void updateWatchCheckInterval(Number(event.target.value))
-                  }
-                  disabled={!appBehavior || isSavingBackgroundMode}
-                >
-                  <option value="1">Every hour</option>
-                  <option value="6">Every 6 hours</option>
-                  <option value="12">Every 12 hours</option>
-                  <option value="24">Every day</option>
-                </select>
-              </label>
-
-              <div className="settings-action-row">
-                <m.button
-                  type="button"
-                  className="secondary-action"
-                  onClick={() => void refreshWatchedSources()}
-                  disabled={isRefreshingWatchedSources}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  {isRefreshingWatchedSources ? "Checking watched pages..." : "Check watched pages now"}
-                </m.button>
-                <p className="workspace-toolbar-copy settings-inline-note">
-                  {automaticWatchChecks
-                    ? `Automatic checks are set to ${watchIntervalLabel(
-                        watchCheckIntervalHours,
-                      )}.`
-                    : "While this is off, SimSuite only checks watched pages when you ask it to."}
-                </p>
-              </div>
-
-              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                Last watch check:{" "}
-                {appBehavior?.lastWatchCheckAt
-                  ? new Date(appBehavior.lastWatchCheckAt).toLocaleString()
-                  : "Not checked yet"}
-              </p>
-              {appBehavior?.lastWatchCheckError ? (
-                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                  Last watch-check problem: {appBehavior.lastWatchCheckError}
-                </p>
-              ) : null}
-              {watchAutomationMessage ? (
-                <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                  {watchAutomationMessage}
-                </p>
-              ) : null}
-              <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-                Exact mod pages are best. Creator pages are still reminder links, and
-                protected services like CurseForge need an approved provider path first.
-              </p>
-            </div>
-          </m.section>
-
-          <m.section className="panel-card" {...stagedListItem(4)}>
-            <div className="panel-heading">
-              <div>
-                <span className="section-label">
-                  <RotateCcw size={14} strokeWidth={2} />
-                  Layout memory
-                </span>
-                <h2>Reset saved panels</h2>
-              </div>
-              <p className="workspace-toolbar-copy">
-                Use this when panels, docks, or saved workspace presets feel too far
-                from the default layout.
-              </p>
-            </div>
-
-            <div className="settings-action-row">
-              <m.button
-                type="button"
-                className="secondary-action"
-                onClick={resetPanelSizes}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                <RotateCcw size={16} strokeWidth={2} />
-                Reset panels
-              </m.button>
-              <p className="workspace-toolbar-copy settings-inline-note">
-                This keeps your files and scan data untouched. It only resets saved
-                widths, heights, and dock arrangements.
-              </p>
-            </div>
-          </m.section>
-        </div>
-
-        <aside className="settings-aside">
           <m.section className="panel-card settings-side-panel" {...stagedListItem(1)}>
             <div className="panel-heading">
               <div>
@@ -628,21 +369,518 @@ export function SettingsScreen({
 
             <div className="settings-note-list">
               <div className="settings-note">
-                Saved locally on this PC so your workspace feels the same next time.
+                Your choices save on this PC right away, so the app feels familiar next
+                time too.
               </div>
               <div className="settings-note">
-                Safe actions still follow the same scan, review, approval, and restore
-                flow no matter which skin or view you pick.
+                These options only change the feel of the app. They do not move files or
+                weaken the safety flow.
               </div>
               <div className="settings-note">
-                Use Home for folders and scan status, then come back here only when you
-                want to personalize the interface.
+                Current focus: <strong>{activeSectionMeta.label}</strong>.
               </div>
             </div>
           </m.section>
         </aside>
+
+        <div className="settings-detail-column">
+          <m.section
+            key={activeSection}
+            className="panel-card settings-focus-panel"
+            {...stagedListItem(2)}
+          >
+            {activeSection === "experience" ? (
+              <SettingsExperienceSection
+                experienceMode={experienceMode}
+                activeView={activeView}
+                onExperienceModeChange={onExperienceModeChange}
+              />
+            ) : null}
+
+            {activeSection === "appearance" ? (
+              <SettingsAppearanceSection
+                activeTheme={activeTheme}
+                theme={theme}
+                onThemeChange={setTheme}
+              />
+            ) : null}
+
+            {activeSection === "density" ? (
+              <SettingsDensitySection
+                density={density}
+                activeDensity={activeDensity}
+                onDensityChange={setDensity}
+              />
+            ) : null}
+
+            {activeSection === "automation" ? (
+              <SettingsAutomationSection
+                appBehavior={appBehavior}
+                keepRunningInBackground={keepRunningInBackground}
+                automaticWatchChecks={automaticWatchChecks}
+                watchCheckIntervalHours={watchCheckIntervalHours}
+                isSavingBackgroundMode={isSavingBackgroundMode}
+                isRefreshingWatchedSources={isRefreshingWatchedSources}
+                backgroundModeError={backgroundModeError}
+                watchAutomationMessage={watchAutomationMessage}
+                onUpdateBackgroundMode={updateBackgroundMode}
+                onUpdateAutomaticWatchChecks={updateAutomaticWatchChecks}
+                onUpdateWatchCheckInterval={updateWatchCheckInterval}
+                onRefreshWatchedSources={refreshWatchedSources}
+              />
+            ) : null}
+
+            {activeSection === "layout" ? (
+              <SettingsLayoutSection onResetPanelSizes={resetPanelSizes} />
+            ) : null}
+          </m.section>
+        </div>
       </div>
     </div>
+  );
+}
+
+function SettingsExperienceSection({
+  experienceMode,
+  activeView,
+  onExperienceModeChange,
+}: {
+  experienceMode: ExperienceMode;
+  activeView: {
+    label: string;
+    hint: string;
+    workspaceSummary: string;
+  };
+  onExperienceModeChange: (view: ExperienceMode) => void;
+}) {
+  return (
+    <>
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <Sparkles size={14} strokeWidth={2} />
+            Experience
+          </span>
+          <h2>Pick your household vibe</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Each view changes how loud or quiet the app feels while you sort.
+        </p>
+      </div>
+
+      <div className="settings-view-grid" role="tablist" aria-label="User view">
+        {EXPERIENCE_MODE_ORDER.map((mode) => {
+          const profile = EXPERIENCE_MODE_PROFILES[mode];
+          const card = EXPERIENCE_CARDS[mode];
+          return (
+            <m.button
+              key={mode}
+              type="button"
+              className={`settings-view-card ${experienceMode === mode ? "is-active" : ""}`}
+              onClick={() => onExperienceModeChange(mode)}
+              title={card.hint}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              <div className="settings-view-card-topline">
+                <strong>{profile.label}</strong>
+                <span className="ghost-chip">{profile.badge}</span>
+              </div>
+              <span className="settings-view-headline">{card.headline}</span>
+              <p className="workspace-toolbar-copy">{card.hint}</p>
+              <div className="settings-view-traits">
+                {card.traits.map((trait) => (
+                  <span key={trait} className="settings-view-trait">
+                    {trait}
+                  </span>
+                ))}
+              </div>
+            </m.button>
+          );
+        })}
+      </div>
+
+      <div className="settings-summary-card">
+        <span className="section-label">Current fit</span>
+        <strong>{activeView.label} mode</strong>
+        <p className="workspace-toolbar-copy">{activeView.hint}</p>
+        <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+          {activeView.workspaceSummary}
+        </p>
+      </div>
+    </>
+  );
+}
+
+function SettingsAppearanceSection({
+  activeTheme,
+  theme,
+  onThemeChange,
+}: {
+  activeTheme: ReturnType<typeof getThemeDefinition>;
+  theme: ReturnType<typeof getThemeDefinition>["id"];
+  onThemeChange: (themeId: ReturnType<typeof getThemeDefinition>["id"]) => void;
+}) {
+  return (
+    <>
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <Palette size={14} strokeWidth={2} />
+            Appearance
+          </span>
+          <h2>Pick a skin</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Themes change color, surface tone, motion feel, and backdrop mood.
+        </p>
+      </div>
+
+      <div className="theme-strip settings-theme-strip">
+        {UI_THEMES.map((item) => (
+          <m.button
+            key={item.id}
+            type="button"
+            className={`theme-chip ${theme === item.id ? "is-active" : ""}`}
+            onClick={() => onThemeChange(item.id)}
+            title={`${item.label}: ${item.hint}`}
+            whileHover={hoverLift}
+            whileTap={tapPress}
+          >
+            <div className="theme-chip-swatches" aria-hidden="true">
+              {item.swatch.map((value) => (
+                <span
+                  key={value}
+                  className="theme-chip-swatch"
+                  style={{ background: value }}
+                />
+              ))}
+            </div>
+            <div className="theme-chip-copy">
+              <strong>{item.label}</strong>
+              <span>{item.mood}</span>
+            </div>
+          </m.button>
+        ))}
+      </div>
+
+      <div className="settings-theme-summary">
+        <div className="workspace-toolbar-summary-swatch" aria-hidden="true">
+          {activeTheme.swatch.map((value) => (
+            <span
+              key={value}
+              className="theme-chip-swatch"
+              style={{ background: value }}
+            />
+          ))}
+        </div>
+        <div className="settings-theme-copy">
+          <strong>{activeTheme.label}</strong>
+          <p className="workspace-toolbar-copy">{activeTheme.hint}</p>
+          <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+            Signature: {activeTheme.signature}
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SettingsDensitySection({
+  density,
+  activeDensity,
+  onDensityChange,
+}: {
+  density: UiDensity;
+  activeDensity: (typeof DENSITIES)[number];
+  onDensityChange: (density: UiDensity) => void;
+}) {
+  return (
+    <>
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <LayoutPanelLeft size={14} strokeWidth={2} />
+            Workspace size
+          </span>
+          <h2>Choose panel density</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Density changes row spacing, panel padding, and how tightly the app packs
+          information.
+        </p>
+      </div>
+
+      <div className="segmented-control" role="tablist" aria-label="Density">
+        {DENSITIES.map((item) => (
+          <m.button
+            key={item.id}
+            type="button"
+            className={`segment-button ${density === item.id ? "is-active" : ""}`}
+            onClick={() => onDensityChange(item.id)}
+            title={item.hint}
+            whileHover={hoverLift}
+            whileTap={tapPress}
+          >
+            {item.label}
+          </m.button>
+        ))}
+      </div>
+
+      <div className="settings-summary-card">
+        <span className="section-label">Current spacing</span>
+        <strong>{activeDensity.label}</strong>
+        <p className="workspace-toolbar-copy">{activeDensity.hint}</p>
+      </div>
+    </>
+  );
+}
+
+function SettingsAutomationSection({
+  appBehavior,
+  keepRunningInBackground,
+  automaticWatchChecks,
+  watchCheckIntervalHours,
+  isSavingBackgroundMode,
+  isRefreshingWatchedSources,
+  backgroundModeError,
+  watchAutomationMessage,
+  onUpdateBackgroundMode,
+  onUpdateAutomaticWatchChecks,
+  onUpdateWatchCheckInterval,
+  onRefreshWatchedSources,
+}: {
+  appBehavior: AppBehaviorSettings | null;
+  keepRunningInBackground: boolean;
+  automaticWatchChecks: boolean;
+  watchCheckIntervalHours: number;
+  isSavingBackgroundMode: boolean;
+  isRefreshingWatchedSources: boolean;
+  backgroundModeError: string | null;
+  watchAutomationMessage: string | null;
+  onUpdateBackgroundMode: (keepRunning: boolean) => Promise<void>;
+  onUpdateAutomaticWatchChecks: (enabled: boolean) => Promise<void>;
+  onUpdateWatchCheckInterval: (hours: number) => Promise<void>;
+  onRefreshWatchedSources: () => Promise<void>;
+}) {
+  return (
+    <>
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <Workflow size={14} strokeWidth={2} />
+            Background and updates
+          </span>
+          <h2>Keep watching after the window closes</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Use the tray if you want SimSuite to keep watching Downloads and safely
+          checking saved mod pages while the main window is hidden.
+        </p>
+      </div>
+
+      <div className="settings-focus-grid">
+        <div className="settings-summary-card settings-focus-block">
+          <span className="section-label">Current close action</span>
+          <strong>
+            {!appBehavior
+              ? "Loading close behavior"
+              : keepRunningInBackground
+                ? "Hide to tray"
+                : "Close app"}
+          </strong>
+          <p className="workspace-toolbar-copy">
+            {!appBehavior
+              ? "Reading your saved preference."
+              : keepRunningInBackground
+                ? "Closing the main window keeps SimSuite running in the tray so the Downloads watcher can stay awake."
+                : "Closing the main window exits SimSuite completely, so Downloads watching stops until you open the app again."}
+          </p>
+
+          <div className="segmented-control" role="tablist" aria-label="Close behavior">
+            <m.button
+              type="button"
+              className={`segment-button ${
+                appBehavior && !keepRunningInBackground ? "is-active" : ""
+              }`}
+              onClick={() => void onUpdateBackgroundMode(false)}
+              disabled={!appBehavior || isSavingBackgroundMode}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              Close app
+            </m.button>
+            <m.button
+              type="button"
+              className={`segment-button ${keepRunningInBackground ? "is-active" : ""}`}
+              onClick={() => void onUpdateBackgroundMode(true)}
+              disabled={!appBehavior || isSavingBackgroundMode}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              Hide to tray
+            </m.button>
+          </div>
+
+          <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+            {isSavingBackgroundMode ? (
+              <span className="settings-inline-status">
+                <LoaderCircle size={14} strokeWidth={2} className="spin" />
+                Saving close behavior...
+              </span>
+            ) : keepRunningInBackground ? (
+              "The tray menu gives you Open SimSuite and Exit SimSuite."
+            ) : (
+              "Best if you only want SimSuite running while the window is open."
+            )}
+          </p>
+        </div>
+
+        <div className="settings-summary-card settings-focus-block">
+          <span className="section-label">Automatic update checks</span>
+          <strong>{automaticWatchChecks ? "On" : "Off"}</strong>
+          <p className="workspace-toolbar-copy">
+            SimSuite only checks saved pages that are safe to read directly. It does not
+            try to break through protected sites, logins, or anti-bot walls.
+          </p>
+
+          <div
+            className="segmented-control"
+            role="tablist"
+            aria-label="Automatic update checks"
+          >
+            <m.button
+              type="button"
+              className={`segment-button ${!automaticWatchChecks ? "is-active" : ""}`}
+              onClick={() => void onUpdateAutomaticWatchChecks(false)}
+              disabled={!appBehavior || isSavingBackgroundMode}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              Off
+            </m.button>
+            <m.button
+              type="button"
+              className={`segment-button ${automaticWatchChecks ? "is-active" : ""}`}
+              onClick={() => void onUpdateAutomaticWatchChecks(true)}
+              disabled={!appBehavior || isSavingBackgroundMode}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              On
+            </m.button>
+          </div>
+
+          <label className="field">
+            <span>How often</span>
+            <select
+              value={String(watchCheckIntervalHours)}
+              onChange={(event) =>
+                void onUpdateWatchCheckInterval(Number(event.target.value))
+              }
+              disabled={!appBehavior || isSavingBackgroundMode}
+            >
+              <option value="1">Every hour</option>
+              <option value="6">Every 6 hours</option>
+              <option value="12">Every 12 hours</option>
+              <option value="24">Every day</option>
+            </select>
+          </label>
+
+          <div className="settings-action-row">
+            <m.button
+              type="button"
+              className="secondary-action"
+              onClick={() => void onRefreshWatchedSources()}
+              disabled={isRefreshingWatchedSources}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              {isRefreshingWatchedSources
+                ? "Checking watched pages..."
+                : "Check watched pages now"}
+            </m.button>
+            <p className="workspace-toolbar-copy settings-inline-note">
+              {automaticWatchChecks
+                ? `Automatic checks are set to ${watchIntervalLabel(
+                    watchCheckIntervalHours,
+                  )}.`
+                : "While this is off, SimSuite only checks watched pages when you ask it to."}
+            </p>
+          </div>
+
+          <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+            Last watch check:{" "}
+            {appBehavior?.lastWatchCheckAt
+              ? new Date(appBehavior.lastWatchCheckAt).toLocaleString()
+              : "Not checked yet"}
+          </p>
+          {watchAutomationMessage ? (
+            <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+              {watchAutomationMessage}
+            </p>
+          ) : null}
+          <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+            Exact mod pages are best. Creator pages stay reminder links until a better
+            provider path exists.
+          </p>
+        </div>
+      </div>
+
+      {backgroundModeError ? (
+        <div className="settings-status-banner">{backgroundModeError}</div>
+      ) : null}
+    </>
+  );
+}
+
+function SettingsLayoutSection({
+  onResetPanelSizes,
+}: {
+  onResetPanelSizes: () => void;
+}) {
+  return (
+    <>
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <RotateCcw size={14} strokeWidth={2} />
+            Layout memory
+          </span>
+          <h2>Reset saved panels</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Use this when panels, docks, or saved workspace presets feel too far from the
+          default layout.
+        </p>
+      </div>
+
+      <div className="settings-summary-card settings-focus-block">
+        <span className="section-label">Reset only the layout</span>
+        <strong>Keep your files and scan data untouched</strong>
+        <p className="workspace-toolbar-copy">
+          This only resets saved widths, heights, and dock arrangements. It does not
+          touch your library, review queues, or learned fixes.
+        </p>
+
+        <div className="settings-action-row">
+          <m.button
+            type="button"
+            className="secondary-action"
+            onClick={onResetPanelSizes}
+            whileHover={hoverLift}
+            whileTap={tapPress}
+          >
+            <RotateCcw size={16} strokeWidth={2} />
+            Reset panels
+          </m.button>
+          <p className="workspace-toolbar-copy settings-inline-note">
+            Handy after lots of resizing, or after switching between very different
+            monitor sizes.
+          </p>
+        </div>
+      </div>
+    </>
   );
 }
 

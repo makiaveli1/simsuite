@@ -1265,6 +1265,106 @@ h2,
   gap: 0.4rem;
 }
 
+.updates-action-note {
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.workbench-sheet-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 42;
+  display: grid;
+  justify-items: end;
+  background: color-mix(in srgb, var(--overlay-scrim) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.workbench-sheet {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  width: min(460px, calc(100vw - 0.8rem));
+  height: calc(100vh - 0.8rem);
+  margin: 0.4rem;
+  min-width: 0;
+  padding: calc(var(--panel-pad) + 0.12rem);
+  border: 1px solid rgba(205, 223, 214, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%),
+    var(--chrome-surface);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.workbench-sheet-header,
+.workbench-sheet-footer,
+.updates-watch-sheet-lead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.workbench-sheet-copy {
+  margin: 0.18rem 0 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.workbench-sheet-body {
+  display: grid;
+  gap: 0.78rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workbench-sheet-footer {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.updates-watch-sheet {
+  gap: 0.9rem;
+}
+
+.updates-watch-sheet-lead {
+  padding: 0.72rem;
+  border: 1px solid rgba(205, 223, 214, 0.1);
+  background:
+    linear-gradient(140deg, color-mix(in srgb, var(--accent-soft) 55%, transparent), transparent 72%),
+    var(--surface-3);
+}
+
+.updates-watch-sheet-lead strong {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.94rem;
+}
+
+.updates-watch-sheet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.updates-watch-sheet-guidance,
+.updates-watch-sheet-danger {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(205, 223, 214, 0.08);
+  background: var(--surface-3);
+}
+
+.updates-watch-sheet-danger {
+  border-color: color-mix(in srgb, var(--amber) 38%, var(--line));
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--amber) 10%, transparent), transparent 78%),
+    var(--surface-3);
+}
+
 /* Desktop-First Workbench: Slim Top Strip */
 .slim-strip {
   display: flex;
@@ -2342,17 +2442,59 @@ h2,
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.7fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   gap: var(--panel-gap);
   align-items: start;
   min-width: 0;
 }
 
-.settings-stack,
-.settings-aside {
+.settings-nav-column,
+.settings-detail-column {
   display: grid;
   gap: var(--panel-gap);
   min-width: 0;
+}
+
+.settings-nav-panel,
+.settings-focus-panel {
+  min-height: 0;
+}
+
+.settings-section-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-section-button {
+  display: grid;
+  gap: 0.34rem;
+  min-width: 0;
+  padding: 0.72rem;
+  border: 1px solid rgba(205, 223, 214, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%),
+    var(--surface-4);
+  text-align: left;
+}
+
+.settings-section-button.is-active {
+  border-color: var(--accent-line);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 68%, transparent), transparent 76%),
+    var(--selection-fill);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.settings-section-button-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.settings-section-button strong {
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
 }
 
 .settings-view-grid {
@@ -2413,6 +2555,11 @@ h2,
   align-items: start;
 }
 
+.settings-focus-heading {
+  padding-bottom: 0.1rem;
+  border-bottom: 1px solid rgba(205, 223, 214, 0.08);
+}
+
 .settings-summary-card,
 .settings-theme-summary,
 .settings-note,
@@ -2451,6 +2598,16 @@ h2,
   min-width: 0;
 }
 
+.settings-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.settings-focus-block {
+  align-content: start;
+}
+
 .settings-action-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -2473,6 +2630,16 @@ h2,
 
 .settings-note {
   padding: 0.6rem 0.68rem;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.settings-status-banner {
+  padding: 0.72rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--amber) 44%, var(--line));
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--amber) 12%, transparent), transparent 76%),
+    var(--surface-3);
   color: var(--text-soft);
   line-height: 1.45;
 }
@@ -6314,6 +6481,10 @@ h2,
   }
 
   .settings-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-focus-grid {
     grid-template-columns: 1fr;
   }
 

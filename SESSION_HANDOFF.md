@@ -1,5 +1,67 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Evening)
+
+- **Mode**: code
+- **Focus**: on-demand detail pass for `Settings` and `Updates`
+
+### Progress Made
+
+1. **Turned `Settings` into a real preferences window instead of one long pile of panels**:
+   - added a left preferences list so only one settings group stays open at a time
+   - moved the “saved here” summary into the left side so the right side can focus on the current choice
+   - split the longer background/update options into a calmer two-block detail view
+
+2. **Moved update-source editing toward details-on-demand**:
+   - removed the always-open source form from the `Updates` inspector
+   - added a reusable right-side sheet for source editing
+   - kept the inspector shorter so status, proof, and the next action stay readable
+   - moved “clear source” into the sheet instead of leaving it on screen all the time
+
+3. **Added the shared styling for the new patterns**:
+   - new workbench side-sheet chrome
+   - calmer settings section buttons
+   - focused settings detail panel layout
+   - responsive fallback for the two-column settings detail block
+
+4. **Checked the live app again instead of trusting the code**:
+   - restarted Vite at `http://127.0.0.1:1420/`
+   - visually checked:
+     - `Settings` in `Creator`
+     - `Settings` in `Casual`
+     - `Updates` in `Creator`
+     - `Updates` in `Casual`
+   - saved fresh screenshots:
+     - `output/playwright/pass8-settings-after.png`
+     - `output/playwright/pass8-updates-after.png`
+
+5. **Verification**:
+   - `npm run build` passed twice during the pass
+
+### What Worked
+
+- `Settings` feels much more like a desktop preferences window now
+- opening one settings section at a time cuts a lot of visual noise
+- `Updates` has a cleaner inspector because editing is no longer welded into it
+- the new side-sheet pattern is ready to reuse on other screens that still show too much at once
+
+### Known Problems / Gaps
+
+- the live fixture data only had one built-in tracked update source and zero setup items, so the new `Updates` side sheet could be verified in code and build output, but not fully opened in a real live state during this pass
+- `Settings` is much calmer now, but short sections like `Experience` still leave a lot of quiet canvas below the main panel; that is cleaner than clutter, but it could still take one more taste pass later
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- If continuing the on-demand-detail pass, start with:
+  - `Updates` live verification once there is editable or setup fixture data
+  - another taste pass on `Settings` short-section balance
+  - deciding which screen should get the next side sheet:
+    - `Home`
+    - `Downloads`
+    - or `Library`
+
 ## Current Session (March 18, 2026 - Afternoon)
 
 - **Mode**: code

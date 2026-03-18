@@ -1,5 +1,51 @@
 # SimSuite Implementation Status
 
+## Current session note (March 18, 2026 - evening)
+
+This session took the redesign into a stronger “show less, mean more” direction and focused on the two screens that still kept too much open at once:
+
+- `Settings`
+- `Updates`
+
+Important changes and findings:
+
+- `Settings` is no longer one tall stack of always-open sections
+- it now behaves more like a proper desktop preferences window:
+  - left side for section choices
+  - right side for the currently selected group
+  - smaller saved-state summary tucked into the side
+- this especially helped with the feeling that too many decisions were shouting at once
+- `Background and updates` also fits the new shape:
+  - close behavior stays in one block
+  - watched-page automation stays in another block
+  - the section is still detailed, but it is not fighting the rest of the settings page anymore
+- `Updates` now uses a better details-on-demand pattern:
+  - the source form is no longer pinned inside the inspector
+  - source editing now opens in a right-side sheet
+  - the inspector stays focused on status, proof, and the next action
+  - clearing a saved source moved into the sheet so it is not always taking up space
+- shared styling was added for:
+  - the new workbench side sheet
+  - calmer settings section buttons
+  - the focused settings detail layout
+- the live app was rechecked after restarting Vite at `http://127.0.0.1:1420/`
+- live visual checks covered:
+  - `Settings` in `Creator`
+  - `Settings` in `Casual`
+  - `Updates` in `Creator`
+  - `Updates` in `Casual`
+- fresh screenshots were saved in:
+  - `output/playwright/pass8-settings-after.png`
+  - `output/playwright/pass8-updates-after.png`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- the current live data only exposed one built-in tracked update source and no setup items
+- because of that, the new `Updates` side sheet could be verified through build success and code review, but not fully opened in a real live fixture during this pass
+- `Settings` is much calmer now, but very short sections still leave some quiet space below the active detail panel; this is better than clutter, but could still take a final taste pass later
+
 ## Current session note (March 18, 2026 - afternoon)
 
 This session stayed in the screenshot-driven desktop-app lane, but instead of rebuilding one or two screens, it did a full consistency pass across the whole app:
