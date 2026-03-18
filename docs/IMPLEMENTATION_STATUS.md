@@ -2,6 +2,41 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 18, 2026 - near dawn)
+
+This session stayed in the desktop-first cleanup lane and focused on two screens that still felt visually off even after the bigger workbench move:
+
+- `Library`
+- `Types`
+
+Important changes and findings:
+
+- `Library` was not just plain; its left filter rail was effectively sprawling across the screen
+- that was making the middle file table feel squeezed into the far right side and was a big reason the page looked hollow
+- `Library` now has:
+  - a real narrow filter rail
+  - a stronger center-stage header with counts and selected-file focus
+  - a direct `Open in Updates` handoff in the stage
+  - stacked rail filters instead of a wide horizontal form row
+- `Types` now starts the work sooner:
+  - the repeated top three-step strip was removed
+  - a smaller guidance note now lives inside the left panel instead
+  - the summary strip is still there, but tighter
+- fresh live visual checks were run after the changes for:
+  - `Library`
+  - `Types`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- `Library` still leaves some quiet lower-stage space when the result list is very short
+- `Types` is cleaner, but the right inspector is still a little busier than the newest screens
+- the same screenshot-driven cleanup should keep moving into:
+  - `Creators`
+  - `Duplicates`
+  - `Organize`
+
 ## Current session note (March 18, 2026 - later night)
 
 This session kept the desktop-first redesign moving, but the most important result was finding and fixing one shared page-shell layout bug that was quietly making several screens look much stranger than their actual screen structure.

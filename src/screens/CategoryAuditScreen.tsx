@@ -325,7 +325,7 @@ export function CategoryAuditScreen({
   }
 
   return (
-    <section className="screen-shell workbench workbench-screen">
+    <section className="screen-shell workbench workbench-screen types-screen">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Type cleanup" : "Learning"}</p>
@@ -361,28 +361,7 @@ export function CategoryAuditScreen({
         <div className="status-banner status-banner-error">{errorMessage}</div>
       ) : null}
 
-      <div className="learning-flow-strip">
-        <LearningStep
-          index={0}
-          step="1"
-          title="Pick a group"
-          detail="SimSuite groups files that look like the same type of CC or mod."
-        />
-        <LearningStep
-          index={1}
-          step="2"
-          title="Check examples"
-          detail="Use the middle column to make sure the files really belong together."
-        />
-        <LearningStep
-          index={2}
-          step="3"
-          title="Save the type"
-          detail="Your saved type will be reused on future scans. No files move here."
-        />
-      </div>
-
-      <div className="summary-matrix">
+      <div className="summary-matrix types-summary-strip">
         <SummaryStat
           label={userView === "beginner" ? "Still unknown" : "Backlog"}
           value={audit?.totalCandidateFiles ?? 0}
@@ -425,6 +404,13 @@ export function CategoryAuditScreen({
               <span className="ghost-chip">
                 {audit?.groups.length ?? 0} shown
               </span>
+            </div>
+
+            <div className="audit-rail-note">
+              <strong>Teach once, reuse later.</strong>
+              <p>
+                Pick one group, check a couple of examples, then save the label for the whole batch on the right.
+              </p>
             </div>
 
             <div className="audit-filter-grid">
@@ -682,32 +668,6 @@ export function CategoryAuditScreen({
         </ResizableDetailPanel>
       </div>
     </section>
-  );
-}
-
-function LearningStep({
-  index,
-  step,
-  title,
-  detail,
-}: {
-  index: number;
-  step: string;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <m.div
-      className="learning-step"
-      whileHover={hoverLift}
-      {...stagedListItem(index)}
-    >
-      <span className="learning-step-index">{step}</span>
-      <div className="learning-step-copy">
-        <strong>{title}</strong>
-        <span>{detail}</span>
-      </div>
-    </m.div>
   );
 }
 

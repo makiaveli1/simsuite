@@ -95,6 +95,7 @@ export function LibraryScreen({
   const [categorySubtypeDraft, setCategorySubtypeDraft] = useState("");
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [libraryRailWidth, setLibraryRailWidth] = useState(292);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -222,6 +223,16 @@ export function LibraryScreen({
     }
   }
 
+  function resetFilters() {
+    setSearch("");
+    setKind("");
+    setSubtype("");
+    setCreator("");
+    setSource("");
+    setMinConfidence("");
+    setPage(0);
+  }
+
   const creatorSuggestions = selected
     ? Array.from(
         new Set(
@@ -266,6 +277,27 @@ export function LibraryScreen({
   
   const hasVersionWatchInfo = Boolean(selected?.installedVersionSummary);
   const updatesTarget = selected ? getUpdatesWorkspaceTarget(selected) : null;
+  const activeFilterCount = [
+    search.trim(),
+    kind,
+    subtype,
+    creator,
+    source,
+    minConfidence,
+  ].filter(Boolean).length;
+  const selectedTypeLabel = selected
+    ? [friendlyTypeLabel(selected.kind), selected.subtype?.trim()]
+        .filter((value): value is string => Boolean(value))
+        .join(" / ")
+    : null;
+  const stageSelectionTags = selected
+    ? [
+        selectedTypeLabel,
+        selected.creator ?? unknownCreatorLabel(userView),
+        selected.sourceLocation === "tray" ? "Tray root" : "Mods root",
+        selected.installedVersionSummary ? "Update watch ready" : null,
+      ].filter((value): value is string => Boolean(value))
+    : [];
 
   const libraryInspectorSections = selected
     ? [
@@ -635,25 +667,45 @@ export function LibraryScreen({
     <Workbench threePanel fullHeight>
       {/* Left rail for filters */}
       <WorkbenchRail 
+        className="library-rail-shell"
         resizable 
-        width={libraryFiltersCollapsed ? 0 : undefined} 
+        width={libraryFiltersCollapsed ? 0 : libraryRailWidth}
         onWidthChange={(width) => {
           if (width === 0) {
             setLibraryFiltersCollapsed(true);
           } else {
             setLibraryFiltersCollapsed(false);
+            setLibraryRailWidth(width);
           }
         }}
-        minWidth={240}
-        maxWidth={400}
+        minWidth={248}
+        maxWidth={360}
         noBorder
       >
         {/* Filter panel content */}
         {!libraryFiltersCollapsed && (
           <div className="filter-panel-content">
             <div className="filter-header">
-              <h3>Filters</h3>
+              <div>
+                <p className="eyebrow">Library</p>
+                <h3>Browse the whole collection</h3>
+              </div>
+              <p className="library-rail-copy">
+                Narrow the list here, keep the selected file details on the right, and let the middle stay focused on browsing.
+              </p>
             </div>
+
+            <div className="library-filter-summary">
+              <div className="library-filter-summary-item">
+                <span>Shown now</span>
+                <strong>{rows?.items.length.toLocaleString() ?? "0"}</strong>
+              </div>
+              <div className="library-filter-summary-item">
+                <span>Filters on</span>
+                <strong>{activeFilterCount}</strong>
+              </div>
+            </div>
+
             <div className="filter-grid">
               <label className="field">
                 <span>Search</span>
@@ -761,40 +813,119 @@ export function LibraryScreen({
                 </label>
               ) : null}
             </div>
+
+            <div className="library-filter-actions">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={resetFilters}
+                disabled={activeFilterCount === 0}
+              >
+                Reset filters
+              </button>
+              <span className="ghost-chip">
+                {facets?.creators.length ?? 0} creators
+              </span>
+              <span className="ghost-chip">
+                {facets?.kinds.length ?? 0} type groups
+              </span>
+            </div>
           </div>
         )}
       </WorkbenchRail>
 
       {/* Central work area - table */}
-      <WorkbenchStage>
-        {/* Table header with meta info and workspace toggles */}
-        <div className="table-header">
-          <div className="table-meta">
-            <div>
-              <strong>{rows?.total.toLocaleString() ?? "0"}</strong>
-              <span>{userView === "beginner" ? "found" : "matches"}</span>
+      <WorkbenchStage className="library-stage-shell">
+        <div className="library-stage-bar">
+          <div className="library-stage-summary">
+            <div className="table-meta library-stage-metrics">
+              <div>
+                <strong>{rows?.total.toLocaleString() ?? "0"}</strong>
+                <span>{userView === "beginner" ? "found" : "matches"}</span>
+              </div>
+              <div>
+                <strong>{rows?.items.length.toLocaleString() ?? "0"}</strong>
+                <span>{userView === "beginner" ? "on this page" : "visible"}</span>
+              </div>
+              <div>
+                <strong>{activeFilterCount}</strong>
+                <span>{activeFilterCount === 1 ? "filter on" : "filters on"}</span>
+              </div>
             </div>
-            <div>
-              <strong>{rows?.items.length.toLocaleString() ?? "0"}</strong>
-              <span>{userView === "beginner" ? "on this page" : "visible"}</span>
+
+            <div className="library-stage-focus">
+              <p className="eyebrow">Selection</p>
+              {selected ? (
+                <>
+                  <strong>{selected.filename}</strong>
+                  <span>
+                    {playerFacingNames[0] ??
+                      "Browse the list in the middle, then use the right side for the full file story."}
+                  </span>
+                  <div className="library-stage-focus-tags">
+                    {stageSelectionTags.map((tag) => (
+                      <span key={tag} className="ghost-chip">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <strong>Choose a file</strong>
+                  <span>
+                    Keep the table in the middle for scanning, then use the inspector when something deserves a closer look.
+                  </span>
+                </>
+              )}
             </div>
           </div>
-          <div className="workspace-toggles">
-            {LIBRARY_LAYOUT_PRESETS.map((preset) => (
+
+          <div className="library-stage-actions">
+            {libraryFiltersCollapsed ? (
               <button
-                key={preset.id}
                 type="button"
-                className={`workspace-toggle ${libraryLayoutPreset === preset.id ? 'is-active' : ''}`}
-                onClick={() => applyLibraryLayoutPreset(preset.id)}
+                className="secondary-action"
+                onClick={() => setLibraryFiltersCollapsed(false)}
               >
-                {preset.label}
+                Show filters
               </button>
-            ))}
+            ) : null}
+            <div className="workspace-toggles">
+              {LIBRARY_LAYOUT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`workspace-toggle ${libraryLayoutPreset === preset.id ? 'is-active' : ''}`}
+                  onClick={() => applyLibraryLayoutPreset(preset.id)}
+                  title={preset.hint}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {selected && onNavigateWithParams && updatesTarget ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() =>
+                  onNavigateWithParams(
+                    "updates",
+                    updatesTarget.mode,
+                    updatesTarget.filter,
+                    selected.id,
+                  )
+                }
+              >
+                <ExternalLink size={12} strokeWidth={2} />
+                Open in Updates
+              </button>
+            ) : null}
           </div>
         </div>
 
         {/* Table content */}
-        <div className="table-scroll workbench-surface">
+        <div className="table-scroll library-table-scroll">
           <table className="library-table">
             <thead>
               <tr>
@@ -894,7 +1025,7 @@ export function LibraryScreen({
       </WorkbenchStage>
 
       {/* Right inspector panel */}
-      <WorkbenchInspector>
+      <WorkbenchInspector className="library-inspector-shell">
         {selected ? (
           <>
             <div className="detail-header">

@@ -1,5 +1,70 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Near Dawn)
+
+- **Mode**: code
+- **Focus**: screenshot-driven cleanup pass on `Library` and `Types`
+
+### Progress Made
+
+1. **Fixed the broken feel in `Library` by reshaping the rail and center stage**:
+   - the filter rail is now a real narrow rail instead of stretching across the screen
+   - the center stage now has:
+     - a compact count strip
+     - a selected-file focus block
+     - a direct handoff button into `Updates`
+   - this stopped the file table from being squeezed into the far right edge
+
+2. **Made the `Library` rail feel like part of the tool instead of a raw form block**:
+   - added a short browse note
+   - added small “shown now” and “filters on” stats
+   - stacked the filters vertically so the rail stays calm and narrow
+   - added a reset action and quick counts for creators and type groups
+
+3. **Calmed `Types` by removing the repeated top tutorial band**:
+   - removed the three-step strip that was repeating information already shown inside the three columns
+   - kept the stats row, but tightened it a bit
+   - added one quieter note inside the left panel so the screen still explains itself once
+
+4. **Ran fresh live visual checks after the changes**:
+   - `Library`
+   - `Types`
+   - screenshot files saved locally:
+     - `tmp-ui-pass-4-library-before.png`
+     - `tmp-ui-pass-4-library-after.png`
+     - `tmp-ui-pass-4-types-before.png`
+     - `tmp-ui-pass-4-types-after.png`
+
+5. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- `Library` finally reads like a desktop browser:
+  - left rail for narrowing
+  - center stage for scanning the file list
+  - right inspector for deeper details
+- the biggest visual problem on `Library` was not just styling; the rail was effectively allowed to sprawl, which squeezed the main work area
+- `Types` feels faster now because the work starts sooner and the explanation lives closer to the place where you act
+
+### Known Problems / Gaps
+
+- `Library` is much better, but very short result sets can still leave a lot of quiet space in the lower half of the screen
+- `Types` is calmer now, but the inspector is still a little busy compared with the newer `Downloads` and `Updates` work
+- `Creators`, `Duplicates`, and `Organize` should still get another visual consistency pass after these improvements
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Do one more screenshot-driven taste pass on:
+  - `Library` lower-stage empty-space handling
+  - `Types` inspector density
+- Then continue with:
+  - `Creators`
+  - `Duplicates`
+  - `Organize`
+
 ## Current Session (March 18, 2026 - Late Night)
 
 - **Mode**: code
