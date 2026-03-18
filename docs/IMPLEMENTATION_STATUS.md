@@ -1,5 +1,59 @@
 # SimSuite Implementation Status
 
+## Current session note (March 18, 2026 - afternoon)
+
+This session stayed in the screenshot-driven desktop-app lane, but instead of rebuilding one or two screens, it did a full consistency pass across the whole app:
+
+- `Home`
+- `Downloads`
+- `Library`
+- `Updates`
+- `Organize`
+- `Review`
+- `Creators`
+- `Types`
+- `Duplicates`
+- `Settings`
+
+Important changes and findings:
+
+- the left rail was too boxy and too loud compared with the workspaces
+- the rail is now calmer:
+  - less constant border weight
+  - less jumpy icon behavior
+  - better visual priority for the active screen
+- a shared screen-shell issue was still leaving several screens with too much dead lower space
+- the workbench page shell now lets the last main workspace section fill the remaining canvas better
+- this especially helped:
+  - `Review`
+  - `Creators`
+  - `Types`
+  - `Duplicates`
+- `Home` also got one small content cleanup:
+  - the right inspector no longer repeats the full next-action description again
+- panel surfaces, rows, chips, and stage cards were all softened so the app reads more like one calm desktop tool instead of many similar dark boxes
+- `Updates` and `Review` footer cards now stretch more naturally and feel less tacked on
+- the audit screens now use a real working height so the middle stage feels fuller
+- the live app was checked again in all three experience modes:
+  - `Seasoned`
+  - `Casual`
+  - `Creator`
+- fresh screenshots were saved in:
+  - `output/playwright/pass7-after/`
+- contact sheets were also saved for fast comparison:
+  - `seasoned-sheet.png`
+  - `casual-sheet.png`
+  - `creator-sheet.png`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- `Updates` still has some quiet lower-canvas space when the tracked list is very short
+- `Home` still has a slightly calm lower-right area when the folders section is short
+- `Settings` is improved, but it is still one of the densest screens and could take one more grouping pass later
+
+
 ## Current session note (March 18, 2026 - midday)
 
 This session stayed in the screenshot-driven desktop-app lane and focused on the last three big screens that still needed cross-view cleanup:

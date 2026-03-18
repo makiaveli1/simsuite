@@ -542,7 +542,6 @@ export function HomeScreen({
             <div className="home-focus-copy">
               <span className="section-label">Best next move</span>
               <strong>{primaryAction.title}</strong>
-              <p>{primaryAction.body}</p>
             </div>
             <button
               type="button"
