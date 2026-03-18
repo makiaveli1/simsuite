@@ -123,6 +123,8 @@ export function HomeScreen({
         (!settings?.trayPath && detectedPaths.trayPath) ||
         (!settings?.downloadsPath && detectedPaths.downloadsPath)),
   );
+  const reviewActionLabel = userView === "beginner" ? "Needs review" : "Review";
+  const setupActionLabel = userView === "beginner" ? "Set pages" : "Track setup";
   const nextActions = [
     {
       id: "inbox",
@@ -134,7 +136,7 @@ export function HomeScreen({
     },
     {
       id: "review",
-      label: "Review",
+      label: reviewActionLabel,
       description: "Files that still need a human check before SimSuite can move them.",
       count: overview?.reviewCount ?? 0,
       icon: <ShieldAlert size={14} strokeWidth={2} className="action-item-icon" />,
@@ -151,7 +153,7 @@ export function HomeScreen({
     },
     {
       id: "setup",
-      label: "Track setup",
+      label: setupActionLabel,
       description: "Library items that still need a page saved before SimSuite can watch them.",
       count: overview?.watchSetupItems ?? 0,
       icon: <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />,
@@ -206,18 +208,32 @@ export function HomeScreen({
     {
       label: "Confirmed updates",
       value: String(overview?.exactUpdateItems ?? 0),
+      note: "Clear page matches with a newer version waiting.",
+      onClick: () => onNavigateWithParams("updates", "tracked", "exact_updates"),
     },
     {
       label: "Possible updates",
       value: String(overview?.possibleUpdateItems ?? 0),
+      note: "Changed pages that still need one more careful look.",
+      onClick: () => onNavigateWithParams("updates", "tracked", "possible_updates"),
     },
     {
       label: "Unclear watch results",
       value: String(overview?.unknownWatchItems ?? 0),
+      note: "Saved pages that still do not give a clean answer.",
+      onClick: () => onNavigateWithParams("updates", "tracked", "unclear"),
     },
     {
-      label: "Need source setup",
+      label: userView === "beginner" ? "Pages to save" : "Need source setup",
       value: String(overview?.watchSetupItems ?? 0),
+      note: "Installed files that still need one saved page first.",
+      onClick: () => onNavigateWithParams("updates", "setup", "all"),
+    },
+    {
+      label: userView === "beginner" ? "Needs follow-up" : "Watch review",
+      value: String(overview?.watchReviewItems ?? 0),
+      note: "Reminder-only or provider-backed pages that stay cautious.",
+      onClick: () => onNavigateWithParams("updates", "review", "all"),
     },
   ];
   const systemRows = [
@@ -246,6 +262,35 @@ export function HomeScreen({
       value: (overview?.bundlesCount ?? 0).toLocaleString(),
     },
   ];
+  const visibleSystemRows =
+    userView === "power"
+      ? systemRows
+      : userView === "standard"
+        ? systemRows.slice(0, 5)
+        : systemRows.slice(0, 4);
+  const healthSnapshot = [
+    {
+      label: userView === "beginner" ? "Scripts" : "Script mods",
+      value: (overview?.scriptModsCount ?? 0).toLocaleString(),
+    },
+    {
+      label: "Duplicates",
+      value: (overview?.duplicatesCount ?? 0).toLocaleString(),
+    },
+    {
+      label: "Creators",
+      value: (overview?.creatorCount ?? 0).toLocaleString(),
+    },
+    {
+      label: userView === "power" ? "Bundles" : "Update watch",
+      value:
+        userView === "power"
+          ? (overview?.bundlesCount ?? 0).toLocaleString()
+          : (overview?.exactUpdateItems ?? 0).toLocaleString(),
+    },
+  ];
+  const primaryActionMatches =
+    busiestAction && primaryAction.title === busiestAction.label;
 
   return (
     <Workbench threePanel fullHeight className="home-workbench">
@@ -278,23 +323,42 @@ export function HomeScreen({
         </div>
 
         <div className="home-stage-grid">
-          <section className="panel-card home-command-panel">
+          <section className="panel-card home-priority-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Do next</p>
-                <h2>Keep the day moving</h2>
+                <p className="eyebrow">Today board</p>
+                <h2>{userView === "beginner" ? "Best next move" : "Keep the day moving"}</h2>
               </div>
               <span className="ghost-chip">
                 {nextActions.reduce((total, item) => total + item.count, 0)} open
               </span>
             </div>
+
+            <div className="home-priority-card">
+              <div className="home-priority-copy">
+                <span className="section-label">Best next move</span>
+                <strong>{primaryAction.title}</strong>
+                <p>{primaryAction.body}</p>
+              </div>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled}
+              >
+                {primaryAction.cta}
+              </button>
+            </div>
+
             <div className="home-command-list">
               {nextActions.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   className={`action-item home-action-item ${
-                    primaryAction.title === item.label ? "is-active" : ""
+                    primaryActionMatches && primaryAction.title === item.label
+                      ? "is-active"
+                      : ""
                   }`}
                   onClick={item.onClick}
                 >
@@ -313,7 +377,7 @@ export function HomeScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">System health</p>
-                <h2>Truth before action</h2>
+                <h2>{userView === "beginner" ? "What SimSuite knows" : "Truth before action"}</h2>
               </div>
             </div>
             <div className="health-chip-group home-health-chips">
@@ -342,23 +406,49 @@ export function HomeScreen({
                 {sourceCount}/3 folders ready
               </span>
             </div>
-            <div className="detail-list home-health-ledger">
-              <HomeDetailRow
-                label="Possible updates"
-                value={(overview?.possibleUpdateItems ?? 0).toLocaleString()}
-              />
-              <HomeDetailRow
-                label="Unclear watch results"
-                value={(overview?.unknownWatchItems ?? 0).toLocaleString()}
-              />
-              <HomeDetailRow
-                label="Script mods"
-                value={(overview?.scriptModsCount ?? 0).toLocaleString()}
-              />
-              <HomeDetailRow
-                label="Duplicates"
-                value={(overview?.duplicatesCount ?? 0).toLocaleString()}
-              />
+            <div className="summary-matrix home-health-summary">
+              {healthSnapshot.map((item) => (
+                <HomeStatTile key={item.label} label={item.label} value={item.value} />
+              ))}
+            </div>
+            <p className="home-panel-note">
+              {overview?.scanNeedsRefresh
+                ? "A fresh scan should happen before you trust older library facts."
+                : "The scan truth, watch lanes, and safety signals are all reading from the same current pass."}
+            </p>
+          </section>
+
+          <section className="panel-card home-watch-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Tracked pages</p>
+                <h2>{userView === "beginner" ? "Update follow-up" : "Watch lanes"}</h2>
+              </div>
+              <span className="ghost-chip">
+                {(overview?.exactUpdateItems ?? 0) +
+                  (overview?.possibleUpdateItems ?? 0) +
+                  (overview?.unknownWatchItems ?? 0) +
+                  (overview?.watchSetupItems ?? 0) +
+                  (overview?.watchReviewItems ?? 0)}{" "}
+                open
+              </span>
+            </div>
+
+            <div className="home-watch-list">
+              {watchRows.map((row) => (
+                <button
+                  key={row.label}
+                  type="button"
+                  className="home-watch-row"
+                  onClick={row.onClick}
+                >
+                  <span className="home-watch-copy">
+                    <span className="action-item-label">{row.label}</span>
+                    <span className="home-action-note">{row.note}</span>
+                  </span>
+                  <span className="action-item-badge">{row.value}</span>
+                </button>
+              ))}
             </div>
           </section>
 
@@ -429,6 +519,11 @@ export function HomeScreen({
                 </button>
               </div>
             </div>
+            <p className="home-panel-note">
+              {sourceCount < 3
+                ? "Finish the missing folder links first so scans, downloads watching, and tray checks all land in the right place."
+                : "These roots are ready, so scans and follow-up work can stay inside one steady desktop flow."}
+            </p>
           </section>
         </div>
       </WorkbenchStage>
@@ -437,14 +532,18 @@ export function HomeScreen({
         <div className="home-inspector">
           <div className="detail-header">
             <div>
-              <p className="eyebrow">Control room</p>
-              <h2>{primaryAction.title}</h2>
+              <p className="eyebrow">Today</p>
+              <h2>{userView === "beginner" ? "What needs you first" : "Command board"}</h2>
             </div>
             <span className="ghost-chip">Home</span>
           </div>
 
           <div className="home-focus-card">
-            <p>{primaryAction.body}</p>
+            <div className="home-focus-copy">
+              <span className="section-label">Best next move</span>
+              <strong>{primaryAction.title}</strong>
+              <p>{primaryAction.body}</p>
+            </div>
             <button
               type="button"
               className="primary-action"
@@ -455,19 +554,37 @@ export function HomeScreen({
             </button>
           </div>
 
+          <div className="summary-matrix home-inspector-grid">
+            {nextActions.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`summary-stat home-inspector-link ${
+                  primaryActionMatches && primaryAction.title === item.label
+                    ? "is-active"
+                    : ""
+                }`}
+                onClick={item.onClick}
+              >
+                <span>{item.label}</span>
+                <strong>{item.count}</strong>
+              </button>
+            ))}
+          </div>
+
           <div className="detail-block">
-            <div className="section-label">Update watch</div>
+            <div className="section-label">System truth</div>
             <div className="detail-list">
-              {watchRows.map((row) => (
+              {visibleSystemRows.map((row) => (
                 <HomeDetailRow key={row.label} label={row.label} value={row.value} />
               ))}
             </div>
           </div>
 
           <div className="detail-block">
-            <div className="section-label">System truth</div>
+            <div className="section-label">Watch pressure</div>
             <div className="detail-list">
-              {systemRows.map((row) => (
+              {watchRows.slice(0, 4).map((row) => (
                 <HomeDetailRow key={row.label} label={row.label} value={row.value} />
               ))}
             </div>
@@ -487,6 +604,15 @@ function HomeDetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function HomeStatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="summary-stat home-stat-tile">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return "Not scanned yet";
@@ -498,36 +624,4 @@ function formatTimestamp(value: string | null | undefined) {
   }
 
   return date.toLocaleString();
-}
-
-function FolderRow({
-  label,
-  value,
-  onBrowse,
-  busy,
-}: {
-  label: string;
-  value: string | null | undefined;
-  onBrowse: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="folder-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.25rem 0' }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-soft)' }}>{label}</div>
-        <div className="text-path" style={{ fontSize: '0.66rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value || "Not chosen yet"}</div>
-      </div>
-
-      <button
-        type="button"
-        className="secondary-action"
-        onClick={onBrowse}
-        disabled={busy}
-        title={`Browse for the ${label} folder`}
-      >
-        <FolderOpen size={14} strokeWidth={2} />
-        Choose
-      </button>
-    </div>
-  );
 }

@@ -2629,6 +2629,9 @@ h2,
     minmax(236px, 18vw)
     minmax(0, 1fr)
     minmax(280px, min(var(--review-detail-width), 38vw));
+  align-items: stretch;
+  min-height: 0;
+  height: 100%;
 }
 
 .duplicates-layout {
@@ -6487,19 +6490,51 @@ h2,
 
 .home-stage-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 1.05fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 0.92fr);
   gap: var(--panel-gap);
+  min-height: 0;
+  height: 100%;
+  align-content: stretch;
+}
+
+.home-priority-panel,
+.home-health-panel,
+.home-watch-panel,
+.home-folders-panel {
+  display: grid;
+  align-content: start;
   min-height: 0;
 }
 
-.home-command-panel,
-.home-health-panel,
-.home-folders-panel {
-  align-content: start;
+.home-priority-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.82rem 0.88rem;
+  border: 1px solid var(--accent-line);
+  background:
+    linear-gradient(135deg, var(--accent-soft), transparent 72%),
+    var(--surface);
 }
 
-.home-folders-panel {
-  grid-column: 1 / -1;
+.home-priority-copy,
+.home-watch-copy,
+.home-focus-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.home-priority-card strong,
+.home-focus-card strong {
+  font-size: 1.02rem;
+}
+
+.home-priority-card p,
+.home-panel-note {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
 }
 
 .home-command-list {
@@ -6530,6 +6565,46 @@ h2,
 
 .home-health-ledger {
   gap: 0.3rem;
+}
+
+.home-health-summary,
+.home-inspector-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-stat-tile {
+  min-height: 82px;
+}
+
+.home-watch-list {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.home-watch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.6rem 0.66rem;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 180ms var(--ease-swift),
+    border-color 180ms var(--ease-swift),
+    box-shadow 220ms var(--ease-standard);
+}
+
+.home-watch-row:hover,
+.home-watch-row:focus-visible {
+  border-color: var(--accent-line);
+  background:
+    linear-gradient(90deg, var(--accent-soft), transparent 16%),
+    var(--surface);
 }
 
 .home-folders-heading,
@@ -6564,6 +6639,7 @@ h2,
   display: grid;
   gap: 0.75rem;
   min-height: 100%;
+  grid-template-rows: auto auto auto 1fr;
   align-content: start;
 }
 
@@ -6581,6 +6657,21 @@ h2,
   margin: 0;
   color: var(--text-soft);
   line-height: 1.5;
+}
+
+.home-inspector-link {
+  width: 100%;
+  border: 0;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-inspector-link.is-active {
+  background:
+    linear-gradient(120deg, var(--accent-soft), transparent 72%),
+    var(--surface);
 }
 
 .updates-rail-shell {
@@ -6607,7 +6698,7 @@ h2,
 
 .updates-stage-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: var(--panel-gap);
   min-height: 0;
   padding-top: 0.15rem;
@@ -6661,11 +6752,10 @@ h2,
   overflow: auto;
 }
 
-.updates-stage-spotlight {
+.updates-stage-focus-band {
   display: grid;
-  grid-template-rows: auto auto 1fr;
-  gap: 0.6rem;
-  min-height: 0;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 0.75rem;
   padding: 0.78rem 0.82rem;
   background:
     linear-gradient(145deg, rgba(111, 230, 165, 0.07), transparent 60%),
@@ -6675,11 +6765,13 @@ h2,
 .updates-stage-focus {
   display: grid;
   gap: 0.38rem;
-  padding: 0.72rem 0.76rem;
-  border: 1px solid var(--accent-line);
-  background:
-    linear-gradient(120deg, var(--accent-soft), transparent 76%),
-    var(--surface-2);
+  align-content: start;
+}
+
+.updates-stage-detail-list {
+  align-content: start;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--line);
 }
 
 .updates-stage-focus h3,
@@ -6693,6 +6785,12 @@ h2,
   margin: 0;
   color: var(--text-soft);
   line-height: 1.5;
+}
+
+.updates-stage-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  gap: var(--panel-gap);
 }
 
 .updates-stage-summary-grid {
@@ -6744,12 +6842,15 @@ h2,
   color: var(--text-soft);
 }
 
+.updates-stage-guidance-card {
+  padding: 0.78rem 0.82rem;
+}
+
 .updates-stage-guidance {
   display: grid;
   align-content: start;
   gap: 0.22rem;
-  padding-top: 0.05rem;
-  border-top: 1px solid var(--line);
+  height: 100%;
 }
 
 .updates-inspector-shell .detail-header {
@@ -6761,6 +6862,23 @@ h2,
   padding-top: 0.35rem;
 }
 
+.updates-table {
+  table-layout: fixed;
+}
+
+.updates-table-meta,
+.updates-table-note {
+  margin-top: 0.18rem;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.updates-table-note {
+  margin-top: 0;
+  color: var(--text);
+}
+
 .review-rail {
   display: grid;
   gap: var(--panel-gap);
@@ -6770,8 +6888,9 @@ h2,
 
 .review-stage-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
+  height: 100%;
 }
 
 .review-layout-toggles {
@@ -6850,9 +6969,45 @@ h2,
 }
 
 .review-queue-list {
-  height: auto;
   min-height: 0;
   max-height: none;
+}
+
+.review-stage-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.82fr);
+  gap: var(--panel-gap);
+  padding-top: var(--panel-gap);
+  border-top: 1px solid var(--line);
+}
+
+.review-stage-card {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 0.78rem 0.82rem;
+  background:
+    linear-gradient(135deg, rgba(111, 230, 165, 0.06), transparent 74%),
+    var(--surface);
+}
+
+.review-stage-action-card {
+  background: var(--surface);
+}
+
+.review-stage-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.review-stage-note {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.48;
+}
+
+.review-stage-detail-list {
+  padding-top: 0.1rem;
 }
 
 .duplicates-control-stack {
@@ -7015,8 +7170,13 @@ h2,
 
 @media (max-width: 1280px) {
   .home-stage-grid,
+  .home-health-summary,
+  .home-inspector-grid,
   .home-folder-grid,
-  .duplicates-filter-grid {
+  .duplicates-filter-grid,
+  .updates-stage-focus-band,
+  .updates-stage-footer,
+  .review-stage-footer {
     grid-template-columns: 1fr;
   }
 

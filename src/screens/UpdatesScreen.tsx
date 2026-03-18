@@ -838,6 +838,40 @@ export function UpdatesScreen({
         {message ? <div className="updates-inline-message">{message}</div> : null}
 
         <div className="updates-stage-body">
+          <div className="workbench-panel updates-stage-focus-band">
+            <div className="updates-stage-focus">
+              <p className="eyebrow">
+                {mode === "setup"
+                  ? userView === "beginner"
+                    ? "Next source"
+                    : "Source focus"
+                  : selectedItem
+                    ? userView === "beginner"
+                      ? "Selected file"
+                      : "Selection focus"
+                    : "Queue focus"}
+              </p>
+              <h3>{selectedItem ? selectedItem.filename : modeCopy[mode].title}</h3>
+              <p className="updates-stage-note">
+                {selectedItem
+                  ? describeUpdatesStageFocus(selectedItem, mode, userView)
+                  : mode === "setup"
+                    ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
+                    : mode === "review"
+                      ? "This lane keeps the cautious pages separate so reminder links and unclear checks do not get mixed in with confirmed updates."
+                      : "Tracked pages stay together here so confirmed updates, cautious matches, and unclear checks are easy to compare."}
+              </p>
+            </div>
+
+            {stageDetailRows.length ? (
+              <div className="detail-list updates-stage-detail-list">
+                {stageDetailRows.map((row) => (
+                  <DetailRow key={row.label} label={row.label} value={row.value} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <div className="table-scroll workbench-panel updates-table-scroll">
             {mode === "tracked" ? (
               <UpdatesTrackedTable
@@ -871,38 +905,7 @@ export function UpdatesScreen({
             ) : null}
           </div>
 
-          <div className="workbench-panel updates-stage-spotlight">
-            <div className="updates-stage-focus">
-              <p className="eyebrow">
-                {mode === "setup"
-                  ? userView === "beginner"
-                    ? "Next source"
-                    : "Source focus"
-                  : selectedItem
-                    ? userView === "beginner"
-                      ? "Selected file"
-                      : "Selection focus"
-                    : "Queue focus"}
-              </p>
-              <h3>{selectedItem ? selectedItem.filename : modeCopy[mode].title}</h3>
-              <p className="updates-stage-note">
-                {selectedItem
-                  ? describeUpdatesStageFocus(selectedItem, mode, userView)
-                  : mode === "setup"
-                    ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
-                    : mode === "review"
-                      ? "This side panel helps explain why some saved pages still need a calmer follow-up instead of a live result."
-                      : "Tracked pages stay here so confirmed updates, cautious matches, and unclear checks all live in one steady workspace."}
-              </p>
-              {stageDetailRows.length ? (
-                <div className="detail-list">
-                  {stageDetailRows.map((row) => (
-                    <DetailRow key={row.label} label={row.label} value={row.value} />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
+          <div className="updates-stage-footer">
             <div className="updates-stage-summary-grid">
               {stageSummaryCards.map((card) => (
                 <UpdatesStageStatCard
@@ -915,9 +918,11 @@ export function UpdatesScreen({
               ))}
             </div>
 
-            <div className="updates-stage-guidance">
-              <strong>{updatesGuidanceTitle(mode, userView)}</strong>
-              <p>{updatesGuidanceBody(mode, userView)}</p>
+            <div className="workbench-panel updates-stage-guidance-card">
+              <div className="updates-stage-guidance">
+                <strong>{updatesGuidanceTitle(mode, userView)}</strong>
+                <p>{updatesGuidanceBody(mode, userView)}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -1242,7 +1247,6 @@ function UpdatesTrackedTable({
         <tr>
           <th>Status</th>
           <th>File</th>
-          <th>Creator</th>
           <th>Watching</th>
           <th>Installed</th>
         </tr>
@@ -1275,15 +1279,27 @@ function UpdatesTrackedTable({
               <td>{watchStatusIcon(item.watchResult.status)}</td>
               <td>
                 <div className="file-title">{item.filename}</div>
+                <div className="updates-table-meta">
+                  {item.creator ?? unknownCreatorLabel(userView)}
+                </div>
               </td>
-              <td>{item.creator ?? unknownCreatorLabel(userView)}</td>
-              <td>{item.subjectLabel}</td>
-              <td>{formatVersion(item.installedVersion)}</td>
+              <td>
+                <div className="file-title">{item.subjectLabel}</div>
+                <div className="updates-table-meta">
+                  {watchStatusLabel(item.watchResult.status, userView)}
+                </div>
+              </td>
+              <td>
+                <div className="file-title">{formatVersion(item.installedVersion)}</div>
+                <div className="updates-table-meta">
+                  {watchSourceKindLabel(item.watchResult.sourceKind)}
+                </div>
+              </td>
             </m.tr>
           ))
         ) : (
           <tr>
-            <td colSpan={5} className="empty-row">
+            <td colSpan={4} className="empty-row">
               {trackedEmptyMessage(filter, userView)}
             </td>
           </tr>
@@ -1311,16 +1327,14 @@ function UpdatesSetupTable({
       <thead>
         <tr>
           <th>File</th>
-          <th>Creator</th>
           <th>Suggested source</th>
-          <th>Installed</th>
           <th>Hint</th>
         </tr>
       </thead>
       <tbody>
         {loading ? (
           <tr>
-            <td colSpan={5} className="empty-row">
+            <td colSpan={3} className="empty-row">
               Loading setup items...
             </td>
           </tr>
@@ -1344,21 +1358,29 @@ function UpdatesSetupTable({
             >
               <td>
                 <div className="file-title">{item.filename}</div>
-                <div className="file-path">{item.subjectLabel}</div>
+                <div className="updates-table-meta">
+                  {item.creator ?? unknownCreatorLabel(userView)}
+                </div>
               </td>
-              <td>{item.creator ?? unknownCreatorLabel(userView)}</td>
               <td>
-                <span className="ghost-chip">
-                  {watchSourceKindLabel(item.suggestedSourceKind)}
-                </span>
+                <div className="file-title">
+                  <span className="ghost-chip">
+                    {watchSourceKindLabel(item.suggestedSourceKind)}
+                  </span>
+                </div>
+                <div className="updates-table-meta">
+                  Installed {formatVersion(item.installedVersion)}
+                </div>
               </td>
-              <td>{formatVersion(item.installedVersion)}</td>
-              <td>{item.setupHint}</td>
+              <td>
+                <div className="updates-table-note">{item.setupHint}</div>
+                <div className="updates-table-meta">{item.subjectLabel}</div>
+              </td>
             </m.tr>
           ))
         ) : (
           <tr>
-            <td colSpan={5} className="empty-row">
+            <td colSpan={3} className="empty-row">
               {userView === "beginner"
                 ? "Nothing needs source setup right now."
                 : "No files currently need watch setup."}
@@ -1389,7 +1411,6 @@ function UpdatesReviewTable({
         <tr>
           <th>Status</th>
           <th>File</th>
-          <th>Creator</th>
           <th>Watching</th>
           <th>Review</th>
         </tr>
@@ -1397,7 +1418,7 @@ function UpdatesReviewTable({
       <tbody>
         {loading ? (
           <tr>
-            <td colSpan={5} className="empty-row">
+            <td colSpan={4} className="empty-row">
               Loading review items...
             </td>
           </tr>
@@ -1422,19 +1443,27 @@ function UpdatesReviewTable({
               <td>{watchStatusIcon(item.watchResult.status)}</td>
               <td>
                 <div className="file-title">{item.filename}</div>
+                <div className="updates-table-meta">
+                  {item.creator ?? unknownCreatorLabel(userView)}
+                </div>
               </td>
-              <td>{item.creator ?? unknownCreatorLabel(userView)}</td>
-              <td>{item.subjectLabel}</td>
+              <td>
+                <div className="file-title">{item.subjectLabel}</div>
+                <div className="updates-table-meta">
+                  {watchStatusLabel(item.watchResult.status, userView)}
+                </div>
+              </td>
               <td>
                 <span className="warning-tag">
                   {reviewReasonLabel(item.reviewReason, userView)}
                 </span>
+                <div className="updates-table-meta">{item.reviewHint}</div>
               </td>
             </m.tr>
           ))
         ) : (
           <tr>
-            <td colSpan={5} className="empty-row">
+            <td colSpan={4} className="empty-row">
               {userView === "beginner"
                 ? "Nothing needs review right now."
                 : "No review items match this filter."}

@@ -107,6 +107,23 @@ export function ReviewScreen({
     (item) => item.confidence >= 0.6 && item.confidence < 0.85,
   ).length;
   const lowConfidenceCount = items.filter((item) => item.confidence < 0.6).length;
+  const selectedNextStep = selected ? getReviewNextStep(selected, userView) : null;
+  const reviewStageRows = selected
+    ? [
+        {
+          label: userView === "beginner" ? "Why it stopped" : "Reason",
+          value: humanize(selected.reason),
+        },
+        {
+          label: "Confidence",
+          value: `${Math.round(selected.confidence * 100)}%`,
+        },
+        {
+          label: userView === "beginner" ? "Safer place" : "Suggested path",
+          value: selected.suggestedPath ?? "No safe destination yet",
+        },
+      ]
+    : [];
   const reviewInspectorSections = selected
     ? [
         {
@@ -410,6 +427,62 @@ export function ReviewScreen({
                 </m.button>
               ))}
             </div>
+
+            <div className="review-stage-footer">
+              <div className="workbench-panel review-stage-card">
+                <p className="eyebrow">
+                  {selected
+                    ? userView === "beginner"
+                      ? "Selected file"
+                      : "Queue focus"
+                    : "Queue focus"}
+                </p>
+                <h3>{selected ? selected.filename : "Pick a review item"}</h3>
+                <p className="review-stage-note">
+                  {selected
+                    ? describeReviewStageFocus(selected, userView)
+                    : userView === "beginner"
+                      ? "Pick one file from the queue and SimSuite will show why it stopped and what safer path it expects."
+                      : "Choose a queued file to compare the stop reason, confidence, and safer destination before you leave this screen."}
+                </p>
+                {reviewStageRows.length ? (
+                  <div className="detail-list review-stage-detail-list">
+                    {reviewStageRows.map((row) => (
+                      <DetailRow key={row.label} label={row.label} value={row.value} />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="workbench-panel review-stage-card review-stage-action-card">
+                <p className="eyebrow">
+                  {userView === "beginner" ? "Best next stop" : "Best fix lane"}
+                </p>
+                <h3>
+                  {selectedNextStep
+                    ? selectedNextStep.title
+                    : userView === "beginner"
+                      ? "Review stays read-only"
+                      : "Batch fixes live elsewhere"}
+                </h3>
+                <p className="review-stage-note">
+                  {selectedNextStep
+                    ? selectedNextStep.body
+                    : userView === "beginner"
+                      ? "Review explains the stop, but the real cleanup still happens in Creators, Types, or Organize."
+                      : "Use this lane to understand the stop first, then jump out to the right cleanup workspace."}
+                </p>
+                {selectedNextStep ? (
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => onNavigate(selectedNextStep.screen)}
+                  >
+                    {selectedNextStep.actionLabel}
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </div>
 
           <ResizableDetailPanel
@@ -539,4 +612,64 @@ function reviewReasonTone(count: number, maxCount: number) {
 
 function humanize(reason: string) {
   return reason.replace(/_/g, " ");
+}
+
+function describeReviewStageFocus(item: ReviewQueueItem, userView: UserView) {
+  if (item.reason === "tray_content_in_mods") {
+    return userView === "beginner"
+      ? "This file looks like Tray content sitting in Mods, so SimSuite stopped it before anything could be misplaced."
+      : "This item reads like Tray content in the Mods tree, so it stays blocked until the safer destination is confirmed.";
+  }
+
+  if (item.reason === "unsafe_script_depth") {
+    return userView === "beginner"
+      ? "This script file sits deeper than the safe one-folder rule, so it needs a manual check before you move it."
+      : "The selected script is deeper than the safe install depth, so the queue is keeping it visible instead of guessing a move.";
+  }
+
+  return userView === "beginner"
+    ? "This file still does not have a safe enough answer, so Review keeps it out of the move lane until you inspect it."
+    : "The selected item still needs a human decision, so Review keeps the stop reason visible instead of pretending the routing is settled.";
+}
+
+function getReviewNextStep(item: ReviewQueueItem, userView: UserView) {
+  const tidyLabel = userView === "beginner" ? "Open Tidy Up" : "Open Organize";
+
+  if (item.reason.includes("creator")) {
+    return {
+      title: "Creator cleanup",
+      body:
+        userView === "beginner"
+          ? "This stop looks tied to who made the file, so the creator lane is the safest next place to batch-fix it."
+          : "The stop reason points back to creator identity, so the creator audit is the best next batch lane.",
+      screen: "creatorAudit" as Screen,
+      actionLabel: "Open Creators",
+    };
+  }
+
+  if (
+    item.reason.includes("type") ||
+    item.reason.includes("category") ||
+    item.reason.includes("low_confidence")
+  ) {
+    return {
+      title: userView === "beginner" ? "Type check" : "Type cleanup",
+      body:
+        userView === "beginner"
+          ? "This file needs a clearer type label before SimSuite can place it safely."
+          : "The stop reason points to type uncertainty, so the type audit is the quickest next cleanup lane.",
+      screen: "categoryAudit" as Screen,
+      actionLabel: "Open Types",
+    };
+  }
+
+  return {
+    title: userView === "beginner" ? "Safer placement pass" : "Placement cleanup",
+    body:
+      userView === "beginner"
+        ? "This looks like a safer-path problem, so the tidy lane is the best place to continue after you check the reason."
+        : "This stop is best handled in the organize pass once you have read the reason and safer path.",
+    screen: "organize" as Screen,
+    actionLabel: tidyLabel,
+  };
 }

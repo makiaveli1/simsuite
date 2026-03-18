@@ -1,5 +1,42 @@
 # SimSuite Implementation Status
 
+## Current session note (March 18, 2026 - midday)
+
+This session stayed in the screenshot-driven desktop-app lane and focused on the last three big screens that still needed cross-view cleanup:
+
+- `Home`
+- `Updates`
+- `Review`
+
+Important changes and findings:
+
+- `Home` was rebuilt into a fuller command board:
+  - stronger main-stage primary action
+  - tracked-pages panel added to the stage
+  - calmer but more useful right inspector
+  - much less of the “top-heavy, empty lower half” feeling
+- `Updates` now gives the main list the width back:
+  - selected-file story moved into a top focus band
+  - the extra explanation moved into a lower footer row
+  - list columns were simplified so tracked/setup/review rows fit more naturally
+- `Review` now uses its center better:
+  - queue focus card added below the list
+  - best-next-fix card added beside it
+  - this helps tiny queues still feel like a real workspace instead of a sparse queue floating in space
+- the live app was checked in all three experience modes:
+  - `Casual`
+  - `Seasoned`
+  - `Creator`
+- extra manual live screenshots were needed for some `Review` captures because the quick automated capture could land mid-transition after tall screens like `Settings`; the actual rendered screen was checked manually after that
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- `Home` now feels much better, but the lower-right stage area can still go a little quiet when the folder block is short
+- `Updates` tracked mode is cleaner, but one-row cases could still take one more density pass later
+- `Review` is much improved, but very tiny queues still leave some calm empty space in the center stage
+
 ## Current session note (March 18, 2026 - morning)
 
 This session kept the redesign in the screenshot-driven desktop-app lane and focused on three screens that still carried too much clutter:

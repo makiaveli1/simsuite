@@ -1,5 +1,77 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Midday)
+
+- **Mode**: code
+- **Focus**: cross-view screenshot pass on `Home`, `Updates`, and `Review`
+
+### Progress Made
+
+1. **Rebuilt `Home` into a fuller desktop command board**:
+   - replaced the old top-heavy layout with a real two-row workspace
+   - added a stronger primary action card inside the main stage
+   - added a dedicated tracked-pages panel so update work no longer hides inside the right inspector
+   - replaced the placeholder-feeling right side with a clearer command-board inspector
+
+2. **Reshaped `Updates` so the middle works like a real work surface**:
+   - moved the selected-file story into a full-width top focus band
+   - kept the list as the main stage instead of squeezing it beside another tall panel
+   - added a calmer footer row for mode totals and lane guidance
+   - simplified the list columns so tracked, setup, and review rows fit without the awkward horizontal squeeze
+
+3. **Made `Review` use its center space better across views**:
+   - kept the left rail and right inspector
+   - added a lower center-stage pair of cards:
+     - queue focus
+     - best next fix lane
+   - this gives tiny queues a clearer follow-up story instead of leaving one big empty center gap
+
+4. **Checked the three experience modes on the live app instead of guessing**:
+   - `Casual`
+   - `Seasoned`
+   - `Creator`
+   - fresh screenshots saved locally for the main pass:
+     - `tmp-ui-pass-6-home-casual-after.png`
+     - `tmp-ui-pass-6-home-seasoned-after.png`
+     - `tmp-ui-pass-6-home-creator-after.png`
+     - `tmp-ui-pass-6-updates-casual-after.png`
+     - `tmp-ui-pass-6-updates-seasoned-after.png`
+     - `tmp-ui-pass-6-updates-creator-after.png`
+     - `tmp-ui-pass-6-review-casual-after.png`
+   - extra manual live checks were also saved where the fast automated capture was too easy to fool during screen transitions:
+     - `tmp-ui-pass-6-review-seasoned-live.png`
+     - `tmp-ui-pass-6-review-creator-live.png`
+     - `tmp-ui-pass-6-updates-casual-setup-live.png`
+
+5. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- `Home` now feels much more like a proper desktop command board instead of a short stack of cards sitting at the top of a large empty page
+- `Updates` is easier to read because the table gets the width back and the supporting explanation lives below it instead of fighting beside it
+- `Review` now gives a clearer “what now?” answer in the center instead of making the user bounce between the queue and the far-right inspector
+- the three experience modes are still using the same screen structure now, but the copy and detail level still shift the right way
+
+### Known Problems / Gaps
+
+- `Home` is much better, but the lower-right stage corner can still feel a little quiet when folder cards are short
+- `Updates` tracked mode is cleaner now, but one-row cases can still take one more taste pass later if we want it even tighter
+- `Review` is meaningfully better, but tiny queues still leave some calm empty canvas in the center stage because there are only a few rows to show
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Do one final visual consistency sweep across the cleaned desktop screens in:
+  - `Casual`
+  - `Seasoned`
+  - `Creator`
+- If there is time for one more polish round, focus on:
+  - `Home` lower-stage quiet space
+  - `Updates` single-row tracked density
+  - `Review` tiny-queue center balance
+
 ## Current Session (March 18, 2026 - Morning)
 
 - **Mode**: code
