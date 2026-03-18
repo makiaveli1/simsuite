@@ -39,6 +39,7 @@ const STORAGE_KEYS = {
   duplicatesQueueHeight: "simsuite:duplicates-queue-height",
   libraryFiltersCollapsed: "simsuite:library-filters-collapsed",
   duplicatesFiltersCollapsed: "simsuite:duplicates-filters-collapsed",
+  updatesFiltersCollapsed: "simsuite:updates-filters-collapsed",
   libraryLayoutPreset: "simsuite:library-layout-preset",
   reviewLayoutPreset: "simsuite:review-layout-preset",
   duplicatesLayoutPreset: "simsuite:duplicates-layout-preset",
@@ -152,6 +153,7 @@ interface UiPreferencesContextValue {
   duplicatesQueueHeight: number;
   libraryFiltersCollapsed: boolean;
   duplicatesFiltersCollapsed: boolean;
+  updatesFiltersCollapsed: boolean;
   libraryLayoutPreset: LibraryLayoutPreset;
   reviewLayoutPreset: ReviewLayoutPreset;
   duplicatesLayoutPreset: DuplicatesLayoutPreset;
@@ -189,6 +191,7 @@ interface UiPreferencesContextValue {
   setDuplicatesQueueHeight: (height: number) => void;
   setLibraryFiltersCollapsed: (collapsed: boolean) => void;
   setDuplicatesFiltersCollapsed: (collapsed: boolean) => void;
+  setUpdatesFiltersCollapsed: (collapsed: boolean) => void;
   applyLibraryLayoutPreset: (preset: LibraryLayoutPreset) => void;
   applyReviewLayoutPreset: (preset: ReviewLayoutPreset) => void;
   applyDuplicatesLayoutPreset: (preset: DuplicatesLayoutPreset) => void;
@@ -597,6 +600,14 @@ export function UiPreferencesProvider({
         modeProfile.defaults.duplicatesFiltersCollapsed,
       ),
     );
+  const [updatesFiltersCollapsed, setUpdatesFiltersCollapsedState] =
+    useState(() =>
+      readModeStoredBoolean(
+        mode,
+        STORAGE_KEYS.updatesFiltersCollapsed,
+        modeProfile.defaults.updatesFiltersCollapsed,
+      ),
+    );
   const [libraryLayoutPreset, setLibraryLayoutPresetState] =
     useState<LibraryLayoutPreset>(() => readModeStoredLibraryLayoutPreset(mode));
   const [reviewLayoutPreset, setReviewLayoutPresetState] =
@@ -777,6 +788,13 @@ export function UiPreferencesProvider({
         nextProfile.defaults.duplicatesFiltersCollapsed,
       ),
     );
+    setUpdatesFiltersCollapsedState(
+      readModeStoredBoolean(
+        mode,
+        STORAGE_KEYS.updatesFiltersCollapsed,
+        nextProfile.defaults.updatesFiltersCollapsed,
+      ),
+    );
     setLibraryLayoutPresetState(readModeStoredLibraryLayoutPreset(mode));
     setReviewLayoutPresetState(readModeStoredReviewLayoutPreset(mode));
     setDuplicatesLayoutPresetState(readModeStoredDuplicatesLayoutPreset(mode));
@@ -898,6 +916,10 @@ export function UiPreferencesProvider({
   function setDuplicatesFiltersCollapsed(collapsed: boolean) {
     setDuplicatesFiltersCollapsedState(collapsed);
     setDuplicatesLayoutPresetState("custom");
+  }
+
+  function setUpdatesFiltersCollapsed(collapsed: boolean) {
+    setUpdatesFiltersCollapsedState(collapsed);
   }
 
   function getDockSectionLayout(
@@ -1076,6 +1098,10 @@ export function UiPreferencesProvider({
       String(duplicatesFiltersCollapsed),
     );
     globalThis.localStorage?.setItem(
+      modeScopedKey(mode, STORAGE_KEYS.updatesFiltersCollapsed),
+      String(updatesFiltersCollapsed),
+    );
+    globalThis.localStorage?.setItem(
       modeScopedKey(mode, STORAGE_KEYS.libraryLayoutPreset),
       libraryLayoutPreset,
     );
@@ -1115,6 +1141,7 @@ export function UiPreferencesProvider({
     duplicatesQueueHeight,
     libraryFiltersCollapsed,
     duplicatesFiltersCollapsed,
+    updatesFiltersCollapsed,
     libraryLayoutPreset,
     reviewLayoutPreset,
     duplicatesLayoutPreset,
@@ -1147,6 +1174,7 @@ export function UiPreferencesProvider({
         duplicatesQueueHeight,
         libraryFiltersCollapsed,
         duplicatesFiltersCollapsed,
+        updatesFiltersCollapsed,
         libraryLayoutPreset,
         reviewLayoutPreset,
         duplicatesLayoutPreset,
@@ -1176,6 +1204,7 @@ export function UiPreferencesProvider({
         setDuplicatesQueueHeight,
         setLibraryFiltersCollapsed,
         setDuplicatesFiltersCollapsed,
+        setUpdatesFiltersCollapsed,
         applyLibraryLayoutPreset,
         applyReviewLayoutPreset,
         applyDuplicatesLayoutPreset,
@@ -1206,6 +1235,7 @@ export function UiPreferencesProvider({
           setDuplicatesQueueHeightState(duplicatesDefaults.queueHeight);
           setLibraryFiltersCollapsedState(defaults.libraryFiltersCollapsed);
           setDuplicatesFiltersCollapsedState(defaults.duplicatesFiltersCollapsed);
+          setUpdatesFiltersCollapsedState(defaults.updatesFiltersCollapsed);
           setLibraryLayoutPresetState(defaults.libraryLayoutPreset);
           setReviewLayoutPresetState(defaults.reviewLayoutPreset);
           setDuplicatesLayoutPresetState(defaults.duplicatesLayoutPreset);

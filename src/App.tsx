@@ -15,12 +15,11 @@ import { getScreenFrameMotion } from "./lib/motion";
 import type {
   ExperienceMode,
   LibrarySettings,
-  LibraryWatchFocusRequest,
-  LibraryWatchFocusTarget,
   ScanProgress,
   ScanStatus,
   Screen,
   UserView,
+  WatchListFilter,
   WorkspaceChange,
   WorkspaceDomain,
 } from "./lib/types";
@@ -29,6 +28,7 @@ const WORKSPACE_DOMAINS: WorkspaceDomain[] = [
   "home",
   "downloads",
   "library",
+  "updates",
   "organize",
   "review",
   "duplicates",
@@ -45,6 +45,9 @@ const DownloadsScreen = lazy(async () => ({
 }));
 const LibraryScreen = lazy(async () => ({
   default: (await import("./screens/LibraryScreen")).LibraryScreen,
+}));
+const UpdatesScreen = lazy(async () => ({
+  default: (await import("./screens/UpdatesScreen")).UpdatesScreen,
 }));
 const CreatorAuditScreen = lazy(async () => ({
   default: (await import("./screens/CreatorAuditScreen")).CreatorAuditScreen,
@@ -104,6 +107,7 @@ function resolveInitialScreen(): Screen {
     value === "home" ||
     value === "downloads" ||
     value === "library" ||
+    value === "updates" ||
     value === "creatorAudit" ||
     value === "categoryAudit" ||
     value === "duplicates" ||
@@ -115,6 +119,35 @@ function resolveInitialScreen(): Screen {
   }
 
   return "home";
+}
+
+interface UpdatesNavigationParams {
+  mode?: "tracked" | "setup" | "review";
+  filter?: WatchListFilter;
+  fileId?: number;
+}
+
+function resolveUpdatesParams(): UpdatesNavigationParams {
+  const params = new URLSearchParams(globalThis.location?.search ?? "");
+  const mode = params.get("mode") as "tracked" | "setup" | "review" | null;
+  const filter = params.get("filter") as WatchListFilter | null;
+  const fileIdValue = params.get("fileId");
+  const fileId = fileIdValue ? Number(fileIdValue) : Number.NaN;
+  return {
+    mode:
+      mode === "tracked" || mode === "setup" || mode === "review"
+        ? mode
+        : undefined,
+    filter:
+      filter === "attention" ||
+      filter === "exact_updates" ||
+      filter === "possible_updates" ||
+      filter === "unclear" ||
+      filter === "all"
+        ? filter
+        : undefined,
+    fileId: Number.isFinite(fileId) ? fileId : undefined,
+  };
 }
 
 export default function App() {
@@ -152,11 +185,9 @@ function AppShell({
     createInitialWorkspaceVersions,
   );
   const [isGuideOpen, setIsGuideOpen] = useState(false);
-  const [libraryWatchFocusRequest, setLibraryWatchFocusRequest] =
-    useState<LibraryWatchFocusRequest | null>(null);
+  const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
-  const libraryWatchFocusRequestId = useRef(0);
   const userView: UserView = experienceModeToLegacyView(experienceMode);
 
   useEffect(() => {
@@ -208,20 +239,19 @@ function AppShell({
     setWorkspaceVersions((current) => bumpWorkspaceVersions(current, domains));
   });
 
-  const openLibraryWatchFocus = useEffectEvent(
-    (target: LibraryWatchFocusTarget) => {
-      libraryWatchFocusRequestId.current += 1;
-      setLibraryWatchFocusRequest({
-        id: libraryWatchFocusRequestId.current,
-        target,
-      });
-      setScreen("library");
+  const navigateWithParams = useEffectEvent(
+    (
+      targetScreen: Screen,
+      mode?: "tracked" | "setup" | "review",
+      filter?: WatchListFilter,
+      fileId?: number,
+    ) => {
+      if (targetScreen === "updates") {
+        setUpdatesParams({ mode, filter, fileId });
+      }
+      setScreen(targetScreen);
     },
   );
-
-  const consumeLibraryWatchFocus = useEffectEvent(() => {
-    setLibraryWatchFocusRequest(null);
-  });
 
   const handleScanStatus = useEffectEvent((status: ScanStatus) => {
     if (status.state === "running") {
@@ -254,14 +284,15 @@ function AppShell({
       });
       setIsScanning(false);
       if (!hasTauriRuntime) {
-        bumpWorkspaceDomains([
-          "home",
-          "library",
-          "organize",
-          "review",
-          "duplicates",
-          "creatorAudit",
-          "categoryAudit",
+          bumpWorkspaceDomains([
+            "home",
+            "library",
+            "updates",
+            "organize",
+            "review",
+            "duplicates",
+            "creatorAudit",
+            "categoryAudit",
           "snapshots",
         ]);
       }
@@ -328,14 +359,15 @@ function AppShell({
     setSettings(saved);
     if (!hasTauriRuntime) {
       bumpWorkspaceDomains([
-        "home",
-        "downloads",
-        "library",
-        "organize",
-        "review",
-        "duplicates",
-        "creatorAudit",
-        "categoryAudit",
+          "home",
+          "downloads",
+          "library",
+          "updates",
+          "organize",
+          "review",
+          "duplicates",
+          "creatorAudit",
+          "categoryAudit",
       ]);
     }
   }
@@ -420,7 +452,7 @@ function AppShell({
         settings={settings}
         onSettingsChange={saveLibraryPaths}
         onNavigate={setScreen}
-        onOpenLibraryWatchFocus={openLibraryWatchFocus}
+        onNavigateWithParams={navigateWithParams}
         onScan={startScan}
         isScanning={isScanning}
         userView={userView}
@@ -435,6 +467,7 @@ function AppShell({
               "home",
               "downloads",
               "library",
+              "updates",
               "organize",
               "review",
               "duplicates",
@@ -448,9 +481,22 @@ function AppShell({
       <LibraryScreen
         refreshVersion={workspaceVersions.library}
         onNavigate={setScreen}
-        watchFocusRequest={libraryWatchFocusRequest}
-        onConsumeWatchFocus={consumeLibraryWatchFocus}
+        onNavigateWithParams={navigateWithParams}
         userView={userView}
+      />
+    ) : screen === "updates" ? (
+      <UpdatesScreen
+        refreshVersion={workspaceVersions.updates}
+        onNavigate={setScreen}
+        onDataChanged={() => {
+          if (!hasTauriRuntime) {
+            bumpWorkspaceDomains(["home", "library", "updates"]);
+          }
+        }}
+        userView={userView}
+        initialMode={updatesParams.mode}
+        initialFilter={updatesParams.filter}
+        initialFileId={updatesParams.fileId}
       />
     ) : screen === "creatorAudit" ? (
       <CreatorAuditScreen
@@ -461,6 +507,7 @@ function AppShell({
             bumpWorkspaceDomains([
               "home",
               "library",
+              "updates",
               "organize",
               "review",
               "creatorAudit",
@@ -478,6 +525,7 @@ function AppShell({
             bumpWorkspaceDomains([
               "home",
               "library",
+              "updates",
               "organize",
               "review",
               "categoryAudit",
@@ -504,6 +552,7 @@ function AppShell({
             bumpWorkspaceDomains([
               "home",
               "library",
+              "updates",
               "organize",
               "review",
               "duplicates",

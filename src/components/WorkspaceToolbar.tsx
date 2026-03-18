@@ -33,13 +33,12 @@ export function WorkspaceToolbar({
   return (
     <div className="workspace-toolbar">
       <div className="workspace-toolbar-status">
-        <div className="workspace-toolbar-heading">
-          <span className="section-label">
+        <div className="workspace-toolbar-heading" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <span className="section-label" style={{ margin: 0 }}>
             <LayoutPanelLeft size={14} strokeWidth={2} />
             {screenLabel(currentScreen, experienceMode)}
           </span>
-          <p className="workspace-toolbar-copy">{modeProfile.workspaceSummary}</p>
-          <div className="workspace-toolbar-meta" aria-label="Current workspace preferences">
+          <div className="workspace-toolbar-meta" aria-label="Current workspace preferences" style={{ margin: 0 }}>
             <span className="workspace-toolbar-meta-item">{viewLabel}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
             <span className="workspace-toolbar-meta-item">{modeProfile.badge}</span>

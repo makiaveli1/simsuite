@@ -1,30 +1,23 @@
 import { useEffect, useState } from "react";
-import { m } from "motion/react";
-import type { LucideIcon } from "lucide-react";
 import {
   Download,
   FolderCog,
   FolderOpen,
-  FolderTree,
-  House,
   LibraryBig,
   ScanSearch,
   ShieldAlert,
-  TriangleAlert,
-  Workflow,
 } from "lucide-react";
-import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
-import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
-import { reviewLabel, screenHelperLine, screenLabel } from "../lib/uiLanguage";
+import { Workbench } from "../components/layout/Workbench";
+import { WorkbenchStage } from "../components/layout/WorkbenchStage";
+import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
 import type {
   DetectedLibraryPaths,
   HomeOverview,
   LibrarySettings,
-  LibraryWatchFocusTarget,
   Screen,
   UserView,
+  WatchListFilter,
 } from "../lib/types";
 
 interface HomeScreenProps {
@@ -32,7 +25,7 @@ interface HomeScreenProps {
   settings: LibrarySettings | null;
   onSettingsChange: (settings: LibrarySettings) => Promise<void>;
   onNavigate: (screen: Screen) => void;
-  onOpenLibraryWatchFocus: (target: LibraryWatchFocusTarget) => void;
+  onNavigateWithParams: (screen: Screen, mode?: 'tracked' | 'setup' | 'review', filter?: WatchListFilter) => void;
   onScan: () => Promise<void>;
   isScanning: boolean;
   userView: UserView;
@@ -43,17 +36,11 @@ export function HomeScreen({
   settings,
   onSettingsChange,
   onNavigate,
-  onOpenLibraryWatchFocus,
+  onNavigateWithParams,
   onScan,
   isScanning,
   userView,
 }: HomeScreenProps) {
-  const {
-    homePrimaryWidth,
-    setHomePrimaryWidth,
-    homeSecondaryWidth,
-    setHomeSecondaryWidth,
-  } = useUiPreferences();
   const [overview, setOverview] = useState<HomeOverview | null>(null);
   const [detectedPaths, setDetectedPaths] = useState<DetectedLibraryPaths | null>(
     null,
@@ -110,427 +97,165 @@ export function HomeScreen({
     Number(Boolean(settings?.modsPath)) +
     Number(Boolean(settings?.trayPath)) +
     Number(Boolean(settings?.downloadsPath));
-  const libraryRefreshValue = isScanning
-    ? userView === "beginner"
-      ? "Refreshing now"
-      : "Refresh running"
-    : overview?.scanNeedsRefresh
-      ? userView === "beginner"
-        ? "Needs refresh"
-        : "Needs refresh"
-      : overview?.lastScanAt
-        ? "Current"
-        : "Not scanned";
-  const metricItems =
-    userView === "beginner"
-      ? [
-          {
-            label: "Checked",
-            value: overview?.totalFiles ?? 0,
-            icon: FolderTree,
-          },
-          {
-            label: "Inbox",
-            value: overview?.downloadsCount ?? 0,
-            icon: Download,
-            onClick: () => onNavigate("downloads"),
-          },
-          {
-            label: "Needs review",
-            value: overview?.reviewCount ?? 0,
-            icon: ShieldAlert,
-            tone: "warn" as const,
-            onClick: () => onNavigate("review"),
-          },
-          {
-            label: "CC & Mods",
-            value: overview?.modsCount ?? 0,
-            icon: LibraryBig,
-          },
-        ]
-      : [
-          {
-            label: "Indexed",
-            value: overview?.totalFiles ?? 0,
-            icon: FolderTree,
-          },
-          {
-            label: "Mods",
-            value: overview?.modsCount ?? 0,
-            icon: LibraryBig,
-          },
-          {
-            label: "Tray",
-            value: overview?.trayCount ?? 0,
-            icon: House,
-          },
-          {
-            label: "Inbox",
-            value: overview?.downloadsCount ?? 0,
-            icon: Download,
-            onClick: () => onNavigate("downloads"),
-          },
-          {
-            label: "Review",
-            value: overview?.reviewCount ?? 0,
-            icon: ShieldAlert,
-            tone: "warn" as const,
-            onClick: () => onNavigate("review"),
-          },
-          {
-            label: "Unsafe",
-            value: overview?.unsafeCount ?? 0,
-            icon: TriangleAlert,
-            tone: "danger" as const,
-            onClick: () => onNavigate("library"),
-          },
-          {
-            label: userView === "power" ? "Scripts" : "Creators",
-            value:
-              userView === "power"
-                ? overview?.scriptModsCount ?? 0
-                : overview?.creatorCount ?? 0,
-            icon: userView === "power" ? FolderCog : Workflow,
-          },
-          ...(userView === "power"
-            ? [
-                {
-                  label: "Duplicates",
-                  value: overview?.duplicatesCount ?? 0,
-                  icon: Workflow,
-                },
-                {
-                  label: "Creators",
-                  value: overview?.creatorCount ?? 0,
-                  icon: Workflow,
-                },
-              ]
-            : []),
-        ];
-  const stateRows =
-    userView === "beginner"
-      ? [
-          { label: "Moves", value: "Ask first" },
-          { label: "Library check", value: libraryRefreshValue },
-          {
-            label: "Updates ready",
-            value: `${overview?.exactUpdateItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_exact_updates"),
-          },
-          {
-            label: "Watch review",
-            value: `${overview?.watchReviewItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_attention"),
-          },
-          {
-            label: "Watch setup",
-            value: `${overview?.watchSetupItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("setup"),
-          },
-          {
-            label: "Last check",
-            value: overview?.lastScanAt
-              ? new Date(overview.lastScanAt).toLocaleString()
-              : "Not scanned",
-          },
-          { label: "Folders ready", value: `${sourceCount} / 3` },
-        ]
-      : [
-          { label: "Mode", value: "Approval-first" },
-          { label: "Moves", value: "Validator + snapshot" },
-          { label: "Library facts", value: libraryRefreshValue },
-          {
-            label: "Exact updates",
-            value: `${overview?.exactUpdateItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_exact_updates"),
-          },
-          {
-            label: "Possible updates",
-            value: `${overview?.possibleUpdateItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_possible_updates"),
-          },
-          {
-            label: "Watch review",
-            value: `${overview?.watchReviewItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("tracked_attention"),
-          },
-          {
-            label: "Watch setup",
-            value: `${overview?.watchSetupItems ?? 0}`,
-            onClick: () => onOpenLibraryWatchFocus("setup"),
-          },
-          {
-            label: "Last scan",
-            value: overview?.lastScanAt
-              ? new Date(overview.lastScanAt).toLocaleString()
-              : "Not scanned",
-          },
-          { label: "Roots online", value: `${sourceCount} / 3` },
-          ...(userView === "power"
-            ? [
-                {
-                  label: "Read only",
-                  value: overview?.readOnlyMode ? "Yes" : "No",
-                },
-                {
-                  label: "Bundles",
-                  value: `${overview?.bundlesCount ?? 0}`,
-                },
-              ]
-            : []),
-        ];
 
   return (
-    <section className="screen-shell">
-      <div className="screen-header-row">
-        <div className="screen-heading">
-          <p className="eyebrow">{userView === "beginner" ? "Start here" : "Control"}</p>
-          <div className="screen-title-row">
-            <House size={18} strokeWidth={2} />
-            <h1>Home</h1>
-          </div>
-          <p className="workspace-toolbar-copy">{screenHelperLine("home", userView)}</p>
-        </div>
-        <div className="header-actions">
-          {detectedPaths?.modsPath || detectedPaths?.trayPath ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => void applyDetectedPaths()}
-              disabled={isSaving}
-              title="Use the detected Sims 4 Mods and Tray folders"
-            >
-              <FolderCog size={14} strokeWidth={2} />
-              {userView === "beginner" ? "Use found folders" : "Use detected"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="primary-action"
-            onClick={() => void onScan()}
-            disabled={!canScan || isScanning}
-            title="Run a full read-only scan"
-          >
-            <ScanSearch size={14} strokeWidth={2} />
-            {isScanning ? "Scanning..." : userView === "beginner" ? "Scan my CC" : "Scan"}
-          </button>
-        </div>
-      </div>
-
-      <div className="metrics-grid">
-        {metricItems.map((item, index) => (
-          <MetricCard
-            key={item.label}
-            index={index}
-            label={item.label}
-            value={item.value}
-            icon={item.icon}
-            tone={item.tone}
-            onClick={item.onClick}
-          />
-        ))}
-      </div>
-
-      {overview?.scanNeedsRefresh ? (
-        <div className="status-banner home-refresh-banner" role="status">
-          <div className="home-refresh-banner-copy">
-            <strong>
-              {isScanning
-                ? "Library details are refreshing."
-                : "Library details need one refresh."}
-            </strong>
-            <span>
-              {isScanning
-                ? "SimSuite found newer scan rules and is rechecking your installed files now."
-                : canScan
-                  ? "SimSuite found newer scan rules, so some saved library details are out of date until this refresh finishes."
-                  : "SimSuite found newer scan rules. Choose your game folders, then run one refresh so the library uses the newer results."}
+    <Workbench threePanel fullHeight>
+      {/* Left rail for navigation - using existing Sidebar from App shell */}
+      {/* Central work area */}
+      <WorkbenchStage>
+        {/* Slim utility strip instead of second page header */}
+        <div className="slim-strip">
+          <div className="slim-strip-group">
+            <span className="health-chip is-good">
+              <span className="health-chip-dot"></span>
+              {overview?.totalFiles?.toLocaleString() ?? 0} indexed
+            </span>
+            <span className="health-chip">
+              {overview?.modsCount?.toLocaleString() ?? 0} mods
+            </span>
+            <span className="health-chip">
+              {overview?.trayCount?.toLocaleString() ?? 0} tray
             </span>
           </div>
-          {isScanning ? (
-            <span className="ghost-chip">Refreshing</span>
-          ) : (
+          <div className="slim-strip-group">
             <button
               type="button"
-              className="secondary-action"
-              onClick={() => void onScan()}
-              disabled={!canScan}
-              title="Refresh library details with the newer scan rules"
-            >
-              <ScanSearch size={14} strokeWidth={2} />
-              {userView === "beginner" ? "Refresh library" : "Refresh now"}
-            </button>
-          )}
-        </div>
-      ) : null}
-
-      <div className="home-layout">
-        <ResizableEdgeHandle
-          label="Resize left home panel"
-          value={homePrimaryWidth}
-          min={280}
-          max={520}
-          onChange={setHomePrimaryWidth}
-          side="right"
-          className="layout-resize-handle home-layout-handle"
-        />
-        <ResizableEdgeHandle
-          label="Resize center home panel"
-          value={homePrimaryWidth + homeSecondaryWidth}
-          min={540}
-          max={900}
-          onChange={(nextTotal) => {
-            setHomeSecondaryWidth(Math.max(240, Math.min(460, nextTotal - homePrimaryWidth)));
-          }}
-          side="right"
-          className="layout-resize-handle home-secondary-handle"
-        />
-        <div className="panel-card">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Roots</p>
-              <h2>{userView === "beginner" ? "Game folders" : "Library folders"}</h2>
-            </div>
-            <span className="ghost-chip">{sourceCount}/3 set</span>
-          </div>
-
-          <div className="folder-list">
-            <FolderRow
-              label="Mods"
-              value={settings?.modsPath}
-              onBrowse={() => void chooseFolder("modsPath")}
-              busy={isSaving}
-            />
-            <FolderRow
-              label="Tray"
-              value={settings?.trayPath}
-              onBrowse={() => void chooseFolder("trayPath")}
-              busy={isSaving}
-            />
-            <FolderRow
-              label="Downloads"
-              value={settings?.downloadsPath}
-              onBrowse={() => void chooseFolder("downloadsPath")}
-              busy={isSaving}
-            />
-          </div>
-        </div>
-
-        <div className="panel-card">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Shortcuts</p>
-              <h2>{userView === "beginner" ? "What to do next" : "Primary actions"}</h2>
-            </div>
-          </div>
-
-          <div className="action-grid">
-            <ActionCard
-              index={0}
-              icon={LibraryBig}
-              label={screenLabel("library", userView)}
-              title="Open the indexed file explorer"
-              onClick={() => onNavigate("library")}
-            />
-            <ActionCard
-              index={1}
-              icon={Download}
-              label={screenLabel("downloads", userView)}
-              title="Open the downloads intake workspace"
-              onClick={() => onNavigate("downloads")}
-            />
-            <ActionCard
-              index={2}
-              icon={ShieldAlert}
-              label={reviewLabel(userView)}
-              title="Open the review queue"
-              onClick={() => onNavigate("review")}
-            />
-            {userView !== "beginner" ? (
-              <ActionCard
-                index={3}
-                icon={Workflow}
-                label="Organize"
-                title="Open rule previews and snapshots"
-                onClick={() => onNavigate("organize")}
-              />
-            ) : null}
-            <ActionCard
-              index={userView !== "beginner" ? 4 : 3}
-              icon={ScanSearch}
-              label={
-                isScanning
-                  ? "Scanning..."
-                  : userView === "beginner"
-                    ? "Scan my CC"
-                    : "Scan now"
-              }
-              title="Run a full read-only scan"
+              className="primary-action"
               onClick={() => void onScan()}
               disabled={!canScan || isScanning}
-              accent
-            />
+              title="Run a full read-only scan"
+            >
+              <ScanSearch size={14} strokeWidth={2} />
+              {isScanning ? "Scanning..." : "Scan"}
+            </button>
           </div>
         </div>
 
-        <div className="panel-card">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">State</p>
-              <h2>{userView === "beginner" ? "Status" : "Station"}</h2>
+        {/* Command Board: Two fixed columns */}
+        <div className="command-board">
+          {/* Left column: Do next items */}
+          <div className="command-column">
+            <div className="command-column-title">Do next</div>
+            <button
+              type="button"
+              className="action-item"
+              onClick={() => onNavigate("downloads")}
+            >
+              <Download size={14} strokeWidth={2} className="action-item-icon" />
+              <span className="action-item-label">Inbox</span>
+              <span className="action-item-badge">{overview?.downloadsCount ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className="action-item"
+              onClick={() => onNavigate("review")}
+            >
+              <ShieldAlert size={14} strokeWidth={2} className="action-item-icon" />
+              <span className="action-item-label">Review</span>
+              <span className="action-item-badge">{overview?.reviewCount ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className="action-item"
+              onClick={() => onNavigateWithParams("updates", "tracked", "exact_updates")}
+            >
+              <LibraryBig size={14} strokeWidth={2} className="action-item-icon" />
+              <span className="action-item-label">Updates</span>
+              <span className="action-item-badge">{overview?.exactUpdateItems ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className="action-item"
+              onClick={() => onNavigateWithParams("updates", "setup", "all")}
+            >
+              <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />
+              <span className="action-item-label">Scan setup</span>
+              <span className="action-item-badge">{overview?.watchSetupItems ?? 0}</span>
+            </button>
+          </div>
+
+          {/* Right column: System health chips */}
+          <div className="command-column">
+            <div className="command-column-title">System health</div>
+            <div className="health-chip-group">
+              <span className={`health-chip ${overview?.scanNeedsRefresh ? 'is-warn' : 'is-good'}`}>
+                <span className="health-chip-dot"></span>
+                {overview?.scanNeedsRefresh ? 'Needs refresh' : 'Scan current'}
+              </span>
+              <span className={`health-chip ${(overview?.unsafeCount ?? 0) > 0 ? 'is-danger' : 'is-good'}`}>
+                <span className="health-chip-dot"></span>
+                {overview?.unsafeCount ?? 0} risky
+              </span>
+              <span className={`health-chip ${sourceCount < 3 ? 'is-warn' : 'is-good'}`}>
+                <span className="health-chip-dot"></span>
+                {sourceCount}/3 folders ready
+              </span>
             </div>
           </div>
+        </div>
 
-          <div className="system-ledger">
-            {stateRows.map((row) => (
-              <LedgerRow
-                key={row.label}
-                label={row.label}
-                value={row.value}
-                onClick={row.onClick}
-              />
-            ))}
+        {/* Compact folder setup section */}
+        <div className="folder-setup-compact">
+          <div className="folder-setup-header">
+            <FolderCog size={14} strokeWidth={2} />
+            <span>Folders</span>
+            <span className="folder-setup-status">{sourceCount}/3 set</span>
+          </div>
+          <div className="folder-setup-items">
+            <div className="folder-item">
+              <span className="folder-label">Mods</span>
+              <span className="folder-path">{settings?.modsPath || "Not chosen yet"}</span>
+              <button
+                type="button"
+                className="folder-action secondary-action"
+                onClick={() => void chooseFolder("modsPath")}
+                disabled={isSaving}
+                title="Browse for the Mods folder"
+              >
+                <FolderOpen size={12} strokeWidth={2} />
+                Choose
+              </button>
+            </div>
+            <div className="folder-item">
+              <span className="folder-label">Tray</span>
+              <span className="folder-path">{settings?.trayPath || "Not chosen yet"}</span>
+              <button
+                type="button"
+                className="folder-action secondary-action"
+                onClick={() => void chooseFolder("trayPath")}
+                disabled={isSaving}
+                title="Browse for the Tray folder"
+              >
+                <FolderOpen size={12} strokeWidth={2} />
+                Choose
+              </button>
+            </div>
+            <div className="folder-item">
+              <span className="folder-label">Downloads</span>
+              <span className="folder-path">{settings?.downloadsPath || "Not chosen yet"}</span>
+              <button
+                type="button"
+                className="folder-action secondary-action"
+                onClick={() => void chooseFolder("downloadsPath")}
+                disabled={isSaving}
+                title="Browse for the Downloads folder"
+              >
+                <FolderOpen size={12} strokeWidth={2} />
+                Choose
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
+      </WorkbenchStage>
 
-function MetricCard({
-  index,
-  label,
-  value,
-  icon: Icon,
-  tone,
-  onClick,
-}: {
-  index: number;
-  label: string;
-  value: number;
-  icon: LucideIcon;
-  tone?: "warn" | "danger";
-  onClick?: () => void;
-}) {
-  return (
-    <m.button
-      type="button"
-      className={`metric-card ${tone ? `metric-card-${tone}` : ""} ${
-        onClick ? "is-clickable" : ""
-      }`}
-      onClick={onClick}
-      disabled={!onClick}
-      title={label}
-      whileHover={onClick ? hoverLift : undefined}
-      whileTap={onClick ? tapPress : undefined}
-      {...stagedListItem(index)}
-    >
-      <span className="metric-card-head">
-        <Icon size={14} strokeWidth={2} />
-        <span className="metric-label">{label}</span>
-      </span>
-      <strong className="metric-value">{value.toLocaleString()}</strong>
-    </m.button>
+      {/* Right inspector panel */}
+      <WorkbenchInspector>
+        {/* Inspector content can be added here if needed */}
+        <div className="inspector-placeholder">
+          <p className="inspector-hint">Select an item to see details</p>
+        </div>
+      </WorkbenchInspector>
+    </Workbench>
   );
 }
 
@@ -546,10 +271,10 @@ function FolderRow({
   busy: boolean;
 }) {
   return (
-    <div className="folder-row">
-      <div className="folder-main">
-        <div className="folder-title">{label}</div>
-        <div className="folder-path">{value || "Not chosen yet"}</div>
+    <div className="folder-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.25rem 0' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-soft)' }}>{label}</div>
+        <div className="text-path" style={{ fontSize: '0.66rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value || "Not chosen yet"}</div>
       </div>
 
       <button
@@ -562,66 +287,6 @@ function FolderRow({
         <FolderOpen size={14} strokeWidth={2} />
         Choose
       </button>
-    </div>
-  );
-}
-
-function ActionCard({
-  index,
-  icon: Icon,
-  label,
-  title,
-  onClick,
-  disabled,
-  accent,
-}: {
-  index: number;
-  icon: LucideIcon;
-  label: string;
-  title: string;
-  onClick: () => void;
-  disabled?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <m.button
-      type="button"
-      className={`action-card ${accent ? "action-card-accent" : ""}`}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      whileHover={!disabled ? hoverLift : undefined}
-      whileTap={!disabled ? tapPress : undefined}
-      {...stagedListItem(index)}
-    >
-      <Icon size={16} strokeWidth={2} />
-      <strong>{label}</strong>
-    </m.button>
-  );
-}
-
-function LedgerRow({
-  label,
-  value,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  onClick?: () => void;
-}) {
-  if (onClick) {
-    return (
-      <button type="button" className="ledger-row ledger-row-action" onClick={onClick}>
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </button>
-    );
-  }
-
-  return (
-    <div className="ledger-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }

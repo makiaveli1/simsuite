@@ -2,6 +2,32 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 18, 2026)
+
+This session began the first real desktop-first UI restructure instead of only planning it.
+
+Important changes and findings:
+
+- `Updates` is now a real dedicated workspace in the app shell, not just leftover watch logic hanging off `Library`
+- the `Updates` screen now uses the new pane-based workbench layout:
+  - left control rail
+  - central table
+  - right inspector
+- `Library` no longer carries the old hidden watch-center state and dead follow-up helpers
+- `Library` now hands the selected file off into `Updates` instead of trying to manage tracking inside the browser view
+- workspace refresh wiring now includes `updates`, so update-related changes can refresh the right surfaces together
+- the shared workbench shell also had a real bug fixed:
+  - class names in `Workbench`, `WorkbenchRail`, and `WorkbenchInspector` were being joined incorrectly
+  - this could quietly break density and layout styling across the new workbench screens
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- this was the first big UI slice, not the full redesign
+- `Downloads`, `Review`, `Duplicates`, and the audit screens still need the same desktop-workbench cleanup
+- no fresh real desktop click-through or screenshot signoff was run yet after this slice
+
 ## Current session note (March 16, 2026)
 
 This session did not add features. It was a research-backed product audit for player-facing mod information, so later `Library` polish stays useful instead of turning back into a debug screen.

@@ -52,6 +52,7 @@ Implemented screens:
 - Home
 - Downloads
 - Library
+- Updates
 - Settings
 - Creator Audit
 - Category Audit
@@ -63,6 +64,29 @@ Not yet implemented:
 
 - Patch Recovery
 - Tools
+
+## Current engineering note (March 18, 2026)
+
+The desktop UI shell now treats `Updates` as its own workspace instead of leaving watch management embedded inside `Library`.
+
+Important current behavior:
+
+- `Updates` is now a first-class workspace in the app shell and in workspace refresh invalidation
+- `Home` can open `Updates` directly in the right mode for:
+  - tracked items
+  - setup items
+  - review work
+- `Library` now acts as the installed-file browser again:
+  - browse rows
+  - inspect one selected file
+  - hand update work off to `Updates`
+- the `Updates` screen now follows the same shared workbench structure as the new `Home` and `Library` screens:
+  - left rail
+  - central work surface
+  - right inspector
+- the shared workbench primitives also had a shell bug fixed:
+  - layout and density classes were being concatenated incorrectly
+  - that could stop shared workbench styles from applying correctly across redesigned screens
 
 ## Current engineering note (March 16, 2026)
 

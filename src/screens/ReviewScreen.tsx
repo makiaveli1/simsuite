@@ -187,17 +187,10 @@ export function ReviewScreen({
     : [];
 
   return (
-    <section className="screen-shell">
-      <div className="screen-header-row">
-        <div className="screen-heading">
-          <p className="eyebrow">{userView === "beginner" ? "Check these" : "Queue"}</p>
-          <div className="screen-title-row">
-            <ShieldAlert size={18} strokeWidth={2} />
-            <h1>{reviewLabel(userView)}</h1>
-          </div>
-          <p className="workspace-toolbar-copy">{screenHelperLine("review", userView)}</p>
-        </div>
-        <div className="header-actions">
+    <section className="screen-shell workbench">
+      {/* Slim strip */}
+      <div className="slim-strip">
+        <div className="slim-strip-group">
           <button
             type="button"
             className="secondary-action"
@@ -207,6 +200,8 @@ export function ReviewScreen({
             <RefreshCw size={14} strokeWidth={2} />
             {isLoading ? "Refreshing..." : "Refresh"}
           </button>
+        </div>
+        <div className="slim-strip-group">
           <button
             type="button"
             className="secondary-action"
@@ -234,25 +229,9 @@ export function ReviewScreen({
         </div>
       </div>
 
-      <LayoutPresetBar
-        title={userView === "beginner" ? "Quick view" : "Review layout"}
-        summary={
-          userView === "beginner"
-            ? "Keep the queue and the selected file easy to read while you work through the hold list."
-            : userView === "power"
-              ? "Saved queue and inspector presets for denser review passes."
-              : "Saved queue and detail presets for triage and deeper file review."
-        }
-        presets={userView === "beginner" ? [] : REVIEW_LAYOUT_PRESETS}
-        activePreset={reviewLayoutPreset}
-        onApplyPreset={(preset) =>
-          applyReviewLayoutPreset(preset as ReviewLayoutPreset)
-        }
-      />
-
       {items.length ? (
         <div className="review-layout review-layout-screen">
-          <div className="panel-card queue-panel review-queue-panel">
+          <div className="panel-card queue-panel review-queue-panel workbench-rail">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">

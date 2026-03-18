@@ -131,6 +131,7 @@ const SCREEN_TEMPO = {
   home: 1.08,
   downloads: 0.96,
   library: 0.94,
+  updates: 0.94,
   creatorAudit: 0.98,
   categoryAudit: 0.98,
   organize: 0.9,

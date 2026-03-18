@@ -16,6 +16,7 @@ const SCREEN_LABELS: Record<
   home: { default: "Home" },
   downloads: { default: "Inbox" },
   library: { default: "Library", beginner: "My CC" },
+  updates: { default: "Updates", beginner: "Updates" },
   creatorAudit: { default: "Creators" },
   categoryAudit: { default: "Types" },
   duplicates: { default: "Duplicates", beginner: "Same file?" },
@@ -184,6 +185,11 @@ export function screenHelperLine(
       beginner: "Pick a file, check the basics, then save the right Creator or Type once.",
       standard: "Browse the indexed library and fix the details SimSuite should remember next time.",
       power: "Use the full file desk for paths, clues, confidence, and learned overrides.",
+    },
+    updates: {
+      beginner: "Check your tracked mods for updates and set up new ones.",
+      standard: "Review tracked mods, set up new watch sources, and check for updates.",
+      power: "Manage watch sources, review uncertain sources, and refresh all tracked mods.",
     },
     creatorAudit: {
       beginner: "Fix creator names in groups so you do not have to sort one file at a time.",

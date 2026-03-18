@@ -21,6 +21,7 @@ export interface ExperienceModeProfile {
     duplicatesLayoutPreset: DuplicatesLayoutPreset;
     libraryFiltersCollapsed: boolean;
     duplicatesFiltersCollapsed: boolean;
+    updatesFiltersCollapsed: boolean;
   };
 }
 
@@ -40,14 +41,26 @@ export const EXPERIENCE_MODE_PROFILES: Record<
     badge: "Easygoing",
     summary: "Simple, guided, and calm for day-to-day play sessions.",
     workspaceSummary: "Straightforward flow with the safest next step up front.",
-    primaryScreens: ["home", "downloads", "organize", "review", "library", "settings"],
-    toolScreens: ["creatorAudit", "categoryAudit", "duplicates"],
+    primaryScreens: [
+      "home",
+      "downloads",
+      "library",
+      "updates",
+      "organize",
+      "review",
+      "creatorAudit",
+      "categoryAudit",
+      "duplicates",
+      "settings"
+    ],
+    toolScreens: [],
     defaults: {
       libraryLayoutPreset: "browse",
       reviewLayoutPreset: "focus",
       duplicatesLayoutPreset: "sweep",
       libraryFiltersCollapsed: false,
       duplicatesFiltersCollapsed: true,
+      updatesFiltersCollapsed: false,
     },
   },
   seasoned: {
@@ -60,6 +73,7 @@ export const EXPERIENCE_MODE_PROFILES: Record<
       "home",
       "downloads",
       "library",
+      "updates",
       "creatorAudit",
       "categoryAudit",
       "duplicates",
@@ -74,6 +88,7 @@ export const EXPERIENCE_MODE_PROFILES: Record<
       duplicatesLayoutPreset: "balanced",
       libraryFiltersCollapsed: false,
       duplicatesFiltersCollapsed: false,
+      updatesFiltersCollapsed: false,
     },
   },
   creator: {
@@ -85,11 +100,12 @@ export const EXPERIENCE_MODE_PROFILES: Record<
     primaryScreens: [
       "home",
       "downloads",
-      "organize",
       "library",
+      "updates",
+      "organize",
+      "review",
       "creatorAudit",
       "categoryAudit",
-      "review",
       "duplicates",
       "settings",
     ],
@@ -100,6 +116,7 @@ export const EXPERIENCE_MODE_PROFILES: Record<
       duplicatesLayoutPreset: "compare",
       libraryFiltersCollapsed: false,
       duplicatesFiltersCollapsed: false,
+      updatesFiltersCollapsed: false,
     },
   },
 };

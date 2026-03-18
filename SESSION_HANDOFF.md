@@ -1,5 +1,110 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Afternoon)
+
+- **Mode**: code
+- **Focus**: first desktop-workbench UI implementation slice
+
+### Progress Made
+
+1. **Promoted `Updates` into a real workspace**:
+   - rebuilt `Updates` around the new desktop workbench pattern:
+     - left control rail
+     - center work table
+     - right inspector
+   - `Updates` now owns the three watch jobs directly:
+     - tracked items
+     - setup items
+     - review items
+   - the selected file can now be opened straight into `Updates` from `Library`
+
+2. **Cut the leftover watch-center clutter out of `Library`**:
+   - removed the old hidden watch-center state and dead helper code from `LibraryScreen.tsx`
+   - `Library` is back to being a browse-and-inspect screen
+   - the inspector now gives a small handoff into `Updates` instead of trying to host watch management itself
+
+3. **Fixed shared workbench shell problems**:
+   - `Workbench`, `WorkbenchRail`, and `WorkbenchInspector` were building broken class names because the class strings were being joined incorrectly
+   - that is now fixed, so the shared desktop layout styles can apply consistently
+
+4. **App shell wiring now treats `Updates` like a first-class workspace**:
+   - `updates` is now included in workspace version invalidation
+   - Home actions route straight into the right `Updates` mode
+   - update-related changes can now refresh `Home` and `Updates` together
+
+5. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- The current redesign direction is much clearer now:
+  - `Home` is the command board
+  - `Library` is the file browser
+  - `Updates` is the watch and update workspace
+- The new `Updates` screen now feels like a real desktop pane-based tool instead of a stacked utility page.
+- The `Library` file got much smaller and easier to reason about once the old watch-center leftovers were removed.
+
+### Known Problems / Gaps
+
+- This session only covered the first big UI slice:
+  - `Updates` is now in much better shape
+  - `Library` is cleaner
+  - but other dense screens still need the same workbench cleanup
+- No real desktop click-through or fresh screenshot pass was run yet after this redesign slice.
+- `Home` still has a placeholder right inspector.
+- The new `Updates` workspace still needs a second polish pass for:
+  - stronger mode counts
+  - a little more visual refinement
+  - possible batch setup helpers later
+
+### Important Decisions
+
+- `Updates` is now the real owner of tracked/setup/review watch work.
+- `Library` should not host the old watch center anymore.
+- Shared workbench components should stay the base for new dense desktop screens instead of each screen inventing its own shell.
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Do one real desktop UI check for:
+  - `Home` -> `Updates`
+  - `Library` -> selected file -> `Open in Updates`
+  - save source
+  - clear source
+  - check selected source
+- Then move to the next redesign slice:
+  - tighten `Downloads` into the same workbench pattern
+  - reduce stacked summary clutter on the other dense screens
+  - give `Home` a proper right inspector instead of the placeholder
+
+## Current Session (March 17, 2026 - Evening)
+
+- **Mode**: code
+- **Focus**: Desktop-First Workbench Redesign implementation
+
+### Progress Made
+
+1. **Fixed TypeScript errors in LibraryScreen.tsx**:
+   - Added missing state variables for legacy watch center functionality: `setQueuedWatchCenterAction`, `setPendingWatchIntent`, `setWatchCenterMessage`
+   - These are now placeholder setters since watch functionality has moved to Updates screen
+
+2. **Fixed import errors in HomeScreen.tsx**:
+   - Changed from barrel import `'../components/layout'` to individual imports
+   - Now imports Workbench, WorkbenchStage, WorkbenchInspector separately
+
+3. **Build verification**:
+   - `npm run build` now succeeds
+   - `npm run tauri dev` starts successfully
+
+### Key Changes in Progress
+
+- HomeScreen and LibraryScreen now use Workbench layout components
+- Updates navigation link from Home now points to 'updates' instead of 'library'
+- Watch-related functionality references in Library are now legacy placeholders
+
+---
+
 ## Current Priority
 
 - March 16, 2026: a research-only product audit was done before any more player-facing `Library` detail work:

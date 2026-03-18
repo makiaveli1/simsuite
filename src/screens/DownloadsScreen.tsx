@@ -1043,17 +1043,33 @@ export function DownloadsScreen({
   };
 
   return (
-    <section className="screen-shell">
-      <div className="screen-header-row">
-        <div className="screen-heading">
-          <p className="eyebrow">{userView === "beginner" ? "New downloads" : "Inbox"}</p>
-          <div className="screen-title-row">
-            <Download size={18} strokeWidth={2} />
-            <h1>{screenLabel("downloads", userView)}</h1>
-          </div>
-          <p className="workspace-toolbar-copy">{screenHelperLine("downloads", userView)}</p>
+    <section className="screen-shell workbench">
+      {/* Slim strip with watcher state and queue summary */}
+      <div className="slim-strip">
+        <div className="slim-strip-group">
+          {statusMessage ? (
+            <span className="health-chip is-warn">{statusMessage}</span>
+          ) : errorMessage ? (
+            <span className="health-chip is-danger">{errorMessage}</span>
+          ) : (
+            <>
+              <span className="health-chip is-good">
+                <span className="health-chip-dot"></span>
+                {overview?.totalItems ?? 0} items
+              </span>
+              <span className="health-chip">
+                {overview?.readyNowItems ?? overview?.readyItems ?? 0} ready
+              </span>
+              <span className={`health-chip ${(overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) > 0 ? 'is-warn' : ''}`}>
+                {overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0} waiting
+              </span>
+              <span className={`health-chip ${(overview?.blockedItems ?? overview?.errorItems ?? 0) > 0 ? 'is-danger' : ''}`}>
+                {overview?.blockedItems ?? overview?.errorItems ?? 0} blocked
+              </span>
+            </>
+          )}
         </div>
-        <div className="header-actions">
+        <div className="slim-strip-group">
           <button
             type="button"
             className="secondary-action"
@@ -1072,46 +1088,6 @@ export function DownloadsScreen({
             {reviewLabel(userView)}
           </button>
         </div>
-      </div>
-
-      {statusMessage ? <div className="status-banner">{statusMessage}</div> : null}
-      {errorMessage ? (
-        <div className="status-banner status-banner-error">{errorMessage}</div>
-      ) : null}
-
-      <div className="summary-matrix">
-        <SummaryStat
-          label={userView === "beginner" ? "Inbox items" : "Items"}
-          value={overview?.totalItems ?? 0}
-          tone="neutral"
-        />
-        <SummaryStat
-          label={userView === "beginner" ? "Ready now" : "Ready"}
-          value={overview?.readyNowItems ?? overview?.readyItems ?? 0}
-          tone="good"
-        />
-        <SummaryStat
-          label={userView === "beginner" ? "Special setup" : "Special setup"}
-          value={overview?.specialSetupItems ?? 0}
-          tone="neutral"
-        />
-        <SummaryStat
-          label={userView === "beginner" ? "Waiting on you" : "Waiting"}
-          value={overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0}
-          tone="low"
-        />
-        <SummaryStat
-          label="Blocked"
-          value={overview?.blockedItems ?? overview?.errorItems ?? 0}
-          tone="low"
-        />
-        {userView !== "beginner" ? (
-          <SummaryStat
-            label="Done"
-            value={overview?.doneItems ?? overview?.appliedItems ?? 0}
-            tone="neutral"
-          />
-        ) : null}
       </div>
 
       {showWatcherBootstrap ? (
@@ -1246,7 +1222,7 @@ export function DownloadsScreen({
             </div>
 
             <div className={`downloads-stage${splitStage ? " downloads-stage-split" : ""}`}>
-              <div className="panel-card downloads-queue-panel">
+              <div className="panel-card downloads-queue-panel workbench-rail">
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">Inbox queue</p>
@@ -1381,7 +1357,7 @@ export function DownloadsScreen({
                   )}
                 </div>
               </div>
-              <div className="panel-card downloads-preview-panel">
+              <div className="panel-card downloads-preview-panel workbench-surface">
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">

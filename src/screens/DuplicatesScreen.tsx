@@ -198,7 +198,7 @@ export function DuplicatesScreen({
     : [];
 
   return (
-    <section className="screen-shell">
+    <section className="screen-shell workbench">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Lookalikes" : "Analysis"}</p>

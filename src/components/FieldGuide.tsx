@@ -9,6 +9,7 @@ import {
   FolderTree,
   House,
   ListChecks,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Shapes,
@@ -300,6 +301,36 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         { label: "Moves allowed", value: "No" },
         { label: "Best use", value: "Inspect and save" },
         { label: "Related screens", value: "Creators, Types" },
+      ],
+    ),
+    updates: makeScreenTopic(
+      "updates",
+      RefreshCw,
+      "Updates",
+      "Track mods for updates, set up new watch sources, and check for new versions.",
+      viewCopy(userView, {
+        beginner: "Check which of your tracked mods have updates available.",
+        standard: "Track mods for updates, set up new sources, and refresh all tracked items.",
+        power: "Full watch management with source configuration, review, and bulk refresh.",
+      }),
+      "Watch center",
+      "Start by checking for updates, then set up any mods that need watching.",
+      [
+        section("What you can do", [
+          "Check tracked mods for available updates.",
+          "Set up watch sources for mods that need tracking.",
+          "Review uncertain watch sources before they become active.",
+        ]),
+        section("Modes", [
+          "Tracked: See all watched mods and their update status.",
+          "Setup: Set up new watch sources for mods.",
+          "Review: Check sources that need human verification.",
+        ]),
+      ],
+      [
+        { label: "Focus", value: "Mod updates" },
+        { label: "Safe action", value: "Check for updates" },
+        { label: "Not moved", value: "Read-only tracking" },
       ],
     ),
     creatorAudit: makeScreenTopic(
