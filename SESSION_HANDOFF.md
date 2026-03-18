@@ -1,5 +1,67 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Late Afternoon)
+
+- **Mode**: code
+- **Focus**: second desktop-workbench UI implementation slice
+
+### Progress Made
+
+1. **Rebuilt `Downloads` around the same desktop workbench shape**:
+   - moved the stacked watcher + filter card block out of the top of the page
+   - `Downloads` now uses:
+     - left control rail
+     - center stage
+     - right inspector
+   - the main stage now keeps the queue and preview together as the working surface instead of pushing them down below setup cards
+
+2. **Made the `Downloads` rail do the quiet setup work instead of the page header**:
+   - watcher path, status, filters, rule set, lane counts, and quick actions now live in the left rail
+   - the center area now starts with a small status line and then goes straight into queue + preview work
+   - this reduces page-level clutter and keeps the main workspace focused on the currently selected batch
+
+3. **Tightened shared workbench shell spacing**:
+   - `WorkbenchRail` and `WorkbenchInspector` were wrapping content in helper containers that had no real base styling
+   - shared padding and layout rules now exist for those containers, so pane-based screens behave more consistently
+
+4. **Verification**:
+   - `npm run build` passed
+
+### What Worked
+
+- `Downloads` now fits the same desktop-app pattern as `Updates`, which makes the app feel more intentional already.
+- The queue and preview are easier to read because they are no longer being pushed downward by a wide setup block.
+- The right inspector still keeps the detailed action flow, so the redesign stayed structural without disturbing the safety logic.
+
+### Known Problems / Gaps
+
+- No fresh real desktop click-through or screenshot signoff was run after the `Downloads` restructure.
+- `Home` still has a placeholder right inspector.
+- `Review`, `Duplicates`, `Creator Audit`, and `Category Audit` still need the same desktop cleanup pass.
+- The shared rail/inspector padding change needs a quick visual sanity check on `Updates` and `Library` even though the build is clean.
+
+### Important Decisions
+
+- `Downloads` should follow the same workbench model as `Updates`:
+  - narrow control rail
+  - central work surface
+  - right inspector
+- Workspace-level setup and filters belong in the rail, not stacked above the main working surface.
+- Shared workbench container padding should come from the base layout primitives so each screen does not have to fake it separately.
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Do one real desktop UI pass for:
+  - `Downloads`
+  - `Updates`
+  - `Library`
+- If the layout feels stable, move to the next cleanup slice:
+  - give `Home` a real right inspector
+  - convert `Review` or `Duplicates` to the same workbench pattern
+  - remove any leftover stacked dashboard bands from the remaining dense screens
+
 ## Current Session (March 18, 2026 - Afternoon)
 
 - **Mode**: code

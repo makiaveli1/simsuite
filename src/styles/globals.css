@@ -780,6 +780,26 @@ h2,
   overflow-y: auto;
 }
 
+.rail-content,
+.inspector-content {
+  display: grid;
+  gap: 0.7rem;
+  min-height: 100%;
+  padding: 0.72rem;
+  align-content: start;
+}
+
+.rail-no-padding,
+.inspector-no-padding {
+  gap: 0;
+  padding: 0;
+}
+
+.workbench-rail.rail-no-border,
+.workbench-inspector.inspector-no-border {
+  box-shadow: none;
+}
+
 /* Desktop-First Workbench: Flat Surfaces */
 .workbench-surface,
 .workbench-rail,
@@ -3825,6 +3845,117 @@ h2,
   background: var(--amber-soft);
 }
 
+.downloads-shell {
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+.downloads-workbench {
+  min-height: 0;
+  height: 100%;
+  align-items: stretch;
+}
+
+.downloads-rail-shell {
+  width: clamp(276px, 21vw, 320px);
+  min-width: 0;
+}
+
+.downloads-rail,
+.downloads-inspector {
+  display: grid;
+  gap: 0.7rem;
+  min-height: 100%;
+  align-content: start;
+}
+
+.downloads-rail-title {
+  margin: 0.14rem 0 0;
+  font-size: 1rem;
+}
+
+.downloads-rail-copy {
+  margin: 0.3rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.downloads-rail-section {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
+}
+
+.downloads-rail-card,
+.downloads-lane-summary {
+  padding: 0.58rem 0.62rem;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 20%),
+    var(--surface-4);
+}
+
+.downloads-rail-note {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.downloads-lane-summary-list,
+.downloads-rail-actions {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.downloads-lane-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.downloads-lane-summary > div {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.downloads-lane-summary span {
+  color: var(--text-soft);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.downloads-rail-actions .primary-action,
+.downloads-rail-actions .secondary-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.downloads-stage-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.72rem;
+}
+
+.downloads-stage-header {
+  padding: 0;
+}
+
+.downloads-stage-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .downloads-layout {
   display: grid;
   grid-template-columns:
@@ -3872,9 +4003,9 @@ h2,
   display: grid;
   grid-template-rows:
     minmax(220px, var(--downloads-queue-height))
-    minmax(220px, 1fr);
+    minmax(0, 1fr);
   gap: 0.65rem;
-  height: clamp(560px, calc(100vh - 260px), 920px);
+  height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -3882,8 +4013,8 @@ h2,
 
 .downloads-stage-split {
   grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
-  grid-template-rows: minmax(560px, calc(100vh - 260px));
-  height: clamp(560px, calc(100vh - 260px), 920px);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
 }
 
 .downloads-stage > * {
@@ -4916,12 +5047,21 @@ h2,
     grid-template-columns: 1fr;
     grid-template-rows:
       minmax(220px, var(--downloads-queue-height))
-      minmax(220px, 1fr);
-    height: clamp(560px, calc(100vh - 260px), 920px);
+      minmax(0, 1fr);
+    height: 100%;
   }
 }
 
 @media (max-width: 1280px) {
+  .downloads-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .downloads-rail-shell,
+  .downloads-inspector-shell {
+    width: auto !important;
+  }
+
   .downloads-layout {
     grid-template-columns: 1fr;
   }
@@ -5635,6 +5775,10 @@ h2,
     grid-template-columns: 1fr;
   }
 
+  .downloads-workbench {
+    grid-template-columns: 1fr;
+  }
+
   .workspace-toolbar {
     grid-template-columns: 1fr;
   }
@@ -5687,6 +5831,11 @@ h2,
     display: none;
   }
 
+  .downloads-rail-shell .resize-handle,
+  .downloads-inspector-shell .resize-handle {
+    display: none;
+  }
+
   .library-table-scroll,
   .downloads-stage,
   .review-queue-list,
@@ -5713,6 +5862,10 @@ h2,
 
   .downloads-control-grid {
     grid-template-columns: 1fr;
+  }
+
+  .downloads-stage-status {
+    justify-content: flex-start;
   }
 
   .guide-drawer {

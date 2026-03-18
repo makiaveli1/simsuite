@@ -67,6 +67,23 @@ Not yet implemented:
 
 ## Current engineering note (March 18, 2026)
 
+`Downloads` now follows the shared workbench shell instead of keeping its own stacked dashboard-style layout.
+
+Important current behavior:
+
+- `Downloads` now uses the same high-level structure as the newer `Updates` workspace:
+  - left control rail
+  - central working stage
+  - right inspector
+- watcher state, search, filters, preset choice, lane counts, and quick actions now live in the left rail
+- the center stage is now responsible for the actual inbox work only:
+  - queue
+  - preview
+- the right inspector still owns the selected batch detail, next action, evidence, and docked detail sections
+- shared workbench rail / inspector wrapper containers now have real base padding and layout rules, which the newer pane-based screens depend on
+
+## Current engineering note (March 18, 2026)
+
 The desktop UI shell now treats `Updates` as its own workspace instead of leaving watch management embedded inside `Library`.
 
 Important current behavior:

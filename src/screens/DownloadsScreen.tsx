@@ -21,7 +21,10 @@ import {
   DockSectionStack,
   type DockSectionDefinition,
 } from "../components/DockSectionStack";
-import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
+import { Workbench } from "../components/layout/Workbench";
+import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
+import { WorkbenchRail } from "../components/layout/WorkbenchRail";
+import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
@@ -35,7 +38,6 @@ import {
   sampleCountLabel,
   sampleToggleLabel,
   screenHelperLine,
-  screenLabel,
 } from "../lib/uiLanguage";
 import type {
   DependencyStatus,
@@ -1012,6 +1014,12 @@ export function DownloadsScreen({
       })
     : [];
   const groupedItems = groupDownloadItems(inbox?.items ?? []);
+  const visibleLaneCounts = Object.fromEntries(
+    DOWNLOAD_LANE_ORDER.map((lane) => [
+      lane,
+      groupedItems.find((group) => group.lane === lane)?.items.length ?? 0,
+    ]),
+  ) as Record<DownloadQueueLane, number>;
   const splitStage = userView !== "beginner";
   const inspectorSignals = selectedResolvedItem
     ? buildDownloadInspectorSignals(
@@ -1041,9 +1049,19 @@ export function DownloadsScreen({
     needsReviewItems: 0,
     activeItems: 0,
   };
+  const stageStatusMessage =
+    activeWatcherStatus.state === "processing"
+      ? activeWatcherStatus.currentItem
+        ? `Checking ${activeWatcherStatus.currentItem}`
+        : "Checking the Downloads folder"
+      : activeWatcherStatus.lastError
+        ? activeWatcherStatus.lastError
+        : activeWatcherStatus.lastRunAt
+          ? `Last check ${formatDate(activeWatcherStatus.lastRunAt)}`
+          : "Watcher ready";
 
   return (
-    <section className="screen-shell workbench">
+    <section className="screen-shell downloads-shell">
       {/* Slim strip with watcher state and queue summary */}
       <div className="slim-strip">
         <div className="slim-strip-group">
@@ -1141,22 +1159,33 @@ export function DownloadsScreen({
           meta={["No watcher path", "Nothing moves from this screen automatically"]}
         />
       ) : (
-        <div className="downloads-layout">
-          <div className="downloads-main-column">
-            <div className="panel-card downloads-control-panel">
-              <div className="panel-heading">
+        <Workbench threePanel className="downloads-workbench">
+          <WorkbenchRail
+            ariaLabel="Downloads controls"
+            className="downloads-rail-shell"
+            noBorder
+          >
+            <div className="downloads-rail">
+              <div className="workbench-header">
                 <div>
-                  <p className="eyebrow">Watch folder</p>
-                  <h2>{userView === "beginner" ? "Inbox station" : "Watcher status"}</h2>
+                  <p className="eyebrow">Workspace</p>
+                  <h1 className="downloads-rail-title">Downloads</h1>
+                  <p className="downloads-rail-copy">
+                    {screenHelperLine("downloads", userView)}
+                  </p>
                 </div>
-                <span className={`confidence-badge ${watcherTone(activeWatcherStatus.state)}`}>
+                <span
+                  className={`confidence-badge ${watcherTone(
+                    activeWatcherStatus.state,
+                  )}`}
+                >
                   {friendlyWatcherLabel(activeWatcherStatus.state)}
                 </span>
               </div>
 
-              <div className="downloads-control-grid">
-                <div className="downloads-watch-card">
-                  <div className="section-label">Watching</div>
+              <div className="downloads-rail-section">
+                <div className="section-label">Watcher</div>
+                <div className="downloads-rail-card downloads-watch-card">
                   <div className="path-card">
                     {activeWatcherStatus.watchedPath ?? "No downloads folder set"}
                   </div>
@@ -1174,8 +1203,11 @@ export function DownloadsScreen({
                     ) : null}
                   </div>
                 </div>
+              </div>
 
-                <div className="downloads-filter-card">
+              <div className="downloads-rail-section">
+                <div className="section-label">Controls</div>
+                <div className="downloads-rail-card downloads-filter-card">
                   <div className="filter-grid">
                     <label className="field">
                       <span>Search</span>
@@ -1217,12 +1249,87 @@ export function DownloadsScreen({
                       </select>
                     </label>
                   </div>
+                  {selectedItem?.intakeMode === "guided" ? (
+                    <p className="downloads-rail-note">
+                      This batch has its own install rules, so the tidy style stays locked.
+                    </p>
+                  ) : null}
                 </div>
+              </div>
+
+              <div className="downloads-rail-section">
+                <div className="section-label">Queue lanes</div>
+                <div className="downloads-lane-summary-list">
+                  {DOWNLOAD_LANE_ORDER.map((lane) => (
+                    <div key={lane} className="downloads-lane-summary">
+                      <div>
+                        <strong>{queueLaneLabel(lane, userView)}</strong>
+                        <span>{queueLaneHint(lane, userView)}</span>
+                      </div>
+                      <span className="ghost-chip">
+                        {visibleLaneCounts[lane].toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="downloads-rail-section">
+                <div className="section-label">Quick actions</div>
+                <div className="downloads-rail-actions">
+                  <button
+                    type="button"
+                    className="primary-action"
+                    onClick={() => void handleRefresh()}
+                    disabled={isRefreshing || isLoadingInbox}
+                  >
+                    <RefreshCw size={14} strokeWidth={2} />
+                    {isRefreshing ? "Refreshing..." : "Refresh inbox"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => onNavigate("review")}
+                  >
+                    <ShieldAlert size={14} strokeWidth={2} />
+                    {reviewLabel(userView)}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => onNavigate("home")}
+                  >
+                    <FolderSearch size={14} strokeWidth={2} />
+                    Home folders
+                  </button>
+                </div>
+              </div>
+            </div>
+          </WorkbenchRail>
+
+          <WorkbenchStage className="downloads-stage-panel">
+            <div className="table-header downloads-stage-header">
+              <div className="table-meta">
+                <div>
+                  <strong>{(inbox?.items.length ?? 0).toLocaleString()}</strong>
+                  <span>visible</span>
+                </div>
+                <div>
+                  <strong>{selectedItem ? "1" : "0"}</strong>
+                  <span>selected</span>
+                </div>
+                <div>
+                  <strong>{selectedPreset}</strong>
+                  <span>{userView === "beginner" ? "tidy style" : "rule set"}</span>
+                </div>
+              </div>
+              <div className="downloads-stage-status">
+                <span className="ghost-chip">{stageStatusMessage}</span>
               </div>
             </div>
 
             <div className={`downloads-stage${splitStage ? " downloads-stage-split" : ""}`}>
-              <div className="panel-card downloads-queue-panel workbench-rail">
+              <div className="panel-card downloads-queue-panel workbench-panel">
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">Inbox queue</p>
@@ -1357,7 +1464,7 @@ export function DownloadsScreen({
                   )}
                 </div>
               </div>
-              <div className="panel-card downloads-preview-panel workbench-surface">
+              <div className="panel-card downloads-preview-panel workbench-panel">
                 <div className="panel-heading">
                   <div>
                     <p className="eyebrow">
@@ -1469,11 +1576,11 @@ export function DownloadsScreen({
                           ? "Select an inbox item"
                           : "Select a download item to inspect"
                       }
-                      body={
-                        userView === "beginner"
-                          ? "Pick one batch from the left to see whether it is a normal sort, a special setup, or something that needs review."
-                          : "Select a staged archive or file batch to load the correct inbox preview."
-                      }
+                        body={
+                          userView === "beginner"
+                            ? "Pick one batch from the queue to see whether it is a normal sort, a special setup, or something that needs review."
+                            : "Select a staged archive or file batch to load the correct inbox preview."
+                        }
                       icon={Download}
                       compact
                       meta={["Normal", "Special setup", "Needs review", "Blocked"]}
@@ -1482,14 +1589,16 @@ export function DownloadsScreen({
                 </div>
               </div>
             </div>
-          </div>
+          </WorkbenchStage>
 
-          <ResizableDetailPanel
+          <WorkbenchInspector
             ariaLabel="Downloads inbox details"
             width={downloadsDetailWidth}
             onWidthChange={setDownloadsDetailWidth}
             minWidth={320}
             maxWidth={780}
+            className="downloads-inspector-shell"
+            noBorder
           >
             {selectedItem ? (
               <>
@@ -1617,8 +1726,8 @@ export function DownloadsScreen({
                 meta={["Approval first", "Snapshots happen before moves"]}
               />
             )}
-          </ResizableDetailPanel>
-        </div>
+          </WorkbenchInspector>
+        </Workbench>
       )}
     </section>
   );

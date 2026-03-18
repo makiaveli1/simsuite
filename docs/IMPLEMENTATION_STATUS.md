@@ -2,6 +2,32 @@
 
 This document maps the current implementation to the active product requirements.
 
+## Current session note (March 18, 2026 - later)
+
+This session pushed the desktop-first redesign into `Downloads`, which was still one of the most crowded workspaces.
+
+Important changes and findings:
+
+- `Downloads` now follows the same pane-based workbench pattern as the newer `Updates` screen:
+  - left control rail
+  - center queue + preview stage
+  - right inspector
+- watcher status, search, filters, tidy style, lane counts, and quick actions moved into the left rail instead of sitting above the main work surface
+- the center stage now opens with a small status line and then goes straight into the working area:
+  - queue
+  - preview
+- the deeper selected-batch detail flow stayed in the right inspector, so the structural cleanup did not disturb apply / ignore / review behavior
+- shared rail and inspector content wrappers now have real base padding and layout rules, which should help the newer workbench screens stay visually consistent
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- no fresh real desktop click-through or screenshot signoff was run after this `Downloads` pass
+- `Home` still needs a real inspector
+- `Review`, `Duplicates`, and the audit screens still need the same desktop cleanup
+- the shared rail/inspector spacing change should be visually checked on `Library` and `Updates`
+
 ## Current session note (March 18, 2026)
 
 This session began the first real desktop-first UI restructure instead of only planning it.
