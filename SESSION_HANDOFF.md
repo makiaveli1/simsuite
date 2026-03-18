@@ -1,5 +1,70 @@
 # Session Handoff
 
+## Current Session (March 18, 2026 - Morning)
+
+- **Mode**: code
+- **Focus**: screenshot-driven cleanup pass on `Creators`, `Duplicates`, and `Organize`
+
+### Progress Made
+
+1. **Calmed `Creators` so the work starts sooner**:
+   - removed the repeated full-width three-step strip
+   - kept the useful summary counts
+   - added one small guidance note inside the left rail
+   - the screen now gets to the real creator groups, sample files, and save panel much faster
+
+2. **Rebuilt `Duplicates` into a real compare workspace**:
+   - moved counts, filters, and layout presets into a dedicated left rail
+   - added a proper center focus stage that shows the selected pair side by side
+   - kept the deeper proof in the right inspector
+   - fixed a layout issue in the lower queue so rows sit directly under the queue heading instead of drifting downward
+
+3. **Quieted `Organize` without changing its core flow**:
+   - added a short “safe path first” note in the left rail
+   - tightened the summary, recommendation, preset, and issue panels
+   - made the left rail scroll on its own so the page stays more desktop-like and the center preview keeps the spotlight
+
+4. **Ran fresh live visual checks after the changes**:
+   - `Creators`
+   - `Duplicates`
+   - `Organize`
+   - screenshot files saved locally:
+     - `tmp-ui-pass-5-creators-before.png`
+     - `tmp-ui-pass-5-creators-after.png`
+     - `tmp-ui-pass-5-duplicates-before.png`
+     - `tmp-ui-pass-5-duplicates-after-4.png`
+     - `tmp-ui-pass-5-organize-before.png`
+     - `tmp-ui-pass-5-organize-after.png`
+
+5. **Verification**:
+   - `npm run build` passed multiple times during the pass
+
+### What Worked
+
+- `Creators` now feels more like `Types`: one short explanation, then straight into the work
+- `Duplicates` finally reads like a desktop comparison tool instead of one long list with controls stacked on top
+- `Organize` still keeps all of its safety detail, but the left side feels less overbearing and the preview gets to lead more clearly
+
+### Known Problems / Gaps
+
+- `Duplicates` is much stronger now, but the lower queue still leaves some quiet space when there are only a few pairs
+- `Organize` is better, but the left rail could still use one more taste pass if we want it even calmer
+- `Home` still needs its placeholder right side replaced
+- the remaining big visual consistency targets are still:
+  - `Review` small-queue density
+  - `Updates` tiny-list empty space
+  - `Home` right inspector
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Start with a screenshot-driven polish pass on:
+  - `Home`
+  - `Review`
+  - `Updates`
+- If those feel stable, do one lighter consistency sweep across all cleaned screens and trim any last “too many boxes” spots.
+
 ## Current Session (March 18, 2026 - Near Dawn)
 
 - **Mode**: code

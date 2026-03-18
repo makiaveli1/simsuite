@@ -1,5 +1,45 @@
 # SimSuite Implementation Status
 
+## Current session note (March 18, 2026 - morning)
+
+This session kept the redesign in the screenshot-driven desktop-app lane and focused on three screens that still carried too much clutter:
+
+- `Creators`
+- `Duplicates`
+- `Organize`
+
+Important changes and findings:
+
+- `Creators` no longer uses the repeated top teaching strip
+- the screen now keeps the useful counts, adds one quieter note in the left rail, and lets the actual group list, sample files, and save panel do the talking
+- `Duplicates` got the biggest structural cleanup:
+  - left rail for counts, filters, and layout presets
+  - center comparison stage for the selected pair
+  - right inspector for deeper proof
+- `Duplicates` also had one last layout bug fixed during visual checking:
+  - the lower queue rows were sitting too low inside their panel
+  - the panel now stacks its heading, note, and queue naturally so the rows start where users expect
+- `Organize` was tightened instead of rebuilt:
+  - added a short “safe path first” note
+  - compressed the left rail cards
+  - made the left rail scroll on its own so the full page stays more desktop-like
+- fresh live visual checks were run after the changes for:
+  - `Creators`
+  - `Duplicates`
+  - `Organize`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- `Duplicates` now feels like a real compare desk, but tiny result sets still leave some quiet space in the lower queue region
+- `Organize` is calmer, but there is still room for one more taste-level density pass
+- `Home` still needs the placeholder right side replaced
+- the next best screenshot-driven cleanup targets are:
+  - `Home`
+  - `Review`
+  - `Updates`
+
 This document maps the current implementation to the active product requirements.
 
 ## Current session note (March 18, 2026 - near dawn)

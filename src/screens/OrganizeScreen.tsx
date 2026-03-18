@@ -281,7 +281,7 @@ export function OrganizeScreen({
     null;
 
   return (
-    <section className="screen-shell workbench workbench-screen">
+    <section className="screen-shell workbench workbench-screen organize-screen">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Guided cleanup" : "Workflow"}</p>
@@ -328,7 +328,7 @@ export function OrganizeScreen({
           className="layout-resize-handle organize-layout-handle"
         />
         <div className="organize-rail">
-          <div className="panel-card">
+          <div className="panel-card organize-summary-card">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">{userView === "beginner" ? "This pass" : "Batch window"}</p>
@@ -337,7 +337,15 @@ export function OrganizeScreen({
               <span className="ghost-chip">{selectedPresetCopy.shortLabel}</span>
             </div>
 
-            <div className="summary-matrix">
+            <div className="audit-rail-note organize-rail-note">
+              <strong>Lead with the safe path first.</strong>
+              <p>
+                Keep the suggested rule set if it looks right, skim the center preview,
+                then move only the files already marked safe.
+              </p>
+            </div>
+
+            <div className="summary-matrix organize-summary-strip">
               <SummaryStat
                 label={userView === "beginner" ? "Ready now" : "Safe"}
                 value={safeCount}
@@ -429,7 +437,7 @@ export function OrganizeScreen({
             </div>
           </div>
 
-          <div className="panel-card">
+          <div className="panel-card organize-preset-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">{userView === "beginner" ? "Tidy styles" : "Presets"}</p>
@@ -483,7 +491,7 @@ export function OrganizeScreen({
             </div>
           </div>
 
-          <div className="panel-card">
+          <div className="panel-card organize-issues-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">

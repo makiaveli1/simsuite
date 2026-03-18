@@ -7,7 +7,7 @@ import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
+import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import { friendlyTypeLabel, reviewLabel, screenHelperLine } from "../lib/uiLanguage";
 import type {
   CreatorAuditFile,
@@ -348,7 +348,7 @@ export function CreatorAuditScreen({
   }
 
   return (
-    <section className="screen-shell workbench workbench-screen">
+    <section className="screen-shell workbench workbench-screen creators-screen">
       <div className="screen-header-row">
         <div className="screen-heading">
           <p className="eyebrow">{userView === "beginner" ? "Name cleanup" : "Learning"}</p>
@@ -384,28 +384,7 @@ export function CreatorAuditScreen({
         <div className="status-banner status-banner-error">{errorMessage}</div>
       ) : null}
 
-      <div className="learning-flow-strip">
-        <LearningStep
-          index={0}
-          step="1"
-          title="Pick a group"
-          detail="SimSuite groups files that look like they came from the same creator."
-        />
-        <LearningStep
-          index={1}
-          step="2"
-          title="Check examples"
-          detail="Look over a few filenames before you save anything."
-        />
-        <LearningStep
-          index={2}
-          step="3"
-          title="Save once"
-          detail="Your saved name will be reused on future scans. No files move here."
-        />
-      </div>
-
-      <div className="summary-matrix">
+      <div className="summary-matrix creators-summary-strip">
         <SummaryStat
           label={userView === "beginner" ? "Still unknown" : "Backlog"}
           value={audit?.totalCandidateFiles ?? 0}
@@ -455,6 +434,14 @@ export function CreatorAuditScreen({
               <span className="ghost-chip">
                 {audit?.groups.length ?? 0} shown
               </span>
+            </div>
+
+            <div className="audit-rail-note">
+              <strong>Check a few names, then save once.</strong>
+              <p>
+                Pick one creator group, glance through the sample files in the middle,
+                then use the right panel to save the shared creator for the whole batch.
+              </p>
             </div>
 
             <div className="audit-filter-grid">
@@ -709,32 +696,6 @@ export function CreatorAuditScreen({
         </ResizableDetailPanel>
       </div>
     </section>
-  );
-}
-
-function LearningStep({
-  index,
-  step,
-  title,
-  detail,
-}: {
-  index: number;
-  step: string;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <m.div
-      className="learning-step"
-      whileHover={hoverLift}
-      {...stagedListItem(index)}
-    >
-      <span className="learning-step-index">{step}</span>
-      <div className="learning-step-copy">
-        <strong>{title}</strong>
-        <span>{detail}</span>
-      </div>
-    </m.div>
   );
 }
 

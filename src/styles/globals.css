@@ -73,6 +73,7 @@
   --review-queue-height: 520px;
   --duplicates-detail-width: 430px;
   --duplicates-queue-height: 520px;
+  --duplicates-rail-width: 272px;
   --guide-width: 820px;
   --scanner-width: 560px;
   --audit-left-width: 316px;
@@ -2636,6 +2637,157 @@ h2,
     minmax(300px, min(var(--duplicates-detail-width), 40vw));
 }
 
+.duplicates-workbench {
+  display: grid;
+  grid-template-columns:
+    minmax(232px, min(var(--duplicates-rail-width), 19vw))
+    minmax(0, 1fr)
+    minmax(300px, min(var(--duplicates-detail-width), 40vw));
+  gap: var(--panel-gap);
+  align-items: stretch;
+  min-height: 0;
+  height: clamp(760px, calc(100vh - 220px), 940px);
+}
+
+.duplicates-rail,
+.duplicates-stage,
+.duplicates-inspector-shell {
+  min-width: 0;
+  min-height: 0;
+}
+
+.duplicates-rail {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+  overflow: auto;
+  padding-right: 0.08rem;
+}
+
+.duplicates-rail-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.duplicates-rail-note {
+  margin-top: 0.05rem;
+}
+
+.duplicates-rail-collapsed-copy,
+.duplicates-focus-caption,
+.duplicates-queue-caption,
+.duplicates-file-caption,
+.duplicates-file-meta {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.duplicates-rail-collapsed-copy,
+.duplicates-queue-caption {
+  line-height: 1.46;
+}
+
+.duplicates-stage {
+  position: relative;
+  display: grid;
+  grid-template-rows:
+    minmax(220px, 1fr)
+    minmax(240px, var(--duplicates-queue-height));
+  gap: 0.65rem;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.duplicates-stage-handle {
+  left: 0;
+  right: 0;
+  top: calc(100% - var(--duplicates-queue-height) - 7px);
+  bottom: auto;
+}
+
+.duplicates-focus-panel,
+.duplicates-queue-panel,
+.duplicates-inspector-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.duplicates-queue-panel {
+  grid-template-rows: auto auto auto;
+  align-content: start;
+}
+
+.duplicates-focus-content {
+  display: grid;
+  gap: 0.6rem;
+  min-height: 0;
+}
+
+.duplicates-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.duplicates-file-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+}
+
+.duplicates-file-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.duplicates-file-card strong {
+  line-height: 1.22;
+}
+
+.duplicates-file-meta {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.74rem;
+}
+
+.duplicates-stage-note {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(120deg, var(--accent-soft), transparent 80%),
+    var(--surface-4);
+}
+
+.duplicates-stage-note strong,
+.duplicates-stage-note span {
+  margin: 0;
+}
+
+.duplicates-focus-panel .panel-heading,
+.duplicates-queue-panel .panel-heading {
+  margin-bottom: 0.12rem;
+}
+
+.duplicates-inspector-shell {
+  overflow: hidden;
+}
+
+.duplicates-inspector-shell .dock-stack {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.08rem;
+}
+
 .audit-layout {
   position: relative;
   display: grid;
@@ -2967,8 +3119,11 @@ h2,
 }
 
 .duplicates-queue-list {
-  height: var(--duplicates-queue-height);
+  align-self: start;
+  height: auto;
+  min-height: 0;
   max-height: none;
+  overflow: auto;
 }
 
 .dock-resize-handle {
@@ -3573,7 +3728,7 @@ h2,
     minmax(220px, min(var(--organize-rail-width), 22vw))
     minmax(0, 1fr);
   gap: var(--panel-gap);
-  align-items: start;
+  align-items: stretch;
 }
 
 .organize-rail {
@@ -3582,6 +3737,10 @@ h2,
   gap: var(--panel-gap);
   align-content: start;
   min-width: 0;
+  min-height: 0;
+  height: clamp(520px, calc(100vh - 250px), 860px);
+  overflow: auto;
+  padding-right: 0.08rem;
 }
 
 .organize-stage {
@@ -3662,6 +3821,46 @@ h2,
   min-height: 0;
   overflow: auto;
   padding-right: 0.08rem;
+}
+
+.organize-screen .organize-rail .panel-card {
+  gap: 0.58rem;
+  padding: 0.78rem;
+}
+
+.organize-screen .organize-rail-note {
+  margin-bottom: 0.02rem;
+}
+
+.organize-screen .organize-summary-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.organize-screen .organize-recommendation-card {
+  gap: 0.34rem;
+  padding: 0.58rem 0.62rem;
+}
+
+.organize-screen .organize-action-stack,
+.organize-screen .organize-preset-grid,
+.organize-screen .organize-issue-list {
+  gap: 0.38rem;
+}
+
+.organize-screen .organize-preset-button,
+.organize-screen .organize-issue-row {
+  padding: 0.56rem 0.6rem;
+}
+
+.organize-screen .organize-preset-button .organize-muted {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.organize-screen .organize-preview-inspector .dock-stack-toolbar.is-compact {
+  padding-top: 0.02rem;
 }
 
 .organize-guide-card {
@@ -5080,6 +5279,7 @@ h2,
 .queue-list,
 .preview-list {
   display: grid;
+  align-content: start;
   gap: 0.3rem;
   max-height: calc(100vh - 290px);
   overflow: auto;
@@ -5314,6 +5514,10 @@ h2,
       minmax(220px, var(--downloads-queue-height))
       minmax(0, 1fr);
     height: 100%;
+  }
+
+  .duplicates-compare-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -6033,6 +6237,7 @@ h2,
 
   .home-layout,
   .downloads-layout,
+  .duplicates-workbench,
   .library-layout,
   .review-layout,
   .organize-layout,
@@ -6042,6 +6247,10 @@ h2,
 
   .downloads-workbench {
     grid-template-columns: 1fr;
+  }
+
+  .duplicates-workbench {
+    height: auto;
   }
 
   .workspace-toolbar {
@@ -6112,6 +6321,7 @@ h2,
 
   .audit-stage,
   .downloads-stage,
+  .duplicates-stage,
   .organize-stage {
     grid-template-rows: auto;
     min-height: auto;
@@ -6760,6 +6970,12 @@ h2,
     linear-gradient(90deg, var(--accent-soft), transparent 16%),
     var(--surface);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.creators-screen .creators-summary-strip,
+.organize-screen .organize-summary-strip,
+.duplicates-screen .duplicates-summary-strip {
+  grid-auto-rows: minmax(0, 1fr);
 }
 
 .screen-shell.workbench .dock-stack {
