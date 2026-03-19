@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useState } from "react";
-import { m } from "motion/react";
+import { AnimatePresence, m } from "motion/react";
 import { ExternalLink } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
@@ -8,7 +8,12 @@ import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import {
+  downloadsSheetTransition,
+  rowHover,
+  rowPress,
+  stagedListItem,
+} from "../lib/motion";
 import {
   friendlyTypeLabel,
   unknownCreatorLabel,
@@ -27,6 +32,12 @@ import type {
   VersionConfidence,
   WatchListFilter,
 } from "../lib/types";
+import { libraryViewFlags } from "./library/libraryDisplay";
+import {
+  LibraryFilterRail,
+  type LibraryFilterValues,
+} from "./library/LibraryFilterRail";
+import { LibraryTopStrip } from "./library/LibraryTopStrip";
 
 interface LibraryScreenProps {
   refreshVersion: number;
@@ -41,28 +52,6 @@ interface LibraryScreenProps {
 }
 
 const PAGE_SIZE = 100;
-const LIBRARY_LAYOUT_PRESETS: Array<{
-  id: LibraryLayoutPreset;
-  label: string;
-  hint: string;
-}> = [
-  {
-    id: "browse",
-    label: "Browse",
-    hint: "Balanced list and inspector with filters open.",
-  },
-  {
-    id: "inspect",
-    label: "Inspect",
-    hint: "Gives the right-hand inspector more room for details.",
-  },
-  {
-    id: "catalog",
-    label: "Catalog",
-    hint: "Puts more space on the table and hides filters until needed.",
-  },
-];
-
 export function LibraryScreen({
   refreshVersion,
   onNavigate,
@@ -72,8 +61,6 @@ export function LibraryScreen({
   const {
     libraryFiltersCollapsed,
     setLibraryFiltersCollapsed,
-    libraryLayoutPreset,
-    applyLibraryLayoutPreset,
   } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
@@ -96,6 +83,7 @@ export function LibraryScreen({
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
   const [libraryRailWidth, setLibraryRailWidth] = useState(292);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -298,6 +286,7 @@ export function LibraryScreen({
         selected.installedVersionSummary ? "Update watch ready" : null,
       ].filter((value): value is string => Boolean(value))
     : [];
+  const viewFlags = libraryViewFlags(userView);
 
   const libraryInspectorSections = selected
     ? [
@@ -683,119 +672,102 @@ export function LibraryScreen({
         noBorder
       >
         {/* Filter panel content */}
-        {!libraryFiltersCollapsed && (
-          <div className="filter-panel-content">
-            <div className="filter-header">
-              <div>
-                <p className="eyebrow">Library</p>
-                <h3>Browse the whole collection</h3>
+        <LibraryFilterRail
+          userView={userView}
+          facets={facets}
+          filters={{
+            kind,
+            creator,
+            source,
+            subtype,
+            minConfidence,
+          }}
+          activeFilterCount={activeFilterCount}
+          resultsCount={rows?.items.length ?? 0}
+          isCollapsed={libraryFiltersCollapsed}
+          onToggleCollapsed={() => setLibraryFiltersCollapsed(true)}
+          onFilterChange={(next: Partial<LibraryFilterValues>) => {
+            if (typeof next.kind === "string") {
+              setKind(next.kind);
+            }
+            if (typeof next.creator === "string") {
+              setCreator(next.creator);
+            }
+            if (typeof next.source === "string") {
+              setSource(next.source);
+            }
+            if (typeof next.subtype === "string") {
+              setSubtype(next.subtype);
+            }
+            if (typeof next.minConfidence === "string") {
+              setMinConfidence(next.minConfidence);
+            }
+            setPage(0);
+          }}
+          onReset={resetFilters}
+          onOpenMoreFilters={() => setMoreFiltersOpen((current) => !current)}
+        />
+      </WorkbenchRail>
+
+      {/* Central work area - table */}
+      <WorkbenchStage className="library-stage-shell">
+        <LibraryTopStrip
+          userView={userView}
+          search={search}
+          shownCount={rows?.items.length ?? 0}
+          totalCount={rows?.total ?? 0}
+          activeFilterCount={activeFilterCount}
+          filtersCollapsed={libraryFiltersCollapsed}
+          moreFiltersOpen={moreFiltersOpen}
+          onSearchChange={(value) => {
+            setSearch(value);
+            setPage(0);
+          }}
+          onToggleFiltersRail={() => setLibraryFiltersCollapsed(false)}
+          onToggleMoreFilters={() => setMoreFiltersOpen((current) => !current)}
+        />
+
+        <AnimatePresence>
+          {viewFlags.showAdvancedFilters && moreFiltersOpen ? (
+            <m.div
+              className="library-more-filters-popover"
+              initial={{ opacity: 0, y: -8, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.985 }}
+              transition={downloadsSheetTransition}
+            >
+              <div className="library-more-filters-header">
+                <div>
+                  <p className="eyebrow">{userView === "power" ? "Inspect filters" : "More filters"}</p>
+                  <strong>
+                    {userView === "power"
+                      ? "Keep the deeper clues one click away"
+                      : "Use the extra narrowing only when you need it"}
+                  </strong>
+                </div>
               </div>
-              <p className="library-rail-copy">
-                Narrow the list here, keep the selected file details on the right, and let the middle stay focused on browsing.
-              </p>
-            </div>
 
-            <div className="library-filter-summary">
-              <div className="library-filter-summary-item">
-                <span>Shown now</span>
-                <strong>{rows?.items.length.toLocaleString() ?? "0"}</strong>
-              </div>
-              <div className="library-filter-summary-item">
-                <span>Filters on</span>
-                <strong>{activeFilterCount}</strong>
-              </div>
-            </div>
+              <div className="filter-grid library-more-filters-grid">
+                {userView === "power" ? (
+                  <label className="field">
+                    <span>Subtype</span>
+                    <select
+                      value={subtype}
+                      onChange={(event) => {
+                        setSubtype(event.target.value);
+                        setPage(0);
+                      }}
+                    >
+                      <option value="">All subtypes</option>
+                      {facets?.subtypes.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
 
-            <div className="filter-grid">
-              <label className="field">
-                <span>Search</span>
-                <input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(0);
-                  }}
-                  placeholder="Name or creator"
-                />
-              </label>
-
-              <label className="field">
-                <span>Type</span>
-                <select
-                  value={kind}
-                  onChange={(event) => {
-                    setKind(event.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <option value="">All</option>
-                  {facets?.kinds.map((item) => (
-                    <option key={item} value={item}>
-                      {friendlyTypeLabel(item)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {userView === "power" ? (
-                <label className="field">
-                  <span>Subtype</span>
-                  <select
-                    value={subtype}
-                    onChange={(event) => {
-                      setSubtype(event.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <option value="">All</option>
-                    {facets?.subtypes.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              <label className="field">
-                <span>Creator</span>
-                <select
-                  value={creator}
-                  onChange={(event) => {
-                    setCreator(event.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <option value="">All</option>
-                  {facets?.creators.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {userView !== "beginner" ? (
-                <label className="field">
-                  <span>Root</span>
-                  <select
-                    value={source}
-                    onChange={(event) => {
-                      setSource(event.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <option value="">All</option>
-                    {facets?.sources.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {userView !== "beginner" ? (
                 <label className="field">
                   <span>Confidence</span>
                   <select
@@ -805,124 +777,16 @@ export function LibraryScreen({
                       setPage(0);
                     }}
                   >
-                    <option value="">Any</option>
+                    <option value="">Any match</option>
                     <option value="0.35">35%+</option>
                     <option value="0.55">55%+</option>
                     <option value="0.75">75%+</option>
                   </select>
                 </label>
-              ) : null}
-            </div>
-
-            <div className="library-filter-actions">
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={resetFilters}
-                disabled={activeFilterCount === 0}
-              >
-                Reset filters
-              </button>
-              <span className="ghost-chip">
-                {facets?.creators.length ?? 0} creators
-              </span>
-              <span className="ghost-chip">
-                {facets?.kinds.length ?? 0} type groups
-              </span>
-            </div>
-          </div>
-        )}
-      </WorkbenchRail>
-
-      {/* Central work area - table */}
-      <WorkbenchStage className="library-stage-shell">
-        <div className="library-stage-bar">
-          <div className="library-stage-summary">
-            <div className="table-meta library-stage-metrics">
-              <div>
-                <strong>{rows?.total.toLocaleString() ?? "0"}</strong>
-                <span>{userView === "beginner" ? "found" : "matches"}</span>
               </div>
-              <div>
-                <strong>{rows?.items.length.toLocaleString() ?? "0"}</strong>
-                <span>{userView === "beginner" ? "on this page" : "visible"}</span>
-              </div>
-              <div>
-                <strong>{activeFilterCount}</strong>
-                <span>{activeFilterCount === 1 ? "filter on" : "filters on"}</span>
-              </div>
-            </div>
-
-            <div className="library-stage-focus">
-              <p className="eyebrow">Selection</p>
-              {selected ? (
-                <>
-                  <strong>{selected.filename}</strong>
-                  <span>
-                    {playerFacingNames[0] ??
-                      "Browse the list in the middle, then use the right side for the full file story."}
-                  </span>
-                  <div className="library-stage-focus-tags">
-                    {stageSelectionTags.map((tag) => (
-                      <span key={tag} className="ghost-chip">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <strong>Choose a file</strong>
-                  <span>
-                    Keep the table in the middle for scanning, then use the inspector when something deserves a closer look.
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="library-stage-actions">
-            {libraryFiltersCollapsed ? (
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() => setLibraryFiltersCollapsed(false)}
-              >
-                Show filters
-              </button>
-            ) : null}
-            <div className="workspace-toggles">
-              {LIBRARY_LAYOUT_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`workspace-toggle ${libraryLayoutPreset === preset.id ? 'is-active' : ''}`}
-                  onClick={() => applyLibraryLayoutPreset(preset.id)}
-                  title={preset.hint}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            {selected && onNavigateWithParams && updatesTarget ? (
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() =>
-                  onNavigateWithParams(
-                    "updates",
-                    updatesTarget.mode,
-                    updatesTarget.filter,
-                    selected.id,
-                  )
-                }
-              >
-                <ExternalLink size={12} strokeWidth={2} />
-                Open in Updates
-              </button>
-            ) : null}
-          </div>
-        </div>
+            </m.div>
+          ) : null}
+        </AnimatePresence>
 
         {/* Table content */}
         <div className="table-scroll library-table-scroll">
