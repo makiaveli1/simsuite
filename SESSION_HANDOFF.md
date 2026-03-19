@@ -1,5 +1,97 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Early Night)
+
+- **Mode**: code
+- **Focus**: full `Home` rework using the new calm-home philosophy
+
+### Progress Made
+
+1. **Locked the design context for the deeper page-by-page redesign**:
+   - added `.impeccable.md` at the repo root
+   - wrote the `Home` redesign spec in:
+     - `docs/superpowers/specs/2026-03-19-home-redesign-design.md`
+   - the main rules now stay explicit:
+     - cosy
+     - casual
+     - non-confusing
+     - flat desktop feel
+     - personalization through theme and module choice instead of wallpapers
+
+2. **Rebuilt `Home` away from the old command-board layout**:
+   - removed the permanent right inspector
+   - replaced the old workbench-style `Home` with a calmer centered landing surface
+   - added one large hero area that changes its message based on:
+     - library health
+     - watched-page state
+     - folder setup
+   - kept only two fixed actions in view:
+     - `Customize Home`
+     - `Scan`
+   - moved the rest of the page toward glanceable modules instead of navigation actions
+
+3. **Added real details-on-demand personalization**:
+   - `Customize Home` now opens as a right-side sheet
+   - the sheet can change:
+     - hero focus
+     - information level
+     - visible modules
+     - theme
+     - spacing density
+     - ambient hero motion
+   - these preferences save per user view so `Casual`, `Seasoned`, and `Creator` can each feel a little different
+
+4. **Made the three user views actually behave differently on `Home`**:
+   - `Casual` now defaults to the quietest version
+   - `Seasoned` keeps a balanced middle state
+   - `Creator` shows the fullest set of `Home` modules and richer detail rows
+   - all three views keep the same page structure, but the amount of information shifts in a much more intentional way
+
+5. **Verified the rebuild visually instead of trusting the code**:
+   - restarted Vite at `http://127.0.0.1:1420/`
+   - checked `Home` in:
+     - `Casual`
+     - `Seasoned`
+     - `Creator`
+   - also checked the `Customize Home` side sheet
+   - saved fresh screenshots:
+     - `output/playwright/home-pass10-casual-after.png`
+     - `output/playwright/home-pass10-seasoned-verified.png`
+     - `output/playwright/home-pass10-creator-after.png`
+     - `output/playwright/home-pass10-customize-sheet.png`
+
+6. **Verification**:
+   - `npm run build` passed
+   - checked the screen frame in the live app and confirmed the new `Home` did not overflow vertically in the checked desktop view
+
+### What Worked
+
+- `Home` now feels much closer to a calm browser-style landing page than a mini dashboard
+- removing the always-open inspector was the right call
+- the hero panel gives the page a clear center of gravity without making it feel loud
+- `Casual` especially feels easier to read now
+- the side-sheet customization pattern feels much more appropriate than leaving lots of controls on the page itself
+
+### Known Problems / Gaps
+
+- the `Customize Home` sheet is useful and works, but it is still a little long; it scrolls cleanly, though a later taste pass could tighten the theme area
+- `Creator` view is intentionally denser, but it is also the closest to feeling busy again; if we want to push the calm-home idea even further later, that is the first variant to tune
+- this session only reworked `Home`; the same deeper page-by-page rethink still needs to move through the other screens one at a time
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- If continuing the deeper redesign program, keep the same flow:
+  - one screen per pass
+  - design first
+  - live screenshots
+  - real cross-view checks
+- Best next screen candidates:
+  - `Downloads`
+  - `Updates`
+  - or `Library`
+
 ## Current Session (March 18, 2026 - Evening)
 
 - **Mode**: code

@@ -1,16 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import {
-  Download,
+  Activity,
+  Check,
   FolderCog,
   FolderOpen,
   LibraryBig,
+  Palette,
+  RefreshCw,
   ScanSearch,
-  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  X,
 } from "lucide-react";
+import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { Workbench } from "../components/layout/Workbench";
-import { WorkbenchStage } from "../components/layout/WorkbenchStage";
-import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
+import { hoverLift, overlayTransition, panelSpring, stagedListItem, tapPress } from "../lib/motion";
+import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type {
   DetectedLibraryPaths,
   HomeOverview,
@@ -19,13 +26,36 @@ import type {
   UserView,
   WatchListFilter,
 } from "../lib/types";
+import {
+  HOME_DENSITY_OPTIONS,
+  HOME_DETAIL_OPTIONS,
+  HOME_MODULE_LABELS,
+  HOME_MODULE_ORDER,
+  buildHeroState,
+  defaultHomePrefs,
+  describeHomeModule,
+  formatHomeTime,
+  formatTimestamp,
+  getHomeGreeting,
+  normalizeHomePrefs,
+  readHomePrefs,
+  saveHomePrefs,
+  type HomeDetailLevel,
+  type HomeDisplayPrefs,
+  type HomeHeroFocus,
+  type HomeModuleId,
+} from "./homeDisplay";
 
 interface HomeScreenProps {
   refreshVersion: number;
   settings: LibrarySettings | null;
   onSettingsChange: (settings: LibrarySettings) => Promise<void>;
   onNavigate: (screen: Screen) => void;
-  onNavigateWithParams: (screen: Screen, mode?: 'tracked' | 'setup' | 'review', filter?: WatchListFilter) => void;
+  onNavigateWithParams: (
+    screen: Screen,
+    mode?: "tracked" | "setup" | "review",
+    filter?: WatchListFilter,
+  ) => void;
   onScan: () => Promise<void>;
   isScanning: boolean;
   userView: UserView;
@@ -35,17 +65,20 @@ export function HomeScreen({
   refreshVersion,
   settings,
   onSettingsChange,
-  onNavigate,
-  onNavigateWithParams,
   onScan,
   isScanning,
   userView,
 }: HomeScreenProps) {
   const [overview, setOverview] = useState<HomeOverview | null>(null);
-  const [detectedPaths, setDetectedPaths] = useState<DetectedLibraryPaths | null>(
-    null,
-  );
+  const [detectedPaths, setDetectedPaths] = useState<DetectedLibraryPaths | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [customizing, setCustomizing] = useState(false);
+  const [displayPrefs, setDisplayPrefs] = useState<HomeDisplayPrefs>(() =>
+    readHomePrefs(userView),
+  );
+  const { theme, density, setTheme, setDensity } = useUiPreferences();
+  const reducedMotion = useReducedMotion();
+  const activeTheme = getThemeDefinition(theme);
 
   useEffect(() => {
     void api.getHomeOverview().then(setOverview);
@@ -54,6 +87,14 @@ export function HomeScreen({
   useEffect(() => {
     void api.detectDefaultLibraryPaths().then(setDetectedPaths);
   }, []);
+
+  useEffect(() => {
+    setDisplayPrefs(readHomePrefs(userView));
+  }, [userView]);
+
+  useEffect(() => {
+    saveHomePrefs(userView, displayPrefs);
+  }, [displayPrefs, userView]);
 
   async function chooseFolder(kind: "modsPath" | "trayPath" | "downloadsPath") {
     const title =
@@ -96,22 +137,35 @@ export function HomeScreen({
     if (!settings) {
       return;
     }
-
     if (!settings.modsPath) {
       await chooseFolder("modsPath");
       return;
     }
-
     if (!settings.trayPath) {
       await chooseFolder("trayPath");
       return;
     }
-
     if (!settings.downloadsPath) {
       await chooseFolder("downloadsPath");
     }
   }
 
+  function updateDisplayPrefs(next: Partial<HomeDisplayPrefs>) {
+    setDisplayPrefs((current) => normalizeHomePrefs({ ...current, ...next }, userView));
+  }
+
+  function setModuleVisible(moduleId: HomeModuleId, visible: boolean) {
+    setDisplayPrefs((current) => {
+      const nextVisible = { ...current.visibleModules, [moduleId]: visible };
+      if (!visible && Object.values(nextVisible).filter(Boolean).length === 0) {
+        return current;
+      }
+      return { ...current, visibleModules: nextVisible };
+    });
+  }
+
+  const now = new Date();
+  const greeting = getHomeGreeting(now);
   const canScan = Boolean(settings?.modsPath || settings?.trayPath);
   const sourceCount =
     Number(Boolean(settings?.modsPath)) +
@@ -123,504 +177,390 @@ export function HomeScreen({
         (!settings?.trayPath && detectedPaths.trayPath) ||
         (!settings?.downloadsPath && detectedPaths.downloadsPath)),
   );
-  const reviewActionLabel = userView === "beginner" ? "Needs review" : "Review";
-  const setupActionLabel = userView === "beginner" ? "Set pages" : "Track setup";
-  const nextActions = [
-    {
-      id: "inbox",
-      label: "Inbox",
-      description: "Fresh downloads and staged batches waiting for a safe hand-off.",
-      count: overview?.downloadsCount ?? 0,
-      icon: <Download size={14} strokeWidth={2} className="action-item-icon" />,
-      onClick: () => onNavigate("downloads"),
-    },
-    {
-      id: "review",
-      label: reviewActionLabel,
-      description: "Files that still need a human check before SimSuite can move them.",
-      count: overview?.reviewCount ?? 0,
-      icon: <ShieldAlert size={14} strokeWidth={2} className="action-item-icon" />,
-      onClick: () => onNavigate("review"),
-    },
-    {
-      id: "updates",
-      label: "Updates",
-      description: "Tracked pages that already look like confirmed update matches.",
-      count: overview?.exactUpdateItems ?? 0,
-      icon: <LibraryBig size={14} strokeWidth={2} className="action-item-icon" />,
-      onClick: () =>
-        onNavigateWithParams("updates", "tracked", "exact_updates"),
-    },
-    {
-      id: "setup",
-      label: setupActionLabel,
-      description: "Library items that still need a page saved before SimSuite can watch them.",
-      count: overview?.watchSetupItems ?? 0,
-      icon: <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />,
-      onClick: () => onNavigateWithParams("updates", "setup", "all"),
-    },
-  ];
-  const busiestAction = nextActions.find((item) => item.count > 0) ?? null;
+  const totalAttentionCount =
+    (overview?.downloadsCount ?? 0) +
+    (overview?.reviewCount ?? 0) +
+    (overview?.exactUpdateItems ?? 0) +
+    (overview?.watchSetupItems ?? 0);
+  const totalWatchCount =
+    (overview?.exactUpdateItems ?? 0) +
+    (overview?.possibleUpdateItems ?? 0) +
+    (overview?.unknownWatchItems ?? 0) +
+    (overview?.watchReviewItems ?? 0) +
+    (overview?.watchSetupItems ?? 0);
+  const calmDetails = displayPrefs.detailLevel === "calm";
+  const denseDetails = displayPrefs.detailLevel === "detailed";
+  const heroState = buildHeroState({
+    focus: displayPrefs.focus,
+    overview,
+    userView,
+    sourceCount,
+    totalWatchCount,
+    totalAttentionCount,
+  });
+  const visibleModules = HOME_MODULE_ORDER.filter(
+    (moduleId) => displayPrefs.visibleModules[moduleId],
+  );
 
-  const primaryAction =
-    sourceCount < 3
-      ? {
-          title: "Finish folder setup",
-          body:
-            "Pick the last missing folders so scans, inbox watching, and tray checks all have the right places to read from.",
-          cta:
-            hasDetectedPathSuggestion && !isSaving
-              ? "Use detected folders"
-              : "Choose next folder",
-          disabled: isSaving,
-          onClick: () =>
-            hasDetectedPathSuggestion && !isSaving
-              ? void applyDetectedPaths()
-              : void chooseFirstMissingFolder(),
-        }
-      : (busiestAction
-          ? {
-              title: busiestAction.label,
-              body: busiestAction.description,
-              cta: `Open ${busiestAction.label}`,
-              disabled: false,
-              onClick: busiestAction.onClick,
-            }
-          : overview?.scanNeedsRefresh
-            ? {
-                title: "Refresh library facts",
-                body:
-                  "The stored library picture is older than the current scan rules, so a fresh scan is the safest next move.",
-                cta: isScanning ? "Scanning..." : "Run scan",
-                disabled: isScanning || !canScan,
-                onClick: () => void onScan(),
-              }
-            : {
-                title: "Everything looks steady",
-                body:
-                  "There is no hot queue right now, so this is a good time to skim the library or tune your tracked pages.",
-                cta: "Browse library",
-                disabled: false,
-                onClick: () => onNavigate("library"),
-              });
+  const snapshotRows = [
+    ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
+    [userView === "beginner" ? "Needs review" : "Review", (overview?.reviewCount ?? 0).toLocaleString(), "Files that still need a human check."],
+    ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Tracked pages with a clear newer version waiting."],
+    ...(!denseDetails
+      ? []
+      : [[
+          "Pages to set",
+          (overview?.watchSetupItems ?? 0).toLocaleString(),
+          "Installed files that still need one saved page.",
+        ]]),
+  ] as const;
+
+  const healthRows = [
+    ["Scan state", overview?.scanNeedsRefresh ? "Needs refresh" : "Current"],
+    ["Safety mode", overview?.readOnlyMode ? "Read-only on" : "Read-only off"],
+    ["Risky files", (overview?.unsafeCount ?? 0).toLocaleString()],
+    ["Duplicates", (overview?.duplicatesCount ?? 0).toLocaleString()],
+    ...(!denseDetails ? [] : [[userView === "power" ? "Script mods" : "Scripts", (overview?.scriptModsCount ?? 0).toLocaleString()]]),
+  ] as const;
 
   const watchRows = [
-    {
-      label: "Confirmed updates",
-      value: String(overview?.exactUpdateItems ?? 0),
-      note: "Clear page matches with a newer version waiting.",
-      onClick: () => onNavigateWithParams("updates", "tracked", "exact_updates"),
-    },
-    {
-      label: "Possible updates",
-      value: String(overview?.possibleUpdateItems ?? 0),
-      note: "Changed pages that still need one more careful look.",
-      onClick: () => onNavigateWithParams("updates", "tracked", "possible_updates"),
-    },
-    {
-      label: "Unclear watch results",
-      value: String(overview?.unknownWatchItems ?? 0),
-      note: "Saved pages that still do not give a clean answer.",
-      onClick: () => onNavigateWithParams("updates", "tracked", "unclear"),
-    },
-    {
-      label: userView === "beginner" ? "Pages to save" : "Need source setup",
-      value: String(overview?.watchSetupItems ?? 0),
-      note: "Installed files that still need one saved page first.",
-      onClick: () => onNavigateWithParams("updates", "setup", "all"),
-    },
-    {
-      label: userView === "beginner" ? "Needs follow-up" : "Watch review",
-      value: String(overview?.watchReviewItems ?? 0),
-      note: "Reminder-only or provider-backed pages that stay cautious.",
-      onClick: () => onNavigateWithParams("updates", "review", "all"),
-    },
-  ];
-  const systemRows = [
-    {
-      label: "Last scan",
-      value: formatTimestamp(overview?.lastScanAt),
-    },
-    {
-      label: "Library facts",
-      value: overview?.scanNeedsRefresh ? "Need refresh" : "Current",
-    },
-    {
-      label: "Safety mode",
-      value: overview?.readOnlyMode ? "Read-only on" : "Read-only off",
-    },
-    {
-      label: "Duplicates found",
-      value: (overview?.duplicatesCount ?? 0).toLocaleString(),
-    },
-    {
-      label: "Creators seen",
-      value: (overview?.creatorCount ?? 0).toLocaleString(),
-    },
-    {
-      label: "Bundles seen",
-      value: (overview?.bundlesCount ?? 0).toLocaleString(),
-    },
-  ];
-  const visibleSystemRows =
-    userView === "power"
-      ? systemRows
-      : userView === "standard"
-        ? systemRows.slice(0, 5)
-        : systemRows.slice(0, 4);
-  const healthSnapshot = [
-    {
-      label: userView === "beginner" ? "Scripts" : "Script mods",
-      value: (overview?.scriptModsCount ?? 0).toLocaleString(),
-    },
-    {
-      label: "Duplicates",
-      value: (overview?.duplicatesCount ?? 0).toLocaleString(),
-    },
-    {
-      label: "Creators",
-      value: (overview?.creatorCount ?? 0).toLocaleString(),
-    },
-    {
-      label: userView === "power" ? "Bundles" : "Update watch",
-      value:
-        userView === "power"
-          ? (overview?.bundlesCount ?? 0).toLocaleString()
-          : (overview?.exactUpdateItems ?? 0).toLocaleString(),
-    },
-  ];
-  const primaryActionMatches =
-    busiestAction && primaryAction.title === busiestAction.label;
+    ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages that already look like real new versions."],
+    ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
+    [userView === "beginner" ? "Pages to save" : "Need source setup", (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need a saved page first."],
+    ...(!calmDetails
+      ? [[userView === "beginner" ? "Needs follow-up" : "Watch review", (overview?.watchReviewItems ?? 0).toLocaleString(), "Reminder-only or provider-backed pages that stay cautious."]]
+      : []),
+    ...(!denseDetails
+      ? []
+      : [["Unclear results", (overview?.unknownWatchItems ?? 0).toLocaleString(), "Saved pages that still do not give a clean answer."]]),
+  ] as const;
+
+  const libraryRows = [
+    ["Indexed files", (overview?.totalFiles ?? 0).toLocaleString()],
+    ["Mods", (overview?.modsCount ?? 0).toLocaleString()],
+    ["Tray", (overview?.trayCount ?? 0).toLocaleString()],
+    ["Creators", (overview?.creatorCount ?? 0).toLocaleString()],
+    ...(!calmDetails ? [["Bundles", (overview?.bundlesCount ?? 0).toLocaleString()]] : []),
+  ] as const;
+
+  const statusChips = [
+    [overview?.scanNeedsRefresh ? "Scan needs refresh" : "Scan current", overview?.scanNeedsRefresh ? "warn" : "good"],
+    [`${sourceCount}/3 folders ready`, sourceCount < 3 ? "warn" : "good"],
+    [`${overview?.unsafeCount ?? 0} risky`, (overview?.unsafeCount ?? 0) > 0 ? "danger" : "good"],
+    [`${totalWatchCount} watched`, (overview?.exactUpdateItems ?? 0) > 0 || (overview?.watchSetupItems ?? 0) > 0 ? "warn" : "neutral"],
+  ] as const;
 
   return (
-    <Workbench threePanel fullHeight className="home-workbench">
-      <WorkbenchStage className="home-stage">
-        <div className="slim-strip home-slim-strip">
-          <div className="slim-strip-group">
-            <span className="health-chip is-good">
-              <span className="health-chip-dot"></span>
-              {overview?.totalFiles?.toLocaleString() ?? 0} indexed
+    <div className="screen-shell home-hub-screen">
+      <div className="home-hub-shell">
+        <m.header className="home-hub-topbar" {...stagedListItem(0)}>
+          <div className="home-hub-intro">
+            <span className="section-label">
+              <Sparkles size={14} strokeWidth={2} />
+              Home
             </span>
-            <span className="health-chip">
-              {overview?.modsCount?.toLocaleString() ?? 0} mods
-            </span>
-            <span className="health-chip">
-              {overview?.trayCount?.toLocaleString() ?? 0} tray
-            </span>
+            <div>
+              <h1>{greeting}</h1>
+              <p className="workspace-toolbar-copy">
+                {userView === "beginner"
+                  ? "A calm, easy read of your mod setup before you dive into the game."
+                  : userView === "power"
+                    ? "Your personal landing page for library health, watch status, and setup truth."
+                    : "A steady overview of system health without turning the page into a dashboard wall."}
+              </p>
+            </div>
           </div>
-          <div className="slim-strip-group">
-            <button
-              type="button"
-              className="primary-action"
-              onClick={() => void onScan()}
-              disabled={!canScan || isScanning}
-              title="Run a full read-only scan"
-            >
+
+          <div className="home-hub-actions">
+            <span className="ghost-chip"><Palette size={12} strokeWidth={2} />{activeTheme.label}</span>
+            <span className="ghost-chip">{formatHomeTime(now)}</span>
+            <m.button type="button" className="secondary-action" onClick={() => setCustomizing(true)} whileHover={hoverLift} whileTap={tapPress}>
+              <SlidersHorizontal size={14} strokeWidth={2} />
+              Customize Home
+            </m.button>
+            <m.button type="button" className="primary-action" onClick={() => void onScan()} disabled={!canScan || isScanning} whileHover={!canScan || isScanning ? undefined : hoverLift} whileTap={!canScan || isScanning ? undefined : tapPress}>
               <ScanSearch size={14} strokeWidth={2} />
               {isScanning ? "Scanning..." : "Scan"}
-            </button>
+            </m.button>
           </div>
-        </div>
+        </m.header>
 
-        <div className="home-stage-grid">
-          <section className="panel-card home-priority-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Today board</p>
-                <h2>{userView === "beginner" ? "Best next move" : "Keep the day moving"}</h2>
-              </div>
-              <span className="ghost-chip">
-                {nextActions.reduce((total, item) => total + item.count, 0)} open
-              </span>
-            </div>
+        <m.section className={`home-hero home-hero-${heroState.tone}`} {...stagedListItem(1)}>
+          <div className="home-hero-surface" aria-hidden="true">
+            <m.span
+              className="home-hero-aura home-hero-aura-a"
+              animate={!displayPrefs.ambientMotion || reducedMotion ? undefined : { x: [-10, 12, -8, -10], y: [0, 10, -6, 0], opacity: [0.2, 0.38, 0.24, 0.2] }}
+              transition={{ duration: 18, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            />
+            <m.span
+              className="home-hero-aura home-hero-aura-b"
+              animate={!displayPrefs.ambientMotion || reducedMotion ? undefined : { x: [8, -12, 6, 8], y: [0, -12, 8, 0], opacity: [0.16, 0.3, 0.2, 0.16] }}
+              transition={{ duration: 22, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            />
+          </div>
 
-            <div className="home-priority-card">
-              <div className="home-priority-copy">
-                <span className="section-label">Best next move</span>
-                <strong>{primaryAction.title}</strong>
-                <p>{primaryAction.body}</p>
-              </div>
-              <button
-                type="button"
-                className="primary-action"
-                onClick={primaryAction.onClick}
-                disabled={primaryAction.disabled}
-              >
-                {primaryAction.cta}
-              </button>
-            </div>
-
-            <div className="home-command-list">
-              {nextActions.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`action-item home-action-item ${
-                    primaryActionMatches && primaryAction.title === item.label
-                      ? "is-active"
-                      : ""
-                  }`}
-                  onClick={item.onClick}
-                >
-                  {item.icon}
-                  <span className="home-action-copy">
-                    <span className="action-item-label">{item.label}</span>
-                    <span className="home-action-note">{item.description}</span>
-                  </span>
-                  <span className="action-item-badge">{item.count}</span>
-                </button>
+          <div className="home-hero-copy">
+            <p className="eyebrow">{heroState.eyebrow}</p>
+            <h2>{heroState.title}</h2>
+            <p className="home-hero-summary">{heroState.summary}</p>
+            <div className="health-chip-group home-hero-chip-row">
+              {statusChips.slice(0, denseDetails ? statusChips.length : 3).map(([label, tone]) => (
+                <span key={label} className={`health-chip ${tone === "good" ? "is-good" : tone === "warn" ? "is-warn" : tone === "danger" ? "is-danger" : ""}`}>
+                  <span className="health-chip-dot"></span>
+                  {label}
+                </span>
               ))}
             </div>
-          </section>
+            <p className="home-hero-footnote">{heroState.footnote}</p>
+          </div>
 
-          <section className="panel-card home-health-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">System health</p>
-                <h2>{userView === "beginner" ? "What SimSuite knows" : "Truth before action"}</h2>
+          <div className="home-hero-metrics">
+            {heroState.metrics.map((metric) => (
+              <div key={metric.label} className="home-hero-metric">
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+                <small>{metric.note}</small>
               </div>
-            </div>
-            <div className="health-chip-group home-health-chips">
-              <span
-                className={`health-chip ${
-                  overview?.scanNeedsRefresh ? "is-warn" : "is-good"
-                }`}
-              >
-                <span className="health-chip-dot"></span>
-                {overview?.scanNeedsRefresh ? "Scan needs refresh" : "Scan current"}
-              </span>
-              <span
-                className={`health-chip ${
-                  (overview?.unsafeCount ?? 0) > 0 ? "is-danger" : "is-good"
-                }`}
-              >
-                <span className="health-chip-dot"></span>
-                {overview?.unsafeCount ?? 0} risky
-              </span>
-              <span
-                className={`health-chip ${
-                  sourceCount < 3 ? "is-warn" : "is-good"
-                }`}
-              >
-                <span className="health-chip-dot"></span>
-                {sourceCount}/3 folders ready
-              </span>
-            </div>
-            <div className="summary-matrix home-health-summary">
-              {healthSnapshot.map((item) => (
-                <HomeStatTile key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+        </m.section>
+
+        <div className="home-module-grid">
+          {visibleModules.includes("snapshot") ? (
+            <HomeModuleCard index={2} label="Today snapshot" title={userView === "beginner" ? "What is waiting right now" : "What is active right now"} icon={<Activity size={14} strokeWidth={2} />}>
+              {snapshotRows.map(([label, value, note]) => (
+                <HomeGlanceRow key={label} label={label} value={value} note={calmDetails ? undefined : note} />
               ))}
-            </div>
-            <p className="home-panel-note">
-              {overview?.scanNeedsRefresh
-                ? "A fresh scan should happen before you trust older library facts."
-                : "The scan truth, watch lanes, and safety signals are all reading from the same current pass."}
-            </p>
-          </section>
+            </HomeModuleCard>
+          ) : null}
 
-          <section className="panel-card home-watch-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Tracked pages</p>
-                <h2>{userView === "beginner" ? "Update follow-up" : "Watch lanes"}</h2>
+          {visibleModules.includes("health") ? (
+            <HomeModuleCard index={3} label="System health" title={userView === "beginner" ? "What SimSuite knows" : "Current system truth"} icon={<ShieldCheck size={14} strokeWidth={2} />}>
+              <div className="health-chip-group">
+                <span className={`health-chip ${overview?.scanNeedsRefresh ? "is-warn" : "is-good"}`}><span className="health-chip-dot"></span>{overview?.scanNeedsRefresh ? "Refresh scan" : "Scan current"}</span>
+                <span className={`health-chip ${(overview?.unsafeCount ?? 0) > 0 ? "is-danger" : "is-good"}`}><span className="health-chip-dot"></span>{(overview?.unsafeCount ?? 0) > 0 ? "Needs care" : "No active risks"}</span>
               </div>
-              <span className="ghost-chip">
-                {(overview?.exactUpdateItems ?? 0) +
-                  (overview?.possibleUpdateItems ?? 0) +
-                  (overview?.unknownWatchItems ?? 0) +
-                  (overview?.watchSetupItems ?? 0) +
-                  (overview?.watchReviewItems ?? 0)}{" "}
-                open
-              </span>
-            </div>
+              <div className="home-fact-list">
+                {healthRows.map(([label, value]) => <HomeFactRow key={label} label={label} value={value} />)}
+              </div>
+            </HomeModuleCard>
+          ) : null}
 
-            <div className="home-watch-list">
-              {watchRows.map((row) => (
-                <button
-                  key={row.label}
-                  type="button"
-                  className="home-watch-row"
-                  onClick={row.onClick}
-                >
-                  <span className="home-watch-copy">
-                    <span className="action-item-label">{row.label}</span>
-                    <span className="home-action-note">{row.note}</span>
-                  </span>
-                  <span className="action-item-badge">{row.value}</span>
-                </button>
+          {visibleModules.includes("watch") ? (
+            <HomeModuleCard index={4} label="Update watch" title={userView === "beginner" ? "Tracked page follow-up" : "Watched page summary"} icon={<RefreshCw size={14} strokeWidth={2} />}>
+              {watchRows.map(([label, value, note]) => (
+                <HomeGlanceRow key={label} label={label} value={value} note={calmDetails ? undefined : note} />
               ))}
-            </div>
-          </section>
+            </HomeModuleCard>
+          ) : null}
 
-          <section className="panel-card home-folders-panel">
-            <div className="panel-heading">
-              <div className="home-folders-heading">
-                <p className="eyebrow">Folders</p>
-                <h2>Library roots</h2>
+          {visibleModules.includes("folders") ? (
+            <HomeModuleCard index={5} label="Folders" title={sourceCount < 3 ? "Finish setup gently" : "Library roots are linked"} icon={<FolderOpen size={14} strokeWidth={2} />} badge={`${sourceCount}/3 ready`} extraClass="home-folders-module">
+              <div className="home-folder-list">
+                <HomeFolderRow label="Mods" path={settings?.modsPath} onChoose={() => void chooseFolder("modsPath")} disabled={isSaving} />
+                <HomeFolderRow label="Tray" path={settings?.trayPath} onChoose={() => void chooseFolder("trayPath")} disabled={isSaving} />
+                <HomeFolderRow label="Downloads" path={settings?.downloadsPath} onChoose={() => void chooseFolder("downloadsPath")} disabled={isSaving} />
               </div>
-              <div className="home-folders-toolbar">
-                <span className="ghost-chip">{sourceCount}/3 set</span>
+              <div className="home-folder-actions">
+                {sourceCount < 3 ? (
+                  <button type="button" className="secondary-action" onClick={() => void chooseFirstMissingFolder()} disabled={isSaving}>
+                    <FolderOpen size={14} strokeWidth={2} />
+                    Choose next folder
+                  </button>
+                ) : null}
                 {hasDetectedPathSuggestion ? (
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => void applyDetectedPaths()}
-                    disabled={isSaving}
-                  >
+                  <button type="button" className="secondary-action" onClick={() => void applyDetectedPaths()} disabled={isSaving}>
                     <FolderCog size={14} strokeWidth={2} />
                     Use detected folders
                   </button>
                 ) : null}
               </div>
-            </div>
-            <div className="folder-setup-items home-folder-grid">
-              <div className="folder-item">
-                <span className="folder-label">Mods</span>
-                <span className="folder-path">{settings?.modsPath || "Not chosen yet"}</span>
-                <button
-                  type="button"
-                  className="folder-action secondary-action"
-                  onClick={() => void chooseFolder("modsPath")}
-                  disabled={isSaving}
-                  title="Browse for the Mods folder"
-                >
-                  <FolderOpen size={12} strokeWidth={2} />
-                  Choose
-                </button>
+              <p className="home-module-note">
+                {sourceCount < 3
+                  ? "Once the missing folders are linked, scans and inbox checks can stay calm and reliable."
+                  : "These roots are ready, so SimSuite can keep using one steady desktop flow."}
+              </p>
+            </HomeModuleCard>
+          ) : null}
+
+          {visibleModules.includes("library") ? (
+            <HomeModuleCard index={6} label="Library facts" title={userView === "power" ? "Receipts at a glance" : "The shape of the library"} icon={<LibraryBig size={14} strokeWidth={2} />}>
+              <div className="summary-matrix home-library-matrix">
+                {libraryRows.map(([label, value]) => (
+                  <div key={label} className="summary-stat home-library-stat">
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
               </div>
-              <div className="folder-item">
-                <span className="folder-label">Tray</span>
-                <span className="folder-path">{settings?.trayPath || "Not chosen yet"}</span>
-                <button
-                  type="button"
-                  className="folder-action secondary-action"
-                  onClick={() => void chooseFolder("trayPath")}
-                  disabled={isSaving}
-                  title="Browse for the Tray folder"
-                >
-                  <FolderOpen size={12} strokeWidth={2} />
-                  Choose
-                </button>
+              <div className="home-fact-list">
+                <HomeFactRow label="Last scan" value={formatTimestamp(overview?.lastScanAt)} />
+                <HomeFactRow label="Theme" value={activeTheme.label} />
               </div>
-              <div className="folder-item">
-                <span className="folder-label">Downloads</span>
-                <span className="folder-path">
-                  {settings?.downloadsPath || "Not chosen yet"}
-                </span>
-                <button
-                  type="button"
-                  className="folder-action secondary-action"
-                  onClick={() => void chooseFolder("downloadsPath")}
-                  disabled={isSaving}
-                  title="Browse for the Downloads folder"
-                >
-                  <FolderOpen size={12} strokeWidth={2} />
-                  Choose
-                </button>
-              </div>
-            </div>
-            <p className="home-panel-note">
-              {sourceCount < 3
-                ? "Finish the missing folder links first so scans, downloads watching, and tray checks all land in the right place."
-                : "These roots are ready, so scans and follow-up work can stay inside one steady desktop flow."}
-            </p>
-          </section>
+            </HomeModuleCard>
+          ) : null}
         </div>
-      </WorkbenchStage>
+      </div>
 
-      <WorkbenchInspector className="home-inspector-shell" ariaLabel="Home details">
-        <div className="home-inspector">
-          <div className="detail-header">
-            <div>
-              <p className="eyebrow">Today</p>
-              <h2>{userView === "beginner" ? "What needs you first" : "Command board"}</h2>
-            </div>
-            <span className="ghost-chip">Home</span>
-          </div>
+      <AnimatePresence>
+        {customizing ? (
+          <m.div className="workbench-sheet-shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={overlayTransition} onClick={() => setCustomizing(false)}>
+            <m.aside className="workbench-sheet home-customize-sheet" role="dialog" aria-modal="true" aria-labelledby="home-customize-title" initial={{ opacity: 0, x: 52 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 58 }} transition={panelSpring} onClick={(event) => event.stopPropagation()}>
+              <div className="workbench-sheet-header">
+                <div>
+                  <p className="eyebrow">Customize Home</p>
+                  <h2 id="home-customize-title">Make this page feel more like yours</h2>
+                  <p className="workbench-sheet-copy">Keep it softer, show more facts, or swap the main focus without turning the page into a cluttered control room.</p>
+                </div>
+                <button type="button" className="workspace-toggle" onClick={() => setCustomizing(false)} aria-label="Close Customize Home">
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
 
-          <div className="home-focus-card">
-            <div className="home-focus-copy">
-              <span className="section-label">Best next move</span>
-              <strong>{primaryAction.title}</strong>
-            </div>
-            <button
-              type="button"
-              className="primary-action"
-              onClick={primaryAction.onClick}
-              disabled={primaryAction.disabled}
-            >
-              {primaryAction.cta}
-            </button>
-          </div>
+              <div className="workbench-sheet-body">
+                <HomeCustomSection label="Hero focus" copy="Choose what the main panel puts front and center." icon={<Sparkles size={14} strokeWidth={2} />}>
+                  <SegmentPicker<HomeHeroFocus> options={[["health", "Library health"], ["watch", "Update watch"], ["setup", "Folder setup"]]} value={displayPrefs.focus} onChange={(value) => updateDisplayPrefs({ focus: value })} />
+                </HomeCustomSection>
 
-          <div className="summary-matrix home-inspector-grid">
-            {nextActions.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`summary-stat home-inspector-link ${
-                  primaryActionMatches && primaryAction.title === item.label
-                    ? "is-active"
-                    : ""
-                }`}
-                onClick={item.onClick}
-              >
-                <span>{item.label}</span>
-                <strong>{item.count}</strong>
-              </button>
-            ))}
-          </div>
+                <HomeCustomSection label="Information level" copy="Choose how short or detailed the page feels." icon={<Activity size={14} strokeWidth={2} />}>
+                  <SegmentPicker<HomeDetailLevel> options={HOME_DETAIL_OPTIONS.map((option) => [option.id, option.label])} value={displayPrefs.detailLevel} onChange={(value) => updateDisplayPrefs({ detailLevel: value })} />
+                </HomeCustomSection>
 
-          <div className="detail-block">
-            <div className="section-label">System truth</div>
-            <div className="detail-list">
-              {visibleSystemRows.map((row) => (
-                <HomeDetailRow key={row.label} label={row.label} value={row.value} />
-              ))}
-            </div>
-          </div>
+                <HomeCustomSection label="Show on Home" copy="Keep only the parts you want to glance at here." icon={<SlidersHorizontal size={14} strokeWidth={2} />}>
+                  <div className="home-toggle-grid">
+                    {HOME_MODULE_ORDER.map((moduleId) => (
+                      <m.button key={moduleId} type="button" className={`home-toggle-card ${displayPrefs.visibleModules[moduleId] ? "is-active" : ""}`} onClick={() => setModuleVisible(moduleId, !displayPrefs.visibleModules[moduleId])} whileHover={hoverLift} whileTap={tapPress}>
+                        <span className="home-toggle-check" aria-hidden="true">{displayPrefs.visibleModules[moduleId] ? <Check size={12} strokeWidth={2.4} /> : null}</span>
+                        <div className="home-toggle-copy">
+                          <strong>{HOME_MODULE_LABELS[moduleId]}</strong>
+                          <span>{describeHomeModule(moduleId)}</span>
+                        </div>
+                      </m.button>
+                    ))}
+                  </div>
+                </HomeCustomSection>
 
-          <div className="detail-block">
-            <div className="section-label">Watch pressure</div>
-            <div className="detail-list">
-              {watchRows.slice(0, 4).map((row) => (
-                <HomeDetailRow key={row.label} label={row.label} value={row.value} />
-              ))}
-            </div>
-          </div>
-        </div>
-      </WorkbenchInspector>
-    </Workbench>
+                <HomeCustomSection label="Theme and spacing" copy="Personalize the color mood and how airy the page feels." icon={<Palette size={14} strokeWidth={2} />}>
+                  <div className="theme-strip home-theme-strip">
+                    {UI_THEMES.map((item) => (
+                      <m.button key={item.id} type="button" className={`theme-chip ${theme === item.id ? "is-active" : ""}`} onClick={() => setTheme(item.id)} whileHover={hoverLift} whileTap={tapPress} title={`${item.label}: ${item.hint}`}>
+                        <div className="theme-chip-swatches" aria-hidden="true">
+                          {item.swatch.map((value) => <span key={value} className="theme-chip-swatch" style={{ background: value }} />)}
+                        </div>
+                        <div className="theme-chip-copy">
+                          <strong>{item.label}</strong>
+                          <span>{item.mood}</span>
+                        </div>
+                      </m.button>
+                    ))}
+                  </div>
+                  <SegmentPicker options={HOME_DENSITY_OPTIONS.map((option) => [option.id, option.label])} value={density} onChange={setDensity} />
+                </HomeCustomSection>
+
+                <HomeCustomSection label="Atmosphere" copy="Keep the hero still, or let it drift very softly." icon={<RefreshCw size={14} strokeWidth={2} />}>
+                  <SegmentPicker options={[["still", "Still"], ["ambient", "Ambient"]]} value={displayPrefs.ambientMotion ? "ambient" : "still"} onChange={(value) => updateDisplayPrefs({ ambientMotion: value === "ambient" })} />
+                </HomeCustomSection>
+              </div>
+
+              <div className="workbench-sheet-footer">
+                <button type="button" className="secondary-action" onClick={() => setDisplayPrefs(defaultHomePrefs(userView))}>Reset Home</button>
+                <button type="button" className="primary-action" onClick={() => setCustomizing(false)}>Done</button>
+              </div>
+            </m.aside>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
   );
 }
 
-function HomeDetailRow({ label, value }: { label: string; value: string }) {
+function HomeModuleCard({
+  children,
+  index,
+  label,
+  title,
+  icon,
+  badge,
+  extraClass,
+}: {
+  children: ReactNode;
+  index: number;
+  label: string;
+  title: string;
+  icon: ReactNode;
+  badge?: string;
+  extraClass?: string;
+}) {
   return (
-    <div className="detail-row">
+    <m.section className={`panel-card home-module-card${extraClass ? ` ${extraClass}` : ""}`} {...stagedListItem(index)}>
+      <div className="panel-heading home-module-heading">
+        <div>
+          <span className="section-label">{icon}{label}</span>
+          <h2>{title}</h2>
+        </div>
+        {badge ? <span className="ghost-chip">{badge}</span> : null}
+      </div>
+      {children}
+    </m.section>
+  );
+}
+
+function HomeCustomSection({ children, label, copy, icon }: { children: ReactNode; label: string; copy: string; icon: ReactNode }) {
+  return (
+    <section className="home-custom-section">
+      <div className="home-custom-section-heading">
+        <span className="section-label">{icon}{label}</span>
+        <p className="workspace-toolbar-copy">{copy}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SegmentPicker<T extends string>({ options, value, onChange }: { options: Array<readonly [T, string]>; value: T; onChange: (value: T) => void }) {
+  return (
+    <div className="segmented-control" role="tablist">
+      {options.map(([id, label]) => (
+        <m.button key={id} type="button" className={`segment-button ${value === id ? "is-active" : ""}`} onClick={() => onChange(id)} whileHover={hoverLift} whileTap={tapPress}>
+          {label}
+        </m.button>
+      ))}
+    </div>
+  );
+}
+
+function HomeGlanceRow({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="home-glance-row">
+      <div className="home-glance-copy">
+        <strong>{label}</strong>
+        {note ? <span>{note}</span> : null}
+      </div>
+      <span className="ghost-chip home-value-chip">{value}</span>
+    </div>
+  );
+}
+
+function HomeFactRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="home-fact-row">
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function HomeStatTile({ label, value }: { label: string; value: string }) {
+function HomeFolderRow({ label, path, onChoose, disabled }: { label: string; path: string | null | undefined; onChoose: () => void; disabled: boolean }) {
   return (
-    <div className="summary-stat home-stat-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className={`home-folder-row ${path ? "is-ready" : "is-empty"}`}>
+      <div className="home-folder-copy">
+        <strong>{label}</strong>
+        <span className="text-path">{path || "Not chosen yet"}</span>
+      </div>
+      <button type="button" className="secondary-action folder-action" onClick={onChoose} disabled={disabled}>
+        <FolderOpen size={12} strokeWidth={2} />
+        Choose
+      </button>
     </div>
   );
-}
-
-function formatTimestamp(value: string | null | undefined) {
-  if (!value) {
-    return "Not scanned yet";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
 }

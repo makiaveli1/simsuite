@@ -1,5 +1,54 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - early night)
+
+This session started the deeper screen-by-screen redesign program with a full rethink of `Home`.
+
+Important changes and findings:
+
+- the repo now has persistent design context in:
+  - `.impeccable.md`
+- the `Home` redesign spec is now written in:
+  - `docs/superpowers/specs/2026-03-19-home-redesign-design.md`
+- `Home` no longer behaves like a command board with a permanent right inspector
+- the page is now a calmer centered landing surface with:
+  - one main hero area
+  - a smaller set of glance modules
+  - a right-side `Customize Home` sheet
+- the page stopped using navigation-style action lists as the main content
+- only two direct actions stay visible:
+  - `Customize Home`
+  - `Scan`
+- `Customize Home` now supports:
+  - hero focus choice
+  - information level
+  - show/hide home modules
+  - theme
+  - spacing density
+  - ambient hero motion
+- these settings are saved per user view, so:
+  - `Casual` can stay quieter
+  - `Seasoned` can stay balanced
+  - `Creator` can keep more visible detail
+- live checks were run on `Home` in:
+  - `Casual`
+  - `Seasoned`
+  - `Creator`
+- the new side sheet was also checked live
+- fresh screenshots were saved in:
+  - `output/playwright/home-pass10-casual-after.png`
+  - `output/playwright/home-pass10-seasoned-verified.png`
+  - `output/playwright/home-pass10-creator-after.png`
+  - `output/playwright/home-pass10-customize-sheet.png`
+- checks passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- the `Customize Home` sheet works and looks good overall, but its theme section is still the longest part of the panel and could take one more density pass later
+- the same deeper rethink still needs to be carried across the rest of the app one page at a time
+- `Creator` `Home` is intentionally fuller, but it is the first place to tune if we want even more calm without losing useful information
+
 ## Current session note (March 18, 2026 - evening)
 
 This session took the redesign into a stronger “show less, mean more” direction and focused on the two screens that still kept too much open at once:
