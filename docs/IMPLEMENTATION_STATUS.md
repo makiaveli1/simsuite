@@ -1,5 +1,46 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - deep night follow-up)
+
+This follow-up pass fixed one of the last visually awkward spots in `Downloads`: the special-setup action block that still felt bulky and under-organized.
+
+Important changes and findings:
+
+- the action card no longer repeats a long filename as both the heading and the button text
+- a new helper now separates:
+  - the readable card title
+  - the shorter CTA label
+  - the running/progress label
+- new helper file:
+  - `src/screens/downloads/reviewActionText.ts`
+- new focused test:
+  - `src/screens/downloads/reviewActionText.test.ts`
+- the new test locks the intended behavior for `open_related_item`:
+  - the filename stays in the card title
+  - the button stays short
+  - the in-progress label still reads clearly
+- `DownloadsScreen.tsx` now uses the new helper in the repair CTA and the smaller action rows
+- the action-card styling was tightened in `src/styles/globals.css`:
+  - top-aligned content
+  - calmer spacing
+  - cleaner title wrapping
+  - smaller CTA
+  - stacked CTA on narrower widths
+- live check:
+  - the exact original `Use McCmdCenter...` fixture was not exposed in the current live mock data
+  - but the same shorter CTA treatment was confirmed live in the MCCC blocked path
+- fresh screenshot from this pass:
+  - `output/playwright/downloads-pass15-action-card-tighten.png`
+- checks passed:
+  - `npm run test:unit -- src/screens/downloads/reviewActionText.test.ts`
+  - `npm run test:unit -- src/screens/downloads/DownloadsDecisionPanel.test.tsx src/screens/downloads/DownloadsBatchCanvas.test.tsx src/screens/downloads/reviewActionText.test.ts`
+  - `npm run build`
+
+Important remaining gap:
+
+- `DownloadsScreen.tsx` still has too much page orchestration in one file
+- the exact user-reported action state was covered by unit test rather than a live screenshot because the current mock flow did not surface that action on screen
+
 ## Current session note (March 19, 2026 - deep night)
 
 This session pushed the `Downloads` rebuild out of the awkward middle state and made it feel much closer to the approved quiet staging desk.

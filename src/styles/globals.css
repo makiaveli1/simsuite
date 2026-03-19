@@ -5658,9 +5658,9 @@ h2,
 .downloads-review-action-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.6rem;
-  align-items: center;
-  padding: 0.52rem;
+  gap: 0.52rem 0.7rem;
+  align-items: start;
+  padding: 0.56rem 0.58rem;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.016);
 }
@@ -5766,15 +5766,29 @@ h2,
 .downloads-review-action-copy {
   display: grid;
   gap: 0.18rem;
+  min-width: 0;
 }
 
 .downloads-review-action-copy strong {
   color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.34;
+  overflow-wrap: anywhere;
 }
 
 .downloads-review-action-copy span {
   color: var(--text-soft);
+  font-size: 0.74rem;
   line-height: 1.45;
+}
+
+.downloads-review-action-cta {
+  align-self: start;
+  justify-self: end;
+  min-height: calc(var(--control-height) - 0.24rem);
+  padding: 0 0.64rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .downloads-guided-row {
@@ -6233,6 +6247,16 @@ h2,
   .preview-row-meta {
     justify-items: start;
     min-width: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .downloads-review-action-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .downloads-review-action-cta {
+    justify-self: start;
   }
 }
 

@@ -1,5 +1,69 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Deep Night Follow-up)
+
+- **Mode**: code
+- **Focus**: tighten the `Downloads` special-setup action card after a live design review
+
+### Progress Made
+
+1. **Tightened the action block that was still reading too loud in `SpecialReviewPanel`**:
+   - split the action title from the button label
+   - the long pack name now stays in the card copy
+   - the button now uses a shorter action label like `Use this pack` or `Download files`
+   - the same calmer button treatment now also applies to the repair card CTA
+
+2. **Added a small helper for review-action wording instead of hard-coding it inside the screen**:
+   - new file:
+     - `src/screens/downloads/reviewActionText.ts`
+   - this keeps the stage copy easier to tune without digging through the whole screen again
+
+3. **Added a focused unit test before changing the screen code**:
+   - new test:
+     - `src/screens/downloads/reviewActionText.test.ts`
+   - the test locks:
+     - the pack-name title behavior for `open_related_item`
+     - the shorter CTA label for that action
+     - the running/progress label while that action is active
+
+4. **Refined the action-card layout itself**:
+   - the card now aligns from the top instead of centering the text against the button
+   - the title wraps more cleanly
+   - the supporting text is slightly quieter
+   - the CTA is smaller and stacks below on narrower widths
+
+5. **Checked the result live again**:
+   - the exact old `Use McCmdCenter...` fixture was not exposed in the current live mock flow
+   - but the live blocked MCCC path now clearly shows the calmer shorter CTA style
+   - fresh screenshot:
+     - `output/playwright/downloads-pass15-action-card-tighten.png`
+
+6. **Verification**:
+   - `npm run test:unit -- src/screens/downloads/reviewActionText.test.ts`
+   - `npm run test:unit -- src/screens/downloads/DownloadsDecisionPanel.test.tsx src/screens/downloads/DownloadsBatchCanvas.test.tsx src/screens/downloads/reviewActionText.test.ts`
+   - `npm run build`
+
+### What Worked
+
+- the action area reads more like one tidy decision row now
+- shorter CTA labels make the stage feel calmer immediately
+- pulling the wording into a helper made this much safer than tweaking button text inline
+
+### Known Problems / Gaps
+
+- the exact `open_related_item` mock state from the user screenshot still was not reachable in the current live fixture set, so that specific wording change was locked by unit test rather than a live screenshot
+- `DownloadsScreen.tsx` still carries too much orchestration and can still be split further later
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Re-open `Downloads` and check:
+  - `Blocked`
+  - `Waiting on you`
+  - `Special setup`
+- If the user is happy with this polish, continue the one-page-at-a-time redesign flow for the next `Downloads` tightening pass or move to the next page.
+
 ## Current Session (March 19, 2026 - Deep Night)
 
 - **Mode**: code

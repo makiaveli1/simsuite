@@ -77,6 +77,10 @@ import {
 import { DownloadsSetupDialog } from "./downloads/DownloadsSetupDialog";
 import { DownloadsTopStrip } from "./downloads/DownloadsTopStrip";
 import {
+  reviewActionButtonLabel,
+  reviewActionCardTitle,
+} from "./downloads/reviewActionText";
+import {
   capRowBadges,
   fallbackDownloadsLane,
   pickInitialDownloadsLane,
@@ -2553,12 +2557,12 @@ function SpecialReviewPanel({
             </div>
             <button
               type="button"
-              className="primary-action"
+              className="primary-action downloads-review-action-cta"
               onClick={() => void onResolveAction(repairAction)}
               disabled={isApplying}
             >
               <Workflow size={14} strokeWidth={2} />
-              {reviewActionLabel(repairAction, userView, isApplying)}
+              {reviewActionButtonLabel(repairAction, userView, isApplying)}
             </button>
           </div>
           <div className="summary-matrix">
@@ -2638,17 +2642,17 @@ function SpecialReviewPanel({
                 className="downloads-review-action-card"
               >
                 <div className="downloads-review-action-copy">
-                  <strong>{reviewActionLabel(action, userView, false)}</strong>
+                  <strong>{reviewActionCardTitle(action)}</strong>
                   <span>{reviewActionDescription(action)}</span>
                 </div>
                 <button
                   type="button"
-                  className="primary-action"
+                  className="primary-action downloads-review-action-cta"
                   onClick={() => void onResolveAction(action)}
                   disabled={isApplying}
                 >
                   <Workflow size={14} strokeWidth={2} />
-                  {reviewActionLabel(action, userView, isApplying)}
+                  {reviewActionButtonLabel(action, userView, isApplying)}
                 </button>
               </div>
             ))}
@@ -3874,24 +3878,7 @@ function reviewActionLabel(
     return action.label;
   }
 
-  switch (action.kind) {
-    case "repair_special":
-      return userView === "beginner" ? "Fixing old setup..." : "Repairing setup...";
-    case "install_dependency":
-      return userView === "beginner" ? "Installing helper..." : "Installing dependency...";
-    case "open_related_item":
-      return userView === "beginner" ? "Opening better pack..." : "Opening fuller pack...";
-    case "download_missing_files":
-      return userView === "beginner" ? "Downloading files..." : "Downloading missing files...";
-    case "separate_supported_files":
-      return userView === "beginner" ? "Splitting files..." : "Separating supported files...";
-    case "open_dependency":
-      return userView === "beginner" ? "Opening dependency..." : "Opening dependency...";
-    case "open_official_source":
-      return userView === "beginner" ? "Opening page..." : "Opening official page...";
-    default:
-      return action.label;
-  }
+  return reviewActionButtonLabel(action, userView, true);
 }
 
 function reviewActionDescription(
