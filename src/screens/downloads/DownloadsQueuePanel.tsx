@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 import { Inbox } from "lucide-react";
 import { m } from "motion/react";
 import { StatePanel } from "../../components/StatePanel";
-import { rowHover, rowPress, stagedListItem } from "../../lib/motion";
+import {
+  rowHover,
+  rowPress,
+  stagedListItem,
+} from "../../lib/motion";
 import type { DownloadQueueLane, UserView } from "../../lib/types";
 import { downloadsLaneHint, downloadsLaneLabel } from "./downloadsDisplay";
 
@@ -54,7 +58,7 @@ export function DownloadsQueuePanel({
       </div>
 
       <div className="vertical-dock downloads-queue-dock">
-        <div className="queue-list downloads-queue-list">
+        <m.div className="queue-list downloads-queue-list" layoutScroll>
           {hasItems ? (
             rows.length ? (
               <div className="downloads-lane-group">
@@ -66,7 +70,10 @@ export function DownloadsQueuePanel({
                   <span className="ghost-chip">{rows.length.toLocaleString()}</span>
                 </div>
 
-                <div className="downloads-lane-list">
+                <m.div
+                  className="downloads-lane-list"
+                  layout
+                >
                   {rows.map((row, index) => (
                     <m.button
                       key={row.id}
@@ -76,6 +83,7 @@ export function DownloadsQueuePanel({
                       } downloads-item-row-${row.tone}`}
                       onClick={() => onSelect(row.id)}
                       title={row.sourcePath}
+                      layout
                       whileHover={rowHover}
                       whileTap={rowPress}
                       {...stagedListItem(index)}
@@ -103,7 +111,7 @@ export function DownloadsQueuePanel({
                       </div>
                     </m.button>
                   ))}
-                </div>
+                </m.div>
               </div>
             ) : (
               <StatePanel
@@ -134,7 +142,7 @@ export function DownloadsQueuePanel({
               meta={["Filters stay local to this workspace"]}
             />
           )}
-        </div>
+        </m.div>
         {footer}
       </div>
     </div>

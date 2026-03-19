@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { m } from "motion/react";
+import { downloadsSelectionTransition } from "../../lib/motion";
 import type { DownloadQueueLane, UserView } from "../../lib/types";
 
 interface DownloadsBatchCanvasProps {
@@ -25,40 +27,89 @@ export function DownloadsBatchCanvas({
   children,
 }: DownloadsBatchCanvasProps) {
   const eyebrow = batchCanvasEyebrow(lane, userView);
+  const stats = buildBatchStats({
+    userView,
+    safeCount,
+    reviewCount,
+    unchangedCount,
+    previewCount: previewItems.length,
+  });
 
   return (
-    <div className="panel-card downloads-preview-panel downloads-batch-canvas workbench-panel">
-      <div className="panel-heading downloads-batch-header">
+    <m.div
+      className="panel-card downloads-preview-panel downloads-batch-canvas workbench-panel"
+      layout
+      transition={downloadsSelectionTransition}
+    >
+      <m.div
+        className="panel-heading downloads-batch-header"
+        layout
+        transition={downloadsSelectionTransition}
+      >
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h2>{selectionTitle ?? batchCanvasTitle(lane, userView)}</h2>
           <p className="downloads-batch-summary">{summary}</p>
         </div>
-        <div className="downloads-batch-stats">
-          <div className="downloads-batch-stat">
-            <span>Safe</span>
-            <strong>{safeCount.toLocaleString()}</strong>
-          </div>
-          <div className="downloads-batch-stat">
-            <span>Review</span>
-            <strong>{reviewCount.toLocaleString()}</strong>
-          </div>
-          <div className="downloads-batch-stat">
-            <span>Already fine</span>
-            <strong>{unchangedCount.toLocaleString()}</strong>
-          </div>
-          <div className="downloads-batch-stat">
-            <span>Preview</span>
-            <strong>{previewItems.length.toLocaleString()}</strong>
-          </div>
+        <div
+          className={`downloads-batch-stats downloads-batch-stats-${userView}`}
+          aria-label="Batch summary"
+        >
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className={`downloads-batch-stat downloads-batch-stat-${stat.tone}`}
+            >
+              <span>{stat.label}</span>
+              <strong>{stat.value.toLocaleString()}</strong>
+            </div>
+          ))}
         </div>
-      </div>
+      </m.div>
 
-      <div className="preview-list downloads-preview-list downloads-batch-body">
+      <m.div
+        className="preview-list downloads-preview-list downloads-batch-body"
+        layoutScroll
+      >
         {children}
-      </div>
-    </div>
+      </m.div>
+    </m.div>
   );
+}
+
+function buildBatchStats({
+  userView,
+  safeCount,
+  reviewCount,
+  unchangedCount,
+  previewCount,
+}: {
+  userView: UserView;
+  safeCount: number;
+  reviewCount: number;
+  unchangedCount: number;
+  previewCount: number;
+}) {
+  const allStats = [
+    { label: "Safe", value: safeCount, tone: "good" },
+    { label: userView === "beginner" ? "Needs care" : "Review", value: reviewCount, tone: "warn" },
+    { label: userView === "beginner" ? "Already set" : "Already fine", value: unchangedCount, tone: "neutral" },
+    { label: userView === "beginner" ? "Files shown" : "Preview", value: previewCount, tone: "muted" },
+  ] as const;
+
+  if (userView === "power") {
+    return allStats;
+  }
+
+  if (userView === "standard") {
+    return allStats.filter((stat) => stat.value > 0 || stat.label === "Preview").slice(0, 3);
+  }
+
+  const beginnerStats = allStats.filter(
+    (stat) => stat.label === "Needs care" || stat.label === "Files shown" || stat.value > 0,
+  );
+
+  return beginnerStats.slice(0, 2);
 }
 
 function batchCanvasEyebrow(lane: DownloadQueueLane, userView: UserView) {

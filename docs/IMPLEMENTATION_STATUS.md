@@ -1,5 +1,68 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - deep night)
+
+This session pushed the `Downloads` rebuild out of the awkward middle state and made it feel much closer to the approved quiet staging desk.
+
+Important changes and findings:
+
+- the new proof sheet and action dialog stayed in place, but the main follow-up work was deeper than that:
+  - the center stage still felt too report-like
+  - creator filters were still taking up too much rail space
+  - some actions still fell back to browser confirmation prompts
+- `Downloads` now uses more real details-on-demand behavior:
+  - `More filters` opens as a floating filter panel instead of stretching the left rail
+  - that filter panel now defaults to closed in every view
+  - the stage detail is now tucked behind tabs instead of staying fully expanded
+- `GuidedPreviewPanel` now uses a tabbed detail deck for:
+  - plan
+  - dependencies
+  - notes
+  - why
+- `SpecialReviewPanel` now uses a tabbed detail deck for:
+  - reason
+  - dependencies
+  - tracked files
+- `Casual`, `Seasoned`, and `Creator` now differ more cleanly in the stage:
+  - `Casual`
+    - fewer summary stats
+    - calmer labels
+    - simpler main story before deeper tabs
+  - `Seasoned`
+    - a more balanced stage with the extra context tucked behind the new tabs
+  - `Creator`
+    - still gets the fuller proof-oriented detail, but no longer all at once
+- split-stage layouts now use the left lower space more intentionally:
+  - the queue column gets a small helper card instead of ending in a large dead patch
+- the last browser-style confirms were removed from the inbox flow
+- inbox actions now use the in-app dialog pattern for:
+  - safe move
+  - ignore
+  - guided apply
+  - review actions that need approval
+- motion also got a small polish pass:
+  - queue and stage scroll areas now use Motion layout-aware scrolling
+  - stage tabs use an animated shared highlight
+  - the filter popover fades and settles instead of snapping in
+- live checks were run again on `Downloads` in:
+  - `Casual`
+  - `Seasoned`
+  - `Creator`
+- fresh screenshots from this pass were saved in:
+  - `output/playwright/downloads-pass14-casual-main.png`
+  - `output/playwright/downloads-pass14-seasoned-main.png`
+  - `output/playwright/downloads-pass14-creator-main.png`
+  - `output/playwright/downloads-pass14-creator-dialog.png`
+- checks passed:
+  - `npm run test:unit`
+  - `npm run build`
+
+Important remaining gap:
+
+- the open Playwright browser kept one old React dependency-array warning in its console after hot updates; after a full reload the page behaved normally and the production build passed, so this currently looks like a stale hot-reload artifact rather than a fresh app bug
+- `DownloadsScreen.tsx` still carries a lot of orchestration and could be split further later if we want the code to match the calmer UI
+- the proof sheet is working well, but its section spacing and controls can still take one final taste pass later
+
 ## Current session note (March 19, 2026 - late night)
 
 This session did not start code for `Downloads`. It completed the full design-spec phase for the page instead.

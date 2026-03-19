@@ -40,7 +40,7 @@ export function capRowBadges(labels: string[]) {
 
 export function viewModeDownloadsFlags(userView: UserView) {
   return {
-    showAdvancedFiltersByDefault: userView === "power",
+    showAdvancedFiltersByDefault: false,
     showCompactPreview: userView !== "beginner",
     showExtraProofBlock: userView === "power",
   };

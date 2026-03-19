@@ -1,5 +1,92 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Deep Night)
+
+- **Mode**: code
+- **Focus**: calmer `Downloads` stage, better detail layering, and smoother action flow
+
+### Progress Made
+
+1. **Finished the current `Downloads` implementation slice instead of leaving it halfway between old and new patterns**:
+   - kept the quiet-left-rail / center-stage / right-inspector structure
+   - kept the new proof sheet and action dialog
+   - tightened the middle stage so it no longer tries to be one long always-open report
+
+2. **Moved more of the page into true details-on-demand patterns**:
+   - `More filters` in the left rail now opens as a floating filter panel instead of permanently pushing the rail taller
+   - the filter panel now stays closed by default in all views, including `Creator`
+   - `Escape` now closes:
+     - the action dialog
+     - the proof sheet
+     - the new filter popover
+
+3. **Reworked the center stage so each user view feels calmer**:
+   - `DownloadsBatchCanvas` now shows fewer headline stats in `Casual` and `Seasoned`
+   - `GuidedPreviewPanel` now uses a tabbed detail deck instead of stacking all setup detail at once
+   - `SpecialReviewPanel` now uses a tabbed detail deck for:
+     - reason / why
+     - dependencies
+     - files
+   - this keeps the main story visible while the heavier detail stays one click away
+
+4. **Made the split layouts feel more intentional instead of half-empty**:
+   - `Seasoned` and `Creator` queue panels now get a small lower helper card so the left column still feels purposeful when only one item is in the lane
+   - the queue remains the scanning area, but it no longer ends in a big accidental dead zone
+
+5. **Removed the remaining browser-style confirms from this flow**:
+   - inbox actions now use the in-app dialog pattern instead of browser confirmation popups
+   - this now applies to:
+     - safe move
+     - ignore
+     - guided apply
+     - review actions that need approval
+
+6. **Added smoother motion in the places where it helps comprehension**:
+   - scrollable queue and stage regions now use Motion layout-aware scrolling
+   - the new stage tabs use an animated shared highlight
+   - the filter popover now fades and settles instead of snapping open
+
+7. **Checked the page live again across all three user views**:
+   - `Casual`
+   - `Seasoned`
+   - `Creator`
+   - fresh screenshots from this pass:
+     - `output/playwright/downloads-pass14-casual-main.png`
+     - `output/playwright/downloads-pass14-seasoned-main.png`
+     - `output/playwright/downloads-pass14-creator-main.png`
+     - `output/playwright/downloads-pass14-creator-dialog.png`
+   - the new creator filter popover was also visually checked live during this pass
+
+8. **Verification**:
+   - `npm run test:unit` passed
+   - `npm run build` passed
+
+### What Worked
+
+- the new right inspector still feels short and focused
+- the stage tabs made the biggest difference; `Downloads` now reads more like a desk with layers instead of a wall of receipts
+- `Casual` especially benefits from the reduced top stats and the tucked-away detail tabs
+- replacing browser confirms with the in-app dialog makes the whole screen feel much more intentional
+- the closed-by-default filter popover is better than keeping creator filters expanded all the time
+
+### Known Problems / Gaps
+
+- Playwright still showed one old React console error in the already-open browser session after hot updates:
+  - a dependency-array size warning from the live HMR page
+  - after a full reload the page itself behaved normally and the production build passed, so this looked like a stale hot-reload artifact rather than a fresh runtime break
+- `DownloadsScreen.tsx` is still large, even though the page behavior is much better now
+- the proof sheet works, but it could still take one later taste pass for spacing and section controls after the main redesign settles
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Then check the latest `Downloads` screenshots in:
+  - `output/playwright/downloads-pass14-casual-main.png`
+  - `output/playwright/downloads-pass14-seasoned-main.png`
+  - `output/playwright/downloads-pass14-creator-main.png`
+- If the user likes this direction, the next best step is one smaller polish pass on `Downloads` or moving to the next full page rework.
+
 ## Current Session (March 19, 2026 - Late Night)
 
 - **Mode**: design

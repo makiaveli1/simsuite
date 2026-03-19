@@ -1,14 +1,14 @@
 import {
   startTransition,
+  type ReactNode,
   useDeferredValue,
   useEffect,
   useRef,
   useState,
 } from "react";
-import { m } from "motion/react";
+import { AnimatePresence, LayoutGroup, m } from "motion/react";
 import {
   AlertTriangle,
-  Ban,
   Download,
   FolderSearch,
   Inbox,
@@ -18,7 +18,6 @@ import {
   Workflow,
 } from "lucide-react";
 import {
-  DockSectionStack,
   type DockSectionDefinition,
 } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
@@ -29,7 +28,12 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api, hasTauriRuntime } from "../lib/api";
-import { rowHover, rowPress, stagedListItem } from "../lib/motion";
+import {
+  downloadsSelectionTransition,
+  rowHover,
+  rowPress,
+  stagedListItem,
+} from "../lib/motion";
 import {
   friendlyTypeLabel,
   intakeModeLabel,
@@ -61,9 +65,16 @@ import type {
 import { DownloadsRail } from "./downloads/DownloadsRail";
 import { DownloadsBatchCanvas } from "./downloads/DownloadsBatchCanvas";
 import {
+  DownloadsDecisionPanel,
+  type DownloadsDecisionBadge,
+  type DownloadsDecisionSignal,
+} from "./downloads/DownloadsDecisionPanel";
+import { DownloadsProofSheet } from "./downloads/DownloadsProofSheet";
+import {
   DownloadsQueuePanel,
   type DownloadsQueueRowModel,
 } from "./downloads/DownloadsQueuePanel";
+import { DownloadsSetupDialog } from "./downloads/DownloadsSetupDialog";
 import { DownloadsTopStrip } from "./downloads/DownloadsTopStrip";
 import {
   capRowBadges,
@@ -98,6 +109,12 @@ interface DownloadsScreenCache {
   search: string;
   statusFilter: string;
 }
+
+type DownloadsDialogRequest =
+  | { kind: "guided_apply" }
+  | { kind: "safe_move" }
+  | { kind: "ignore" }
+  | { kind: "review_action"; action: ReviewPlanAction };
 
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
 const DEFAULT_DOWNLOADS_PRESET = "Category First";
@@ -166,6 +183,10 @@ export function DownloadsScreen({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(
     viewModeDownloadsFlags(userView).showAdvancedFiltersByDefault,
+  );
+  const [proofSheetOpen, setProofSheetOpen] = useState(false);
+  const [pendingDialog, setPendingDialog] = useState<DownloadsDialogRequest | null>(
+    null,
   );
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -775,24 +796,18 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleReviewAction(action: ReviewPlanAction) {
+  async function handleReviewAction(
+    action: ReviewPlanAction,
+    skipApproval = false,
+  ) {
     if (!selectedItem) {
       return;
     }
 
     const needsApproval = reviewActionNeedsApproval(action.kind);
-    if (needsApproval) {
-      const confirmed = globalThis.confirm(
-        reviewActionConfirmation(
-          action,
-          selectedItem.displayName,
-          selectedReviewPlan,
-          userView,
-        ),
-      );
-      if (!confirmed) {
-        return;
-      }
+    if (needsApproval && !skipApproval) {
+      setPendingDialog({ kind: "review_action", action });
+      return;
     }
 
     setIsApplying(true);
@@ -838,7 +853,7 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleApply() {
+  async function handleApply(skipConfirm = false) {
     if (!selectedItem) {
       return;
     }
@@ -857,12 +872,8 @@ export function DownloadsScreen({
       }
 
       const isSameVersion = selectedSpecialDecision?.sameVersion ?? false;
-      const confirmed = globalThis.confirm(
-        isSameVersion
-          ? `Reinstall ${selectedGuidedPlan.profileName}? SimSuite checked this download against the installed copy and they match. It will only replace the current files, keep ${selectedGuidedPlan.preserveFiles.length} settings file(s), and create a restore point first.`
-          : `Install ${selectedGuidedPlan.profileName} safely? SimSuite will replace ${selectedGuidedPlan.replaceFiles.length} old file(s), keep ${selectedGuidedPlan.preserveFiles.length} settings file(s), and create a restore point first.`,
-      );
-      if (!confirmed) {
+      if (!skipConfirm) {
+        setPendingDialog({ kind: "guided_apply" });
         return;
       }
 
@@ -893,10 +904,8 @@ export function DownloadsScreen({
       return;
     }
 
-    const confirmed = globalThis.confirm(
-      `Move ${safeCount} safe file(s) from ${selectedItem.displayName}? Files that need review will stay in the inbox, and a restore point will be created first.`,
-    );
-    if (!confirmed) {
+    if (!skipConfirm) {
+      setPendingDialog({ kind: "safe_move" });
       return;
     }
 
@@ -922,15 +931,13 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleIgnore() {
+  async function handleIgnore(skipConfirm = false) {
     if (!selectedItem) {
       return;
     }
 
-    const confirmed = globalThis.confirm(
-      `Hide ${selectedItem.displayName} from the inbox? This keeps it out of the active queue until the download changes again.`,
-    );
-    if (!confirmed) {
+    if (!skipConfirm) {
+      setPendingDialog({ kind: "ignore" });
       return;
     }
 
@@ -948,6 +955,62 @@ export function DownloadsScreen({
     } finally {
       setIsIgnoring(false);
     }
+  }
+
+  function handlePrimaryAction() {
+    if (!selectedResolvedItem) {
+      return;
+    }
+
+    if (primaryReviewAction) {
+      if (reviewActionNeedsApproval(primaryReviewAction.kind)) {
+        setPendingDialog({
+          kind: "review_action",
+          action: primaryReviewAction,
+        });
+        return;
+      }
+
+      void handleReviewAction(primaryReviewAction);
+      return;
+    }
+
+    if (effectiveSelectedIntakeMode === "guided") {
+      if (!selectedGuidedPlan) {
+        void handleApply();
+        return;
+      }
+
+      setPendingDialog({ kind: "guided_apply" });
+      return;
+    }
+
+    if (effectiveSelectedIntakeMode === "standard" && safeCount > 0) {
+      setPendingDialog({ kind: "safe_move" });
+    }
+  }
+
+  async function handleConfirmDialog() {
+    if (!pendingDialog) {
+      return;
+    }
+
+    switch (pendingDialog.kind) {
+      case "guided_apply":
+      case "safe_move":
+        await handleApply(true);
+        break;
+      case "ignore":
+        await handleIgnore(true);
+        break;
+      case "review_action":
+        await handleReviewAction(pendingDialog.action, true);
+        break;
+      default:
+        break;
+    }
+
+    setPendingDialog(null);
   }
 
   const overview = inbox?.overview ?? null;
@@ -1136,8 +1199,22 @@ export function DownloadsScreen({
         userView,
       })
     : [];
+  const decisionBadges: DownloadsDecisionBadge[] = selectedResolvedItem
+    ? selectedStateBadge
+      ? [selectedStateBadge]
+      : [
+          {
+            label: intakeModeLabel(selectedResolvedItem.intakeMode),
+            tone: intakeModeTone(selectedResolvedItem.intakeMode),
+          },
+          {
+            label: friendlyItemStatus(selectedResolvedItem.status),
+            tone: itemStatusTone(selectedResolvedItem.status),
+          },
+        ]
+    : [];
   const splitStage = userView !== "beginner";
-  const inspectorSignals = selectedResolvedItem
+  const inspectorSignals: DownloadsDecisionSignal[] = selectedResolvedItem
     ? buildDownloadInspectorSignals(
         selectedResolvedItem,
         selectedSpecialDecision,
@@ -1146,6 +1223,37 @@ export function DownloadsScreen({
         selectedAutoRecheckNote,
       )
     : [];
+  const visibleInspectorSignals =
+    userView === "beginner" ? inspectorSignals.slice(0, 2) : inspectorSignals;
+  const decisionLaneLabel = selectedResolvedItem
+    ? queueLaneLabel(
+        selectedResolvedItem.queueLane ?? deriveQueueLane(selectedResolvedItem),
+        userView,
+      )
+    : queueLaneLabel(resolvedActiveLane, userView);
+  const proofSummary = selectedResolvedItem
+    ? userView === "beginner"
+      ? `Open ${inspectorSections.length.toLocaleString()} detail section(s) for files, versions, and the fuller safety notes.`
+      : `See ${inspectorSections.length.toLocaleString()} proof section(s) for files, versions, source history, and the full evidence trail.`
+    : userView === "beginner"
+      ? "Pick a batch first, then open the fuller details here."
+      : "Pick a batch first, then open the calmer proof sheet.";
+  const dialogBusy =
+    pendingDialog?.kind === "ignore" ? isIgnoring : pendingDialog ? isApplying : false;
+  const dialogConfig =
+    pendingDialog && selectedResolvedItem
+      ? buildDownloadsDialogConfig({
+          request: pendingDialog,
+          item: selectedResolvedItem,
+          guidedPlan: selectedGuidedPlan,
+          reviewPlan: selectedReviewPlan,
+          specialDecision: selectedSpecialDecision,
+          safeCount,
+          reviewCount,
+          unchangedCount,
+          userView,
+        })
+      : null;
   const hasWatcherStatus = watcherStatus !== null;
   const showWatcherSetup = hasWatcherStatus && !watcherStatus.configured;
   const showWatcherBootstrap = !hasWatcherStatus
@@ -1175,6 +1283,46 @@ export function DownloadsScreen({
         : activeWatcherStatus.lastRunAt
           ? `Last check ${formatDate(activeWatcherStatus.lastRunAt)}`
           : "Watcher ready";
+
+  useEffect(() => {
+    if (!selectedItem) {
+      setProofSheetOpen(false);
+      setPendingDialog(null);
+    }
+  }, [selectedItem]);
+
+  useEffect(() => {
+    if (!proofSheetOpen && !pendingDialog && !filtersOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (pendingDialog) {
+        if (!dialogBusy) {
+          setPendingDialog(null);
+        }
+        return;
+      }
+
+      if (proofSheetOpen) {
+        setProofSheetOpen(false);
+        return;
+      }
+
+      if (filtersOpen) {
+        setFiltersOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dialogBusy, filtersOpen, pendingDialog, proofSheetOpen]);
 
   return (
     <section className="screen-shell downloads-shell">
@@ -1314,7 +1462,23 @@ export function DownloadsScreen({
                   setSelectedItemId(itemId);
                 }}
                 footer={
-                  splitStage ? null : (
+                  splitStage ? (
+                    <div className="downloads-queue-footer-card">
+                      <p className="eyebrow">
+                        {userView === "power" ? "Desk rhythm" : "Keep the queue simple"}
+                      </p>
+                      <strong>
+                        {userView === "power"
+                          ? "Queue first, receipts second"
+                          : "Scan here, act on the right"}
+                      </strong>
+                      <p>
+                        {userView === "power"
+                          ? "Rows stay short on purpose. Keep the action in the inspector and open proof only when you want the full receipt trail."
+                          : "Pick the batch here, use the middle for context, and keep the deeper proof tucked away until you actually need it."}
+                      </p>
+                    </div>
+                  ) : (
                     <ResizableEdgeHandle
                       label="Resize download queue height"
                       value={downloadsQueueHeight}
@@ -1337,6 +1501,15 @@ export function DownloadsScreen({
                 unchangedCount={unchangedCount}
                 previewItems={batchCanvasPreviewItems}
               >
+                <AnimatePresence mode="wait" initial={false}>
+                  <m.div
+                    key={`${resolvedActiveLane}-${selectedItem?.id ?? "empty"}-${isLoadingSelection ? "loading" : "ready"}`}
+                    className="downloads-batch-stage"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={downloadsSelectionTransition}
+                  >
                   {isLoadingSelection ? (
                     <StatePanel
                       eyebrow="Preview"
@@ -1427,6 +1600,8 @@ export function DownloadsScreen({
                       meta={["Normal", "Special setup", "Needs review", "Blocked"]}
                     />
                   )}
+                  </m.div>
+                </AnimatePresence>
               </DownloadsBatchCanvas>
             </div>
           </WorkbenchStage>
@@ -1441,96 +1616,26 @@ export function DownloadsScreen({
             noBorder
           >
             {selectedItem ? (
-              <>
-                <div className="detail-header">
-                  <div>
-                    <p className="eyebrow">
-                      {userView === "beginner" ? "Selected batch" : "Selected inbox item"}
-                    </p>
-                    <h2>{selectedItem.displayName}</h2>
-                    <p className="workspace-toolbar-copy">
-                      {selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
-                    </p>
-                  </div>
-                  <div className="downloads-detail-badges">
-                    <span className="ghost-chip">
-                      {queueLaneLabel(selectedItem.queueLane ?? deriveQueueLane(selectedItem), userView)}
-                    </span>
-                    {selectedStateBadge ? (
-                      <span className={`confidence-badge ${selectedStateBadge.tone}`}>
-                        {selectedStateBadge.label}
-                      </span>
-                    ) : (
-                      <>
-                        <span
-                          className={`confidence-badge ${intakeModeTone(selectedItem.intakeMode)}`}
-                        >
-                          {intakeModeLabel(selectedItem.intakeMode)}
-                        </span>
-                        <span
-                          className={`confidence-badge ${itemStatusTone(selectedItem.status)}`}
-                        >
-                          {friendlyItemStatus(selectedItem.status)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {inspectorSignals.length ? (
-                  <div className="downloads-signal-strip">
-                    {inspectorSignals.map((signal) => (
-                      <div
-                        key={signal.id}
-                        className={`downloads-signal-card downloads-signal-card-${signal.tone}`}
-                      >
-                        <span className="downloads-signal-label">{signal.label}</span>
-                        <strong>{signal.title}</strong>
-                        <span>{signal.body}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="downloads-next-step-card">
-                  <div className="downloads-next-step-copy">
-                    <p className="eyebrow">
-                      {userView === "beginner" ? "Safe next step" : "Next move"}
-                    </p>
-                    <strong className="downloads-next-step-title">{nextStepTitle}</strong>
-                    <p className="downloads-next-step-description">{nextStepDescription}</p>
-                  </div>
-                  <div className="downloads-next-step-actions">
-                    {showPrimaryAction ? (
-                      <button
-                        type="button"
-                        className="primary-action"
-                        onClick={() =>
-                          void (
-                            primaryReviewAction
-                              ? handleReviewAction(primaryReviewAction)
-                              : handleApply()
-                          )
-                        }
-                        disabled={primaryActionDisabled}
-                      >
-                        <Workflow size={14} strokeWidth={2} />
-                        {applyLabel}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => void handleIgnore()}
-                      disabled={isIgnoring}
-                    >
-                      <Ban size={14} strokeWidth={2} />
-                      {isIgnoring ? "Ignoring..." : "Ignore"}
-                    </button>
-                  </div>
-                  {!showPrimaryAction ? (
-                    <div className="downloads-inspector-note">
-                      {downloadsInspectorIdleNote(
+              <DownloadsDecisionPanel
+                userView={userView}
+                title={selectedItem.displayName}
+                summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+                laneLabel={decisionLaneLabel}
+                badges={decisionBadges}
+                signals={visibleInspectorSignals}
+                nextStepTitle={nextStepTitle}
+                nextStepDescription={nextStepDescription}
+                primaryActionLabel={showPrimaryAction ? applyLabel : null}
+                primaryActionDisabled={primaryActionDisabled}
+                onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
+                secondaryActionLabel={isIgnoring ? "Ignoring..." : "Ignore"}
+                secondaryActionDisabled={isIgnoring}
+                onSecondaryAction={() => setPendingDialog({ kind: "ignore" })}
+                onOpenProof={() => setProofSheetOpen(true)}
+                proofSummary={proofSummary}
+                idleNote={
+                  !showPrimaryAction
+                    ? downloadsInspectorIdleNote(
                         effectiveSelectedIntakeMode ?? selectedItem.intakeMode,
                         userView,
                         safeCount,
@@ -1538,17 +1643,10 @@ export function DownloadsScreen({
                         selectedSpecialDecision,
                         selectedVersionResolution,
                         selectedReviewPlan,
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-
-                <DockSectionStack
-                  layoutId="downloadsInspector"
-                  sections={inspectorSections}
-                  intro="Reset this side panel"
-                />
-              </>
+                      )
+                    : null
+                }
+              />
             ) : (
               <StatePanel
                 eyebrow={userView === "beginner" ? "Downloads inbox" : "Inbox"}
@@ -1569,7 +1667,273 @@ export function DownloadsScreen({
           </WorkbenchInspector>
         </Workbench>
       )}
+
+      {selectedItem ? (
+        <DownloadsProofSheet
+          open={proofSheetOpen}
+          onClose={() => setProofSheetOpen(false)}
+          title={selectedItem.displayName}
+          summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+          laneLabel={decisionLaneLabel}
+          badges={decisionBadges}
+          signals={visibleInspectorSignals}
+          sections={inspectorSections}
+          userView={userView}
+        />
+      ) : null}
+
+      <DownloadsSetupDialog
+        open={Boolean(dialogConfig)}
+        onClose={() => setPendingDialog(null)}
+        onConfirm={() => void handleConfirmDialog()}
+        eyebrow={dialogConfig?.eyebrow ?? "Confirm"}
+        title={dialogConfig?.title ?? "Continue?"}
+        description={dialogConfig?.description ?? ""}
+        confirmLabel={dialogConfig?.confirmLabel ?? "Continue"}
+        tone={dialogConfig?.tone ?? "accent"}
+        metrics={dialogConfig?.metrics ?? []}
+        notes={dialogConfig?.notes ?? []}
+        isWorking={dialogBusy}
+      />
     </section>
+  );
+}
+
+function buildDownloadsDialogConfig({
+  request,
+  item,
+  guidedPlan,
+  reviewPlan,
+  specialDecision,
+  safeCount,
+  reviewCount,
+  unchangedCount,
+  userView,
+}: {
+  request: DownloadsDialogRequest;
+  item: DownloadsInboxItem;
+  guidedPlan: GuidedInstallPlan | null;
+  reviewPlan: SpecialReviewPlan | null;
+  specialDecision: SpecialModDecision | null;
+  safeCount: number;
+  reviewCount: number;
+  unchangedCount: number;
+  userView: UserView;
+}) {
+  if (request.kind === "guided_apply" && guidedPlan) {
+    const isSameVersion = specialDecision?.sameVersion ?? false;
+
+    return {
+      eyebrow: userView === "beginner" ? "Safe setup" : "Guided setup",
+      title: isSameVersion
+        ? `Reinstall ${guidedPlan.profileName}?`
+        : `Install ${guidedPlan.profileName} safely?`,
+      description: isSameVersion
+        ? "SimSuite matched this download against the installed copy and found the same version. Reinstall only if you want to refresh the current setup cleanly."
+        : "SimSuite has a guided install plan ready for this special mod. It will follow the matched setup path instead of dropping files in blind.",
+      confirmLabel: isSameVersion ? "Reinstall safely" : "Start safe install",
+      tone: "accent" as const,
+      metrics: [
+        { label: "Replace", value: guidedPlan.replaceFiles.length.toLocaleString() },
+        { label: "Keep", value: guidedPlan.preserveFiles.length.toLocaleString() },
+        { label: "Review later", value: guidedPlan.reviewFiles.length.toLocaleString() },
+      ],
+      notes: [
+        "A restore point is created first.",
+        "Saved settings and side files stay in place when they are meant to be kept.",
+      ],
+    };
+  }
+
+  if (request.kind === "safe_move") {
+    return {
+      eyebrow: userView === "beginner" ? "Safe hand-off" : "Move safe files",
+      title: `Move the safe files from ${item.displayName}?`,
+      description:
+        userView === "beginner"
+          ? "Only the part SimSuite already trusts will move now. Anything that still needs review stays in the inbox."
+          : "This keeps the queue calm by moving only the validated files and leaving the uncertain rows behind for later review.",
+      confirmLabel: userView === "beginner" ? "Move safe files" : "Apply safe batch",
+      tone: "accent" as const,
+      metrics: [
+        { label: "Safe now", value: safeCount.toLocaleString() },
+        { label: "Held for review", value: reviewCount.toLocaleString() },
+        { label: "Already fine", value: unchangedCount.toLocaleString() },
+      ],
+      notes: ["A restore point is created before files move."],
+    };
+  }
+
+  if (request.kind === "ignore") {
+    return {
+      eyebrow: "Queue cleanup",
+      title: `Hide ${item.displayName} from the inbox?`,
+      description:
+        userView === "beginner"
+          ? "This removes the batch from the active inbox for now. It can come back later if the download changes."
+          : "Use this to quiet a batch without deleting it. SimSuite can surface it again if the source changes later.",
+      confirmLabel: "Ignore for now",
+      tone: "warn" as const,
+      metrics: [
+        { label: "Files in batch", value: item.detectedFileCount.toLocaleString() },
+        {
+          label: "Current lane",
+          value: queueLaneLabel(item.queueLane ?? deriveQueueLane(item), userView),
+        },
+      ],
+      notes: ["This only hides the batch from the active queue."],
+    };
+  }
+
+  if (request.kind !== "review_action") {
+    return {
+      eyebrow: "Confirm step",
+      title: "Continue?",
+      description: "SimSuite is ready to continue with the selected batch.",
+      confirmLabel: "Continue",
+      tone: "accent" as const,
+      metrics: [],
+      notes: [],
+    };
+  }
+
+  const action = request.action;
+
+  if (action.kind === "repair_special" && reviewPlan) {
+    return {
+      eyebrow: "Repair first",
+      title: action.label,
+      description:
+        userView === "beginner"
+          ? "SimSuite can clear the older setup out of the way, keep your saved files, and then continue the update safely."
+          : "A safe repair path is ready. SimSuite will move the older layout aside, keep the settings files, and then continue the update if the batch still checks out.",
+      confirmLabel: action.label,
+      tone: "warn" as const,
+      metrics: [
+        { label: "Move aside", value: reviewPlan.repairMoveFiles.length.toLocaleString() },
+        { label: "Keep", value: reviewPlan.repairKeepFiles.length.toLocaleString() },
+        { label: "Replace", value: reviewPlan.repairReplaceFiles.length.toLocaleString() },
+      ],
+      notes: [
+        "A restore point is created first.",
+        reviewPlan.repairCanContinueInstall
+          ? "If the pack is complete, SimSuite can continue the install in the same safe run."
+          : "SimSuite will repair first, then check the batch again.",
+      ],
+    };
+  }
+
+  return {
+    eyebrow: "Confirm step",
+    title: action.label,
+    description: reviewActionDescription(action),
+    confirmLabel: action.label,
+    tone: "warn" as const,
+    metrics: [
+      {
+        label: "Matched setup",
+        value: item.matchedProfileName ?? reviewPlan?.profileName ?? "Not matched",
+      },
+      { label: "Review files", value: reviewCount.toLocaleString() },
+    ],
+    notes: ["SimSuite keeps the batch in the inbox until the safe next step is complete."],
+  };
+}
+
+interface DownloadsStageTab {
+  id: string;
+  label: string;
+  count?: number;
+  content: ReactNode;
+}
+
+function DownloadsStageDeck({
+  deckId,
+  eyebrow,
+  title,
+  summary,
+  defaultTabId,
+  tabs,
+}: {
+  deckId: string;
+  eyebrow: string;
+  title: string;
+  summary?: string;
+  defaultTabId?: string;
+  tabs: DownloadsStageTab[];
+}) {
+  const availableTabs = tabs.filter((tab) => Boolean(tab.content));
+  const fallbackTabId = defaultTabId ?? availableTabs[0]?.id ?? null;
+  const [activeTabId, setActiveTabId] = useState<string | null>(fallbackTabId);
+  const resolvedActiveTab =
+    availableTabs.find((tab) => tab.id === activeTabId) ?? availableTabs[0] ?? null;
+
+  if (!resolvedActiveTab) {
+    return null;
+  }
+
+  return (
+    <div className="downloads-stage-deck">
+      <div className="downloads-stage-deck-header">
+        <div className="downloads-stage-deck-copy">
+          <p className="eyebrow">{eyebrow}</p>
+          <strong>{title}</strong>
+          {summary ? <p>{summary}</p> : null}
+        </div>
+
+        <LayoutGroup id={`${deckId}-tabs`}>
+          <div
+            className="downloads-stage-tabs"
+            role="tablist"
+            aria-label={title}
+          >
+            {availableTabs.map((tab) => {
+              const isActive = tab.id === resolvedActiveTab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`downloads-stage-tab${isActive ? " is-active" : ""}`}
+                  onClick={() => setActiveTabId(tab.id)}
+                >
+                  {isActive ? (
+                    <m.span
+                      className="downloads-stage-tab-highlight"
+                      layoutId={`${deckId}-highlight`}
+                      transition={downloadsSelectionTransition}
+                    />
+                  ) : null}
+                  <span className="downloads-stage-tab-label">{tab.label}</span>
+                  {typeof tab.count === "number" ? (
+                    <span className="downloads-stage-tab-count">
+                      {tab.count.toLocaleString()}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </LayoutGroup>
+      </div>
+
+      <div className="downloads-stage-tab-panels">
+        <AnimatePresence mode="wait" initial={false}>
+          <m.div
+            key={resolvedActiveTab.id}
+            className="downloads-stage-tab-panel"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={downloadsSelectionTransition}
+          >
+            {resolvedActiveTab.content}
+          </m.div>
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
@@ -1693,6 +2057,163 @@ function GuidedPreviewPanel({
   userView: UserView;
 }) {
   const dependencySummary = summarizeDependencies(plan.dependencies);
+  const detailTabs: DownloadsStageTab[] = [
+    {
+      id: "plan",
+      label: userView === "beginner" ? "What moves" : "Plan",
+      count:
+        plan.installFiles.length +
+        plan.replaceFiles.length +
+        plan.preserveFiles.length,
+      content: (
+        <div className="downloads-stage-tab-panel-stack">
+          <div className="downloads-guided-columns">
+            <GuidedListCard
+              title={userView === "beginner" ? "What will move" : "Install files"}
+              badge={plan.installFiles.length.toString()}
+              tone="good"
+              files={plan.installFiles}
+              userView={userView}
+              showPaths={userView === "power"}
+            />
+            <GuidedListCard
+              title={userView === "beginner" ? "What will be replaced" : "Replace files"}
+              badge={plan.replaceFiles.length.toString()}
+              tone="medium"
+              files={plan.replaceFiles}
+              userView={userView}
+              showPaths={userView === "power"}
+            />
+            <GuidedListCard
+              title={userView === "beginner" ? "What will be kept" : "Keep files"}
+              badge={plan.preserveFiles.length.toString()}
+              tone="neutral"
+              files={plan.preserveFiles}
+              userView={userView}
+              showPaths={userView === "power"}
+            />
+          </div>
+        </div>
+      ),
+    },
+    ...(plan.dependencies.length
+      ? [
+          {
+            id: "dependencies",
+            label: userView === "beginner" ? "Depends on" : "Dependencies",
+            count: plan.dependencies.length,
+            content: (
+              <div className="downloads-stage-tab-panel-stack">
+                <div className="downloads-guided-card downloads-guided-card-neutral">
+                  <div className="downloads-guided-card-header">
+                    <strong>
+                      {userView === "beginner" ? "What it depends on" : "Dependencies"}
+                    </strong>
+                    <span className="ghost-chip">{plan.dependencies.length}</span>
+                  </div>
+                  <div className="downloads-evidence-list">
+                    {plan.dependencies.map((dependency) => (
+                      <div key={dependency.key} className="downloads-evidence-row">
+                        <strong>{dependency.displayName}</strong>
+                        <span>{friendlyDependencyState(dependency.status)}</span>
+                        <span>{dependency.summary}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
+    ...((plan.postInstallNotes.length > 0 || plan.warnings.length > 0)
+      ? [
+          {
+            id: "notes",
+            label: userView === "beginner" ? "Remember" : "Notes",
+            count: plan.postInstallNotes.length + plan.warnings.length,
+            content: (
+              <div className="downloads-stage-tab-panel-stack">
+                {plan.postInstallNotes.length ? (
+                  <div className="downloads-guided-card downloads-guided-card-neutral">
+                    <div className="downloads-guided-card-header">
+                      <strong>
+                        {userView === "beginner"
+                          ? "What to remember"
+                          : "Post-install notes"}
+                      </strong>
+                    </div>
+                    <div className="downloads-evidence-list">
+                      {plan.postInstallNotes.map((note) => (
+                        <div key={note} className="downloads-evidence-row">
+                          {note}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {plan.warnings.length ? (
+                  <div className="downloads-guided-warnings">
+                    {plan.warnings.map((warning) => (
+                      <div key={warning} className="status-banner">
+                        {warning}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ),
+          },
+        ]
+      : []),
+    ...(userView !== "beginner"
+      ? [
+          {
+            id: "reason",
+            label: userView === "power" ? "Why this path" : "Why",
+            count:
+              plan.evidence.length +
+              plan.incompatibilityWarnings.length +
+              plan.existingLayoutFindings.length,
+            content: (
+              <div className="downloads-stage-tab-panel-stack">
+                <div className="downloads-guided-card downloads-guided-card-neutral">
+                  <div className="downloads-guided-card-header">
+                    <strong>
+                      {userView === "power"
+                        ? "Matched evidence"
+                        : "Why SimSuite chose this path"}
+                    </strong>
+                  </div>
+                  <div className="downloads-evidence-list">
+                    {plan.evidence.map((reason) => (
+                      <div key={reason} className="downloads-evidence-row">
+                        {reason}
+                      </div>
+                    ))}
+                    {plan.incompatibilityWarnings.map((warning) => (
+                      <div key={warning} className="downloads-evidence-row">
+                        {warning}
+                      </div>
+                    ))}
+                    {plan.existingLayoutFindings.map((finding) => (
+                      <div key={finding} className="downloads-evidence-row">
+                        {finding}
+                      </div>
+                    ))}
+                    {userView === "power" && plan.catalogSource ? (
+                      <div className="downloads-evidence-row">
+                        Catalog reviewed {plan.catalogSource.reviewedAt ?? "recently"}.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className="downloads-guided-layout">
@@ -1724,105 +2245,22 @@ function GuidedPreviewPanel({
         </div>
       </div>
 
-      {plan.dependencies.length ? (
-        <div className="downloads-guided-card downloads-guided-card-neutral">
-          <div className="downloads-guided-card-header">
-            <strong>{userView === "beginner" ? "What it depends on" : "Dependencies"}</strong>
-            <span className="ghost-chip">{plan.dependencies.length}</span>
-          </div>
-          <div className="downloads-evidence-list">
-            {plan.dependencies.map((dependency) => (
-              <div key={dependency.key} className="downloads-evidence-row">
-                <strong>{dependency.displayName}</strong>
-                <span>{friendlyDependencyState(dependency.status)}</span>
-                <span>{dependency.summary}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="downloads-guided-columns">
-        <GuidedListCard
-          title={userView === "beginner" ? "What will move" : "Install files"}
-          badge={plan.installFiles.length.toString()}
-          tone="good"
-          files={plan.installFiles}
-          userView={userView}
-          showPaths={userView === "power"}
-        />
-        <GuidedListCard
-          title={userView === "beginner" ? "What will be replaced" : "Replace files"}
-          badge={plan.replaceFiles.length.toString()}
-          tone="medium"
-          files={plan.replaceFiles}
-          userView={userView}
-          showPaths={userView === "power"}
-        />
-        <GuidedListCard
-          title={userView === "beginner" ? "What will be kept" : "Keep files"}
-          badge={plan.preserveFiles.length.toString()}
-          tone="neutral"
-          files={plan.preserveFiles}
-          userView={userView}
-          showPaths={userView === "power"}
-        />
-      </div>
-
-      {plan.postInstallNotes.length ? (
-        <div className="downloads-guided-card downloads-guided-card-neutral">
-          <div className="downloads-guided-card-header">
-            <strong>{userView === "beginner" ? "What to remember" : "Post-install notes"}</strong>
-          </div>
-          <div className="downloads-evidence-list">
-            {plan.postInstallNotes.map((note) => (
-              <div key={note} className="downloads-evidence-row">
-                {note}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {plan.warnings.length ? (
-        <div className="downloads-guided-warnings">
-          {plan.warnings.map((warning) => (
-            <div key={warning} className="status-banner">
-              {warning}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {userView !== "beginner" ? (
-        <div className="downloads-guided-evidence">
-          <div className="section-label">
-            {userView === "power" ? "Matched evidence" : "Why SimSuite chose this"}
-          </div>
-          <div className="downloads-evidence-list">
-            {plan.evidence.map((reason) => (
-              <div key={reason} className="downloads-evidence-row">
-                {reason}
-              </div>
-            ))}
-            {plan.incompatibilityWarnings.map((warning) => (
-              <div key={warning} className="downloads-evidence-row">
-                {warning}
-              </div>
-            ))}
-            {plan.existingLayoutFindings.map((finding) => (
-              <div key={finding} className="downloads-evidence-row">
-                {finding}
-              </div>
-            ))}
-            {userView === "power" && plan.catalogSource ? (
-              <div className="downloads-evidence-row">
-                Catalog reviewed {plan.catalogSource.reviewedAt ?? "recently"}.
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <DownloadsStageDeck
+        deckId="downloads-guided-deck"
+        eyebrow={userView === "beginner" ? "More detail" : "Keep the stage calm"}
+        title={
+          userView === "beginner"
+            ? "Open only the part you need"
+            : "More setup detail, only when you want it"
+        }
+        summary={
+          userView === "power"
+            ? "The main stage stays focused while the deeper setup detail moves into tabs."
+            : undefined
+        }
+        defaultTabId="plan"
+        tabs={detailTabs}
+      />
     </div>
   );
 }
@@ -1935,6 +2373,120 @@ function SpecialReviewPanel({
         : "SimSuite repairs the old layout first, then checks the batch again.",
     },
   ].filter((step) => step.count !== 0);
+  const detailTabs: DownloadsStageTab[] = [
+    {
+      id: "reason",
+      label: userView === "beginner" ? "Why" : "Reason",
+      count:
+        (reviewPlan.evidence.length ? reviewPlan.evidence : item.assessmentReasons).length +
+        reviewPlan.postInstallNotes.length +
+        (userView === "power" ? reviewPlan.existingLayoutFindings.length : 0) +
+        reviewPlan.incompatibilityWarnings.length,
+      content: (
+        <div className="downloads-stage-tab-panel-stack">
+          {reviewPlan.incompatibilityWarnings.length ? (
+            <div className="downloads-guided-warnings">
+              {reviewPlan.incompatibilityWarnings.map((warning) => (
+                <div key={warning} className="status-banner status-banner-error">
+                  {warning}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="downloads-guided-card downloads-guided-card-neutral">
+            <div className="downloads-guided-card-header">
+              <strong>
+                {userView === "beginner" ? "Why SimSuite decided this" : "Evidence"}
+              </strong>
+            </div>
+            <div className="downloads-evidence-list">
+              {(reviewPlan.evidence.length ? reviewPlan.evidence : item.assessmentReasons).map(
+                (reason) => (
+                  <div key={reason} className="downloads-evidence-row">
+                    {reason}
+                  </div>
+                ),
+              )}
+              {reviewPlan.postInstallNotes.map((note) => (
+                <div key={note} className="downloads-evidence-row">
+                  {note}
+                </div>
+              ))}
+              {userView === "power"
+                ? reviewPlan.existingLayoutFindings.map((finding) => (
+                    <div key={finding} className="downloads-evidence-row">
+                      {finding}
+                    </div>
+                  ))
+                : null}
+              {userView === "power" && reviewPlan.catalogSource ? (
+                <div className="downloads-evidence-row">
+                  Catalog reviewed {reviewPlan.catalogSource.reviewedAt ?? "recently"}.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    ...(reviewPlan.dependencies.length
+      ? [
+          {
+            id: "dependencies",
+            label: userView === "beginner" ? "Depends on" : "Dependencies",
+            count: reviewPlan.dependencies.length,
+            content: (
+              <div className="downloads-stage-tab-panel-stack">
+                <div className="downloads-guided-card downloads-guided-card-neutral">
+                  <div className="downloads-guided-card-header">
+                    <strong>
+                      {userView === "beginner" ? "What it depends on" : "Dependencies"}
+                    </strong>
+                    <span className="ghost-chip">{reviewPlan.dependencies.length}</span>
+                  </div>
+                  <div className="downloads-evidence-list">
+                    {reviewPlan.dependencies.map((dependency) => (
+                      <div key={dependency.key} className="downloads-evidence-row">
+                        <strong>{dependency.displayName}</strong>
+                        <span>{friendlyDependencyState(dependency.status)}</span>
+                        <span>{dependency.summary}</span>
+                        {dependency.inboxItemId ? (
+                          <span>
+                            {dependency.inboxItemGuidedInstallAvailable &&
+                            dependency.inboxItemIntakeMode === "guided"
+                              ? "SimSuite can install this first from the Inbox."
+                              : "Open this dependency in the Inbox before returning here."}
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "files",
+      label: userView === "beginner" ? "Files" : "Tracked files",
+      count: trackedFiles.length,
+      content: (
+        <div className="downloads-stage-tab-panel-stack">
+          <GuidedListCard
+            title={
+              userView === "beginner" ? "Files SimSuite stopped on" : "Tracked review files"
+            }
+            badge={trackedFiles.length.toString()}
+            tone={item.intakeMode === "blocked" ? "medium" : "neutral"}
+            files={trackedFiles}
+            userView={userView}
+            showPaths={userView === "power"}
+          />
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="downloads-assessment-layout">
@@ -2104,82 +2656,22 @@ function SpecialReviewPanel({
         </div>
       ) : null}
 
-      {reviewPlan.dependencies.length ? (
-        <div className="downloads-guided-card downloads-guided-card-neutral">
-          <div className="downloads-guided-card-header">
-            <strong>{userView === "beginner" ? "What it depends on" : "Dependencies"}</strong>
-            <span className="ghost-chip">{reviewPlan.dependencies.length}</span>
-          </div>
-          <div className="downloads-evidence-list">
-            {reviewPlan.dependencies.map((dependency) => (
-              <div key={dependency.key} className="downloads-evidence-row">
-                <strong>{dependency.displayName}</strong>
-                <span>{friendlyDependencyState(dependency.status)}</span>
-                <span>{dependency.summary}</span>
-                {dependency.inboxItemId ? (
-                  <span>
-                    {dependency.inboxItemGuidedInstallAvailable &&
-                    dependency.inboxItemIntakeMode === "guided"
-                      ? "SimSuite can install this first from the Inbox."
-                      : "Open this dependency in the Inbox before returning here."}
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {reviewPlan.incompatibilityWarnings.length ? (
-        <div className="downloads-guided-warnings">
-          {reviewPlan.incompatibilityWarnings.map((warning) => (
-            <div key={warning} className="status-banner status-banner-error">
-              {warning}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <GuidedListCard
-        title={userView === "beginner" ? "Files SimSuite stopped on" : "Tracked review files"}
-        badge={trackedFiles.length.toString()}
-        tone={item.intakeMode === "blocked" ? "medium" : "neutral"}
-        files={trackedFiles}
-        userView={userView}
-        showPaths={userView === "power"}
+      <DownloadsStageDeck
+        deckId="downloads-review-deck"
+        eyebrow={userView === "beginner" ? "More detail" : "Keep the stage calm"}
+        title={
+          userView === "power"
+            ? "Keep the heavy proof tucked behind one switch"
+            : "Open only the extra context you need"
+        }
+        summary={
+          userView === "beginner"
+            ? "The main story stays above. These tabs keep the extra checks out of the way."
+            : undefined
+        }
+        defaultTabId={userView === "power" ? "files" : "reason"}
+        tabs={detailTabs}
       />
-
-      <div className="downloads-guided-card downloads-guided-card-neutral">
-        <div className="downloads-guided-card-header">
-          <strong>{userView === "beginner" ? "Why SimSuite decided this" : "Evidence"}</strong>
-        </div>
-        <div className="downloads-evidence-list">
-          {(reviewPlan.evidence.length ? reviewPlan.evidence : item.assessmentReasons).map(
-            (reason) => (
-              <div key={reason} className="downloads-evidence-row">
-                {reason}
-              </div>
-            ),
-          )}
-          {reviewPlan.postInstallNotes.map((note) => (
-            <div key={note} className="downloads-evidence-row">
-              {note}
-            </div>
-          ))}
-          {userView === "power"
-            ? reviewPlan.existingLayoutFindings.map((finding) => (
-                <div key={finding} className="downloads-evidence-row">
-                  {finding}
-                </div>
-              ))
-            : null}
-          {userView === "power" && reviewPlan.catalogSource ? (
-            <div className="downloads-evidence-row">
-              Catalog reviewed {reviewPlan.catalogSource.reviewedAt ?? "recently"}.
-            </div>
-          ) : null}
-        </div>
-      </div>
     </div>
   );
 }
@@ -3424,32 +3916,6 @@ function reviewActionUpdatesInbox(kind: ReviewPlanAction["kind"]) {
     kind === "download_missing_files" ||
     kind === "separate_supported_files"
   );
-}
-
-function reviewActionConfirmation(
-  action: ReviewPlanAction,
-  itemName: string,
-  reviewPlan: SpecialReviewPlan | null,
-  userView: UserView,
-) {
-  switch (action.kind) {
-    case "repair_special":
-      return userView === "beginner"
-        ? `${action.label}? SimSuite will make a restore point, move the older files out of the way, keep your settings files, and then continue the special-mod update.`
-        : `${action.label}? SimSuite will create a restore point, clear the older install out of the way, keep ${reviewPlan?.repairKeepFiles.length ?? 0} setting file(s), and continue the special update when it is safe.`;
-    case "install_dependency":
-      return `${action.label}? SimSuite will safely set up ${action.relatedItemName ?? "the helper mod"} first, create a restore point, and then re-check ${itemName}.`;
-    case "download_missing_files":
-      return userView === "beginner"
-        ? `${action.label}? SimSuite will download the trusted official file into the Inbox first, then check the full set again before anything moves.`
-        : `${action.label}? SimSuite will fetch the trusted official archive into Inbox staging, re-check the batch, and only continue if the special install is safe.`;
-    case "separate_supported_files":
-      return userView === "beginner"
-        ? `${action.label}? SimSuite will pull the clean supported files into their own batch and leave the extra files behind so nothing gets mixed up.`
-        : `${action.label}? SimSuite will split the supported special-mod files into a clean batch and keep the leftovers in a separate review item.`;
-    default:
-      return action.description;
-  }
 }
 
 function downloadsInspectorIdleNote(

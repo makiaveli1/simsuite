@@ -1,4 +1,6 @@
 import { FolderSearch, ListFilter, Search } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
+import { downloadsSheetTransition } from "../../lib/motion";
 import { screenHelperLine } from "../../lib/uiLanguage";
 import type { DownloadQueueLane, UserView } from "../../lib/types";
 import {
@@ -147,7 +149,7 @@ export function DownloadsRail({
       </div>
 
       {showFiltersToggle ? (
-        <div className="downloads-rail-section">
+        <div className="downloads-rail-section downloads-rail-section-has-popover">
           <div className="downloads-rail-section-header">
             <div className="section-label">Filters</div>
             <button
@@ -161,52 +163,78 @@ export function DownloadsRail({
             </button>
           </div>
 
-          {filtersOpen ? (
-            <div className="downloads-rail-card downloads-filter-card">
-              <div className="downloads-rail-filters">
-                <label className="field">
-                  <span>Status</span>
-                  <select
-                    value={statusFilter}
-                    onChange={(event) => onStatusFilterChange(event.target.value)}
-                  >
-                    <option value="">All items</option>
-                    <option value="ready">Ready</option>
-                    <option value="partial">Partial</option>
-                    <option value="needs_review">Needs review</option>
-                    <option value="applied">Applied</option>
-                    <option value="error">Error</option>
-                    <option value="ignored">Ignored</option>
-                  </select>
-                </label>
+          <AnimatePresence>
+            {filtersOpen ? (
+              <m.div
+                className="downloads-filter-popover downloads-rail-card downloads-filter-card"
+                initial={{ opacity: 0, y: -8, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.985 }}
+                transition={downloadsSheetTransition}
+              >
+                <div className="downloads-filter-popover-header">
+                  <div>
+                    <p className="eyebrow">
+                      {userView === "power" ? "Proof filters" : "Filters"}
+                    </p>
+                    <strong>
+                      {userView === "power"
+                        ? "Keep the queue short without crowding the rail"
+                        : "Tuck the extra sorting choices away until you need them"}
+                    </strong>
+                  </div>
+                </div>
 
-                <label className="field">
-                  <span>{userView === "power" ? "Rule set" : "Tidy style"}</span>
-                  <select
-                    value={selectedPreset}
-                    onChange={(event) => onPresetChange(event.target.value)}
-                    disabled={filterLocked}
-                  >
-                    {presetOptions.map((preset) => (
-                      <option key={preset} value={preset}>
-                        {preset}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+                <div className="downloads-rail-filters">
+                  <label className="field">
+                    <span>Status</span>
+                    <select
+                      value={statusFilter}
+                      onChange={(event) => onStatusFilterChange(event.target.value)}
+                    >
+                      <option value="">All items</option>
+                      <option value="ready">Ready</option>
+                      <option value="partial">Partial</option>
+                      <option value="needs_review">Needs review</option>
+                      <option value="applied">Applied</option>
+                      <option value="error">Error</option>
+                      <option value="ignored">Ignored</option>
+                    </select>
+                  </label>
 
-              {filterLocked ? (
-                <p className="downloads-rail-note">
-                  This batch has its own install rules, so the tidy style stays locked.
-                </p>
-              ) : flags.showAdvancedFiltersByDefault ? (
-                <p className="downloads-rail-note">
-                  Creator view keeps the fuller filter set close by for faster proof work.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+                  <label className="field">
+                    <span>{userView === "power" ? "Rule set" : "Tidy style"}</span>
+                    <select
+                      value={selectedPreset}
+                      onChange={(event) => onPresetChange(event.target.value)}
+                      disabled={filterLocked}
+                    >
+                      {presetOptions.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {preset}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {filterLocked ? (
+                  <p className="downloads-rail-note">
+                    This batch has its own install rules, so the tidy style stays locked.
+                  </p>
+                ) : userView === "power" ? (
+                  <p className="downloads-rail-note">
+                    Creator view keeps the deeper sorting choices one click away instead of
+                    permanently open.
+                  </p>
+                ) : flags.showAdvancedFiltersByDefault ? (
+                  <p className="downloads-rail-note">
+                    Keep the extra filters nearby when you need a faster proof pass.
+                  </p>
+                ) : null}
+              </m.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       ) : null}
 
