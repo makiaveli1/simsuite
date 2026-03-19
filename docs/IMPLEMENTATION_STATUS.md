@@ -17,6 +17,8 @@ Important changes and findings:
   - `Quiet Staging Desk`
 - the full written spec now exists at:
   - `docs/superpowers/specs/2026-03-19-downloads-redesign-design.md`
+- the implementation plan now also exists at:
+  - `docs/superpowers/plans/2026-03-19-downloads-redesign.md`
 - the spec defines:
   - a slim utility top strip
   - a quiet left rail for watcher state, lane picking, search, and on-demand filters
@@ -30,13 +32,21 @@ Important changes and findings:
   - `output/playwright/downloads-design-pass/downloads-casual-current.png`
   - `output/playwright/downloads-design-pass/downloads-seasoned-current.png`
   - `output/playwright/downloads-design-pass/downloads-creator-current.png`
+- the implementation plan breaks the rebuild into five real slices:
+  - lightweight frontend test harness and Downloads display rules
+  - shell split for top strip and left rail
+  - queue and lane-aware center stage rebuild
+  - short decision panel plus proof sheet and setup dialog
+  - final motion, empty-state, and cross-view polish
 
 Important remaining gap:
 
 - this session stopped at the spec gate on purpose
-- the `Downloads` redesign is not implemented yet
-- the next required step is user review of the written spec, then a `writing-plans` pass before any code work begins
+- the `Downloads` redesign is still not implemented yet
+- the spec and implementation plan are both ready
+- the next required step is to pick the execution path and begin the actual code work from the saved plan
 - the brainstorming workflow expected a separate spec-review subagent loop, but that path was not cleanly available in this environment during this pass, so the spec review was done manually against the same checklist instead
+- the writing-plans workflow also expected a separate plan-review subagent loop, and that was also handled manually against the same checklist because the environment still did not expose a clean dispatch path
 
 ## Current session note (March 19, 2026 - early night)
 

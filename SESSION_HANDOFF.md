@@ -54,6 +54,21 @@
    - clarified lane fallback behavior when the remembered lane becomes empty
    - added motion timing guidance so implementation does not have to guess
 
+6. **Turned the approved spec into a concrete implementation plan**:
+   - new plan file:
+     - `docs/superpowers/plans/2026-03-19-downloads-redesign.md`
+   - the plan now breaks the rebuild into clear slices:
+     - add a small frontend test harness and pure Downloads display tests
+     - split the shell and lane controls
+     - rebuild the queue and lane-aware center stage
+     - add the short decision panel plus proof sheet and setup dialog
+     - polish motion, empty states, and cross-view behavior
+   - the plan also locks:
+     - exact files to create and modify
+     - expected commands
+     - commit checkpoints
+     - final verification steps
+
 ### What Worked
 
 - the page direction is much clearer now because the design stayed focused on one real user question:
@@ -63,8 +78,9 @@
 
 ### Known Problems / Gaps
 
-- no implementation work started yet for the new `Downloads` design
+- no implementation work started yet for the new `Downloads` design, but the implementation plan is now written and ready
 - the brainstorming skill expects a separate spec-review subagent loop, but this environment did not expose a clean subagent dispatch path during this pass, so the spec was reviewed manually against the same checklist instead
+- the writing-plans skill also expects a separate plan-review subagent loop; this pass used the same checklist manually because the environment still does not expose a clean subagent dispatch path
 - the temporary Vite dev server used for the screenshots was shut down at the end of the pass
 
 ### Next Session Start Here
@@ -73,9 +89,8 @@
 - Then read `docs/IMPLEMENTATION_STATUS.md`.
 - Then open:
   - `docs/superpowers/specs/2026-03-19-downloads-redesign-design.md`
-- If the user approves the written spec, the next step is:
-  - use the `writing-plans` skill to turn the spec into an implementation plan
-- Do not start coding the `Downloads` redesign before the user reviews the spec file.
+  - `docs/superpowers/plans/2026-03-19-downloads-redesign.md`
+- The next step is to choose the execution path and start the actual Downloads implementation work from the saved plan.
 
 ## Current Session (March 19, 2026 - Early Night)
 
