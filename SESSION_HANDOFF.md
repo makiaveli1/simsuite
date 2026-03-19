@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library Redesign Pivot Spec)
+
+- **Mode**: design
+- **Focus**: replace the left-filter Library direction with a calmer top-filter, list-first layout before more implementation work
+
+### Progress Made
+
+1. **Reviewed the latest user feedback on the Library redesign**:
+   - the user does not like the current left-heavy layout
+   - they want the filters at the top
+   - they want the library list underneath
+   - they want details to open on demand, with a sidebar preferred over a modal for everyday browsing
+
+2. **Locked a new layout direction for Library**:
+   - top filter strip
+   - full collection list below
+   - persistent right detail sidebar
+   - deeper sheets or modals only for larger detail and edit tasks
+
+3. **Wrote the new Library redesign spec**:
+   - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+
+4. **Locked a hard layout rule into the new spec**:
+   - no unnecessary page scrolling
+   - only the list, sidebar, sheets, or larger modals should scroll when genuinely needed
+   - the page should fit cleanly inside the desktop workspace
+
+### What Worked
+
+- the new direction is much closer to what the user wants from `Library`
+- the page shape is now simpler and more natural for browsing a collection
+- the new spec gives clearer boundaries for what belongs in the row, sidebar, sheet, and modal
+
+### Known Problems / Gaps
+
+- the current implemented Library screen still reflects the earlier left-filter direction
+- the new top-filter Library design is not implemented yet
+- the user still needs to review the written spec before implementation planning starts
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read:
+  - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+- Ask the user to review the written spec.
+- If approved, move into the implementation plan for the new Library layout.
+
 ## Current Session (March 19, 2026 - Library Height Fix)
 
 - **Mode**: code

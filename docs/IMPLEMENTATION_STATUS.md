@@ -1,5 +1,33 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library redesign pivot spec)
+
+This design pass changed the planned direction for `Library`.
+
+Important changes and findings:
+
+- the earlier Library direction was too left-heavy for the user's taste
+- the user wants:
+  - filters at the top
+  - the list as the main surface
+  - details on demand
+  - no unnecessary scrolling
+- the new direction is now documented in:
+  - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+- the new planned layout is:
+  - top filter strip
+  - full library list below
+  - persistent right detail sidebar
+  - side sheets or modals only for deeper detail and edit tasks
+- the new spec also locks a hard layout rule:
+  - keep the page fitted cleanly inside the desktop workspace
+  - avoid page-level scrolling unless absolutely necessary
+
+Important remaining gap:
+
+- the current implemented Library screen still reflects the older left-filter version
+- the user needs to review the new written spec before implementation planning starts
+
 ## Current session note (March 19, 2026 - library height and sheet visibility fix)
 
 This pass fixed the Library layout bug that was leaving a dead black area in the lower part of the page and cutting off lower content in the Library detail sheet.
