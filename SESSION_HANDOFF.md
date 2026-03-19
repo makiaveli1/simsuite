@@ -1,5 +1,53 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library Height Fix)
+
+- **Mode**: code
+- **Focus**: fix the Library lower-half layout bug that was leaving a dead black area and hiding lower sheet content
+
+### Progress Made
+
+1. **Tracked the bug to the real layout cause instead of guessing**:
+   - measured the live page in the browser with Playwright
+   - confirmed the `screen-frame` was only getting about `670px` of height while the main shell had about `1088px` available
+   - confirmed the old fixed Library table height was also making the page feel artificially capped
+
+2. **Fixed the shared page-height chain**:
+   - `html`, `body`, and `#root` now have real `height: 100%`
+   - `.main-shell` now uses a single `minmax(0, 1fr)` row instead of leaving the screen frame trapped behind the hidden toolbar row
+   - `.screen-frame` now stretches to the available workspace height
+
+3. **Fixed the Library-specific sizing**:
+   - wrapped `Library` in a proper full-height screen shell
+   - made the Library workbench fill its wrapper cleanly
+   - removed the old fixed-height behavior from the list area so it can use the available desktop height
+   - tightened the detail sheet sizing so its lower controls stay reachable
+
+4. **Verified with both checks and live screenshots**:
+   - `npm run test:unit -- LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+   - `npm run build`
+   - new screenshots:
+     - `output/playwright/library-pass3-height-fix-main-v4.png`
+     - `output/playwright/library-pass3-height-fix-sheet-v4.png`
+
+### What Worked
+
+- the Library workspace now fills the full desktop height instead of stopping halfway down
+- the bottom dead zone is gone
+- the detail sheet footer is visible again
+- the lower update section in the sheet is reachable again
+
+### Known Problems / Gaps
+
+- the main Library page can still feel visually quiet when there are only a few rows on screen, but it is no longer clipped or blocked
+- Library still has more overall polish left before merge, separate from this layout bug
+
+### Next Session Start Here
+
+- ask the user to confirm the height fix feels right in their running app
+- if yes, continue the next Library polish pass
+- merge to `main` only after the user is happy with the Library page overall
+
 ## Current Session (March 19, 2026 - Library Preview Brought Into Main Workspace)
 
 - **Mode**: code

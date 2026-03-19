@@ -647,7 +647,8 @@ export function LibraryScreen({
 
   return (
     <>
-    <Workbench threePanel fullHeight>
+    <section className="screen-shell library-screen">
+    <Workbench threePanel fullHeight className="library-workbench">
       {/* Left rail for filters */}
       <WorkbenchRail 
         className="library-rail-shell"
@@ -816,6 +817,7 @@ export function LibraryScreen({
         />
       </WorkbenchInspector>
     </Workbench>
+    </section>
 
       <LibraryDetailSheet
         open={Boolean(activeLibrarySheet && selected)}

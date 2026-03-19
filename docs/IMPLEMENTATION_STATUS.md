@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library height and sheet visibility fix)
+
+This pass fixed the Library layout bug that was leaving a dead black area in the lower part of the page and cutting off lower content in the Library detail sheet.
+
+Important changes and findings:
+
+- the bug was traced with live browser measurements instead of only screenshots
+- the real problem was a shared height chain issue:
+  - `html`, `body`, and `#root` only had `min-height`
+  - the hidden toolbar still left the main screen trapped in the wrong grid row
+  - the Library list was also still carrying an older fixed-height rule
+- fixed files:
+  - `src/screens/LibraryScreen.tsx`
+  - `src/styles/globals.css`
+- `Library` now uses:
+  - a proper full-height wrapper
+  - a full-height workbench
+  - a list area that stretches with the desktop instead of stopping at the old fixed height
+  - a Library detail sheet with safer vertical sizing
+- new verification screenshots:
+  - `output/playwright/library-pass3-height-fix-main-v4.png`
+  - `output/playwright/library-pass3-height-fix-sheet-v4.png`
+- checks passed:
+  - `npm run test:unit -- LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+  - `npm run build`
+
+Important remaining gap:
+
+- this fixes the clipping bug, but Library still has normal polish work left before merge
+
 ## Current session note (March 19, 2026 - library preview brought into the normal workspace)
 
 This follow-up pass was about making sure the user can see the newer `Library` redesign from the normal working folder, not only from the separate clean worktree where the first implementation happened.
