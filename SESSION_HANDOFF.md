@@ -1,5 +1,110 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Late Night Library Implementation)
+
+- **Mode**: code
+- **Focus**: first full `Library` implementation pass for the approved `Quiet Catalog` redesign
+
+### Progress Made
+
+1. **Turned the approved Library spec into a real implementation path**:
+   - wrote the implementation plan:
+     - `docs/superpowers/plans/2026-03-19-library-redesign.md`
+   - pushed that plan to GitHub before starting code
+
+2. **Added a small tested display layer before changing the page UI**:
+   - new files:
+     - `src/screens/library/libraryDisplay.ts`
+     - `src/screens/library/libraryDisplay.test.ts`
+   - locked:
+     - per-view Library flags
+     - calmer row shaping
+     - plain-language care summary text
+
+3. **Rebuilt the Library shell so it feels quieter immediately**:
+   - new files:
+     - `src/screens/library/LibraryTopStrip.tsx`
+     - `src/screens/library/LibraryFilterRail.tsx`
+     - `src/screens/library/LibraryFilterRail.test.tsx`
+   - `Library` now uses:
+     - a smaller top strip with search and counts
+     - a lighter left rail with only the core filters visible
+     - `More filters` as an on-demand control instead of a permanently taller rail
+
+4. **Made the center list the star of the page again**:
+   - new files:
+     - `src/screens/library/LibraryCollectionTable.tsx`
+     - `src/screens/library/LibraryCollectionTable.test.tsx`
+   - the list now:
+     - drops the full-path-heavy row layout
+     - shows calmer rows with:
+       - file name
+       - type
+       - short health signal
+       - one to three small clues depending on user view
+
+5. **Replaced the old right-wall inspector with a shorter understanding panel**:
+   - new files:
+     - `src/screens/library/LibraryDetailsPanel.tsx`
+     - `src/screens/library/LibraryDetailsPanel.test.tsx`
+     - `src/screens/library/LibraryDetailSheet.tsx`
+   - the page now uses:
+     - `Snapshot`
+     - `Care`
+     - `More`
+   - deeper detail moved into a proper side sheet for:
+     - health details
+     - inspect file
+     - edit details
+
+6. **Checked the result live in the browser instead of stopping at code**:
+   - verified the main page in:
+     - `Casual`
+     - `Seasoned`
+     - `Creator`
+   - verified the inspect sheet live
+   - saved fresh screenshots:
+     - `output/playwright/library-pass2-casual.png`
+     - `output/playwright/library-pass2-seasoned.png`
+     - `output/playwright/library-pass2-creator.png`
+     - `output/playwright/library-pass2-inspect-sheet.png`
+
+7. **Verification**:
+   - `npm ci`
+   - `npm run test:unit -- libraryDisplay`
+   - `npm run test:unit -- LibraryFilterRail`
+   - `npm run test:unit -- LibraryCollectionTable`
+   - `npm run test:unit -- LibraryDetailsPanel`
+   - `npm run test:unit -- libraryDisplay LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+   - `npm run build`
+
+### What Worked
+
+- the page now reads much more like a calm collection browser
+- hiding the inline edit forms made the biggest difference on the right side
+- the list is finally the visual star again instead of the detail wall
+- the three user views now differ more cleanly in row density without changing the page shape
+- the inspect sheet works well as a details-on-demand layer and feels consistent with the newer `Downloads` and `Updates` patterns
+
+### Known Problems / Gaps
+
+- `LibraryScreen.tsx` is better than before, but it still carries too much orchestration and old helper logic in one file
+- the creator and seasoned main-page views are intentionally close right now; most of the creator-only depth lives in the inspect sheet and `More filters`
+- the new Library pass is not merged to `main` yet
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Review the latest Library screenshots:
+  - `output/playwright/library-pass2-casual.png`
+  - `output/playwright/library-pass2-seasoned.png`
+  - `output/playwright/library-pass2-creator.png`
+  - `output/playwright/library-pass2-inspect-sheet.png`
+- If the user likes this Library direction, either:
+  - do one smaller polish pass on Library
+  - or merge this branch and move to the next page
+
 ## Current Session (March 19, 2026 - Late Night Library Design)
 
 - **Mode**: design

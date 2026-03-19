@@ -8,12 +8,7 @@ import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import {
-  downloadsSheetTransition,
-  rowHover,
-  rowPress,
-  stagedListItem,
-} from "../lib/motion";
+import { downloadsSheetTransition } from "../lib/motion";
 import {
   friendlyTypeLabel,
   unknownCreatorLabel,
@@ -25,7 +20,6 @@ import type {
   InstalledVersionSummary,
   LibraryFacets,
   LibraryFileRow,
-  LibraryLayoutPreset,
   LibraryListResponse,
   Screen,
   UserView,
@@ -37,6 +31,9 @@ import {
   LibraryFilterRail,
   type LibraryFilterValues,
 } from "./library/LibraryFilterRail";
+import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
+import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
+import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 
 interface LibraryScreenProps {
@@ -84,6 +81,7 @@ export function LibraryScreen({
   const [savingCategory, setSavingCategory] = useState(false);
   const [libraryRailWidth, setLibraryRailWidth] = useState(292);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -235,12 +233,6 @@ export function LibraryScreen({
     : ["CAS", "BuildBuy", "Gameplay", "ScriptMods", "OverridesAndDefaults", "PosesAndAnimation", "PresetsAndSliders", "TrayHousehold", "TrayLot", "TrayRoom", "TrayItem", "Unknown"];
   const totalPages = rows ? Math.max(1, Math.ceil(rows.total / PAGE_SIZE)) : 1;
 
-  const tableColumns =
-    userView === "beginner"
-      ? ["name", "creator", "kind", "confidence"]
-      : userView === "power"
-        ? ["name", "creator", "kind", "root", "depth", "confidence"]
-        : ["name", "creator", "kind", "root", "confidence"];
   const isPowerView = userView === "power";
   const hasInspectionSignals = Boolean(
     selected &&
@@ -273,19 +265,6 @@ export function LibraryScreen({
     source,
     minConfidence,
   ].filter(Boolean).length;
-  const selectedTypeLabel = selected
-    ? [friendlyTypeLabel(selected.kind), selected.subtype?.trim()]
-        .filter((value): value is string => Boolean(value))
-        .join(" / ")
-    : null;
-  const stageSelectionTags = selected
-    ? [
-        selectedTypeLabel,
-        selected.creator ?? unknownCreatorLabel(userView),
-        selected.sourceLocation === "tray" ? "Tray root" : "Mods root",
-        selected.installedVersionSummary ? "Update watch ready" : null,
-      ].filter((value): value is string => Boolean(value))
-    : [];
   const viewFlags = libraryViewFlags(userView);
 
   const libraryInspectorSections = selected
@@ -651,8 +630,23 @@ export function LibraryScreen({
           : []),
       ]
     : [];
+  const librarySheetSections =
+    activeLibrarySheet && selected
+      ? libraryInspectorSections.filter((section) => {
+          if (activeLibrarySheet === "health") {
+            return ["updatesHint", "safety"].includes(section.id);
+          }
+
+          if (activeLibrarySheet === "inspect") {
+            return ["facts", "inspection", "path"].includes(section.id);
+          }
+
+          return ["creator", "category"].includes(section.id);
+        })
+      : [];
 
   return (
+    <>
     <Workbench threePanel fullHeight>
       {/* Left rail for filters */}
       <WorkbenchRail 
@@ -788,138 +782,51 @@ export function LibraryScreen({
           ) : null}
         </AnimatePresence>
 
-        {/* Table content */}
-        <div className="table-scroll library-table-scroll">
-          <table className="library-table">
-            <thead>
-              <tr>
-                <th>{userView === "beginner" ? "File" : "Name"}</th>
-                <th>Creator</th>
-                <th>Type</th>
-                {tableColumns.includes("root") ? (
-                  <th>{userView === "beginner" ? "Folder" : "Root"}</th>
-                ) : null}
-                {tableColumns.includes("depth") ? <th>Depth</th> : null}
-                <th>{userView === "beginner" ? "Match" : "Confidence"}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows?.items.length ? (
-                rows.items.map((row, index) => (
-                  <m.tr
-                    key={row.id}
-                    className={selected?.id === row.id ? "is-selected" : ""}
-                    onClick={() => void openFile(row)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        void openFile(row);
-                      }
-                    }}
-                    whileHover={rowHover}
-                    whileTap={rowPress}
-                    {...stagedListItem(index)}
-                  >
-                    <td>
-                      <div className="file-title">{row.filename}</div>
-                      <div className="file-path">{row.path}</div>
-                    </td>
-                    <td>{row.creator ?? unknownCreatorLabel(userView)}</td>
-                    <td>
-                      <span className={`kind-pill kind-${kindSlug(row.kind)}`}>
-                        {friendlyTypeLabel(row.kind)}
-                      </span>
-                    </td>
-                    {tableColumns.includes("root") ? (
-                      <td>
-                        <span className="source-pill">{row.sourceLocation}</span>
-                      </td>
-                    ) : null}
-                    {tableColumns.includes("depth") ? (
-                      <td>{row.relativeDepth}</td>
-                    ) : null}
-                    <td>
-                      <span
-                        className={`confidence-badge ${confidenceTone(
-                          row.confidence,
-                        )}`}
-                      >
-                        {Math.round(row.confidence * 100)}%
-                      </span>
-                    </td>
-                  </m.tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={tableColumns.length} className="empty-row">
-                    {userView === "beginner"
-                      ? "Nothing matches these filters."
-                      : "No indexed files match the current filters."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Table footer with pagination */}
-        <div className="table-footer">
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => setPage((current) => Math.max(current - 1, 0))}
-            disabled={page === 0}
-          >
-            Previous
-          </button>
-          <div className="table-page-label">
-            Page {Math.min(page + 1, totalPages)} of {totalPages}
-          </div>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => setPage((current) => current + 1)}
-            disabled={!rows || page + 1 >= totalPages}
-          >
-            Next
-          </button>
-        </div>
+        <LibraryCollectionTable
+          userView={userView}
+          rows={rows?.items ?? []}
+          selectedId={selected?.id ?? null}
+          page={page}
+          totalPages={totalPages}
+          onSelect={(row) => void openFile(row)}
+          onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
+          onNextPage={() => setPage((current) => current + 1)}
+        />
       </WorkbenchStage>
 
       {/* Right inspector panel */}
       <WorkbenchInspector className="library-inspector-shell">
-        {selected ? (
-          <>
-            <div className="detail-header">
-              <div>
-                <p className="eyebrow">{userView === "beginner" ? "Selected file" : "Inspector"}</p>
-                <h2>{selected.filename}</h2>
-              </div>
-              <span className={`confidence-badge ${confidenceTone(selected.confidence)}`}>
-                {Math.round(selected.confidence * 100)}%
-              </span>
-            </div>
+        <LibraryDetailsPanel
+          userView={userView}
+          selectedFile={selected}
+          onOpenHealthDetails={() => setActiveLibrarySheet("health")}
+          onOpenInspectFile={() => setActiveLibrarySheet("inspect")}
+          onOpenEditDetails={() => setActiveLibrarySheet("edit")}
+          onOpenUpdates={() => {
+            if (!selected || !onNavigateWithParams || !updatesTarget) {
+              return;
+            }
 
-            <DockSectionStack
-              layoutId="libraryInspector"
-              sections={libraryInspectorSections}
-              intro={
-                userView === "beginner"
-                  ? "Open the parts you need, hide the rest, and move sections up or down."
-                  : "Collapse, reorder, and reset inspector sections to fit your workflow."
-              }
-            />
-          </>
-        ) : (
-          <div className="detail-empty">
-            <p className="eyebrow">{userView === "beginner" ? "Selected file" : "Inspector"}</p>
-            <h2>Select a file</h2>
-          </div>
-        )}
+            onNavigateWithParams(
+              "updates",
+              updatesTarget.mode,
+              updatesTarget.filter,
+              selected.id,
+            );
+          }}
+        />
       </WorkbenchInspector>
     </Workbench>
+
+      <LibraryDetailSheet
+        open={Boolean(activeLibrarySheet && selected)}
+        mode={activeLibrarySheet}
+        selectedFile={selected}
+        sections={librarySheetSections}
+        userView={userView}
+        onClose={() => setActiveLibrarySheet(null)}
+      />
+    </>
   );
 }
 
@@ -1317,10 +1224,6 @@ function formatBytes(size: number) {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function kindSlug(kind: string) {
-  return kind.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
 function confidenceTone(confidence: number) {

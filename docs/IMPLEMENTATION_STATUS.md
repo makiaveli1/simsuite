@@ -1,5 +1,68 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - late night library implementation)
+
+This session turned the approved `Library` spec into the first real code pass for the calmer `Quiet Catalog` design.
+
+Important changes and findings:
+
+- the `Library` implementation plan now exists at:
+  - `docs/superpowers/plans/2026-03-19-library-redesign.md`
+- a tested display helper layer was added in:
+  - `src/screens/library/libraryDisplay.ts`
+  - `src/screens/library/libraryDisplay.test.ts`
+- `Library` now has a calmer shell:
+  - `src/screens/library/LibraryTopStrip.tsx`
+  - `src/screens/library/LibraryFilterRail.tsx`
+  - `src/screens/library/LibraryFilterRail.test.tsx`
+- the top strip now owns:
+  - shown count
+  - total count
+  - active filter count
+  - search
+  - `More filters`
+- the left rail is lighter and now keeps only the core narrowing controls on screen
+- the middle list is now a dedicated component:
+  - `src/screens/library/LibraryCollectionTable.tsx`
+  - `src/screens/library/LibraryCollectionTable.test.tsx`
+- Library rows no longer lead with full paths
+- rows now focus on:
+  - file name
+  - type
+  - short health signal
+  - a small set of clues based on the current user view
+- the right side no longer keeps the creator and type editor open all the time
+- a shorter understanding panel now lives on the page:
+  - `src/screens/library/LibraryDetailsPanel.tsx`
+  - `src/screens/library/LibraryDetailsPanel.test.tsx`
+- deeper detail moved into an on-demand sheet:
+  - `src/screens/library/LibraryDetailSheet.tsx`
+- the side sheet now handles:
+  - health details
+  - inspect file
+  - edit details
+- `LibraryScreen.tsx` was updated to orchestrate the new pieces instead of rendering the old all-in-one inspector layout
+- `src/styles/globals.css` was updated for the new Library strip, rail, row, panel, and sheet styling
+- fresh live screenshots were saved for:
+  - `output/playwright/library-pass2-casual.png`
+  - `output/playwright/library-pass2-seasoned.png`
+  - `output/playwright/library-pass2-creator.png`
+  - `output/playwright/library-pass2-inspect-sheet.png`
+- checks passed:
+  - `npm ci`
+  - `npm run test:unit -- libraryDisplay`
+  - `npm run test:unit -- LibraryFilterRail`
+  - `npm run test:unit -- LibraryCollectionTable`
+  - `npm run test:unit -- LibraryDetailsPanel`
+  - `npm run test:unit -- libraryDisplay LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+  - `npm run build`
+
+Important remaining gap:
+
+- `LibraryScreen.tsx` still has more orchestration and leftover helper logic than it should after this pass
+- the Library redesign is implemented on the feature branch, but it is not merged to `main` yet
+- creator-mode richness is now mostly in the row clues, `More filters`, and the inspect sheet; the main page itself still stays intentionally restrained
+
 ## Current session note (March 19, 2026 - late night library design)
 
 This session did not start coding `Library`. It completed the full design-spec phase for the page instead.
