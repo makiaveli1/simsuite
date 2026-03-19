@@ -677,7 +677,6 @@ export function LibraryScreen({
             minConfidence,
           }}
           activeFilterCount={activeFilterCount}
-          resultsCount={rows?.items.length ?? 0}
           isCollapsed={libraryFiltersCollapsed}
           onToggleCollapsed={() => setLibraryFiltersCollapsed(true)}
           onFilterChange={(next: Partial<LibraryFilterValues>) => {

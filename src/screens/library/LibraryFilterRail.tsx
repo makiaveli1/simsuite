@@ -16,7 +16,6 @@ interface LibraryFilterRailProps {
   facets: LibraryFacets | null;
   filters: LibraryFilterValues;
   activeFilterCount: number;
-  resultsCount: number;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
   onFilterChange: (next: Partial<LibraryFilterValues>) => void;
@@ -29,7 +28,6 @@ export function LibraryFilterRail({
   facets,
   filters,
   activeFilterCount,
-  resultsCount,
   isCollapsed,
   onToggleCollapsed,
   onFilterChange,
@@ -47,6 +45,9 @@ export function LibraryFilterRail({
         <div>
           <p className="eyebrow">Narrow library</p>
           <h2>Filters</h2>
+          <p className="library-filter-rail-copy">
+            Keep only the filters you actually need here. The quick counts and search stay up top.
+          </p>
         </div>
         <button
           type="button"
@@ -57,17 +58,6 @@ export function LibraryFilterRail({
         >
           <PanelLeftClose size={16} strokeWidth={2} />
         </button>
-      </div>
-
-      <div className="library-filter-rail-metrics">
-        <div className="library-filter-rail-metric">
-          <span>Visible</span>
-          <strong>{resultsCount.toLocaleString()}</strong>
-        </div>
-        <div className="library-filter-rail-metric">
-          <span>Filters on</span>
-          <strong>{activeFilterCount}</strong>
-        </div>
       </div>
 
       <div className="library-filter-rail-body">
@@ -134,6 +124,9 @@ export function LibraryFilterRail({
         <span className="ghost-chip">
           {facets?.creators.length ?? 0} creators
         </span>
+        {activeFilterCount > 0 ? (
+          <span className="ghost-chip">{activeFilterCount} active</span>
+        ) : null}
       </div>
     </div>
   );

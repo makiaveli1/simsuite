@@ -21,7 +21,6 @@ it("keeps only the core filters visible in casual mode", () => {
         minConfidence: "",
       }}
       activeFilterCount={1}
-      resultsCount={12}
       isCollapsed={false}
       onToggleCollapsed={() => {}}
       onFilterChange={() => {}}

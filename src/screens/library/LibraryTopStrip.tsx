@@ -32,18 +32,18 @@ export function LibraryTopStrip({
   return (
     <div className="library-top-strip">
       <div className="library-top-strip-metrics" aria-label="Library summary">
-        <div className="library-top-strip-metric">
-          <span>Shown</span>
+        <span className="library-top-strip-chip">
           <strong>{shownCount.toLocaleString()}</strong>
-        </div>
-        <div className="library-top-strip-metric">
-          <span>In library</span>
+          <span>shown</span>
+        </span>
+        <span className="library-top-strip-chip">
           <strong>{totalCount.toLocaleString()}</strong>
-        </div>
-        <div className="library-top-strip-metric">
-          <span>Filters</span>
+          <span>in library</span>
+        </span>
+        <span className="library-top-strip-chip">
           <strong>{activeFilterCount}</strong>
-        </div>
+          <span>filters</span>
+        </span>
       </div>
 
       <div className="library-top-strip-tools">

@@ -1028,6 +1028,13 @@ h2,
   font-size: 0.95rem;
 }
 
+.library-filter-rail-copy {
+  margin: 0.28rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .icon-action {
   display: inline-flex;
   align-items: center;
@@ -1051,31 +1058,6 @@ h2,
   background:
     linear-gradient(120deg, var(--accent-soft), transparent 80%),
     var(--surface-4);
-}
-
-.library-filter-rail-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.42rem;
-}
-
-.library-filter-rail-metric {
-  display: grid;
-  gap: 0.08rem;
-  padding: 0.48rem 0.54rem;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.library-filter-rail-metric span {
-  color: var(--text-dim);
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.library-filter-rail-metric strong {
-  font-size: 0.95rem;
 }
 
 .library-filter-rail-body {
@@ -1110,28 +1092,29 @@ h2,
 }
 
 .library-top-strip-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.42rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
 }
 
-.library-top-strip-metric {
-  display: grid;
-  gap: 0.08rem;
-  padding: 0.44rem 0.5rem;
+.library-top-strip-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.34rem 0.48rem;
   border: 1px solid rgba(255, 255, 255, 0.05);
   background: rgba(255, 255, 255, 0.015);
 }
 
-.library-top-strip-metric span {
+.library-top-strip-chip span {
   color: var(--text-dim);
   font-size: 0.65rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.library-top-strip-metric strong {
-  font-size: 0.95rem;
+.library-top-strip-chip strong {
+  font-size: 0.88rem;
 }
 
 .library-top-strip-tools {
