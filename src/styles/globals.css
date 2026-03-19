@@ -4727,6 +4727,43 @@ h2,
   border-bottom: 1px solid var(--line);
 }
 
+.downloads-batch-header {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.downloads-batch-summary {
+  margin: 0.32rem 0 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+  max-width: 58ch;
+}
+
+.downloads-batch-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.downloads-batch-stat {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.5rem 0.56rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.downloads-batch-stat span {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.downloads-batch-body {
+  padding-right: 0.06rem;
+}
+
 .downloads-queue-dock {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

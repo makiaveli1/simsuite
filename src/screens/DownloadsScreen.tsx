@@ -59,8 +59,14 @@ import type {
   VersionResolution,
 } from "../lib/types";
 import { DownloadsRail } from "./downloads/DownloadsRail";
+import { DownloadsBatchCanvas } from "./downloads/DownloadsBatchCanvas";
+import {
+  DownloadsQueuePanel,
+  type DownloadsQueueRowModel,
+} from "./downloads/DownloadsQueuePanel";
 import { DownloadsTopStrip } from "./downloads/DownloadsTopStrip";
 import {
+  capRowBadges,
   fallbackDownloadsLane,
   pickInitialDownloadsLane,
   viewModeDownloadsFlags,
@@ -974,6 +980,57 @@ export function DownloadsScreen({
         ? selectedReviewPlan?.reviewFiles.length ?? selectedResolvedItem?.reviewFileCount ?? 0
       : selectedPreview?.reviewCount ?? selectedResolvedItem?.reviewFileCount ?? 0;
   const unchangedCount = alignedCount(selectedPreview);
+  const activeQueueRows: DownloadsQueueRowModel[] = activeLaneItems.map((item) => {
+    const primaryBadge = primaryInboxStateBadge(item, userView);
+    const rawBadges = [
+      findAutoRecheckNote(item.notes)
+        ? { label: "Rechecked", tone: "neutral" }
+        : null,
+      item.relatedItemIds?.length
+        ? {
+            label: `Linked ${item.relatedItemIds.length + 1}`,
+            tone: "neutral",
+          }
+        : null,
+      ...(primaryBadge
+        ? [primaryBadge]
+        : [
+            {
+              label: intakeModeLabel(item.intakeMode),
+              tone: intakeModeTone(item.intakeMode),
+            },
+            {
+              label: friendlyItemStatus(item.status),
+              tone: itemStatusTone(item.status),
+            },
+          ]),
+    ].filter((badge): badge is { label: string; tone: string } => badge !== null);
+    const visibleLabels = capRowBadges(rawBadges.map((badge) => badge.label));
+    const badges = rawBadges.filter(
+      (badge, index) =>
+        visibleLabels.includes(badge.label) &&
+        rawBadges.findIndex((candidate) => candidate.label === badge.label) === index,
+    );
+
+    return {
+      id: item.id,
+      title: item.displayName,
+      meta: `${item.sourceKind === "archive" ? "Archive" : "Direct file"} · ${item.detectedFileCount.toLocaleString()} file(s)${
+        userView === "power" && item.archiveFormat
+          ? ` · ${item.archiveFormat.toUpperCase()}`
+          : ""
+      }`,
+      summary: item.queueSummary ?? fallbackQueueSummary(item),
+      samples: item.sampleFiles.length ? item.sampleFiles.slice(0, 3).join(" · ") : null,
+      badges,
+      tone: inboxItemTone(item),
+      selected: selectedItemId === item.id,
+      sourcePath: item.sourcePath,
+    };
+  });
+  const batchCanvasPreviewItems = previewSuggestions.length
+    ? previewSuggestions.slice(0, 4).map((item) => item.filename)
+    : selectedFiles.slice(0, 4).map((file) => file.filename);
   const reviewActions = selectedSpecialDecision
     ? buildDecisionActions(selectedSpecialDecision, selectedReviewPlan)
     : selectedReviewPlan
@@ -981,6 +1038,17 @@ export function DownloadsScreen({
       : [];
   const primaryReviewAction =
     selectedSpecialDecision?.primaryAction ?? reviewActions[0] ?? null;
+  const batchCanvasSummary = selectedResolvedItem
+    ? downloadsNextStepDescription(
+        selectedResolvedItem,
+        selectedGuidedPlan,
+        selectedSpecialDecision,
+        selectedVersionResolution,
+        primaryReviewAction,
+        safeCount,
+        userView,
+      )
+    : queueLaneHint(resolvedActiveLane, userView);
   const guidedNeedsReview = Boolean(
     selectedResolvedItem?.intakeMode === "guided" &&
       (selectedSpecialDecision
@@ -1235,144 +1303,18 @@ export function DownloadsScreen({
             </div>
 
             <div className={`downloads-stage${splitStage ? " downloads-stage-split" : ""}`}>
-              <div className="panel-card downloads-queue-panel workbench-panel">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Inbox queue</p>
-                    <h2>{queueLaneLabel(resolvedActiveLane, userView)}</h2>
-                    <p className="downloads-queue-subcopy">
-                      {queueLaneHint(resolvedActiveLane, userView)}
-                    </p>
-                  </div>
-                  <span className="ghost-chip">
-                    {isLoadingInbox
-                      ? "Loading..."
-                      : `${activeLaneItems.length.toLocaleString()} shown`}
-                  </span>
-                </div>
-
-                <div className="vertical-dock downloads-queue-dock">
-                  <div className="queue-list downloads-queue-list">
-                    {inbox?.items.length ? (
-                      activeLaneItems.length ? (
-                        <div className="downloads-lane-group">
-                          <div className="downloads-lane-header">
-                            <div>
-                              <strong>{queueLaneLabel(resolvedActiveLane, userView)}</strong>
-                              <span>{queueLaneHint(resolvedActiveLane, userView)}</span>
-                            </div>
-                            <span className="ghost-chip">
-                              {activeLaneItems.length.toLocaleString()}
-                            </span>
-                          </div>
-
-                          <div className="downloads-lane-list">
-                            {activeLaneItems.map((item, index) => {
-                              const primaryBadge = primaryInboxStateBadge(item, userView);
-                              const rowTone = inboxItemTone(item);
-
-                              return (
-                                <m.button
-                                  key={item.id}
-                                  type="button"
-                                  className={`downloads-item-row ${
-                                    selectedItemId === item.id ? "is-selected" : ""
-                                  } downloads-item-row-${rowTone}`}
-                                  onClick={() => {
-                                    setStatusMessage(null);
-                                    setSelectedItemId(item.id);
-                                  }}
-                                  title={item.sourcePath}
-                                  whileHover={rowHover}
-                                  whileTap={rowPress}
-                                  {...stagedListItem(index)}
-                                >
-                                  <div className="downloads-item-main">
-                                    <strong>{item.displayName}</strong>
-                                    <span>
-                                      {item.sourceKind === "archive" ? "Archive" : "Direct file"} ·{" "}
-                                      {item.detectedFileCount.toLocaleString()} file(s)
-                                      {userView === "power" && item.archiveFormat
-                                        ? ` · ${item.archiveFormat.toUpperCase()}`
-                                        : ""}
-                                    </span>
-                                    <div className="downloads-item-samples">
-                                      {item.queueSummary ?? fallbackQueueSummary(item)}
-                                    </div>
-                                    {item.sampleFiles.length ? (
-                                      <div className="downloads-item-samples downloads-item-samples-muted">
-                                        {item.sampleFiles.slice(0, 3).join(" · ")}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                  <div className="downloads-item-meta">
-                                    {findAutoRecheckNote(item.notes) ? (
-                                      <span className="ghost-chip">Rechecked</span>
-                                    ) : null}
-                                    {item.relatedItemIds?.length ? (
-                                      <span className="ghost-chip">
-                                        Linked {item.relatedItemIds.length + 1}
-                                      </span>
-                                    ) : null}
-                                    {primaryBadge ? (
-                                      <span className={`confidence-badge ${primaryBadge.tone}`}>
-                                        {primaryBadge.label}
-                                      </span>
-                                    ) : (
-                                      <>
-                                        <span
-                                          className={`confidence-badge ${intakeModeTone(item.intakeMode)}`}
-                                        >
-                                          {intakeModeLabel(item.intakeMode)}
-                                        </span>
-                                        <span
-                                          className={`confidence-badge ${itemStatusTone(item.status)}`}
-                                        >
-                                          {friendlyItemStatus(item.status)}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </m.button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : (
-                        <StatePanel
-                          eyebrow="Downloads lane"
-                          title={`Nothing is in ${queueLaneLabel(
-                            resolvedActiveLane,
-                            userView,
-                          ).toLowerCase()} right now`}
-                          body={queueLaneHint(resolvedActiveLane, userView)}
-                          icon={Inbox}
-                          compact
-                          badge="Lane clear"
-                        />
-                      )
-                    ) : (
-                      <StatePanel
-                        eyebrow="Downloads inbox"
-                        title={
-                          userView === "beginner"
-                            ? "No inbox items match this view"
-                            : "No download items match the current filter"
-                        }
-                        body={
-                          userView === "beginner"
-                            ? "Try clearing the search, changing the filter, or refresh the inbox after a new download lands."
-                            : "Clear the search, adjust status filters, or refresh the inbox to pull in newly detected downloads."
-                        }
-                        icon={Inbox}
-                        compact
-                        badge="Queue clear"
-                        meta={["Filters stay local to this workspace"]}
-                      />
-                    )}
-                  </div>
-
-                  {splitStage ? null : (
+              <DownloadsQueuePanel
+                lane={resolvedActiveLane}
+                userView={userView}
+                rows={activeQueueRows}
+                isLoading={isLoadingInbox}
+                hasItems={Boolean(inbox?.items.length)}
+                onSelect={(itemId) => {
+                  setStatusMessage(null);
+                  setSelectedItemId(itemId);
+                }}
+                footer={
+                  splitStage ? null : (
                     <ResizableEdgeHandle
                       label="Resize download queue height"
                       value={downloadsQueueHeight}
@@ -1382,41 +1324,19 @@ export function DownloadsScreen({
                       side="bottom"
                       className="dock-resize-handle downloads-queue-height-handle"
                     />
-                  )}
-                </div>
-              </div>
-              <div className="panel-card downloads-preview-panel workbench-panel">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">
-                      {selectedItem?.intakeMode === "guided"
-                        ? guidedNeedsReview
-                          ? "Decision panel"
-                          : "Special setup"
-                        : selectedItem?.intakeMode === "standard"
-                          ? "Safe hand-off"
-                          : "Decision panel"}
-                    </p>
-                    <h2>{previewPanelTitle(selectedItem?.intakeMode, userView, guidedNeedsReview)}</h2>
-                  </div>
-                  {selectedItem ? (
-                    <span className="ghost-chip">
-                      {selectedItem.intakeMode === "guided" && selectedGuidedPlan
-                        ? guidedNeedsReview && selectedReviewPlan
-                          ? `${selectedReviewPlan.reviewFiles.length.toLocaleString()} tracked`
-                          : `${selectedGuidedPlan.installFiles.length.toLocaleString()} install`
-                        : (selectedItem.intakeMode === "needs_review" ||
-                              selectedItem.intakeMode === "blocked") &&
-                            selectedReviewPlan
-                          ? `${selectedReviewPlan.reviewFiles.length.toLocaleString()} tracked`
-                        : previewSuggestions.length
-                          ? `${previewSuggestions.length.toLocaleString()} shown`
-                          : `${selectedFiles.length.toLocaleString()} tracked`}
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="preview-list downloads-preview-list">
+                  )
+                }
+              />
+              <DownloadsBatchCanvas
+                lane={resolvedActiveLane}
+                userView={userView}
+                selectionTitle={selectedItem?.displayName ?? null}
+                summary={batchCanvasSummary}
+                safeCount={safeCount}
+                reviewCount={reviewCount}
+                unchangedCount={unchangedCount}
+                previewItems={batchCanvasPreviewItems}
+              >
                   {isLoadingSelection ? (
                     <StatePanel
                       eyebrow="Preview"
@@ -1507,8 +1427,7 @@ export function DownloadsScreen({
                       meta={["Normal", "Special setup", "Needs review", "Blocked"]}
                     />
                   )}
-                </div>
-              </div>
+              </DownloadsBatchCanvas>
             </div>
           </WorkbenchStage>
 
