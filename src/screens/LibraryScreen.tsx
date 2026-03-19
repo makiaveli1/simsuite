@@ -1,14 +1,7 @@
 import { useDeferredValue, useEffect, useState } from "react";
-import { AnimatePresence, m } from "motion/react";
 import { ExternalLink } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
-import { Workbench } from "../components/layout/Workbench";
-import { WorkbenchRail } from "../components/layout/WorkbenchRail";
-import { WorkbenchStage } from "../components/layout/WorkbenchStage";
-import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
-import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { downloadsSheetTransition } from "../lib/motion";
 import {
   friendlyTypeLabel,
   unknownCreatorLabel,
@@ -28,9 +21,8 @@ import type {
 } from "../lib/types";
 import { libraryViewFlags } from "./library/libraryDisplay";
 import {
-  LibraryFilterRail,
   type LibraryFilterValues,
-} from "./library/LibraryFilterRail";
+} from "./library/LibraryTopStrip";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
@@ -55,10 +47,6 @@ export function LibraryScreen({
   onNavigateWithParams,
   userView,
 }: LibraryScreenProps) {
-  const {
-    libraryFiltersCollapsed,
-    setLibraryFiltersCollapsed,
-  } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
   const [selected, setSelected] = useState<FileDetail | null>(null);
@@ -79,7 +67,6 @@ export function LibraryScreen({
   const [categorySubtypeDraft, setCategorySubtypeDraft] = useState("");
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
-  const [libraryRailWidth, setLibraryRailWidth] = useState(292);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const deferredSearch = useDeferredValue(search);
@@ -645,31 +632,33 @@ export function LibraryScreen({
         })
       : [];
 
+  function updateFilters(next: Partial<LibraryFilterValues>) {
+    if (typeof next.kind === "string") {
+      setKind(next.kind);
+    }
+    if (typeof next.creator === "string") {
+      setCreator(next.creator);
+    }
+    if (typeof next.source === "string") {
+      setSource(next.source);
+    }
+    if (typeof next.subtype === "string") {
+      setSubtype(next.subtype);
+    }
+    if (typeof next.minConfidence === "string") {
+      setMinConfidence(next.minConfidence);
+    }
+    setPage(0);
+  }
+
   return (
     <>
-    <section className="screen-shell library-screen">
-    <Workbench threePanel fullHeight className="library-workbench">
-      {/* Left rail for filters */}
-      <WorkbenchRail 
-        className="library-rail-shell"
-        resizable 
-        width={libraryFiltersCollapsed ? 0 : libraryRailWidth}
-        onWidthChange={(width) => {
-          if (width === 0) {
-            setLibraryFiltersCollapsed(true);
-          } else {
-            setLibraryFiltersCollapsed(false);
-            setLibraryRailWidth(width);
-          }
-        }}
-        minWidth={248}
-        maxWidth={360}
-        noBorder
-      >
-        {/* Filter panel content */}
-        <LibraryFilterRail
+      <section className="screen-shell library-screen">
+      <div className="library-page-shell">
+        <LibraryTopStrip
           userView={userView}
           facets={facets}
+          search={search}
           filters={{
             kind,
             creator,
@@ -677,147 +666,57 @@ export function LibraryScreen({
             subtype,
             minConfidence,
           }}
-          activeFilterCount={activeFilterCount}
-          isCollapsed={libraryFiltersCollapsed}
-          onToggleCollapsed={() => setLibraryFiltersCollapsed(true)}
-          onFilterChange={(next: Partial<LibraryFilterValues>) => {
-            if (typeof next.kind === "string") {
-              setKind(next.kind);
-            }
-            if (typeof next.creator === "string") {
-              setCreator(next.creator);
-            }
-            if (typeof next.source === "string") {
-              setSource(next.source);
-            }
-            if (typeof next.subtype === "string") {
-              setSubtype(next.subtype);
-            }
-            if (typeof next.minConfidence === "string") {
-              setMinConfidence(next.minConfidence);
-            }
-            setPage(0);
-          }}
-          onReset={resetFilters}
-          onOpenMoreFilters={() => setMoreFiltersOpen((current) => !current)}
-        />
-      </WorkbenchRail>
-
-      {/* Central work area - table */}
-      <WorkbenchStage className="library-stage-shell">
-        <LibraryTopStrip
-          userView={userView}
-          search={search}
           shownCount={rows?.items.length ?? 0}
           totalCount={rows?.total ?? 0}
           activeFilterCount={activeFilterCount}
-          filtersCollapsed={libraryFiltersCollapsed}
           moreFiltersOpen={moreFiltersOpen}
           onSearchChange={(value) => {
             setSearch(value);
             setPage(0);
           }}
-          onToggleFiltersRail={() => setLibraryFiltersCollapsed(false)}
+          onFilterChange={updateFilters}
           onToggleMoreFilters={() => setMoreFiltersOpen((current) => !current)}
+          onReset={resetFilters}
         />
 
-        <AnimatePresence>
-          {viewFlags.showAdvancedFilters && moreFiltersOpen ? (
-            <m.div
-              className="library-more-filters-popover"
-              initial={{ opacity: 0, y: -8, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.985 }}
-              transition={downloadsSheetTransition}
-            >
-              <div className="library-more-filters-header">
-                <div>
-                  <p className="eyebrow">{userView === "power" ? "Inspect filters" : "More filters"}</p>
-                  <strong>
-                    {userView === "power"
-                      ? "Keep the deeper clues one click away"
-                      : "Use the extra narrowing only when you need it"}
-                  </strong>
-                </div>
-              </div>
+        <div className="library-browser-layout">
+          <section className="workbench-panel library-list-panel">
+            <LibraryCollectionTable
+              userView={userView}
+              rows={rows?.items ?? []}
+              selectedId={selected?.id ?? null}
+              page={page}
+              totalPages={totalPages}
+              onSelect={(row) => void openFile(row)}
+              onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
+              onNextPage={() => setPage((current) => current + 1)}
+            />
+          </section>
 
-              <div className="filter-grid library-more-filters-grid">
-                {userView === "power" ? (
-                  <label className="field">
-                    <span>Subtype</span>
-                    <select
-                      value={subtype}
-                      onChange={(event) => {
-                        setSubtype(event.target.value);
-                        setPage(0);
-                      }}
-                    >
-                      <option value="">All subtypes</option>
-                      {facets?.subtypes.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
+          <aside className="workbench-panel library-sidebar-panel">
+            <LibraryDetailsPanel
+              userView={userView}
+              selectedFile={selected}
+              onOpenHealthDetails={() => setActiveLibrarySheet("health")}
+              onOpenInspectFile={() => setActiveLibrarySheet("inspect")}
+              onOpenEditDetails={() => setActiveLibrarySheet("edit")}
+              onOpenUpdates={() => {
+                if (!selected || !onNavigateWithParams || !updatesTarget) {
+                  return;
+                }
 
-                <label className="field">
-                  <span>Confidence</span>
-                  <select
-                    value={minConfidence}
-                    onChange={(event) => {
-                      setMinConfidence(event.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <option value="">Any match</option>
-                    <option value="0.35">35%+</option>
-                    <option value="0.55">55%+</option>
-                    <option value="0.75">75%+</option>
-                  </select>
-                </label>
-              </div>
-            </m.div>
-          ) : null}
-        </AnimatePresence>
-
-        <LibraryCollectionTable
-          userView={userView}
-          rows={rows?.items ?? []}
-          selectedId={selected?.id ?? null}
-          page={page}
-          totalPages={totalPages}
-          onSelect={(row) => void openFile(row)}
-          onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
-          onNextPage={() => setPage((current) => current + 1)}
-        />
-      </WorkbenchStage>
-
-      {/* Right inspector panel */}
-      <WorkbenchInspector className="library-inspector-shell">
-        <LibraryDetailsPanel
-          userView={userView}
-          selectedFile={selected}
-          onOpenHealthDetails={() => setActiveLibrarySheet("health")}
-          onOpenInspectFile={() => setActiveLibrarySheet("inspect")}
-          onOpenEditDetails={() => setActiveLibrarySheet("edit")}
-          onOpenUpdates={() => {
-            if (!selected || !onNavigateWithParams || !updatesTarget) {
-              return;
-            }
-
-            onNavigateWithParams(
-              "updates",
-              updatesTarget.mode,
-              updatesTarget.filter,
-              selected.id,
-            );
-          }}
-        />
-      </WorkbenchInspector>
-    </Workbench>
-    </section>
+                onNavigateWithParams(
+                  "updates",
+                  updatesTarget.mode,
+                  updatesTarget.filter,
+                  selected.id,
+                );
+              }}
+            />
+          </aside>
+        </div>
+      </div>
+      </section>
 
       <LibraryDetailSheet
         open={Boolean(activeLibrarySheet && selected)}

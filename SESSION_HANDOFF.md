@@ -1,5 +1,82 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library Top Filter Implementation)
+
+- **Mode**: code
+- **Focus**: replace the older left-heavy `Library` layout with the approved top-filter, list-first browser layout in the normal workspace
+
+### Progress Made
+
+1. **Finished the new top-first Library shape in code**:
+   - `Library` now uses:
+     - a compact top filter strip
+     - the collection list as the main surface
+     - a steady right sidebar for the selected item
+   - updated files:
+     - `src/screens/LibraryScreen.tsx`
+     - `src/screens/library/LibraryTopStrip.tsx`
+     - `src/styles/globals.css`
+
+2. **Locked the “show less by default” filter behavior with a test first**:
+   - new test file:
+     - `src/screens/library/LibraryTopStrip.test.tsx`
+   - the advanced `Creator` view no longer forces the extra filter row open
+   - `More filters` now really behaves like an on-demand second row instead of a second toolbar that appears automatically
+
+3. **Removed the old left-rail Library code that is no longer part of the design**:
+   - removed:
+     - `src/screens/library/LibraryFilterRail.tsx`
+     - `src/screens/library/LibraryFilterRail.test.tsx`
+   - also removed the dead left-rail CSS from `globals.css`
+
+4. **Tightened the layout so it fits the desktop workspace cleanly**:
+   - the page shell now has a real top strip + browser body split
+   - the list panel owns the available height
+   - the sidebar scrolls only when needed
+   - the page itself stays stable instead of feeling like one long scrolling column
+   - the older lower-half clipping problem was rechecked during this pass and did not return
+
+5. **Checked the result live with fresh screenshots instead of stopping at build-green**:
+   - saved:
+     - `output/playwright/library-top-layout-beginner.png`
+     - `output/playwright/library-top-layout-standard.png`
+     - `output/playwright/library-top-layout-power.png`
+     - `output/playwright/library-top-layout-power-more-filters.png`
+     - `output/playwright/library-top-layout-health-sheet.png`
+
+6. **Verification**:
+   - `npm run test:unit -- libraryDisplay LibraryTopStrip LibraryCollectionTable LibraryDetailsPanel`
+   - `npm run build`
+
+### What Worked
+
+- `Library` finally reads like a calm browser instead of a three-column control wall
+- moving the filters to the top made the list feel like the main job of the page again
+- keeping the sidebar open while browsing feels much better than forcing deeper detail into the main page
+- `Creator` view now stays fuller without automatically opening the extra filter row
+- removing the dead left-rail code made the current direction much easier to reason about
+
+### Known Problems / Gaps
+
+- the page is much cleaner now, but the right sidebar could still take one more taste pass later if we want it even quieter
+- the deeper `Edit details` flow still uses the side sheet pattern for now instead of a dedicated modal
+- the new Library pass is not merged to `main` yet
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Re-open `Library` in:
+  - `Casual`
+  - `Seasoned`
+  - `Creator`
+- Check the latest screenshots:
+  - `output/playwright/library-top-layout-beginner.png`
+  - `output/playwright/library-top-layout-standard.png`
+  - `output/playwright/library-top-layout-power.png`
+  - `output/playwright/library-top-layout-power-more-filters.png`
+- If the user likes this direction, do one final polish pass or merge it after approval.
+
 ## Current Session (March 19, 2026 - Library Redesign Pivot Spec)
 
 - **Mode**: design

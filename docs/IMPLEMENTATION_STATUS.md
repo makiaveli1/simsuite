@@ -1,5 +1,56 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library top-filter implementation)
+
+This pass turned the newer `Library` direction into the actual on-screen layout in the main workspace.
+
+Important changes and findings:
+
+- `Library` now follows the approved top-first shape:
+  - compact filter strip at the top
+  - the list as the main surface
+  - a steady right sidebar for the selected item
+- updated files:
+  - `src/screens/LibraryScreen.tsx`
+  - `src/screens/library/LibraryTopStrip.tsx`
+  - `src/styles/globals.css`
+- the top strip now uses:
+  - search
+  - type
+  - creator
+  - folder
+  - `More filters`
+  - calmer inline summary chips
+- the extra filter row is now truly on demand:
+  - `Creator` view no longer forces it open by default
+  - that behavior is now locked by:
+    - `src/screens/library/LibraryTopStrip.test.tsx`
+- the old left-filter direction was cleaned out:
+  - removed:
+    - `src/screens/library/LibraryFilterRail.tsx`
+    - `src/screens/library/LibraryFilterRail.test.tsx`
+  - removed the dead left-rail CSS too
+- the page now fits the desktop shell much more cleanly:
+  - top strip stays in place
+  - list panel owns the height
+  - sidebar scrolls only if it really needs to
+  - no unnecessary page-level scroll was introduced
+- fresh live screenshots from this pass:
+  - `output/playwright/library-top-layout-beginner.png`
+  - `output/playwright/library-top-layout-standard.png`
+  - `output/playwright/library-top-layout-power.png`
+  - `output/playwright/library-top-layout-power-more-filters.png`
+  - `output/playwright/library-top-layout-health-sheet.png`
+- checks passed:
+  - `npm run test:unit -- libraryDisplay LibraryTopStrip LibraryCollectionTable LibraryDetailsPanel`
+  - `npm run build`
+
+Important remaining gap:
+
+- the sidebar is much better now, but it could still take one more visual taste pass later
+- the deeper edit flow still uses the side-sheet pattern for now
+- this Library work is not merged to `main` yet
+
 ## Current session note (March 19, 2026 - library redesign pivot spec)
 
 This design pass changed the planned direction for `Library`.
