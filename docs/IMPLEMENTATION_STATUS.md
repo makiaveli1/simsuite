@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library preview brought into the normal workspace)
+
+This follow-up pass was about making sure the user can see the newer `Library` redesign from the normal working folder, not only from the separate clean worktree where the first implementation happened.
+
+Important changes and findings:
+
+- a new preview branch now exists in the normal workspace:
+  - `codex/library-preview-current-workspace`
+- the earlier Library redesign commits were brought into this workspace so the user does not need to switch folders just to review the page
+- one smaller cleanup pass was added on top:
+  - removed duplicated count boxes from the left rail
+  - added a short helper line in the filter rail
+  - tightened the top strip counts into smaller inline chips
+- updated files:
+  - `src/screens/LibraryScreen.tsx`
+  - `src/screens/library/LibraryFilterRail.tsx`
+  - `src/screens/library/LibraryFilterRail.test.tsx`
+  - `src/screens/library/LibraryTopStrip.tsx`
+  - `src/styles/globals.css`
+- checks passed in the normal workspace:
+  - `npm run test:unit -- LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+  - `npm run build`
+- the preview branch was pushed to GitHub
+
+Important remaining gap:
+
+- the Library redesign still needs user visual confirmation from this normal workspace branch before merging
+- automated fresh screenshots from this exact branch were blocked by a browser-session launch issue in the current Playwright MCP environment
+
 ## Current session note (March 19, 2026 - late night library implementation)
 
 This session turned the approved `Library` spec into the first real code pass for the calmer `Quiet Catalog` design.

@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library Preview Brought Into Main Workspace)
+
+- **Mode**: code
+- **Focus**: bring the new `Library` redesign into the user's normal workspace branch and do one extra polish pass before any merge
+
+### Progress Made
+
+1. **Moved the new Library implementation into the normal working folder**:
+   - created branch:
+     - `codex/library-preview-current-workspace`
+   - cherry-picked the Library redesign commits into this workspace so the user does not have to switch over to the separate clean worktree just to see the new page
+
+2. **Did one smaller visual cleanup pass after bringing it over**:
+   - removed duplicated count boxes from the left rail
+   - added a short helper line so the rail feels calmer and less box-heavy
+   - tightened the top strip counts into lighter inline chips instead of heavier mini cards
+
+3. **Verified the brought-over version still works in this workspace**:
+   - `npm run test:unit -- LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+   - `npm run build`
+
+4. **Pushed the preview branch to GitHub**:
+   - latest commit:
+     - `cae5ff4` `refactor: tighten library preview chrome`
+   - remote branch:
+     - `origin/codex/library-preview-current-workspace`
+
+### What Worked
+
+- the new Library code is now in the same workspace the user is actively running
+- the top strip feels less crowded after the smaller cleanup
+- the left rail no longer repeats information that already exists in the top strip
+
+### Known Problems / Gaps
+
+- the user-reported screenshot came from the older workspace state before this bring-over, so it did not match the newer Library code
+- Playwright MCP browser launch is currently bumping into an existing browser-session issue in this environment, so a fresh automated screenshot from this exact branch was blocked even though build and tests passed
+- the Library redesign is still not merged to `main`
+
+### Next Session Start Here
+
+- Confirm the user can now see the newer Library screen from the normal workspace branch
+- If they want more polish, do it on `codex/library-preview-current-workspace`
+- Merge to `main` only after the user confirms the Library page looks good
+
 ## Current Session (March 19, 2026 - Late Night Library Implementation)
 
 - **Mode**: code
