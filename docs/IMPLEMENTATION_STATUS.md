@@ -1,5 +1,106 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - late night library implementation)
+
+This session turned the approved `Library` spec into the first real code pass for the calmer `Quiet Catalog` design.
+
+Important changes and findings:
+
+- the `Library` implementation plan now exists at:
+  - `docs/superpowers/plans/2026-03-19-library-redesign.md`
+- a tested display helper layer was added in:
+  - `src/screens/library/libraryDisplay.ts`
+  - `src/screens/library/libraryDisplay.test.ts`
+- `Library` now has a calmer shell:
+  - `src/screens/library/LibraryTopStrip.tsx`
+  - `src/screens/library/LibraryFilterRail.tsx`
+  - `src/screens/library/LibraryFilterRail.test.tsx`
+- the top strip now owns:
+  - shown count
+  - total count
+  - active filter count
+  - search
+  - `More filters`
+- the left rail is lighter and now keeps only the core narrowing controls on screen
+- the middle list is now a dedicated component:
+  - `src/screens/library/LibraryCollectionTable.tsx`
+  - `src/screens/library/LibraryCollectionTable.test.tsx`
+- Library rows no longer lead with full paths
+- rows now focus on:
+  - file name
+  - type
+  - short health signal
+  - a small set of clues based on the current user view
+- the right side no longer keeps the creator and type editor open all the time
+- a shorter understanding panel now lives on the page:
+  - `src/screens/library/LibraryDetailsPanel.tsx`
+  - `src/screens/library/LibraryDetailsPanel.test.tsx`
+- deeper detail moved into an on-demand sheet:
+  - `src/screens/library/LibraryDetailSheet.tsx`
+- the side sheet now handles:
+  - health details
+  - inspect file
+  - edit details
+- `LibraryScreen.tsx` was updated to orchestrate the new pieces instead of rendering the old all-in-one inspector layout
+- `src/styles/globals.css` was updated for the new Library strip, rail, row, panel, and sheet styling
+- fresh live screenshots were saved for:
+  - `output/playwright/library-pass2-casual.png`
+  - `output/playwright/library-pass2-seasoned.png`
+  - `output/playwright/library-pass2-creator.png`
+  - `output/playwright/library-pass2-inspect-sheet.png`
+- checks passed:
+  - `npm ci`
+  - `npm run test:unit -- libraryDisplay`
+  - `npm run test:unit -- LibraryFilterRail`
+  - `npm run test:unit -- LibraryCollectionTable`
+  - `npm run test:unit -- LibraryDetailsPanel`
+  - `npm run test:unit -- libraryDisplay LibraryFilterRail LibraryCollectionTable LibraryDetailsPanel`
+  - `npm run build`
+
+Important remaining gap:
+
+- `LibraryScreen.tsx` still has more orchestration and leftover helper logic than it should after this pass
+- the Library redesign is implemented on the feature branch, but it is not merged to `main` yet
+- creator-mode richness is now mostly in the row clues, `More filters`, and the inspect sheet; the main page itself still stays intentionally restrained
+
+## Current session note (March 19, 2026 - late night library design)
+
+This session did not start coding `Library`. It completed the full design-spec phase for the page instead.
+
+Important changes and findings:
+
+- `Downloads` was approved, merged into `main`, and pushed to GitHub before moving to the next page
+- the current `Library` screen was reviewed as both code and live UI
+- the shared Sims mod manager PRD helped confirm what simmers want to see at each experience level
+- the real job of `Library` is now explicitly locked:
+  - a calm place to browse and understand the collection
+  - not a place where every management flow stays open at once
+- the approved redesign direction is:
+  - `Quiet Catalog`
+- the full written spec now exists at:
+  - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+- the spec locks:
+  - a slim top strip
+  - a lighter left filter rail
+  - a list-first center catalog
+  - a short right understanding panel
+  - on-demand sheets for:
+    - health details
+    - inspect file
+    - edit details
+  - clear page boundaries between `Library`, `Updates`, `Review`, `Organize`, `Creators`, and `Types`
+  - view-specific priorities for `Casual`, `Seasoned`, and `Creator`
+  - restrained motion and calmer interaction rules
+- fresh live screenshots of the current page were saved for:
+  - `output/playwright/library-design-casual-current.png`
+  - `output/playwright/library-design-seasoned-current.png`
+  - `output/playwright/library-design-creator-current.png`
+
+Important remaining gap:
+
+- no `Library` implementation code has been started yet
+- the next required step is user review of the written spec, followed by the implementation plan
+- the expected spec-review subagent loop was not cleanly available in this environment, so the spec was manually reviewed against the same design sections and constraints instead
 ## Current session note (March 19, 2026 - deep night follow-up)
 
 This follow-up pass fixed one of the last visually awkward spots in `Downloads`: the special-setup action block that still felt bulky and under-organized.
