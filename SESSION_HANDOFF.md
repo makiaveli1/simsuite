@@ -1,5 +1,82 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Late Night)
+
+- **Mode**: design
+- **Focus**: full `Downloads` redesign spec using the new calm "quiet staging desk" philosophy
+
+### Progress Made
+
+1. **Mapped what `Downloads` actually does before redesigning it**:
+   - read the current `Downloads` screen and supporting copy
+   - confirmed the screen is doing too many jobs at once:
+     - inbox queue
+     - safe preview
+     - guided setup
+     - proof inspector
+   - locked the page's real core purpose:
+     - a staging area for newly downloaded mods before they reach the game
+
+2. **Checked the current page visually instead of designing from code alone**:
+   - reopened the live app at `http://127.0.0.1:1420/`
+   - captured the current `Downloads` page in:
+     - `Casual`
+     - `Seasoned`
+     - `Creator`
+   - saved fresh screenshots:
+     - `output/playwright/downloads-design-pass/downloads-casual-current.png`
+     - `output/playwright/downloads-design-pass/downloads-seasoned-current.png`
+     - `output/playwright/downloads-design-pass/downloads-creator-current.png`
+
+3. **Explored layout approaches and chose one with the user**:
+   - proposed:
+     - `Quiet Staging Desk`
+     - `Tabbed Staging Rooms`
+     - `Queue First`
+   - user approved `Quiet Staging Desk`
+
+4. **Wrote the full `Downloads` redesign spec**:
+   - new spec file:
+     - `docs/superpowers/specs/2026-03-19-downloads-redesign-design.md`
+   - the spec locks:
+     - one-page desktop workbench shape
+     - quiet left rail
+     - queue-first center stage
+     - short right decision panel
+     - side sheets for proof and file details
+     - focused dialog for guided setup
+     - lane-specific center canvas behavior
+     - distinct but aligned `Casual`, `Seasoned`, and `Creator` behavior
+     - restrained motion and reduced-motion rules
+
+5. **Tightened the spec after review for planning clarity**:
+   - clarified that advanced filters stay less prominent in `Casual`
+   - clarified lane fallback behavior when the remembered lane becomes empty
+   - added motion timing guidance so implementation does not have to guess
+
+### What Worked
+
+- the page direction is much clearer now because the design stayed focused on one real user question:
+  - "Can this batch move safely yet?"
+- comparing `Casual`, `Seasoned`, and `Creator` live made it easier to avoid designing only for the densest view
+- keeping `Downloads` as one page while moving proof and setup behind calmer layers feels like the right balance
+
+### Known Problems / Gaps
+
+- no implementation work started yet for the new `Downloads` design
+- the brainstorming skill expects a separate spec-review subagent loop, but this environment did not expose a clean subagent dispatch path during this pass, so the spec was reviewed manually against the same checklist instead
+- the temporary Vite dev server was restarted for screenshots and may still be running on port `1420`
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Then open:
+  - `docs/superpowers/specs/2026-03-19-downloads-redesign-design.md`
+- If the user approves the written spec, the next step is:
+  - use the `writing-plans` skill to turn the spec into an implementation plan
+- Do not start coding the `Downloads` redesign before the user reviews the spec file.
+
 ## Current Session (March 19, 2026 - Early Night)
 
 - **Mode**: code

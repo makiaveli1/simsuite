@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - late night)
+
+This session did not start code for `Downloads`. It completed the full design-spec phase for the page instead.
+
+Important changes and findings:
+
+- the current `Downloads` screen was re-read and re-checked as a real workflow instead of just a layout
+- the screen's core purpose is now explicitly locked:
+  - a calm staging desk for newly downloaded mods before anything reaches the game
+- three redesign directions were explored:
+  - `Quiet Staging Desk`
+  - `Tabbed Staging Rooms`
+  - `Queue First`
+- the approved direction is:
+  - `Quiet Staging Desk`
+- the full written spec now exists at:
+  - `docs/superpowers/specs/2026-03-19-downloads-redesign-design.md`
+- the spec defines:
+  - a slim utility top strip
+  - a quiet left rail for watcher state, lane picking, search, and on-demand filters
+  - a queue-first center workspace with a lane-aware batch canvas
+  - a short right decision panel instead of a full receipt wall
+  - side sheets for proof, versions, source details, and full file lists
+  - a focused dialog for guided setup and major confirmation flows
+  - one shared page shape across `Casual`, `Seasoned`, and `Creator`
+  - restrained motion with reduced-motion-safe fallbacks
+- live screenshots of the current screen were saved for all three user views:
+  - `output/playwright/downloads-design-pass/downloads-casual-current.png`
+  - `output/playwright/downloads-design-pass/downloads-seasoned-current.png`
+  - `output/playwright/downloads-design-pass/downloads-creator-current.png`
+
+Important remaining gap:
+
+- this session stopped at the spec gate on purpose
+- the `Downloads` redesign is not implemented yet
+- the next required step is user review of the written spec, then a `writing-plans` pass before any code work begins
+- the brainstorming workflow expected a separate spec-review subagent loop, but that path was not cleanly available in this environment during this pass, so the spec review was done manually against the same checklist instead
+
 ## Current session note (March 19, 2026 - early night)
 
 This session started the deeper screen-by-screen redesign program with a full rethink of `Home`.
