@@ -78,6 +78,7 @@ export function HomeScreen({
   const { theme, density, setTheme, setDensity } = useUiPreferences();
   const reducedMotion = useReducedMotion();
   const activeTheme = getThemeDefinition(theme);
+  const ambientHero = displayPrefs.ambientMotion && !reducedMotion;
 
   useEffect(() => {
     void api.getHomeOverview().then(setOverview);
@@ -288,17 +289,85 @@ export function HomeScreen({
           </div>
         </m.header>
 
-        <m.section className={`home-hero home-hero-${heroState.tone}`} {...stagedListItem(1)}>
+        <m.section
+          className={`home-hero home-hero-${heroState.tone}`}
+          data-atmosphere={ambientHero ? "ambient" : "still"}
+          {...stagedListItem(1)}
+        >
           <div className="home-hero-surface" aria-hidden="true">
+            <span className="home-hero-gridwash" />
+            <span className="home-hero-ridge" />
             <m.span
               className="home-hero-aura home-hero-aura-a"
-              animate={!displayPrefs.ambientMotion || reducedMotion ? undefined : { x: [-10, 12, -8, -10], y: [0, 10, -6, 0], opacity: [0.2, 0.38, 0.24, 0.2] }}
-              transition={{ duration: 18, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+              initial={false}
+              animate={
+                ambientHero
+                  ? {
+                      x: [-10, 12, -8, -10],
+                      y: [0, 10, -6, 0],
+                      opacity: [0.18, 0.38, 0.24, 0.18],
+                      scale: [1, 1.04, 0.98, 1],
+                    }
+                  : { x: 0, y: 0, opacity: 0.12, scale: 0.98 }
+              }
+              transition={
+                ambientHero
+                  ? { duration: 18, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                  : { duration: 0.24, ease: "easeOut" }
+              }
             />
             <m.span
               className="home-hero-aura home-hero-aura-b"
-              animate={!displayPrefs.ambientMotion || reducedMotion ? undefined : { x: [8, -12, 6, 8], y: [0, -12, 8, 0], opacity: [0.16, 0.3, 0.2, 0.16] }}
-              transition={{ duration: 22, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+              initial={false}
+              animate={
+                ambientHero
+                  ? {
+                      x: [8, -12, 6, 8],
+                      y: [0, -12, 8, 0],
+                      opacity: [0.14, 0.3, 0.2, 0.14],
+                      scale: [1, 0.96, 1.03, 1],
+                    }
+                  : { x: 0, y: 0, opacity: 0.1, scale: 0.96 }
+              }
+              transition={
+                ambientHero
+                  ? { duration: 22, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                  : { duration: 0.24, ease: "easeOut" }
+              }
+            />
+            <m.span
+              className="home-hero-pulse"
+              initial={false}
+              animate={
+                ambientHero
+                  ? {
+                      opacity: [0.16, 0.34, 0.16],
+                      scale: [0.98, 1.05, 0.98],
+                    }
+                  : { opacity: 0, scale: 0.98 }
+              }
+              transition={
+                ambientHero
+                  ? { duration: 14, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                  : { duration: 0.24, ease: "easeOut" }
+              }
+            />
+            <m.span
+              className="home-hero-trace"
+              initial={false}
+              animate={
+                ambientHero
+                  ? {
+                      x: ["-6%", "10%", "-2%", "-6%"],
+                      opacity: [0.14, 0.44, 0.18, 0.14],
+                    }
+                  : { x: "0%", opacity: 0 }
+              }
+              transition={
+                ambientHero
+                  ? { duration: 12, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                  : { duration: 0.24, ease: "easeOut" }
+              }
             />
           </div>
 
@@ -586,7 +655,7 @@ export function HomeScreen({
                   <SegmentPicker options={HOME_DENSITY_OPTIONS.map((option) => [option.id, option.label])} value={density} onChange={setDensity} />
                 </HomeCustomSection>
 
-                <HomeCustomSection label="Atmosphere" copy="Keep the hero still, or let it drift very softly." icon={<RefreshCw size={14} strokeWidth={2} />}>
+                <HomeCustomSection label="Atmosphere" copy="Still keeps the hero settled. Ambient adds a soft drift and light sweep." icon={<RefreshCw size={14} strokeWidth={2} />}>
                   <SegmentPicker options={[["still", "Still"], ["ambient", "Ambient"]]} value={displayPrefs.ambientMotion ? "ambient" : "still"} onChange={(value) => updateDisplayPrefs({ ambientMotion: value === "ambient" })} />
                 </HomeCustomSection>
               </div>

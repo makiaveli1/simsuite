@@ -748,6 +748,8 @@ h2,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  will-change: transform, opacity;
+  transform-origin: top center;
 }
 
 /* Desktop-First Workbench: Scroll Rules
@@ -971,7 +973,11 @@ h2,
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: all 120ms ease;
+  transition:
+    background 180ms var(--ease-swift),
+    border-color 180ms var(--ease-swift),
+    color 180ms var(--ease-swift),
+    box-shadow 180ms var(--ease-standard);
 }
 
 .workspace-toggle:hover {
@@ -1277,7 +1283,7 @@ h2,
   display: grid;
   justify-items: end;
   background: color-mix(in srgb, var(--overlay-scrim) 88%, transparent);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px) saturate(0.92);
 }
 
 .workbench-sheet {
@@ -1291,7 +1297,8 @@ h2,
   padding: calc(var(--panel-pad) + 0.12rem);
   border: 1px solid rgba(205, 223, 214, 0.12);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.034), transparent 24%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.016), transparent 42%),
     var(--chrome-surface);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
   overflow: hidden;
@@ -7514,10 +7521,18 @@ h2,
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 32%),
     linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 22%, transparent), transparent 64%),
     color-mix(in srgb, var(--surface) 88%, var(--chrome-surface));
+  transition:
+    border-color 220ms var(--ease-swift),
+    background 260ms var(--ease-standard),
+    box-shadow 260ms var(--ease-standard);
 }
 
 .home-hero-surface,
-.home-hero-aura {
+.home-hero-aura,
+.home-hero-gridwash,
+.home-hero-ridge,
+.home-hero-pulse,
+.home-hero-trace {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -7527,12 +7542,39 @@ h2,
   overflow: hidden;
 }
 
+.home-hero-gridwash,
+.home-hero-ridge,
+.home-hero-pulse,
+.home-hero-trace {
+  inset: auto;
+}
+
+.home-hero-gridwash {
+  inset: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.028);
+  background:
+    linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), rgba(255, 255, 255, 0.03) 100%),
+    linear-gradient(transparent 0, transparent calc(100% - 1px), rgba(255, 255, 255, 0.024) 100%);
+  mask: linear-gradient(180deg, transparent, black 18%, black 82%, transparent);
+  opacity: 0.2;
+}
+
+.home-hero-ridge {
+  top: 1.1rem;
+  right: 1rem;
+  width: min(34vw, 420px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 28%, transparent 100%);
+  opacity: 0.26;
+}
+
 .home-hero-aura {
   inset: auto;
   width: 280px;
   height: 280px;
   border-radius: 999px;
   filter: blur(46px);
+  opacity: 0.9;
 }
 
 .home-hero-aura-a {
@@ -7545,6 +7587,70 @@ h2,
   right: -48px;
   bottom: -98px;
   background: radial-gradient(circle, color-mix(in srgb, var(--mint) 16%, transparent), transparent 72%);
+}
+
+.home-hero-pulse {
+  top: 1.15rem;
+  right: 12%;
+  width: 224px;
+  height: 224px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-line) 88%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 0 0 20px rgba(255, 255, 255, 0.014);
+}
+
+.home-hero-trace {
+  left: 8%;
+  bottom: 22%;
+  width: min(42vw, 500px);
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--mint) 38%, transparent) 22%, transparent 100%);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--mint) 24%, transparent);
+  transform: rotate(-7deg);
+}
+
+.home-hero[data-atmosphere="still"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 14%, transparent), transparent 68%),
+    color-mix(in srgb, var(--surface) 90%, var(--chrome-surface));
+}
+
+.home-hero[data-atmosphere="still"] .home-hero-gridwash {
+  opacity: 0.12;
+}
+
+.home-hero[data-atmosphere="still"] .home-hero-ridge {
+  opacity: 0.16;
+}
+
+.home-hero[data-atmosphere="still"] .home-hero-aura {
+  filter: blur(36px);
+}
+
+.home-hero[data-atmosphere="still"] .home-hero-pulse,
+.home-hero[data-atmosphere="still"] .home-hero-trace {
+  opacity: 0;
+}
+
+.home-hero[data-atmosphere="ambient"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 28%, transparent), transparent 60%),
+    color-mix(in srgb, var(--surface) 86%, var(--chrome-surface));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.014),
+    0 0 0 1px rgba(255, 255, 255, 0.01);
+}
+
+.home-hero[data-atmosphere="ambient"] .home-hero-gridwash {
+  opacity: 0.34;
+}
+
+.home-hero[data-atmosphere="ambient"] .home-hero-ridge {
+  opacity: 0.54;
 }
 
 .home-hero-copy,
@@ -7595,6 +7701,9 @@ h2,
   padding: 0.78rem 0.82rem;
   border: 1px solid rgba(205, 223, 214, 0.08);
   background: rgba(7, 12, 14, 0.34);
+  transition:
+    background 220ms var(--ease-swift),
+    border-color 220ms var(--ease-swift);
 }
 
 .home-hero-metric span,
@@ -7791,6 +7900,17 @@ h2,
   color: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    background 180ms var(--ease-swift),
+    border-color 180ms var(--ease-swift),
+    box-shadow 180ms var(--ease-standard);
+}
+
+.home-toggle-card:hover {
+  border-color: color-mix(in srgb, var(--accent-line) 56%, var(--line));
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--accent-soft) 24%, transparent), transparent 74%),
+    var(--surface-3);
 }
 
 .home-toggle-card.is-active {

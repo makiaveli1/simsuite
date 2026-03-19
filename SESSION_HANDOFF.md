@@ -91,6 +91,25 @@
      - `output/playwright/home-pass11-customize-sheet.png`
    - `npm run build` passed again after the cleanup
 
+9. **Tightened the motion and made `Still` vs `Ambient` actually different on `Home`**:
+   - softened the shared motion so the app feels steadier:
+     - calmer hover lift
+     - smaller row drift
+     - smoother sheet open/close
+     - gentler screen entry and exit
+   - gave the `Home` hero a clearer atmosphere split:
+     - `Still` now keeps the hero flatter and quieter
+     - `Ambient` now adds a visible but still calm light ring, sweep line, and richer surface glow
+   - tightened the `Customize Home` sheet and toggle interactions so the controls feel less abrupt
+   - live rechecked:
+     - `Creator`
+     - `Seasoned`
+     - `Casual`
+   - captured fresh comparison screenshots:
+     - `output/playwright/home-pass12-creator-still-v2.png`
+     - `output/playwright/home-pass12-creator-ambient-v2.png`
+   - `npm run build` passed after the motion polish
+
 ### What Worked
 
 - `Home` now feels much closer to a calm browser-style landing page than a mini dashboard
@@ -101,6 +120,8 @@
 - removing the extra `Home` detail mode made the whole system easier to understand:
   - user view decides information depth
   - `Customize Home` handles personal taste
+- the shared motion feels cleaner now because controls move less and settle faster
+- `Still` versus `Ambient` finally reads like a real user-facing choice instead of a hidden technical toggle
 
 ### Known Problems / Gaps
 
@@ -108,6 +129,7 @@
 - `Creator` view is intentionally denser, but it is also the closest to feeling busy again; if we want to push the calm-home idea even further later, that is the first variant to tune
 - the newly tightened `Seasoned` and `Creator` layouts are better organized now, but `Creator` is still the first place to tune if we want even more calm later
 - this session only reworked `Home`; the same deeper page-by-page rethink still needs to move through the other screens one at a time
+- the stronger atmosphere split only exists on `Home` so far; if we like it long-term, the same polish language could move into `Downloads` or `Updates` later
 
 ### Next Session Start Here
 

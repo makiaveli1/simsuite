@@ -53,12 +53,32 @@ Important changes and findings:
 - checks passed:
   - `npm run build`
   - `npm run build` after removing the conflicting extra detail-level control
+  - `npm run build` after the motion-and-atmosphere polish pass
+
+- `Home` also got a real polish pass after the structure was already in place:
+  - shared motion was softened so controls, screen changes, and side sheets feel calmer
+  - the `Home` hero now has two visibly different atmosphere states:
+    - `Still`
+      - flatter and quieter
+    - `Ambient`
+      - soft light ring
+      - slow sweep line
+      - richer hero glow
+  - the old problem where `Still` and `Ambient` felt the same is now fixed
+  - live checks were run again in:
+    - `Casual`
+    - `Seasoned`
+    - `Creator`
+  - fresh comparison screenshots were saved in:
+    - `output/playwright/home-pass12-creator-still-v2.png`
+    - `output/playwright/home-pass12-creator-ambient-v2.png`
 
 Important remaining gap:
 
 - the `Customize Home` sheet works and looks better now, but its theme section is still the longest part of the panel and could take one more density pass later
 - the same deeper rethink still needs to be carried across the rest of the app one page at a time
 - `Creator` `Home` is intentionally fuller, but it is still the first place to tune if we want even more calm without losing useful information
+- the richer atmosphere polish is only on `Home` right now; other screens still use the calmer shared motion, but not the same optional atmosphere treatment
 
 ## Current session note (March 18, 2026 - evening)
 

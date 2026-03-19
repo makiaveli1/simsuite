@@ -4,13 +4,13 @@ export const easeStandard: [number, number, number, number] = [0.22, 1, 0.36, 1]
 
 export const panelSpring = {
   type: "spring" as const,
-  stiffness: 320,
-  damping: 30,
-  mass: 0.82,
+  stiffness: 280,
+  damping: 32,
+  mass: 0.88,
 };
 
 export const overlayTransition = {
-  duration: 0.2,
+  duration: 0.24,
   ease: easeStandard,
 };
 
@@ -141,25 +141,32 @@ const SCREEN_TEMPO = {
 } satisfies Record<Screen, number>;
 
 export const screenTransition = {
-  duration: 0.24,
+  duration: 0.26,
   ease: easeStandard,
 };
 
 export const hoverLift = {
-  y: -2,
-  transition: panelSpring,
+  y: -1.5,
+  transition: {
+    duration: 0.18,
+    ease: easeStandard,
+  },
 };
 
 export const tapPress = {
-  scale: 0.985,
+  scale: 0.992,
   transition: {
-    duration: 0.12,
+    duration: 0.14,
+    ease: easeStandard,
   },
 };
 
 export const rowHover = {
-  x: 3,
-  transition: panelSpring,
+  x: 2,
+  transition: {
+    duration: 0.18,
+    ease: easeStandard,
+  },
 };
 
 export const rowPress = {
@@ -171,13 +178,13 @@ export const rowPress = {
 
 export function stagedListItem(index: number) {
   return {
-    initial: { opacity: 0, y: 8 },
+    initial: { opacity: 0, y: 6 },
     animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -6 },
+    exit: { opacity: 0, y: -4 },
     transition: {
-      duration: 0.2,
+      duration: 0.22,
       ease: easeStandard,
-      delay: Math.min(index * 0.018, 0.14),
+      delay: Math.min(index * 0.022, 0.16),
     },
   };
 }
@@ -189,9 +196,9 @@ export function getScreenFrameMotion(theme: UiTheme, screen: Screen) {
   const exit = Math.round(themeProfile.screenExit * tempo);
 
   return {
-    initial: { opacity: 0, y: offset },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: exit },
+    initial: { opacity: 0, y: offset, scale: 0.998 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    exit: { opacity: 0, y: exit, scale: 0.996 },
     transition: {
       duration: Number((themeProfile.screenDuration * tempo).toFixed(3)),
       ease: easeStandard,
