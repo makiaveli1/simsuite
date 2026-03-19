@@ -4413,6 +4413,18 @@ h2,
   height: 100%;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .downloads-workbench {
   min-height: 0;
   height: 100%;
@@ -4461,6 +4473,13 @@ h2,
   border-top: 1px solid var(--line);
 }
 
+.downloads-rail-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .downloads-rail-card {
   padding: 0.58rem 0.62rem;
   border: 1px solid var(--line);
@@ -4474,61 +4493,113 @@ h2,
   line-height: 1.45;
 }
 
-.downloads-lane-summary-list,
-.downloads-rail-actions {
+.downloads-rail-search-card,
+.downloads-rail-filters,
+.downloads-watch-meta {
   display: grid;
-  gap: 0.4rem;
-}
-
-.downloads-filter-card .filter-grid {
-  grid-template-columns: minmax(0, 1fr);
   gap: 0.42rem;
 }
 
-.downloads-lane-summary {
+.downloads-search-input {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.55rem;
-  padding: 0.42rem 0.08rem;
-  border-top: 1px solid var(--line);
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.downloads-search-input svg,
+.downloads-rail-tip svg {
+  color: var(--text-soft);
+  flex: 0 0 auto;
+}
+
+.downloads-search-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
   background: transparent;
 }
 
-.downloads-lane-summary:first-child {
-  padding-top: 0;
-  border-top: 0;
+.downloads-search-input input:focus {
+  outline: none;
 }
 
-.downloads-lane-summary > div {
+.downloads-lane-picker {
   display: grid;
-  gap: 0.12rem;
-  min-width: 0;
+  gap: 0.35rem;
 }
 
-.downloads-lane-summary > div span {
+.downloads-lane-button {
+  display: grid;
+  gap: 0.24rem;
+  padding: 0.54rem 0.58rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.018);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms var(--ease-swift),
+    border-color 180ms var(--ease-swift),
+    box-shadow 200ms var(--ease-standard);
+}
+
+.downloads-lane-button:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.downloads-lane-button.is-active {
+  border-color: var(--accent-line);
+  background:
+    linear-gradient(90deg, var(--accent-soft), transparent 42%),
+    rgba(255, 255, 255, 0.03);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.downloads-lane-button-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.downloads-lane-button-title {
+  font-weight: 600;
+}
+
+.downloads-lane-button-count {
+  padding: 0.16rem 0.34rem;
+  border: 1px solid var(--line);
   color: var(--text-soft);
-  font-size: 0.73rem;
+  font-size: 0.72rem;
+}
+
+.downloads-lane-button-hint {
+  color: var(--text-soft);
+  font-size: 0.72rem;
   line-height: 1.4;
 }
 
-.downloads-lane-summary-ready_now .ghost-chip,
-.downloads-lane-summary-special_setup .ghost-chip {
-  border-color: var(--accent-line);
+.downloads-filters-toggle {
+  padding: 0.34rem 0.52rem;
+  min-height: auto;
+  font-size: 0.74rem;
 }
 
-.downloads-lane-summary-waiting_on_you .ghost-chip {
-  border-color: var(--amber-line);
+.downloads-rail-section-muted {
+  padding-top: 0.4rem;
 }
 
-.downloads-lane-summary-blocked .ghost-chip {
-  border-color: var(--danger-line);
-}
-
-.downloads-rail-actions .primary-action,
-.downloads-rail-actions .action-item {
-  width: 100%;
-  justify-content: center;
+.downloads-rail-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.42rem;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 
 .downloads-stage-panel {
@@ -4560,6 +4631,13 @@ h2,
 .downloads-stage-status .ghost-chip,
 .downloads-stage-metrics .health-chip {
   background: transparent;
+}
+
+.downloads-queue-subcopy {
+  margin: 0.18rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
 }
 
 .downloads-layout {
