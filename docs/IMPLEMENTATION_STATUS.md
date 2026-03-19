@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - late night library design)
+
+This session did not start coding `Library`. It completed the full design-spec phase for the page instead.
+
+Important changes and findings:
+
+- `Downloads` was approved, merged into `main`, and pushed to GitHub before moving to the next page
+- the current `Library` screen was reviewed as both code and live UI
+- the shared Sims mod manager PRD helped confirm what simmers want to see at each experience level
+- the real job of `Library` is now explicitly locked:
+  - a calm place to browse and understand the collection
+  - not a place where every management flow stays open at once
+- the approved redesign direction is:
+  - `Quiet Catalog`
+- the full written spec now exists at:
+  - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+- the spec locks:
+  - a slim top strip
+  - a lighter left filter rail
+  - a list-first center catalog
+  - a short right understanding panel
+  - on-demand sheets for:
+    - health details
+    - inspect file
+    - edit details
+  - clear page boundaries between `Library`, `Updates`, `Review`, `Organize`, `Creators`, and `Types`
+  - view-specific priorities for `Casual`, `Seasoned`, and `Creator`
+  - restrained motion and calmer interaction rules
+- fresh live screenshots of the current page were saved for:
+  - `output/playwright/library-design-casual-current.png`
+  - `output/playwright/library-design-seasoned-current.png`
+  - `output/playwright/library-design-creator-current.png`
+
+Important remaining gap:
+
+- no `Library` implementation code has been started yet
+- the next required step is user review of the written spec, followed by the implementation plan
+- the expected spec-review subagent loop was not cleanly available in this environment, so the spec was manually reviewed against the same design sections and constraints instead
+
 ## Current session note (March 19, 2026 - deep night follow-up)
 
 This follow-up pass fixed one of the last visually awkward spots in `Downloads`: the special-setup action block that still felt bulky and under-organized.

@@ -1,5 +1,87 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Late Night Library Design)
+
+- **Mode**: design
+- **Focus**: full `Library` redesign spec using the calmer `Quiet Catalog` direction
+
+### Progress Made
+
+1. **Closed out the previous page cleanly before moving on**:
+   - the `Downloads` redesign was approved by the user
+   - it was merged into `main`
+   - `main` was pushed to GitHub
+
+2. **Mapped the current `Library` screen before redesigning it**:
+   - reviewed `LibraryScreen.tsx`
+   - reviewed the current repo notes
+   - compared the current screen against the Sims mod manager PRD shared by the user
+   - locked the real purpose of `Library`:
+     - understanding the collection first, not managing every system at once
+
+3. **Checked the current `Library` screen visually in all three user modes**:
+   - saved fresh screenshots for:
+     - `Casual`
+     - `Seasoned`
+     - `Creator`
+   - screenshot files:
+     - `output/playwright/library-design-casual-current.png`
+     - `output/playwright/library-design-seasoned-current.png`
+     - `output/playwright/library-design-creator-current.png`
+
+4. **Aligned the page behavior with the three user types**:
+   - `Casual`
+     - should answer `is it okay, and do I need to do anything?`
+   - `Seasoned`
+     - should answer `what is affecting my setup?`
+   - `Creator`
+     - should answer `how is this built, linked, and debugged?`
+
+5. **Locked the approved page direction with the user**:
+   - chosen direction:
+     - `Quiet Catalog`
+   - key rules:
+     - the list is the hero
+     - the detail panel explains, not overwhelms
+     - editing and deep inspection move behind on-demand sheets
+     - `Library` stays focused on collection truth while other workspaces keep their own jobs
+
+6. **Wrote the full Library redesign spec**:
+   - new spec file:
+     - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+   - the spec covers:
+     - page purpose
+     - layout
+     - view-mode behavior
+     - details-on-demand surfaces
+     - product boundaries
+     - motion
+     - behavior rules
+     - information priorities by user type
+
+### What Worked
+
+- the PRD examples helped confirm what simmers actually want to see first
+- the current screen is now easy to frame: useful data, but too much always open
+- `Quiet Catalog` feels like the right next step after the calmer `Home` and `Downloads` work
+
+### Known Problems / Gaps
+
+- this session stopped at the design-spec stage on purpose
+- no `Library` implementation code has been started yet
+- the expected spec-review subagent loop still was not cleanly available in this environment, so the spec was reviewed manually against the same structure and page rules
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Then review:
+  - `docs/superpowers/specs/2026-03-19-library-redesign-design.md`
+  - `output/playwright/library-design-casual-current.png`
+  - `output/playwright/library-design-seasoned-current.png`
+  - `output/playwright/library-design-creator-current.png`
+- If the user approves the written spec, the next step is to create the `Library` implementation plan.
+
 ## Current Session (March 19, 2026 - Deep Night Follow-up)
 
 - **Mode**: code
