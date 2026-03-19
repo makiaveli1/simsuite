@@ -14,6 +14,23 @@ export const overlayTransition = {
   ease: easeStandard,
 };
 
+export const downloadsSelectionTransition = {
+  duration: 0.2,
+  ease: easeStandard,
+};
+
+export const downloadsSheetTransition = {
+  duration: 0.22,
+  ease: easeStandard,
+};
+
+export const downloadsDialogSpring = {
+  type: "spring" as const,
+  stiffness: 300,
+  damping: 32,
+  mass: 0.84,
+};
+
 const THEME_MOTION = {
   plumbob: {
     screenOffset: 12,
