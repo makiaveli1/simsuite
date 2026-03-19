@@ -201,6 +201,7 @@ export function HomeScreen({
   const visibleModules = HOME_MODULE_ORDER.filter(
     (moduleId) => displayPrefs.visibleModules[moduleId],
   );
+  const moduleBands = buildModuleBands(userView, visibleModules);
 
   const snapshotRows = [
     ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
@@ -251,7 +252,7 @@ export function HomeScreen({
   ] as const;
 
   return (
-    <div className="screen-shell home-hub-screen">
+    <div className={`screen-shell home-hub-screen home-hub-view-${userView}`}>
       <div className="home-hub-shell">
         <m.header className="home-hub-topbar" {...stagedListItem(0)}>
           <div className="home-hub-intro">
@@ -325,80 +326,210 @@ export function HomeScreen({
           </div>
         </m.section>
 
-        <div className="home-module-grid">
-          {visibleModules.includes("snapshot") ? (
-            <HomeModuleCard index={2} label="Today snapshot" title={userView === "beginner" ? "What is waiting right now" : "What is active right now"} icon={<Activity size={14} strokeWidth={2} />}>
-              {snapshotRows.map(([label, value, note]) => (
-                <HomeGlanceRow key={label} label={label} value={value} note={calmDetails ? undefined : note} />
-              ))}
-            </HomeModuleCard>
-          ) : null}
+        <div className="home-module-stack">
+          {moduleBands.map((band, bandIndex) => (
+            <div
+              key={`band-${bandIndex + 1}`}
+              className={`home-module-band home-module-band-${bandIndex + 1}`}
+            >
+              {band.map((moduleId) => {
+                if (moduleId === "snapshot") {
+                  return (
+                    <HomeModuleCard
+                      key={moduleId}
+                      index={2}
+                      moduleId={moduleId}
+                      label="Today snapshot"
+                      title={
+                        userView === "beginner"
+                          ? "What is waiting right now"
+                          : "What is active right now"
+                      }
+                      icon={<Activity size={14} strokeWidth={2} />}
+                    >
+                      {snapshotRows.map(([label, value, note]) => (
+                        <HomeGlanceRow
+                          key={label}
+                          label={label}
+                          value={value}
+                          note={calmDetails ? undefined : note}
+                        />
+                      ))}
+                    </HomeModuleCard>
+                  );
+                }
 
-          {visibleModules.includes("health") ? (
-            <HomeModuleCard index={3} label="System health" title={userView === "beginner" ? "What SimSuite knows" : "Current system truth"} icon={<ShieldCheck size={14} strokeWidth={2} />}>
-              <div className="health-chip-group">
-                <span className={`health-chip ${overview?.scanNeedsRefresh ? "is-warn" : "is-good"}`}><span className="health-chip-dot"></span>{overview?.scanNeedsRefresh ? "Refresh scan" : "Scan current"}</span>
-                <span className={`health-chip ${(overview?.unsafeCount ?? 0) > 0 ? "is-danger" : "is-good"}`}><span className="health-chip-dot"></span>{(overview?.unsafeCount ?? 0) > 0 ? "Needs care" : "No active risks"}</span>
-              </div>
-              <div className="home-fact-list">
-                {healthRows.map(([label, value]) => <HomeFactRow key={label} label={label} value={value} />)}
-              </div>
-            </HomeModuleCard>
-          ) : null}
+                if (moduleId === "health") {
+                  return (
+                    <HomeModuleCard
+                      key={moduleId}
+                      index={3}
+                      moduleId={moduleId}
+                      label="System health"
+                      title={
+                        userView === "beginner"
+                          ? "What SimSuite knows"
+                          : "Current system truth"
+                      }
+                      icon={<ShieldCheck size={14} strokeWidth={2} />}
+                    >
+                      <div className="health-chip-group">
+                        <span
+                          className={`health-chip ${
+                            overview?.scanNeedsRefresh ? "is-warn" : "is-good"
+                          }`}
+                        >
+                          <span className="health-chip-dot"></span>
+                          {overview?.scanNeedsRefresh ? "Refresh scan" : "Scan current"}
+                        </span>
+                        <span
+                          className={`health-chip ${
+                            (overview?.unsafeCount ?? 0) > 0 ? "is-danger" : "is-good"
+                          }`}
+                        >
+                          <span className="health-chip-dot"></span>
+                          {(overview?.unsafeCount ?? 0) > 0
+                            ? "Needs care"
+                            : "No active risks"}
+                        </span>
+                      </div>
+                      <div className="home-fact-list">
+                        {healthRows.map(([label, value]) => (
+                          <HomeFactRow key={label} label={label} value={value} />
+                        ))}
+                      </div>
+                    </HomeModuleCard>
+                  );
+                }
 
-          {visibleModules.includes("watch") ? (
-            <HomeModuleCard index={4} label="Update watch" title={userView === "beginner" ? "Tracked page follow-up" : "Watched page summary"} icon={<RefreshCw size={14} strokeWidth={2} />}>
-              {watchRows.map(([label, value, note]) => (
-                <HomeGlanceRow key={label} label={label} value={value} note={calmDetails ? undefined : note} />
-              ))}
-            </HomeModuleCard>
-          ) : null}
+                if (moduleId === "watch") {
+                  return (
+                    <HomeModuleCard
+                      key={moduleId}
+                      index={4}
+                      moduleId={moduleId}
+                      label="Update watch"
+                      title={
+                        userView === "beginner"
+                          ? "Tracked page follow-up"
+                          : "Watched page summary"
+                      }
+                      icon={<RefreshCw size={14} strokeWidth={2} />}
+                    >
+                      {watchRows.map(([label, value, note]) => (
+                        <HomeGlanceRow
+                          key={label}
+                          label={label}
+                          value={value}
+                          note={calmDetails ? undefined : note}
+                        />
+                      ))}
+                    </HomeModuleCard>
+                  );
+                }
 
-          {visibleModules.includes("folders") ? (
-            <HomeModuleCard index={5} label="Folders" title={sourceCount < 3 ? "Finish setup gently" : "Library roots are linked"} icon={<FolderOpen size={14} strokeWidth={2} />} badge={`${sourceCount}/3 ready`} extraClass="home-folders-module">
-              <div className="home-folder-list">
-                <HomeFolderRow label="Mods" path={settings?.modsPath} onChoose={() => void chooseFolder("modsPath")} disabled={isSaving} />
-                <HomeFolderRow label="Tray" path={settings?.trayPath} onChoose={() => void chooseFolder("trayPath")} disabled={isSaving} />
-                <HomeFolderRow label="Downloads" path={settings?.downloadsPath} onChoose={() => void chooseFolder("downloadsPath")} disabled={isSaving} />
-              </div>
-              <div className="home-folder-actions">
-                {sourceCount < 3 ? (
-                  <button type="button" className="secondary-action" onClick={() => void chooseFirstMissingFolder()} disabled={isSaving}>
-                    <FolderOpen size={14} strokeWidth={2} />
-                    Choose next folder
-                  </button>
-                ) : null}
-                {hasDetectedPathSuggestion ? (
-                  <button type="button" className="secondary-action" onClick={() => void applyDetectedPaths()} disabled={isSaving}>
-                    <FolderCog size={14} strokeWidth={2} />
-                    Use detected folders
-                  </button>
-                ) : null}
-              </div>
-              <p className="home-module-note">
-                {sourceCount < 3
-                  ? "Once the missing folders are linked, scans and inbox checks can stay calm and reliable."
-                  : "These roots are ready, so SimSuite can keep using one steady desktop flow."}
-              </p>
-            </HomeModuleCard>
-          ) : null}
+                if (moduleId === "folders") {
+                  return (
+                    <HomeModuleCard
+                      key={moduleId}
+                      index={5}
+                      moduleId={moduleId}
+                      label="Folders"
+                      title={
+                        sourceCount < 3
+                          ? "Finish setup gently"
+                          : "Library roots are linked"
+                      }
+                      icon={<FolderOpen size={14} strokeWidth={2} />}
+                      badge={`${sourceCount}/3 ready`}
+                      extraClass="home-folders-module"
+                    >
+                      <div className="home-folder-list">
+                        <HomeFolderRow
+                          label="Mods"
+                          path={settings?.modsPath}
+                          onChoose={() => void chooseFolder("modsPath")}
+                          disabled={isSaving}
+                        />
+                        <HomeFolderRow
+                          label="Tray"
+                          path={settings?.trayPath}
+                          onChoose={() => void chooseFolder("trayPath")}
+                          disabled={isSaving}
+                        />
+                        <HomeFolderRow
+                          label="Downloads"
+                          path={settings?.downloadsPath}
+                          onChoose={() => void chooseFolder("downloadsPath")}
+                          disabled={isSaving}
+                        />
+                      </div>
+                      <div className="home-folder-actions">
+                        {sourceCount < 3 ? (
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => void chooseFirstMissingFolder()}
+                            disabled={isSaving}
+                          >
+                            <FolderOpen size={14} strokeWidth={2} />
+                            Choose next folder
+                          </button>
+                        ) : null}
+                        {hasDetectedPathSuggestion ? (
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => void applyDetectedPaths()}
+                            disabled={isSaving}
+                          >
+                            <FolderCog size={14} strokeWidth={2} />
+                            Use detected folders
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="home-module-note">
+                        {sourceCount < 3
+                          ? "Once the missing folders are linked, scans and inbox checks can stay calm and reliable."
+                          : "These roots are ready, so SimSuite can keep using one steady desktop flow."}
+                      </p>
+                    </HomeModuleCard>
+                  );
+                }
 
-          {visibleModules.includes("library") ? (
-            <HomeModuleCard index={6} label="Library facts" title={userView === "power" ? "Receipts at a glance" : "The shape of the library"} icon={<LibraryBig size={14} strokeWidth={2} />}>
-              <div className="summary-matrix home-library-matrix">
-                {libraryRows.map(([label, value]) => (
-                  <div key={label} className="summary-stat home-library-stat">
-                    <span>{label}</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
-              </div>
-              <div className="home-fact-list">
-                <HomeFactRow label="Last scan" value={formatTimestamp(overview?.lastScanAt)} />
-                <HomeFactRow label="Theme" value={activeTheme.label} />
-              </div>
-            </HomeModuleCard>
-          ) : null}
+                return (
+                  <HomeModuleCard
+                    key={moduleId}
+                    index={6}
+                    moduleId={moduleId}
+                    label="Library facts"
+                    title={
+                      userView === "power"
+                        ? "Receipts at a glance"
+                        : "The shape of the library"
+                    }
+                    icon={<LibraryBig size={14} strokeWidth={2} />}
+                  >
+                    <div className="summary-matrix home-library-matrix">
+                      {libraryRows.map(([label, value]) => (
+                        <div key={label} className="summary-stat home-library-stat">
+                          <span>{label}</span>
+                          <strong>{value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="home-fact-list">
+                      <HomeFactRow
+                        label="Last scan"
+                        value={formatTimestamp(overview?.lastScanAt)}
+                      />
+                      <HomeFactRow label="Theme" value={activeTheme.label} />
+                    </div>
+                  </HomeModuleCard>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -477,6 +608,7 @@ export function HomeScreen({
 function HomeModuleCard({
   children,
   index,
+  moduleId,
   label,
   title,
   icon,
@@ -485,6 +617,7 @@ function HomeModuleCard({
 }: {
   children: ReactNode;
   index: number;
+  moduleId: HomeModuleId;
   label: string;
   title: string;
   icon: ReactNode;
@@ -492,7 +625,12 @@ function HomeModuleCard({
   extraClass?: string;
 }) {
   return (
-    <m.section className={`panel-card home-module-card${extraClass ? ` ${extraClass}` : ""}`} {...stagedListItem(index)}>
+    <m.section
+      className={`panel-card home-module-card home-module-card-${moduleId}${
+        extraClass ? ` ${extraClass}` : ""
+      }`}
+      {...stagedListItem(index)}
+    >
       <div className="panel-heading home-module-heading">
         <div>
           <span className="section-label">{icon}{label}</span>
@@ -563,4 +701,41 @@ function HomeFolderRow({ label, path, onChoose, disabled }: { label: string; pat
       </button>
     </div>
   );
+}
+
+function buildModuleBands(
+  userView: UserView,
+  visibleModules: HomeModuleId[],
+) {
+  if (userView === "beginner") {
+    return [visibleModules];
+  }
+
+  const preferredBands =
+    userView === "power"
+      ? [
+          ["watch", "health"],
+          ["snapshot", "folders"],
+          ["library"],
+        ]
+      : [
+          ["snapshot", "health"],
+          ["watch", "folders"],
+          ["library"],
+        ];
+
+  const remaining = new Set(visibleModules);
+  const bands = preferredBands
+    .map((band) => band.filter((moduleId) => remaining.has(moduleId as HomeModuleId)))
+    .filter((band) => band.length > 0)
+    .map((band) => {
+      band.forEach((moduleId) => remaining.delete(moduleId as HomeModuleId));
+      return band as HomeModuleId[];
+    });
+
+  if (remaining.size > 0) {
+    bands.push(Array.from(remaining));
+  }
+
+  return bands;
 }

@@ -30,6 +30,15 @@ Important changes and findings:
   - `Casual` can stay quieter
   - `Seasoned` can stay balanced
   - `Creator` can keep more visible detail
+- after the first `Home` pass, `Seasoned` and `Creator` were tightened further so they no longer read like one flat group of equally weighted cards
+- the denser views now use clearer bands:
+  - `Seasoned`
+    - snapshot + system health
+    - update watch + folders
+  - `Creator`
+    - update watch + system health
+    - snapshot + folders
+    - library facts as a full-width lower strip
 - live checks were run on `Home` in:
   - `Casual`
   - `Seasoned`
@@ -40,6 +49,8 @@ Important changes and findings:
   - `output/playwright/home-pass10-seasoned-verified.png`
   - `output/playwright/home-pass10-creator-after.png`
   - `output/playwright/home-pass10-customize-sheet.png`
+  - `output/playwright/home-pass10-seasoned-tightened.png`
+  - `output/playwright/home-pass10-creator-tightened.png`
 - checks passed:
   - `npm run build`
 
@@ -47,7 +58,7 @@ Important remaining gap:
 
 - the `Customize Home` sheet works and looks good overall, but its theme section is still the longest part of the panel and could take one more density pass later
 - the same deeper rethink still needs to be carried across the rest of the app one page at a time
-- `Creator` `Home` is intentionally fuller, but it is the first place to tune if we want even more calm without losing useful information
+- `Creator` `Home` is intentionally fuller, but it is still the first place to tune if we want even more calm without losing useful information
 
 ## Current session note (March 18, 2026 - evening)
 

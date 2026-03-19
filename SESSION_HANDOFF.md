@@ -41,13 +41,23 @@
      - ambient hero motion
    - these preferences save per user view so `Casual`, `Seasoned`, and `Creator` can each feel a little different
 
-4. **Made the three user views actually behave differently on `Home`**:
+4. **Tightened the richer `Home` views so they feel organized instead of just fuller**:
+   - `Seasoned` now groups its modules into cleaner two-card bands:
+     - snapshot + system health
+     - update watch + folders
+   - `Creator` now uses a clearer hierarchy:
+     - update watch + system health first
+     - snapshot + folders next
+     - library facts as a full-width lower strip
+   - this made the denser views feel much more intentional than the earlier equal-weight card wall
+
+5. **Made the three user views actually behave differently on `Home`**:
    - `Casual` now defaults to the quietest version
    - `Seasoned` keeps a balanced middle state
    - `Creator` shows the fullest set of `Home` modules and richer detail rows
    - all three views keep the same page structure, but the amount of information shifts in a much more intentional way
 
-5. **Verified the rebuild visually instead of trusting the code**:
+6. **Verified the rebuild visually instead of trusting the code**:
    - restarted Vite at `http://127.0.0.1:1420/`
    - checked `Home` in:
      - `Casual`
@@ -59,8 +69,10 @@
      - `output/playwright/home-pass10-seasoned-verified.png`
      - `output/playwright/home-pass10-creator-after.png`
      - `output/playwright/home-pass10-customize-sheet.png`
+     - `output/playwright/home-pass10-seasoned-tightened.png`
+     - `output/playwright/home-pass10-creator-tightened.png`
 
-6. **Verification**:
+7. **Verification**:
    - `npm run build` passed
    - checked the screen frame in the live app and confirmed the new `Home` did not overflow vertically in the checked desktop view
 
@@ -76,6 +88,7 @@
 
 - the `Customize Home` sheet is useful and works, but it is still a little long; it scrolls cleanly, though a later taste pass could tighten the theme area
 - `Creator` view is intentionally denser, but it is also the closest to feeling busy again; if we want to push the calm-home idea even further later, that is the first variant to tune
+- the newly tightened `Seasoned` and `Creator` layouts are better organized now, but `Creator` is still the first place to tune if we want even more calm later
 - this session only reworked `Home`; the same deeper page-by-page rethink still needs to move through the other screens one at a time
 
 ### Next Session Start Here

@@ -7615,17 +7615,56 @@ h2,
   border-color: rgba(255, 180, 76, 0.18);
 }
 
-.home-module-grid {
+.home-module-stack {
+  display: grid;
+  gap: clamp(0.7rem, 1vw, 0.9rem);
+  align-content: start;
+}
+
+.home-module-band {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: clamp(0.7rem, 1vw, 0.9rem);
-  align-content: start;
 }
 
 .home-module-card {
   gap: 0.78rem;
   align-content: start;
   min-height: 0;
+}
+
+.home-hub-view-standard .home-module-band-1 {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+}
+
+.home-hub-view-standard .home-module-band-2 {
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+}
+
+.home-hub-view-standard .home-module-band-3 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.home-hub-view-power .home-module-band-1 {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+.home-hub-view-power .home-module-band-2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.home-hub-view-power .home-module-band-3 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.home-hub-view-power .home-module-card-library .home-library-matrix,
+.home-hub-view-standard .home-module-card-library .home-library-matrix {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+
+.home-hub-view-power .home-module-card-library,
+.home-hub-view-standard .home-module-card-library {
+  gap: 0.64rem;
 }
 
 .home-module-heading {
@@ -7807,7 +7846,7 @@ h2,
     grid-template-rows: auto auto auto;
   }
 
-  .home-module-grid,
+  .home-module-band,
   .home-library-matrix,
   .home-theme-strip {
     grid-template-columns: 1fr;
