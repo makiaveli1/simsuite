@@ -1,7 +1,11 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { LibraryFileRow } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
+
+afterEach(() => {
+  cleanup();
+});
 
 const SAMPLE_ROWS: LibraryFileRow[] = [
   {
@@ -39,4 +43,24 @@ it("shows a calm row in casual mode without the full path", () => {
 
   expect(screen.getByText(/betterbuildbuy\.package/i)).toBeInTheDocument();
   expect(screen.queryByText(/mods\\buildbuy/i)).not.toBeInTheDocument();
+});
+
+it("renders the results inside a dedicated scroll viewport", () => {
+  const { container } = render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={SAMPLE_ROWS}
+      selectedId={1}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(screen.getByRole("region", { name: /library results/i })).toBeVisible();
+  expect(
+    container.querySelector(".library-collection-shell .library-table-viewport"),
+  ).not.toBeNull();
 });

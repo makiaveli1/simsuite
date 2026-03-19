@@ -1,5 +1,59 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library True Viewport Fix)
+
+- **Mode**: code
+- **Focus**: stop the `Library` results list from stretching the whole page downward when the list gets long
+
+### Progress Made
+
+1. **Proved the remaining bug with a stress check instead of guessing**:
+   - checked the live `Library` page with a real browser script
+   - confirmed the document height was fine with the normal list
+   - then artificially stuffed the results table with many extra rows to simulate a larger library page
+   - that exposed the real remaining problem: the list area itself was growing with its contents instead of staying capped
+
+2. **Turned the results area into a real contained viewport**:
+   - wrapped the table and pager inside a dedicated `library-collection-shell`
+   - made the results viewport a true flex child with `min-height: 0`
+   - kept the pager outside the scrolling area so the controls stay where they belong
+   - updated files:
+     - `src/screens/library/LibraryCollectionTable.tsx`
+     - `src/styles/globals.css`
+
+3. **Added a small test so this shape stays protected**:
+   - added a unit test that checks the Library results render inside a dedicated scroll region
+   - updated file:
+     - `src/screens/library/LibraryCollectionTable.test.tsx`
+
+4. **Verified the real behavior after the fix**:
+   - before the stress check:
+     - document height matched the viewport
+   - after cloning many more table rows:
+     - document height still matched the viewport
+     - the results viewport kept the extra scroll instead of letting the page grow
+   - fresh screenshot:
+     - `output/playwright/library-contained-viewport-check.png`
+
+5. **Verification**:
+   - `npm run test:unit -- LibraryCollectionTable`
+   - `npm run build`
+   - direct Playwright browser measurement with an overfilled table
+
+### What Worked
+
+- the main page shell was already mostly right
+- the real missing piece was the inner results viewport:
+  - the list needed its own dedicated scroll container
+  - the pager needed to sit outside that scroll box
+
+### Remaining Gap
+
+- the page now stays inside the window correctly
+- the next Library pass should be visual polish, not containment repair:
+  - balance the row height and the sidebar spacing
+  - make the right details area feel calmer once the layout is fully stable
+
 ## Current Session (March 19, 2026 - Library Contained Scroll Fix)
 
 - **Mode**: code

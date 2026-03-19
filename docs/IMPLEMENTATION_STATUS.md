@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library true viewport fix)
+
+This pass fixed the deeper remaining `Library` overflow bug after the earlier containment pass. The page shell itself was no longer growing, but the results list still was not behaving like a true boxed viewport once the table became large enough.
+
+Important changes and findings:
+
+- the bug was rechecked with a real browser script and a stress setup, not by guesswork
+- a larger simulated results table proved the old list area could still stretch with its contents
+- fixed files:
+  - `src/screens/library/LibraryCollectionTable.tsx`
+  - `src/screens/library/LibraryCollectionTable.test.tsx`
+  - `src/styles/globals.css`
+- the fix now:
+  - wraps the table and pager in a dedicated Library collection shell
+  - makes the results viewport a true flex child with its own contained scroll
+  - keeps the pager outside the scrolling area so the controls do not disappear into the list
+- fresh verification screenshot:
+  - `output/playwright/library-contained-viewport-check.png`
+- checks passed:
+  - `npm run test:unit -- LibraryCollectionTable`
+  - `npm run build`
+- direct Playwright measurement confirmed that even after artificially cloning many more rows into the table:
+  - the document height still matched the viewport
+  - only the results viewport kept the overflow
+
+Important remaining gap:
+
+- the next `Library` work should be visual balance, not overflow repair
+- row rhythm, sidebar spacing, and the overall calmness can still be tightened
+- the Library branch is still not merged to `main`
+
 ## Current session note (March 19, 2026 - library contained-scroll fix)
 
 This pass fixed the next real Library bug after the top-filter redesign landed: the page was still dropping into a stacked layout too early, which made the list and inspector turn into one long scrolling page.

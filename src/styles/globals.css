@@ -1037,18 +1037,10 @@ h2,
 }
 
 .library-list-panel {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.72rem;
+  display: flex;
+  flex-direction: column;
   padding: 0.72rem;
-}
-
-.library-list-panel .table-scroll {
   height: 100%;
-  border-color: rgba(205, 223, 214, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 12%),
-    var(--surface-4);
 }
 
 .library-sidebar-panel {
@@ -1056,6 +1048,28 @@ h2,
   align-content: start;
   padding: 0.72rem;
   overflow: auto;
+}
+
+.library-collection-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 0.72rem;
+}
+
+.library-table-viewport {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-color: rgba(205, 223, 214, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 12%),
+    var(--surface-4);
 }
 
 .library-top-strip {

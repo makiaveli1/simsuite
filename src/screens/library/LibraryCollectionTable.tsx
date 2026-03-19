@@ -25,8 +25,12 @@ export function LibraryCollectionTable({
   onNextPage,
 }: LibraryCollectionTableProps) {
   return (
-    <>
-      <div className="table-scroll library-table-scroll">
+    <section className="library-collection-shell">
+      <div
+        className="table-scroll library-table-scroll library-table-viewport"
+        role="region"
+        aria-label="Library results"
+      >
         <table className="library-table">
           <thead>
             <tr>
@@ -114,6 +118,6 @@ export function LibraryCollectionTable({
           Next
         </button>
       </div>
-    </>
+    </section>
   );
 }
