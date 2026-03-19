@@ -1,12 +1,10 @@
 import type { HomeOverview, UiDensity, UserView } from "../lib/types";
 
 export type HomeHeroFocus = "health" | "watch" | "setup";
-export type HomeDetailLevel = "calm" | "balanced" | "detailed";
 export type HomeModuleId = "snapshot" | "health" | "watch" | "folders" | "library";
 
 export interface HomeDisplayPrefs {
   focus: HomeHeroFocus;
-  detailLevel: HomeDetailLevel;
   ambientMotion: boolean;
   visibleModules: Record<HomeModuleId, boolean>;
 }
@@ -28,20 +26,6 @@ export const HOME_MODULE_LABELS: Record<HomeModuleId, string> = {
   library: "Library facts",
 };
 
-export const HOME_DETAIL_OPTIONS: Array<{
-  id: HomeDetailLevel;
-  label: string;
-  hint: string;
-}> = [
-  { id: "calm", label: "Calm", hint: "Keep the page softer and shorter." },
-  {
-    id: "balanced",
-    label: "Balanced",
-    hint: "Show the best mix of calm and context.",
-  },
-  { id: "detailed", label: "Detailed", hint: "Keep more facts visible at once." },
-];
-
 export const HOME_DENSITY_OPTIONS: Array<{
   id: UiDensity;
   label: string;
@@ -52,11 +36,22 @@ export const HOME_DENSITY_OPTIONS: Array<{
   { id: "roomy", label: "Roomy", hint: "Add more breathing room." },
 ];
 
+export function allowedHomeModules(userView: UserView): HomeModuleId[] {
+  if (userView === "beginner") {
+    return ["snapshot", "health", "watch", "folders"];
+  }
+
+  if (userView === "power") {
+    return [...HOME_MODULE_ORDER];
+  }
+
+  return ["snapshot", "health", "watch", "folders"];
+}
+
 export function defaultHomePrefs(userView: UserView): HomeDisplayPrefs {
   if (userView === "beginner") {
     return {
       focus: "setup",
-      detailLevel: "calm",
       ambientMotion: true,
       visibleModules: {
         snapshot: true,
@@ -71,7 +66,6 @@ export function defaultHomePrefs(userView: UserView): HomeDisplayPrefs {
   if (userView === "power") {
     return {
       focus: "watch",
-      detailLevel: "detailed",
       ambientMotion: true,
       visibleModules: {
         snapshot: true,
@@ -85,7 +79,6 @@ export function defaultHomePrefs(userView: UserView): HomeDisplayPrefs {
 
   return {
     focus: "health",
-    detailLevel: "balanced",
     ambientMotion: true,
     visibleModules: {
       snapshot: true,
@@ -100,13 +93,15 @@ export function defaultHomePrefs(userView: UserView): HomeDisplayPrefs {
 function normalizeVisibleModules(
   value: Partial<Record<HomeModuleId, boolean>> | undefined,
   defaults: Record<HomeModuleId, boolean>,
+  allowedModules: HomeModuleId[],
 ) {
+  const allowedSet = new Set<HomeModuleId>(allowedModules);
   return {
-    snapshot: value?.snapshot ?? defaults.snapshot,
-    health: value?.health ?? defaults.health,
-    watch: value?.watch ?? defaults.watch,
-    folders: value?.folders ?? defaults.folders,
-    library: value?.library ?? defaults.library,
+    snapshot: allowedSet.has("snapshot") ? (value?.snapshot ?? defaults.snapshot) : false,
+    health: allowedSet.has("health") ? (value?.health ?? defaults.health) : false,
+    watch: allowedSet.has("watch") ? (value?.watch ?? defaults.watch) : false,
+    folders: allowedSet.has("folders") ? (value?.folders ?? defaults.folders) : false,
+    library: allowedSet.has("library") ? (value?.library ?? defaults.library) : false,
   };
 }
 
@@ -115,22 +110,21 @@ export function normalizeHomePrefs(
   userView: UserView,
 ): HomeDisplayPrefs {
   const defaults = defaultHomePrefs(userView);
+  const allowedModules = allowedHomeModules(userView);
   return {
     focus:
       value?.focus === "health" || value?.focus === "watch" || value?.focus === "setup"
         ? value.focus
         : defaults.focus,
-    detailLevel:
-      value?.detailLevel === "calm" ||
-      value?.detailLevel === "balanced" ||
-      value?.detailLevel === "detailed"
-        ? value.detailLevel
-        : defaults.detailLevel,
     ambientMotion:
       typeof value?.ambientMotion === "boolean"
         ? value.ambientMotion
         : defaults.ambientMotion,
-    visibleModules: normalizeVisibleModules(value?.visibleModules, defaults.visibleModules),
+    visibleModules: normalizeVisibleModules(
+      value?.visibleModules,
+      defaults.visibleModules,
+      allowedModules,
+    ),
   };
 }
 

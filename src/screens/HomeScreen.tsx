@@ -27,8 +27,8 @@ import type {
   WatchListFilter,
 } from "../lib/types";
 import {
+  allowedHomeModules,
   HOME_DENSITY_OPTIONS,
-  HOME_DETAIL_OPTIONS,
   HOME_MODULE_LABELS,
   HOME_MODULE_ORDER,
   buildHeroState,
@@ -40,7 +40,6 @@ import {
   normalizeHomePrefs,
   readHomePrefs,
   saveHomePrefs,
-  type HomeDetailLevel,
   type HomeDisplayPrefs,
   type HomeHeroFocus,
   type HomeModuleId,
@@ -188,8 +187,9 @@ export function HomeScreen({
     (overview?.unknownWatchItems ?? 0) +
     (overview?.watchReviewItems ?? 0) +
     (overview?.watchSetupItems ?? 0);
-  const calmDetails = displayPrefs.detailLevel === "calm";
-  const denseDetails = displayPrefs.detailLevel === "detailed";
+  const calmDetails = userView === "beginner";
+  const denseDetails = userView === "power";
+  const allowedModules = allowedHomeModules(userView);
   const heroState = buildHeroState({
     focus: displayPrefs.focus,
     overview,
@@ -200,8 +200,10 @@ export function HomeScreen({
   });
   const visibleModules = HOME_MODULE_ORDER.filter(
     (moduleId) => displayPrefs.visibleModules[moduleId],
-  );
+  ).filter((moduleId) => allowedModules.includes(moduleId));
   const moduleBands = buildModuleBands(userView, visibleModules);
+  const watchSetupLabel = userView === "beginner" ? "Pages to save" : "Need source setup";
+  const watchFollowupLabel = userView === "beginner" ? "Needs follow-up" : "Watch review";
 
   const snapshotRows = [
     ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
@@ -227,9 +229,9 @@ export function HomeScreen({
   const watchRows = [
     ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages that already look like real new versions."],
     ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
-    [userView === "beginner" ? "Pages to save" : "Need source setup", (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need a saved page first."],
+    [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need a saved page first."],
     ...(!calmDetails
-      ? [[userView === "beginner" ? "Needs follow-up" : "Watch review", (overview?.watchReviewItems ?? 0).toLocaleString(), "Reminder-only or provider-backed pages that stay cautious."]]
+      ? [[watchFollowupLabel, (overview?.watchReviewItems ?? 0).toLocaleString(), "Reminder-only or provider-backed pages that stay cautious."]]
       : []),
     ...(!denseDetails
       ? []
@@ -541,7 +543,7 @@ export function HomeScreen({
                 <div>
                   <p className="eyebrow">Customize Home</p>
                   <h2 id="home-customize-title">Make this page feel more like yours</h2>
-                  <p className="workbench-sheet-copy">Keep it softer, show more facts, or swap the main focus without turning the page into a cluttered control room.</p>
+                  <p className="workbench-sheet-copy">Pick the parts that matter most to you here. Your app view still decides how much detail SimSuite shows overall.</p>
                 </div>
                 <button type="button" className="workspace-toggle" onClick={() => setCustomizing(false)} aria-label="Close Customize Home">
                   <X size={14} strokeWidth={2} />
@@ -553,13 +555,9 @@ export function HomeScreen({
                   <SegmentPicker<HomeHeroFocus> options={[["health", "Library health"], ["watch", "Update watch"], ["setup", "Folder setup"]]} value={displayPrefs.focus} onChange={(value) => updateDisplayPrefs({ focus: value })} />
                 </HomeCustomSection>
 
-                <HomeCustomSection label="Information level" copy="Choose how short or detailed the page feels." icon={<Activity size={14} strokeWidth={2} />}>
-                  <SegmentPicker<HomeDetailLevel> options={HOME_DETAIL_OPTIONS.map((option) => [option.id, option.label])} value={displayPrefs.detailLevel} onChange={(value) => updateDisplayPrefs({ detailLevel: value })} />
-                </HomeCustomSection>
-
                 <HomeCustomSection label="Show on Home" copy="Keep only the parts you want to glance at here." icon={<SlidersHorizontal size={14} strokeWidth={2} />}>
                   <div className="home-toggle-grid">
-                    {HOME_MODULE_ORDER.map((moduleId) => (
+                    {allowedModules.map((moduleId) => (
                       <m.button key={moduleId} type="button" className={`home-toggle-card ${displayPrefs.visibleModules[moduleId] ? "is-active" : ""}`} onClick={() => setModuleVisible(moduleId, !displayPrefs.visibleModules[moduleId])} whileHover={hoverLift} whileTap={tapPress}>
                         <span className="home-toggle-check" aria-hidden="true">{displayPrefs.visibleModules[moduleId] ? <Check size={12} strokeWidth={2.4} /> : null}</span>
                         <div className="home-toggle-copy">

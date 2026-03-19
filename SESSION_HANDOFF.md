@@ -76,6 +76,21 @@
    - `npm run build` passed
    - checked the screen frame in the live app and confirmed the new `Home` did not overflow vertically in the checked desktop view
 
+8. **Removed the conflicting second "detail level" from `Home` customization**:
+   - dropped the `Calm` / `Balanced` / `Detailed` control from `Customize Home`
+   - `Casual`, `Seasoned`, and `Creator` now fully decide how much information `Home` shows
+   - `Customize Home` now stays in its own lane and only handles personal preferences like:
+     - hero focus
+     - visible modules
+     - theme
+     - spacing
+     - ambient motion
+   - added view-aware module limits so `Home` only offers modules that fit the current user type
+   - this keeps the page customization personal without weakening what the three real user views mean
+   - visually rechecked the updated side sheet live and saved:
+     - `output/playwright/home-pass11-customize-sheet.png`
+   - `npm run build` passed again after the cleanup
+
 ### What Worked
 
 - `Home` now feels much closer to a calm browser-style landing page than a mini dashboard
@@ -83,10 +98,13 @@
 - the hero panel gives the page a clear center of gravity without making it feel loud
 - `Casual` especially feels easier to read now
 - the side-sheet customization pattern feels much more appropriate than leaving lots of controls on the page itself
+- removing the extra `Home` detail mode made the whole system easier to understand:
+  - user view decides information depth
+  - `Customize Home` handles personal taste
 
 ### Known Problems / Gaps
 
-- the `Customize Home` sheet is useful and works, but it is still a little long; it scrolls cleanly, though a later taste pass could tighten the theme area
+- the `Customize Home` sheet is cleaner now, but it is still a little long; it scrolls cleanly, though a later taste pass could tighten the theme area
 - `Creator` view is intentionally denser, but it is also the closest to feeling busy again; if we want to push the calm-home idea even further later, that is the first variant to tune
 - the newly tightened `Seasoned` and `Creator` layouts are better organized now, but `Creator` is still the first place to tune if we want even more calm later
 - this session only reworked `Home`; the same deeper page-by-page rethink still needs to move through the other screens one at a time

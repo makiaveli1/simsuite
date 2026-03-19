@@ -21,15 +21,13 @@ Important changes and findings:
   - `Scan`
 - `Customize Home` now supports:
   - hero focus choice
-  - information level
   - show/hide home modules
   - theme
   - spacing density
   - ambient hero motion
-- these settings are saved per user view, so:
-  - `Casual` can stay quieter
-  - `Seasoned` can stay balanced
-  - `Creator` can keep more visible detail
+- these settings are saved per user view, but they now stay in the right lane:
+  - `Casual`, `Seasoned`, and `Creator` decide how much information `Home` shows
+  - `Customize Home` only handles personal preference like focus, visible modules, theme, spacing, and motion
 - after the first `Home` pass, `Seasoned` and `Creator` were tightened further so they no longer read like one flat group of equally weighted cards
 - the denser views now use clearer bands:
   - `Seasoned`
@@ -51,12 +49,14 @@ Important changes and findings:
   - `output/playwright/home-pass10-customize-sheet.png`
   - `output/playwright/home-pass10-seasoned-tightened.png`
   - `output/playwright/home-pass10-creator-tightened.png`
+  - `output/playwright/home-pass11-customize-sheet.png`
 - checks passed:
   - `npm run build`
+  - `npm run build` after removing the conflicting extra detail-level control
 
 Important remaining gap:
 
-- the `Customize Home` sheet works and looks good overall, but its theme section is still the longest part of the panel and could take one more density pass later
+- the `Customize Home` sheet works and looks better now, but its theme section is still the longest part of the panel and could take one more density pass later
 - the same deeper rethink still needs to be carried across the rest of the app one page at a time
 - `Creator` `Home` is intentionally fuller, but it is still the first place to tune if we want even more calm without losing useful information
 
