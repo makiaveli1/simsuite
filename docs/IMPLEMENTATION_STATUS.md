@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (March 19, 2026 - library contained-scroll fix)
+
+This pass fixed the next real Library bug after the top-filter redesign landed: the page was still dropping into a stacked layout too early, which made the list and inspector turn into one long scrolling page.
+
+Important changes and findings:
+
+- the real cause was measured in the browser instead of guessed:
+  - the `Library` browser layout was switching to one column too early
+  - the inspector width was also staying too rigid for the available desktop space
+  - once that happened, the document became taller than the viewport and the whole page scrolled
+- fixed file:
+  - `src/styles/globals.css`
+- the fix now:
+  - keeps the desktop two-column layout longer
+  - lets the inspector width scale more gently
+  - keeps the page shell clipped so the list and inspector stay inside the workspace
+- fresh verification screenshots:
+  - `output/playwright/library-layout-fix-1365.png`
+  - `output/playwright/library-layout-fix-1020.png`
+- live browser measurements confirmed the page no longer overflows at the previously broken desktop widths
+- check passed:
+  - `npm run build`
+
+Important remaining gap:
+
+- if the whole app window is made much smaller still, the top app chrome becomes the next tight spot
+- the Library sidebar can still take one more spacing polish pass later
+- the Library branch is still not merged to `main`
+
 ## Current session note (March 19, 2026 - library top-filter implementation)
 
 This pass turned the newer `Library` direction into the actual on-screen layout in the main workspace.

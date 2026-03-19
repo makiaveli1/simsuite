@@ -1018,11 +1018,12 @@ h2,
   gap: 0.72rem;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .library-browser-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, var(--library-detail-width));
+  grid-template-columns: minmax(0, 1fr) clamp(304px, 28vw, var(--library-detail-width));
   gap: 0.72rem;
   min-height: 0;
   overflow: hidden;
@@ -1249,13 +1250,14 @@ h2,
   color: var(--text-soft);
 }
 
-@media (max-width: 1380px) {
+@media (max-width: 820px) {
   .library-browser-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 28vh);
   }
 
   .library-sidebar-panel {
-    max-height: 320px;
+    max-height: none;
   }
 }
 

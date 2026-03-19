@@ -1,5 +1,61 @@
 # Session Handoff
 
+## Current Session (March 19, 2026 - Library Contained Scroll Fix)
+
+- **Mode**: code
+- **Focus**: stop `Library` from turning into one long scrolling page when the desktop window gets narrower
+
+### Progress Made
+
+1. **Traced the layout bug to the real cause instead of guessing**:
+   - measured the live layout in the browser at several desktop widths
+   - confirmed the `Library` browser area was collapsing into a stacked one-column mode too early
+   - confirmed that once it stacked, the page itself became taller than the window and started scrolling
+
+2. **Fixed the real trigger**:
+   - the stack breakpoint was lowered so `Library` keeps its desktop two-column layout much longer
+   - the right sidebar width now scales more gently instead of staying too wide for the available space
+   - updated file:
+     - `src/styles/globals.css`
+
+3. **Kept the page contained inside the window again**:
+   - the main page shell now keeps its overflow clipped
+   - the list and the inspector stay inside the workspace instead of bleeding into one long page
+   - at the widths that were failing before, the list and inspector now stay side by side and the document no longer grows taller than the viewport
+
+4. **Verified with live measurements and fresh screenshots**:
+   - confirmed no page overflow at the previously broken desktop widths
+   - new screenshots:
+     - `output/playwright/library-layout-fix-1365.png`
+     - `output/playwright/library-layout-fix-1020.png`
+
+5. **Verification**:
+   - live Playwright measurement check for `1365px`, `1280px`, `1120px`, `1020px`, and `980px`
+   - `npm run build`
+
+### What Worked
+
+- the root cause was simple once measured:
+  - too-early stack breakpoint
+  - overly rigid sidebar width
+- the page now behaves much more like a proper desktop workspace again
+- the list and the inspector now stay visible together at the narrower desktop widths that were breaking for the user
+
+### Known Problems / Gaps
+
+- if the app window is pushed much smaller still, the top app chrome gets crowded before `Library` itself does
+- there is still room for one more taste pass on the Library sidebar spacing later
+- this work is still not merged to `main`
+
+### Next Session Start Here
+
+- Read this file first.
+- Then read `docs/IMPLEMENTATION_STATUS.md`.
+- Check:
+  - `output/playwright/library-layout-fix-1365.png`
+  - `output/playwright/library-layout-fix-1020.png`
+- If the user is happy with this contained-scroll fix, continue visual polish or merge after approval.
+
 ## Current Session (March 19, 2026 - Library Top Filter Implementation)
 
 - **Mode**: code
