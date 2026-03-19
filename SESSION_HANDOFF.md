@@ -65,7 +65,7 @@
 
 - no implementation work started yet for the new `Downloads` design
 - the brainstorming skill expects a separate spec-review subagent loop, but this environment did not expose a clean subagent dispatch path during this pass, so the spec was reviewed manually against the same checklist instead
-- the temporary Vite dev server was restarted for screenshots and may still be running on port `1420`
+- the temporary Vite dev server used for the screenshots was shut down at the end of the pass
 
 ### Next Session Start Here
 
