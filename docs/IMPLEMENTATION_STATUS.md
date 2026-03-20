@@ -1,5 +1,46 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - Updates setup containment follow-up)
+
+This pass fixed the next real `Updates` layout miss after the backlog fix: the `Need source` lane was still behaving like a long page sheet instead of a contained desktop queue.
+
+Important changes and findings:
+
+- the user clarified the real rule:
+  - the Updates page should fit within the app frame
+  - the setup list should not become a long downward-scrolling sheet
+- the issue was mainly in the setup lane itself:
+  - the center queue was spending too much row height on hint text
+  - `Set source` still broke into a separate editing surface
+- fixed files:
+  - `src/screens/UpdatesScreen.tsx`
+  - `src/screens/UpdatesScreen.test.tsx`
+  - `src/styles/globals.css`
+- the fix now:
+  - removes the long `Hint` column from the setup queue
+  - keeps setup rows compact with file, suggested source, and installed version
+  - moves the source editor into the right inspector instead of opening a separate dialog/sheet
+  - tightens Updates overflow so the page stays contained and only inner work areas scroll
+- fresh screenshots:
+  - `output/playwright/updates-setup-contained-casual.png`
+  - `output/playwright/updates-setup-contained-seasoned.png`
+  - `output/playwright/updates-setup-contained-creator.png`
+  - `output/playwright/updates-setup-inline-editor.png`
+- direct Playwright measurements confirmed:
+  - casual: document height matched viewport height
+  - seasoned: document height matched viewport height
+  - creator: document height matched viewport height
+  - the browser proof pass reported `pageHasVerticalScroll: false`
+- checks passed:
+  - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+  - `npm run build`
+
+Important remaining gap:
+
+- the fresh containment proof was done in the browser shell rather than the real desktop backlog window
+- the structural fix is aimed at the same issue, but one more real desktop screenshot pass with the larger live queue would still be a good follow-up
+- the Updates branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - Updates setup backlog fix)
 
 This pass fixed the real `Need source` backlog bug and finished tightening the Updates inspector for items that still have no saved source.

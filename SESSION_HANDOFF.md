@@ -1,5 +1,69 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Updates Setup Containment Follow-up)
+
+- **Mode**: code
+- **Focus**: stop the Updates setup lane from behaving like a long vertical sheet and keep source editing inside the existing desktop layout
+
+### Progress Made
+
+1. **Reframed the real issue after the latest screenshot review**:
+   - the problem was not mainly the source editor styling
+   - the real miss was that `Need source` rows were too tall and detail-heavy
+   - that made the setup lane feel like a stacked sheet instead of a contained queue
+   - the user clarified that the page should fit inside the app frame without needing to scroll downward through the whole page
+
+2. **Compacted the setup queue back into a proper list**:
+   - removed the long `Hint` column from the center setup table
+   - setup rows now show only:
+     - file
+     - suggested source
+     - installed version
+   - the row hints now stay in the right inspector where they belong
+
+3. **Moved source editing into the right inspector**:
+   - `Set source` and `Edit source` no longer open the separate watch sheet
+   - the source form now opens inline inside the inspector
+   - this keeps the queue visible while editing and avoids stacking another vertical surface on top of the page
+
+4. **Tightened the Updates height rules so the page stays contained**:
+   - the Updates workbench surface and inspector now keep overflow inside their own areas
+   - the stage stays at full height
+   - the inspector can scroll internally if needed
+   - direct browser measurements now show:
+     - document height equals viewport height
+     - no page-level vertical scroll in setup mode
+
+5. **Added tests for the corrected layout behavior**:
+   - protected that the setup queue does not render the long hint text in the main list
+   - protected that `Set source` opens the source form in the inspector instead of as a dialog
+
+6. **Saved fresh visual proof**:
+   - `output/playwright/updates-setup-contained-casual.png`
+   - `output/playwright/updates-setup-contained-seasoned.png`
+   - `output/playwright/updates-setup-contained-creator.png`
+   - `output/playwright/updates-setup-inline-editor.png`
+
+7. **Verification**:
+   - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+   - `npm run build`
+   - direct Playwright browser check confirmed:
+     - casual: `docScrollHeight === docClientHeight`
+     - seasoned: `docScrollHeight === docClientHeight`
+     - creator: `docScrollHeight === docClientHeight`
+
+### What Worked
+
+- the setup lane calmed down once the center list stopped trying to explain everything row by row
+- moving editing into the inspector fits the desktop shape better because the queue stays visible and anchored
+- containing overflow at the Updates workspace level fixed the “whole page becomes a sheet” problem in the browser proof pass
+
+### Remaining Gap
+
+- the fresh containment screenshots were taken against the browser/dev data shape, not the real desktop backlog window with all 94 rows visible at once
+- structurally the fix is aimed at that real issue because the center queue is now a compact list with its own container, but a fresh real-data desktop screenshot would still be useful in the next pass
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Updates Need Source Backlog Fix)
 
 - **Mode**: code

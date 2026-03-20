@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiPreferencesProvider } from "../components/UiPreferencesContext";
 import { UpdatesScreen } from "./UpdatesScreen";
@@ -99,6 +99,37 @@ it("keeps the no-source sidebar focused on the suggested source and next step", 
   expect(within(inspector).getByText(/set source/i)).toBeVisible();
   expect(within(inspector).queryByText(/check selected/i)).not.toBeInTheDocument();
   expect(within(inspector).queryByText(/latest helper version/i)).not.toBeInTheDocument();
+});
+
+it("keeps the setup queue compact by moving long hints out of the main list", async () => {
+  renderUpdatesScreen({
+    initialMode: "setup",
+  });
+
+  const listRegion = await screen.findByRole("region", {
+    name: /update source setup list/i,
+  });
+
+  expect(within(listRegion).queryByText(/has creator and version clues/i)).not.toBeInTheDocument();
+  expect(within(listRegion).queryByRole("columnheader", { name: /hint/i })).not.toBeInTheDocument();
+});
+
+it("opens source editing inside the inspector instead of a separate dialog", async () => {
+  renderUpdatesScreen({
+    initialMode: "setup",
+  });
+
+  await screen.findByText(/miiko_eyebrows\.package/i);
+
+  fireEvent.click(await screen.findByRole("button", { name: /set source/i }));
+
+  const inspector = screen.getByLabelText(/update details/i);
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(within(inspector).getByLabelText(/source type/i)).toBeVisible();
+  expect(within(inspector).getByLabelText(/^label$/i)).toBeVisible();
+  expect(within(inspector).getByLabelText(/^url$/i)).toBeVisible();
+  expect(within(inspector).getByRole("button", { name: /save source/i })).toBeVisible();
 });
 
 function renderUpdatesScreen(
