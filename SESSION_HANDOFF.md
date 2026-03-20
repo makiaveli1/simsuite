@@ -1,5 +1,79 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Updates Need Source Backlog Fix)
+
+- **Mode**: code
+- **Focus**: fix the real `Need source` backlog mismatch and finish organizing the Updates right sidebar
+
+### Progress Made
+
+1. **Found the real reason the live app still showed only a small chunk of the setup queue**:
+   - the screen was asking for a larger setup list
+   - the desktop command had also been widened
+   - but the deeper Rust watch-setup builder was still clamping the queue back down to `24`
+   - that is why the real app could still say `94 need source` while only returning a smaller slice
+
+2. **Fixed the full setup queue path end to end**:
+   - `Updates` now requests `200` setup items on load
+   - the frontend mock setup cap now also allows `200`
+   - the desktop command cap now allows `200`
+   - the Rust watch-setup builder now also allows `200`
+   - added a Rust regression test so a large requested setup limit does not quietly get chopped back down again
+
+3. **Finished the right sidebar cleanup for no-source items**:
+   - found one more real UI bug during screenshot review:
+     - setup items can arrive as `not watched yet` instead of `null`
+     - that made the inspector fall back into the old `Watch state` path even when no source was saved
+   - the inspector now correctly treats `no source saved yet` as:
+     - `Snapshot`
+     - `Suggested source`
+     - `Next step`
+   - the no-source sidebar now hides:
+     - `Latest helper version`
+     - `Check selected`
+   - the no-source sidebar now keeps the main action simple:
+     - `Set source`
+
+4. **Added and tightened coverage**:
+   - frontend tests protect:
+     - requesting a larger setup backlog
+     - keeping setup selection from auto-opening the source editor
+     - keeping the no-source sidebar on `Suggested source` and `Next step`
+   - new Rust test protects:
+     - large setup queue requests are not truncated back to `24`
+
+5. **Verified the real desktop data path**:
+   - direct desktop command check against the real app data now returns:
+     - `total: 94`
+     - `items: 94`
+     - `truncated: false`
+   - saved proof:
+     - `output/playwright/updates-real-setup-summary.json`
+
+6. **Saved fresh visual proof for the sidebar/layout pass**:
+   - `output/playwright/updates-fix-casual-setup.png`
+   - `output/playwright/updates-fix-seasoned-setup.png`
+   - `output/playwright/updates-fix-creator-setup.png`
+
+7. **Verification**:
+   - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+   - `cargo test --manifest-path src-tauri/Cargo.toml watch_setup_list_honors_large_requested_limit`
+   - `cargo build --manifest-path src-tauri/Cargo.toml`
+   - `npm run build`
+   - `npm run tauri:build -- --debug`
+
+### What Worked
+
+- the real live-data bug was not in the page layout alone; it was the deeper Rust setup cap
+- once that cap moved, the command returned the full `94` setup items correctly
+- the sidebar reads much better once no-source items stop pretending they already have a real watch state
+
+### Remaining Gap
+
+- the desktop webdriver window still showed stale zero-count Updates content even while direct commands in that same desktop session returned the correct `94` setup items
+- that currently looks like a desktop webdriver/webview validation quirk rather than the fixed setup command path itself, but it is worth remembering before trusting webdriver UI text alone
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Updates Tracking Desk Redesign)
 
 - **Mode**: code

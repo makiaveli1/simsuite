@@ -4804,7 +4804,7 @@ async function mockInvoke<T>(
     case "list_library_watch_setup_items": {
       const rawLimit = Number(payload?.limit ?? 6);
       const limit = Number.isFinite(rawLimit)
-        ? Math.max(1, Math.min(24, Math.trunc(rawLimit)))
+        ? Math.max(1, Math.min(200, Math.trunc(rawLimit)))
         : 6;
       return buildMockLibraryWatchSetupList(limit) as T;
     }

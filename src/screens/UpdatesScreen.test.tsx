@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiPreferencesProvider } from "../components/UiPreferencesContext";
 import { UpdatesScreen } from "./UpdatesScreen";
@@ -74,6 +74,33 @@ it("keeps setup rows in the queue until the user opens the source editor", async
   });
 });
 
+it("requests a fuller setup backlog instead of the tiny default slice", async () => {
+  renderUpdatesScreen({
+    initialMode: "setup",
+  });
+
+  await screen.findByText(/miiko_eyebrows\.package/i);
+
+  await waitFor(() => {
+    expect(apiMocks.listLibraryWatchSetupItems).toHaveBeenCalledWith(200);
+  });
+});
+
+it("keeps the no-source sidebar focused on the suggested source and next step", async () => {
+  renderUpdatesScreen({
+    initialMode: "setup",
+  });
+
+  await screen.findByText(/miiko_eyebrows\.package/i);
+
+  const inspector = screen.getByLabelText(/update details/i);
+
+  expect(await within(inspector).findByText(/suggested source/i)).toBeVisible();
+  expect(within(inspector).getByText(/set source/i)).toBeVisible();
+  expect(within(inspector).queryByText(/check selected/i)).not.toBeInTheDocument();
+  expect(within(inspector).queryByText(/latest helper version/i)).not.toBeInTheDocument();
+});
+
 function renderUpdatesScreen(
   overrides: Partial<ComponentProps<typeof UpdatesScreen>> = {},
 ) {
@@ -120,6 +147,22 @@ const REVIEW_WATCH_RESULT: WatchResult = {
   confidence: "weak",
   note: "This creator page is saved as a reminder only.",
   evidence: ["Creator pages are saved as reminders for now."],
+};
+
+const UNTRACKED_WATCH_RESULT: WatchResult = {
+  status: "not_watched",
+  sourceKind: null,
+  sourceOrigin: "none",
+  sourceLabel: null,
+  sourceUrl: null,
+  capability: "saved_reference_only",
+  canRefreshNow: false,
+  providerName: null,
+  latestVersion: null,
+  checkedAt: null,
+  confidence: "weak",
+  note: null,
+  evidence: [],
 };
 
 const TRACKED_RESPONSE: LibraryWatchListResponse = {
@@ -219,7 +262,7 @@ const FILE_DETAILS: Record<number, FileDetail> = {
     filename: "Miiko_Eyebrows.package",
     kind: "CAS",
     creator: "Miiko",
-    watchResult: null,
+    watchResult: UNTRACKED_WATCH_RESULT,
     installedVersionSummary: {
       subjectLabel: "Miiko",
       subjectKey: "miiko-eyebrows",
@@ -234,7 +277,7 @@ const FILE_DETAILS: Record<number, FileDetail> = {
     filename: "AHarris00_CozyKitchen.package",
     kind: "Build/Buy",
     creator: "AHarris00",
-    watchResult: null,
+    watchResult: UNTRACKED_WATCH_RESULT,
     installedVersionSummary: null,
   }),
   12: makeFileDetail({

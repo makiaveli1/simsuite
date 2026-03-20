@@ -1,5 +1,56 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - Updates setup backlog fix)
+
+This pass fixed the real `Need source` backlog bug and finished tightening the Updates inspector for items that still have no saved source.
+
+Important changes and findings:
+
+- the first redesign pass improved the page shape, but the live desktop queue still had a real mismatch:
+  - the screen could show `94 need source`
+  - while the returned setup list was still being chopped down to `24`
+- the actual limit bug lived in the deeper Rust watch-setup builder, not just in the screen code
+- fixed files:
+  - `src/screens/UpdatesScreen.tsx`
+  - `src/screens/UpdatesScreen.test.tsx`
+  - `src/styles/globals.css`
+  - `src/lib/api.ts`
+  - `src-tauri/src/core/content_versions/mod.rs`
+  - `src-tauri/src/commands/mod.rs`
+- the fix now:
+  - requests `200` setup items from the Updates screen
+  - raises the frontend mock setup cap to `200`
+  - raises the desktop command cap to `200`
+  - raises the deeper Rust setup cap to `200`
+  - adds a Rust regression test so a large setup request is not silently cut back down again
+- the inspector also now handles `not watched yet` correctly:
+  - no-source items use `Snapshot`, `Suggested source`, and `Next step`
+  - `Latest helper version` is hidden when there is no saved source
+  - `Check selected` is hidden when there is no saved source
+  - the main action stays on `Set source`
+- fresh screenshots:
+  - `output/playwright/updates-fix-casual-setup.png`
+  - `output/playwright/updates-fix-seasoned-setup.png`
+  - `output/playwright/updates-fix-creator-setup.png`
+- real desktop data proof:
+  - `output/playwright/updates-real-setup-summary.json`
+  - the direct desktop command check now returns:
+    - `total: 94`
+    - `items: 94`
+    - `truncated: false`
+- checks passed:
+  - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+  - `cargo test --manifest-path src-tauri/Cargo.toml watch_setup_list_honors_large_requested_limit`
+  - `cargo build --manifest-path src-tauri/Cargo.toml`
+  - `npm run build`
+  - `npm run tauri:build -- --debug`
+
+Important remaining gap:
+
+- the desktop webdriver window still showed stale zero-count Updates text during verification even while the direct desktop command in that same session returned the corrected `94` setup items
+- that currently looks like a webdriver/webview validation quirk, not a known remaining product bug in the fixed setup command path
+- the Updates branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - Updates tracking desk redesign)
 
 This pass redesigned `Updates` so it behaves more like a calm desktop tracking desk and less like a crowded wall of status blocks.

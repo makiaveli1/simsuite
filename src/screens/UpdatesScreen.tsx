@@ -54,6 +54,7 @@ interface UpdatesScreenProps {
 
 type UpdateMode = "tracked" | "setup" | "review";
 type ReviewFilter = "all" | "provider_needed" | "reference_only" | "unknown_result";
+const SETUP_FETCH_LIMIT = 200;
 
 const WATCH_LIST_FILTERS: Array<{
   id: WatchListFilter;
@@ -114,6 +115,12 @@ function watchSourceKindLabel(kind: WatchSourceKind | null) {
     return "Exact mod page";
   }
   return "Not set";
+}
+
+function setupSuggestedSourceLabel(item: LibraryWatchSetupItem) {
+  return item.suggestedSourceKind === "creator_page"
+    ? item.creator ?? item.subjectLabel
+    : item.subjectLabel;
 }
 
 function watchSourceOriginLabel(origin: WatchResult["sourceOrigin"]) {
@@ -278,7 +285,7 @@ export function UpdatesScreen({
     }
 
     try {
-      const result = await api.listLibraryWatchSetupItems();
+      const result = await api.listLibraryWatchSetupItems(SETUP_FETCH_LIMIT);
       setSetupList(result);
     } catch (error) {
       console.error("Could not load setup items.", error);
@@ -349,10 +356,7 @@ export function UpdatesScreen({
   async function handleSelectSetupItem(item: LibraryWatchSetupItem) {
     await loadSelectedFile(item.fileId, {
       sourceKind: item.suggestedSourceKind,
-      sourceLabel:
-        item.suggestedSourceKind === "creator_page"
-          ? item.creator ?? item.subjectLabel
-          : item.subjectLabel,
+      sourceLabel: setupSuggestedSourceLabel(item),
       sourceUrl: "",
     });
   }
@@ -483,24 +487,34 @@ export function UpdatesScreen({
   const trackedTotal = trackedList?.total ?? 0;
   const setupTotal = setupList?.total ?? 0;
   const reviewTotal = reviewList?.total ?? 0;
-  const currentModeCount =
-    mode === "tracked"
-      ? trackedTotal
-      : mode === "setup"
-        ? setupTotal
-        : filteredReviewItems.length;
   const visibleRows =
     mode === "tracked"
       ? trackedList?.items ?? []
       : mode === "setup"
         ? setupList?.items ?? []
         : filteredReviewItems;
+  const selectedWatchResult = selectedItem?.watchResult ?? null;
+  const hasSavedWatchSource = Boolean(selectedWatchResult?.sourceKind);
+  const selectedSetupItem =
+    selectedItem && setupList
+      ? setupList.items.find((item) => item.fileId === selectedItem.id) ?? null
+      : null;
+  const setupSuggestionKind = selectedSetupItem?.suggestedSourceKind ?? watchSourceKind;
+  const setupSuggestionLabel = selectedSetupItem
+    ? setupSuggestedSourceLabel(selectedSetupItem)
+    : selectedItem?.creator ??
+      selectedItem?.installedVersionSummary?.subjectLabel ??
+      "Use the clearest file clue";
+  const setupSuggestionHint =
+    selectedSetupItem?.setupHint ??
+    (userView === "beginner"
+      ? "Save one page for this file so SimSuite can check it later."
+      : "Save one source page for this file so it can move into the tracked lane.");
   const canEditSelectedSource =
-    selectedItem?.watchResult?.sourceOrigin !== "built_in_special";
-  const canClearSelectedSource =
-    selectedItem?.watchResult?.sourceOrigin === "saved_by_user";
+    selectedWatchResult?.sourceOrigin !== "built_in_special";
+  const canClearSelectedSource = selectedWatchResult?.sourceOrigin === "saved_by_user";
   const canRefreshSelectedSource = Boolean(
-    selectedItem?.watchResult?.sourceUrl && selectedItem.watchResult.canRefreshNow,
+    hasSavedWatchSource && selectedWatchResult?.sourceUrl && selectedWatchResult.canRefreshNow,
   );
   const currentFilterLabel =
     mode === "review"
@@ -531,6 +545,10 @@ export function UpdatesScreen({
     setup: setupTotal,
     review: reviewTotal,
   };
+  const listCountLabel =
+    mode === "setup" && setupList?.truncated
+      ? `${setupList.items.length.toLocaleString()} shown of ${setupTotal.toLocaleString()}`
+      : `${visibleRows.length.toLocaleString()} in view`;
 
   useEffect(() => {
     if (!watchEditing) {
@@ -602,7 +620,7 @@ export function UpdatesScreen({
             </div>
 
             <div className="updates-list-meta">
-              <span className="ghost-chip">{currentModeCount.toLocaleString()} in view</span>
+              <span className="ghost-chip">{listCountLabel}</span>
               <span className="ghost-chip">{currentFilterLabel}</span>
             </div>
           </div>
@@ -627,14 +645,17 @@ export function UpdatesScreen({
 
               <div className="tag-list updates-selection-tags">
                 <span className="ghost-chip">
-                  {selectedItem.watchResult
-                    ? watchStatusLabel(selectedItem.watchResult.status, userView)
+                  {hasSavedWatchSource
+                    ? watchStatusLabel(selectedWatchResult!.status, userView)
                     : "Needs source"}
                 </span>
                 <span className="ghost-chip">
                   {mode === "setup"
                     ? watchSourceKindLabel(watchSourceKind)
-                    : selectedItem.watchResult?.sourceLabel ?? "No saved source"}
+                    : hasSavedWatchSource
+                      ? selectedWatchResult?.sourceLabel ??
+                        watchSourceKindLabel(selectedWatchResult?.sourceKind ?? null)
+                      : "No saved source"}
                 </span>
                 <span className="ghost-chip">
                   Installed {formatVersion(selectedItem.installedVersionSummary?.version)}
@@ -691,18 +712,24 @@ export function UpdatesScreen({
       <WorkbenchInspector ariaLabel="Update details" className="updates-inspector-shell">
         {selectedItem ? (
           <div className="updates-inspector">
-            <div className="detail-header">
-              <div>
+            <div className="detail-header updates-detail-header">
+              <div className="updates-detail-heading">
                 <p className="eyebrow">{userView === "beginner" ? "Selected item" : "Inspector"}</p>
-                <h2>{selectedItem.filename}</h2>
+                <div className="updates-detail-title-row">
+                  <h2>{selectedItem.filename}</h2>
+                  {hasSavedWatchSource ? (
+                    <span className="ghost-chip">
+                      {watchStatusLabel(selectedWatchResult!.status, userView)}
+                    </span>
+                  ) : (
+                    <span className="ghost-chip">Needs source</span>
+                  )}
+                </div>
+                <p className="updates-detail-subline">
+                  {(selectedItem.creator ?? unknownCreatorLabel(userView))} ·{" "}
+                  {friendlyTypeLabel(selectedItem.kind)}
+                </p>
               </div>
-              {selectedItem.watchResult ? (
-                <span className="ghost-chip">
-                  {watchStatusLabel(selectedItem.watchResult.status, userView)}
-                </span>
-              ) : (
-                <span className="ghost-chip">Needs source</span>
-              )}
             </div>
 
             <div className="detail-block">
@@ -717,62 +744,66 @@ export function UpdatesScreen({
                   label="Installed version"
                   value={formatVersion(selectedItem.installedVersionSummary?.version)}
                 />
-                <DetailRow
-                  label="Latest helper version"
-                  value={formatVersion(selectedItem.watchResult?.latestVersion)}
-                />
+                {hasSavedWatchSource ? (
+                  <DetailRow
+                    label="Latest helper version"
+                    value={formatVersion(selectedWatchResult!.latestVersion)}
+                  />
+                ) : null}
               </div>
             </div>
 
             <div className="detail-block">
-              <div className="section-label">Tracking</div>
-              {selectedItem.watchResult ? (
+              <div className="section-label">
+                {hasSavedWatchSource ? "Watch state" : "Suggested source"}
+              </div>
+              {hasSavedWatchSource ? (
                 <div className="updates-status-card">
                   <div className="updates-status-row">
-                    {watchStatusIcon(selectedItem.watchResult.status)}
+                    {watchStatusIcon(selectedWatchResult!.status)}
                     <div>
                       <strong>
-                        {watchStatusLabel(selectedItem.watchResult.status, userView)}
+                        {watchStatusLabel(selectedWatchResult!.status, userView)}
                       </strong>
                       <p className="text-muted">
-                        {watchCapabilityLabel(selectedItem.watchResult, userView)}
+                        {watchCapabilityLabel(selectedWatchResult!, userView)}
                       </p>
                     </div>
                   </div>
                   <div className="detail-list">
                     <DetailRow
                       label="Source type"
-                      value={watchSourceKindLabel(selectedItem.watchResult.sourceKind)}
+                      value={watchSourceKindLabel(selectedWatchResult!.sourceKind)}
                     />
                     <DetailRow
                       label="Source origin"
-                      value={watchSourceOriginLabel(selectedItem.watchResult.sourceOrigin)}
+                      value={watchSourceOriginLabel(selectedWatchResult!.sourceOrigin)}
                     />
                     <DetailRow
                       label="Last checked"
-                      value={formatCheckedAt(selectedItem.watchResult.checkedAt)}
+                      value={formatCheckedAt(selectedWatchResult!.checkedAt)}
                     />
                   </div>
-                  {selectedItem.watchResult.sourceLabel ? (
+                  {selectedWatchResult!.sourceLabel ? (
                     <p className="text-muted">
-                      Watching <strong>{selectedItem.watchResult.sourceLabel}</strong>
+                      Watching <strong>{selectedWatchResult!.sourceLabel}</strong>
                     </p>
                   ) : null}
-                  {selectedItem.watchResult.note ? (
-                    <p className="text-muted">{selectedItem.watchResult.note}</p>
+                  {selectedWatchResult!.note ? (
+                    <p className="text-muted">{selectedWatchResult!.note}</p>
                   ) : null}
-                  {selectedItem.watchResult.evidence.length ? (
+                  {selectedWatchResult!.evidence.length ? (
                     <div className="tag-list">
-                      {selectedItem.watchResult.evidence.map((entry) => (
+                      {selectedWatchResult!.evidence.map((entry) => (
                         <span key={entry} className="ghost-chip">
                           {entry}
                         </span>
                       ))}
                     </div>
                   ) : null}
-                  {selectedItem.watchResult.sourceUrl ? (
+                  {selectedWatchResult!.sourceUrl ? (
                     <a
-                      href={selectedItem.watchResult.sourceUrl}
+                      href={selectedWatchResult!.sourceUrl}
                       target="_blank"
                       rel="noreferrer noopener"
                       className="updates-source-link"
@@ -783,14 +814,30 @@ export function UpdatesScreen({
                   ) : null}
                 </div>
               ) : (
-                <div className="updates-built-in-note">
-                  No approved watch source is saved for this content yet.
+                <div className="updates-status-card updates-status-card-setup">
+                  <div className="updates-status-row">
+                    <HelpCircle className="updates-status-icon updates-status-icon-muted" />
+                    <div>
+                      <strong>{watchSourceKindLabel(setupSuggestionKind)}</strong>
+                      <p className="text-muted">
+                        Best first guess: <strong>{setupSuggestionLabel}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="detail-list">
+                    <DetailRow
+                      label="Suggested type"
+                      value={watchSourceKindLabel(setupSuggestionKind)}
+                    />
+                    <DetailRow label="Best match" value={setupSuggestionLabel} />
+                  </div>
+                  <p className="text-muted">{setupSuggestionHint}</p>
                 </div>
               )}
             </div>
 
             <div className="detail-block">
-              <div className="section-label">Actions</div>
+              <div className="section-label">Next step</div>
               <div className="updates-action-grid">
                 {canEditSelectedSource ? (
                   <button
@@ -799,7 +846,8 @@ export function UpdatesScreen({
                     onClick={() => setWatchEditing(true)}
                   >
                     <Settings2 size={14} strokeWidth={2} />
-                    {selectedItem.watchResult?.sourceUrl || selectedItem.watchResult?.sourceLabel
+                    {hasSavedWatchSource &&
+                    (selectedWatchResult?.sourceUrl || selectedWatchResult?.sourceLabel)
                       ? "Edit source"
                       : "Set source"}
                   </button>
@@ -809,7 +857,7 @@ export function UpdatesScreen({
                   </div>
                 )}
 
-                {selectedItem.watchResult ? (
+                {hasSavedWatchSource ? (
                   <button
                     type="button"
                     className="secondary-action"
@@ -826,9 +874,11 @@ export function UpdatesScreen({
                 ) : null}
               </div>
               <p className="updates-action-note">
-                {mode === "setup"
-                  ? "Keep the queue in view, then open the source sheet only when you are ready to save the page."
-                  : "The right side keeps the proof close. Open the source sheet only when you need to change the saved page."}
+                {!hasSavedWatchSource
+                  ? "Open the source sheet when you are ready to save the page. Once it is saved, this file moves into tracked."
+                  : mode === "setup"
+                    ? "Keep the queue in view, then open the source sheet only when you are ready to save the page."
+                    : "The right side keeps the proof close. Open the source sheet only when you need to change the saved page."}
               </p>
             </div>
           </div>

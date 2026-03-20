@@ -26,7 +26,7 @@ const MAX_SEARCH_TOKENS: usize = 4;
 const MAX_SEARCH_FAMILY_HINTS: usize = 4;
 const MAX_WATCH_LIST_LIMIT: usize = 48;
 const MAX_WATCH_REVIEW_LIMIT: usize = 24;
-const MAX_WATCH_SETUP_LIMIT: usize = 24;
+const MAX_WATCH_SETUP_LIMIT: usize = 200;
 const MAX_WATCH_SETUP_EXACT_LIMIT: usize = 8;
 const WATCH_SETUP_SCAN_LIMIT: usize = 320;
 const WATCH_SETUP_QUERY_LIMIT: usize = WATCH_SETUP_SCAN_LIMIT * 4;
@@ -3310,6 +3310,64 @@ mod tests {
             WatchSourceKind::ExactPage
         );
         assert_eq!(response.exact_page_items[0].file_id, file_id);
+    }
+
+    #[test]
+    fn watch_setup_list_honors_large_requested_limit() {
+        let (connection, seed_pack, settings, _file_id) = setup_watch_env();
+
+        for index in 2..=30 {
+            let creator = format!("BulkCreator{index}");
+            let version = format!("{index}.0");
+            let insights = FileInsights {
+                creator_hints: vec![creator.clone()],
+                version_hints: vec![version.clone()],
+                version_signals: vec![VersionSignal {
+                    raw_value: version.clone(),
+                    normalized_value: version.clone(),
+                    source_kind: "filename".to_owned(),
+                    source_path: None,
+                    matched_by: Some("filename pattern".to_owned()),
+                    confidence: 0.84,
+                }],
+                ..FileInsights::default()
+            };
+
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path,
+                        filename,
+                        extension,
+                        kind,
+                        confidence,
+                        source_location,
+                        parser_warnings,
+                        insights
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        format!(
+                            "C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods/{creator}/watch_test_mod_{index}_v{version}.package"
+                        ),
+                        format!("watch_test_mod_{index}_v{version}.package"),
+                        ".package",
+                        "Gameplay",
+                        0.94_f64,
+                        "mods",
+                        "[]",
+                        serde_json::to_string(&insights).expect("insights json"),
+                    ],
+                )
+                .expect("insert bulk setup candidate");
+        }
+
+        let response = list_library_watch_setup_items(&connection, &settings, &seed_pack, 200)
+            .expect("watch setup list");
+
+        assert_eq!(response.total, 30);
+        assert_eq!(response.items.len(), 30);
+        assert!(!response.truncated);
+        assert_eq!(response.exact_page_total, 30);
     }
 
     #[test]

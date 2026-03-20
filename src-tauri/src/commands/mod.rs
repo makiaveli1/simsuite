@@ -1789,7 +1789,7 @@ pub async fn list_library_watch_setup_items(
             &connection,
             &settings,
             &seed_pack,
-            limit.unwrap_or(6).clamp(1, 24) as usize,
+            limit.unwrap_or(6).clamp(1, 200) as usize,
         )
         .map_err(map_error)?;
         log_slow_command("list_library_watch_setup_items", started_at, || {
