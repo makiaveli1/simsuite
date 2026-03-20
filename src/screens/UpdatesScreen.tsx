@@ -4,23 +4,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
-  Eye,
   HelpCircle,
   LibraryBig,
-  ListChecks,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCw,
-  ScanSearch,
   Settings2,
   Trash2,
   X,
 } from "lucide-react";
 import { Workbench } from "../components/layout/Workbench";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
-import { WorkbenchRail } from "../components/layout/WorkbenchRail";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
-import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import {
   overlayTransition,
@@ -206,10 +199,6 @@ export function UpdatesScreen({
   initialFilter,
   initialFileId,
 }: UpdatesScreenProps) {
-  const {
-    updatesFiltersCollapsed,
-    setUpdatesFiltersCollapsed,
-  } = useUiPreferences();
   const [mode, setMode] = useState<UpdateMode>(initialMode ?? "tracked");
   const [filter, setFilter] = useState<WatchListFilter>(initialFilter ?? "attention");
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
@@ -233,7 +222,6 @@ export function UpdatesScreen({
   useEffect(() => {
     if (initialMode) {
       setMode(initialMode);
-      setWatchEditing(initialMode === "setup");
     }
   }, [initialMode]);
 
@@ -244,25 +232,27 @@ export function UpdatesScreen({
   }, [initialFilter]);
 
   useEffect(() => {
-    if (mode === "tracked") {
-      void loadTrackedList();
+    void Promise.all([
+      loadTrackedList(mode !== "tracked", filter),
+      loadSetupList(mode !== "setup"),
+      loadReviewList(mode !== "review"),
+    ]);
+  }, [refreshVersion]);
+
+  useEffect(() => {
+    if (mode !== "tracked") {
       return;
     }
 
-    if (mode === "setup") {
-      void loadSetupList();
-      return;
-    }
-
-    void loadReviewList();
-  }, [refreshVersion, mode, filter]);
+    void loadTrackedList();
+  }, [filter, mode]);
 
   useEffect(() => {
     if (!initialFileId) {
       return;
     }
 
-    void loadSelectedFile(initialFileId, { edit: initialMode === "setup" });
+    void loadSelectedFile(initialFileId);
   }, [initialFileId, initialMode]);
 
   async function loadTrackedList(skipLoading = false, nextFilter = filter) {
@@ -358,7 +348,6 @@ export function UpdatesScreen({
 
   async function handleSelectSetupItem(item: LibraryWatchSetupItem) {
     await loadSelectedFile(item.fileId, {
-      edit: true,
       sourceKind: item.suggestedSourceKind,
       sourceLabel:
         item.suggestedSourceKind === "creator_page"
@@ -537,127 +526,11 @@ export function UpdatesScreen({
         "These pages still need provider setup, are reminder-only, or came back too unclear to trust yet.",
     },
   };
-  const trackedExactCount =
-    trackedList?.items.filter((item) => item.watchResult.status === "exact_update_available")
-      .length ?? 0;
-  const trackedPossibleCount =
-    trackedList?.items.filter((item) => item.watchResult.status === "possible_update").length ??
-    0;
-  const trackedUnclearCount =
-    trackedList?.items.filter((item) => item.watchResult.status === "unknown").length ?? 0;
-  const setupExactPageCount = setupList?.exactPageTotal ?? 0;
-  const setupCreatorPageCount = Math.max(0, setupTotal - setupExactPageCount);
-  const stageSummaryCards =
-    mode === "tracked"
-      ? [
-          {
-            label: "Confirmed",
-            value: trackedExactCount,
-            tone: "good" as const,
-            note:
-              userView === "beginner"
-                ? "These have a clear update waiting."
-                : "Exact pages with a confirmed newer version.",
-          },
-          {
-            label: "Possible",
-            value: trackedPossibleCount,
-            tone: "warn" as const,
-            note:
-              userView === "beginner"
-                ? "These probably changed, but still need a look."
-                : "The page changed, but the version clue is still cautious.",
-          },
-          {
-            label: "Unclear",
-            value: trackedUnclearCount,
-            tone: "muted" as const,
-            note:
-              userView === "beginner"
-                ? "These still need a better page or more context."
-                : "Saved pages that still do not produce a trustworthy result.",
-          },
-        ]
-      : mode === "setup"
-        ? [
-            {
-              label: "Exact pages",
-              value: setupExactPageCount,
-              tone: "good" as const,
-              note:
-                userView === "beginner"
-                  ? "Best when one file clearly belongs to one page."
-                  : "Best fit when one installed file maps to one exact release page.",
-            },
-            {
-              label: "Creator pages",
-              value: setupCreatorPageCount,
-              tone: "muted" as const,
-              note:
-                userView === "beginner"
-                  ? "Useful when a creator has many related files."
-                  : "Safer when one source covers a whole creator family.",
-            },
-            {
-              label: "Still waiting",
-              value: setupTotal,
-              tone: "warn" as const,
-              note:
-                userView === "beginner"
-                  ? "Everything here still needs a saved source."
-                  : "These items stay untracked until a source is saved.",
-            },
-          ]
-        : [
-            {
-              label: "Provider needed",
-              value: reviewList?.providerNeededCount ?? 0,
-              tone: "warn" as const,
-              note:
-                userView === "beginner"
-                  ? "These pages need a provider before SimSuite can check them."
-                  : "Saved pages that need a provider or login-backed helper path.",
-            },
-            {
-              label: "Reminder only",
-              value: reviewList?.referenceOnlyCount ?? 0,
-              tone: "muted" as const,
-              note:
-                userView === "beginner"
-                  ? "These are saved as reminders, not live checks."
-                  : "Reference pages that stay as bookmarks instead of refreshable sources.",
-            },
-            {
-              label: "Unknown result",
-              value: reviewList?.unknownResultCount ?? 0,
-              tone: "low" as const,
-              note:
-                userView === "beginner"
-                  ? "These still came back too unclear to trust."
-                  : "Saved pages that refresh, but still do not return a safe update answer.",
-            },
-          ];
-  const stageDetailRows = selectedItem
-    ? [
-        {
-          label: "Status",
-          value: selectedItem.watchResult
-            ? watchStatusLabel(selectedItem.watchResult.status, userView)
-            : "No source saved",
-        },
-        {
-          label: mode === "setup" ? "Suggested source" : "Watching",
-          value:
-            mode === "setup"
-              ? watchSourceKindLabel(watchSourceKind)
-              : selectedItem.watchResult?.sourceLabel ?? "No source saved",
-        },
-        {
-          label: "Installed",
-          value: formatVersion(selectedItem.installedVersionSummary?.version),
-        },
-      ]
-    : [];
+  const modeCounts = {
+    tracked: trackedTotal,
+    setup: setupTotal,
+    review: reviewTotal,
+  };
 
   useEffect(() => {
     if (!watchEditing) {
@@ -702,207 +575,85 @@ export function UpdatesScreen({
   }, [mode, selectedItem, visibleRows]);
 
   return (
-    <Workbench threePanel fullHeight className="updates-workbench">
-      <WorkbenchRail
-        ariaLabel="Updates controls"
-        className={`updates-rail-shell ${updatesFiltersCollapsed ? "is-collapsed" : ""}`}
-        noBorder
-        noPadding={updatesFiltersCollapsed}
-        hideHandle
-      >
-        {!updatesFiltersCollapsed ? (
-          <div className="updates-rail">
-            <div className="workbench-header">
-              <div>
-                <p className="eyebrow">Workspace</p>
-                <h1 className="updates-rail-title">Updates</h1>
-                <p className="updates-rail-copy">
-                  {screenHelperLine("updates", userView)}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="workspace-toggle"
-                onClick={() => setUpdatesFiltersCollapsed(true)}
-                aria-label="Hide updates controls"
-              >
-                <PanelLeftClose size={14} strokeWidth={2} />
-              </button>
-            </div>
-
-            <div className="updates-rail-section">
-              <div className="section-label">Modes</div>
-              <div className="updates-mode-list">
-                <button
-                  type="button"
-                  className={`action-item ${mode === "tracked" ? "is-active" : ""}`}
-                  onClick={() => setMode("tracked")}
-                >
-                  <Eye size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Tracked</span>
-                  <span className="action-item-badge">{trackedList?.total ?? 0}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`action-item ${mode === "setup" ? "is-active" : ""}`}
-                  onClick={() => setMode("setup")}
-                >
-                  <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Setup</span>
-                  <span className="action-item-badge">{setupList?.total ?? 0}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`action-item ${mode === "review" ? "is-active" : ""}`}
-                  onClick={() => setMode("review")}
-                >
-                  <ListChecks size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Review</span>
-                  <span className="action-item-badge">{reviewList?.total ?? 0}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="updates-rail-section">
-              <div className="section-label">
-                {mode === "review" ? "Review filter" : "List filter"}
-              </div>
-              <div className="updates-filter-list">
-                {(mode === "review" ? REVIEW_FILTERS : WATCH_LIST_FILTERS).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`workspace-toggle ${
-                      (mode === "review" ? reviewFilter : filter) === item.id
-                        ? "is-active"
-                        : ""
-                    }`}
-                    onClick={() => {
-                      if (mode === "review") {
-                        setReviewFilter(item.id as ReviewFilter);
-                      } else {
-                        setFilter(item.id as WatchListFilter);
-                      }
-                    }}
-                  >
-                    {userView === "beginner" ? item.beginnerLabel : item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="updates-rail-section">
-              <div className="section-label">Quick actions</div>
-              <div className="updates-rail-actions">
-                <button
-                  type="button"
-                  className="primary-action"
-                  onClick={() => void handleRefreshAll()}
-                  disabled={refreshingAll}
-                >
-                  <RefreshCw
-                    size={14}
-                    strokeWidth={2}
-                    className={refreshingAll ? "spin" : undefined}
-                  />
-                  {refreshingAll ? "Checking..." : "Check tracked now"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={() => onNavigate("library")}
-                >
-                  <LibraryBig size={14} strokeWidth={2} />
-                  Browse library
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </WorkbenchRail>
-
+    <Workbench fullHeight className="updates-workbench">
       <WorkbenchStage className="updates-stage">
-        <div className="table-header updates-stage-header">
-          <div className="updates-stage-copy">
-            <div>
-              <p className="eyebrow">Workspace</p>
-              <h2>{modeCopy[mode].title}</h2>
-              <p className="text-muted">{modeCopy[mode].body}</p>
-            </div>
-            <div className="health-chip-group updates-stage-metrics">
-              <span className={`health-chip ${mode === "tracked" ? "is-good" : ""}`}>
-                {trackedTotal} tracked
-              </span>
-              <span className={`health-chip ${mode === "setup" ? "is-good" : ""}`}>
-                {setupTotal} setup
-              </span>
-              <span className={`health-chip ${mode === "review" ? "is-warn" : ""}`}>
-                {reviewTotal} review
-              </span>
-            </div>
-          </div>
-          <div className="workspace-toggles">
-            <button
-              type="button"
-              className="workspace-toggle"
-              onClick={() => setUpdatesFiltersCollapsed(!updatesFiltersCollapsed)}
-            >
-              {updatesFiltersCollapsed ? (
-                <PanelLeftOpen size={14} strokeWidth={2} />
-              ) : (
-                <PanelLeftClose size={14} strokeWidth={2} />
-              )}
-              {updatesFiltersCollapsed ? "Show controls" : "Hide controls"}
-            </button>
-          </div>
-        </div>
-
-        <div className="updates-stage-toolbar">
-          <span className="ghost-chip">{currentModeCount.toLocaleString()} in view</span>
-          <span className="ghost-chip">{currentFilterLabel}</span>
-          <span className="ghost-chip">
-            {selectedItem ? `Selected: ${selectedItem.filename}` : "Nothing selected"}
-          </span>
-        </div>
+        <UpdatesTopStrip
+          userView={userView}
+          mode={mode}
+          filter={filter}
+          reviewFilter={reviewFilter}
+          modeCounts={modeCounts}
+          refreshingAll={refreshingAll}
+          onModeChange={setMode}
+          onTrackedFilterChange={setFilter}
+          onReviewFilterChange={setReviewFilter}
+          onRefreshAll={() => void handleRefreshAll()}
+          onOpenLibrary={() => onNavigate("library")}
+        />
 
         {message ? <div className="updates-inline-message">{message}</div> : null}
 
-        <div className="updates-stage-body">
-          <div className="workbench-panel updates-stage-focus-band">
-            <div className="updates-stage-focus">
-              <p className="eyebrow">
-                {mode === "setup"
-                  ? userView === "beginner"
-                    ? "Next source"
-                    : "Source focus"
-                  : selectedItem
-                    ? userView === "beginner"
-                      ? "Selected file"
-                      : "Selection focus"
-                    : "Queue focus"}
-              </p>
-              <h3>{selectedItem ? selectedItem.filename : modeCopy[mode].title}</h3>
-              <p className="updates-stage-note">
-                {selectedItem
-                  ? describeUpdatesStageFocus(selectedItem, mode, userView)
-                  : mode === "setup"
-                    ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
-                    : mode === "review"
-                      ? "This lane keeps the cautious pages separate so reminder links and unclear checks do not get mixed in with confirmed updates."
-                      : "Tracked pages stay together here so confirmed updates, cautious matches, and unclear checks are easy to compare."}
-              </p>
+        <section className="workbench-panel updates-list-panel">
+          <div className="updates-list-header">
+            <div className="updates-list-copy">
+              <p className="eyebrow">Current lane</p>
+              <h2>{modeCopy[mode].title}</h2>
+              <p className="text-muted">{modeCopy[mode].body}</p>
             </div>
 
-            {stageDetailRows.length ? (
-              <div className="detail-list updates-stage-detail-list">
-                {stageDetailRows.map((row) => (
-                  <DetailRow key={row.label} label={row.label} value={row.value} />
-                ))}
-              </div>
-            ) : null}
+            <div className="updates-list-meta">
+              <span className="ghost-chip">{currentModeCount.toLocaleString()} in view</span>
+              <span className="ghost-chip">{currentFilterLabel}</span>
+            </div>
           </div>
 
-          <div className="table-scroll workbench-panel updates-table-scroll">
+          {selectedItem ? (
+            <div className="updates-selection-strip">
+              <div className="updates-selection-copy">
+                <span className="section-label">
+                  {mode === "setup"
+                    ? userView === "beginner"
+                      ? "Next source"
+                      : "Setup focus"
+                    : userView === "beginner"
+                      ? "Selected item"
+                      : "Selection focus"}
+                </span>
+                <strong>{selectedItem.filename}</strong>
+                <p className="text-muted">
+                  {describeUpdatesStageFocus(selectedItem, mode, userView)}
+                </p>
+              </div>
+
+              <div className="tag-list updates-selection-tags">
+                <span className="ghost-chip">
+                  {selectedItem.watchResult
+                    ? watchStatusLabel(selectedItem.watchResult.status, userView)
+                    : "Needs source"}
+                </span>
+                <span className="ghost-chip">
+                  {mode === "setup"
+                    ? watchSourceKindLabel(watchSourceKind)
+                    : selectedItem.watchResult?.sourceLabel ?? "No saved source"}
+                </span>
+                <span className="ghost-chip">
+                  Installed {formatVersion(selectedItem.installedVersionSummary?.version)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            className="table-scroll updates-table-scroll"
+            role="region"
+            aria-label={
+              mode === "tracked"
+                ? "Tracked updates list"
+                : mode === "setup"
+                  ? "Update source setup list"
+                  : "Update review list"
+            }
+          >
             {mode === "tracked" ? (
               <UpdatesTrackedTable
                 items={trackedList?.items ?? []}
@@ -934,34 +685,10 @@ export function UpdatesScreen({
               />
             ) : null}
           </div>
-
-          <div className="updates-stage-footer">
-            <div className="updates-stage-summary-grid">
-              {stageSummaryCards.map((card) => (
-                <UpdatesStageStatCard
-                  key={card.label}
-                  label={card.label}
-                  value={card.value}
-                  tone={card.tone}
-                  note={card.note}
-                />
-              ))}
-            </div>
-
-            <div className="workbench-panel updates-stage-guidance-card">
-              <div className="updates-stage-guidance">
-                <strong>{updatesGuidanceTitle(mode, userView)}</strong>
-                <p>{updatesGuidanceBody(mode, userView)}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
       </WorkbenchStage>
 
-      <WorkbenchInspector
-        ariaLabel="Update details"
-        className="updates-inspector-shell"
-      >
+      <WorkbenchInspector ariaLabel="Update details" className="updates-inspector-shell">
         {selectedItem ? (
           <div className="updates-inspector">
             <div className="detail-header">
@@ -973,11 +700,13 @@ export function UpdatesScreen({
                 <span className="ghost-chip">
                   {watchStatusLabel(selectedItem.watchResult.status, userView)}
                 </span>
-              ) : null}
+              ) : (
+                <span className="ghost-chip">Needs source</span>
+              )}
             </div>
 
             <div className="detail-block">
-              <div className="section-label">At a glance</div>
+              <div className="section-label">Snapshot</div>
               <div className="detail-list">
                 <DetailRow
                   label="Creator"
@@ -995,9 +724,9 @@ export function UpdatesScreen({
               </div>
             </div>
 
-            {selectedItem.watchResult ? (
-              <div className="detail-block">
-                <div className="section-label">Tracking</div>
+            <div className="detail-block">
+              <div className="section-label">Tracking</div>
+              {selectedItem.watchResult ? (
                 <div className="updates-status-card">
                   <div className="updates-status-row">
                     {watchStatusIcon(selectedItem.watchResult.status)}
@@ -1053,8 +782,12 @@ export function UpdatesScreen({
                     </a>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <div className="updates-built-in-note">
+                  No approved watch source is saved for this content yet.
+                </div>
+              )}
+            </div>
 
             <div className="detail-block">
               <div className="section-label">Actions</div>
@@ -1094,8 +827,8 @@ export function UpdatesScreen({
               </div>
               <p className="updates-action-note">
                 {mode === "setup"
-                  ? "Source editing opens in a side sheet so you can keep the queue and status details in view while you save the page."
-                  : "Keep the item details open here, then slide in the source editor only when you need to change or save a page."}
+                  ? "Keep the queue in view, then open the source sheet only when you are ready to save the page."
+                  : "The right side keeps the proof close. Open the source sheet only when you need to change the saved page."}
               </p>
             </div>
           </div>
@@ -1105,8 +838,8 @@ export function UpdatesScreen({
             <h2>Select an item</h2>
             <p>
               {userView === "beginner"
-                ? "Pick something from the list to set a source or check its update state."
-                : "Select a row to inspect its current source, status, and next action."}
+                ? "Pick something from the list to check its update story or save a watch page."
+                : "Select a row to inspect its current source, proof, and next step."}
             </p>
           </div>
         )}
@@ -1274,22 +1007,119 @@ export function UpdatesScreen({
   );
 }
 
-function UpdatesStageStatCard({
-  label,
-  value,
-  tone,
-  note,
+function UpdatesTopStrip({
+  userView,
+  mode,
+  filter,
+  reviewFilter,
+  modeCounts,
+  refreshingAll,
+  onModeChange,
+  onTrackedFilterChange,
+  onReviewFilterChange,
+  onRefreshAll,
+  onOpenLibrary,
 }: {
-  label: string;
-  value: number;
-  tone: "good" | "warn" | "low" | "muted";
-  note: string;
+  userView: UserView;
+  mode: UpdateMode;
+  filter: WatchListFilter;
+  reviewFilter: ReviewFilter;
+  modeCounts: Record<UpdateMode, number>;
+  refreshingAll: boolean;
+  onModeChange: (mode: UpdateMode) => void;
+  onTrackedFilterChange: (filter: WatchListFilter) => void;
+  onReviewFilterChange: (filter: ReviewFilter) => void;
+  onRefreshAll: () => void;
+  onOpenLibrary: () => void;
 }) {
+  const modeOptions: Array<{ id: UpdateMode; label: string }> = [
+    { id: "tracked", label: "Tracked" },
+    { id: "setup", label: "Need source" },
+    { id: "review", label: "Needs review" },
+  ];
+  const filterOptions = mode === "review" ? REVIEW_FILTERS : WATCH_LIST_FILTERS;
+  const activeFilter = mode === "review" ? reviewFilter : filter;
+
   return (
-    <div className={`updates-stage-stat updates-stage-stat-${tone}`}>
-      <span>{label}</span>
-      <strong>{value.toLocaleString()}</strong>
-      <p>{note}</p>
+    <div className="updates-top-strip">
+      <div className="updates-top-strip-summary" aria-label="Updates summary">
+        {modeOptions.map((option) => (
+          <span key={option.id} className="updates-top-strip-chip">
+            <strong>{modeCounts[option.id].toLocaleString()}</strong>
+            <span>{option.label}</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="updates-top-strip-main">
+        <div className="updates-top-strip-section">
+          <span className="section-label">View</span>
+          <div className="updates-top-strip-toggle-row" role="tablist" aria-label="Update views">
+            {modeOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={mode === option.id}
+                aria-label={`${option.label} (${modeCounts[option.id]})`}
+                className={`workspace-toggle ${mode === option.id ? "is-active" : ""}`}
+                onClick={() => onModeChange(option.id)}
+              >
+                <span>{option.label}</span>
+                <span className="updates-top-strip-count">
+                  {modeCounts[option.id].toLocaleString()}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="updates-top-strip-section">
+          <span className="section-label">
+            {mode === "review" ? "Review filter" : "List filter"}
+          </span>
+          <div className="updates-top-strip-toggle-row">
+            {filterOptions.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`workspace-toggle ${activeFilter === item.id ? "is-active" : ""}`}
+                onClick={() => {
+                  if (mode === "review") {
+                    onReviewFilterChange(item.id as ReviewFilter);
+                    return;
+                  }
+
+                  onTrackedFilterChange(item.id as WatchListFilter);
+                }}
+              >
+                {userView === "beginner" ? item.beginnerLabel : item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="updates-top-strip-actions">
+          <button
+            type="button"
+            className="primary-action"
+            onClick={onRefreshAll}
+            disabled={refreshingAll}
+          >
+            <RefreshCw
+              size={14}
+              strokeWidth={2}
+              className={refreshingAll ? "spin" : undefined}
+            />
+            {refreshingAll ? "Checking..." : "Check tracked now"}
+          </button>
+          <button type="button" className="secondary-action" onClick={onOpenLibrary}>
+            <LibraryBig size={14} strokeWidth={2} />
+            Browse library
+          </button>
+          <p className="updates-top-strip-note">{screenHelperLine("updates", userView)}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1318,36 +1148,6 @@ function describeUpdatesStageFocus(
     : userView === "beginner"
       ? "This tracked file has the clearest next update story in the current view."
       : "This tracked file is the clearest current follow-up in the selected watch lane.";
-}
-
-function updatesGuidanceTitle(mode: UpdateMode, userView: UserView) {
-  if (mode === "setup") {
-    return userView === "beginner" ? "How to pick the page" : "Choosing the source";
-  }
-
-  if (mode === "review") {
-    return userView === "beginner" ? "Why it stays here" : "Why this lane exists";
-  }
-
-  return userView === "beginner" ? "How tracked checks work" : "Reading tracked results";
-}
-
-function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
-  if (mode === "setup") {
-    return userView === "beginner"
-      ? "Use an exact page when one file clearly belongs to one download page. Use a creator page when that source covers a whole set from the same creator."
-      : "Exact pages work best for one-to-one matches. Creator pages are better when several related files share one release stream.";
-  }
-
-  if (mode === "review") {
-    return userView === "beginner"
-      ? "Review keeps reminder pages, provider-backed sources, and unclear checks in one place so they do not get mixed up with confirmed updates."
-      : "This lane keeps low-trust follow-up work visible without pretending that reminder pages or helper-limited checks are clean live answers.";
-  }
-
-  return userView === "beginner"
-    ? "Built-in exact pages can often be checked directly. Creator pages stay more careful because one source may cover several files or versions."
-    : "Tracked results stay together here so exact updates, possible changes, and low-trust checks can be compared side by side without burying the queue.";
 }
 
 function UpdatesTrackedTable({

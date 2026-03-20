@@ -1,5 +1,79 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Updates Tracking Desk Redesign)
+
+- **Mode**: code
+- **Focus**: redesign `Updates` into a calmer desktop tracking desk with one main work area and details on demand
+
+### Progress Made
+
+1. **Mapped the real job of the Updates page before changing it**:
+   - checked the live page in all three views first
+   - confirmed the screen really does three jobs:
+     - tracked updates
+     - source setup
+     - review
+   - found the main pain point was repeated status and guidance spread across too many areas at once
+
+2. **Rebuilt Updates around a top-strip plus central desk layout**:
+   - removed the older left-rail-heavy layout
+   - added a compact top strip with:
+     - lane counts
+     - lane switching
+     - list filters
+     - main refresh action
+     - quick jump back to Library
+   - kept one central contained queue as the main work area
+   - kept the right inspector for details and next actions
+   - this now makes Updates feel more like a tracking desk than a status wall
+
+3. **Fixed two real behavior issues during the redesign**:
+   - Setup and Review counts now load even before you open those lanes
+   - selecting an item in `Need source` no longer opens the source sheet right away
+   - the source sheet now opens only when the user chooses `Set source` or `Edit source`
+
+4. **Fixed the last layout miss after the redesign landed**:
+   - the Updates stage container was not actually stretching the center panel down the page
+   - that left the lower half feeling like loose background in tracked mode
+   - changed the stage to a real vertical layout and let the main list panel fill the remaining height
+
+5. **Added coverage for the important new behavior**:
+   - new test file:
+     - `src/screens/UpdatesScreen.test.tsx`
+   - protected:
+     - lane counts are visible without opening Setup or Review first
+     - Setup selection does not auto-open the source editor
+
+6. **Verified with fresh live screenshots and checks**:
+   - screenshots:
+     - `output/playwright/updates-redesign-casual.png`
+     - `output/playwright/updates-redesign-seasoned.png`
+     - `output/playwright/updates-redesign-creator.png`
+     - `output/playwright/updates-redesign-setup-seasoned.png`
+     - `output/playwright/updates-redesign-review-seasoned.png`
+   - direct browser measurements confirmed the page stayed contained:
+     - casual: viewport 1080, body 1080, document 1080
+     - seasoned: viewport 1080, body 1080, document 1080
+     - creator: viewport 1080, body 1080, document 1080
+     - setup: viewport 1080, body 1080, document 1080
+     - review: viewport 1080, body 1080, document 1080
+
+7. **Verification**:
+   - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+   - `npm run build`
+
+### What Worked
+
+- the redesign got much calmer once Updates stopped repeating the same summary in multiple places
+- the top strip plus contained queue matches the stronger Home and Library direction better
+- keeping the inspector steady on the right makes the main list easier to trust and easier to scan
+
+### Remaining Gap
+
+- the current fixture data has no active review rows, so the review screenshot proves layout and empty-state calmness more than dense review content
+- tracked mode can still feel visually quiet when there is only one row, but the main work surface now stays properly contained
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Library Sheet Layout Follow-up)
 
 - **Mode**: code

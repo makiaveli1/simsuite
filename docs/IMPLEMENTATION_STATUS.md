@@ -1,5 +1,48 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - Updates tracking desk redesign)
+
+This pass redesigned `Updates` so it behaves more like a calm desktop tracking desk and less like a crowded wall of status blocks.
+
+Important changes and findings:
+
+- the old page was repeating the same story in too many places at once:
+  - lane summary
+  - center focus block
+  - lower status area
+  - right inspector
+- the redesigned page now uses a steadier shape:
+  - compact top strip for lane controls, filters, and refresh
+  - one main contained queue in the center
+  - right inspector for details and next actions
+  - source editing kept in the sheet only when the user asks for it
+- fixed files:
+  - `src/screens/UpdatesScreen.tsx`
+  - `src/screens/UpdatesScreen.test.tsx`
+  - `src/styles/globals.css`
+- important behavior fixes:
+  - Setup and Review totals now load without needing to open those lanes first
+  - selecting a `Need source` row no longer auto-opens the source editor
+  - the center Updates panel now stretches properly and keeps its work area contained to the bottom of the desktop workspace
+- fresh screenshots:
+  - `output/playwright/updates-redesign-casual.png`
+  - `output/playwright/updates-redesign-seasoned.png`
+  - `output/playwright/updates-redesign-creator.png`
+  - `output/playwright/updates-redesign-setup-seasoned.png`
+  - `output/playwright/updates-redesign-review-seasoned.png`
+- direct Playwright measurements confirmed the page stayed fully contained in the checked states:
+  - viewport 1080
+  - body 1080
+  - document 1080
+- checks passed:
+  - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+  - `npm run build`
+
+Important remaining gap:
+
+- the current review fixture is empty, so the review screenshot validates the empty-state layout more than a busy review queue
+- the Updates branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - library sheet layout follow-up)
 
 This follow-up pass fixed the remaining real `Library` modal issues after the first sheet cleanup landed.
