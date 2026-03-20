@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { Eye, X } from "lucide-react";
-import { DockSectionStack, type DockSectionDefinition } from "../../components/DockSectionStack";
+import type { DockSectionDefinition } from "../../components/DockSectionStack";
 import {
   overlayTransition,
   panelSpring,
 } from "../../lib/motion";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView } from "../../lib/types";
+import { buildLibraryRowModel } from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;
 
@@ -31,6 +32,8 @@ export function LibraryDetailSheet({
   if (!selectedFile || !mode) {
     return null;
   }
+
+  const rowModel = buildLibraryRowModel(selectedFile, userView);
 
   return (
     <AnimatePresence>
@@ -74,16 +77,22 @@ export function LibraryDetailSheet({
             </div>
 
             <div className="workbench-sheet-body library-detail-sheet-body">
-              <div className="library-detail-sheet-lead">
-                <div>
-                  <span className="section-label">Selected</span>
-                  <strong>{selectedFile.filename}</strong>
-                  <p className="workspace-toolbar-copy">
+              <section className="library-detail-sheet-summary">
+                <div className="library-detail-sheet-summary-copy">
+                  <span className="section-label">Selected file</span>
+                  <h3>{selectedFile.filename}</h3>
+                  <p className="library-detail-sheet-summary-subcopy">
                     {friendlyTypeLabel(selectedFile.kind)}
                     {selectedFile.subtype?.trim() ? ` / ${selectedFile.subtype}` : ""}
                   </p>
                 </div>
-                <div className="library-detail-sheet-meta">
+                <div className="library-detail-sheet-summary-meta">
+                  <span className={`library-health-pill is-${rowModel.healthTone}`}>
+                    {rowModel.healthLabel}
+                  </span>
+                  <span className={`library-type-pill is-${rowModel.typeTone}`}>
+                    {rowModel.typeLabel}
+                  </span>
                   <span className="ghost-chip">
                     {selectedFile.creator ?? unknownCreatorLabel(userView)}
                   </span>
@@ -91,14 +100,17 @@ export function LibraryDetailSheet({
                     {Math.round(selectedFile.confidence * 100)}%
                   </span>
                 </div>
-              </div>
+              </section>
 
-              <DockSectionStack
-                layoutId={`librarySheet:${mode}`}
-                sections={sections}
-                intro="Reset this detail view"
-                showHints={userView !== "beginner"}
-              />
+              <div className="library-sheet-section-list">
+                {sections.map((section) => (
+                  <LibrarySheetSection
+                    key={section.id}
+                    section={section}
+                    showHint={userView !== "beginner"}
+                  />
+                ))}
+              </div>
             </div>
 
             <div className="workbench-sheet-footer">
@@ -111,6 +123,29 @@ export function LibraryDetailSheet({
         </m.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+function LibrarySheetSection({
+  section,
+  showHint,
+}: {
+  section: DockSectionDefinition;
+  showHint: boolean;
+}) {
+  return (
+    <section className="library-sheet-section-card">
+      <div className="library-sheet-section-header">
+        <div className="library-sheet-section-copy">
+          <strong>{section.label}</strong>
+          {showHint && section.hint ? (
+            <p className="library-sheet-section-hint">{section.hint}</p>
+          ) : null}
+        </div>
+        {section.badge ? <span className="ghost-chip">{section.badge}</span> : null}
+      </div>
+      <div className="library-sheet-section-body">{section.children as ReactNode}</div>
+    </section>
   );
 }
 

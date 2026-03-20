@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - library sheet cleanup)
+
+This pass cleaned up the shared `Library` detail sheet pattern so all three Library modals stop feeling like cramped little control panels.
+
+Important changes and findings:
+
+- the issue was shared across:
+  - `Health details`
+  - `Inspect file`
+  - `Edit details`
+- the old Library sheet was reusing the heavier dock-stack layout from full work panels
+- that brought in modal clutter that did not belong there:
+  - reset button
+  - section move controls
+  - awkward spacing between the lead card and the real content
+- fixed files:
+  - `src/screens/library/LibraryDetailSheet.tsx`
+  - `src/styles/globals.css`
+  - `src/screens/library/LibraryDetailSheet.test.tsx`
+- the new sheet now:
+  - uses a compact top summary card
+  - shows file name, status, type, creator, and confidence in that summary
+  - renders the rest of the content as fixed section cards in a stable order
+  - removes reset and reorder controls from the modal entirely
+- fresh screenshots:
+  - `output/playwright/library-sheet-health-organized.png`
+  - `output/playwright/library-sheet-inspect-organized.png`
+  - `output/playwright/library-sheet-edit-organized.png`
+- checks passed:
+  - `npm run test:unit -- LibraryDetailSheet LibraryCollectionTable libraryDisplay`
+  - `npm run build`
+- direct Playwright validation confirmed the organized sheet no longer renders the old reset control
+
+Important remaining gap:
+
+- the next Library work here is polish only
+- wording, footer button tone, and a little spacing balance can still be refined
+- the Library branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - library simple list pass)
 
 This pass simplified the main `Library` table so the page feels more like a calm catalog and less like a metadata wall.

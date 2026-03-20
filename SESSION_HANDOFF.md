@@ -1,5 +1,71 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Library Sheet Cleanup)
+
+- **Mode**: code
+- **Focus**: organize all `Library` detail sheets so they stop looking like overloaded work panels
+
+### Progress Made
+
+1. **Found the shared design problem**:
+   - all three `Library` sheets (`Health details`, `Inspect file`, `Edit details`) were reusing the heavier dock stack layout from larger work panels
+   - that pulled in controls the modal did not need:
+     - reset button
+     - section move buttons
+     - awkward floating spacing
+   - that is why all the Library modals had the same cluttered feel
+
+2. **Rebuilt the Library sheet layout around a calmer pattern**:
+   - kept the shared shell and animation
+   - replaced the oversized lead block with a compact summary card
+   - summary now shows:
+     - file name
+     - status
+     - type
+     - creator
+     - confidence
+   - replaced the old dock stack inside the sheet with fixed section cards in a steady order
+
+3. **Removed the controls that did not belong in the modal**:
+   - no reset control
+   - no move-up / move-down section buttons
+   - no panel-management chrome inside the Library modal anymore
+
+4. **Made the shared modal styling cleaner**:
+   - widened the sheet a little for easier reading
+   - tightened the spacing between summary and content
+   - added a more stable summary layout for narrower widths too
+   - updated files:
+     - `src/screens/library/LibraryDetailSheet.tsx`
+     - `src/styles/globals.css`
+
+5. **Verified it in tests and the live app**:
+   - added a unit test that checks the Library sheet no longer shows reset and section move controls
+   - fresh screenshots:
+     - `output/playwright/library-sheet-health-organized.png`
+     - `output/playwright/library-sheet-inspect-organized.png`
+     - `output/playwright/library-sheet-edit-organized.png`
+   - live browser check confirmed:
+     - no reset control
+     - the sheet now renders section cards instead of the old dock stack controls
+
+6. **Verification**:
+   - `npm run test:unit -- LibraryDetailSheet LibraryCollectionTable libraryDisplay`
+   - `npm run build`
+   - direct Playwright screenshot pass for all three Library sheet modes
+
+### What Worked
+
+- treating the problem as one shared `Library` sheet pattern made the cleanup much stronger than patching one modal
+- the modal now behaves like a focused detail surface instead of a tiny configurable workspace
+
+### Remaining Gap
+
+- the next pass here is pure polish:
+  - tighten the wording inside some section cards
+  - decide if the footer button should stay `Done` or become a smaller `Close`
+  - refine spacing if any of the live screenshots still feel a bit tall
+
 ## Current Session (March 20, 2026 - Library Simple List Pass)
 
 - **Mode**: code
