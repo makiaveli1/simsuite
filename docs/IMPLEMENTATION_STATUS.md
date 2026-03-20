@@ -1,5 +1,41 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - library sheet layout follow-up)
+
+This follow-up pass fixed the remaining real `Library` modal issues after the first sheet cleanup landed.
+
+Important changes and findings:
+
+- the previous modal cleanup removed the unwanted controls, but two deeper issues remained:
+  - the sheet body was still stretching cards vertically, creating large empty blocks
+  - `Edit details` was almost empty outside the power view because its edit sections only existed there
+- fixed files:
+  - `src/screens/library/LibraryDetailSheet.tsx`
+  - `src/screens/LibraryScreen.tsx`
+  - `src/styles/globals.css`
+- the fix now:
+  - changes the Library sheet body from a stretch-prone grid into a steadier vertical flow
+  - restructures the top summary into separate rows so long file names do not collide with the metadata badges
+  - enables creator and type editing sections for all Library views, not just the power view
+  - changes the footer action from a large `Done` primary button to a calmer `Close`
+- fresh screenshots:
+  - `output/playwright/library-sheet-health-organized-v2.png`
+  - `output/playwright/library-sheet-inspect-organized-v2.png`
+  - `output/playwright/library-sheet-edit-organized-v2.png`
+- direct Playwright validation confirmed:
+  - the summary card height dropped back to a normal size
+  - the modal footer now uses `Close`
+  - the sheet renders actual content in `Edit details`
+- checks passed:
+  - `npm run test:unit -- LibraryDetailSheet LibraryCollectionTable libraryDisplay`
+  - `npm run build`
+
+Important remaining gap:
+
+- the next pass should be visual taste only if needed
+- the main structural problems with the Library sheets are now fixed
+- the Library branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - library sheet cleanup)
 
 This pass cleaned up the shared `Library` detail sheet pattern so all three Library modals stop feeling like cramped little control panels.

@@ -533,76 +533,80 @@ export function LibraryScreen({
               },
             ]
           : []),
+        {
+          id: "creator",
+          label: userView === "beginner" ? "Set creator" : "Creator learning",
+          hint: isPowerView
+            ? "Save creator matches and optional folder preferences."
+            : "Save the right creator once so later scans stop guessing.",
+          defaultCollapsed: false,
+          children: (
+            <CreatorLearningBlock
+              userView={userView}
+              creatorDraft={creatorDraft}
+              aliasDraft={aliasDraft}
+              lockPreference={lockPreference}
+              preferredPathDraft={preferredPathDraft}
+              savingCreator={savingCreator}
+              creatorMessage={creatorMessage}
+              suggestions={creatorSuggestions}
+              creatorLearning={selected.creatorLearning}
+              onCreatorDraftChange={(value) => {
+                setCreatorDraft(value);
+                setCreatorMessage(null);
+              }}
+              onAliasDraftChange={(value) => {
+                setAliasDraft(value);
+                setCreatorMessage(null);
+              }}
+              onLockPreferenceChange={(value) => {
+                setLockPreference(value);
+                setCreatorMessage(null);
+              }}
+              onPreferredPathChange={(value) => {
+                setPreferredPathDraft(value);
+                setCreatorMessage(null);
+              }}
+              onSelectSuggestion={(value) => {
+                setCreatorDraft(value);
+                setCreatorMessage(null);
+              }}
+              onSave={() => void saveCreatorOverride()}
+              onOpenAudit={() => onNavigate("creatorAudit")}
+            />
+          ),
+        },
+        {
+          id: "category",
+          label: userView === "beginner" ? "Set type" : "Type override",
+          hint: isPowerView
+            ? "Override type and subtype for later scans and previews."
+            : "Correct the saved type so the Library stays tidy next time.",
+          defaultCollapsed: false,
+          children: (
+            <CategoryOverrideBlock
+              userView={userView}
+              kindOptions={categoryKindOptions}
+              categoryKindDraft={categoryKindDraft}
+              categorySubtypeDraft={categorySubtypeDraft}
+              categoryMessage={categoryMessage}
+              savingCategory={savingCategory}
+              categoryOverride={selected.categoryOverride}
+              onKindChange={(value) => {
+                setCategoryKindDraft(value);
+                setCategoryMessage(null);
+              }}
+              onSubtypeChange={(value) => {
+                setCategorySubtypeDraft(value);
+                setCategoryMessage(null);
+              }}
+              onSave={() => void saveCategoryClassification()}
+              onOpenAudit={() => onNavigate("categoryAudit")}
+            />
+          ),
+        },
         ...(isPowerView
           ? [
-              {
-                id: "creator",
-                label: "Creator learning",
-                hint: "Save creator matches and optional folder preferences.",
-                defaultCollapsed: false,
-                children: (
-                  <CreatorLearningBlock
-                    userView={userView}
-                    creatorDraft={creatorDraft}
-                    aliasDraft={aliasDraft}
-                    lockPreference={lockPreference}
-                    preferredPathDraft={preferredPathDraft}
-                    savingCreator={savingCreator}
-                    creatorMessage={creatorMessage}
-                    suggestions={creatorSuggestions}
-                    creatorLearning={selected.creatorLearning}
-                    onCreatorDraftChange={(value) => {
-                      setCreatorDraft(value);
-                      setCreatorMessage(null);
-                    }}
-                    onAliasDraftChange={(value) => {
-                      setAliasDraft(value);
-                      setCreatorMessage(null);
-                    }}
-                    onLockPreferenceChange={(value) => {
-                      setLockPreference(value);
-                      setCreatorMessage(null);
-                    }}
-                    onPreferredPathChange={(value) => {
-                      setPreferredPathDraft(value);
-                      setCreatorMessage(null);
-                    }}
-                    onSelectSuggestion={(value) => {
-                      setCreatorDraft(value);
-                      setCreatorMessage(null);
-                    }}
-                    onSave={() => void saveCreatorOverride()}
-                    onOpenAudit={() => onNavigate("creatorAudit")}
-                  />
-                ),
-              },
-              {
-                id: "category",
-                label: "Type override",
-                hint: "Override type and subtype for later scans and previews.",
-                defaultCollapsed: false,
-                children: (
-                  <CategoryOverrideBlock
-                    userView={userView}
-                    kindOptions={categoryKindOptions}
-                    categoryKindDraft={categoryKindDraft}
-                    categorySubtypeDraft={categorySubtypeDraft}
-                    categoryMessage={categoryMessage}
-                    savingCategory={savingCategory}
-                    categoryOverride={selected.categoryOverride}
-                    onKindChange={(value) => {
-                      setCategoryKindDraft(value);
-                      setCategoryMessage(null);
-                    }}
-                    onSubtypeChange={(value) => {
-                      setCategorySubtypeDraft(value);
-                      setCategoryMessage(null);
-                    }}
-                    onSave={() => void saveCategoryClassification()}
-                    onOpenAudit={() => onNavigate("categoryAudit")}
-                  />
-                ),
-              },
               {
                 id: "path",
                 label: "Path",

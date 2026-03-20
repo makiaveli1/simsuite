@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Eye, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { DockSectionDefinition } from "../../components/DockSectionStack";
 import {
   overlayTransition,
@@ -78,27 +78,34 @@ export function LibraryDetailSheet({
 
             <div className="workbench-sheet-body library-detail-sheet-body">
               <section className="library-detail-sheet-summary">
-                <div className="library-detail-sheet-summary-copy">
+                <div className="library-detail-sheet-summary-top">
                   <span className="section-label">Selected file</span>
+                  <div className="library-detail-sheet-summary-badges">
+                    <span className={`library-health-pill is-${rowModel.healthTone}`}>
+                      {rowModel.healthLabel}
+                    </span>
+                    <span className={`library-type-pill is-${rowModel.typeTone}`}>
+                      {rowModel.typeLabel}
+                    </span>
+                  </div>
+                </div>
+                <div className="library-detail-sheet-summary-copy">
                   <h3>{selectedFile.filename}</h3>
                   <p className="library-detail-sheet-summary-subcopy">
                     {friendlyTypeLabel(selectedFile.kind)}
                     {selectedFile.subtype?.trim() ? ` / ${selectedFile.subtype}` : ""}
                   </p>
                 </div>
-                <div className="library-detail-sheet-summary-meta">
-                  <span className={`library-health-pill is-${rowModel.healthTone}`}>
-                    {rowModel.healthLabel}
-                  </span>
-                  <span className={`library-type-pill is-${rowModel.typeTone}`}>
-                    {rowModel.typeLabel}
-                  </span>
+                <div className="library-detail-sheet-summary-bottom">
+                  <div className="library-detail-sheet-summary-spacer" />
+                  <div className="library-detail-sheet-summary-meta">
                   <span className="ghost-chip">
                     {selectedFile.creator ?? unknownCreatorLabel(userView)}
                   </span>
                   <span className="confidence-badge neutral">
                     {Math.round(selectedFile.confidence * 100)}%
                   </span>
+                  </div>
                 </div>
               </section>
 
@@ -114,9 +121,8 @@ export function LibraryDetailSheet({
             </div>
 
             <div className="workbench-sheet-footer">
-              <button type="button" className="primary-action" onClick={onClose}>
-                <Eye size={14} strokeWidth={2} />
-                Done
+              <button type="button" className="secondary-action" onClick={onClose}>
+                Close
               </button>
             </div>
           </m.aside>

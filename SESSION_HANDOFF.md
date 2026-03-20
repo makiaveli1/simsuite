@@ -1,5 +1,62 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Library Sheet Layout Follow-up)
+
+- **Mode**: code
+- **Focus**: fix the remaining `Library` modal issues after the first sheet cleanup pass
+
+### Progress Made
+
+1. **Fixed the real layout problem in the sheet body**:
+   - the Library sheet body was still using a grid layout that stretched its cards vertically
+   - that is what caused the giant empty brown blocks in the screenshots
+   - changed the sheet body and section list to use a steadier vertical flow so the cards stay as tall as their content
+
+2. **Rebuilt the top summary so long names stop colliding with the badges**:
+   - split the summary into:
+     - top row with the status/type badges
+     - title row
+     - bottom row with creator and confidence
+   - long filenames can now wrap without fighting the metadata chips
+
+3. **Fixed the hidden content bug in `Edit details`**:
+   - the edit sections were only being built for the power view before
+   - that left the modal almost empty in the normal Library views
+   - creator and type editing sections now exist for all Library views
+
+4. **Tidied the footer action**:
+   - changed the large `Done` primary action to a calmer `Close` button
+   - this fits the Library modal better now that it is a focused reading/editing panel
+
+5. **Verified with fresh live screenshots**:
+   - `output/playwright/library-sheet-health-organized-v2.png`
+   - `output/playwright/library-sheet-inspect-organized-v2.png`
+   - `output/playwright/library-sheet-edit-organized-v2.png`
+   - direct browser check confirmed:
+     - the summary card height is now back down to a normal size
+     - `Edit details` shows real content
+     - the footer button now reads `Close`
+
+6. **Verification**:
+   - `npm run test:unit -- LibraryDetailSheet LibraryCollectionTable libraryDisplay`
+   - `npm run build`
+   - direct Playwright screenshot pass for all three Library sheet modes
+
+### What Worked
+
+- the modal problems were not separate visual issues
+- they came from two shared causes:
+  - stretched card layout
+  - edit sections only existing for the power view
+
+### Remaining Gap
+
+- this is much closer now
+- the next pass, if needed, should only be visual taste:
+  - wording polish in the section cards
+  - button tone
+  - maybe a slightly tighter header copy
+
 ## Current Session (March 20, 2026 - Library Sheet Cleanup)
 
 - **Mode**: code
