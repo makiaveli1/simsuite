@@ -26,6 +26,7 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
     }
 
     ensure_schema(connection)?;
+    cleanup_stale_installed_safety_review_rows(connection)?;
 
     let version_exists: Option<i64> = connection
         .query_row(
@@ -43,6 +44,26 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+fn cleanup_stale_installed_safety_review_rows(connection: &Connection) -> AppResult<usize> {
+    if !table_exists(connection, "files")? || !table_exists(connection, "review_queue")? {
+        return Ok(0);
+    }
+
+    let deleted = connection.execute(
+        "DELETE FROM review_queue
+         WHERE id IN (
+            SELECT rq.id
+            FROM review_queue rq
+            JOIN files f ON f.id = rq.file_id
+            WHERE f.source_location <> 'downloads'
+              AND rq.reason IN ('unsafe_script_depth', 'tray_file_in_mods_root', 'tray_content_in_mods')
+         )",
+        [],
+    )?;
+
+    Ok(deleted)
 }
 
 fn table_exists(connection: &Connection, table_name: &str) -> AppResult<bool> {
@@ -1484,6 +1505,146 @@ mod tests {
         assert_eq!(old_count, 0);
         assert_eq!(new_row.0, "CAS");
         assert_eq!(new_row.1.as_deref(), Some("Hair"));
+    }
+
+    #[test]
+    fn initialize_cleans_stale_installed_safety_only_review_rows() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/NeedsCare/deep-script.ts4script",
+                    "deep-script.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.96_f64,
+                    "mods",
+                    "[\"unsafe_script_depth\"]",
+                    "[]",
+                    "{}",
+                ],
+            )
+            .expect("unsafe installed file");
+        let installed_safety_file_id = connection.last_insert_rowid();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/Unclear/Colorful_Var_Pink.package",
+                    "Colorful_Var_Pink.package",
+                    ".package",
+                    "Unknown",
+                    0.32_f64,
+                    "mods",
+                    "[]",
+                    "[\"low_confidence_parse\",\"no_category_detected\"]",
+                    "{}",
+                ],
+            )
+            .expect("installed unknown file");
+        let installed_unknown_file_id = connection.last_insert_rowid();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Downloads/incoming.package",
+                    "incoming.package",
+                    ".package",
+                    "Gameplay",
+                    0.41_f64,
+                    "downloads",
+                    "[]",
+                    "[\"low_confidence_parse\"]",
+                    "{}",
+                ],
+            )
+            .expect("download file");
+        let download_file_id = connection.last_insert_rowid();
+
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                params![installed_safety_file_id, "unsafe_script_depth", 0.96_f64],
+            )
+            .expect("stale safety review");
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                params![installed_unknown_file_id, "low_confidence_parse", 0.32_f64],
+            )
+            .expect("installed unknown review");
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                params![download_file_id, "low_confidence_parse", 0.41_f64],
+            )
+            .expect("download review");
+
+        initialize(&mut connection).expect("cleanup existing db");
+
+        let remaining = connection
+            .prepare(
+                "SELECT f.filename, rq.reason
+                 FROM review_queue rq
+                 JOIN files f ON f.id = rq.file_id
+                 ORDER BY rq.id",
+            )
+            .expect("prepare")
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect");
+
+        assert_eq!(
+            remaining,
+            vec![
+                (
+                    "Colorful_Var_Pink.package".to_owned(),
+                    "low_confidence_parse".to_owned(),
+                ),
+                (
+                    "incoming.package".to_owned(),
+                    "low_confidence_parse".to_owned()
+                ),
+            ]
+        );
     }
 
     #[test]

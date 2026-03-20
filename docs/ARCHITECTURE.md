@@ -67,6 +67,23 @@ Not yet implemented:
 
 ## Current engineering note (March 20, 2026)
 
+Older databases now self-clean stale installed safety-only review rows during startup, so read-time filtering is no longer the only protection keeping fake installed review backlog out of the app.
+
+Important current behavior:
+
+- `database::initialize` now runs a narrow cleanup after schema setup
+- that cleanup removes only installed `review_queue` rows for:
+  - `unsafe_script_depth`
+  - `tray_file_in_mods_root`
+  - `tray_content_in_mods`
+- this keeps the product split honest even for long-lived databases:
+  - `Review` keeps unresolved manual triage work
+  - installed safety issues stay attached to installed-content care
+- real installed review rows still remain
+- download review rows still remain
+
+## Current engineering note (March 20, 2026)
+
 Installed safety-only issues now stay in the installed-content care flow instead of leaking into manual review counts.
 
 Important current behavior:

@@ -1,5 +1,62 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Startup review queue cleanup)
+
+- **Mode**: code
+- **Focus**: finish the stale installed review-row cleanup properly so older databases stop carrying fake review backlog on disk
+
+### Progress Made
+
+1. **Finished the cleanup at the real source instead of only hiding stale rows in reads**:
+   - kept the earlier read-side protection in place
+   - added a startup cleanup in `database::initialize`
+   - the cleanup now removes only stale installed safety-only review rows for:
+     - `unsafe_script_depth`
+     - `tray_file_in_mods_root`
+     - `tray_content_in_mods`
+   - download review rows and real installed review rows are left alone
+
+2. **Added a regression test for the exact cleanup contract**:
+   - the new database test proves:
+     - stale installed safety-only rows are deleted
+     - real installed review rows still remain
+     - download review rows still remain
+
+3. **Verified the full app path, not just an in-memory test**:
+   - before a real app launch, the live database still had:
+     - raw `review_queue` rows: `22`
+     - stale installed safety-only rows: `20`
+     - rows that should still show in app: `2`
+   - after one real desktop app launch, the live database dropped to:
+     - raw `review_queue` rows: `2`
+     - stale installed safety-only rows: `0`
+     - rows that should still show in app: `2`
+   - the remaining real review rows are both for:
+     - `Colorful_Var_Pink.package`
+     - reasons:
+       - `low_confidence_parse`
+       - `no_category_detected`
+
+4. **Verification**:
+   - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - `npm run build`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+   - launched the real desktop app once and re-checked the live SQLite database
+
+### What Worked
+
+- the cleanup is now automatic for older databases and no longer depends on waiting for the next full rescan
+- the database truth and the app truth now line up:
+  - `Review` keeps only real unresolved work
+  - installed safety issues stay in care, not fake review backlog
+
+### Remaining Gap
+
+- the cleanup is intentionally narrow and only removes stale installed safety-only review rows
+- broader watch-system bug cleanup is still the next important stabilization pass
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Review queue truth and desktop smoke realignment)
 
 - **Mode**: code

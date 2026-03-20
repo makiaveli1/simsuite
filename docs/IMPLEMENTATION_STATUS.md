@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - startup review queue cleanup)
+
+This pass finished the stale installed review-row cleanup properly for older databases, so fake installed safety backlog is now removed from disk at app startup instead of only being hidden at read time.
+
+Important changes and findings:
+
+- fixed file:
+  - `src-tauri/src/database/mod.rs`
+- the database startup path now deletes only stale installed safety-only rows from `review_queue` for:
+  - `unsafe_script_depth`
+  - `tray_file_in_mods_root`
+  - `tray_content_in_mods`
+- this cleanup runs during `database::initialize`, after schema setup, so older user databases self-heal on the next app launch
+- the cleanup is intentionally narrow:
+  - real installed review rows stay
+  - download review rows stay
+  - installed safety issues still remain available through care flows instead of pretending to be review backlog
+- a regression test now protects that exact contract
+- live-database proof:
+  - before launch:
+    - raw `review_queue` rows: `22`
+    - stale installed safety-only rows: `20`
+    - rows that should still show in app: `2`
+  - after one real app launch:
+    - raw `review_queue` rows: `2`
+    - stale installed safety-only rows: `0`
+    - rows that should still show in app: `2`
+- checks passed:
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo test --manifest-path src-tauri/Cargo.toml`
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- this cleanup only covers the stale installed safety-only review reasons on purpose
+- the next stabilization step should still be the postponed watch-system bug sweep on top of this cleaner backlog truth
+
 ## Current session note (March 20, 2026 - review queue truth and desktop smoke realignment)
 
 This pass finished an important stabilization layer under the newer desktop UI: existing stale installed safety rows no longer inflate `Home` or `Review`, and the desktop smoke now follows the Inbox/Home/Updates flow the app actually has today.
@@ -44,8 +82,7 @@ Important changes and findings:
 
 Important remaining gap:
 
-- older databases can still physically contain stale installed safety-only rows until the next full scan or cleanup pass rewrites them
-- the app now reads them correctly, but the raw table still keeps them for now
+- older databases are now cleaned on the next app launch, so the raw table no longer has to wait for a full rescan to drop stale installed safety-only rows
 - the current smoke can only verify the exact Home watch-launch click path when that Home module is visible in the current saved layout
 - this branch is still not merged to `main`
 
