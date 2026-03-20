@@ -24,6 +24,7 @@ it("shows the common top filters in the main strip", () => {
         source: "",
         subtype: "",
         minConfidence: "",
+        unsafeOnly: false,
       }}
       shownCount={100}
       totalCount={13010}
@@ -61,6 +62,7 @@ it("shows the extra filter row only when more filters is open", () => {
         source: "",
         subtype: "",
         minConfidence: "",
+        unsafeOnly: false,
       }}
       shownCount={100}
       totalCount={13010}
@@ -96,6 +98,7 @@ it("keeps extra filters hidden in creator view until asked for", () => {
         source: "",
         subtype: "",
         minConfidence: "",
+        unsafeOnly: false,
       }}
       shownCount={100}
       totalCount={13010}

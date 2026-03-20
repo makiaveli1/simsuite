@@ -38,7 +38,16 @@ pub fn get_home_overview(
     )?;
     let bundles_count = scalar(connection, "SELECT COUNT(*) FROM bundles")?;
     let duplicates_count = scalar(connection, "SELECT COUNT(*) FROM duplicates")?;
-    let review_count = scalar(connection, "SELECT COUNT(*) FROM review_queue")?;
+    let review_count = scalar(
+        connection,
+        "SELECT COUNT(*)
+         FROM review_queue rq
+         JOIN files f ON rq.file_id = f.id
+         WHERE NOT (
+            f.source_location <> 'downloads'
+            AND rq.reason IN ('unsafe_script_depth', 'tray_file_in_mods_root', 'tray_content_in_mods')
+         )",
+    )?;
     let unsafe_count = scalar(
         connection,
         "SELECT COUNT(*) FROM files WHERE safety_notes <> '[]'",
@@ -349,6 +358,10 @@ fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
         params.push(Value::Real(min_confidence));
     }
 
+    if query.unsafe_only.unwrap_or(false) {
+        sql.push_str(" AND f.safety_notes <> '[]'");
+    }
+
     (sql, params)
 }
 
@@ -402,7 +415,7 @@ mod tests {
         seed::load_seed_pack,
     };
 
-    use super::{get_file_detail, get_library_facets, list_library_files};
+    use super::{get_file_detail, get_home_overview, get_library_facets, list_library_files};
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
         let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -505,5 +518,118 @@ mod tests {
         let download_detail =
             get_file_detail(&connection, &settings, &seed_pack, 2).expect("download detail lookup");
         assert!(download_detail.is_none());
+    }
+
+    #[test]
+    fn library_can_filter_to_files_that_need_care() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/NeedsCare/deep-script.ts4script",
+                    "deep-script.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.96_f64,
+                    "mods",
+                    "[\"unsafe_script_depth\"]",
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("unsafe file");
+
+        let listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                unsafe_only: Some(true),
+                ..LibraryQuery::default()
+            },
+        )
+        .expect("unsafe listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items.len(), 1);
+        assert_eq!(listing.items[0].filename, "deep-script.ts4script");
+        assert_eq!(
+            listing.items[0].safety_notes,
+            vec!["unsafe_script_depth".to_owned()]
+        );
+    }
+
+    #[test]
+    fn home_overview_hides_stale_installed_safety_only_review_rows() {
+        let (connection, settings, seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/NeedsCare/deep-script.ts4script",
+                    "deep-script.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.96_f64,
+                    "mods",
+                    "[\"unsafe_script_depth\"]",
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("unsafe installed file");
+        let unsafe_file_id = connection.last_insert_rowid();
+
+        let download_file_id = connection
+            .query_row(
+                "SELECT id FROM files WHERE filename = ?1",
+                params!["incoming.package"],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("download file id");
+
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                params![unsafe_file_id, "unsafe_script_depth", 0.96_f64],
+            )
+            .expect("stale safety review row");
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                params![download_file_id, "low_confidence_parse", 0.42_f64],
+            )
+            .expect("download review row");
+
+        let overview =
+            get_home_overview(&connection, &settings, &seed_pack).expect("home overview");
+
+        assert_eq!(overview.review_count, 1);
+        assert_eq!(overview.unsafe_count, 1);
     }
 }

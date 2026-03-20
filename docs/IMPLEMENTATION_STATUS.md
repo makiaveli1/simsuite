@@ -1,5 +1,54 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - review queue truth and desktop smoke realignment)
+
+This pass finished an important stabilization layer under the newer desktop UI: existing stale installed safety rows no longer inflate `Home` or `Review`, and the desktop smoke now follows the Inbox/Home/Updates flow the app actually has today.
+
+Important changes and findings:
+
+- checked the newer UI first before changing logic
+- confirmed the current desktop-first behavior is:
+  - `Library` for installed-content browsing and care
+  - `Updates` for tracked pages and source follow-up
+  - `Home` as a calmer launch surface
+- fixed files:
+  - `src-tauri/src/core/library_index/mod.rs`
+  - `src-tauri/src/core/rule_engine/mod.rs`
+  - `src/screens/library/LibraryTopStrip.test.tsx`
+  - `scripts/desktop/desktop-smoke.mjs`
+- the backend now hides stale installed safety-only review rows at read time in both:
+  - `Home` review counts
+  - `Review` queue loading
+- those installed reasons still stay visible as care/safety work, but they no longer count as manual review backlog:
+  - `unsafe_script_depth`
+  - `tray_file_in_mods_root`
+  - `tray_content_in_mods`
+- the Library test fixture was updated for the new `unsafeOnly` filter shape
+- the desktop smoke now:
+  - switches to the correct Inbox lane before selecting a row
+  - confirms the selected row actually became selected
+  - follows the current lane truth:
+    - guided update batch in `Special setup`
+    - older follow-up batches in `Waiting on you`
+    - same-version batches in `Done`
+  - checks current user-facing Downloads text instead of older proof-only labels
+  - falls back cleanly when a personalized Home layout hides the watch-launch card
+- live-database sanity check after the read-side fix:
+  - raw `review_queue` rows: `22`
+  - filtered rows that should still show in app: `2`
+  - installed files with safety notes: `20`
+- checks passed:
+  - `npm run build`
+  - `cargo test --manifest-path src-tauri/Cargo.toml`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- older databases can still physically contain stale installed safety-only rows until the next full scan or cleanup pass rewrites them
+- the app now reads them correctly, but the raw table still keeps them for now
+- the current smoke can only verify the exact Home watch-launch click path when that Home module is visible in the current saved layout
+- this branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - Updates root scroll fix)
 
 This pass fixed the deeper remaining `Updates` overflow bug: when the setup queue got tall enough, the whole page still stretched and scrolled instead of keeping the queue inside its own panel.

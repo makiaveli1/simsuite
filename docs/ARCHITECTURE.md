@@ -65,6 +65,27 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (March 20, 2026)
+
+Installed safety-only issues now stay in the installed-content care flow instead of leaking into manual review counts.
+
+Important current behavior:
+
+- the backend now filters stale installed safety-only `review_queue` rows at read time in both:
+  - `library_index::get_home_overview`
+  - `rule_engine::load_review_queue`
+- this specifically hides older carry-over rows for:
+  - `unsafe_script_depth`
+  - `tray_file_in_mods_root`
+  - `tray_content_in_mods`
+- these installed issues are still treated as real care items:
+  - `Library` can surface them directly through the `unsafe_only` filter path
+  - `unsafe_count` still reflects them
+- the product split is now clearer:
+  - `Review` is for unresolved human-triage work
+  - installed safety notes stay attached to installed-file care, not fake review backlog
+- existing databases may still physically contain stale rows in `review_queue` until a later rescan or cleanup pass rewrites them, but the live app no longer shows them as active review work
+
 ## Current engineering note (March 18, 2026)
 
 `Downloads` now follows the shared workbench shell instead of keeping its own stacked dashboard-style layout.

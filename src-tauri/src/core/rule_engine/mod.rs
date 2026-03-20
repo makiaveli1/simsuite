@@ -167,6 +167,10 @@ pub fn load_review_queue(
          JOIN files f ON rq.file_id = f.id
          LEFT JOIN creators c ON f.creator_id = c.id
          LEFT JOIN bundles b ON f.bundle_id = b.id
+         WHERE NOT (
+            f.source_location <> 'downloads'
+            AND rq.reason IN ('unsafe_script_depth', 'tray_file_in_mods_root', 'tray_content_in_mods')
+         )
          ORDER BY rq.created_at DESC
          LIMIT ?1",
     )?;
@@ -864,7 +868,7 @@ fn normalize_relative_path(path: PathBuf) -> String {
 mod tests {
     use crate::{database, models::LibrarySettings};
 
-    use super::{build_preview, list_rule_presets};
+    use super::{build_preview, list_rule_presets, load_review_queue};
 
     #[test]
     fn lists_seeded_rule_presets() {
@@ -1085,5 +1089,105 @@ mod tests {
         assert_eq!(preview.total_considered, 3);
         assert_eq!(preview.safe_count, 3);
         assert_eq!(preview.suggestions.len(), 2);
+    }
+
+    #[test]
+    fn load_review_queue_hides_stale_installed_safety_only_rows() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        database::seed_database(
+            &mut connection,
+            &crate::seed::load_seed_pack().expect("seed"),
+        )
+        .expect("seed db");
+
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    safety_notes,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    "C:/Mods/NeedsCare/deep-script.ts4script",
+                    "deep-script.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.96_f64,
+                    "mods",
+                    "[\"unsafe_script_depth\"]",
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("unsafe installed file");
+        let unsafe_file_id = connection.last_insert_rowid();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    subtype,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    "C:/Downloads/incoming.package",
+                    "incoming.package",
+                    ".package",
+                    "Gameplay",
+                    "Utility",
+                    0.41_f64,
+                    "downloads",
+                    "[\"low_confidence_parse\"]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("download file");
+        let download_file_id = connection.last_insert_rowid();
+
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                rusqlite::params![unsafe_file_id, "unsafe_script_depth", 0.96_f64],
+            )
+            .expect("stale installed review row");
+        connection
+            .execute(
+                "INSERT INTO review_queue (file_id, reason, confidence) VALUES (?1, ?2, ?3)",
+                rusqlite::params![download_file_id, "low_confidence_parse", 0.41_f64],
+            )
+            .expect("download review row");
+
+        let queue = load_review_queue(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:/Mods".to_owned()),
+                tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: Some("C:/Downloads".to_owned()),
+            },
+            Some("Category First".to_owned()),
+            80,
+        )
+        .expect("review queue");
+
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].filename, "incoming.package");
+        assert_eq!(queue[0].reason, "low_confidence_parse");
     }
 }

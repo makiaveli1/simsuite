@@ -1,5 +1,77 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Review queue truth and desktop smoke realignment)
+
+- **Mode**: code
+- **Focus**: verify the user's newer desktop-first UI changes, stop stale safety-only review work from leaking into Home and Review, and realign the desktop smoke to the current Inbox/Home/Updates flow
+
+### Progress Made
+
+1. **Checked the current UI changes first instead of assuming old screen behavior still applied**:
+   - confirmed the newer desktop-first split is real:
+     - `Library` is the installed-content browser
+     - `Updates` is the watch/update workspace
+     - `Home` is calmer and launch-oriented
+   - confirmed the smoke script was still carrying older assumptions about:
+     - Inbox lane placement
+     - Home watch launch rows
+     - where version details still show up in the current Downloads UI
+
+2. **Fixed the remaining production-side review truth gap**:
+   - future scans were already no longer adding new installed safety-only rows into `review_queue`
+   - but older databases could still keep stale rows there
+   - fixed the read side too so the app now hides those stale rows immediately in:
+     - `Home` review counts
+     - `Review` queue loading
+   - the hidden stale reasons are:
+     - `unsafe_script_depth`
+     - `tray_file_in_mods_root`
+     - `tray_content_in_mods`
+   - these installed safety issues still count as care items, but they no longer pretend to be unresolved manual review work
+
+3. **Kept the new Library care flow wired correctly**:
+   - `Library` now supports the newer `unsafeOnly` filter path cleanly
+   - fixed the related frontend test fixture so builds stop failing on the new required filter shape
+
+4. **Rebuilt the desktop smoke around the UI the app actually has now**:
+   - Inbox smoke now switches to the real queue lane before looking for a row
+   - row clicks now prove the row actually became selected
+   - the script now follows the current lane truth:
+     - real guided install/update batch in `Special setup`
+     - older follow-up packs in `Waiting on you`
+     - already-current same-version packs in `Done`
+   - the smoke no longer expects older proof-heavy version blocks on the main Downloads stage when the current UI is showing calmer action-first summaries instead
+   - `Home` watch setup launch is now treated carefully:
+     - if the watch card is visible, smoke uses it
+     - if the user has hidden that Home module, smoke falls back to opening `Updates` directly instead of failing for the wrong reason
+
+5. **Verified the live database math against the real app data**:
+   - raw `review_queue` rows in the live database: `22`
+   - filtered review rows the app should now show: `2`
+   - installed files with safety notes: `20`
+   - this matches the intended product behavior:
+     - `20` care items stay visible as safety work
+     - only `2` rows still belong in true manual review
+
+6. **Verification**:
+   - `npm run build`
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+   - smoke now passes against the current desktop UI
+
+### What Worked
+
+- checking the real UI first mattered here because the failing smoke was mostly stale verification, not just a product regression
+- the read-side review filtering closes an important trust gap for existing user databases without forcing an immediate rebuild
+- the desktop smoke is now much closer to the actual player flow across Inbox, Home, and Updates
+
+### Remaining Gap
+
+- the raw stale installed safety-only rows still remain in older databases until the next full scan rewrites them
+- the app now hides them correctly, but the table itself is not yet cleaned in place
+- the Home watch-launch smoke currently falls back when the user has hidden that module, so it proves the Updates flow is reachable but not always the exact Home click path in that personalized layout
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Updates Root Scroll Fix)
 
 - **Mode**: code
