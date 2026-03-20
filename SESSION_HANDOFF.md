@@ -1,5 +1,70 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Updates Root Scroll Fix)
+
+- **Mode**: code
+- **Focus**: stop the whole Updates page from scrolling when the setup queue gets tall
+
+### Progress Made
+
+1. **Reproduced the real overflow bug with a stress check**:
+   - the normal small browser fixture looked fine
+   - but once the setup table was expanded to simulate a much larger backlog, the page started growing vertically again
+   - that matched what the user was still seeing in the real app
+
+2. **Found the actual root cause**:
+   - the queue box itself was not the main problem
+   - the deeper issue was the top-level app shell only using `min-height`
+   - that meant the height chain was not fully definite
+   - once the setup list got tall enough, the whole workbench was allowed to stretch instead of forcing the queue to scroll inside its own panel
+
+3. **Validated the hypothesis before editing the real CSS**:
+   - tested a tiny temporary browser override:
+     - `.app-shell { height: 100vh; min-height: 100vh; overflow: hidden; }`
+   - before the override:
+     - document height jumped to `7728`
+     - workbench height jumped to `7716`
+     - page-level vertical scroll was `true`
+   - after the override:
+     - document height stayed at `980`
+     - workbench height stayed at `968`
+     - queue scroll height stayed much larger than its client height
+     - page-level vertical scroll was `false`
+
+4. **Applied the minimal real fix**:
+   - updated `.app-shell` to use a real viewport height:
+     - `height: 100vh`
+     - `min-height: 100vh`
+     - `height: 100dvh`
+     - `min-height: 100dvh`
+     - `overflow: hidden`
+   - this keeps the app itself at viewport height and makes the Updates queue scroll inside its own box as intended
+
+5. **Saved fresh proof**:
+   - `output/playwright/updates-setup-stress-contained.png`
+   - stress metrics now show:
+     - `pageHasVerticalScroll: false`
+     - `docClientHeight: 980`
+     - `docScrollHeight: 980`
+     - `listClientHeight: 551`
+     - `listScrollHeight: 7299`
+     - `listCanScroll: true`
+
+6. **Verification**:
+   - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+   - `npm run build`
+
+### What Worked
+
+- the right fix was at the app shell level, not more Updates-only overflow patches
+- once the viewport height became definite, the queue started behaving like a real contained scroll area
+
+### Remaining Gap
+
+- this proof used a browser stress setup rather than the live desktop 94-row backlog window
+- the behavior now matches the real bug pattern much better, but another real desktop screenshot pass would still be useful if the user wants one more confirmation
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Updates Setup Containment Follow-up)
 
 - **Mode**: code

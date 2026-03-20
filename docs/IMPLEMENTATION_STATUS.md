@@ -1,5 +1,46 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - Updates root scroll fix)
+
+This pass fixed the deeper remaining `Updates` overflow bug: when the setup queue got tall enough, the whole page still stretched and scrolled instead of keeping the queue inside its own panel.
+
+Important changes and findings:
+
+- the bug was reproduced with a stress check rather than guessed from screenshots alone
+- the setup queue itself was not the main problem
+- the real root cause was the top-level app shell:
+  - it only had `min-height`
+  - that meant the workspace height chain was not definite
+  - tall queue content could still expand the whole workbench
+- fixed file:
+  - `src/styles/globals.css`
+- the fix now:
+  - gives `.app-shell` a real viewport height with:
+    - `height: 100vh`
+    - `min-height: 100vh`
+    - `height: 100dvh`
+    - `min-height: 100dvh`
+    - `overflow: hidden`
+  - this keeps the app frame itself fixed to the viewport and forces the queue to scroll inside its own contained box
+- fresh stress proof:
+  - `output/playwright/updates-setup-stress-contained.png`
+  - direct browser metrics after the fix showed:
+    - `pageHasVerticalScroll: false`
+    - `docClientHeight: 980`
+    - `docScrollHeight: 980`
+    - `listClientHeight: 551`
+    - `listScrollHeight: 7299`
+    - `listCanScroll: true`
+- checks passed:
+  - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+  - `npm run build`
+
+Important remaining gap:
+
+- this proof used a browser stress pass rather than the real desktop backlog window
+- the fix matches the actual root cause that let the page stretch, but another live desktop screenshot pass would still be the cleanest final confirmation
+- the Updates branch is still not merged to `main`
+
 ## Current session note (March 20, 2026 - Updates setup containment follow-up)
 
 This pass fixed the next real `Updates` layout miss after the backlog fix: the `Need source` lane was still behaving like a long page sheet instead of a contained desktop queue.

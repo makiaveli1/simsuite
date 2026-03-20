@@ -609,8 +609,12 @@ h2,
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   gap: 0.35rem;
+  height: 100vh;
   min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   padding: 0.35rem;
+  overflow: hidden;
 }
 
 .app-shell > * {
