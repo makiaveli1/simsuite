@@ -1,21 +1,26 @@
-import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
+import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
 
 export interface LibraryViewFlags {
-  showCreatorInList: boolean;
-  showInspectFactsInList: boolean;
   showAdvancedFilters: boolean;
-  showRootFacts: boolean;
-  maxSupportingFacts: number;
 }
 
 export interface LibraryRowModel {
   id: number;
   title: string;
   typeLabel: string;
+  typeTone:
+    | "gameplay"
+    | "cas"
+    | "buildbuy"
+    | "scriptmods"
+    | "overrides"
+    | "poses"
+    | "presets"
+    | "tray"
+    | "unknown";
   healthLabel: string;
   healthTone: "calm" | "attention" | "muted";
-  supportingFacts: string[];
 }
 
 type LibraryCareSummarySource = Pick<
@@ -25,38 +30,21 @@ type LibraryCareSummarySource = Pick<
 
 export function libraryViewFlags(userView: UserView): LibraryViewFlags {
   return {
-    showCreatorInList: userView !== "beginner",
-    showInspectFactsInList: userView === "power",
     showAdvancedFilters: userView === "power",
-    showRootFacts: userView !== "beginner",
-    maxSupportingFacts: userView === "power" ? 3 : 2,
   };
 }
 
 export function buildLibraryRowModel(
   row: LibraryFileRow,
-  userView: UserView,
+  _userView: UserView,
 ): LibraryRowModel {
-  const flags = libraryViewFlags(userView);
-  const creatorLabel = row.creator ?? unknownCreatorLabel(userView);
-  const supportingFacts = [
-    row.subtype?.trim() || friendlyTypeLabel(row.kind),
-    flags.showCreatorInList ? creatorLabel : null,
-    flags.showRootFacts
-      ? row.sourceLocation === "tray"
-        ? "Tray"
-        : "Mods"
-      : null,
-    flags.showInspectFactsInList ? `Depth ${row.relativeDepth}` : null,
-  ].filter((value): value is string => Boolean(value));
-
   return {
     id: row.id,
     title: row.filename,
     typeLabel: friendlyTypeLabel(row.kind),
+    typeTone: libraryTypeTone(row.kind),
     healthLabel: describeLibraryHealth(row),
     healthTone: libraryHealthTone(row),
-    supportingFacts: supportingFacts.slice(0, flags.maxSupportingFacts),
   };
 }
 
@@ -98,4 +86,30 @@ function libraryHealthTone(
   }
 
   return "calm";
+}
+
+function libraryTypeTone(kind: string): LibraryRowModel["typeTone"] {
+  switch (kind) {
+    case "Gameplay":
+      return "gameplay";
+    case "CAS":
+      return "cas";
+    case "BuildBuy":
+      return "buildbuy";
+    case "ScriptMods":
+      return "scriptmods";
+    case "OverridesAndDefaults":
+      return "overrides";
+    case "PosesAndAnimation":
+      return "poses";
+    case "PresetsAndSliders":
+      return "presets";
+    case "TrayHousehold":
+    case "TrayLot":
+    case "TrayRoom":
+    case "TrayItem":
+      return "tray";
+    default:
+      return "unknown";
+  }
 }

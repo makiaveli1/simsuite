@@ -1,5 +1,67 @@
 # Session Handoff
 
+## Current Session (March 20, 2026 - Library Simple List Pass)
+
+- **Mode**: code
+- **Focus**: simplify the main `Library` table so it only shows mod name, status, and type
+
+### Progress Made
+
+1. **Trimmed the main list to the essentials**:
+   - removed the old `At a glance` column from the table
+   - removed creator and extra clue text from the main list rows
+   - kept the list focused on:
+     - mod name
+     - status
+     - type
+
+2. **Made type easier to scan without adding clutter**:
+   - moved type into its own dedicated column
+   - added calm color-coded type pills for the main Sims content groups:
+     - Gameplay
+     - CAS
+     - Build/Buy
+     - Script Mods
+     - Overrides
+     - Poses
+     - Presets
+     - Tray
+   - kept the colors flat and muted so the list still feels cozy, not loud
+
+3. **Cleaned up list-only leftover logic**:
+   - the row model no longer builds extra supporting facts for the main table
+   - removed now-unused list detail wiring from `LibraryScreen`
+   - kept the richer information in the inspector and deeper detail sheet instead
+
+4. **Verified both behavior and visuals**:
+   - added and passed a test that checks the main list now uses only:
+     - `Mod name`
+     - `Status`
+     - `Type`
+   - direct browser screenshot confirmed the first row now reads as:
+     - file name
+     - status
+     - type only
+   - fresh screenshot:
+     - `output/playwright/library-pass4-simple-list.png`
+
+5. **Verification**:
+   - `npm run test:unit -- LibraryCollectionTable libraryDisplay`
+   - `npm run build`
+   - direct Playwright screenshot and header/cell check
+
+### What Worked
+
+- the table got noticeably calmer once the extra creator/folder clues left the main list
+- type still stays easy to scan because the color now carries the category instead of extra text
+
+### Remaining Gap
+
+- the next Library pass should focus on polish only:
+  - make the type colors feel even more balanced if needed
+  - tighten row spacing and the inspector rhythm
+  - consider whether the top filter strip can be simplified a little more later
+
 ## Current Session (March 19, 2026 - Library True Viewport Fix)
 
 - **Mode**: code

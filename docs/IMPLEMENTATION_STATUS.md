@@ -1,5 +1,40 @@
 # SimSuite Implementation Status
 
+## Current session note (March 20, 2026 - library simple list pass)
+
+This pass simplified the main `Library` table so the page feels more like a calm catalog and less like a metadata wall.
+
+Important changes and findings:
+
+- the main list now shows only:
+  - mod name
+  - status
+  - type
+- the old `At a glance` column was removed
+- creator, folder, and other extra clues now stay in the inspector or the deeper detail sheet instead of living in the main list
+- fixed files:
+  - `src/screens/library/LibraryCollectionTable.tsx`
+  - `src/screens/library/libraryDisplay.ts`
+  - `src/styles/globals.css`
+  - `src/screens/LibraryScreen.tsx`
+- type is now color coded with calm flat pills for the main Sims groups
+- tests were updated to protect the simpler table shape
+- fresh screenshot:
+  - `output/playwright/library-pass4-simple-list.png`
+- checks passed:
+  - `npm run test:unit -- LibraryCollectionTable libraryDisplay`
+  - `npm run build`
+- direct Playwright validation confirmed the live table headers are now:
+  - `Mod name`
+  - `Status`
+  - `Type`
+
+Important remaining gap:
+
+- the next `Library` work is mostly visual polish now
+- type pill balance, row rhythm, and the inspector spacing can still be tightened further
+- the Library branch is still not merged to `main`
+
 ## Current session note (March 19, 2026 - library true viewport fix)
 
 This pass fixed the deeper remaining `Library` overflow bug after the earlier containment pass. The page shell itself was no longer growing, but the results list still was not behaving like a true boxed viewport once the table became large enough.

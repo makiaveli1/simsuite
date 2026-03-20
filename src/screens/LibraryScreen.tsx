@@ -19,7 +19,6 @@ import type {
   VersionConfidence,
   WatchListFilter,
 } from "../lib/types";
-import { libraryViewFlags } from "./library/libraryDisplay";
 import {
   type LibraryFilterValues,
 } from "./library/LibraryTopStrip";
@@ -252,8 +251,6 @@ export function LibraryScreen({
     source,
     minConfidence,
   ].filter(Boolean).length;
-  const viewFlags = libraryViewFlags(userView);
-
   const libraryInspectorSections = selected
     ? [
         {

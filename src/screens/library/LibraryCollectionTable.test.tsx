@@ -45,6 +45,27 @@ it("shows a calm row in casual mode without the full path", () => {
   expect(screen.queryByText(/mods\\buildbuy/i)).not.toBeInTheDocument();
 });
 
+it("keeps the main list to mod name, status, and type only", () => {
+  render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={SAMPLE_ROWS}
+      selectedId={1}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(screen.getByRole("columnheader", { name: /mod name/i })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: /status/i })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: /^type$/i })).toBeVisible();
+  expect(screen.queryByRole("columnheader", { name: /at a glance/i })).not.toBeInTheDocument();
+  expect(screen.queryByText(/twistedmexi/i)).not.toBeInTheDocument();
+});
+
 it("renders the results inside a dedicated scroll viewport", () => {
   const { container } = render(
     <LibraryCollectionTable

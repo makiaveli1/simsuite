@@ -34,9 +34,9 @@ export function LibraryCollectionTable({
         <table className="library-table">
           <thead>
             <tr>
-              <th>{userView === "beginner" ? "File" : "Mod or file"}</th>
+              <th>Mod name</th>
               <th>Status</th>
-              <th>{userView === "power" ? "Clues" : "At a glance"}</th>
+              <th>Type</th>
             </tr>
           </thead>
           <tbody>
@@ -63,9 +63,6 @@ export function LibraryCollectionTable({
                   >
                     <td>
                       <div className="library-row-title">{model.title}</div>
-                      <div className="library-row-type">
-                        <span className="library-type-pill">{model.typeLabel}</span>
-                      </div>
                     </td>
                     <td>
                       <span className={`library-health-pill is-${model.healthTone}`}>
@@ -73,13 +70,9 @@ export function LibraryCollectionTable({
                       </span>
                     </td>
                     <td>
-                      <div className="library-row-facts">
-                        {model.supportingFacts.map((fact) => (
-                          <span key={fact} className="library-row-fact">
-                            {fact}
-                          </span>
-                        ))}
-                      </div>
+                      <span className={`library-type-pill is-${model.typeTone}`}>
+                        {model.typeLabel}
+                      </span>
                     </td>
                   </m.tr>
                 );

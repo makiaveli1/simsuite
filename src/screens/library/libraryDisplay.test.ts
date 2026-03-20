@@ -25,16 +25,20 @@ const SAMPLE_ROW: LibraryFileRow = {
 };
 
 describe("libraryViewFlags", () => {
-  it("keeps technical detail out of casual mode", () => {
-    expect(libraryViewFlags("beginner").showInspectFactsInList).toBe(false);
+  it("only opens the extra filter row by default for creator view", () => {
+    expect(libraryViewFlags("beginner").showAdvancedFilters).toBe(false);
+    expect(libraryViewFlags("standard").showAdvancedFilters).toBe(false);
+    expect(libraryViewFlags("power").showAdvancedFilters).toBe(true);
   });
 });
 
 describe("buildLibraryRowModel", () => {
-  it("caps the row at two supporting facts for seasoned mode", () => {
+  it("returns a simple list model with a calm type tone", () => {
     const row = buildLibraryRowModel(SAMPLE_ROW, "standard");
 
-    expect(row.supportingFacts).toHaveLength(2);
+    expect(row.typeLabel).toBe("Script Mods");
+    expect(row.typeTone).toBe("scriptmods");
+    expect("supportingFacts" in row).toBe(false);
   });
 });
 
