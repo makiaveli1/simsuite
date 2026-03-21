@@ -36,6 +36,7 @@ impl UpdateEvents {
             UpdateStatus::SourceUnreachable => "source_unreachable",
             UpdateStatus::UpToDate => "up_to_date",
             UpdateStatus::Untracked => "untracked",
+            UpdateStatus::NeedsGameUpdate => "needs_game_update",
         };
         let confidence_score = decision.confidence;
         let summary = decision

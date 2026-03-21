@@ -1265,6 +1265,7 @@ pub enum UpdateStatus {
     ProbableUpdate,
     SourceActivity,
     SourceUnreachable,
+    NeedsGameUpdate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

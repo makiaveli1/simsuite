@@ -480,6 +480,7 @@ fn update_status_label(status: &UpdateStatus) -> &'static str {
         UpdateStatus::ProbableUpdate => "probable_update",
         UpdateStatus::SourceActivity => "source_activity",
         UpdateStatus::SourceUnreachable => "source_unreachable",
+        UpdateStatus::NeedsGameUpdate => "needs_game_update",
     }
 }
 
@@ -490,6 +491,7 @@ fn parse_update_status(value: &str) -> UpdateStatus {
         "probable_update" => UpdateStatus::ProbableUpdate,
         "source_activity" => UpdateStatus::SourceActivity,
         "source_unreachable" => UpdateStatus::SourceUnreachable,
+        "needs_game_update" => UpdateStatus::NeedsGameUpdate,
         _ => UpdateStatus::Untracked,
     }
 }

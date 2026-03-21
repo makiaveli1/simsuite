@@ -4,12 +4,16 @@ use chrono::{DateTime, Utc};
 use tauri::AppHandle;
 
 use crate::{
+    adapters::{ea_broken_mods::EABrokenModsAdapter, SourceAdapter, UpdateDecision},
     app_state::AppState,
     commands,
     core::{content_versions, special_mod_versions},
     database,
     error::{AppError, AppResult},
-    models::{AccessTier, WatchRefreshSummary, WorkspaceChange, WorkspaceDomain},
+    models::{
+        AccessTier, SourceBinding, SourceKind, UpdateStatus, WatchRefreshSummary, WorkspaceChange,
+        WorkspaceDomain,
+    },
     services::{
         candidate_discovery::CandidateDiscovery, scheduler::UpdateScheduler,
         update_events::UpdateEvents, LocalInventory, SharedRateLimiter,
@@ -179,6 +183,102 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
     Ok(summary)
 }
 
+fn check_ea_broken_mods(
+    connection: &rusqlite::Connection,
+    tracked_mods: &[crate::models::LocalMod],
+) -> AppResult<()> {
+    let adapter = EABrokenModsAdapter::default();
+
+    let binding = SourceBinding {
+        id: "ea-broken-mods-check".to_string(),
+        local_mod_id: String::new(),
+        source_kind: SourceKind::EaBrokenMods,
+        source_url: EABROKENMODS_INDEX.to_string(),
+        provider_mod_id: None,
+        provider_file_id: None,
+        provider_repo: None,
+        bind_method: "compatibility_check".to_string(),
+        is_primary: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+
+    let snapshot = match adapter.refresh_snapshot(&binding) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("EA broken mods check failed: {}", e);
+            return Ok(());
+        }
+    };
+
+    let broken_mods: Vec<String> = snapshot.release_asset_names;
+
+    if broken_mods.is_empty() {
+        return Ok(());
+    }
+
+    for local_mod in tracked_mods {
+        let normalized = normalize_mod_name_for_ea(&local_mod.display_name);
+
+        for broken in &broken_mods {
+            let broken_normalized = normalize_mod_name_for_ea(broken);
+
+            if normalized.contains(&broken_normalized)
+                || broken_normalized.contains(&normalized)
+                || strings_similarity(&normalized, &broken_normalized) > 0.8
+            {
+                let decision = UpdateDecision {
+                    status: UpdateStatus::NeedsGameUpdate,
+                    confidence: 0.95,
+                    summary: Some(
+                        "This mod may be broken by a recent game update. Check EA forums for details.".to_string()
+                    ),
+                };
+
+                let _ = UpdateEvents::create_event(
+                    connection,
+                    &local_mod.id,
+                    None,
+                    &decision,
+                    None,
+                    None,
+                );
+
+                tracing::info!(
+                    "Mod {} appears in EA broken mods list",
+                    local_mod.display_name
+                );
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+const EABROKENMODS_INDEX: &str =
+    "https://forums.thesims.com/en_US/discussions/the-sims-4-mods-and-custom-content-en/broken-and-updated-sims-4-mods-and-cc";
+
+fn normalize_mod_name_for_ea(name: &str) -> String {
+    name.to_lowercase()
+        .replace(' ', "")
+        .replace('-', "")
+        .replace('_', "")
+}
+
+fn strings_similarity(a: &str, b: &str) -> f64 {
+    use std::collections::HashSet;
+    let a_chars: HashSet<char> = a.chars().collect();
+    let b_chars: HashSet<char> = b.chars().collect();
+    let intersection = a_chars.intersection(&b_chars).count() as f64;
+    let union = a_chars.union(&b_chars).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
+}
+
 fn run_tracking_refresh(
     connection: &rusqlite::Connection,
     settings: &crate::models::LibrarySettings,
@@ -264,8 +364,8 @@ fn run_tracking_refresh(
         tracked_mods.len()
     );
 
-    for local_mod in tracked_mods {
-        let Some(binding_id) = &local_mod.confirmed_source_id else {
+    for local_mod in &tracked_mods {
+        let Some(binding_id) = local_mod.confirmed_source_id.as_ref() else {
             continue;
         };
 
@@ -385,6 +485,11 @@ fn run_tracking_refresh(
     }
 
     tracing::info!("Tracking refresh complete");
+
+    if let Err(e) = check_ea_broken_mods(connection, &tracked_mods) {
+        tracing::warn!("EA broken mods check failed: {}", e);
+    }
+
     Ok(())
 }
 
