@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1285,6 +1286,42 @@ pub struct LocalFile {
     pub file_size: i64,
     pub sha256: Option<String>,
     pub modified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserTrackingPrefs {
+    pub local_mod_id: String,
+    pub ignore_updates: bool,
+    pub ignore_versions: Vec<String>,
+    pub notify_on_probable: bool,
+    pub notify_on_source_activity: bool,
+    pub manual_source_url: Option<String>,
+    pub pinned_source_kind: Option<SourceKind>,
+    pub custom_check_interval_hours: Option<i32>,
+    pub fingerprint_enabled: bool,
+    pub ea_broken_mods_enabled: bool,
+    pub ea_broken_mods_custom_url: Option<String>,
+    pub custom_headers: HashMap<String, String>,
+}
+
+impl Default for UserTrackingPrefs {
+    fn default() -> Self {
+        Self {
+            local_mod_id: String::new(),
+            ignore_updates: false,
+            ignore_versions: Vec::new(),
+            notify_on_probable: false,
+            notify_on_source_activity: false,
+            manual_source_url: None,
+            pinned_source_kind: None,
+            custom_check_interval_hours: None,
+            fingerprint_enabled: false,
+            ea_broken_mods_enabled: true,
+            ea_broken_mods_custom_url: None,
+            custom_headers: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

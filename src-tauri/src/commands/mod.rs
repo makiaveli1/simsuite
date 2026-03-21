@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use std::{
     collections::HashSet,
     fs,
@@ -10,6 +10,7 @@ use std::{
     time::Duration,
     time::Instant,
 };
+use uuid::Uuid;
 
 use dirs::document_dir;
 use reqwest::blocking::Client;
@@ -36,14 +37,27 @@ use crate::{
         LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
         SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
-        WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, UserTrackingPrefs, WatchListFilter, WatchRefreshSummary,
+        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
+    services::{LocalInventory, LocalModScanResult, UpdateEventRow, UpdateEvents},
     sync_tray_visibility,
 };
 
 fn map_error(error: AppError) -> String {
     error.to_string()
+}
+
+fn parse_source_kind(s: &str) -> Option<crate::models::SourceKind> {
+    match s.to_lowercase().as_str() {
+        "curseforge" => Some(crate::models::SourceKind::CurseForge),
+        "github" => Some(crate::models::SourceKind::GitHub),
+        "nexus" => Some(crate::models::SourceKind::Nexus),
+        "feed" => Some(crate::models::SourceKind::Feed),
+        "structured_page" => Some(crate::models::SourceKind::StructuredPage),
+        "generic_page" => Some(crate::models::SourceKind::GenericPage),
+        _ => None,
+    }
 }
 
 async fn run_blocking_command<T, F>(command: &'static str, operation: F) -> Result<T, String>
@@ -2422,6 +2436,327 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
             Some(PathBuf::from(trimmed))
         }
     })
+}
+
+#[tauri::command]
+pub fn scan_local_mods(state: State<AppState>) -> Result<LocalModScanResult, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let mods_path = settings
+        .mods_path
+        .ok_or("No mods path configured")?;
+    LocalInventory::scan_and_update_local_mods(&connection, Path::new(&mods_path))
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_local_mods(
+    state: State<AppState>,
+    filter: Option<crate::models::LibraryQuery>,
+) -> Result<Vec<crate::models::LocalMod>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let mut query = String::from(
+        "SELECT id, display_name, normalized_name, creator_name, category,
+                local_root_path, tracking_mode, source_confidence, confirmed_source_id,
+                current_status, last_checked_at, created_at, updated_at
+         FROM local_mods WHERE 1=1",
+    );
+    
+    if let Some(ref f) = filter {
+        if let Some(ref tracking_mode) = f.source {
+            query.push_str(&format!(" AND tracking_mode = '{}'", tracking_mode));
+        }
+        if let Some(ref status) = f.kind {
+            query.push_str(&format!(" AND current_status = '{}'", status));
+        }
+    }
+    
+    query.push_str(" ORDER BY display_name LIMIT 500");
+    
+    let mut stmt = connection.prepare(&query).map_err(|e| e.to_string())?;
+    
+    let mods = stmt
+        .query_map([], |row| {
+            Ok(crate::models::LocalMod {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                normalized_name: row.get(2)?,
+                creator_name: row.get(3)?,
+                category: row.get(4)?,
+                local_root_path: row.get(5)?,
+                tracking_mode: parse_tracking_mode(&row.get::<_, String>(6)?),
+                source_confidence: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+                confirmed_source_id: row.get(8)?,
+                current_status: parse_update_status(&row.get::<_, String>(9)?),
+                last_checked_at: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    
+    Ok(mods)
+}
+
+fn parse_tracking_mode(value: &str) -> crate::models::TrackingMode {
+    match value {
+        "auto" => crate::models::TrackingMode::Auto,
+        "manual" => crate::models::TrackingMode::Manual,
+        "ignored" => crate::models::TrackingMode::Ignored,
+        _ => crate::models::TrackingMode::DetectedOnly,
+    }
+}
+
+fn parse_update_status(value: &str) -> crate::models::UpdateStatus {
+    match value {
+        "up_to_date" => crate::models::UpdateStatus::UpToDate,
+        "confirmed_update" => crate::models::UpdateStatus::ConfirmedUpdate,
+        "probable_update" => crate::models::UpdateStatus::ProbableUpdate,
+        "source_activity" => crate::models::UpdateStatus::SourceActivity,
+        "source_unreachable" => crate::models::UpdateStatus::SourceUnreachable,
+        _ => crate::models::UpdateStatus::Untracked,
+    }
+}
+
+#[tauri::command]
+pub fn get_update_events(state: State<AppState>) -> Result<Vec<UpdateEventRow>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::get_unread_events(&connection, 100).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn mark_event_read(state: State<AppState>, event_id: String) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::mark_read(&connection, &event_id).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn dismiss_event(state: State<AppState>, event_id: String) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::dismiss_event(&connection, &event_id).map_err(map_error)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateSourceRow {
+    pub id: String,
+    pub local_mod_id: String,
+    pub source_kind: String,
+    pub source_url: String,
+    pub provider_mod_id: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub provider_repo: Option<String>,
+    pub confidence_score: f64,
+    pub reasoning_json: String,
+    pub status: String,
+}
+
+#[tauri::command]
+pub fn confirm_candidate_source(
+    state: State<AppState>,
+    candidate_id: String,
+) -> Result<crate::models::SourceBinding, String> {
+    let connection = state.connection().map_err(map_error)?;
+
+    let candidate: CandidateSourceRow = connection
+        .query_row(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
+             FROM candidate_sources WHERE id = ?1",
+            params![candidate_id],
+            |row| {
+                Ok(CandidateSourceRow {
+                    id: row.get(0)?,
+                    local_mod_id: row.get(1)?,
+                    source_kind: row.get(2)?,
+                    source_url: row.get(3)?,
+                    provider_mod_id: row.get(4)?,
+                    provider_file_id: row.get(5)?,
+                    provider_repo: row.get(6)?,
+                    confidence_score: row.get(7)?,
+                    reasoning_json: row.get(8)?,
+                    status: row.get(9)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Candidate not found: {}", e))?;
+
+    let binding_id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+
+    connection
+        .execute(
+            "INSERT INTO source_bindings (
+                id, local_mod_id, source_kind, source_url, provider_mod_id,
+                provider_file_id, provider_repo, bind_method, is_primary, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10)",
+            params![
+                binding_id,
+                candidate.local_mod_id,
+                candidate.source_kind,
+                candidate.source_url,
+                candidate.provider_mod_id,
+                candidate.provider_file_id,
+                candidate.provider_repo,
+                "confirmed_by_user",
+                now,
+                now,
+            ],
+        )
+        .map_err(|e| format!("Failed to create binding: {}", e))?;
+
+    connection
+        .execute(
+            "UPDATE candidate_sources SET status = 'confirmed', updated_at = ?1 WHERE id = ?2",
+            params![now, candidate_id],
+        )
+        .map_err(|e| format!("Failed to update candidate: {}", e))?;
+
+    Ok(crate::models::SourceBinding {
+        id: binding_id,
+        local_mod_id: candidate.local_mod_id,
+        source_kind: serde_json::from_str(&candidate.source_kind)
+            .unwrap_or(crate::models::SourceKind::GenericPage),
+        source_url: candidate.source_url,
+        provider_mod_id: candidate.provider_mod_id,
+        provider_file_id: candidate.provider_file_id,
+        provider_repo: candidate.provider_repo,
+        bind_method: "confirmed_by_user".to_string(),
+        is_primary: true,
+        created_at: now.clone(),
+        updated_at: now,
+    })
+}
+
+#[tauri::command]
+pub fn reject_candidate_source(
+    state: State<AppState>,
+    candidate_id: String,
+) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    let now = Utc::now().to_rfc3339();
+
+    connection
+        .execute(
+            "UPDATE candidate_sources SET status = 'rejected', updated_at = ?1 WHERE id = ?2",
+            params![now, candidate_id],
+        )
+        .map_err(|e| format!("Failed to reject candidate: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_candidates_for_mod(
+    state: State<AppState>,
+    mod_id: String,
+) -> Result<Vec<CandidateSourceRow>, String> {
+    let connection = state.connection().map_err(map_error)?;
+
+    let mut stmt = connection
+        .prepare(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
+             FROM candidate_sources WHERE local_mod_id = ?1 AND status = 'suggested'
+             ORDER BY confidence_score DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let candidates = stmt
+        .query_map(params![mod_id], |row| {
+            Ok(CandidateSourceRow {
+                id: row.get(0)?,
+                local_mod_id: row.get(1)?,
+                source_kind: row.get(2)?,
+                source_url: row.get(3)?,
+                provider_mod_id: row.get(4)?,
+                provider_file_id: row.get(5)?,
+                provider_repo: row.get(6)?,
+                confidence_score: row.get(7)?,
+                reasoning_json: row.get(8)?,
+                status: row.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(candidates)
+}
+
+#[tauri::command]
+pub fn get_tracking_prefs(
+    state: State<AppState>,
+    mod_id: String,
+) -> Result<Option<UserTrackingPrefs>, String> {
+    let conn = state.connection().map_err(map_error)?;
+    let mut stmt = conn.prepare(
+        "SELECT local_mod_id, ignore_updates, ignore_versions_json, notify_on_probable,
+                notify_on_source_activity, manual_source_url, pinned_source_kind,
+                custom_check_interval_hours, fingerprint_enabled, ea_broken_mods_enabled,
+                ea_broken_mods_custom_url, custom_headers_json
+         FROM user_tracking_prefs WHERE local_mod_id = ?"
+    ).map_err(|e| e.to_string())?;
+    
+    let result = stmt.query_row([&mod_id], |row| {
+        Ok(UserTrackingPrefs {
+            local_mod_id: row.get(0)?,
+            ignore_updates: row.get::<_, i32>(1)? != 0,
+            ignore_versions: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+            notify_on_probable: row.get::<_, i32>(3)? != 0,
+            notify_on_source_activity: row.get::<_, i32>(4)? != 0,
+            manual_source_url: row.get(5)?,
+            pinned_source_kind: row.get::<_, Option<String>>(6)?
+                .and_then(|s| parse_source_kind(&s)),
+            custom_check_interval_hours: row.get(7)?,
+            fingerprint_enabled: row.get::<_, i32>(8)? != 0,
+            ea_broken_mods_enabled: row.get::<_, i32>(9)? != 0,
+            ea_broken_mods_custom_url: row.get(10)?,
+            custom_headers: row.get::<_, Option<String>>(11)?
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
+        })
+    });
+    
+    match result {
+        Ok(prefs) => Ok(Some(prefs)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn set_tracking_prefs(
+    state: State<AppState>,
+    prefs: UserTrackingPrefs,
+) -> Result<(), String> {
+    let conn = state.connection().map_err(map_error)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO user_tracking_prefs
+         (local_mod_id, ignore_updates, ignore_versions_json, notify_on_probable,
+          notify_on_source_activity, manual_source_url, pinned_source_kind,
+          custom_check_interval_hours, fingerprint_enabled, ea_broken_mods_enabled,
+          ea_broken_mods_custom_url, custom_headers_json, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, CURRENT_TIMESTAMP)",
+        rusqlite::params![
+            prefs.local_mod_id,
+            prefs.ignore_updates as i32,
+            serde_json::to_string(&prefs.ignore_versions).unwrap_or_default(),
+            prefs.notify_on_probable as i32,
+            prefs.notify_on_source_activity as i32,
+            prefs.manual_source_url,
+            prefs.pinned_source_kind.map(|k| format!("{:?}", k)),
+            prefs.custom_check_interval_hours,
+            prefs.fingerprint_enabled as i32,
+            prefs.ea_broken_mods_enabled as i32,
+            prefs.ea_broken_mods_custom_url,
+            serde_json::to_string(&prefs.custom_headers).ok(),
+        ],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(())
 }
 
 #[cfg(test)]

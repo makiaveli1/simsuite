@@ -141,3 +141,23 @@ CREATE INDEX IF NOT EXISTS idx_update_events_is_read ON update_events (is_read);
 CREATE INDEX IF NOT EXISTS idx_update_events_is_dismissed ON update_events (is_dismissed);
 CREATE INDEX IF NOT EXISTS idx_update_events_created_at ON update_events (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_update_events_unread ON update_events (is_read, is_dismissed, created_at DESC);
+
+-- =============================================================================
+-- USER TRACKING PREFS: Per-mod user preferences for tracking behavior
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_tracking_prefs (
+    local_mod_id TEXT PRIMARY KEY REFERENCES local_mods(id) ON DELETE CASCADE,
+    ignore_updates INTEGER NOT NULL DEFAULT 0,
+    ignore_versions_json TEXT NOT NULL DEFAULT '[]',
+    notify_on_probable INTEGER NOT NULL DEFAULT 0,
+    notify_on_source_activity INTEGER NOT NULL DEFAULT 0,
+    manual_source_url TEXT,
+    pinned_source_kind TEXT,
+    custom_check_interval_hours INTEGER,
+    fingerprint_enabled INTEGER NOT NULL DEFAULT 0,
+    ea_broken_mods_enabled INTEGER NOT NULL DEFAULT 1,
+    ea_broken_mods_custom_url TEXT,
+    custom_headers_json TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
