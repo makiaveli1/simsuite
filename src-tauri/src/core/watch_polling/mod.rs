@@ -10,6 +10,10 @@ use crate::{
     database,
     error::{AppError, AppResult},
     models::{WatchRefreshSummary, WorkspaceChange, WorkspaceDomain},
+    services::{
+        candidate_discovery::CandidateDiscovery, update_events::UpdateEvents, LocalInventory,
+        SharedRateLimiter,
+    },
     MAIN_TRAY_ID,
 };
 
@@ -102,14 +106,6 @@ fn initial_due_at(state: &AppState) -> DateTime<Utc> {
     }
 }
 
-fn watch_refresh_workspace_domains() -> Vec<WorkspaceDomain> {
-    vec![
-        WorkspaceDomain::Home,
-        WorkspaceDomain::Library,
-        WorkspaceDomain::Updates,
-    ]
-}
-
 fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefreshSummary> {
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
@@ -147,34 +143,9 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
         checked_subjects += 1;
     }
 
-    // PHASE 1.5 INTEGRATION: New source_bindings polling via AdapterRegistry
-    // For each binding in source_bindings table:
-    //   1. Get adapter from AdapterRegistry for the binding's source_kind
-    //   2. Call adapter.refresh_snapshot(binding) to get current RemoteSnapshot
-    //   3. Get previous snapshot from SnapshotStore (if any)
-    //   4. Call detect_update(local_mod, previous_snapshot, current_snapshot)
-    //   5. If decision.status != UpToDate:
-    //      - Store new snapshot via SnapshotStore
-    //      - Create event via UpdateEvents::create_event()
-    //
-    // Example integration point:
-    // let registry = AdapterRegistry::new();
-    // let bindings = database::get_source_bindings(&connection)?;
-    // for binding in bindings {
-    //     if let Some(adapter) = registry.for_kind(binding.source_kind) {
-    //         let current = adapter.refresh_snapshot(&binding)?;
-    //         let previous = SnapshotStore::get_latest(&connection, &binding.id)?;
-    //         let local_mod = LocalInventory::get_local_mod(&connection, &binding.local_mod_id)?;
-    //         let decision = detect_update(&local_mod, previous.as_ref(), &current);
-    //         if decision.status != UpdateStatus::UpToDate {
-    //             SnapshotStore::store_snapshot(&connection, &current)?;
-    //             UpdateEvents::create_event(&connection, &binding.local_mod_id,
-    //                 Some(&binding.id), &decision,
-    //                 current.version_text.as_deref(),
-    //                 current.published_at.as_deref())?;
-    //         }
-    //     }
-    // }
+    if let Err(error) = run_tracking_refresh(&connection, &settings) {
+        tracing::warn!("Tracking refresh failed: {}", error);
+    }
 
     let (exact_update_items, possible_update_items, unknown_watch_items) =
         content_versions::load_watch_counts(&connection)?;
@@ -198,7 +169,7 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
 
     refresh_tray_tooltip(app, state)?;
     let change = WorkspaceChange {
-        domains: watch_refresh_workspace_domains(),
+        domains: vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
         reason: "watch-refresh-finished".to_owned(),
         item_ids: Vec::new(),
         family_keys: Vec::new(),
@@ -207,6 +178,339 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
 
     Ok(summary)
 }
+
+fn run_tracking_refresh(
+    connection: &rusqlite::Connection,
+    settings: &crate::models::LibrarySettings,
+) -> AppResult<()> {
+    let mods_path = match &settings.mods_path {
+        Some(path) if !path.is_empty() => Path::new(path),
+        _ => return Ok(()),
+    };
+
+    if !mods_path.exists() {
+        tracing::debug!("Mods path does not exist, skipping tracking refresh");
+        return Ok(());
+    }
+
+    tracing::info!("Running tracking refresh for local mods");
+
+    let scan_result = LocalInventory::scan_and_update_local_mods(connection, mods_path)?;
+    tracing::info!(
+        "Local mod scan complete: {} mods found ({} new, {} updated), {} files processed",
+        scan_result.mods_found,
+        scan_result.new_mods,
+        scan_result.updated_mods,
+        scan_result.files_processed
+    );
+
+    let app_settings = crate::models::AppBehaviorSettings {
+        keep_running_in_background: false,
+        automatic_watch_checks: false,
+        watch_check_interval_hours: 12,
+        last_watch_check_at: None,
+        last_watch_check_error: None,
+        curseforge_api_key: database::get_app_setting(connection, "curseforge_api_key")
+            .ok()
+            .flatten(),
+        github_api_token: database::get_app_setting(connection, "github_api_token")
+            .ok()
+            .flatten(),
+    };
+
+    let rate_limiter = SharedRateLimiter::default();
+    let discovery = CandidateDiscovery::new(&app_settings, rate_limiter);
+
+    let untracked_mods = get_untracked_local_mods(connection)?;
+    tracing::debug!(
+        "Found {} untracked mods for candidate discovery",
+        untracked_mods.len()
+    );
+
+    for local_mod in untracked_mods {
+        let files = LocalInventory::get_local_files(connection, &local_mod.id)?;
+        if files.is_empty() {
+            continue;
+        }
+
+        match discovery.discover_for_mod(&local_mod, &files) {
+            Ok(candidates) => {
+                if !candidates.is_empty() {
+                    tracing::debug!(
+                        "Discovered {} candidates for mod {}",
+                        candidates.len(),
+                        local_mod.display_name
+                    );
+                    if let Err(e) =
+                        CandidateDiscovery::store_candidates(connection, &local_mod.id, &candidates)
+                    {
+                        tracing::warn!("Failed to store candidates: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Candidate discovery failed for mod {}: {}",
+                    local_mod.display_name,
+                    e
+                );
+            }
+        }
+    }
+
+    let tracked_mods = get_tracked_local_mods_with_bindings(connection)?;
+    tracing::debug!(
+        "Found {} tracked mods with bindings to check",
+        tracked_mods.len()
+    );
+
+    for local_mod in tracked_mods {
+        let Some(binding_id) = &local_mod.confirmed_source_id else {
+            continue;
+        };
+
+        let binding = get_source_binding(connection, binding_id)?;
+        let Some(binding) = binding else {
+            continue;
+        };
+
+        let app_settings = crate::models::AppBehaviorSettings {
+            keep_running_in_background: false,
+            automatic_watch_checks: false,
+            watch_check_interval_hours: 12,
+            last_watch_check_at: None,
+            last_watch_check_error: None,
+            curseforge_api_key: database::get_app_setting(connection, "curseforge_api_key")
+                .ok()
+                .flatten(),
+            github_api_token: database::get_app_setting(connection, "github_api_token")
+                .ok()
+                .flatten(),
+        };
+        let registry =
+            crate::adapters::AdapterRegistry::new(&app_settings, SharedRateLimiter::default());
+        let adapter = registry.for_kind(binding.source_kind);
+
+        let Some(adapter) = adapter else {
+            continue;
+        };
+
+        match adapter.refresh_snapshot(&binding) {
+            Ok(snapshot) => {
+                let decision = crate::adapters::UpdateDecision {
+                    status: determine_update_status(&snapshot, &local_mod),
+                    confidence: snapshot.confidence,
+                    summary: Some(format!(
+                        "Version {} published {}",
+                        snapshot.version_text.clone().unwrap_or_default(),
+                        snapshot.published_at.clone().unwrap_or_default()
+                    )),
+                };
+
+                if let Err(e) = UpdateEvents::create_event(
+                    connection,
+                    &local_mod.id,
+                    Some(&binding.id),
+                    &decision,
+                    snapshot.version_text.as_deref(),
+                    snapshot.published_at.as_deref(),
+                ) {
+                    tracing::warn!("Failed to create update event: {}", e);
+                }
+
+                let new_confidence = snapshot.confidence;
+                LocalInventory::update_mod_status(
+                    connection,
+                    &local_mod.id,
+                    decision.status,
+                    new_confidence,
+                    Some(&binding.id),
+                )?;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to refresh snapshot for mod {}: {}",
+                    local_mod.display_name,
+                    e
+                );
+                let decision = crate::adapters::UpdateDecision {
+                    status: crate::models::UpdateStatus::SourceUnreachable,
+                    confidence: 0.0,
+                    summary: Some(format!("Source unreachable: {}", e)),
+                };
+                let _ = UpdateEvents::create_event(
+                    connection,
+                    &local_mod.id,
+                    Some(&binding.id),
+                    &decision,
+                    None,
+                    None,
+                );
+                LocalInventory::update_mod_status(
+                    connection,
+                    &local_mod.id,
+                    crate::models::UpdateStatus::SourceUnreachable,
+                    0.0,
+                    Some(&binding.id),
+                );
+            }
+        }
+    }
+
+    tracing::info!("Tracking refresh complete");
+    Ok(())
+}
+
+fn get_untracked_local_mods(
+    connection: &rusqlite::Connection,
+) -> AppResult<Vec<crate::models::LocalMod>> {
+    let mut stmt = connection.prepare(
+        "SELECT id, display_name, normalized_name, creator_name, category,
+                local_root_path, tracking_mode, source_confidence, confirmed_source_id,
+                current_status, last_checked_at, created_at, updated_at
+         FROM local_mods
+         WHERE tracking_mode = 'auto' AND confirmed_source_id IS NULL
+         ORDER BY display_name
+         LIMIT 50",
+    )?;
+
+    let mods = stmt
+        .query_map([], |row| {
+            Ok(crate::models::LocalMod {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                normalized_name: row.get(2)?,
+                creator_name: row.get(3)?,
+                category: row.get(4)?,
+                local_root_path: row.get(5)?,
+                tracking_mode: parse_tracking_mode(&row.get::<_, String>(6)?),
+                source_confidence: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+                confirmed_source_id: row.get(8)?,
+                current_status: parse_update_status(&row.get::<_, String>(9)?),
+                last_checked_at: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(mods)
+}
+
+fn get_tracked_local_mods_with_bindings(
+    connection: &rusqlite::Connection,
+) -> AppResult<Vec<crate::models::LocalMod>> {
+    let mut stmt = connection.prepare(
+        "SELECT lm.id, lm.display_name, lm.normalized_name, lm.creator_name, lm.category,
+                lm.local_root_path, lm.tracking_mode, lm.source_confidence, lm.confirmed_source_id,
+                lm.current_status, lm.last_checked_at, lm.created_at, lm.updated_at
+         FROM local_mods lm
+         INNER JOIN source_bindings sb ON lm.confirmed_source_id = sb.id
+         WHERE lm.tracking_mode IN ('auto', 'manual')
+         ORDER BY lm.display_name
+         LIMIT 100",
+    )?;
+
+    let mods = stmt
+        .query_map([], |row| {
+            Ok(crate::models::LocalMod {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                normalized_name: row.get(2)?,
+                creator_name: row.get(3)?,
+                category: row.get(4)?,
+                local_root_path: row.get(5)?,
+                tracking_mode: parse_tracking_mode(&row.get::<_, String>(6)?),
+                source_confidence: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+                confirmed_source_id: row.get(8)?,
+                current_status: parse_update_status(&row.get::<_, String>(9)?),
+                last_checked_at: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(mods)
+}
+
+fn get_source_binding(
+    connection: &rusqlite::Connection,
+    binding_id: &str,
+) -> AppResult<Option<crate::models::SourceBinding>> {
+    use rusqlite::OptionalExtension;
+
+    let result = connection
+        .query_row(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, bind_method, is_primary, created_at, updated_at
+             FROM source_bindings
+             WHERE id = ?1",
+            rusqlite::params![binding_id],
+            |row| {
+                Ok(crate::models::SourceBinding {
+                    id: row.get(0)?,
+                    local_mod_id: row.get(1)?,
+                    source_kind: parse_source_kind(&row.get::<_, String>(2)?),
+                    source_url: row.get(3)?,
+                    provider_mod_id: row.get(4)?,
+                    provider_file_id: row.get(5)?,
+                    provider_repo: row.get(6)?,
+                    bind_method: row.get(7)?,
+                    is_primary: row.get::<_, i64>(8)? != 0,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
+                })
+            },
+        )
+        .optional()?;
+
+    Ok(result)
+}
+
+fn parse_tracking_mode(value: &str) -> crate::models::TrackingMode {
+    match value {
+        "auto" => crate::models::TrackingMode::Auto,
+        "manual" => crate::models::TrackingMode::Manual,
+        "ignored" => crate::models::TrackingMode::Ignored,
+        _ => crate::models::TrackingMode::DetectedOnly,
+    }
+}
+
+fn parse_update_status(value: &str) -> crate::models::UpdateStatus {
+    match value {
+        "up_to_date" => crate::models::UpdateStatus::UpToDate,
+        "confirmed_update" => crate::models::UpdateStatus::ConfirmedUpdate,
+        "probable_update" => crate::models::UpdateStatus::ProbableUpdate,
+        "source_activity" => crate::models::UpdateStatus::SourceActivity,
+        "source_unreachable" => crate::models::UpdateStatus::SourceUnreachable,
+        _ => crate::models::UpdateStatus::Untracked,
+    }
+}
+
+fn parse_source_kind(value: &str) -> crate::models::SourceKind {
+    match value {
+        "curseforge" => crate::models::SourceKind::CurseForge,
+        "github" => crate::models::SourceKind::GitHub,
+        "nexus" => crate::models::SourceKind::Nexus,
+        "feed" => crate::models::SourceKind::Feed,
+        "structured_page" => crate::models::SourceKind::StructuredPage,
+        _ => crate::models::SourceKind::GenericPage,
+    }
+}
+
+fn determine_update_status(
+    snapshot: &crate::adapters::RemoteSnapshot,
+    local_mod: &crate::models::LocalMod,
+) -> crate::models::UpdateStatus {
+    if snapshot.version_text.is_none() && snapshot.published_at.is_none() {
+        return crate::models::UpdateStatus::SourceActivity;
+    }
+
+    crate::models::UpdateStatus::ProbableUpdate
+}
+
+use std::path::Path;
 
 fn refresh_tray_tooltip(app: &AppHandle, state: &AppState) -> AppResult<()> {
     let connection = state.connection()?;
@@ -262,8 +566,7 @@ fn save_watch_refresh_error(state: &AppState, error: Option<String>) -> AppResul
 
 #[cfg(test)]
 mod tests {
-    use super::{build_tray_tooltip, initial_due_at, watch_refresh_workspace_domains};
-    use crate::models::WorkspaceDomain;
+    use super::{build_tray_tooltip, initial_due_at};
     use crate::{app_state::AppState, database, seed};
     use chrono::Utc;
     use rusqlite::Connection;
@@ -315,17 +618,5 @@ mod tests {
         let state = fake_state();
         let due_at = initial_due_at(&state);
         assert!(due_at > Utc::now());
-    }
-
-    #[test]
-    fn watch_refresh_workspace_change_includes_updates_workspace() {
-        assert_eq!(
-            watch_refresh_workspace_domains(),
-            vec![
-                WorkspaceDomain::Home,
-                WorkspaceDomain::Library,
-                WorkspaceDomain::Updates,
-            ]
-        );
     }
 }
