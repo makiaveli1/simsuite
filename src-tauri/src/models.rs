@@ -218,6 +218,7 @@ pub struct LibraryQuery {
     pub creator: Option<String>,
     pub source: Option<String>,
     pub min_confidence: Option<f64>,
+    pub unsafe_only: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -1218,4 +1219,84 @@ pub struct ApplyReviewPlanActionResult {
     pub deferred_review_count: i64,
     pub snapshot_name: Option<String>,
     pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    CurseForge,
+    GitHub,
+    Nexus,
+    Feed,
+    StructuredPage,
+    GenericPage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackingMode {
+    #[default]
+    DetectedOnly,
+    Auto,
+    Manual,
+    Ignored,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStatus {
+    #[default]
+    Untracked,
+    UpToDate,
+    ConfirmedUpdate,
+    ProbableUpdate,
+    SourceActivity,
+    SourceUnreachable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalMod {
+    pub id: String,
+    pub display_name: String,
+    pub normalized_name: String,
+    pub creator_name: Option<String>,
+    pub category: Option<String>,
+    pub local_root_path: String,
+    pub tracking_mode: TrackingMode,
+    pub source_confidence: f64,
+    pub confirmed_source_id: Option<String>,
+    pub current_status: UpdateStatus,
+    pub last_checked_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalFile {
+    pub id: String,
+    pub local_mod_id: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub file_ext: String,
+    pub file_size: i64,
+    pub sha256: Option<String>,
+    pub modified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceBinding {
+    pub id: String,
+    pub local_mod_id: String,
+    pub source_kind: SourceKind,
+    pub source_url: String,
+    pub provider_mod_id: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub provider_repo: Option<String>,
+    pub bind_method: String,
+    pub is_primary: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }

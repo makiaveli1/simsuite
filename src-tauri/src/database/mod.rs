@@ -801,7 +801,102 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             original_path TEXT NOT NULL,
             original_hash TEXT,
             backup_path TEXT
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS local_mods (
+            id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL,
+            creator_name TEXT,
+            category TEXT,
+            local_root_path TEXT NOT NULL,
+            tracking_mode TEXT NOT NULL DEFAULT 'detected_only',
+            source_confidence REAL DEFAULT 0,
+            confirmed_source_id TEXT,
+            current_status TEXT NOT NULL DEFAULT 'untracked',
+            last_checked_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS local_files (
+            id TEXT PRIMARY KEY,
+            local_mod_id TEXT NOT NULL REFERENCES local_mods(id),
+            file_path TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_ext TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            sha256 TEXT,
+            modified_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS candidate_sources (
+            id TEXT PRIMARY KEY,
+            local_mod_id TEXT NOT NULL REFERENCES local_mods(id),
+            source_kind TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            provider_mod_id TEXT,
+            provider_file_id TEXT,
+            provider_repo TEXT,
+            confidence_score REAL NOT NULL,
+            reasoning_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'suggested',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS source_bindings (
+            id TEXT PRIMARY KEY,
+            local_mod_id TEXT NOT NULL REFERENCES local_mods(id),
+            source_kind TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            provider_mod_id TEXT,
+            provider_file_id TEXT,
+            provider_repo TEXT,
+            bind_method TEXT NOT NULL,
+            is_primary INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS remote_snapshots (
+            id TEXT PRIMARY KEY,
+            binding_id TEXT NOT NULL REFERENCES source_bindings(id),
+            snapshot_hash TEXT NOT NULL,
+            title TEXT,
+            version_text TEXT,
+            published_at TEXT,
+            download_url TEXT,
+            changelog_url TEXT,
+            release_id TEXT,
+            asset_names_json TEXT,
+            image_hashes_json TEXT,
+            raw_summary_json TEXT NOT NULL,
+            etag TEXT,
+            last_modified TEXT,
+            fetched_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS update_events (
+            id TEXT PRIMARY KEY,
+            local_mod_id TEXT NOT NULL REFERENCES local_mods(id),
+            binding_id TEXT,
+            event_type TEXT NOT NULL,
+            confidence_score REAL NOT NULL,
+            summary TEXT NOT NULL,
+            latest_version_text TEXT,
+            latest_published_at TEXT,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            is_dismissed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_tracking_prefs (
+            local_mod_id TEXT PRIMARY KEY REFERENCES local_mods(id),
+            ignore_updates INTEGER NOT NULL DEFAULT 0,
+            ignore_versions_json TEXT,
+            notify_on_probable INTEGER NOT NULL DEFAULT 1,
+            notify_on_source_activity INTEGER NOT NULL DEFAULT 0,
+            manual_source_url TEXT,
+            pinned_source_kind TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidate_sources_local_mod ON candidate_sources(local_mod_id);
+        CREATE INDEX IF NOT EXISTS idx_source_bindings_local_mod ON source_bindings(local_mod_id);
+        CREATE INDEX IF NOT EXISTS idx_remote_snapshots_binding ON remote_snapshots(binding_id);
+        CREATE INDEX IF NOT EXISTS idx_update_events_local_mod ON update_events(local_mod_id);",
     )?;
 
     ensure_column(
