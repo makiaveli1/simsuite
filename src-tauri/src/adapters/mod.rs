@@ -13,7 +13,6 @@ mod curseforge_test;
 mod generic_page_test;
 
 pub use errors::AdapterError;
-pub use feed::FeedAdapter;
 
 use crate::error::AppResult;
 use crate::models::{AccessTier, AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
@@ -98,6 +97,7 @@ pub struct CandidateSource {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct RemoteSnapshot {
     pub binding_id: String,
     pub title: Option<String>,

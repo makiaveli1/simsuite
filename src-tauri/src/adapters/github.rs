@@ -19,6 +19,7 @@ pub struct GitHubAdapter {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GhSearchResponse {
     total_count: i64,
     items: Vec<GhRepo>,
@@ -26,6 +27,7 @@ struct GhSearchResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct GhRepo {
     id: i64,
     full_name: String,
@@ -39,17 +41,20 @@ struct GhRepo {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GhOwner {
     login: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GhReleasesResponse {
     items: Vec<GhRelease>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct GhRelease {
     id: i64,
     tag_name: String,
@@ -63,6 +68,7 @@ struct GhRelease {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GhAsset {
     id: i64,
     name: String,
@@ -127,6 +133,7 @@ impl GitHubAdapter {
 
         self.record_request(&url);
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct GhReleasesWrapper {
             items: Vec<GhRelease>,
         }

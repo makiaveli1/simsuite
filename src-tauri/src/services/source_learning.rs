@@ -75,6 +75,7 @@ impl SourceLearning {
     }
 
     /// Returns all learned domains where confirmations exceed rejections.
+    #[allow(dead_code)]
     pub fn get_learned_domains(conn: &Connection) -> AppResult<HashMap<String, LearnedDomain>> {
         let mut stmt = conn.prepare(
             "SELECT domain, source_kind, confirm_count, reject_count 
@@ -116,6 +117,7 @@ impl SourceLearning {
 
     /// Adjusts a score based on learned domain history.
     /// Boosts confirmed domains and penalizes rejected ones.
+    #[allow(dead_code)]
     pub fn boost_for_learned_domain(
         score: f64,
         domain: &str,
@@ -141,6 +143,7 @@ impl Default for SourceLearning {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LearnedDomain {
     pub domain: String,
     pub source_kind: Option<SourceKind>,

@@ -1,4 +1,5 @@
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct MatchSignals {
     pub stored_binding: bool,
     pub fingerprint_match: bool,
@@ -14,6 +15,7 @@ pub struct MatchSignals {
 }
 
 /// Calculates a match score from the given signals.
+#[allow(dead_code)]
 pub fn score_match(signals: &MatchSignals) -> f64 {
     let mut score = 0.0;
 
@@ -45,6 +47,7 @@ pub fn score_match(signals: &MatchSignals) -> f64 {
 }
 
 /// Returns a confidence level label for a given score.
+#[allow(dead_code)]
 pub fn confidence_level(score: f64) -> &'static str {
     match score {
         s if s >= 90.0 => "confirmed",
@@ -56,12 +59,14 @@ pub fn confidence_level(score: f64) -> &'static str {
 
 /// Returns true if a score is high enough for automatic binding.
 /// AUTO-BIND DISABLED: Users must always manually confirm sources.
+#[allow(dead_code)]
 pub fn should_auto_bind(_score: f64) -> bool {
     false
 }
 
 /// Computes similarity between two strings using normalized edit distance.
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
+#[allow(dead_code)]
 pub fn string_similarity(a: &str, b: &str) -> f64 {
     if a.is_empty() && b.is_empty() {
         return 1.0;
@@ -78,6 +83,7 @@ pub fn string_similarity(a: &str, b: &str) -> f64 {
     1.0 - (distance as f64 / max_len as f64)
 }
 
+#[allow(dead_code)]
 fn simple_edit_distance(a: &str, b: &str) -> usize {
     let chars_a: Vec<char> = a.chars().collect();
     let chars_b: Vec<char> = b.chars().collect();

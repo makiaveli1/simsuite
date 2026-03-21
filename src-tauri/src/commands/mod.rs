@@ -2729,6 +2729,7 @@ pub fn get_candidates_for_mod(
 }
 
 #[tauri::command]
+#[allow(dead_code)]
 pub fn get_tracking_prefs(
     state: State<AppState>,
     mod_id: String,
@@ -2770,6 +2771,7 @@ pub fn get_tracking_prefs(
 }
 
 #[tauri::command]
+#[allow(dead_code)]
 pub fn set_tracking_prefs(
     state: State<AppState>,
     prefs: UserTrackingPrefs,

@@ -21,12 +21,14 @@ pub struct CurseForgeAdapter {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CfSearchResponse {
     data: Vec<CfMod>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct CfMod {
     id: i64,
     name: String,
@@ -37,11 +39,13 @@ struct CfMod {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CfLinks {
     website_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CfCategory {
     id: i64,
     name: String,
@@ -49,6 +53,7 @@ struct CfCategory {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct CfFile {
     id: i64,
     file_name: String,
@@ -61,6 +66,7 @@ struct CfFile {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct CfFileDetail {
     id: i64,
     filename: String,
@@ -68,6 +74,7 @@ struct CfFileDetail {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct CfSearchRequest {
     game_id: i64,
     search_filter: String,

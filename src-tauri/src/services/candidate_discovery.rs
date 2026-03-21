@@ -58,6 +58,7 @@ impl CandidateDiscovery {
     }
 
     /// Builds match signals by comparing a local mod and its files against a candidate source.
+    #[allow(dead_code)]
     pub fn build_signals(
         local_mod: &LocalMod,
         candidate: &CandidateSource,
@@ -106,6 +107,7 @@ impl CandidateDiscovery {
 
     /// Scores and ranks candidates for a local mod.
     /// Returns candidates sorted by score in descending order.
+    #[allow(dead_code)]
     pub fn score_candidates(
         local_mod: &LocalMod,
         candidates: Vec<CandidateSource>,
@@ -153,6 +155,7 @@ impl CandidateDiscovery {
         scored
     }
 
+    #[allow(dead_code)]
     pub fn should_auto_bind(score: f64) -> bool {
         candidate_scorer::should_auto_bind(score)
     }
@@ -231,6 +234,7 @@ impl Default for CandidateDiscovery {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ScoredCandidate {
     pub candidate: CandidateSource,
     pub score: f64,

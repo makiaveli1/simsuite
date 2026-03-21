@@ -214,6 +214,7 @@ pub struct WorkspaceChange {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct LibraryQuery {
     pub search: Option<String>,
     pub kind: Option<String>,
@@ -1301,6 +1302,7 @@ pub struct LocalFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct UserTrackingPrefs {
     pub local_mod_id: String,
     pub ignore_updates: bool,

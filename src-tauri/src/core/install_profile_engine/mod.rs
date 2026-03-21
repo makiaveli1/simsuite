@@ -524,6 +524,7 @@ fn evaluate_download_item_cached(
     Ok(result)
 }
 
+#[allow(dead_code)]
 pub fn assess_download_item(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -2660,6 +2661,7 @@ fn parse_download_intake_mode(value: String) -> DownloadIntakeMode {
     }
 }
 
+#[allow(dead_code)]
 fn evaluate_download_item(
     connection: &Connection,
     settings: &LibrarySettings,

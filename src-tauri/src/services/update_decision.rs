@@ -8,6 +8,7 @@ use crate::models::{LocalMod, UpdateStatus};
 ///
 /// Returns an `UpdateDecision` with the appropriate status, confidence score,
 /// and a human-readable summary of what changed.
+#[allow(dead_code)]
 pub fn detect_update(
     _local_mod: &LocalMod,
     previous: Option<&RemoteSnapshot>,
@@ -125,6 +126,7 @@ pub fn detect_update(
 }
 
 /// Compares two snapshots and returns evidence of what changed between them.
+#[allow(dead_code)]
 pub fn compare_snapshots(prev: &RemoteSnapshot, curr: &RemoteSnapshot) -> SnapshotEvidence {
     SnapshotEvidence {
         version_changed: prev.version_text != curr.version_text,

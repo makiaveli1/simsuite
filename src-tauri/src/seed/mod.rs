@@ -227,6 +227,7 @@ pub struct GuidedInstallProfileSeed {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct DependencyRuleSeed {
     pub key: String,
     pub display_name: String,
@@ -251,6 +252,7 @@ pub struct DependencyRuleSeed {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct IncompatibilityRuleSeed {
     pub key: String,
     pub display_name: String,
@@ -271,6 +273,7 @@ pub struct IncompatibilityRuleSeed {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ReviewOnlyPatternSeed {
     pub key: String,
     pub display_name: String,

@@ -164,6 +164,7 @@ impl UpdateEvents {
     }
 
     /// Returns counts of update events by type.
+    #[allow(dead_code)]
     pub fn get_update_counts(conn: &Connection) -> AppResult<UpdateCounts> {
         let mut stmt = conn.prepare(
             "SELECT event_type, COUNT(*) as count
@@ -208,6 +209,7 @@ impl UpdateEvents {
     }
 
     /// Returns events for a specific mod, ordered by creation time descending.
+    #[allow(dead_code)]
     pub fn get_events_for_mod(
         conn: &Connection,
         local_mod_id: &str,
@@ -272,6 +274,7 @@ pub struct UpdateEventRow {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct UpdateCounts {
     pub confirmed_updates: i64,
     pub probable_updates: i64,

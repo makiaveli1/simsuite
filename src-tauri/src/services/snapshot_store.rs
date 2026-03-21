@@ -5,9 +5,11 @@ use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SnapshotStore;
 
 impl SnapshotStore {
+    #[allow(dead_code)]
     pub fn store_snapshot(
         conn: &Connection,
         binding_id: &str,
@@ -73,6 +75,7 @@ impl SnapshotStore {
         Ok(id)
     }
 
+    #[allow(dead_code)]
     pub fn get_latest_snapshot(
         conn: &Connection,
         binding_id: &str,
@@ -145,6 +148,7 @@ impl SnapshotStore {
         }
     }
 
+    #[allow(dead_code)]
     pub fn should_refetch(
         conn: &Connection,
         binding_id: &str,
@@ -192,6 +196,7 @@ impl SnapshotStore {
         false
     }
 
+    #[allow(dead_code)]
     pub fn get_latest_hash(conn: &Connection, binding_id: &str) -> AppResult<Option<String>> {
         if binding_id.is_empty() {
             return Err(AppError::Message("binding_id cannot be empty".into()));
@@ -221,6 +226,7 @@ impl SnapshotStore {
     }
 }
 
+#[allow(dead_code)]
 fn compute_snapshot_hash(
     title: Option<&str>,
     version: Option<&str>,

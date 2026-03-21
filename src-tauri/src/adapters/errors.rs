@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum AdapterError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),

@@ -71,6 +71,7 @@ impl StructuredPageAdapter {
             .map(String::from)
     }
 
+    #[allow(dead_code)]
     fn extract_version_from_text(&self, text: &str) -> Option<String> {
         let patterns = [
             r"v?(\d+\.\d+\.\d+(?:\.\d+)?)",
@@ -89,6 +90,7 @@ impl StructuredPageAdapter {
     }
 }
 
+#[allow(dead_code)]
 struct StructuredData {
     title: Option<String>,
     version_text: Option<String>,

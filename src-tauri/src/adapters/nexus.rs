@@ -20,6 +20,7 @@ pub struct NexusAdapter {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct NxModDetails {
     mod_id: i64,
     name: String,
@@ -31,6 +32,7 @@ struct NxModDetails {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct NxModFiles {
     mod_id: i64,
     files: Vec<NxFile>,
@@ -38,6 +40,7 @@ struct NxModFiles {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct NxFile {
     file_id: i64,
     name: String,

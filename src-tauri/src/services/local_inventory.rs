@@ -182,6 +182,7 @@ impl LocalInventory {
         })
     }
 
+    #[allow(dead_code)]
     pub fn get_or_create_local_mod(
         conn: &Connection,
         display_name: &str,
@@ -203,6 +204,7 @@ impl LocalInventory {
         Self::create_local_mod(conn, display_name, folder_path)
     }
 
+    #[allow(dead_code)]
     pub fn get_local_mod(conn: &Connection, mod_id: &str) -> AppResult<Option<LocalMod>> {
         if mod_id.is_empty() {
             return Err(AppError::Message("mod_id cannot be empty".into()));
@@ -546,6 +548,7 @@ impl LocalInventory {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
+    #[allow(dead_code)]
     pub fn compute_file_fingerprints(folder_path: &Path) -> AppResult<HashMap<String, String>> {
         let mut fingerprints = HashMap::new();
 
@@ -591,6 +594,7 @@ fn tracking_mode_label(mode: &TrackingMode) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn parse_tracking_mode(value: &str) -> TrackingMode {
     match value {
         "auto" => TrackingMode::Auto,
@@ -613,6 +617,7 @@ fn update_status_label(status: &UpdateStatus) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn parse_update_status(value: &str) -> UpdateStatus {
     match value {
         "up_to_date" => UpdateStatus::UpToDate,

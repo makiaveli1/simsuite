@@ -36,6 +36,7 @@ impl DomainRateLimiter {
     }
 
     /// Returns the duration to wait before the next request to the given URL can be made.
+    #[allow(dead_code)]
     pub fn wait_time(&self, url: &str) -> Duration {
         let domain = self.extract_domain(url);
         if let Some(last_fetch) = self.domains.get(&domain) {
@@ -61,6 +62,7 @@ impl DomainRateLimiter {
     }
 }
 
+#[allow(dead_code)]
 struct RetryState {
     attempts: u32,
     last_attempt: Instant,
@@ -109,6 +111,7 @@ impl SharedRateLimiter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn wait_time(&self, url: &str) -> Duration {
         self.inner
             .read()
@@ -119,6 +122,7 @@ impl SharedRateLimiter {
             })
     }
 
+    #[allow(dead_code)]
     pub fn record_rate_limit(&self, domain: &str) {
         if let Ok(mut state) = self.retry_state.write() {
             if let Some(retry) = state.get_mut(domain) {

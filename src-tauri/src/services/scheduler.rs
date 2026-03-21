@@ -55,6 +55,7 @@ impl UpdateScheduler {
     }
 
     /// Returns the timestamp of the next check, or None if checks are not scheduled.
+    #[allow(dead_code)]
     pub fn next_check_at(
         &self,
         last_check: Option<&str>,

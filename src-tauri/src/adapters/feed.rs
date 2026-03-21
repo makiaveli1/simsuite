@@ -132,6 +132,7 @@ pub enum FeedEntry {
 }
 
 impl FeedEntry {
+    #[allow(dead_code)]
     pub fn title(&self) -> Option<String> {
         match self {
             FeedEntry::Rss2(item) => item.title.clone(),
@@ -139,6 +140,7 @@ impl FeedEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn guid(&self) -> Option<String> {
         match self {
             FeedEntry::Rss2(item) => item.guid.clone(),
@@ -146,6 +148,7 @@ impl FeedEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn published(&self) -> Option<String> {
         match self {
             FeedEntry::Rss2(item) => item.pub_date.clone(),
@@ -153,6 +156,7 @@ impl FeedEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn download_url(&self) -> Option<String> {
         match self {
             FeedEntry::Rss2(item) => item.enclosure.as_ref().map(|e| e.url.clone()),
@@ -206,6 +210,7 @@ pub struct Rss2Channel {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 pub struct Rss2Item {
     title: Option<String>,
     #[serde(rename = "pubDate", default)]
@@ -230,6 +235,7 @@ pub struct AtomFeed {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 pub struct AtomEntry {
     title: Option<String>,
     id: Option<String>,

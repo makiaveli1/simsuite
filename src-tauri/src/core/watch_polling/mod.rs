@@ -474,7 +474,7 @@ fn run_tracking_refresh(
                     None,
                     None,
                 );
-                LocalInventory::update_mod_status(
+                let _ = LocalInventory::update_mod_status(
                     connection,
                     &local_mod.id,
                     crate::models::UpdateStatus::SourceUnreachable,
@@ -636,7 +636,7 @@ fn parse_source_kind(value: &str) -> crate::models::SourceKind {
 
 fn determine_update_status(
     snapshot: &crate::adapters::RemoteSnapshot,
-    local_mod: &crate::models::LocalMod,
+    _local_mod: &crate::models::LocalMod,
 ) -> crate::models::UpdateStatus {
     if snapshot.version_text.is_none() && snapshot.published_at.is_none() {
         return crate::models::UpdateStatus::SourceActivity;

@@ -24,6 +24,7 @@ pub struct StoredSpecialModFamilyState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VersionComparison {
     pub incoming_version: Option<String>,
     pub incoming_signature: Option<String>,
@@ -228,6 +229,7 @@ pub fn extract_version_from_values(values: &[String]) -> Option<String> {
         .map(|candidate| candidate.normalized)
 }
 
+#[allow(dead_code)]
 pub fn extract_version_from_value(value: &str) -> Option<String> {
     extract_ranked_version_candidates(value)
         .into_iter()
@@ -805,6 +807,7 @@ pub fn normalize_version_value(value: &str) -> String {
         .replace(['_', '-'], ".")
 }
 
+#[allow(dead_code)]
 pub fn normalize_version_with_confidence(version: &str) -> (String, f64) {
     let version = version.trim();
 
@@ -986,6 +989,7 @@ pub fn version_hints_from_profile(
     values
 }
 
+#[allow(dead_code)]
 pub fn signature_entries_from_paths(paths: &[&Path]) -> Vec<SignatureEntry> {
     paths
         .iter()

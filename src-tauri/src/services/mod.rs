@@ -9,6 +9,5 @@ pub mod update_decision;
 pub mod update_events;
 
 pub use local_inventory::{LocalInventory, LocalModScanResult};
-pub use rate_limiter::{DomainRateLimiter, SharedRateLimiter};
-pub use snapshot_store::SnapshotStore;
-pub use update_events::{UpdateCounts, UpdateEventRow, UpdateEvents};
+pub use rate_limiter::SharedRateLimiter;
+pub use update_events::{UpdateEventRow, UpdateEvents};
