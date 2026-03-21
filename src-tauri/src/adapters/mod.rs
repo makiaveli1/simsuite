@@ -71,6 +71,7 @@ pub struct RemoteSnapshot {
     pub raw: serde_json::Value,
     pub access_tier: AccessTier,
     pub patron_free_version: Option<String>,
+    pub file_fingerprints_json: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -121,6 +122,7 @@ impl Default for RemoteSnapshot {
             raw: serde_json::Value::Null,
             access_tier: AccessTier::Public,
             patron_free_version: None,
+            file_fingerprints_json: None,
         }
     }
 }

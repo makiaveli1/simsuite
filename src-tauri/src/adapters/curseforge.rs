@@ -304,6 +304,7 @@ impl SourceAdapter for CurseForgeAdapter {
             }),
             access_tier: detect_access_tier(&binding.source_url),
             patron_free_version: None,
+            file_fingerprints_json: None,
         })
     }
 }

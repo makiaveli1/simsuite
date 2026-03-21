@@ -250,6 +250,7 @@ impl SourceAdapter for NexusAdapter {
             }),
             access_tier: AccessTier::Public,
             patron_free_version: None,
+            file_fingerprints_json: None,
         })
     }
 }

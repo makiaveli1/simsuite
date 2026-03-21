@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::adapters::{RemoteSnapshot, SnapshotEvidence, UpdateDecision};
 use crate::core::special_mod_versions::normalize_version_with_confidence;
 use crate::models::{LocalMod, UpdateStatus};
@@ -64,6 +66,24 @@ pub fn detect_update(
             confidence: 0.92,
             summary: Some("Version changed".into()),
         };
+    }
+
+    if current.version_text == prev.version_text {
+        let prev_fingerprints: HashMap<String, String> =
+            serde_json::from_str(&prev.file_fingerprints_json.as_deref().unwrap_or("{}"))
+                .unwrap_or_default();
+        let curr_fingerprints: HashMap<String, String> =
+            serde_json::from_str(&current.file_fingerprints_json.as_deref().unwrap_or("{}"))
+                .unwrap_or_default();
+
+        if !prev_fingerprints.is_empty() && prev_fingerprints != curr_fingerprints {
+            tracing::info!("Probable update: mod rebuilt without version change");
+            return UpdateDecision {
+                status: UpdateStatus::ProbableUpdate,
+                confidence: 0.75,
+                summary: Some("Mod rebuilt without version change".into()),
+            };
+        }
     }
 
     if current.download_url.is_some()

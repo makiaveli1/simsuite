@@ -137,6 +137,7 @@ impl SourceAdapter for GenericPageAdapter {
             raw: serde_json::json!({"source": "generic_page"}),
             access_tier: detect_access_tier(&binding.source_url),
             patron_free_version: None,
+            file_fingerprints_json: None,
         })
     }
 }

@@ -45,8 +45,9 @@ impl SnapshotStore {
             "INSERT INTO remote_snapshots (
                 id, binding_id, snapshot_hash, title, version_text, published_at,
                 download_url, changelog_url, release_id, asset_names_json,
-                image_hashes_json, raw_summary_json, etag, last_modified, fetched_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                image_hashes_json, raw_summary_json, etag, last_modified, fetched_at,
+                file_fingerprints_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             rusqlite::params![
                 id,
                 binding_id,
@@ -63,6 +64,7 @@ impl SnapshotStore {
                 snapshot.etag,
                 snapshot.last_modified,
                 chrono::Utc::now().to_rfc3339(),
+                snapshot.file_fingerprints_json,
             ],
         )?;
 
@@ -82,7 +84,8 @@ impl SnapshotStore {
         let mut statement = conn.prepare(
             "SELECT id, binding_id, snapshot_hash, title, version_text, published_at,
                     download_url, changelog_url, release_id, asset_names_json,
-                    image_hashes_json, raw_summary_json, etag, last_modified, fetched_at
+                    image_hashes_json, raw_summary_json, etag, last_modified, fetched_at,
+                    file_fingerprints_json
              FROM remote_snapshots
              WHERE binding_id = ?1
              ORDER BY fetched_at DESC
@@ -124,6 +127,7 @@ impl SnapshotStore {
                 raw,
                 access_tier: AccessTier::Public,
                 patron_free_version: None,
+                file_fingerprints_json: row.get::<_, Option<String>>(14)?,
             })
         });
 

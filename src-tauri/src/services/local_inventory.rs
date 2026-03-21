@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::Utc;
@@ -440,6 +441,56 @@ impl LocalInventory {
         }
 
         Ok(hex::encode(hasher.finalize()))
+    }
+
+    pub fn compute_folder_fingerprint(folder_path: &Path) -> AppResult<String> {
+        let mut hasher = Sha256::new();
+        let mut files: Vec<(String, u64)> = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(folder_path) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                    if let Ok(metadata) = entry.metadata() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let size = metadata.len();
+                        files.push((name, size));
+                    }
+                }
+            }
+        }
+
+        files.sort();
+
+        for (name, size) in files {
+            hasher.update(format!("{}:{}", name, size));
+        }
+
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    pub fn compute_file_fingerprints(folder_path: &Path) -> AppResult<HashMap<String, String>> {
+        let mut fingerprints = HashMap::new();
+
+        if let Ok(entries) = std::fs::read_dir(folder_path) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                    let path = entry.path();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+
+                    if let Ok(metadata) = entry.metadata() {
+                        let fingerprint = format!("{}:{}", name, metadata.len());
+                        let hash = format!("{:x}", Sha256::digest(fingerprint.as_bytes()));
+                        fingerprints.insert(name, hash);
+                    }
+                }
+            }
+        }
+
+        Ok(fingerprints)
     }
 }
 

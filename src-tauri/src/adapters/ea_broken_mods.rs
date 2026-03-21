@@ -201,6 +201,7 @@ impl SourceAdapter for EABrokenModsAdapter {
             access_tier: AccessTier::Public,
             patron_free_version: None,
             raw: serde_json::json!({ "mod_count": mod_count }),
+            file_fingerprints_json: None,
         })
     }
 }
