@@ -16,6 +16,8 @@ pub struct AppBehaviorSettings {
     pub watch_check_interval_hours: i64,
     pub last_watch_check_at: Option<String>,
     pub last_watch_check_error: Option<String>,
+    pub curseforge_api_key: Option<String>,
+    pub github_api_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

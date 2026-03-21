@@ -15,6 +15,7 @@ const GAME_ID: i64 = 432;
 
 pub struct CurseForgeAdapter {
     client: Client,
+    api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,21 +76,31 @@ struct CfSearchRequest {
 }
 
 impl CurseForgeAdapter {
-    pub fn new() -> Self {
+    pub fn new(api_key: Option<String>) -> Self {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::limited(6))
             .timeout(Duration::from_secs(15))
             .user_agent("SimSuite/1.0")
             .build()
             .expect("CurseForge client");
-        CurseForgeAdapter { client }
+        CurseForgeAdapter { client, api_key }
+    }
+
+    fn add_auth_headers(
+        &self,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        if let Some(key) = &self.api_key {
+            request.header("x-api-key", key)
+        } else {
+            request
+        }
     }
 
     fn search_mods(&self, query: &str) -> AppResult<Vec<CfMod>> {
         let url = format!("{}/v1/mods/search", BASE_URL);
         let response = self
-            .client
-            .get(&url)
+            .add_auth_headers(self.client.get(&url))
             .query(&[
                 ("gameId", GAME_ID.to_string()),
                 ("searchFilter", query.to_string()),
@@ -109,8 +120,7 @@ impl CurseForgeAdapter {
     fn get_mod(&self, mod_id: i64) -> AppResult<CfMod> {
         let url = format!("{}/v1/mods/{}", BASE_URL, mod_id);
         let response = self
-            .client
-            .get(&url)
+            .add_auth_headers(self.client.get(&url))
             .send()?
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
@@ -128,8 +138,7 @@ impl CurseForgeAdapter {
     fn get_latest_files(&self, mod_id: i64) -> AppResult<Vec<CfFile>> {
         let url = format!("{}/v1/mods/{}/files", BASE_URL, mod_id);
         let response = self
-            .client
-            .get(&url)
+            .add_auth_headers(self.client.get(&url))
             .query(&[("pageSize", "5")])
             .send()?
             .error_for_status()
@@ -274,6 +283,6 @@ impl SourceAdapter for CurseForgeAdapter {
 
 impl Default for CurseForgeAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }

@@ -6,6 +6,7 @@ mod database;
 mod error;
 mod models;
 mod seed;
+pub mod services;
 
 use app_state::AppState;
 use core::{downloads_watcher, watch_polling};

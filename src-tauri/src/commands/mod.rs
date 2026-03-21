@@ -410,6 +410,10 @@ pub fn get_app_behavior_settings(
             .map_err(map_error)?,
         last_watch_check_error: database::get_app_setting(&connection, "watch_auto_last_error")
             .map_err(map_error)?,
+        curseforge_api_key: database::get_app_setting(&connection, "curseforge_api_key")
+            .map_err(map_error)?,
+        github_api_token: database::get_app_setting(&connection, "github_api_token")
+            .map_err(map_error)?,
     })
 }
 
@@ -454,6 +458,20 @@ pub fn save_app_behavior_settings(
         &mut connection,
         "watch_check_interval_hours",
         Some(&settings.watch_check_interval_hours.to_string()),
+        "user",
+    )
+    .map_err(map_error)?;
+    database::save_app_setting(
+        &mut connection,
+        "curseforge_api_key",
+        settings.curseforge_api_key.as_deref(),
+        "user",
+    )
+    .map_err(map_error)?;
+    database::save_app_setting(
+        &mut connection,
+        "github_api_token",
+        settings.github_api_token.as_deref(),
         "user",
     )
     .map_err(map_error)?;
@@ -625,7 +643,9 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>) -> Result<ScanStat
         match result {
             Ok(summary) => {
                 let snapshot = {
-                    let mut status = status_handle.lock().expect("scan status lock");
+                    let mut status = status_handle.lock().map_err(|_| {
+                        tracing::error!("Scan status lock poisoned during success handler");
+                    }).expect("scan status lock poisoned");
                     status.state = ScanRuntimeState::Succeeded;
                     status.mode = Some(summary.scan_mode.clone());
                     status.phase = Some(ScanPhase::Done);
@@ -657,7 +677,9 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>) -> Result<ScanStat
             }
             Err(error) => {
                 let snapshot = {
-                    let mut status = status_handle.lock().expect("scan status lock");
+                    let mut status = status_handle.lock().map_err(|_| {
+                        tracing::error!("Scan status lock poisoned during error handler");
+                    }).expect("scan status lock poisoned");
                     status.state = ScanRuntimeState::Failed;
                     status.phase = None;
                     status.finished_at = Some(Utc::now().to_rfc3339());

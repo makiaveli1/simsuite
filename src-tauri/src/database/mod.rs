@@ -893,6 +893,15 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             manual_source_url TEXT,
             pinned_source_kind TEXT
         );
+        CREATE TABLE IF NOT EXISTS source_learning (
+            id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL UNIQUE,
+            source_kind TEXT,
+            confirm_count INTEGER NOT NULL DEFAULT 0,
+            reject_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_candidate_sources_local_mod ON candidate_sources(local_mod_id);
         CREATE INDEX IF NOT EXISTS idx_source_bindings_local_mod ON source_bindings(local_mod_id);
         CREATE INDEX IF NOT EXISTS idx_remote_snapshots_binding ON remote_snapshots(binding_id);

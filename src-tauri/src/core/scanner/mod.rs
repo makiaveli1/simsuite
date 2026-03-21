@@ -1231,14 +1231,13 @@ fn queue_review_items(
     file_id: i64,
     confidence: f64,
     warning_flags: &[String],
-    safety_notes: &[String],
+    _safety_notes: &[String],
 ) -> AppResult<usize> {
     let mut reasons = Vec::new();
     if confidence < 0.55 {
         reasons.push("low_confidence_parse".to_owned());
     }
     reasons.extend(warning_flags.iter().cloned());
-    reasons.extend(safety_notes.iter().cloned());
 
     let mut created = 0;
     for reason in reasons {
@@ -1579,6 +1578,74 @@ mod tests {
         assert_eq!(overview.total_files, 4);
         assert!(overview.unsafe_count >= 1);
         assert!(overview.bundles_count >= 1);
+        assert_eq!(overview.review_count, 0);
+    }
+
+    #[test]
+    fn parser_warnings_still_seed_review_queue_without_safety_only_rows() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    safety_notes,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/Test.ts4script",
+                    "Test.ts4script",
+                    ".ts4script",
+                    "ScriptMods",
+                    0.91_f64,
+                    "mods",
+                    "[\"no_category_detected\"]",
+                    "[\"unsafe_script_depth\"]",
+                    "{}",
+                ],
+            )
+            .expect("file");
+        let file_id = connection.last_insert_rowid();
+
+        {
+            let tx = connection.transaction().expect("transaction");
+            let mut review_insert = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
+                     VALUES (?1, ?2, ?3)",
+                )
+                .expect("review insert");
+
+            let created = queue_review_items(
+                &mut review_insert,
+                file_id,
+                0.91,
+                &["no_category_detected".to_owned()],
+                &["unsafe_script_depth".to_owned()],
+            )
+            .expect("queue review items");
+
+            drop(review_insert);
+            tx.commit().expect("commit");
+            assert_eq!(created, 1);
+        }
+
+        let reasons = connection
+            .prepare("SELECT reason FROM review_queue ORDER BY reason")
+            .expect("prepare")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect");
+
+        assert_eq!(reasons, vec!["no_category_detected".to_owned()]);
     }
 
     #[test]

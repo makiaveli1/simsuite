@@ -104,6 +104,7 @@ impl Default for FeedAdapter {
     }
 }
 
+#[derive(Debug)]
 pub enum FeedEntry {
     Rss2(Rss2Item),
     Atom(AtomEntry),

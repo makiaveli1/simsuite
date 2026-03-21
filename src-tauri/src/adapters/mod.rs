@@ -19,6 +19,7 @@ use crate::models::{AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct DiscoverInput {
     pub local_mod_id: String,
     pub display_name: String,
@@ -29,6 +30,7 @@ pub struct DiscoverInput {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct FileInfo {
     pub file_name: String,
     pub sha256: Option<String>,
@@ -36,6 +38,7 @@ pub struct FileInfo {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CandidateSource {
     pub source_kind: SourceKind,
     pub source_url: String,
@@ -46,6 +49,7 @@ pub struct CandidateSource {
     pub reasoning: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct RemoteSnapshot {
     pub binding_id: String,
     pub title: Option<String>,
@@ -73,6 +77,7 @@ pub struct SnapshotEvidence {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct UpdateDecision {
     pub status: UpdateStatus,
     pub confidence: f64,
