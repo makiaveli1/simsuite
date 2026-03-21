@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -60,6 +61,37 @@ impl DomainRateLimiter {
     }
 }
 
+#[derive(Clone)]
+pub struct SharedRateLimiter {
+    inner: Arc<RwLock<DomainRateLimiter>>,
+}
+
+impl SharedRateLimiter {
+    pub fn new(min_interval: Duration) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(DomainRateLimiter::new(min_interval))),
+        }
+    }
+
+    pub fn can_fetch(&self, url: &str) -> bool {
+        self.inner.read().unwrap().can_fetch(url)
+    }
+
+    pub fn record_fetch(&self, url: &str) {
+        self.inner.write().unwrap().record_fetch(url)
+    }
+
+    pub fn wait_time(&self, url: &str) -> Duration {
+        self.inner.read().unwrap().wait_time(url)
+    }
+}
+
+impl Default for SharedRateLimiter {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(60))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,6 +112,55 @@ mod tests {
     #[test]
     fn test_different_domains_independent() {
         let mut limiter = DomainRateLimiter::new(Duration::from_secs(60));
+        limiter.record_fetch("https://api.curseforge.com/test");
+        assert!(!limiter.can_fetch("https://api.curseforge.com/test"));
+        assert!(limiter.can_fetch("https://api.github.com/test"));
+    }
+
+    #[test]
+    fn test_shared_rate_limiter_clone_shares_state() {
+        let limiter = SharedRateLimiter::new(Duration::from_secs(60));
+        let cloned = limiter.clone();
+
+        assert!(limiter.can_fetch("https://api.curseforge.com/test"));
+        limiter.record_fetch("https://api.curseforge.com/test");
+        assert!(!limiter.can_fetch("https://api.curseforge.com/test"));
+
+        assert!(!cloned.can_fetch("https://api.curseforge.com/test"));
+    }
+
+    #[test]
+    fn test_shared_rate_limiter_record_fetch() {
+        let limiter = SharedRateLimiter::new(Duration::from_secs(60));
+        assert!(limiter.can_fetch("https://api.curseforge.com/test"));
+
+        limiter.record_fetch("https://api.curseforge.com/test");
+        assert!(!limiter.can_fetch("https://api.curseforge.com/test"));
+    }
+
+    #[test]
+    fn test_shared_rate_limiter_wait_time() {
+        let limiter = SharedRateLimiter::new(Duration::from_secs(60));
+        assert_eq!(
+            limiter.wait_time("https://api.curseforge.com/test"),
+            Duration::ZERO
+        );
+
+        limiter.record_fetch("https://api.curseforge.com/test");
+        let wait = limiter.wait_time("https://api.curseforge.com/test");
+        assert!(wait > Duration::ZERO);
+        assert!(wait <= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_shared_rate_limiter_default() {
+        let limiter = SharedRateLimiter::default();
+        assert!(limiter.can_fetch("https://api.example.com/test"));
+    }
+
+    #[test]
+    fn test_shared_rate_limiter_different_domains_independent() {
+        let limiter = SharedRateLimiter::new(Duration::from_secs(60));
         limiter.record_fetch("https://api.curseforge.com/test");
         assert!(!limiter.can_fetch("https://api.curseforge.com/test"));
         assert!(limiter.can_fetch("https://api.github.com/test"));
