@@ -10,6 +10,8 @@ pub enum AdapterError {
     Api(String),
     #[error("Not supported: {0}")]
     NotSupported(String),
+    #[error("Rate limited for domain: {0}")]
+    RateLimited(String),
 }
 
 impl From<AdapterError> for crate::error::AppError {
@@ -19,6 +21,9 @@ impl From<AdapterError> for crate::error::AppError {
             AdapterError::Parse(s) => crate::error::AppError::Message(s),
             AdapterError::Api(s) => crate::error::AppError::Message(s),
             AdapterError::NotSupported(s) => crate::error::AppError::Message(s),
+            AdapterError::RateLimited(domain) => {
+                crate::error::AppError::Message(format!("Rate limited: {}", domain))
+            }
         }
     }
 }

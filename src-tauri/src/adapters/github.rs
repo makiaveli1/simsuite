@@ -9,11 +9,13 @@ use crate::adapters::{
 };
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
+use crate::services::SharedRateLimiter;
 
 const BASE_URL: &str = "https://api.github.com";
 
 pub struct GitHubAdapter {
     client: Client,
+    rate_limiter: SharedRateLimiter,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,18 +71,33 @@ struct GhAsset {
 }
 
 impl GitHubAdapter {
-    pub fn new() -> Self {
+    pub fn new(rate_limiter: SharedRateLimiter) -> Self {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::limited(6))
             .timeout(Duration::from_secs(15))
             .user_agent("SimSuite/1.0")
             .build()
             .expect("GitHub client");
-        GitHubAdapter { client }
+        GitHubAdapter {
+            client,
+            rate_limiter,
+        }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     fn search_repos(&self, query: &str) -> AppResult<Vec<GhRepo>> {
         let url = format!("{}/search/repositories", BASE_URL);
+        self.check_rate_limit(&url)?;
         let response = self
             .client
             .get(&url)
@@ -90,6 +107,7 @@ impl GitHubAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         let body = response.text()?;
         let result: GhSearchResponse =
             serde_json::from_str(&body).map_err(|e| AdapterError::Parse(e.to_string()))?;
@@ -98,6 +116,7 @@ impl GitHubAdapter {
 
     fn get_latest_release(&self, owner: &str, repo: &str) -> AppResult<Option<GhRelease>> {
         let url = format!("{}/repos/{}/{}/releases", BASE_URL, owner, repo);
+        self.check_rate_limit(&url)?;
         let response = self
             .client
             .get(&url)
@@ -106,6 +125,7 @@ impl GitHubAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         #[derive(Deserialize)]
         struct GhReleasesWrapper {
             items: Vec<GhRelease>,
@@ -259,6 +279,6 @@ impl SourceAdapter for GitHubAdapter {
 
 impl Default for GitHubAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new(SharedRateLimiter::default())
     }
 }
