@@ -1,5 +1,45 @@
 # SimSuite Implementation Status
 
+## Current session note (March 21, 2026 - watch workspace refresh targeting fix)
+
+This pass started the real watch bug sweep by fixing a backend stale-state problem: the app had already moved watch work into `Updates`, but the Rust workspace-change model still could not target `Updates` when watch data changed.
+
+Important changes and findings:
+
+- fixed files:
+  - `src-tauri/src/models.rs`
+  - `src-tauri/src/core/watch_polling/mod.rs`
+  - `src-tauri/src/commands/mod.rs`
+- the real root cause was deeper than one missed event:
+  - the Rust `WorkspaceDomain` enum itself was missing `Updates`
+  - because of that, backend watch-change emitters could only announce `Home` and `Library`
+- the fix now:
+  - adds `Updates` to the Rust workspace domain model
+  - includes `Updates` in automatic watch-refresh workspace events
+  - includes `Updates` in manual watch action events for:
+    - save source
+    - bulk save sources
+    - clear source
+    - refresh one source
+- added regression tests for both workspace-target helpers so the backend cannot quietly drop `Updates` again
+- checks passed:
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+  - `cargo check --manifest-path src-tauri/Cargo.toml`
+  - `cargo build --manifest-path src-tauri/Cargo.toml`
+  - `cargo test --manifest-path src-tauri/Cargo.toml`
+  - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+  - `npm run build`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- this fixes the backend refresh-targeting contract, not every watch UX bug
+- the next watch pass should check real desktop behavior for:
+  - save/clear flows
+  - bulk setup flow
+  - review-lane movement
+  - live Updates refresh while background checks finish
+
 ## Current session note (March 20, 2026 - startup review queue cleanup)
 
 This pass finished the stale installed review-row cleanup properly for older databases, so fake installed safety backlog is now removed from disk at app startup instead of only being hidden at read time.

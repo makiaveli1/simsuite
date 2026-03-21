@@ -191,6 +191,7 @@ pub enum WorkspaceDomain {
     Home,
     Downloads,
     Library,
+    Updates,
     Organize,
     Review,
     Duplicates,

@@ -141,6 +141,14 @@ fn emit_workspace_domains(
     )
 }
 
+fn watch_workspace_domains() -> Vec<WorkspaceDomain> {
+    vec![
+        WorkspaceDomain::Home,
+        WorkspaceDomain::Library,
+        WorkspaceDomain::Updates,
+    ]
+}
+
 fn review_action_kind_matches(kind: &ReviewPlanActionKind, value: &str) -> bool {
     matches!(
         (kind, value),
@@ -1966,7 +1974,7 @@ pub async fn save_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            watch_workspace_domains(),
             "watch-source-saved",
             vec![file_id],
             Vec::new(),
@@ -2056,7 +2064,7 @@ pub async fn save_watch_sources_for_files(
         if !changed_file_ids.is_empty() {
             emit_workspace_domains(
                 &app,
-                vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+                watch_workspace_domains(),
                 "watch-sources-saved",
                 changed_file_ids.into_iter().collect(),
                 Vec::new(),
@@ -2107,7 +2115,7 @@ pub async fn clear_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            watch_workspace_domains(),
             "watch-source-cleared",
             vec![file_id],
             Vec::new(),
@@ -2149,7 +2157,7 @@ pub async fn refresh_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+            watch_workspace_domains(),
             "watch-source-refreshed",
             vec![file_id],
             Vec::new(),
@@ -2425,11 +2433,12 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 mod tests {
     use super::{
         approved_review_action_url, approved_watch_source_url, is_locked_read_error,
+        watch_workspace_domains,
         retry_locked_read, review_action_url_matches, validate_review_download_redirect,
     };
     use crate::{
         error::AppError,
-        models::{ReviewPlanAction, ReviewPlanActionKind},
+        models::{ReviewPlanAction, ReviewPlanActionKind, WorkspaceDomain},
     };
     use reqwest::Url;
 
@@ -2541,5 +2550,17 @@ mod tests {
             .expect_err("credentials blocked");
 
         assert!(error.contains("sign-in details"));
+    }
+
+    #[test]
+    fn watch_workspace_domains_include_updates_workspace() {
+        assert_eq!(
+            watch_workspace_domains(),
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Updates,
+            ]
+        );
     }
 }

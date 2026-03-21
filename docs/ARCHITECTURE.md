@@ -67,6 +67,24 @@ Not yet implemented:
 
 ## Current engineering note (March 20, 2026)
 
+The backend watch workspace model now matches the current desktop app shape: watch-related backend events can target `Updates` directly instead of only `Home` and `Library`.
+
+Important current behavior:
+
+- the Rust `WorkspaceDomain` enum now includes `Updates`
+- automatic watch refresh in `watch_polling` now emits `WorkspaceChange` events for:
+  - `Home`
+  - `Library`
+  - `Updates`
+- manual watch actions in `commands` now do the same for:
+  - save source
+  - bulk save sources
+  - clear source
+  - refresh one source
+- this means the current watch workspace is no longer invisible to backend watch-change events
+
+## Current engineering note (March 20, 2026)
+
 Older databases now self-clean stale installed safety-only review rows during startup, so read-time filtering is no longer the only protection keeping fake installed review backlog out of the app.
 
 Important current behavior:

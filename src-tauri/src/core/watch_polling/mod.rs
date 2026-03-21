@@ -102,6 +102,14 @@ fn initial_due_at(state: &AppState) -> DateTime<Utc> {
     }
 }
 
+fn watch_refresh_workspace_domains() -> Vec<WorkspaceDomain> {
+    vec![
+        WorkspaceDomain::Home,
+        WorkspaceDomain::Library,
+        WorkspaceDomain::Updates,
+    ]
+}
+
 fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefreshSummary> {
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
@@ -161,7 +169,7 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
 
     refresh_tray_tooltip(app, state)?;
     let change = WorkspaceChange {
-        domains: vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
+        domains: watch_refresh_workspace_domains(),
         reason: "watch-refresh-finished".to_owned(),
         item_ids: Vec::new(),
         family_keys: Vec::new(),
@@ -225,7 +233,8 @@ fn save_watch_refresh_error(state: &AppState, error: Option<String>) -> AppResul
 
 #[cfg(test)]
 mod tests {
-    use super::{build_tray_tooltip, initial_due_at};
+    use super::{build_tray_tooltip, initial_due_at, watch_refresh_workspace_domains};
+    use crate::models::WorkspaceDomain;
     use crate::{app_state::AppState, database, seed};
     use chrono::Utc;
     use rusqlite::Connection;
@@ -277,5 +286,17 @@ mod tests {
         let state = fake_state();
         let due_at = initial_due_at(&state);
         assert!(due_at > Utc::now());
+    }
+
+    #[test]
+    fn watch_refresh_workspace_change_includes_updates_workspace() {
+        assert_eq!(
+            watch_refresh_workspace_domains(),
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Updates,
+            ]
+        );
     }
 }

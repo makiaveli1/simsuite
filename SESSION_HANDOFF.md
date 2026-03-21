@@ -1,5 +1,67 @@
 # Session Handoff
 
+## Current Session (March 21, 2026 - Watch workspace refresh targeting fix)
+
+- **Mode**: code
+- **Focus**: start the postponed watch-system bug sweep by fixing stale watch refresh targeting across the real `Updates` workspace
+
+### Progress Made
+
+1. **Verified the current baseline first**:
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - `npm run build`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+   - baseline was green, so this pass stayed focused on watch logic instead of branch health
+
+2. **Found the real root cause instead of guessing at stale screen behavior**:
+   - the Rust backend `WorkspaceDomain` enum did not even include `Updates`
+   - because of that, the backend could not truly target the current watch workspace when watch data changed
+   - background watch refresh and manual watch source actions were still only announcing:
+     - `Home`
+     - `Library`
+
+3. **Fixed the workspace targeting at the backend layer**:
+   - added `Updates` to the Rust `WorkspaceDomain` enum
+   - updated automatic watch refresh in `core/watch_polling`
+   - updated manual watch actions in `commands`:
+     - save source
+     - bulk save sources
+     - clear source
+     - refresh one source
+   - these paths now all include `Updates` in their emitted workspace-change domains
+
+4. **Added regression tests with a real red-green flow**:
+   - added a watch-polling test that failed first because the backend could not target `Updates`
+   - added a commands test that failed first because the watch-action workspace list still excluded `Updates`
+   - both now pass and protect the new refresh-target contract
+
+5. **Verification**:
+   - `cargo fmt --manifest-path src-tauri/Cargo.toml --all`
+   - `cargo check --manifest-path src-tauri/Cargo.toml`
+   - `cargo build --manifest-path src-tauri/Cargo.toml`
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+   - `npm run build`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+### What Worked
+
+- the real issue was not in React state first
+- the load-bearing miss was lower down:
+  - the backend event model still thought watch changes only belonged to `Home` and `Library`
+- once the Rust workspace enum and watch emitters matched the current app shape, the watch workspace targeting became internally consistent again
+
+### Remaining Gap
+
+- this fixes the backend refresh-targeting contract, but it is only the first watch bug in the sweep
+- next best pass should inspect user-facing watch flows in the real desktop app:
+  - save source
+  - bulk setup
+  - clear source
+  - review lane movement
+  - background refresh visibility while `Updates` is open
+- this branch is still not merged to `main`
+
 ## Current Session (March 20, 2026 - Startup review queue cleanup)
 
 - **Mode**: code
