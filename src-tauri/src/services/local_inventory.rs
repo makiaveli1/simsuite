@@ -6,11 +6,12 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{LocalFile, LocalMod, TrackingMode, UpdateStatus};
 
 pub struct LocalInventory;
 
+#[derive(Debug)]
 pub struct LocalModScanResult {
     pub mods_found: i64,
     pub files_processed: i64,
@@ -29,6 +30,7 @@ impl LocalInventory {
         let mut updated_mods = 0i64;
 
         if !mods_path.exists() {
+            tracing::info!("Mods path does not exist: {:?}", mods_path);
             return Ok(LocalModScanResult {
                 mods_found,
                 files_processed,
@@ -36,6 +38,8 @@ impl LocalInventory {
                 updated_mods,
             });
         }
+
+        tracing::info!("Starting scan of mods directory: {:?}", mods_path);
 
         let mut folder_to_files: std::collections::HashMap<String, Vec<std::path::PathBuf>> =
             std::collections::HashMap::new();
@@ -51,6 +55,12 @@ impl LocalInventory {
                 folder_to_files.insert(path.to_string_lossy().to_string(), Vec::new());
             }
         }
+
+        let walkdir_count = WalkDir::new(mods_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .count();
+        tracing::debug!("WalkDir found {} entries in {:?}", walkdir_count, mods_path);
 
         for entry in WalkDir::new(mods_path).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -92,6 +102,8 @@ impl LocalInventory {
             }
         }
 
+        tracing::info!("Found {} mod folders to process", folder_to_files.len());
+
         for (folder_path, files) in folder_to_files {
             if files.is_empty() {
                 continue;
@@ -122,6 +134,14 @@ impl LocalInventory {
             }
         }
 
+        tracing::info!(
+            "Scan complete: {} mods found ({} new, {} updated), {} files processed",
+            mods_found,
+            new_mods,
+            updated_mods,
+            files_processed
+        );
+
         Ok(LocalModScanResult {
             mods_found,
             files_processed,
@@ -135,7 +155,16 @@ impl LocalInventory {
         display_name: &str,
         folder_path: &str,
     ) -> AppResult<String> {
+        if folder_path.is_empty() {
+            return Err(AppError::Message("folder_path cannot be empty".into()));
+        }
+
         if let Some(existing_id) = Self::find_local_mod_by_folder(conn, folder_path)? {
+            tracing::debug!(
+                "Found existing local mod {} for folder {}",
+                existing_id,
+                folder_path
+            );
             return Ok(existing_id);
         }
 
@@ -143,6 +172,10 @@ impl LocalInventory {
     }
 
     pub fn get_local_mod(conn: &Connection, mod_id: &str) -> AppResult<Option<LocalMod>> {
+        if mod_id.is_empty() {
+            return Err(AppError::Message("mod_id cannot be empty".into()));
+        }
+
         let result = conn
             .query_row(
                 "SELECT id, display_name, normalized_name, creator_name, category,
@@ -175,6 +208,10 @@ impl LocalInventory {
     }
 
     pub fn get_local_files(conn: &Connection, mod_id: &str) -> AppResult<Vec<LocalFile>> {
+        if mod_id.is_empty() {
+            return Err(AppError::Message("mod_id cannot be empty".into()));
+        }
+
         let mut statement = conn.prepare(
             "SELECT id, local_mod_id, file_path, file_name, file_ext,
                     file_size, sha256, modified_at
@@ -208,6 +245,17 @@ impl LocalInventory {
         source_confidence: f64,
         confirmed_source_id: Option<&str>,
     ) -> AppResult<()> {
+        if mod_id.is_empty() {
+            return Err(AppError::Message("mod_id cannot be empty".into()));
+        }
+
+        if source_confidence < 0.0 || source_confidence > 1.0 {
+            tracing::warn!(
+                "source_confidence {} is outside valid range [0, 1]",
+                source_confidence
+            );
+        }
+
         let now = Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE local_mods
@@ -243,9 +291,22 @@ impl LocalInventory {
         display_name: &str,
         folder_path: &str,
     ) -> AppResult<String> {
+        if display_name.is_empty() {
+            return Err(AppError::Message("display_name cannot be empty".into()));
+        }
+        if folder_path.is_empty() {
+            return Err(AppError::Message("folder_path cannot be empty".into()));
+        }
+
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         let normalized_name = normalize_mod_name(display_name);
+
+        tracing::debug!(
+            "Creating new local mod: {} at {}",
+            display_name,
+            folder_path
+        );
 
         conn.execute(
             "INSERT INTO local_mods (
@@ -274,10 +335,14 @@ impl LocalInventory {
         mod_id: &str,
         file_path: &Path,
     ) -> AppResult<Option<LocalFile>> {
-        let metadata = match file_path.metadata() {
-            Ok(m) => m,
-            Err(_) => return Ok(None),
-        };
+        if mod_id.is_empty() {
+            return Err(AppError::Message("mod_id cannot be empty".into()));
+        }
+
+        let metadata = file_path.metadata().map_err(|e| {
+            tracing::warn!("Failed to read metadata for {:?}: {}", file_path, e);
+            AppError::Io(e)
+        })?;
 
         let file_name = file_path
             .file_name()
@@ -293,7 +358,13 @@ impl LocalInventory {
             .ok()
             .map(|t| chrono::DateTime::<Utc>::from(t).to_rfc3339());
 
-        let sha256 = Self::compute_file_hash(file_path).ok();
+        let sha256 = match Self::compute_file_hash(file_path) {
+            Ok(hash) => Some(hash),
+            Err(e) => {
+                tracing::warn!("Failed to compute hash for {:?}: {}", file_path, e);
+                None
+            }
+        };
 
         let existing: Option<String> = conn
             .query_row(
@@ -381,6 +452,7 @@ fn normalize_mod_name(name: &str) -> String {
         .to_string()
 }
 
+#[expect(clippy::unneeded_struct_pattern)]
 fn tracking_mode_label(mode: &TrackingMode) -> &'static str {
     match mode {
         TrackingMode::DetectedOnly => "detected_only",
@@ -399,6 +471,7 @@ fn parse_tracking_mode(value: &str) -> TrackingMode {
     }
 }
 
+#[expect(clippy::unneeded_struct_pattern)]
 fn update_status_label(status: &UpdateStatus) -> &'static str {
     match status {
         UpdateStatus::Untracked => "untracked",

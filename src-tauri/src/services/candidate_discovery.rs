@@ -1,17 +1,18 @@
 use crate::adapters::{AdapterRegistry, CandidateSource, DiscoverInput, FileInfo};
-use crate::error::AppResult;
-use crate::models::{LocalFile, LocalMod};
+use crate::error::{AppError, AppResult};
+use crate::models::{AppBehaviorSettings, LocalFile, LocalMod};
 use crate::services::candidate_scorer::{self, MatchSignals};
 use rusqlite::{params, Connection};
 
+#[derive(Debug)]
 pub struct CandidateDiscovery {
     registry: AdapterRegistry,
 }
 
 impl CandidateDiscovery {
-    pub fn new() -> Self {
+    pub fn new(settings: &AppBehaviorSettings) -> Self {
         Self {
-            registry: AdapterRegistry::new(),
+            registry: AdapterRegistry::new(settings),
         }
     }
 
@@ -20,6 +21,16 @@ impl CandidateDiscovery {
         local_mod: &LocalMod,
         files: &[LocalFile],
     ) -> AppResult<Vec<CandidateSource>> {
+        if local_mod.id.is_empty() {
+            return Err(AppError::Message("local_mod.id cannot be empty".into()));
+        }
+
+        tracing::debug!(
+            "Discovering candidates for mod: {} ({} files)",
+            local_mod.display_name,
+            files.len()
+        );
+
         let input = DiscoverInput {
             local_mod_id: local_mod.id.clone(),
             display_name: local_mod.display_name.clone(),
@@ -36,9 +47,16 @@ impl CandidateDiscovery {
                 .collect(),
         };
 
-        self.registry.discover_all(&input)
+        let result = self.registry.discover_all(&input);
+        tracing::debug!(
+            "Discovered {} candidates for mod {}",
+            result.as_ref().map(|c| c.len()).unwrap_or(0),
+            local_mod.display_name
+        );
+        result
     }
 
+    /// Builds match signals by comparing a local mod and its files against a candidate source.
     pub fn build_signals(
         local_mod: &LocalMod,
         candidate: &CandidateSource,
@@ -85,6 +103,8 @@ impl CandidateDiscovery {
         signals
     }
 
+    /// Scores and ranks candidates for a local mod.
+    /// Returns candidates sorted by score in descending order.
     pub fn score_candidates(
         local_mod: &LocalMod,
         candidates: Vec<CandidateSource>,
@@ -111,6 +131,24 @@ impl CandidateDiscovery {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            let total = scored.len();
+            tracing::debug!(
+                "Scored {} candidates for mod {}",
+                total,
+                local_mod.display_name
+            );
+            for (i, s) in scored.iter().take(3).enumerate() {
+                tracing::trace!(
+                    "  [{}/{}] score={:.1} level={}",
+                    i + 1,
+                    total,
+                    s.score,
+                    s.level
+                );
+            }
+        }
+
         scored
     }
 
@@ -118,14 +156,34 @@ impl CandidateDiscovery {
         candidate_scorer::should_auto_bind(score)
     }
 
+    /// Stores candidate sources in the database for a local mod.
     pub fn store_candidates(
         conn: &Connection,
         local_mod_id: &str,
         candidates: &[CandidateSource],
     ) -> AppResult<()> {
+        if local_mod_id.is_empty() {
+            return Err(AppError::Message("local_mod_id cannot be empty".into()));
+        }
+
+        tracing::info!(
+            "Storing {} candidates for mod {}",
+            candidates.len(),
+            local_mod_id
+        );
+
         for candidate in candidates {
             let id = uuid::Uuid::new_v4().to_string();
             let now = chrono::Utc::now().to_rfc3339();
+
+            let source_kind_json = serde_json::to_string(&candidate.source_kind).map_err(|e| {
+                tracing::error!("Failed to serialize source_kind: {}", e);
+                AppError::Json(e)
+            })?;
+            let reasoning_json = serde_json::to_string(&candidate.reasoning).map_err(|e| {
+                tracing::error!("Failed to serialize reasoning: {}", e);
+                AppError::Json(e)
+            })?;
 
             conn.execute(
                 "INSERT INTO candidate_sources (
@@ -136,13 +194,13 @@ impl CandidateDiscovery {
                 params![
                     id,
                     local_mod_id,
-                    serde_json::to_string(&candidate.source_kind).unwrap_or_default(),
+                    source_kind_json,
                     candidate.source_url,
                     candidate.provider_mod_id,
                     candidate.provider_file_id,
                     candidate.provider_repo,
                     candidate.confidence_score,
-                    serde_json::to_string(&candidate.reasoning).unwrap_or_else(|_| "[]".into()),
+                    reasoning_json,
                     "suggested",
                     now,
                     now,
@@ -156,10 +214,19 @@ impl CandidateDiscovery {
 
 impl Default for CandidateDiscovery {
     fn default() -> Self {
-        Self::new()
+        Self::new(&AppBehaviorSettings {
+            keep_running_in_background: false,
+            automatic_watch_checks: false,
+            watch_check_interval_hours: 12,
+            last_watch_check_at: None,
+            last_watch_check_error: None,
+            curseforge_api_key: None,
+            github_api_token: None,
+        })
     }
 }
 
+#[derive(Debug)]
 pub struct ScoredCandidate {
     pub candidate: CandidateSource,
     pub score: f64,
@@ -284,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_discover_calls_all_adapters() {
-        let discovery = CandidateDiscovery::new();
+        let discovery = CandidateDiscovery::default();
         let local_mod = create_test_local_mod();
         let files = create_test_local_files();
 

@@ -2,12 +2,14 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::adapters::UpdateDecision;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::UpdateStatus;
 
+#[derive(Debug)]
 pub struct UpdateEvents;
 
 impl UpdateEvents {
+    /// Creates an update event and returns the event ID.
     pub fn create_event(
         conn: &Connection,
         local_mod_id: &str,
@@ -16,6 +18,16 @@ impl UpdateEvents {
         latest_version: Option<&str>,
         latest_published_at: Option<&str>,
     ) -> AppResult<String> {
+        if local_mod_id.is_empty() {
+            return Err(AppError::Message("local_mod_id cannot be empty".into()));
+        }
+
+        tracing::info!(
+            "Creating update event for mod {} with status {:?}",
+            local_mod_id,
+            decision.status
+        );
+
         let event_id = Uuid::new_v4().to_string();
         let event_type = match decision.status {
             UpdateStatus::ConfirmedUpdate => "confirmed_update",
@@ -51,7 +63,12 @@ impl UpdateEvents {
         Ok(event_id)
     }
 
+    /// Returns unread, undismissed events, ordered by creation time descending.
     pub fn get_unread_events(conn: &Connection, limit: i64) -> AppResult<Vec<UpdateEventRow>> {
+        if limit < 0 {
+            return Err(AppError::Message("limit cannot be negative".into()));
+        }
+
         let mut stmt = conn.prepare(
             "SELECT id, local_mod_id, binding_id, event_type, confidence_score, summary,
                     latest_version_text, latest_published_at, is_read, is_dismissed, created_at
@@ -81,25 +98,39 @@ impl UpdateEvents {
         for row in rows {
             events.push(row?);
         }
+        tracing::debug!("Retrieved {} unread events", events.len());
         Ok(events)
     }
 
+    /// Marks an event as read.
     pub fn mark_read(conn: &Connection, event_id: &str) -> AppResult<()> {
+        if event_id.is_empty() {
+            return Err(AppError::Message("event_id cannot be empty".into()));
+        }
+
         conn.execute(
             "UPDATE update_events SET is_read = 1 WHERE id = ?1",
             params![event_id],
         )?;
+        tracing::debug!("Marked event {} as read", event_id);
         Ok(())
     }
 
+    /// Dismisses an event.
     pub fn dismiss_event(conn: &Connection, event_id: &str) -> AppResult<()> {
+        if event_id.is_empty() {
+            return Err(AppError::Message("event_id cannot be empty".into()));
+        }
+
         conn.execute(
             "UPDATE update_events SET is_dismissed = 1 WHERE id = ?1",
             params![event_id],
         )?;
+        tracing::debug!("Dismissed event {}", event_id);
         Ok(())
     }
 
+    /// Returns counts of update events by type.
     pub fn get_update_counts(conn: &Connection) -> AppResult<UpdateCounts> {
         let mut stmt = conn.prepare(
             "SELECT event_type, COUNT(*) as count
@@ -128,6 +159,13 @@ impl UpdateEvents {
             }
         }
 
+        tracing::debug!(
+            "Update counts: confirmed={}, probable={}, activity={}",
+            confirmed_updates,
+            probable_updates,
+            source_activity
+        );
+
         Ok(UpdateCounts {
             confirmed_updates,
             probable_updates,
@@ -136,11 +174,19 @@ impl UpdateEvents {
         })
     }
 
+    /// Returns events for a specific mod, ordered by creation time descending.
     pub fn get_events_for_mod(
         conn: &Connection,
         local_mod_id: &str,
         limit: i64,
     ) -> AppResult<Vec<UpdateEventRow>> {
+        if local_mod_id.is_empty() {
+            return Err(AppError::Message("local_mod_id cannot be empty".into()));
+        }
+        if limit < 0 {
+            return Err(AppError::Message("limit cannot be negative".into()));
+        }
+
         let mut stmt = conn.prepare(
             "SELECT id, local_mod_id, binding_id, event_type, confidence_score, summary,
                     latest_version_text, latest_published_at, is_read, is_dismissed, created_at
@@ -170,6 +216,7 @@ impl UpdateEvents {
         for row in rows {
             events.push(row?);
         }
+        tracing::debug!("Retrieved {} events for mod {}", events.len(), local_mod_id);
         Ok(events)
     }
 }

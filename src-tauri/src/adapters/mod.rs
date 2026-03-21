@@ -7,15 +7,18 @@ pub mod nexus;
 pub mod structured_page;
 
 #[cfg(test)]
+mod curseforge_test;
+#[cfg(test)]
 mod generic_page_test;
 
 pub use errors::AdapterError;
 pub use feed::FeedAdapter;
 
 use crate::error::AppResult;
-use crate::models::{SourceBinding, SourceKind, UpdateStatus};
+use crate::models::{AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug)]
 pub struct DiscoverInput {
     pub local_mod_id: String,
     pub display_name: String,
@@ -25,12 +28,14 @@ pub struct DiscoverInput {
     pub files: Vec<FileInfo>,
 }
 
+#[derive(Debug)]
 pub struct FileInfo {
     pub file_name: String,
     pub sha256: Option<String>,
     pub size: i64,
 }
 
+#[derive(Debug)]
 pub struct CandidateSource {
     pub source_kind: SourceKind,
     pub source_url: String,
@@ -58,7 +63,7 @@ pub struct RemoteSnapshot {
     pub raw: serde_json::Value,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct SnapshotEvidence {
     pub version_changed: bool,
     pub download_changed: bool,
@@ -67,6 +72,7 @@ pub struct SnapshotEvidence {
     pub feed_guid_changed: bool,
 }
 
+#[derive(Debug)]
 pub struct UpdateDecision {
     pub status: UpdateStatus,
     pub confidence: f64,
@@ -83,10 +89,20 @@ pub struct AdapterRegistry {
     adapters: Vec<Box<dyn SourceAdapter>>,
 }
 
+impl std::fmt::Debug for AdapterRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdapterRegistry")
+            .field("adapter_count", &self.adapters.len())
+            .finish()
+    }
+}
+
 impl AdapterRegistry {
-    pub fn new() -> Self {
+    pub fn new(settings: &AppBehaviorSettings) -> Self {
         let adapters: Vec<Box<dyn SourceAdapter>> = vec![
-            Box::new(curseforge::CurseForgeAdapter::new()),
+            Box::new(curseforge::CurseForgeAdapter::new(
+                settings.curseforge_api_key.clone(),
+            )),
             Box::new(feed::FeedAdapter::new()),
             Box::new(generic_page::GenericPageAdapter::new()),
             Box::new(github::GitHubAdapter::new()),
@@ -121,6 +137,14 @@ impl AdapterRegistry {
 
 impl Default for AdapterRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(&AppBehaviorSettings {
+            keep_running_in_background: false,
+            automatic_watch_checks: false,
+            watch_check_interval_hours: 12,
+            last_watch_check_at: None,
+            last_watch_check_error: None,
+            curseforge_api_key: None,
+            github_api_token: None,
+        })
     }
 }
