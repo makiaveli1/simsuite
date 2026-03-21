@@ -1,6 +1,7 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
+use uuid::Uuid;
 use std::{
     collections::HashSet,
     fs,
@@ -36,8 +37,8 @@ use crate::{
         LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
         SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
-        WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SourceBinding, SourceKind, SpecialReviewPlan, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     services::{LocalInventory, LocalModScanResult, UpdateEvents, UpdateEventRow},
     sync_tray_visibility,
@@ -2428,14 +2429,96 @@ pub fn dismiss_event(state: State<AppState>, event_id: String) -> Result<(), Str
         .map_err(map_error)
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateSourceRow {
+    pub id: String,
+    pub local_mod_id: String,
+    pub source_kind: String,
+    pub source_url: String,
+    pub provider_mod_id: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub provider_repo: Option<String>,
+    pub confidence_score: f64,
+    pub reasoning_json: String,
+    pub status: String,
+}
+
 #[tauri::command]
 pub fn confirm_candidate_source(
     state: State<AppState>,
     candidate_id: String,
-) -> Result<crate::models::SourceBinding, String> {
+) -> Result<SourceBinding, String> {
     let connection = state.connection().map_err(map_error)?;
-    let _candidate_id = candidate_id;
-    Err("confirm_candidate_source not yet implemented".to_string())
+
+    let candidate: CandidateSourceRow = connection
+        .query_row(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
+             FROM candidate_sources WHERE id = ?1",
+            params![candidate_id],
+            |row| {
+                Ok(CandidateSourceRow {
+                    id: row.get(0)?,
+                    local_mod_id: row.get(1)?,
+                    source_kind: row.get(2)?,
+                    source_url: row.get(3)?,
+                    provider_mod_id: row.get(4)?,
+                    provider_file_id: row.get(5)?,
+                    provider_repo: row.get(6)?,
+                    confidence_score: row.get(7)?,
+                    reasoning_json: row.get(8)?,
+                    status: row.get(9)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Candidate not found: {}", e))?;
+
+    let binding_id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+
+    connection
+        .execute(
+            "INSERT INTO source_bindings (
+                id, local_mod_id, source_kind, source_url, provider_mod_id,
+                provider_file_id, provider_repo, bind_method, is_primary, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10)",
+            params![
+                binding_id,
+                candidate.local_mod_id,
+                candidate.source_kind,
+                candidate.source_url,
+                candidate.provider_mod_id,
+                candidate.provider_file_id,
+                candidate.provider_repo,
+                "confirmed_by_user",
+                now,
+                now,
+            ],
+        )
+        .map_err(|e| format!("Failed to create binding: {}", e))?;
+
+    connection
+        .execute(
+            "UPDATE candidate_sources SET status = 'confirmed', updated_at = ?1 WHERE id = ?2",
+            params![now, candidate_id],
+        )
+        .map_err(|e| format!("Failed to update candidate: {}", e))?;
+
+    Ok(SourceBinding {
+        id: binding_id,
+        local_mod_id: candidate.local_mod_id,
+        source_kind: serde_json::from_str(&candidate.source_kind)
+            .unwrap_or(SourceKind::GenericPage),
+        source_url: candidate.source_url,
+        provider_mod_id: candidate.provider_mod_id,
+        provider_file_id: candidate.provider_file_id,
+        provider_repo: candidate.provider_repo,
+        bind_method: "confirmed_by_user".to_string(),
+        is_primary: true,
+        created_at: now.clone(),
+        updated_at: now,
+    })
 }
 
 #[tauri::command]
@@ -2444,8 +2527,54 @@ pub fn reject_candidate_source(
     candidate_id: String,
 ) -> Result<(), String> {
     let connection = state.connection().map_err(map_error)?;
-    let _candidate_id = candidate_id;
-    Err("reject_candidate_source not yet implemented".to_string())
+    let now = Utc::now().to_rfc3339();
+
+    connection
+        .execute(
+            "UPDATE candidate_sources SET status = 'rejected', updated_at = ?1 WHERE id = ?2",
+            params![now, candidate_id],
+        )
+        .map_err(|e| format!("Failed to reject candidate: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_candidates_for_mod(
+    state: State<AppState>,
+    mod_id: String,
+) -> Result<Vec<CandidateSourceRow>, String> {
+    let connection = state.connection().map_err(map_error)?;
+
+    let mut stmt = connection
+        .prepare(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
+             FROM candidate_sources WHERE local_mod_id = ?1 AND status = 'suggested'
+             ORDER BY confidence_score DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let candidates = stmt
+        .query_map(params![mod_id], |row| {
+            Ok(CandidateSourceRow {
+                id: row.get(0)?,
+                local_mod_id: row.get(1)?,
+                source_kind: row.get(2)?,
+                source_url: row.get(3)?,
+                provider_mod_id: row.get(4)?,
+                provider_file_id: row.get(5)?,
+                provider_repo: row.get(6)?,
+                confidence_score: row.get(7)?,
+                reasoning_json: row.get(8)?,
+                status: row.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(candidates)
 }
 
 pub fn emit_scan_progress(

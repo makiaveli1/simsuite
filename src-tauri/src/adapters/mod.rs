@@ -1,12 +1,20 @@
 pub mod curseforge;
 pub mod errors;
+pub mod feed;
+pub mod generic_page;
 pub mod github;
 pub mod nexus;
+pub mod structured_page;
+
+#[cfg(test)]
+mod generic_page_test;
 
 pub use errors::AdapterError;
+pub use feed::FeedAdapter;
 
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind, UpdateStatus};
+use serde::{Deserialize, Serialize};
 
 pub struct DiscoverInput {
     pub local_mod_id: String,
@@ -50,7 +58,7 @@ pub struct RemoteSnapshot {
     pub raw: serde_json::Value,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct SnapshotEvidence {
     pub version_changed: bool,
     pub download_changed: bool,
@@ -79,8 +87,11 @@ impl AdapterRegistry {
     pub fn new() -> Self {
         let adapters: Vec<Box<dyn SourceAdapter>> = vec![
             Box::new(curseforge::CurseForgeAdapter::new()),
+            Box::new(feed::FeedAdapter::new()),
+            Box::new(generic_page::GenericPageAdapter::new()),
             Box::new(github::GitHubAdapter::new()),
             Box::new(nexus::NexusAdapter::new()),
+            Box::new(structured_page::StructuredPageAdapter::new()),
         ];
         AdapterRegistry { adapters }
     }
