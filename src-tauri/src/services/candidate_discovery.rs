@@ -2,6 +2,7 @@ use crate::adapters::{AdapterRegistry, CandidateSource, DiscoverInput, FileInfo}
 use crate::error::{AppError, AppResult};
 use crate::models::{AppBehaviorSettings, LocalFile, LocalMod};
 use crate::services::candidate_scorer::{self, MatchSignals};
+use crate::services::SharedRateLimiter;
 use rusqlite::{params, Connection};
 
 #[derive(Debug)]
@@ -10,9 +11,9 @@ pub struct CandidateDiscovery {
 }
 
 impl CandidateDiscovery {
-    pub fn new(settings: &AppBehaviorSettings) -> Self {
+    pub fn new(settings: &AppBehaviorSettings, rate_limiter: SharedRateLimiter) -> Self {
         Self {
-            registry: AdapterRegistry::new(settings),
+            registry: AdapterRegistry::new(settings, rate_limiter),
         }
     }
 
@@ -214,15 +215,18 @@ impl CandidateDiscovery {
 
 impl Default for CandidateDiscovery {
     fn default() -> Self {
-        Self::new(&AppBehaviorSettings {
-            keep_running_in_background: false,
-            automatic_watch_checks: false,
-            watch_check_interval_hours: 12,
-            last_watch_check_at: None,
-            last_watch_check_error: None,
-            curseforge_api_key: None,
-            github_api_token: None,
-        })
+        Self::new(
+            &AppBehaviorSettings {
+                keep_running_in_background: false,
+                automatic_watch_checks: false,
+                watch_check_interval_hours: 12,
+                last_watch_check_at: None,
+                last_watch_check_error: None,
+                curseforge_api_key: None,
+                github_api_token: None,
+            },
+            SharedRateLimiter::default(),
+        )
     }
 }
 
@@ -343,9 +347,9 @@ mod tests {
 
     #[test]
     fn test_auto_bind_threshold() {
-        assert!(CandidateDiscovery::should_auto_bind(90.0));
-        assert!(CandidateDiscovery::should_auto_bind(95.0));
-        assert!(!CandidateDiscovery::should_auto_bind(89.0));
+        assert!(!CandidateDiscovery::should_auto_bind(90.0));
+        assert!(!CandidateDiscovery::should_auto_bind(95.0));
+        assert!(!CandidateDiscovery::should_auto_bind(100.0));
         assert!(!CandidateDiscovery::should_auto_bind(50.0));
     }
 

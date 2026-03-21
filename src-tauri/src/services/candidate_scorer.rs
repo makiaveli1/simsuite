@@ -55,8 +55,9 @@ pub fn confidence_level(score: f64) -> &'static str {
 }
 
 /// Returns true if a score is high enough for automatic binding.
-pub fn should_auto_bind(score: f64) -> bool {
-    score >= 90.0
+/// AUTO-BIND DISABLED: Users must always manually confirm sources.
+pub fn should_auto_bind(_score: f64) -> bool {
+    false
 }
 
 /// Computes similarity between two strings using normalized edit distance.
