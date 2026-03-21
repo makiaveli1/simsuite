@@ -1,6 +1,6 @@
 use crate::adapters::{
-    detect_access_tier, AdapterError, CandidateSource, DiscoverInput, RemoteSnapshot,
-    SnapshotEvidence, SourceAdapter,
+    apply_custom_headers, detect_access_tier, AdapterError, CandidateSource, DiscoverInput,
+    RemoteSnapshot, SnapshotEvidence, SourceAdapter,
 };
 use crate::error::AppResult;
 use crate::models::SourceKind;
@@ -112,11 +112,9 @@ impl SourceAdapter for StructuredPageAdapter {
     ) -> AppResult<RemoteSnapshot> {
         let url = &binding.source_url;
         self.check_rate_limit(url)?;
-        let response = self
-            .client
-            .get(&binding.source_url)
-            .send()
-            .map_err(AdapterError::Network)?;
+        let mut request = self.client.get(&binding.source_url);
+        request = apply_custom_headers(request, binding);
+        let response = request.send().map_err(AdapterError::Network)?;
 
         self.record_request(url);
         let etag = response
@@ -276,6 +274,7 @@ mod tests {
             provider_repo: None,
             bind_method: "manual".to_string(),
             is_primary: true,
+            custom_headers_json: None,
             created_at: "2025-01-01T00:00:00Z".to_string(),
             updated_at: "2025-01-01T00:00:00Z".to_string(),
         };

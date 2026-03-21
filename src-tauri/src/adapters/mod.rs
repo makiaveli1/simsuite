@@ -19,6 +19,23 @@ use crate::error::AppResult;
 use crate::models::{AccessTier, AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
 use crate::services::SharedRateLimiter;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub fn apply_custom_headers(
+    request: reqwest::blocking::RequestBuilder,
+    binding: &SourceBinding,
+) -> reqwest::blocking::RequestBuilder {
+    if let Some(headers_json) = &binding.custom_headers_json {
+        if let Ok(headers) = serde_json::from_str::<HashMap<String, String>>(headers_json) {
+            let mut req = request;
+            for (key, value) in headers {
+                req = req.header(&key, &value);
+            }
+            return req;
+        }
+    }
+    request
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]

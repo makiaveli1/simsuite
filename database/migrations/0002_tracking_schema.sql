@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS source_bindings (
     provider_repo TEXT,
     bind_method TEXT NOT NULL DEFAULT 'manual',
     is_primary INTEGER NOT NULL DEFAULT 1 CHECK (is_primary IN (0, 1)),
+    custom_headers_json TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

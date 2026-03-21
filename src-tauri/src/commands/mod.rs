@@ -2636,6 +2636,7 @@ pub fn confirm_candidate_source(
         provider_repo: candidate.provider_repo,
         bind_method: "confirmed_by_user".to_string(),
         is_primary: true,
+        custom_headers_json: None,
         created_at: now.clone(),
         updated_at: now,
     })

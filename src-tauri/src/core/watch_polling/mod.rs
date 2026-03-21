@@ -199,6 +199,7 @@ fn check_ea_broken_mods(
         provider_repo: None,
         bind_method: "compatibility_check".to_string(),
         is_primary: false,
+        custom_headers_json: None,
         created_at: String::new(),
         updated_at: String::new(),
     };
@@ -575,7 +576,8 @@ fn get_source_binding(
     let result = connection
         .query_row(
             "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
-                    provider_file_id, provider_repo, bind_method, is_primary, created_at, updated_at
+                    provider_file_id, provider_repo, bind_method, is_primary,
+                    custom_headers_json, created_at, updated_at
              FROM source_bindings
              WHERE id = ?1",
             rusqlite::params![binding_id],
@@ -590,8 +592,9 @@ fn get_source_binding(
                     provider_repo: row.get(6)?,
                     bind_method: row.get(7)?,
                     is_primary: row.get::<_, i64>(8)? != 0,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
+                    custom_headers_json: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             },
         )

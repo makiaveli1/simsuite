@@ -1347,6 +1347,7 @@ pub struct SourceBinding {
     pub provider_repo: Option<String>,
     pub bind_method: String,
     pub is_primary: bool,
+    pub custom_headers_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
