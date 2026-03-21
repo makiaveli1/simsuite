@@ -1,3 +1,4 @@
+pub mod adapters;
 mod app_state;
 mod commands;
 mod core;
