@@ -19,7 +19,8 @@
     "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply",
     "desktop:smoke:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1",
     "desktop:smoke:apply:fixtures": "pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "prepare": "husky"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -35,7 +36,9 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.0",
+    "lint-staged": "^16.4.0",
     "playwright": "^1.58.2",
     "selenium-webdriver": "^4.41.0",
     "typescript": "^5.9.3",
