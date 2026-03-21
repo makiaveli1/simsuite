@@ -1,4 +1,5 @@
 pub mod curseforge;
+pub mod ea_broken_mods;
 pub mod errors;
 pub mod feed;
 pub mod generic_page;
@@ -162,6 +163,9 @@ impl AdapterRegistry {
             Box::new(github::GitHubAdapter::new(rate_limiter.clone())),
             Box::new(nexus::NexusAdapter::new(rate_limiter.clone())),
             Box::new(structured_page::StructuredPageAdapter::new(
+                rate_limiter.clone(),
+            )),
+            Box::new(ea_broken_mods::EABrokenModsAdapter::new(
                 rate_limiter.clone(),
             )),
         ];

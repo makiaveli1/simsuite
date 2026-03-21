@@ -1233,6 +1233,7 @@ pub enum SourceKind {
     Feed,
     StructuredPage,
     GenericPage,
+    EaBrokenMods,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
