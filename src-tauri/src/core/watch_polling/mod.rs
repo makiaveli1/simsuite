@@ -9,7 +9,7 @@ use crate::{
     core::{content_versions, special_mod_versions},
     database,
     error::{AppError, AppResult},
-    models::{WatchRefreshSummary, WorkspaceChange, WorkspaceDomain},
+    models::{AccessTier, WatchRefreshSummary, WorkspaceChange, WorkspaceDomain},
     services::{
         candidate_discovery::CandidateDiscovery, scheduler::UpdateScheduler,
         update_events::UpdateEvents, LocalInventory, SharedRateLimiter,
@@ -309,35 +309,50 @@ fn run_tracking_refresh(
 
         match adapter.refresh_snapshot(&binding) {
             Ok(snapshot) => {
-                let decision = crate::adapters::UpdateDecision {
-                    status: determine_update_status(&snapshot, &local_mod),
-                    confidence: snapshot.confidence,
-                    summary: Some(format!(
-                        "Version {} published {}",
-                        snapshot.version_text.clone().unwrap_or_default(),
-                        snapshot.published_at.clone().unwrap_or_default()
-                    )),
-                };
+                if matches!(
+                    snapshot.access_tier,
+                    AccessTier::PatronOnly | AccessTier::EarlyAccess
+                ) && snapshot.version_text.is_none()
+                {
+                    if let Err(e) = UpdateEvents::create_patron_update_event(
+                        connection,
+                        &local_mod.id,
+                        &binding.id,
+                        snapshot.access_tier.clone(),
+                    ) {
+                        tracing::warn!("Failed to create patron update event: {}", e);
+                    }
+                } else {
+                    let decision = crate::adapters::UpdateDecision {
+                        status: determine_update_status(&snapshot, &local_mod),
+                        confidence: snapshot.confidence,
+                        summary: Some(format!(
+                            "Version {} published {}",
+                            snapshot.version_text.clone().unwrap_or_default(),
+                            snapshot.published_at.clone().unwrap_or_default()
+                        )),
+                    };
 
-                if let Err(e) = UpdateEvents::create_event(
-                    connection,
-                    &local_mod.id,
-                    Some(&binding.id),
-                    &decision,
-                    snapshot.version_text.as_deref(),
-                    snapshot.published_at.as_deref(),
-                ) {
-                    tracing::warn!("Failed to create update event: {}", e);
+                    if let Err(e) = UpdateEvents::create_event(
+                        connection,
+                        &local_mod.id,
+                        Some(&binding.id),
+                        &decision,
+                        snapshot.version_text.as_deref(),
+                        snapshot.published_at.as_deref(),
+                    ) {
+                        tracing::warn!("Failed to create update event: {}", e);
+                    }
+
+                    let new_confidence = snapshot.confidence;
+                    LocalInventory::update_mod_status(
+                        connection,
+                        &local_mod.id,
+                        decision.status,
+                        new_confidence,
+                        Some(&binding.id),
+                    )?;
                 }
-
-                let new_confidence = snapshot.confidence;
-                LocalInventory::update_mod_status(
-                    connection,
-                    &local_mod.id,
-                    decision.status,
-                    new_confidence,
-                    Some(&binding.id),
-                )?;
             }
             Err(e) => {
                 tracing::warn!(

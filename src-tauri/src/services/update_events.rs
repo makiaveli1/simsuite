@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::adapters::UpdateDecision;
 use crate::error::{AppError, AppResult};
-use crate::models::UpdateStatus;
+use crate::models::{AccessTier, UpdateStatus};
 
 #[derive(Debug)]
 pub struct UpdateEvents;
@@ -61,6 +61,38 @@ impl UpdateEvents {
         )?;
 
         Ok(event_id)
+    }
+
+    pub fn create_patron_update_event(
+        conn: &Connection,
+        local_mod_id: &str,
+        binding_id: &str,
+        access_tier: AccessTier,
+    ) -> AppResult<String> {
+        let summary = match access_tier {
+            AccessTier::PatronOnly => "Update available (Patron-only access)".to_string(),
+            AccessTier::EarlyAccess => "Early access update available".to_string(),
+            AccessTier::Public => "Update available".to_string(),
+        };
+
+        let confidence = match access_tier {
+            AccessTier::PatronOnly => 0.75,
+            AccessTier::EarlyAccess => 0.80,
+            AccessTier::Public => 0.90,
+        };
+
+        Self::create_event(
+            conn,
+            local_mod_id,
+            Some(binding_id),
+            &UpdateDecision {
+                status: UpdateStatus::ConfirmedUpdate,
+                confidence,
+                summary: Some(summary),
+            },
+            None,
+            None,
+        )
     }
 
     /// Returns unread, undismissed events, ordered by creation time descending.
