@@ -241,7 +241,7 @@ pub struct ScoredCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::SourceKind;
+    use crate::models::{AccessTier, SourceKind};
 
     fn create_test_local_mod() -> LocalMod {
         LocalMod {
@@ -284,6 +284,8 @@ mod tests {
                 provider_repo: None,
                 confidence_score: 30.0,
                 reasoning: vec!["Title match".to_string()],
+                access_tier: AccessTier::Public,
+                patron_free_version: None,
             },
             CandidateSource {
                 source_kind: SourceKind::Nexus,
@@ -293,6 +295,8 @@ mod tests {
                 provider_repo: None,
                 confidence_score: 40.0,
                 reasoning: vec!["Exact title match".to_string()],
+                access_tier: AccessTier::Public,
+                patron_free_version: None,
             },
             CandidateSource {
                 source_kind: SourceKind::GitHub,
@@ -302,6 +306,8 @@ mod tests {
                 provider_repo: Some("kinky/amazing-kinky-mod".to_string()),
                 confidence_score: 20.0,
                 reasoning: vec!["Creator match".to_string()],
+                access_tier: AccessTier::Public,
+                patron_free_version: None,
             },
         ]
     }
@@ -318,6 +324,8 @@ mod tests {
             provider_repo: None,
             confidence_score: 80.0,
             reasoning: vec![],
+            access_tier: AccessTier::Public,
+            patron_free_version: None,
         };
 
         let signals = CandidateDiscovery::build_signals(&local_mod, &candidate, &files);

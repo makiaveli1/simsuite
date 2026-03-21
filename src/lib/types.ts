@@ -956,3 +956,105 @@ export interface ApplyReviewPlanActionResult {
   snapshotName: string | null;
   message: string;
 }
+
+export type SourceKind = "curseforge" | "github" | "nexus" | "feed" | "structured_page" | "generic_page";
+
+export type TrackingMode = "detected_only" | "auto" | "manual" | "ignored";
+
+export type UpdateStatus = "untracked" | "up_to_date" | "confirmed_update" | "probable_update" | "source_activity" | "source_unreachable";
+
+export type AccessTier = "public" | "patron_only" | "early_access";
+
+export interface LocalMod {
+  id: string;
+  displayName: string;
+  normalizedName: string;
+  creatorName: string | null;
+  category: string | null;
+  localRootPath: string;
+  trackingMode: TrackingMode;
+  sourceConfidence: number;
+  confirmedSourceId: string | null;
+  currentStatus: UpdateStatus;
+  lastCheckedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LocalFile {
+  id: string;
+  localModId: string;
+  filePath: string;
+  fileName: string;
+  fileExt: string;
+  fileSize: number;
+  sha256: string | null;
+  modifiedAt: string | null;
+}
+
+export interface SourceBinding {
+  id: string;
+  localModId: string;
+  sourceKind: SourceKind;
+  sourceUrl: string;
+  providerModId: string | null;
+  providerFileId: string | null;
+  providerRepo: string | null;
+  bindMethod: string;
+  isPrimary: boolean;
+  customHeadersJson: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandidateSource {
+  id: string;
+  localModId: string;
+  sourceKind: string;
+  sourceUrl: string;
+  providerModId: string | null;
+  providerFileId: string | null;
+  providerRepo: string | null;
+  confidenceScore: number;
+  reasoningJson: string;
+  status: string;
+  accessTier: AccessTier;
+  patronFreeVersion: string | null;
+}
+
+export interface UpdateEvent {
+  id: string;
+  localModId: string;
+  bindingId: string | null;
+  eventType: string;
+  confidenceScore: number;
+  summary: string;
+  latestVersionText: string | null;
+  latestPublishedAt: string | null;
+  isRead: boolean;
+  isDismissed: boolean;
+  createdAt: string;
+  accessTier?: AccessTier;
+}
+
+export interface LocalModScanResult {
+  modsFound: number;
+  filesProcessed: number;
+  newMods: number;
+  updatedMods: number;
+}
+
+export interface UserTrackingPrefs {
+  localModId: string;
+  ignoreUpdates: boolean;
+  ignoreVersions: string[];
+  notifyOnProbable: boolean;
+  notifyOnSourceActivity: boolean;
+  manualSourceUrl: string | null;
+  pinnedSourceKind: SourceKind | null;
+  customCheckIntervalHours: number | null;
+  fingerprintEnabled: boolean;
+  eaBrokenModsEnabled: boolean;
+  eaBrokenModsCustomUrl: string | null;
+  customHeaders: Record<string, string>;
+}

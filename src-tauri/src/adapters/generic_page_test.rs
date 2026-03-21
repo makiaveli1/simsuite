@@ -1,11 +1,12 @@
 use crate::adapters::generic_page::GenericPageAdapter;
 use crate::adapters::SourceAdapter;
 use crate::models::{SourceBinding, SourceKind};
+use crate::services::SharedRateLimiter;
 use scraper::Html;
 
 #[test]
 fn test_generic_adapter_kind() {
-    let adapter = GenericPageAdapter::new();
+    let adapter = GenericPageAdapter::new(SharedRateLimiter::default());
     assert_eq!(adapter.kind(), SourceKind::GenericPage);
 }
 
@@ -99,7 +100,7 @@ fn test_extract_title() {
 
 #[test]
 fn test_refresh_snapshot_uses_etag() {
-    let adapter = GenericPageAdapter::new();
+    let adapter = GenericPageAdapter::new(SharedRateLimiter::default());
 
     let binding = SourceBinding {
         id: "test-binding-generic".to_string(),
@@ -111,6 +112,7 @@ fn test_refresh_snapshot_uses_etag() {
         provider_repo: None,
         bind_method: "manual".to_string(),
         is_primary: true,
+        custom_headers_json: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
@@ -133,7 +135,7 @@ fn test_refresh_snapshot_uses_etag() {
 #[test]
 #[ignore]
 fn test_refresh_snapshot_with_conditional_headers() {
-    let adapter = GenericPageAdapter::new();
+    let adapter = GenericPageAdapter::new(SharedRateLimiter::default());
 
     let binding_with_etag = SourceBinding {
         id: "test-binding-etag".to_string(),
@@ -145,6 +147,7 @@ fn test_refresh_snapshot_with_conditional_headers() {
         provider_repo: None,
         bind_method: "manual".to_string(),
         is_primary: true,
+        custom_headers_json: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
@@ -157,7 +160,7 @@ fn test_refresh_snapshot_with_conditional_headers() {
 fn test_discover_candidates_returns_empty() {
     use crate::adapters::DiscoverInput;
 
-    let adapter = GenericPageAdapter::new();
+    let adapter = GenericPageAdapter::new(SharedRateLimiter::default());
     let input = DiscoverInput {
         local_mod_id: "test".to_string(),
         display_name: "Test Mod".to_string(),

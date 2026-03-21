@@ -57,12 +57,19 @@ import type {
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
+  UserTrackingPrefs,
   VersionResolution,
   VersionSignal,
   WatchListFilter,
   WatchSourceKind,
   WatchResult,
   WorkspaceChange,
+  LocalMod,
+  LocalFile,
+  SourceBinding,
+  CandidateSource,
+  UpdateEvent,
+  LocalModScanResult,
 } from "./types";
 
 export const hasTauriRuntime =
@@ -4804,7 +4811,7 @@ async function mockInvoke<T>(
     case "list_library_watch_setup_items": {
       const rawLimit = Number(payload?.limit ?? 6);
       const limit = Number.isFinite(rawLimit)
-        ? Math.max(1, Math.min(200, Math.trunc(rawLimit)))
+        ? Math.max(1, Math.min(24, Math.trunc(rawLimit)))
         : 6;
       return buildMockLibraryWatchSetupList(limit) as T;
     }
@@ -5590,4 +5597,22 @@ export const api = {
       kind,
       subtype,
     }),
+  scanLocalMods: () => invoke<LocalModScanResult>("scan_local_mods"),
+  getLocalMods: (filter?: LibraryQuery) =>
+    invoke<LocalMod[]>("get_local_mods", { filter }),
+  getUpdateEvents: () => invoke<UpdateEvent[]>("get_update_events"),
+  markEventRead: (eventId: string) =>
+    invoke<void>("mark_event_read", { eventId }),
+  dismissEvent: (eventId: string) =>
+    invoke<void>("dismiss_event", { eventId }),
+  confirmCandidateSource: (candidateId: string) =>
+    invoke<SourceBinding>("confirm_candidate_source", { candidateId }),
+  rejectCandidateSource: (candidateId: string) =>
+    invoke<void>("reject_candidate_source", { candidateId }),
+  getCandidatesForMod: (modId: string) =>
+    invoke<CandidateSource[]>("get_candidates_for_mod", { modId }),
+  getTrackingPrefs: (modId: string) =>
+    invoke<UserTrackingPrefs | null>("get_tracking_prefs", { modId }),
+  setTrackingPrefs: (prefs: UserTrackingPrefs) =>
+    invoke<void>("set_tracking_prefs", { prefs }),
 };
