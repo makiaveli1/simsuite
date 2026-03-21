@@ -3470,20 +3470,53 @@ All Phase 2 adapter and discovery work is done:
 - [x] All 236 tests pass
 - [x] Smoke test passes
 
-### Phase 3+ (Planned)
+### Phase 3 Complete! ✅
 
-- [ ] Phase 3: Source learning, rate limiter, scheduler
-- [ ] Phase 3: Frontend integration (Updates screen enhancements)
+All Phase 3 services are done and production-ready:
+- [x] Rate limiter - per-domain rate limiting to avoid overwhelming sources
+- [x] Scheduler - different refresh intervals per source type (6h API, 12h feeds, 24h structured, 48h generic)
+- [x] Source learning - tracks confirmed/rejected sources per domain to improve future matching
+- [x] Production-readiness audit - added logging, error handling, validation, docs
+
+### CurseForge API Key Support ✅
+
+- [x] Added `curseforge_api_key` to AppBehaviorSettings
+- [x] Added `github_api_token` to AppBehaviorSettings
+- [x] All adapters support API key authentication
+
+### All Backend Implementation Complete! ✅
+
+The Non-CurseForge Mod Tracking backend is fully implemented:
+- 6 source adapters (CurseForge, GitHub, Nexus, Feed, StructuredPage, GenericPage)
+- Local mod inventory with file scanning and SHA256 hashing
+- Confidence scoring with 11 signals
+- Update decision engine with 6 rules
+- Snapshot store with change detection
+- Update events audit trail
+- Candidate discovery with auto-bind at 90+ score
+- User confirmation flow (confirm/reject candidates)
+- Rate limiting and scheduling
+
+### Frontend Integration (Pending)
+
+The backend is complete but the frontend needs updates to use the new types:
+- [ ] Add LocalMod, CandidateSource, UpdateEvent types to types.ts
+- [ ] Add new API calls to api.ts for the new tracking commands
+- [ ] Update UpdatesScreen to show candidate sources
+- [ ] Add candidate confirmation UI
+
+This is a significant UI task that should be done with proper design work.
 
 ### What Worked
 
 - Using subagent-driven development with spec review after each task
 - Committing after each phase for clean history
 - Running smoke test after Phase 1 and Phase 2 completion to verify everything integrates
+- Production-readiness audit before moving to frontend
 
 ### Next Session Start Here
 
-Phase 2 is complete and pushed. Next session could:
-- Start Phase 3 with source learning (tracking confirmed/rejected sources per domain)
-- Or add rate limiter and scheduler for refresh intervals
-- Or start frontend integration for the Updates screen
+Backend is complete. Next session should:
+1. Add new types to types.ts and api.ts
+2. Update UpdatesScreen to support the new tracking system
+3. Test the full flow end-to-end
