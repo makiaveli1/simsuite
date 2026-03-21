@@ -805,6 +805,69 @@ pub fn normalize_version_value(value: &str) -> String {
         .replace(['_', '-'], ".")
 }
 
+pub fn normalize_version_with_confidence(version: &str) -> (String, f64) {
+    let version = version.trim();
+
+    if let Some(caps) = Regex::new(r"v?(\d+)\.(\d+)\.(\d+)")
+        .unwrap()
+        .captures(version)
+    {
+        let v = format!("{}.{}.{}", &caps[1], &caps[2], &caps[3]);
+        return (v, 0.95);
+    }
+
+    if let Some(caps) = Regex::new(r"(\d+)\.(\d+)\.(\d+)\.(\d+)")
+        .unwrap()
+        .captures(version)
+    {
+        let v = format!("{}.{}.{}.{}", &caps[1], &caps[2], &caps[3], &caps[4]);
+        return (v, 0.93);
+    }
+
+    if let Some(caps) = Regex::new(r"(\d{4})\.(\d{2})\.(\d{2})")
+        .unwrap()
+        .captures(version)
+    {
+        let v = format!("{}-{}-{}", &caps[1], &caps[2], &caps[3]);
+        return (v, 0.85);
+    }
+
+    if let Some(caps) = Regex::new(r"(\d{2})-(\d{2})-(\d{4})")
+        .unwrap()
+        .captures(version)
+    {
+        let v = format!("{}-{}-{}", &caps[3], &caps[1], &caps[2]);
+        return (v, 0.80);
+    }
+
+    if let Some(caps) =
+        Regex::new(r"(?i)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})")
+            .unwrap()
+            .captures(version)
+    {
+        let v = format!("{} {}", &caps[1], &caps[2]);
+        return (v, 0.70);
+    }
+
+    if let Some(caps) = Regex::new(r"(?i)Release\s+(\d+\.?\d*)")
+        .unwrap()
+        .captures(version)
+    {
+        return (caps[1].to_string(), 0.75);
+    }
+
+    if let Some(caps) = Regex::new(r"(?i)r(\d+)").unwrap().captures(version) {
+        return (format!("r{}", &caps[1]), 0.70);
+    }
+
+    if let Some(caps) = Regex::new(r"v?(\d+)\.(\d+)").unwrap().captures(version) {
+        let v = format!("{}.{}", &caps[1], &caps[2]);
+        return (v, 0.85);
+    }
+
+    (version.to_string(), 0.50)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionCandidate {
     pub raw_value: String,

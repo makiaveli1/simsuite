@@ -1,4 +1,5 @@
 use crate::adapters::{RemoteSnapshot, SnapshotEvidence, UpdateDecision};
+use crate::core::special_mod_versions::normalize_version_with_confidence;
 use crate::models::{LocalMod, UpdateStatus};
 
 /// Detects updates by comparing a current remote snapshot against a previous one.
@@ -37,6 +38,22 @@ pub fn detect_update(
         && prev.version_text.is_some()
         && current.version_text != prev.version_text
     {
+        let (_, version_confidence) =
+            normalize_version_with_confidence(current.version_text.as_ref().unwrap());
+
+        if version_confidence < 0.70 {
+            tracing::debug!(
+                "Ambiguous version format changed from {:?} to {:?}",
+                prev.version_text,
+                current.version_text
+            );
+            return UpdateDecision {
+                status: UpdateStatus::SourceActivity,
+                confidence: 0.55,
+                summary: Some("Version changed but format is ambiguous".into()),
+            };
+        }
+
         tracing::info!(
             "Confirmed update: version changed from {:?} to {:?}",
             prev.version_text,
