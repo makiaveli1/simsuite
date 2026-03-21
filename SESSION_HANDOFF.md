@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (March 21, 2026 - Updates smoke now proves tracked refresh too)
+
+- **Mode**: code
+- **Focus**: keep the watch bug sweep honest by proving the real `Tracked -> Check selected` path in the desktop app instead of only the setup/review source flow
+
+### Progress Made
+
+1. **Extended the `Updates` smoke beyond setup and review**:
+   - added a real tracked-lane refresh step in `scripts/desktop/desktop-smoke.mjs`
+   - the smoke now:
+     - reads real tracked watch rows from the backend
+     - picks a row that can truly refresh now
+     - opens that row in `Updates`
+     - clicks `Check selected`
+     - waits for the success message in the real UI
+
+2. **Protected the React-side inspector flow too**:
+   - added a focused unit test in `src/screens/UpdatesScreen.test.tsx`
+   - the new test proves the tracked inspector really calls:
+     - `refreshWatchSourceForFile`
+     - and shows `Checked the selected source.`
+
+3. **Kept this pass safely scoped**:
+   - this did not change app behavior
+   - it tightened verification around an already-existing watch action so later regressions are easier to catch
+
+4. **Verification**:
+   - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - result: all passed
+
+### What Worked
+
+- `Updates` smoke now proves both major watch flows already present in the product:
+  - setup / review / clear
+  - tracked item refresh
+- the smoke no longer relies on assuming a tracked row is refreshable
+- it asks the backend for a real refreshable row first, then proves that row through the live desktop UI
+
+### Remaining Gap
+
+- `Updates` smoke is much more trustworthy now, but it still does not prove a real exact-page save path end to end
+- next useful watch pass should either:
+  - drive one real exact-page save into tracked
+  - or move from verification hardening into the next actual watch bug found in live desktop use
+
 ## Current Session (March 21, 2026 - Updates smoke now proves a real save/edit/clear flow)
 
 - **Mode**: code

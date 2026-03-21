@@ -679,6 +679,18 @@ async function listLibraryRows(driver, limit = 200) {
   return response.response;
 }
 
+async function listTrackedWatchRows(driver, filter = "all", limit = 200) {
+  const response = await invokeTauriCommand(driver, "list_library_watch_items", {
+    filter,
+    limit,
+  });
+  if (!response.ok || !response.response) {
+    throw new Error(`Could not read tracked watch rows: ${response.error ?? "unknown error"}`);
+  }
+
+  return response.response;
+}
+
 async function backendLibraryHasRows(driver, expectedRows = [], limit = 200) {
   const response = await listLibraryRows(driver, limit);
   const items = response.items ?? [];
@@ -986,6 +998,47 @@ async function verifyUpdatesVersionWatch(driver) {
   }
 }
 
+async function verifyUpdatesTrackedRefresh(driver, genericWatchFile) {
+  try {
+    await ensureLibraryIndexed(driver, [genericWatchFile]);
+
+    const trackedRows = await listTrackedWatchRows(driver, "all", 200);
+    const refreshableItem =
+      trackedRows.items?.find(
+        (item) =>
+          item.watchResult?.canRefreshNow &&
+          item.watchResult?.sourceKind &&
+          item.filename !== genericWatchFile,
+      ) ?? null;
+
+    if (!refreshableItem?.filename) {
+      throw new Error("Smoke fixture did not produce a refreshable tracked watch row.");
+    }
+
+    await clickButton(driver, "Updates");
+    await waitForText(driver, "Updates", 30000);
+    await clickVisibleText(driver, "Tracked");
+    await clickVisibleText(driver, "All tracked");
+    await waitForText(driver, refreshableItem.filename, 30000);
+    await clickUpdatesRow(driver, refreshableItem.filename);
+    await waitForAnyText(
+      driver,
+      [
+        "Check selected",
+        "Built-in page",
+        "Saved by you",
+      ],
+      30000,
+    );
+    await clickButton(driver, "Check selected", 30000);
+    await waitForText(driver, "Checked the selected source.", 60000);
+    await waitForText(driver, refreshableItem.filename, 30000);
+  } catch (error) {
+    await dumpBodyText(driver, "updates-tracked-refresh-failure");
+    throw error;
+  }
+}
+
 async function verifyUpdatesWatchSaveClear(driver, genericWatchFile) {
   try {
     await ensureLibraryIndexed(driver, [genericWatchFile]);
@@ -1242,6 +1295,7 @@ async function run() {
     await verifyHomeWatchSummary(driver);
     await verifyHomeWatchFocus(driver);
     await verifyUpdatesVersionWatch(driver);
+    await verifyUpdatesTrackedRefresh(driver, fixtureGenericWatchFile);
     await verifyUpdatesWatchSaveClear(driver, fixtureGenericWatchFile);
 
     console.log(`Desktop smoke passed against ${appPath}`);

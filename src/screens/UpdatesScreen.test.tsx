@@ -132,6 +132,28 @@ it("opens source editing inside the inspector instead of a separate dialog", asy
   expect(within(inspector).getByRole("button", { name: /save source/i })).toBeVisible();
 });
 
+it("refreshes the selected tracked source from the inspector", async () => {
+  apiMocks.refreshWatchSourceForFile.mockResolvedValueOnce(
+    makeFileDetail({
+      ...FILE_DETAILS[4],
+      watchResult: {
+        ...TRACKED_WATCH_RESULT,
+        latestVersion: "2026.5.0",
+        checkedAt: "2026-03-21T12:30:00.000Z",
+      },
+    }),
+  );
+
+  renderUpdatesScreen();
+
+  fireEvent.click(await screen.findByRole("button", { name: /check selected/i }));
+
+  await waitFor(() => {
+    expect(apiMocks.refreshWatchSourceForFile).toHaveBeenCalledWith(4);
+  });
+  expect(await screen.findByText(/checked the selected source\./i)).toBeVisible();
+});
+
 function renderUpdatesScreen(
   overrides: Partial<ComponentProps<typeof UpdatesScreen>> = {},
 ) {

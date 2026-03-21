@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (March 21, 2026 - Updates smoke now proves tracked refresh)
+
+This pass still stayed in stabilization mode. It did not change the product flow itself. It closed the next watch verification gap by proving that the real `Updates` tracked inspector can run `Check selected` end to end in the desktop app.
+
+Important changes and findings:
+
+- fixed files:
+  - `scripts/desktop/desktop-smoke.mjs`
+  - `src/screens/UpdatesScreen.test.tsx`
+- the desktop smoke now:
+  - loads real tracked watch rows from the backend
+  - finds one that truly supports `Check selected`
+  - opens that row in `Updates`
+  - runs the real tracked refresh path
+  - waits for `Checked the selected source.` in the live UI
+- a new unit test now protects the same inspector action in the React layer
+- this pass did not change watch behavior itself
+- checks passed:
+  - `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+  - `cargo test --manifest-path src-tauri/Cargo.toml`
+
+Important remaining gap:
+
+- the `Updates` smoke now proves:
+  - setup / review / clear
+  - tracked refresh
+- the next useful watch verification gap is a real exact-page save path
+
 ## Current session note (March 21, 2026 - Updates smoke now proves real watch setup and clear)
 
 This pass did not change the product flow itself. It fixed the watch verification gap around `Updates`, so the desktop smoke now proves a real source save/edit/clear cycle instead of only checking that the setup tab exists.
