@@ -61,28 +61,84 @@ impl DomainRateLimiter {
     }
 }
 
+struct RetryState {
+    attempts: u32,
+    last_attempt: Instant,
+    base_delay: Duration,
+}
+
 #[derive(Clone)]
 pub struct SharedRateLimiter {
     inner: Arc<RwLock<DomainRateLimiter>>,
+    retry_state: Arc<RwLock<HashMap<String, RetryState>>>,
 }
 
 impl SharedRateLimiter {
     pub fn new(min_interval: Duration) -> Self {
         Self {
             inner: Arc::new(RwLock::new(DomainRateLimiter::new(min_interval))),
+            retry_state: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub fn can_fetch(&self, url: &str) -> bool {
+        let domain = self.extract_domain(url);
+        if let Some(ref d) = domain {
+            let backoff = self.wait_time_for_retry(d);
+            if backoff > Duration::ZERO {
+                return false;
+            }
+        }
         self.inner.read().unwrap().can_fetch(url)
     }
 
     pub fn record_fetch(&self, url: &str) {
-        self.inner.write().unwrap().record_fetch(url)
+        self.inner.write().unwrap().record_fetch(url);
+        if let Some(domain) = self.extract_domain(url) {
+            self.reset_retry_state(&domain);
+        }
     }
 
     pub fn wait_time(&self, url: &str) -> Duration {
         self.inner.read().unwrap().wait_time(url)
+    }
+
+    pub fn record_rate_limit(&self, domain: &str) {
+        let mut state = self.retry_state.write().unwrap();
+        if let Some(retry) = state.get_mut(domain) {
+            retry.attempts += 1;
+            retry.last_attempt = Instant::now();
+        } else {
+            state.insert(
+                domain.to_string(),
+                RetryState {
+                    attempts: 1,
+                    last_attempt: Instant::now(),
+                    base_delay: Duration::from_secs(1),
+                },
+            );
+        }
+    }
+
+    pub fn wait_time_for_retry(&self, domain: &str) -> Duration {
+        let state = self.retry_state.read().unwrap();
+        if let Some(retry) = state.get(domain) {
+            let delay = retry.base_delay * 2u32.pow(retry.attempts.min(4));
+            delay.min(Duration::from_secs(300))
+        } else {
+            Duration::ZERO
+        }
+    }
+
+    pub fn reset_retry_state(&self, domain: &str) {
+        let mut state = self.retry_state.write().unwrap();
+        state.remove(domain);
+    }
+
+    fn extract_domain(&self, url: &str) -> Option<String> {
+        Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()))
     }
 }
 
