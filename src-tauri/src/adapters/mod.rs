@@ -15,7 +15,7 @@ pub use errors::AdapterError;
 pub use feed::FeedAdapter;
 
 use crate::error::AppResult;
-use crate::models::{AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
+use crate::models::{AccessTier, AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
 use crate::services::SharedRateLimiter;
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +48,8 @@ pub struct CandidateSource {
     pub provider_repo: Option<String>,
     pub confidence_score: f64,
     pub reasoning: Vec<String>,
+    pub access_tier: AccessTier,
+    pub patron_free_version: Option<String>,
 }
 
 #[derive(Debug)]
@@ -66,6 +68,8 @@ pub struct RemoteSnapshot {
     pub evidence: SnapshotEvidence,
     pub confidence: f64,
     pub raw: serde_json::Value,
+    pub access_tier: AccessTier,
+    pub patron_free_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -75,6 +79,49 @@ pub struct SnapshotEvidence {
     pub title_changed: bool,
     pub asset_list_changed: bool,
     pub feed_guid_changed: bool,
+}
+
+pub fn detect_access_tier(url: &str) -> AccessTier {
+    let url_lower = url.to_lowercase();
+
+    if url_lower.contains("patreon.com") {
+        if url_lower.contains("posts/") || url_lower.contains("community/") {
+            AccessTier::EarlyAccess
+        } else {
+            AccessTier::PatronOnly
+        }
+    } else if url_lower.contains("ko-fi.com") || url_lower.contains("kofi.com") {
+        AccessTier::PatronOnly
+    } else if url_lower.contains("buymeacoffee.com") {
+        AccessTier::PatronOnly
+    } else if url_lower.contains("gumroad.com") {
+        AccessTier::PatronOnly
+    } else {
+        AccessTier::Public
+    }
+}
+
+impl Default for RemoteSnapshot {
+    fn default() -> Self {
+        Self {
+            binding_id: String::new(),
+            title: None,
+            version_text: None,
+            published_at: None,
+            download_url: None,
+            changelog_url: None,
+            release_id: None,
+            release_asset_names: Vec::new(),
+            image_hashes: Vec::new(),
+            etag: None,
+            last_modified: None,
+            evidence: SnapshotEvidence::default(),
+            confidence: 0.0,
+            raw: serde_json::Value::Null,
+            access_tier: AccessTier::Public,
+            patron_free_version: None,
+        }
+    }
 }
 
 #[derive(Debug)]

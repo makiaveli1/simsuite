@@ -1,5 +1,6 @@
 use crate::adapters::{
-    AdapterError, CandidateSource, DiscoverInput, RemoteSnapshot, SnapshotEvidence, SourceAdapter,
+    detect_access_tier, AdapterError, CandidateSource, DiscoverInput, RemoteSnapshot,
+    SnapshotEvidence, SourceAdapter,
 };
 use crate::error::AppResult;
 use crate::models::SourceKind;
@@ -134,6 +135,8 @@ impl SourceAdapter for GenericPageAdapter {
             evidence: SnapshotEvidence::default(),
             confidence: 0.50,
             raw: serde_json::json!({"source": "generic_page"}),
+            access_tier: detect_access_tier(&binding.source_url),
+            patron_free_version: None,
         })
     }
 }

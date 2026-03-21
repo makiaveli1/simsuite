@@ -4,8 +4,8 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::adapters::{
-    AdapterError, CandidateSource, DiscoverInput, FileInfo, RemoteSnapshot, SnapshotEvidence,
-    SourceAdapter,
+    detect_access_tier, AdapterError, CandidateSource, DiscoverInput, FileInfo, RemoteSnapshot,
+    SnapshotEvidence, SourceAdapter,
 };
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
@@ -245,12 +245,14 @@ impl SourceAdapter for CurseForgeAdapter {
 
                 CandidateSource {
                     source_kind: SourceKind::CurseForge,
-                    source_url: website_url,
+                    source_url: website_url.clone(),
                     provider_mod_id: Some(m.id.to_string()),
                     provider_file_id: None,
                     provider_repo: None,
                     confidence_score: confidence,
                     reasoning,
+                    access_tier: detect_access_tier(&website_url),
+                    patron_free_version: None,
                 }
             })
             .collect();
@@ -300,6 +302,8 @@ impl SourceAdapter for CurseForgeAdapter {
                 "slug": mod_info.slug,
                 "website_url": website_url,
             }),
+            access_tier: detect_access_tier(&binding.source_url),
+            patron_free_version: None,
         })
     }
 }

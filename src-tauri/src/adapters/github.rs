@@ -4,8 +4,8 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 
 use crate::adapters::{
-    AdapterError, CandidateSource, DiscoverInput, FileInfo, RemoteSnapshot, SnapshotEvidence,
-    SourceAdapter,
+    detect_access_tier, AdapterError, CandidateSource, DiscoverInput, FileInfo, RemoteSnapshot,
+    SnapshotEvidence, SourceAdapter,
 };
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
@@ -221,12 +221,14 @@ impl SourceAdapter for GitHubAdapter {
 
                 CandidateSource {
                     source_kind: SourceKind::GitHub,
-                    source_url: repo.html_url,
+                    source_url: repo.html_url.clone(),
                     provider_mod_id: Some(repo.id.to_string()),
                     provider_file_id: None,
                     provider_repo: Some(repo.full_name),
                     confidence_score: confidence,
                     reasoning,
+                    access_tier: detect_access_tier(&repo.html_url),
+                    patron_free_version: None,
                 }
             })
             .collect();
@@ -273,6 +275,8 @@ impl SourceAdapter for GitHubAdapter {
                 "repo": repo,
                 "release_id": release.id,
             }),
+            access_tier: detect_access_tier(&binding.source_url),
+            patron_free_version: None,
         })
     }
 }

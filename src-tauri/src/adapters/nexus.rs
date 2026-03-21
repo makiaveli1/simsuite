@@ -8,7 +8,7 @@ use crate::adapters::{
     SourceAdapter,
 };
 use crate::error::AppResult;
-use crate::models::{SourceBinding, SourceKind};
+use crate::models::{AccessTier, SourceBinding, SourceKind};
 use crate::services::SharedRateLimiter;
 
 const BASE_URL: &str = "https://api.nexusmods.com";
@@ -203,6 +203,8 @@ impl SourceAdapter for NexusAdapter {
                     provider_repo: None,
                     confidence_score: confidence,
                     reasoning,
+                    access_tier: AccessTier::Public,
+                    patron_free_version: None,
                 }
             })
             .collect();
@@ -246,6 +248,8 @@ impl SourceAdapter for NexusAdapter {
                 "mod_id": mod_id,
                 "name": mod_name,
             }),
+            access_tier: AccessTier::Public,
+            patron_free_version: None,
         })
     }
 }

@@ -1235,6 +1235,15 @@ pub enum SourceKind {
     GenericPage,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessTier {
+    #[default]
+    Public,
+    PatronOnly,
+    EarlyAccess,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackingMode {

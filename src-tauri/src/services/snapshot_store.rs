@@ -1,5 +1,6 @@
 use crate::adapters::{RemoteSnapshot, SnapshotEvidence};
 use crate::error::{AppError, AppResult};
+use crate::models::AccessTier;
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 
@@ -121,6 +122,8 @@ impl SnapshotStore {
                 evidence: SnapshotEvidence::default(),
                 confidence: 1.0,
                 raw,
+                access_tier: AccessTier::Public,
+                patron_free_version: None,
             })
         });
 

@@ -1,5 +1,6 @@
 use crate::adapters::{
-    AdapterError, CandidateSource, DiscoverInput, RemoteSnapshot, SnapshotEvidence, SourceAdapter,
+    detect_access_tier, AdapterError, CandidateSource, DiscoverInput, RemoteSnapshot,
+    SnapshotEvidence, SourceAdapter,
 };
 use crate::error::AppResult;
 use crate::models::SourceKind;
@@ -162,6 +163,8 @@ impl SourceAdapter for StructuredPageAdapter {
             evidence: SnapshotEvidence::default(),
             confidence: 0.70,
             raw: serde_json::json!({"source": "structured_page"}),
+            access_tier: detect_access_tier(&binding.source_url),
+            patron_free_version: None,
         })
     }
 }
@@ -177,6 +180,7 @@ mod tests {
     use crate::adapters::structured_page::StructuredPageAdapter;
     use crate::adapters::SourceAdapter;
     use crate::models::{SourceBinding, SourceKind};
+    use crate::services::SharedRateLimiter;
     use scraper::Html;
 
     const TSR_ITEM_PAGE_HTML: &str = r#"<!DOCTYPE html>
@@ -192,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_parse_tsr_item_page() {
-        let adapter = StructuredPageAdapter::new();
+        let adapter = StructuredPageAdapter::new(SharedRateLimiter::default());
         let html = Html::parse_document(TSR_ITEM_PAGE_HTML);
 
         let title = adapter.extract_text(&html, "h1.item-title");
@@ -210,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_extract_version_from_text() {
-        let adapter = StructuredPageAdapter::new();
+        let adapter = StructuredPageAdapter::new(SharedRateLimiter::default());
 
         assert_eq!(
             adapter.extract_version_from_text("v1.2.3").as_deref(),
@@ -238,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_extract_download_link() {
-        let adapter = StructuredPageAdapter::new();
+        let adapter = StructuredPageAdapter::new(SharedRateLimiter::default());
         let html = Html::parse_document(
             r#"<html><body>
             <a href="https://example.com/files/mod.zip">Download Mod</a>
@@ -252,14 +256,14 @@ mod tests {
 
     #[test]
     fn test_structured_adapter_kind() {
-        let adapter = StructuredPageAdapter::new();
+        let adapter = StructuredPageAdapter::new(SharedRateLimiter::default());
         assert_eq!(adapter.kind(), SourceKind::StructuredPage);
     }
 
     #[test]
     #[ignore] // Requires actual HTTP server
     fn test_refresh_snapshot_extracts_fields() {
-        let adapter = StructuredPageAdapter::new();
+        let adapter = StructuredPageAdapter::new(SharedRateLimiter::default());
 
         let binding = SourceBinding {
             id: "test-binding-struct".to_string(),

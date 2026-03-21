@@ -1,4 +1,6 @@
-use crate::adapters::{AdapterError, RemoteSnapshot, SnapshotEvidence, SourceAdapter};
+use crate::adapters::{
+    detect_access_tier, AdapterError, RemoteSnapshot, SnapshotEvidence, SourceAdapter,
+};
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
 use crate::services::SharedRateLimiter;
@@ -111,6 +113,8 @@ impl SourceAdapter for FeedAdapter {
             evidence: SnapshotEvidence::default(),
             confidence: 0.85,
             raw: serde_json::json!({}),
+            access_tier: detect_access_tier(&binding.source_url),
+            patron_free_version: None,
         })
     }
 }
@@ -249,7 +253,8 @@ pub struct AtomLink {
 mod tests {
     use crate::adapters::feed::FeedAdapter;
     use crate::adapters::SourceAdapter;
-    use crate::models::{SourceBinding, SourceKind};
+    use crate::models::{AccessTier, SourceBinding, SourceKind};
+    use crate::services::SharedRateLimiter;
 
     const RSS2_SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -300,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_parse_rss2_feed() {
-        let adapter = FeedAdapter::new();
+        let adapter = FeedAdapter::new(SharedRateLimiter::default());
         let result = adapter.parse_feed(RSS2_SAMPLE);
         assert!(result.is_ok(), "Should parse RSS2: {:?}", result.err());
 
@@ -319,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_parse_atom_feed() {
-        let adapter = FeedAdapter::new();
+        let adapter = FeedAdapter::new(SharedRateLimiter::default());
         let result = adapter.parse_feed(ATOM_SAMPLE);
         assert!(result.is_ok(), "Should parse Atom: {:?}", result.err());
 
@@ -338,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_detect_new_entry() {
-        let adapter = FeedAdapter::new();
+        let adapter = FeedAdapter::new(SharedRateLimiter::default());
         let result = adapter.parse_feed(RSS2_SAMPLE).expect("Should parse");
         let (_title, entries) = result;
 
@@ -348,14 +353,14 @@ mod tests {
 
     #[test]
     fn test_feed_adapter_kind() {
-        let adapter = FeedAdapter::new();
+        let adapter = FeedAdapter::new(SharedRateLimiter::default());
         assert_eq!(adapter.kind(), SourceKind::Feed);
     }
 
     #[test]
     #[ignore] // Requires actual HTTP server - tested manually with real feeds
     fn test_refresh_snapshot_extracts_latest() {
-        let adapter = FeedAdapter::new();
+        let adapter = FeedAdapter::new(SharedRateLimiter::default());
 
         let binding = SourceBinding {
             id: "test-binding-1".to_string(),
