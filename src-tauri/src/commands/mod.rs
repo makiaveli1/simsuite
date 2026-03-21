@@ -1,7 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::{params, Connection};
-use uuid::Uuid;
+use rusqlite::Connection;
 use std::{
     collections::HashSet,
     fs,
@@ -37,10 +36,9 @@ use crate::{
         LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
         SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SourceBinding, SourceKind, SpecialReviewPlan, WatchListFilter,
-        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
+        WorkspaceChange, WorkspaceDomain,
     },
-    services::{LocalInventory, LocalModScanResult, UpdateEvents, UpdateEventRow},
     sync_tray_visibility,
 };
 
@@ -141,14 +139,6 @@ fn emit_workspace_domains(
         app,
         &workspace_change(domains, reason, item_ids, family_keys),
     )
-}
-
-fn watch_workspace_domains() -> Vec<WorkspaceDomain> {
-    vec![
-        WorkspaceDomain::Home,
-        WorkspaceDomain::Library,
-        WorkspaceDomain::Updates,
-    ]
 }
 
 fn review_action_kind_matches(kind: &ReviewPlanActionKind, value: &str) -> bool {
@@ -461,20 +451,6 @@ pub fn save_app_behavior_settings(
         "user",
     )
     .map_err(map_error)?;
-    database::save_app_setting(
-        &mut connection,
-        "curseforge_api_key",
-        settings.curseforge_api_key.as_deref(),
-        "user",
-    )
-    .map_err(map_error)?;
-    database::save_app_setting(
-        &mut connection,
-        "github_api_token",
-        settings.github_api_token.as_deref(),
-        "user",
-    )
-    .map_err(map_error)?;
     state
         .set_keep_running_in_background(settings.keep_running_in_background)
         .map_err(map_error)?;
@@ -643,9 +619,7 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>) -> Result<ScanStat
         match result {
             Ok(summary) => {
                 let snapshot = {
-                    let mut status = status_handle.lock().map_err(|_| {
-                        tracing::error!("Scan status lock poisoned during success handler");
-                    }).expect("scan status lock poisoned");
+                    let mut status = status_handle.lock().expect("scan status lock");
                     status.state = ScanRuntimeState::Succeeded;
                     status.mode = Some(summary.scan_mode.clone());
                     status.phase = Some(ScanPhase::Done);
@@ -677,9 +651,7 @@ pub fn start_scan(app: AppHandle, state: State<'_, AppState>) -> Result<ScanStat
             }
             Err(error) => {
                 let snapshot = {
-                    let mut status = status_handle.lock().map_err(|_| {
-                        tracing::error!("Scan status lock poisoned during error handler");
-                    }).expect("scan status lock poisoned");
+                    let mut status = status_handle.lock().expect("scan status lock");
                     status.state = ScanRuntimeState::Failed;
                     status.phase = None;
                     status.finished_at = Some(Utc::now().to_rfc3339());
@@ -1821,7 +1793,7 @@ pub async fn list_library_watch_setup_items(
             &connection,
             &settings,
             &seed_pack,
-            limit.unwrap_or(6).clamp(1, 200) as usize,
+            limit.unwrap_or(6).clamp(1, 24) as usize,
         )
         .map_err(map_error)?;
         log_slow_command("list_library_watch_setup_items", started_at, || {
@@ -1998,7 +1970,7 @@ pub async fn save_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            watch_workspace_domains(),
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
             "watch-source-saved",
             vec![file_id],
             Vec::new(),
@@ -2087,7 +2059,7 @@ pub async fn save_watch_sources_for_files(
         if !changed_file_ids.is_empty() {
             emit_workspace_domains(
                 &app,
-                watch_workspace_domains(),
+                vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
                 "watch-sources-saved",
                 changed_file_ids.into_iter().collect(),
                 Vec::new(),
@@ -2138,7 +2110,7 @@ pub async fn clear_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            watch_workspace_domains(),
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
             "watch-source-cleared",
             vec![file_id],
             Vec::new(),
@@ -2180,7 +2152,7 @@ pub async fn refresh_watch_source_for_file(
 
         emit_workspace_domains(
             &app,
-            watch_workspace_domains(),
+            vec![WorkspaceDomain::Home, WorkspaceDomain::Library],
             "watch-source-refreshed",
             vec![file_id],
             Vec::new(),
@@ -2410,195 +2382,6 @@ pub async fn save_category_override(
     .await
 }
 
-#[tauri::command]
-pub fn scan_local_mods(state: State<AppState>) -> Result<LocalModScanResult, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let settings = database::get_library_settings(&connection).map_err(map_error)?;
-    let mods_path = settings.mods_path
-        .ok_or("No mods path configured")?;
-    LocalInventory::scan_and_update_local_mods(&connection, Path::new(&mods_path))
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub fn get_local_mods(
-    state: State<AppState>,
-    filter: Option<LibraryQuery>,
-) -> Result<Vec<crate::models::LocalMod>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    let _filter = filter.unwrap_or_default();
-    Ok(vec![])
-}
-
-#[tauri::command]
-pub fn get_update_events(state: State<AppState>) -> Result<Vec<UpdateEventRow>, String> {
-    let connection = state.connection().map_err(map_error)?;
-    UpdateEvents::get_unread_events(&connection, 100)
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub fn mark_event_read(state: State<AppState>, event_id: String) -> Result<(), String> {
-    let connection = state.connection().map_err(map_error)?;
-    UpdateEvents::mark_read(&connection, &event_id)
-        .map_err(map_error)
-}
-
-#[tauri::command]
-pub fn dismiss_event(state: State<AppState>, event_id: String) -> Result<(), String> {
-    let connection = state.connection().map_err(map_error)?;
-    UpdateEvents::dismiss_event(&connection, &event_id)
-        .map_err(map_error)
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CandidateSourceRow {
-    pub id: String,
-    pub local_mod_id: String,
-    pub source_kind: String,
-    pub source_url: String,
-    pub provider_mod_id: Option<String>,
-    pub provider_file_id: Option<String>,
-    pub provider_repo: Option<String>,
-    pub confidence_score: f64,
-    pub reasoning_json: String,
-    pub status: String,
-}
-
-#[tauri::command]
-pub fn confirm_candidate_source(
-    state: State<AppState>,
-    candidate_id: String,
-) -> Result<SourceBinding, String> {
-    let connection = state.connection().map_err(map_error)?;
-
-    let candidate: CandidateSourceRow = connection
-        .query_row(
-            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
-                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
-             FROM candidate_sources WHERE id = ?1",
-            params![candidate_id],
-            |row| {
-                Ok(CandidateSourceRow {
-                    id: row.get(0)?,
-                    local_mod_id: row.get(1)?,
-                    source_kind: row.get(2)?,
-                    source_url: row.get(3)?,
-                    provider_mod_id: row.get(4)?,
-                    provider_file_id: row.get(5)?,
-                    provider_repo: row.get(6)?,
-                    confidence_score: row.get(7)?,
-                    reasoning_json: row.get(8)?,
-                    status: row.get(9)?,
-                })
-            },
-        )
-        .map_err(|e| format!("Candidate not found: {}", e))?;
-
-    let binding_id = Uuid::new_v4().to_string();
-    let now = Utc::now().to_rfc3339();
-
-    connection
-        .execute(
-            "INSERT INTO source_bindings (
-                id, local_mod_id, source_kind, source_url, provider_mod_id,
-                provider_file_id, provider_repo, bind_method, is_primary, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10)",
-            params![
-                binding_id,
-                candidate.local_mod_id,
-                candidate.source_kind,
-                candidate.source_url,
-                candidate.provider_mod_id,
-                candidate.provider_file_id,
-                candidate.provider_repo,
-                "confirmed_by_user",
-                now,
-                now,
-            ],
-        )
-        .map_err(|e| format!("Failed to create binding: {}", e))?;
-
-    connection
-        .execute(
-            "UPDATE candidate_sources SET status = 'confirmed', updated_at = ?1 WHERE id = ?2",
-            params![now, candidate_id],
-        )
-        .map_err(|e| format!("Failed to update candidate: {}", e))?;
-
-    Ok(SourceBinding {
-        id: binding_id,
-        local_mod_id: candidate.local_mod_id,
-        source_kind: serde_json::from_str(&candidate.source_kind)
-            .unwrap_or(SourceKind::GenericPage),
-        source_url: candidate.source_url,
-        provider_mod_id: candidate.provider_mod_id,
-        provider_file_id: candidate.provider_file_id,
-        provider_repo: candidate.provider_repo,
-        bind_method: "confirmed_by_user".to_string(),
-        is_primary: true,
-        created_at: now.clone(),
-        updated_at: now,
-    })
-}
-
-#[tauri::command]
-pub fn reject_candidate_source(
-    state: State<AppState>,
-    candidate_id: String,
-) -> Result<(), String> {
-    let connection = state.connection().map_err(map_error)?;
-    let now = Utc::now().to_rfc3339();
-
-    connection
-        .execute(
-            "UPDATE candidate_sources SET status = 'rejected', updated_at = ?1 WHERE id = ?2",
-            params![now, candidate_id],
-        )
-        .map_err(|e| format!("Failed to reject candidate: {}", e))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_candidates_for_mod(
-    state: State<AppState>,
-    mod_id: String,
-) -> Result<Vec<CandidateSourceRow>, String> {
-    let connection = state.connection().map_err(map_error)?;
-
-    let mut stmt = connection
-        .prepare(
-            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
-                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
-             FROM candidate_sources WHERE local_mod_id = ?1 AND status = 'suggested'
-             ORDER BY confidence_score DESC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let candidates = stmt
-        .query_map(params![mod_id], |row| {
-            Ok(CandidateSourceRow {
-                id: row.get(0)?,
-                local_mod_id: row.get(1)?,
-                source_kind: row.get(2)?,
-                source_url: row.get(3)?,
-                provider_mod_id: row.get(4)?,
-                provider_file_id: row.get(5)?,
-                provider_repo: row.get(6)?,
-                confidence_score: row.get(7)?,
-                reasoning_json: row.get(8)?,
-                status: row.get(9)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(candidates)
-}
-
 pub fn emit_scan_progress(
     app: &AppHandle,
     progress: &crate::models::ScanProgress,
@@ -2646,11 +2429,10 @@ mod tests {
     use super::{
         approved_review_action_url, approved_watch_source_url, is_locked_read_error,
         retry_locked_read, review_action_url_matches, validate_review_download_redirect,
-        watch_workspace_domains,
     };
     use crate::{
         error::AppError,
-        models::{ReviewPlanAction, ReviewPlanActionKind, WorkspaceDomain},
+        models::{ReviewPlanAction, ReviewPlanActionKind},
     };
     use reqwest::Url;
 
@@ -2762,17 +2544,5 @@ mod tests {
             .expect_err("credentials blocked");
 
         assert!(error.contains("sign-in details"));
-    }
-
-    #[test]
-    fn watch_workspace_domains_include_updates_workspace() {
-        assert_eq!(
-            watch_workspace_domains(),
-            vec![
-                WorkspaceDomain::Home,
-                WorkspaceDomain::Library,
-                WorkspaceDomain::Updates,
-            ]
-        );
     }
 }
