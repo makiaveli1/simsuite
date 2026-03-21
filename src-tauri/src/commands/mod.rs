@@ -37,10 +37,13 @@ use crate::{
         LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
         SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, UserTrackingPrefs, WatchListFilter, WatchRefreshSummary,
-        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, SourceKind, UserTrackingPrefs, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
-    services::{LocalInventory, LocalModScanResult, UpdateEventRow, UpdateEvents},
+    services::{
+        source_learning::SourceLearning, LocalInventory, LocalModScanResult, UpdateEventRow,
+        UpdateEvents,
+    },
     sync_tray_visibility,
 };
 
@@ -2614,6 +2617,14 @@ pub fn confirm_candidate_source(
         )
         .map_err(|e| format!("Failed to update candidate: {}", e))?;
 
+    if let Some(domain) = SourceLearning::extract_domain(&candidate.source_url) {
+        let source_kind = parse_source_kind(&candidate.source_kind)
+            .unwrap_or(SourceKind::GenericPage);
+        if let Err(e) = SourceLearning::record_confirmation(&connection, &domain, source_kind) {
+            tracing::warn!("Failed to record source confirmation for learning: {}", e);
+        }
+    }
+
     Ok(crate::models::SourceBinding {
         id: binding_id,
         local_mod_id: candidate.local_mod_id,
@@ -2636,6 +2647,30 @@ pub fn reject_candidate_source(
     candidate_id: String,
 ) -> Result<(), String> {
     let connection = state.connection().map_err(map_error)?;
+
+    let candidate: CandidateSourceRow = connection
+        .query_row(
+            "SELECT id, local_mod_id, source_kind, source_url, provider_mod_id,
+                    provider_file_id, provider_repo, confidence_score, reasoning_json, status
+             FROM candidate_sources WHERE id = ?1",
+            params![candidate_id],
+            |row| {
+                Ok(CandidateSourceRow {
+                    id: row.get(0)?,
+                    local_mod_id: row.get(1)?,
+                    source_kind: row.get(2)?,
+                    source_url: row.get(3)?,
+                    provider_mod_id: row.get(4)?,
+                    provider_file_id: row.get(5)?,
+                    provider_repo: row.get(6)?,
+                    confidence_score: row.get(7)?,
+                    reasoning_json: row.get(8)?,
+                    status: row.get(9)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Candidate not found: {}", e))?;
+
     let now = Utc::now().to_rfc3339();
 
     connection
@@ -2644,6 +2679,12 @@ pub fn reject_candidate_source(
             params![now, candidate_id],
         )
         .map_err(|e| format!("Failed to reject candidate: {}", e))?;
+
+    if let Some(domain) = SourceLearning::extract_domain(&candidate.source_url) {
+        if let Err(e) = SourceLearning::record_rejection(&connection, &domain) {
+            tracing::warn!("Failed to record source rejection for learning: {}", e);
+        }
+    }
 
     Ok(())
 }
