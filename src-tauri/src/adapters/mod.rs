@@ -20,6 +20,29 @@ use crate::models::{AccessTier, AppBehaviorSettings, SourceBinding, SourceKind, 
 use crate::services::SharedRateLimiter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use url::Url;
+
+const BLOCKED_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "host",
+    "content-type",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "date",
+    "upgrade",
+    "sec-",
+    "proxy-",
+];
+
+fn is_header_allowed(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    !BLOCKED_HEADERS
+        .iter()
+        .any(|blocked| lower.starts_with(blocked) || lower == *blocked)
+}
 
 pub fn apply_custom_headers(
     request: reqwest::blocking::RequestBuilder,
@@ -29,7 +52,11 @@ pub fn apply_custom_headers(
         if let Ok(headers) = serde_json::from_str::<HashMap<String, String>>(headers_json) {
             let mut req = request;
             for (key, value) in headers {
-                req = req.header(&key, &value);
+                if is_header_allowed(&key) {
+                    req = req.header(&key, &value);
+                } else {
+                    tracing::warn!("Blocked sensitive header: {}", key);
+                }
             }
             return req;
         }
@@ -100,24 +127,42 @@ pub struct SnapshotEvidence {
     pub feed_guid_changed: bool,
 }
 
-pub fn detect_access_tier(url: &str) -> AccessTier {
-    let url_lower = url.to_lowercase();
+const PATRON_DOMAINS: &[(&str, &[&str])] = &[
+    ("patreon.com", &["posts", "community"]),
+    ("ko-fi.com", &[]),
+    ("kofi.com", &[]),
+    ("buymeacoffee.com", &[]),
+    ("gumroad.com", &[]),
+    ("boosty.to", &[]),
+    ("liberapay.com", &[]),
+];
 
-    if url_lower.contains("patreon.com") {
-        if url_lower.contains("posts/") || url_lower.contains("community/") {
-            AccessTier::EarlyAccess
-        } else {
-            AccessTier::PatronOnly
+pub fn detect_access_tier(url: &str) -> AccessTier {
+    let parsed = match Url::parse(url) {
+        Ok(p) => p,
+        Err(_) => return AccessTier::Public,
+    };
+
+    let host = match parsed.host_str() {
+        Some(h) => h.to_lowercase(),
+        None => return AccessTier::Public,
+    };
+
+    let path = parsed.path();
+
+    for (domain, early_access_paths) in PATRON_DOMAINS {
+        if host == *domain || host.ends_with(&format!(".{}", domain)) {
+            if early_access_paths.is_empty() {
+                return AccessTier::PatronOnly;
+            }
+            if early_access_paths.iter().any(|p| path.contains(p)) {
+                return AccessTier::EarlyAccess;
+            }
+            return AccessTier::PatronOnly;
         }
-    } else if url_lower.contains("ko-fi.com") || url_lower.contains("kofi.com") {
-        AccessTier::PatronOnly
-    } else if url_lower.contains("buymeacoffee.com") {
-        AccessTier::PatronOnly
-    } else if url_lower.contains("gumroad.com") {
-        AccessTier::PatronOnly
-    } else {
-        AccessTier::Public
     }
+
+    AccessTier::Public
 }
 
 impl Default for RemoteSnapshot {

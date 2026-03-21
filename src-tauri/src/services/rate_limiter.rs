@@ -89,50 +89,79 @@ impl SharedRateLimiter {
                 return false;
             }
         }
-        self.inner.read().unwrap().can_fetch(url)
+        self.inner
+            .read()
+            .map(|guard| guard.can_fetch(url))
+            .unwrap_or_else(|_| {
+                tracing::error!("Rate limiter lock poisoned, allowing request");
+                true
+            })
     }
 
     pub fn record_fetch(&self, url: &str) {
-        self.inner.write().unwrap().record_fetch(url);
+        if let Ok(mut guard) = self.inner.write() {
+            guard.record_fetch(url);
+        } else {
+            tracing::error!("Rate limiter lock poisoned on record_fetch");
+        }
         if let Some(domain) = self.extract_domain(url) {
             self.reset_retry_state(&domain);
         }
     }
 
     pub fn wait_time(&self, url: &str) -> Duration {
-        self.inner.read().unwrap().wait_time(url)
+        self.inner
+            .read()
+            .map(|guard| guard.wait_time(url))
+            .unwrap_or_else(|_| {
+                tracing::error!("Rate limiter lock poisoned on wait_time");
+                Duration::ZERO
+            })
     }
 
     pub fn record_rate_limit(&self, domain: &str) {
-        let mut state = self.retry_state.write().unwrap();
-        if let Some(retry) = state.get_mut(domain) {
-            retry.attempts += 1;
-            retry.last_attempt = Instant::now();
+        if let Ok(mut state) = self.retry_state.write() {
+            if let Some(retry) = state.get_mut(domain) {
+                retry.attempts += 1;
+                retry.last_attempt = Instant::now();
+            } else {
+                state.insert(
+                    domain.to_string(),
+                    RetryState {
+                        attempts: 1,
+                        last_attempt: Instant::now(),
+                        base_delay: Duration::from_secs(1),
+                    },
+                );
+            }
         } else {
-            state.insert(
-                domain.to_string(),
-                RetryState {
-                    attempts: 1,
-                    last_attempt: Instant::now(),
-                    base_delay: Duration::from_secs(1),
-                },
-            );
+            tracing::error!("Rate limiter lock poisoned on record_rate_limit");
         }
     }
 
     pub fn wait_time_for_retry(&self, domain: &str) -> Duration {
-        let state = self.retry_state.read().unwrap();
-        if let Some(retry) = state.get(domain) {
-            let delay = retry.base_delay * 2u32.pow(retry.attempts.min(4));
-            delay.min(Duration::from_secs(300))
-        } else {
-            Duration::ZERO
-        }
+        self.retry_state
+            .read()
+            .map(|state| {
+                if let Some(retry) = state.get(domain) {
+                    let delay = retry.base_delay * 2u32.pow(retry.attempts.min(4));
+                    delay.min(Duration::from_secs(300))
+                } else {
+                    Duration::ZERO
+                }
+            })
+            .unwrap_or_else(|_| {
+                tracing::error!("Rate limiter lock poisoned on wait_time_for_retry");
+                Duration::ZERO
+            })
     }
 
     pub fn reset_retry_state(&self, domain: &str) {
-        let mut state = self.retry_state.write().unwrap();
-        state.remove(domain);
+        if let Ok(mut state) = self.retry_state.write() {
+            state.remove(domain);
+        } else {
+            tracing::error!("Rate limiter lock poisoned on reset_retry_state");
+        }
     }
 
     fn extract_domain(&self, url: &str) -> Option<String> {

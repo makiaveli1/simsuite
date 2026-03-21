@@ -6,6 +6,7 @@ use crate::models::{AccessTier, SourceBinding, SourceKind};
 use crate::services::SharedRateLimiter;
 use reqwest::blocking::Client;
 use std::time::Duration;
+use url::Url;
 
 const EA_BROKEN_MODS_INDEX: &str = 
     "https://forums.thesims.com/en_US/discussions/the-sims-4-mods-and-custom-content-en/broken-and-updated-sims-4-mods-and-cc";
@@ -15,9 +16,36 @@ const FALLBACK_URLS: &[(&str, &str)] = &[
     ("1.121", "https://forums.thesims.com/en_US/discussions/the-sims-4-mods-and-custom-content-en/broken-and-updated-sims-4-mods-and-cc-patch-1-121"),
 ];
 
+const ALLOWED_DOMAINS: &[&str] = &["forums.thesims.com", "ea.com"];
+
+const MAX_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
+
+const VERSION_REGEX: &str = r"^\d+\.\d+$";
+const THREAD_LINK_REGEX: &str =
+    r#"href="([^"]*broken-and-updated-sims-4-mods-and-cc-patch-(\d+)-(\d+)-(\d+)[^"]*)""#;
+const BOLD_PATTERN: &str = r"<strong>([^<]{3,100})</strong>";
+const TD_PATTERN: &str = r"<td[^>]*>([^<]{3,100})</td>";
+
 pub struct EABrokenModsAdapter {
     client: Client,
     rate_limiter: SharedRateLimiter,
+}
+
+fn is_allowed_url(url: &str) -> bool {
+    if let Ok(parsed) = Url::parse(url) {
+        if let Some(host) = parsed.host_str() {
+            return ALLOWED_DOMAINS
+                .iter()
+                .any(|d| host.ends_with(d) || host == *d);
+        }
+    }
+    false
+}
+
+fn is_version_string(s: &str) -> bool {
+    regex::Regex::new(VERSION_REGEX)
+        .map(|r| r.is_match(s))
+        .unwrap_or(false)
 }
 
 impl EABrokenModsAdapter {
@@ -45,20 +73,38 @@ impl EABrokenModsAdapter {
         self.rate_limiter.record_fetch(url);
     }
 
+    fn fetch_with_size_limit(&self, url: &str) -> AppResult<String> {
+        let response = self
+            .client
+            .get(url)
+            .header("Accept", "text/html")
+            .send()
+            .map_err(AdapterError::Network)?
+            .error_for_status()
+            .map_err(AdapterError::Network)?;
+
+        let bytes = response.bytes().map_err(AdapterError::Network)?;
+        if bytes.len() > MAX_RESPONSE_SIZE {
+            tracing::warn!(
+                "Response from {} exceeded size limit ({} bytes)",
+                url,
+                bytes.len()
+            );
+            return Err(
+                AdapterError::Parse(format!("Response too large: {} bytes", bytes.len())).into(),
+            );
+        }
+
+        String::from_utf8(bytes.to_vec())
+            .map_err(|e| AdapterError::Parse(format!("Invalid UTF-8: {}", e)).into())
+    }
+
     pub fn fetch_index_page(&self) -> AppResult<String> {
         self.check_rate_limit(EA_BROKEN_MODS_INDEX)?;
 
-        let response = self
-            .client
-            .get(EA_BROKEN_MODS_INDEX)
-            .header("Accept", "text/html")
-            .send()?
-            .error_for_status()
-            .map_err(|e| AdapterError::Network(e))?;
-
+        let body = self.fetch_with_size_limit(EA_BROKEN_MODS_INDEX)?;
         self.record_request(EA_BROKEN_MODS_INDEX);
 
-        let body = response.text()?;
         if body.len() < 1000 {
             return self.fetch_with_fallback();
         }
@@ -70,18 +116,17 @@ impl EABrokenModsAdapter {
         for (_, url) in FALLBACK_URLS {
             self.check_rate_limit(url)?;
 
-            match self.client.get(*url).send() {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        self.record_request(url);
-                        if let Ok(body) = response.text() {
-                            if body.len() > 1000 {
-                                return Ok(body);
-                            }
-                        }
-                    }
+            match self.fetch_with_size_limit(url) {
+                Ok(body) if body.len() > 1000 => {
+                    self.record_request(url);
+                    return Ok(body);
                 }
-                Err(_) => continue,
+                Ok(_) => {
+                    tracing::debug!("Fallback URL {} returned too small body, trying next", url);
+                }
+                Err(e) => {
+                    tracing::warn!("Fallback URL {} failed: {}", url, e);
+                }
             }
         }
 
@@ -89,10 +134,13 @@ impl EABrokenModsAdapter {
     }
 
     pub fn parse_thread_links(&self, html: &str) -> Vec<(String, String)> {
-        let pattern = regex::Regex::new(
-            r#"href="([^"]*broken-and-updated-sims-4-mods-and-cc-patch-(\d+)-(\d+)-(\d+)[^"]*)"#,
-        )
-        .unwrap();
+        let pattern = match regex::Regex::new(THREAD_LINK_REGEX) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("Invalid regex pattern: {}", e);
+                return Vec::new();
+            }
+        };
 
         let mut threads = Vec::new();
         for cap in pattern.captures_iter(html) {
@@ -111,9 +159,18 @@ impl EABrokenModsAdapter {
     }
 
     pub fn parse_mod_names_from_thread(&self, html: &str) -> Vec<String> {
+        let bold_pattern = match regex::Regex::new(BOLD_PATTERN) {
+            Ok(p) => p,
+            Err(_) => return Vec::new(),
+        };
+
+        let td_pattern = match regex::Regex::new(TD_PATTERN) {
+            Ok(p) => p,
+            Err(_) => return Vec::new(),
+        };
+
         let mut mod_names = Vec::new();
 
-        let bold_pattern = regex::Regex::new(r"<strong>([^<]{3,100})</strong>").unwrap();
         for cap in bold_pattern.captures_iter(html) {
             let name = cap.get(1).unwrap().as_str().trim().to_string();
             if self.is_likely_mod_name(&name) {
@@ -121,7 +178,6 @@ impl EABrokenModsAdapter {
             }
         }
 
-        let td_pattern = regex::Regex::new(r"<td[^>]*>([^<]{3,100})</td>").unwrap();
         for cap in td_pattern.captures_iter(html) {
             let name = cap.get(1).unwrap().as_str().trim().to_string();
             if self.is_likely_mod_name(&name) {
@@ -144,7 +200,7 @@ impl EABrokenModsAdapter {
         if lower.contains("read more") {
             return false;
         }
-        if regex::Regex::new(r"^\d+\.\d+$").unwrap().is_match(name) {
+        if is_version_string(name) {
             return false;
         }
 
@@ -168,12 +224,17 @@ impl SourceAdapter for EABrokenModsAdapter {
 
         let threads = self.parse_thread_links(&html);
         for (_, url) in &threads {
-            if url != EA_BROKEN_MODS_INDEX {
-                if let Ok(thread_html) = self.client.get(url).send() {
-                    if let Ok(body) = thread_html.text() {
+            if url != EA_BROKEN_MODS_INDEX && is_allowed_url(url) {
+                match self.fetch_with_size_limit(url) {
+                    Ok(body) => {
                         all_mods.extend(self.parse_mod_names_from_thread(&body));
                     }
+                    Err(e) => {
+                        tracing::warn!("Failed to fetch thread URL {}: {}", url, e);
+                    }
                 }
+            } else if !is_allowed_url(url) {
+                tracing::warn!("SSRF attempt blocked: URL {} not in allowed domains", url);
             }
         }
 
@@ -183,6 +244,7 @@ impl SourceAdapter for EABrokenModsAdapter {
         all_mods.dedup();
 
         let mod_count = all_mods.len();
+        let release_asset_names = all_mods;
 
         Ok(RemoteSnapshot {
             binding_id: _binding.id.clone(),
@@ -192,7 +254,7 @@ impl SourceAdapter for EABrokenModsAdapter {
             download_url: None,
             changelog_url: Some(EA_BROKEN_MODS_INDEX.to_string()),
             release_id: None,
-            release_asset_names: all_mods,
+            release_asset_names,
             image_hashes: Vec::new(),
             etag: None,
             last_modified: None,
