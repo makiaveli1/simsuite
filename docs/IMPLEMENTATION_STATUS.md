@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (March 21, 2026 - Updates smoke now proves real watch setup and clear)
+
+This pass did not change the product flow itself. It fixed the watch verification gap around `Updates`, so the desktop smoke now proves a real source save/edit/clear cycle instead of only checking that the setup tab exists.
+
+Important changes and findings:
+
+- fixed files:
+  - `scripts/desktop/desktop-smoke.mjs`
+  - `scripts/desktop/run-tauri-webdriver.ps1`
+- the old generic watch smoke fixture was too weak for the stricter setup rules
+- the fixture now uses a deterministic generic script-mod file:
+  - `LittleMsSam_SendSimsToBed.ts4script`
+- the smoke now proves this live `Updates` path:
+  - setup candidate appears
+  - source is saved
+  - item moves to `Needs review`
+  - source editor opens
+  - source is cleared
+  - item returns to `Need source`
+- `ensureLibraryIndexed` now confirms indexed rows from the backend instead of only trusting the Library table repaint timing
+- a DOM-level button click fallback was added for the scrolled `Clear source` button inside the inline editor
+- checks passed:
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- the smoke now proves one real reminder-only path inside `Updates`
+- the next useful watch smoke expansion is either:
+  - an exact-page save path
+  - or a tracked-item `Check selected` refresh path
+
 ## Current session note (March 21, 2026 - plain Updates navigation resets stale focus)
 
 This watch-system stabilization pass fixed a user-facing navigation bug in the current desktop-first shell: once `Home` or `Library` jumped into a focused `Updates` lane, later plain sidebar visits to `Updates` could keep replaying that old focus instead of opening a normal default view.

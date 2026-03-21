@@ -100,7 +100,7 @@ function Initialize-SmokeFixtures {
     $toolboxOlderItem = "Toolbox_Older_Test_$token"
     $smartCoreSameItem = "Smart_Core_Same_Test_$token"
     $smartCoreOlderItem = "Smart_Core_Older_Test_$token"
-    $genericWatchFile = "Generic_Watch_Mod_v1.0.package"
+    $genericWatchFile = "LittleMsSam_SendSimsToBed.ts4script"
 
     foreach ($path in @(
         $appData,
@@ -178,7 +178,7 @@ function Initialize-SmokeFixtures {
 
     New-SmokeTs4script -Path (Join-Path $smartCoreOlderRoot 'SmartCoreScript.ts4script') -Version '2.8.0' -Marker 'Smart Core Script version'
     New-SmokeZip -SourceRoot $smartCoreOlderRoot -ZipPath (Join-Path $downloads "$smartCoreOlderItem.zip")
-    Write-SmokePackage -Path (Join-Path $installedGenericWatch $genericWatchFile) -Content 'generic watch fixture v1.0'
+    New-SmokeTs4script -Path (Join-Path $installedGenericWatch $genericWatchFile) -Version '1.0' -Marker 'LittleMsSam SendSimsToBed'
 
     return @{
         Root = $root

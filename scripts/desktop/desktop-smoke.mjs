@@ -15,7 +15,7 @@ const DEFAULT_TOOLBOX_SAME_ITEM = "Toolbox_Same_Test";
 const DEFAULT_TOOLBOX_OLDER_ITEM = "Toolbox_Older_Test";
 const DEFAULT_SMART_CORE_SAME_ITEM = "Smart_Core_Same_Test";
 const DEFAULT_SMART_CORE_OLDER_ITEM = "Smart_Core_Older_Test";
-const DEFAULT_GENERIC_WATCH_FILE = "Generic_Watch_Mod_v1.0.package";
+const DEFAULT_GENERIC_WATCH_FILE = "LittleMsSam_SendSimsToBed.ts4script";
 const DEFAULT_APP_PATHS = [
   path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
   path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
@@ -107,6 +107,36 @@ async function clickButton(driver, partialText, timeoutMs = 30000) {
     }
     throw error;
   }
+}
+
+async function clickButtonViaDom(driver, partialText, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const clicked = await driver.executeScript(
+      `
+        const targetText = arguments[0].toLowerCase();
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const button = buttons.find((element) =>
+          (element.innerText || element.textContent || '').toLowerCase().includes(targetText),
+        );
+        if (!button) {
+          return false;
+        }
+        button.scrollIntoView({ block: 'center', inline: 'nearest' });
+        button.click();
+        return true;
+      `,
+      partialText,
+    );
+
+    if (clicked) {
+      return;
+    }
+
+    await driver.sleep(250);
+  }
+
+  throw new Error(`Could not click a button containing "${partialText}" through the DOM.`);
 }
 
 async function dispatchMouseClick(driver, element) {
@@ -218,6 +248,45 @@ async function clickLibraryRow(driver, filename, timeoutMs = 30000) {
   }
 
   throw new Error(`Could not find a visible Library row for "${filename}".`);
+}
+
+async function clickUpdatesRow(driver, filename, timeoutMs = 30000) {
+  const exactLocator = By.xpath(
+    `//table[contains(@class, 'updates-table')]//tr[@role='button'][.//div[contains(@class, 'file-title') and normalize-space(.) = ${xpathString(
+      filename,
+    )}]]`,
+  );
+  const partialLocator = By.xpath(
+    `//table[contains(@class, 'updates-table')]//tr[@role='button'][.//div[contains(@class, 'file-title') and contains(normalize-space(.), ${xpathString(
+      filename,
+    )})]]`,
+  );
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    for (const locator of [exactLocator, partialLocator]) {
+      const rows = await driver.findElements(locator);
+      for (const row of rows) {
+        if (await row.isDisplayed()) {
+          await dispatchMouseClick(driver, row);
+          try {
+            await row.click();
+          } catch (error) {
+            if (String(error).toLowerCase().includes("click intercepted")) {
+              await dispatchMouseClick(driver, row);
+            } else {
+              throw error;
+            }
+          }
+          return;
+        }
+      }
+    }
+
+    await driver.sleep(250);
+  }
+
+  throw new Error(`Could not find a visible Updates row for "${filename}".`);
 }
 
 async function clickLibraryWatchEntryAction(driver, filename, labels, timeoutMs = 30000) {
@@ -599,14 +668,35 @@ async function invokeTauriCommand(driver, command, payload = {}) {
   );
 }
 
+async function listLibraryRows(driver, limit = 200) {
+  const response = await invokeTauriCommand(driver, "list_library_files", {
+    query: { limit, offset: 0 },
+  });
+  if (!response.ok || !response.response) {
+    throw new Error(`Could not read indexed Library rows: ${response.error ?? "unknown error"}`);
+  }
+
+  return response.response;
+}
+
+async function backendLibraryHasRows(driver, expectedRows = [], limit = 200) {
+  const response = await listLibraryRows(driver, limit);
+  const items = response.items ?? [];
+
+  if (!expectedRows.length) {
+    return (response.total ?? items.length) > 0;
+  }
+
+  const filenames = new Set(items.map((item) => item.filename));
+  return expectedRows.every((rowText) => filenames.has(rowText));
+}
+
 async function ensureLibraryIndexed(driver, expectedRows = [], timeoutMs = 90000) {
   await clickButton(driver, "Library");
   await waitForText(driver, "Library");
 
-  for (const rowText of expectedRows) {
-    if (await hasVisibleText(driver, rowText)) {
-      return;
-    }
+  if (await backendLibraryHasRows(driver, expectedRows)) {
+    return;
   }
 
   const started = await invokeTauriCommand(driver, "start_scan");
@@ -646,12 +736,21 @@ async function ensureLibraryIndexed(driver, expectedRows = [], timeoutMs = 90000
   }
 
   await driver.sleep(1200);
-  await clickButton(driver, "Library");
-  await waitForText(driver, "Library");
-
-  if (expectedRows.length) {
-    await waitForAnyText(driver, expectedRows, 30000);
+  const indexedAt = Date.now();
+  while (Date.now() - indexedAt < 30000) {
+    if (await backendLibraryHasRows(driver, expectedRows)) {
+      await clickButton(driver, "Library");
+      await waitForText(driver, "Library");
+      await driver.sleep(1200);
+      return;
+    }
+    await driver.sleep(300);
   }
+
+  await dumpBodyText(driver, "library-indexed-but-ui-not-ready");
+  throw new Error(
+    `Timed out waiting for indexed Library rows: ${expectedRows.join(", ") || "any rows"}.`,
+  );
 }
 
 async function fillInputByPlaceholder(driver, placeholder, value, timeoutMs = 30000) {
@@ -889,25 +988,63 @@ async function verifyUpdatesVersionWatch(driver) {
 
 async function verifyUpdatesWatchSaveClear(driver, genericWatchFile) {
   try {
+    await ensureLibraryIndexed(driver, [genericWatchFile]);
+
+    const setupRows = await invokeTauriCommand(driver, "list_library_watch_setup_items", {
+      limit: 200,
+    });
+    if (!setupRows.ok || !setupRows.response) {
+      throw new Error(
+        `Could not load watch setup rows for Updates smoke: ${setupRows.error ?? "unknown error"}`,
+      );
+    }
+
+    const setupItem =
+      setupRows.response.items?.find((item) => item.filename === genericWatchFile) ?? null;
+    if (!setupItem?.fileId) {
+      throw new Error(
+        `Smoke fixture did not produce a real Updates setup item for ${genericWatchFile}.`,
+      );
+    }
+
     // Navigate to Updates screen
     await clickButton(driver, "Updates");
     await waitForText(driver, "Updates", 30000);
-    
-    // Click on the setup tab using the current wording.
-    await clickVisibleText(driver, "Need source");
+
+    await clickButton(driver, "Need source");
+    await waitForText(driver, genericWatchFile, 30000);
+    await clickUpdatesRow(driver, genericWatchFile);
+    await waitForAnyText(driver, ["Suggested source", "Set source"], 30000);
+
+    await clickButton(driver, "Set source");
+    await waitForText(driver, "Save source", 30000);
+    await selectFieldOptionByLabel(driver, "Source type", "Creator page");
+    await fillInputByPlaceholder(driver, "What page is this?", "Simstrouble");
+    await fillInputByPlaceholder(driver, "https://...", "https://example.com/simstrouble");
+    await clickButton(driver, "Save source");
+    await waitForText(driver, "Source saved.", 30000);
+
+    await clickButton(driver, "Needs review");
+    await waitForText(driver, genericWatchFile, 30000);
+    await clickUpdatesRow(driver, genericWatchFile);
     await waitForAnyText(
       driver,
       [
-        "Need source",
-        "Source setup",
-        "Nothing needs source setup right now.",
-        "No files currently need watch setup.",
+        "This creator page is saved as a reminder only.",
+        "Reference only",
+        "Reminder only",
       ],
       30000,
     );
-    
-    // Check if there are setup suggestions - if not, that's OK (test fixture may not have any)
-    console.log("Updates screen Setup tab verified - no setup items in test fixture is expected");
+
+    await clickButton(driver, "Edit source");
+    await waitForAnyText(driver, ["Save source", "URL"], 30000);
+    await clickButtonViaDom(driver, "Clear source");
+    await waitForText(driver, "Source cleared.", 30000);
+
+    await clickButton(driver, "Need source");
+    await waitForText(driver, genericWatchFile, 30000);
+    await ensureTextStaysHidden(driver, "This creator page is saved as a reminder only.", 5000);
   } catch (error) {
     await dumpBodyText(driver, "updates-watch-save-clear-failure");
     throw error;
@@ -916,15 +1053,10 @@ async function verifyUpdatesWatchSaveClear(driver, genericWatchFile) {
 
 async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   try {
-    await ensureLibraryIndexed(driver, []);
-    await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
-    await waitForText(driver, genericWatchFile, 30000);
-    const libraryRows = await invokeTauriCommand(driver, "list_library_files", {
-      query: { limit: 100, offset: 0 },
-    });
-    const genericRow = libraryRows.ok
-      ? libraryRows.response?.items?.find((item) => item.filename === genericWatchFile) ?? null
-      : null;
+    await ensureLibraryIndexed(driver, [genericWatchFile]);
+    const libraryRows = await listLibraryRows(driver, 100);
+    const genericRow =
+      libraryRows.items?.find((item) => item.filename === genericWatchFile) ?? null;
     if (!genericRow?.id) {
       throw new Error(`Could not resolve a Library row id for ${genericWatchFile}.`);
     }

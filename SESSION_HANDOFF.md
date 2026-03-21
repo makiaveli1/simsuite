@@ -1,5 +1,56 @@
 # Session Handoff
 
+## Current Session (March 21, 2026 - Updates smoke now proves a real save/edit/clear flow)
+
+- **Mode**: code
+- **Focus**: keep the watch bug sweep honest by replacing the placeholder `Updates` smoke check with a real end-to-end setup/review pass
+
+### Progress Made
+
+1. **Turned the weak smoke placeholder into a real check**:
+   - `verifyUpdatesWatchSaveClear` in `scripts/desktop/desktop-smoke.mjs` no longer stops at:
+     - open `Updates`
+     - confirm `Need source`
+   - it now does the real UI flow:
+     - confirm a setup candidate exists
+     - open that item in `Updates`
+     - save a creator page
+     - move into `Needs review`
+     - open edit mode
+     - clear the source
+     - confirm the file returns to `Need source`
+
+2. **Found and fixed two smoke-only weak spots while doing that**:
+   - the old generic package fixture was too weak for the stricter watch setup rules
+   - swapped it to a deterministic generic script-mod fixture:
+     - `LittleMsSam_SendSimsToBed.ts4script`
+   - the smoke helper was also trusting Library repaint timing too much
+   - `ensureLibraryIndexed` now confirms indexed rows from the backend first, instead of only waiting for the Library table to repaint
+
+3. **Handled the last editor-scroll edge case**:
+   - the inline `Clear source` button can sit below the fold in the `Updates` inspector
+   - added a DOM-level button click fallback in the smoke script so the test can reach that button reliably without loosening app behavior
+
+4. **Verification**:
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+   - result: passed
+
+### What Worked
+
+- the fixture data now really enters the `Updates` setup lane
+- the smoke proves the watch path users care about most:
+  - setup
+  - review
+  - clear
+- this pass did not change app behavior; it hardened the test harness so future watch regressions are easier to catch
+
+### Remaining Gap
+
+- `Updates` smoke is much more real now, but it still uses one deterministic fixture path
+- next useful pass should exercise:
+  - a real exact-page save path
+  - or a tracked-item `Check selected` refresh path inside `Updates`
+
 ## Current Session (March 21, 2026 - Updates focus reset for plain navigation)
 
 - **Mode**: code
