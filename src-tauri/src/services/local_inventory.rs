@@ -115,6 +115,37 @@ impl LocalInventory {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
 
+            let new_fingerprint =
+                Self::compute_folder_fingerprint(std::path::Path::new(&folder_path))?;
+
+            if let Some(existing_mod_id) = Self::detect_folder_rename(
+                conn,
+                std::path::Path::new(&folder_path),
+                &new_fingerprint,
+            )? {
+                Self::update_local_mod_path(
+                    conn,
+                    &existing_mod_id,
+                    std::path::Path::new(&folder_path),
+                )?;
+                tracing::info!(
+                    "Updated path for mod {} to {}",
+                    existing_mod_id,
+                    folder_path
+                );
+                updated_mods += 1;
+                mods_found += 1;
+                for file_path in &files {
+                    if let Some(file_record) =
+                        Self::process_file(conn, &existing_mod_id, file_path)?
+                    {
+                        files_processed += 1;
+                        let _ = file_record;
+                    }
+                }
+                continue;
+            }
+
             let existing_id = Self::find_local_mod_by_folder(conn, &folder_path)?;
 
             let mod_id = if let Some(id) = existing_id {
@@ -273,6 +304,53 @@ impl LocalInventory {
                 now,
                 mod_id
             ],
+        )?;
+        Ok(())
+    }
+
+    pub fn detect_folder_rename(
+        connection: &Connection,
+        new_folder_path: &Path,
+        new_fingerprint: &str,
+    ) -> AppResult<Option<String>> {
+        let mut stmt = connection.prepare(
+            "SELECT lm.id, lm.local_root_path, lm.display_name
+             FROM local_mods lm
+             WHERE lm.local_root_path != ?1",
+        )?;
+
+        let existing_mods: Vec<(String, String, String)> = stmt
+            .query_map([new_folder_path.to_string_lossy().to_string()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (mod_id, old_path, display_name) in existing_mods {
+            if let Ok(old_fingerprint) = Self::compute_folder_fingerprint(Path::new(&old_path)) {
+                if old_fingerprint == new_fingerprint {
+                    tracing::info!(
+                        "Detected folder rename for mod {}: {} -> {}",
+                        display_name,
+                        old_path,
+                        new_folder_path.display()
+                    );
+                    return Ok(Some(mod_id));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn update_local_mod_path(
+        connection: &Connection,
+        mod_id: &str,
+        new_folder_path: &Path,
+    ) -> AppResult<()> {
+        connection.execute(
+            "UPDATE local_mods SET local_root_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            rusqlite::params![new_folder_path.to_string_lossy().to_string(), mod_id],
         )?;
         Ok(())
     }
