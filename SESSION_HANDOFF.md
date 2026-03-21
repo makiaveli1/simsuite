@@ -3459,23 +3459,31 @@ All Phase 1 foundation work is done:
 - [x] Events and commands (update_events, new commands)
 - [x] Watch polling integration comments
 
-### Phase 2+ (Planned)
+### Phase 2 Complete! ✅
 
-- [ ] Phase 2: Feed adapter, structured page adapter, generic page adapter
-- [ ] Phase 2: Candidate discovery engine (full implementation)
-- [ ] Phase 2: User confirmation backend (stubs exist)
+All Phase 2 adapter and discovery work is done:
+- [x] Feed adapter (RSS/Atom) - parses RSS 2.0 and Atom feeds
+- [x] Structured page adapter - extracts from TSR-style pages
+- [x] Generic page adapter - fallback with content hashing
+- [x] Candidate discovery engine (full) - scoring and auto-bind
+- [x] User confirmation backend - confirm/reject candidates
+- [x] All 236 tests pass
+- [x] Smoke test passes
+
+### Phase 3+ (Planned)
+
 - [ ] Phase 3: Source learning, rate limiter, scheduler
-- [ ] Phase 3: Frontend integration
+- [ ] Phase 3: Frontend integration (Updates screen enhancements)
 
 ### What Worked
 
 - Using subagent-driven development with spec review after each task
 - Committing after each phase for clean history
-- Running smoke test after Phase 1 completion to verify everything integrates
+- Running smoke test after Phase 1 and Phase 2 completion to verify everything integrates
 
 ### Next Session Start Here
 
-Phase 1 is complete and pushed. Next session could:
-- Start Phase 2 with feed adapter and structured page adapter
-- Or add full implementation of candidate discovery engine
+Phase 2 is complete and pushed. Next session could:
+- Start Phase 3 with source learning (tracking confirmed/rejected sources per domain)
+- Or add rate limiter and scheduler for refresh intervals
 - Or start frontend integration for the Updates screen
