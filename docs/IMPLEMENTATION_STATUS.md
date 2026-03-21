@@ -1,5 +1,33 @@
 # SimSuite Implementation Status
 
+## Current session note (March 21, 2026 - Non-CurseForge Mod Tracking Implementation Started)
+
+Implementation of the advanced Non-CurseForge Mod Update Tracking system has begun. See `docs/superpowers/plans/2026-03-21-non-curseforge-mod-tracking.md` for the full plan.
+
+### What's Done
+
+**Phase 1.1 - Schema:**
+- `src-tauri/src/models.rs`: Added `SourceKind`, `TrackingMode`, `UpdateStatus` enums and `LocalMod`, `LocalFile`, `SourceBinding` structs
+- `src-tauri/src/database/mod.rs`: Added 7 new tables (`local_mods`, `local_files`, `candidate_sources`, `source_bindings`, `remote_snapshots`, `update_events`, `user_tracking_prefs`) and 4 indexes
+- Commit: `9223df5`
+
+**Phase 1.2 - Adapter Module:**
+- `src-tauri/src/adapters/`: Created `SourceAdapter` trait, `AdapterRegistry`, and 3 adapters (CurseForge, GitHub, Nexus)
+- Commit: `4d6d7a6`
+
+**Phase 1.3 - Services Module (in progress):**
+- `src-tauri/src/services/`: Created module with `LocalInventory` service
+- Integration into scanner still pending
+
+### What's Next
+
+Phase 1 continues with:
+- Phase 1.3: Integrate local_inventory into scanner
+- Phase 1.4: Create snapshot_store, update_decision, candidate_scorer services
+- Phase 1.5: Create update_events service and commands, integrate into watch_polling
+
+Phase 2+ covers feed adapters, candidate discovery, user confirmation UI, and source learning.
+
 ## Current session note (March 21, 2026 - Updates smoke now proves tracked refresh)
 
 This pass still stayed in stabilization mode. It did not change the product flow itself. It closed the next watch verification gap by proving that the real `Updates` tracked inspector can run `Check selected` end to end in the desktop app.

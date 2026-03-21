@@ -3393,3 +3393,65 @@
   - widen helper-only latest parsing only where there is a safe official endpoint
   - add the first small curated expansion wave through `docs/SPECIAL_MOD_CANDIDATES.json`
   - keep checking Inbox detail performance so the broader compare system does not make the screen feel heavy again
+
+## Current Session (March 21, 2026 - Non-CurseForge Mod Tracking Implementation Started)
+
+- **Mode**: code
+- **Focus**: Started implementing the advanced Non-CurseForge Mod Update Tracking system from the PRD
+
+### Progress Made
+
+1. **Created implementation plan**:
+   - Wrote detailed plan at `docs/superpowers/plans/2026-03-21-non-curseforge-mod-tracking.md`
+   - Plan covers 3 phases: Foundation, Expanded Coverage, Advanced Features
+
+2. **Completed Phase 1.1 - Schema**:
+   - Added `SourceKind`, `TrackingMode`, `UpdateStatus` enums to models.rs
+   - Added `LocalMod`, `LocalFile`, `SourceBinding` structs to models.rs
+   - Added 7 new tables to database: `local_mods`, `local_files`, `candidate_sources`, `source_bindings`, `remote_snapshots`, `update_events`, `user_tracking_prefs`
+   - Added 4 indexes for new tables
+   - Committed: `9223df5`
+
+3. **Completed Phase 1.2 - Adapter Module**:
+   - Created `src-tauri/src/adapters/` module
+   - Added `SourceAdapter` trait with `discover_candidates` and `refresh_snapshot`
+   - Added `AdapterRegistry` with `for_kind()` and `discover_all()`
+   - Implemented `CurseForgeAdapter` using CF API v1
+   - Implemented `GitHubAdapter` using GitHub API
+   - Implemented `NexusAdapter` using Nexus API
+   - Added `AdapterError` enum
+   - Committed: `4d6d7a6`
+
+4. **Started Phase 1.3 - Services Module**:
+   - Created `src-tauri/src/services/` module with 10 files
+   - Implemented `LocalInventory` service with:
+     - `scan_and_update_local_mods()` - scans mods folder, groups files by folder
+     - `get_or_create_local_mod()` - gets or creates local mod records
+     - `get_local_mod()` - retrieves mod by ID
+     - `get_local_files()` - retrieves files for a mod
+     - `update_mod_status()` - updates mod after check
+   - Added `uuid` dependency to Cargo.toml
+
+### Remaining Work (Phase 1)
+
+- [ ] Phase 1.3: Integrate local_inventory into scanner
+- [ ] Phase 1.4: Create snapshot_store, update_decision, candidate_scorer services
+- [ ] Phase 1.5: Create update_events service and new commands, integrate into watch_polling
+
+### Phase 2+ (Planned)
+
+- [ ] Phase 2: Feed adapter, structured page adapter, generic page adapter
+- [ ] Phase 2: Candidate discovery engine
+- [ ] Phase 2: User confirmation backend
+- [ ] Phase 3: Source learning, rate limiter, scheduler
+- [ ] Phase 3: Frontend integration
+
+### What Worked
+
+- Using subagent-driven development with spec review after each task
+- Committing after each phase for clean history
+
+### Next Session Start Here
+
+- Resume Phase 1.3 integration into scanner
+- Or proceed to Phase 1.4 for snapshot_store and update_decision services
