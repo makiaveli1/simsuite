@@ -11,7 +11,7 @@ use crate::models::{LocalFile, LocalMod, TrackingMode, UpdateStatus};
 
 pub struct LocalInventory;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LocalModScanResult {
     pub mods_found: i64,
     pub files_processed: i64,

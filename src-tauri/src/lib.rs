@@ -173,7 +173,15 @@ pub fn run() {
             commands::save_creator_learning,
             commands::apply_creator_audit,
             commands::apply_category_audit,
-            commands::save_category_override
+            commands::save_category_override,
+            commands::scan_local_mods,
+            commands::get_local_mods,
+            commands::get_update_events,
+            commands::mark_event_read,
+            commands::dismiss_event,
+            commands::confirm_candidate_source,
+            commands::reject_candidate_source,
+            commands::get_candidates_for_mod
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimSuite");
