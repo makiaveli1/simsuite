@@ -11,8 +11,8 @@ use crate::{
     error::{AppError, AppResult},
     models::{WatchRefreshSummary, WorkspaceChange, WorkspaceDomain},
     services::{
-        candidate_discovery::CandidateDiscovery, update_events::UpdateEvents, LocalInventory,
-        SharedRateLimiter,
+        candidate_discovery::CandidateDiscovery, scheduler::UpdateScheduler,
+        update_events::UpdateEvents, LocalInventory, SharedRateLimiter,
     },
     MAIN_TRAY_ID,
 };
@@ -273,6 +273,18 @@ fn run_tracking_refresh(
         let Some(binding) = binding else {
             continue;
         };
+
+        let scheduler = UpdateScheduler::new();
+        let last_checked = local_mod.last_checked_at.as_deref();
+        if !scheduler.is_due(last_checked, binding.source_kind) {
+            tracing::debug!(
+                "Skipping {:?} for {} - not due for check yet (last checked: {:?})",
+                binding.source_kind,
+                local_mod.display_name,
+                last_checked
+            );
+            continue;
+        }
 
         let app_settings = crate::models::AppBehaviorSettings {
             keep_running_in_background: false,
