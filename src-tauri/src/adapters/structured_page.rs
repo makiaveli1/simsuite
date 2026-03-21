@@ -3,21 +3,35 @@ use crate::adapters::{
 };
 use crate::error::AppResult;
 use crate::models::SourceKind;
+use crate::services::SharedRateLimiter;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
 
 pub struct StructuredPageAdapter {
     client: Client,
+    rate_limiter: SharedRateLimiter,
 }
 
 impl StructuredPageAdapter {
-    pub fn new() -> Self {
+    pub fn new(rate_limiter: SharedRateLimiter) -> Self {
         Self {
             client: Client::builder()
                 .user_agent("SimSort/1.0")
                 .build()
                 .unwrap_or_default(),
+            rate_limiter,
         }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     fn extract_from_tsr(&self, html: &Html) -> Option<StructuredData> {
@@ -95,12 +109,15 @@ impl SourceAdapter for StructuredPageAdapter {
         &self,
         binding: &crate::models::SourceBinding,
     ) -> AppResult<RemoteSnapshot> {
+        let url = &binding.source_url;
+        self.check_rate_limit(url)?;
         let response = self
             .client
             .get(&binding.source_url)
             .send()
             .map_err(AdapterError::Network)?;
 
+        self.record_request(url);
         let etag = response
             .headers()
             .get("etag")
@@ -146,6 +163,12 @@ impl SourceAdapter for StructuredPageAdapter {
             confidence: 0.70,
             raw: serde_json::json!({"source": "structured_page"}),
         })
+    }
+}
+
+impl Default for StructuredPageAdapter {
+    fn default() -> Self {
+        Self::new(SharedRateLimiter::default())
     }
 }
 

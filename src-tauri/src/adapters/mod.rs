@@ -16,6 +16,7 @@ pub use feed::FeedAdapter;
 
 use crate::error::AppResult;
 use crate::models::{AppBehaviorSettings, SourceBinding, SourceKind, UpdateStatus};
+use crate::services::SharedRateLimiter;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
@@ -103,16 +104,19 @@ impl std::fmt::Debug for AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    pub fn new(settings: &AppBehaviorSettings) -> Self {
+    pub fn new(settings: &AppBehaviorSettings, rate_limiter: SharedRateLimiter) -> Self {
         let adapters: Vec<Box<dyn SourceAdapter>> = vec![
             Box::new(curseforge::CurseForgeAdapter::new(
                 settings.curseforge_api_key.clone(),
+                rate_limiter.clone(),
             )),
-            Box::new(feed::FeedAdapter::new()),
-            Box::new(generic_page::GenericPageAdapter::new()),
-            Box::new(github::GitHubAdapter::new()),
-            Box::new(nexus::NexusAdapter::new()),
-            Box::new(structured_page::StructuredPageAdapter::new()),
+            Box::new(feed::FeedAdapter::new(rate_limiter.clone())),
+            Box::new(generic_page::GenericPageAdapter::new(rate_limiter.clone())),
+            Box::new(github::GitHubAdapter::new(rate_limiter.clone())),
+            Box::new(nexus::NexusAdapter::new(rate_limiter.clone())),
+            Box::new(structured_page::StructuredPageAdapter::new(
+                rate_limiter.clone(),
+            )),
         ];
         AdapterRegistry { adapters }
     }
@@ -142,14 +146,17 @@ impl AdapterRegistry {
 
 impl Default for AdapterRegistry {
     fn default() -> Self {
-        Self::new(&AppBehaviorSettings {
-            keep_running_in_background: false,
-            automatic_watch_checks: false,
-            watch_check_interval_hours: 12,
-            last_watch_check_at: None,
-            last_watch_check_error: None,
-            curseforge_api_key: None,
-            github_api_token: None,
-        })
+        Self::new(
+            &AppBehaviorSettings {
+                keep_running_in_background: false,
+                automatic_watch_checks: false,
+                watch_check_interval_hours: 12,
+                last_watch_check_at: None,
+                last_watch_check_error: None,
+                curseforge_api_key: None,
+                github_api_token: None,
+            },
+            SharedRateLimiter::default(),
+        )
     }
 }

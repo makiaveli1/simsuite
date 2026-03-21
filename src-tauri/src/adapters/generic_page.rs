@@ -3,6 +3,7 @@ use crate::adapters::{
 };
 use crate::error::AppResult;
 use crate::models::SourceKind;
+use crate::services::SharedRateLimiter;
 use regex::Regex;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
@@ -10,16 +11,29 @@ use sha2::{Digest, Sha256};
 
 pub struct GenericPageAdapter {
     client: Client,
+    rate_limiter: SharedRateLimiter,
 }
 
 impl GenericPageAdapter {
-    pub fn new() -> Self {
+    pub fn new(rate_limiter: SharedRateLimiter) -> Self {
         Self {
             client: Client::builder()
                 .user_agent("SimSort/1.0")
                 .build()
                 .unwrap_or_default(),
+            rate_limiter,
         }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     pub fn compute_content_hash(html_content: &str) -> String {
@@ -79,10 +93,13 @@ impl SourceAdapter for GenericPageAdapter {
         &self,
         binding: &crate::models::SourceBinding,
     ) -> AppResult<RemoteSnapshot> {
+        let url = &binding.source_url;
+        self.check_rate_limit(url)?;
         let request = self.client.get(&binding.source_url);
 
         let response = request.send().map_err(AdapterError::Network)?;
 
+        self.record_request(url);
         let etag = response
             .headers()
             .get("etag")
@@ -123,6 +140,6 @@ impl SourceAdapter for GenericPageAdapter {
 
 impl Default for GenericPageAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new(SharedRateLimiter::default())
     }
 }

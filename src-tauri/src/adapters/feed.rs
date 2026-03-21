@@ -1,21 +1,35 @@
 use crate::adapters::{AdapterError, RemoteSnapshot, SnapshotEvidence, SourceAdapter};
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
+use crate::services::SharedRateLimiter;
 use quick_xml::de::from_str;
 use reqwest::blocking::Client;
 
 pub struct FeedAdapter {
     client: Client,
+    rate_limiter: SharedRateLimiter,
 }
 
 impl FeedAdapter {
-    pub fn new() -> Self {
+    pub fn new(rate_limiter: SharedRateLimiter) -> Self {
         Self {
             client: Client::builder()
                 .user_agent("SimSort/1.0")
                 .build()
                 .unwrap_or_default(),
+            rate_limiter,
         }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     pub fn parse_feed(&self, content: &str) -> Result<(String, Vec<FeedEntry>), AdapterError> {
@@ -49,12 +63,15 @@ impl SourceAdapter for FeedAdapter {
     }
 
     fn refresh_snapshot(&self, binding: &SourceBinding) -> AppResult<RemoteSnapshot> {
+        let url = &binding.source_url;
+        self.check_rate_limit(url)?;
         let response = self
             .client
             .get(&binding.source_url)
             .send()
             .map_err(AdapterError::Network)?;
 
+        self.record_request(url);
         let etag = response
             .headers()
             .get("etag")
@@ -100,7 +117,7 @@ impl SourceAdapter for FeedAdapter {
 
 impl Default for FeedAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new(SharedRateLimiter::default())
     }
 }
 

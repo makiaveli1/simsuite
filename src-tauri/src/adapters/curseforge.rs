@@ -9,6 +9,7 @@ use crate::adapters::{
 };
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
+use crate::services::SharedRateLimiter;
 
 const BASE_URL: &str = "https://api.curseforge.com";
 const GAME_ID: i64 = 432;
@@ -16,6 +17,7 @@ const GAME_ID: i64 = 432;
 pub struct CurseForgeAdapter {
     client: Client,
     api_key: Option<String>,
+    rate_limiter: SharedRateLimiter,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,14 +78,29 @@ struct CfSearchRequest {
 }
 
 impl CurseForgeAdapter {
-    pub fn new(api_key: Option<String>) -> Self {
+    pub fn new(api_key: Option<String>, rate_limiter: SharedRateLimiter) -> Self {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::limited(6))
             .timeout(Duration::from_secs(15))
             .user_agent("SimSuite/1.0")
             .build()
             .expect("CurseForge client");
-        CurseForgeAdapter { client, api_key }
+        CurseForgeAdapter {
+            client,
+            api_key,
+            rate_limiter,
+        }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     fn add_auth_headers(
@@ -99,6 +116,7 @@ impl CurseForgeAdapter {
 
     fn search_mods(&self, query: &str) -> AppResult<Vec<CfMod>> {
         let url = format!("{}/v1/mods/search", BASE_URL);
+        self.check_rate_limit(&url)?;
         let response = self
             .add_auth_headers(self.client.get(&url))
             .query(&[
@@ -111,6 +129,7 @@ impl CurseForgeAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         let body = response.text()?;
         let result: CfSearchResponse =
             serde_json::from_str(&body).map_err(|e| AdapterError::Parse(e.to_string()))?;
@@ -119,12 +138,14 @@ impl CurseForgeAdapter {
 
     fn get_mod(&self, mod_id: i64) -> AppResult<CfMod> {
         let url = format!("{}/v1/mods/{}", BASE_URL, mod_id);
+        self.check_rate_limit(&url)?;
         let response = self
             .add_auth_headers(self.client.get(&url))
             .send()?
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         #[derive(Deserialize)]
         struct CfModResponse {
             data: CfMod,
@@ -137,6 +158,7 @@ impl CurseForgeAdapter {
 
     fn get_latest_files(&self, mod_id: i64) -> AppResult<Vec<CfFile>> {
         let url = format!("{}/v1/mods/{}/files", BASE_URL, mod_id);
+        self.check_rate_limit(&url)?;
         let response = self
             .add_auth_headers(self.client.get(&url))
             .query(&[("pageSize", "5")])
@@ -144,6 +166,7 @@ impl CurseForgeAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         #[derive(Deserialize)]
         struct CfFilesResponse {
             data: Vec<CfFile>,
@@ -283,6 +306,6 @@ impl SourceAdapter for CurseForgeAdapter {
 
 impl Default for CurseForgeAdapter {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(None, SharedRateLimiter::default())
     }
 }

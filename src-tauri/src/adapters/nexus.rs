@@ -9,12 +9,14 @@ use crate::adapters::{
 };
 use crate::error::AppResult;
 use crate::models::{SourceBinding, SourceKind};
+use crate::services::SharedRateLimiter;
 
 const BASE_URL: &str = "https://api.nexusmods.com";
 const GAME_ID: &str = "1341";
 
 pub struct NexusAdapter {
     client: Client,
+    rate_limiter: SharedRateLimiter,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,18 +62,33 @@ struct NxModInfo {
 }
 
 impl NexusAdapter {
-    pub fn new() -> Self {
+    pub fn new(rate_limiter: SharedRateLimiter) -> Self {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::limited(6))
             .timeout(Duration::from_secs(15))
             .user_agent("SimSuite/1.0")
             .build()
             .expect("Nexus client");
-        NexusAdapter { client }
+        NexusAdapter {
+            client,
+            rate_limiter,
+        }
+    }
+
+    fn check_rate_limit(&self, url: &str) -> AppResult<()> {
+        if !self.rate_limiter.can_fetch(url) {
+            return Err(AdapterError::RateLimited(url.to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn record_request(&self, url: &str) {
+        self.rate_limiter.record_fetch(url);
     }
 
     fn search_mods(&self, query: &str) -> AppResult<Vec<NxModInfo>> {
         let url = format!("{}/v1/games/{}/mods/search.json", BASE_URL, GAME_ID);
+        self.check_rate_limit(&url)?;
         let response = self
             .client
             .get(&url)
@@ -81,6 +98,7 @@ impl NexusAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         let body = response.text()?;
         let result: NxSearchResponse =
             serde_json::from_str(&body).map_err(|e| AdapterError::Parse(e.to_string()))?;
@@ -89,6 +107,7 @@ impl NexusAdapter {
 
     fn get_mod_details(&self, mod_id: i64) -> AppResult<NxModDetails> {
         let url = format!("{}/v1/games/{}/mods/{}.json", BASE_URL, GAME_ID, mod_id);
+        self.check_rate_limit(&url)?;
         let response = self
             .client
             .get(&url)
@@ -97,6 +116,7 @@ impl NexusAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         let body = response.text()?;
         let result: NxModDetails =
             serde_json::from_str(&body).map_err(|e| AdapterError::Parse(e.to_string()))?;
@@ -108,6 +128,7 @@ impl NexusAdapter {
             "{}/v1/games/{}/mods/{}/files.json",
             BASE_URL, GAME_ID, mod_id
         );
+        self.check_rate_limit(&url)?;
         let response = self
             .client
             .get(&url)
@@ -116,6 +137,7 @@ impl NexusAdapter {
             .error_for_status()
             .map_err(|e| AdapterError::Api(e.to_string()))?;
 
+        self.record_request(&url);
         #[derive(Deserialize)]
         struct NxFilesWrapper {
             files: Vec<NxFile>,
@@ -230,6 +252,6 @@ impl SourceAdapter for NexusAdapter {
 
 impl Default for NexusAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new(SharedRateLimiter::default())
     }
 }
