@@ -147,6 +147,35 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
         checked_subjects += 1;
     }
 
+    // PHASE 1.5 INTEGRATION: New source_bindings polling via AdapterRegistry
+    // For each binding in source_bindings table:
+    //   1. Get adapter from AdapterRegistry for the binding's source_kind
+    //   2. Call adapter.refresh_snapshot(binding) to get current RemoteSnapshot
+    //   3. Get previous snapshot from SnapshotStore (if any)
+    //   4. Call detect_update(local_mod, previous_snapshot, current_snapshot)
+    //   5. If decision.status != UpToDate:
+    //      - Store new snapshot via SnapshotStore
+    //      - Create event via UpdateEvents::create_event()
+    //
+    // Example integration point:
+    // let registry = AdapterRegistry::new();
+    // let bindings = database::get_source_bindings(&connection)?;
+    // for binding in bindings {
+    //     if let Some(adapter) = registry.for_kind(binding.source_kind) {
+    //         let current = adapter.refresh_snapshot(&binding)?;
+    //         let previous = SnapshotStore::get_latest(&connection, &binding.id)?;
+    //         let local_mod = LocalInventory::get_local_mod(&connection, &binding.local_mod_id)?;
+    //         let decision = detect_update(&local_mod, previous.as_ref(), &current);
+    //         if decision.status != UpdateStatus::UpToDate {
+    //             SnapshotStore::store_snapshot(&connection, &current)?;
+    //             UpdateEvents::create_event(&connection, &binding.local_mod_id,
+    //                 Some(&binding.id), &decision,
+    //                 current.version_text.as_deref(),
+    //                 current.published_at.as_deref())?;
+    //         }
+    //     }
+    // }
+
     let (exact_update_items, possible_update_items, unknown_watch_items) =
         content_versions::load_watch_counts(&connection)?;
     let checked_at = Utc::now().to_rfc3339();

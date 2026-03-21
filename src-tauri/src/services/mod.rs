@@ -1,9 +1,13 @@
-pub mod local_inventory;
-pub mod snapshot_store;
-pub mod update_decision;
-pub mod candidate_scorer;
 pub mod candidate_discovery;
-pub mod update_events;
+pub mod candidate_scorer;
+pub mod local_inventory;
 pub mod rate_limiter;
 pub mod scheduler;
+pub mod snapshot_store;
 pub mod source_learning;
+pub mod update_decision;
+pub mod update_events;
+
+pub use local_inventory::{LocalInventory, LocalModScanResult};
+pub use snapshot_store::SnapshotStore;
+pub use update_events::{UpdateCounts, UpdateEventRow, UpdateEvents};

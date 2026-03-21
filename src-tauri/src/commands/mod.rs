@@ -36,9 +36,10 @@ use crate::{
         LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
         RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
         SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary,
-        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
+        WorkspaceChange, WorkspaceDomain,
     },
+    services::{LocalInventory, LocalModScanResult, UpdateEvents, UpdateEventRow},
     sync_tray_visibility,
 };
 
@@ -2046,9 +2047,8 @@ pub async fn save_watch_sources_for_files(
                     results.push(LibraryWatchBulkSaveItemResult {
                         file_id,
                         saved: false,
-                        message:
-                            "Watch sources can only be saved for installed Library items."
-                                .to_owned(),
+                        message: "Watch sources can only be saved for installed Library items."
+                            .to_owned(),
                     });
                 }
                 Err(error) => {
@@ -2387,6 +2387,67 @@ pub async fn save_category_override(
     .await
 }
 
+#[tauri::command]
+pub fn scan_local_mods(state: State<AppState>) -> Result<LocalModScanResult, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let settings = database::get_library_settings(&connection).map_err(map_error)?;
+    let mods_path = settings.mods_path
+        .ok_or("No mods path configured")?;
+    LocalInventory::scan_and_update_local_mods(&connection, Path::new(&mods_path))
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_local_mods(
+    state: State<AppState>,
+    filter: Option<LibraryQuery>,
+) -> Result<Vec<crate::models::LocalMod>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let _filter = filter.unwrap_or_default();
+    Ok(vec![])
+}
+
+#[tauri::command]
+pub fn get_update_events(state: State<AppState>) -> Result<Vec<UpdateEventRow>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::get_unread_events(&connection, 100)
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn mark_event_read(state: State<AppState>, event_id: String) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::mark_read(&connection, &event_id)
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn dismiss_event(state: State<AppState>, event_id: String) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    UpdateEvents::dismiss_event(&connection, &event_id)
+        .map_err(map_error)
+}
+
+#[tauri::command]
+pub fn confirm_candidate_source(
+    state: State<AppState>,
+    candidate_id: String,
+) -> Result<crate::models::SourceBinding, String> {
+    let connection = state.connection().map_err(map_error)?;
+    let _candidate_id = candidate_id;
+    Err("confirm_candidate_source not yet implemented".to_string())
+}
+
+#[tauri::command]
+pub fn reject_candidate_source(
+    state: State<AppState>,
+    candidate_id: String,
+) -> Result<(), String> {
+    let connection = state.connection().map_err(map_error)?;
+    let _candidate_id = candidate_id;
+    Err("reject_candidate_source not yet implemented".to_string())
+}
+
 pub fn emit_scan_progress(
     app: &AppHandle,
     progress: &crate::models::ScanProgress,
@@ -2433,8 +2494,8 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 mod tests {
     use super::{
         approved_review_action_url, approved_watch_source_url, is_locked_read_error,
-        watch_workspace_domains,
         retry_locked_read, review_action_url_matches, validate_review_download_redirect,
+        watch_workspace_domains,
     };
     use crate::{
         error::AppError,
