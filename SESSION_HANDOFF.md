@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (March 21, 2026 - Updates focus reset for plain navigation)
+
+- **Mode**: code
+- **Focus**: continue the watch bug sweep by fixing sticky `Updates` focus state in the current desktop-first navigation
+
+### Progress Made
+
+1. **Finished the previous backend watch-targeting fix cleanly**:
+   - committed and pushed `761d722` on `codex/library-preview-current-workspace`
+   - that fix made backend watch refresh events include the real `Updates` workspace
+
+2. **Found the next real watch UX bug in the current app shell**:
+   - focused jumps from `Home` or `Library` into `Updates` were saved in `App` state
+   - plain sidebar clicks into `Updates` reused those old params instead of opening a normal default view
+   - in practice, this could make `Updates` feel stuck on an old lane or old selected file
+
+3. **Fixed the navigation behavior without disturbing explicit focus jumps**:
+   - added a small shared helper in `src/lib/updatesNavigation.ts`
+   - plain navigation to `Updates` now clears old focus params
+   - explicit focus navigation still keeps its requested:
+     - mode
+     - filter
+     - file id
+   - wired plain screen navigation in `App` through the new reset-aware path
+
+4. **Added regression coverage**:
+   - new unit tests in `src/lib/updatesNavigation.test.ts`
+   - verified focused `UpdatesScreen` tests still pass
+
+5. **Verification**:
+   - `npm run test:unit -- src/lib/updatesNavigation.test.ts src/screens/UpdatesScreen.test.tsx`
+   - `npm run build`
+   - `cargo test --manifest-path src-tauri/Cargo.toml`
+   - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+### What Worked
+
+- the next bug was not in watch data itself
+- it was the app shell remembering old `Updates` focus too aggressively
+- after the fix:
+  - `Home` / `Library` can still open a specific watch lane on purpose
+  - normal `Updates` nav opens a fresh default view again
+
+### Remaining Gap
+
+- desktop smoke is still only partially proving the real `Updates` save/edit/clear flow
+- the current fixture run still logs:
+  - `Updates screen Setup tab verified - no setup items in test fixture is expected`
+- next best pass should exercise a real `Updates` setup or review item directly in the desktop app, not only through backend command bridges
+
 ## Current Session (March 21, 2026 - Watch workspace refresh targeting fix)
 
 - **Mode**: code

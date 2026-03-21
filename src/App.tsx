@@ -12,6 +12,11 @@ import {
   normalizeExperienceMode,
 } from "./lib/experienceMode";
 import { getScreenFrameMotion } from "./lib/motion";
+import {
+  createUpdatesNavigationParams,
+  nextUpdatesParamsForPlainNavigation,
+  resolveUpdatesNavigationParams,
+} from "./lib/updatesNavigation";
 import type {
   ExperienceMode,
   LibrarySettings,
@@ -121,35 +126,6 @@ function resolveInitialScreen(): Screen {
   return "home";
 }
 
-interface UpdatesNavigationParams {
-  mode?: "tracked" | "setup" | "review";
-  filter?: WatchListFilter;
-  fileId?: number;
-}
-
-function resolveUpdatesParams(): UpdatesNavigationParams {
-  const params = new URLSearchParams(globalThis.location?.search ?? "");
-  const mode = params.get("mode") as "tracked" | "setup" | "review" | null;
-  const filter = params.get("filter") as WatchListFilter | null;
-  const fileIdValue = params.get("fileId");
-  const fileId = fileIdValue ? Number(fileIdValue) : Number.NaN;
-  return {
-    mode:
-      mode === "tracked" || mode === "setup" || mode === "review"
-        ? mode
-        : undefined,
-    filter:
-      filter === "attention" ||
-      filter === "exact_updates" ||
-      filter === "possible_updates" ||
-      filter === "unclear" ||
-      filter === "all"
-        ? filter
-        : undefined,
-    fileId: Number.isFinite(fileId) ? fileId : undefined,
-  };
-}
-
 export default function App() {
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>(
     resolveInitialExperienceMode,
@@ -185,7 +161,9 @@ function AppShell({
     createInitialWorkspaceVersions,
   );
   const [isGuideOpen, setIsGuideOpen] = useState(false);
-  const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
+  const [updatesParams, setUpdatesParams] = useState(() =>
+    resolveUpdatesNavigationParams(globalThis.location?.search ?? ""),
+  );
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
   const screenFrameRef = useRef<HTMLDivElement | null>(null);
@@ -245,6 +223,13 @@ function AppShell({
     setWorkspaceVersions((current) => bumpWorkspaceVersions(current, domains));
   });
 
+  const navigateToScreen = useEffectEvent((targetScreen: Screen) => {
+    setUpdatesParams((current) =>
+      nextUpdatesParamsForPlainNavigation(targetScreen, current),
+    );
+    setScreen(targetScreen);
+  });
+
   const navigateWithParams = useEffectEvent(
     (
       targetScreen: Screen,
@@ -253,7 +238,7 @@ function AppShell({
       fileId?: number,
     ) => {
       if (targetScreen === "updates") {
-        setUpdatesParams({ mode, filter, fileId });
+        setUpdatesParams(createUpdatesNavigationParams(mode, filter, fileId));
       }
       setScreen(targetScreen);
     },
@@ -457,7 +442,7 @@ function AppShell({
         refreshVersion={workspaceVersions.home}
         settings={settings}
         onSettingsChange={saveLibraryPaths}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onNavigateWithParams={navigateWithParams}
         onScan={startScan}
         isScanning={isScanning}
@@ -466,7 +451,7 @@ function AppShell({
     ) : screen === "downloads" ? (
       <DownloadsScreen
         refreshVersion={workspaceVersions.downloads}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onDataChanged={() => {
           if (!hasTauriRuntime) {
             bumpWorkspaceDomains([
@@ -486,14 +471,14 @@ function AppShell({
     ) : screen === "library" ? (
       <LibraryScreen
         refreshVersion={workspaceVersions.library}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onNavigateWithParams={navigateWithParams}
         userView={userView}
       />
     ) : screen === "updates" ? (
       <UpdatesScreen
         refreshVersion={workspaceVersions.updates}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onDataChanged={() => {
           if (!hasTauriRuntime) {
             bumpWorkspaceDomains(["home", "library", "updates"]);
@@ -507,7 +492,7 @@ function AppShell({
     ) : screen === "creatorAudit" ? (
       <CreatorAuditScreen
         refreshVersion={workspaceVersions.creatorAudit}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onDataChanged={() => {
           if (!hasTauriRuntime) {
             bumpWorkspaceDomains([
@@ -525,7 +510,7 @@ function AppShell({
     ) : screen === "categoryAudit" ? (
       <CategoryAuditScreen
         refreshVersion={workspaceVersions.categoryAudit}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onDataChanged={() => {
           if (!hasTauriRuntime) {
             bumpWorkspaceDomains([
@@ -543,7 +528,7 @@ function AppShell({
     ) : screen === "duplicates" ? (
       <DuplicatesScreen
         refreshVersion={workspaceVersions.duplicates}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         userView={userView}
       />
     ) : screen === "organize" ? (
@@ -552,7 +537,7 @@ function AppShell({
           "organize",
           "snapshots",
         ])}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onDataChanged={() => {
           if (!hasTauriRuntime) {
             bumpWorkspaceDomains([
@@ -576,7 +561,7 @@ function AppShell({
     ) : (
       <ReviewScreen
         refreshVersion={workspaceVersions.review}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         userView={userView}
       />
     );
@@ -589,7 +574,7 @@ function AppShell({
       <Sidebar
         currentScreen={screen}
         experienceMode={experienceMode}
-        onNavigate={setScreen}
+        onNavigate={navigateToScreen}
         onScan={() => void startScan()}
         isScanning={isScanning}
         onOpenGuide={() => setIsGuideOpen(true)}
@@ -599,7 +584,7 @@ function AppShell({
         <WorkspaceToolbar
           experienceMode={experienceMode}
           currentScreen={screen}
-          onOpenSettings={() => setScreen("settings")}
+          onOpenSettings={() => navigateToScreen("settings")}
         />
         <AnimatePresence mode="wait" initial={false}>
           <m.div

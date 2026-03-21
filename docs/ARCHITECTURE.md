@@ -67,6 +67,19 @@ Not yet implemented:
 
 ## Current engineering note (March 20, 2026)
 
+The app shell now treats `Updates` focus as one-shot guidance instead of sticky global state. Focused jumps into `Updates` can still request a lane or file, but plain navigation to `Updates` now clears old focus params and opens the normal default workspace view.
+
+Important current behavior:
+
+- `Home` and `Library` can still send targeted `Updates` navigation with:
+  - mode
+  - filter
+  - file id
+- plain navigation through the sidebar or generic screen navigation resets old `Updates` focus params
+- this keeps watch handoff behavior intentional without making later visits to `Updates` reopen stale state
+
+## Current engineering note (March 20, 2026)
+
 The backend watch workspace model now matches the current desktop app shape: watch-related backend events can target `Updates` directly instead of only `Home` and `Library`.
 
 Important current behavior:

@@ -1,5 +1,33 @@
 # SimSuite Implementation Status
 
+## Current session note (March 21, 2026 - plain Updates navigation resets stale focus)
+
+This watch-system stabilization pass fixed a user-facing navigation bug in the current desktop-first shell: once `Home` or `Library` jumped into a focused `Updates` lane, later plain sidebar visits to `Updates` could keep replaying that old focus instead of opening a normal default view.
+
+Important changes and findings:
+
+- fixed files:
+  - `src/lib/updatesNavigation.ts`
+  - `src/lib/updatesNavigation.test.ts`
+  - `src/App.tsx`
+- added a small shared helper for `Updates` navigation state
+- plain navigation to `Updates` now clears old stored focus params
+- explicit targeted jumps still keep their requested:
+  - mode
+  - filter
+  - selected file id
+- this keeps the watch handoff behavior useful without making the whole `Updates` workspace feel sticky
+- checks passed:
+  - `npm run test:unit -- src/lib/updatesNavigation.test.ts src/screens/UpdatesScreen.test.tsx`
+  - `npm run build`
+  - `cargo test --manifest-path src-tauri/Cargo.toml`
+  - `pwsh -NoProfile -File scripts/desktop/run-tauri-smoke.ps1`
+
+Important remaining gap:
+
+- the current smoke run still does not fully prove the live `Updates` setup editor with a real setup item on screen
+- next watch pass should drive one real setup/review item inside `Updates`, not only save/clear via backend command bridges elsewhere
+
 ## Current session note (March 21, 2026 - watch workspace refresh targeting fix)
 
 This pass started the real watch bug sweep by fixing a backend stale-state problem: the app had already moved watch work into `Updates`, but the Rust workspace-change model still could not target `Updates` when watch data changed.
