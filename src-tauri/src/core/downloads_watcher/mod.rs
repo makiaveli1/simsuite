@@ -37,6 +37,8 @@ use crate::{
 };
 
 const WATCHER_DEBOUNCE_MS: u64 = 900;
+// Minimum interval between syncs to prevent thrashing (5 seconds)
+const WATCHER_MIN_SYNC_INTERVAL_MS: u64 = 5000;
 // Bump when download-side evidence rules change so existing inbox items get reassessed once.
 const DOWNLOADS_ASSESSMENT_VERSION_PREFIX: &str = "downloads-assessment-v11";
 const AUTO_RECHECK_NOTE_PREFIX: &str = "Rechecked with newer SimSuite rules";
@@ -1339,6 +1341,7 @@ pub fn load_active_file_ids(connection: &Connection, item_id: i64) -> AppResult<
 }
 
 fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc::Receiver<()>) {
+    let mut last_sync_time = std::time::Instant::now();
     let (event_tx, event_rx) = mpsc::channel();
 
     let mut watcher = match recommended_watcher(move |result| {
@@ -1454,6 +1457,13 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                     continue;
                 }
                 
+                // Skip if we've synced too recently - prevents thrashing
+                let time_since_last_sync = last_sync_time.elapsed().as_millis() as u64;
+                if time_since_last_sync < WATCHER_MIN_SYNC_INTERVAL_MS {
+                    continue;
+                }
+                
+                last_sync_time = std::time::Instant::now();
                 let _ = process_downloads_once_for_paths(
                     &app,
                     &state,
@@ -1482,31 +1492,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 let _ = store_status(&state, &app, snapshot);
             }
             Err(RecvTimeoutError::Timeout) => {
-                // On timeout, do a periodic check but only if needed
-                let should_skip = state
-                    .downloads_status()
-                    .lock()
-                    .map(|status| {
-                        status.state == DownloadsWatcherState::Watching
-                            && status.active_items == 0
-                            && status.ready_items == 0
-                            && status.needs_review_items == 0
-                    })
-                    .unwrap_or(false);
-                
-                // Skip periodic check if already watching and we have no pending work
-                if should_skip {
-                    continue;
-                }
-                
-                // Do a lightweight periodic sync
-                let _ = process_downloads_once_for_paths(
-                    &app,
-                    &state,
-                    Some("Periodic check".to_owned()),
-                    false,
-                    None,
-                );
+                // Do nothing on timeout - don't run periodic syncs
+                // This prevents constant unnecessary processing
             }
             Err(RecvTimeoutError::Disconnected) => break,
         }
