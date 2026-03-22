@@ -1,12 +1,15 @@
 import { Suspense, lazy, useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnimatePresence, domAnimation, LazyMotion, m, MotionConfig } from "motion/react";
 import { Sidebar } from "./components/layout/Sidebar";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FieldGuide } from "./components/FieldGuide";
+import { ToastContainer } from "./components/Toast";
 import { ScannerOverlay } from "./components/ScannerOverlay";
 import { ThemeBackdrop } from "./components/ThemeBackdrop";
 import { useUiPreferences, UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { api, hasTauriRuntime } from "./lib/api";
+import { toast } from "./components/Toast";
 import {
   experienceModeToLegacyView,
   normalizeExperienceMode,
@@ -346,20 +349,26 @@ function AppShell({
   }, [isScanning, handleScanStatus]);
 
   async function saveLibraryPaths(nextSettings: LibrarySettings) {
-    const saved = await api.saveLibraryPaths(nextSettings);
-    setSettings(saved);
-    if (!hasTauriRuntime) {
-      bumpWorkspaceDomains([
-          "home",
-          "downloads",
-          "library",
-          "updates",
-          "organize",
-          "review",
-          "duplicates",
-          "creatorAudit",
-          "categoryAudit",
-      ]);
+    try {
+      const saved = await api.saveLibraryPaths(nextSettings);
+      setSettings(saved);
+      toast("success", "Library paths saved successfully");
+      if (!hasTauriRuntime) {
+        bumpWorkspaceDomains([
+            "home",
+            "downloads",
+            "library",
+            "updates",
+            "organize",
+            "review",
+            "duplicates",
+            "creatorAudit",
+            "categoryAudit",
+        ]);
+      }
+    } catch (error) {
+      toast("error", "Failed to save library paths");
+      throw error;
     }
   }
 
@@ -389,6 +398,7 @@ function AppShell({
       }
     } catch (error) {
       setIsScanning(false);
+      toast("error", "Failed to start scan. Check your library paths.");
       throw error;
     }
   }
@@ -588,7 +598,6 @@ function AppShell({
         />
         <AnimatePresence mode="wait" initial={false}>
           <m.div
-            key={screen}
             ref={screenFrameRef}
             className="screen-frame"
             initial={screenFrameMotion.initial}
@@ -596,15 +605,17 @@ function AppShell({
             exit={screenFrameMotion.exit}
             transition={screenFrameMotion.transition}
           >
-            <Suspense
-              fallback={
-                <div className="state-panel state-panel--loading">
-                  Loading workspace view...
-                </div>
-              }
-            >
-              {currentScreen}
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense
+                fallback={
+                  <div className="state-panel state-panel--loading">
+                    Loading workspace view...
+                  </div>
+                }
+              >
+                {currentScreen}
+              </Suspense>
+            </ErrorBoundary>
           </m.div>
         </AnimatePresence>
       </main>
@@ -620,6 +631,7 @@ function AppShell({
         experienceMode={experienceMode}
         onClose={() => setIsGuideOpen(false)}
       />
+      <ToastContainer />
     </div>
   );
 }

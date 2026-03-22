@@ -28,6 +28,7 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api, hasTauriRuntime } from "../lib/api";
+import { toast } from "../components/Toast";
 import {
   downloadsSelectionTransition,
   rowHover,
@@ -926,10 +927,12 @@ export function DownloadsScreen({
       setStatusMessage(
         `Moved ${result.movedCount} safe file(s) from ${selectedItem.displayName}. ${result.deferredReviewCount} file(s) stayed in the inbox.`,
       );
+      toast("success", `Moved ${result.movedCount} file(s) successfully`);
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
+      toast("error", "Failed to apply download item");
     } finally {
       setIsApplying(false);
     }
@@ -952,10 +955,12 @@ export function DownloadsScreen({
     try {
       await api.ignoreDownloadItem(selectedItem.id);
       setStatusMessage(`${selectedItem.displayName} was removed from the active inbox.`);
+      toast("success", `${selectedItem.displayName} ignored`);
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
+      toast("error", "Failed to ignore item");
     } finally {
       setIsIgnoring(false);
     }

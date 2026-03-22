@@ -1,5 +1,6 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
+import { toast } from "../components/Toast";
 import type {
   AppBehaviorSettings,
   WatchRefreshSummary,

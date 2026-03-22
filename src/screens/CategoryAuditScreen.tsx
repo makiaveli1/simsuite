@@ -7,6 +7,7 @@ import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { toast } from "../components/Toast";
 import { hoverLift, rowHover, rowPress, stagedListItem } from "../lib/motion";
 import { friendlyTypeLabel, reviewLabel, screenHelperLine } from "../lib/uiLanguage";
 import type {
@@ -285,10 +286,12 @@ export function CategoryAuditScreen({
       setStatusMessage(
         `Saved ${friendlyTypeLabel(result.kind)}${result.subtype ? ` / ${result.subtype}` : ""} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
       );
+      toast("success", `Category updated for ${result.updatedCount} files`);
       onDataChanged();
       await loadAudit();
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
+      toast("error", "Failed to apply category audit");
     } finally {
       setIsApplying(false);
     }

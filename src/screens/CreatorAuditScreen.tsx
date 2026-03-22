@@ -7,6 +7,7 @@ import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
+import { toast } from "../components/Toast";
 import { rowHover, rowPress, stagedListItem } from "../lib/motion";
 import { friendlyTypeLabel, reviewLabel, screenHelperLine } from "../lib/uiLanguage";
 import type {
@@ -308,10 +309,12 @@ export function CreatorAuditScreen({
       setStatusMessage(
         `Saved ${result.creatorName} for ${result.updatedCount} files and cleared ${result.clearedReviewCount} review items.`,
       );
+      toast("success", `Creator updated for ${result.updatedCount} files`);
       onDataChanged();
       await loadAudit();
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
+      toast("error", "Failed to apply creator audit");
     } finally {
       setIsApplying(false);
     }
