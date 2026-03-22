@@ -133,6 +133,7 @@ struct ExistingDownloadItem {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DownloadItemSourceRecord {
     pub id: i64,
     pub display_name: String,
@@ -1534,6 +1535,22 @@ fn process_downloads_once_for_paths(
         };
         store_status(state, app, status.clone())?;
         return Ok(status);
+    }
+
+    // Skip processing if no actual changes - avoid unnecessary "Processing" state
+    if let Some(paths) = changed_paths {
+        if paths.is_empty() {
+            // Return current status without setting to Processing
+            let current_status = state
+                .downloads_status()
+                .lock()
+                .map_err(|_| AppError::Message("Downloads status lock poisoned".to_owned()))?
+                .clone();
+            // If already Watching, just return it
+            if current_status.state == DownloadsWatcherState::Watching {
+                return Ok(current_status);
+            }
+        }
     }
 
     store_status(
