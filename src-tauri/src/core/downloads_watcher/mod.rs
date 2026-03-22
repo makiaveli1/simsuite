@@ -1448,6 +1448,12 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 }
 
                 let changed_paths = dedupe_changed_paths(changed_paths);
+                
+                // Skip processing if no actual paths changed - prevents unnecessary syncs
+                if changed_paths.is_empty() {
+                    continue;
+                }
+                
                 let _ = process_downloads_once_for_paths(
                     &app,
                     &state,
@@ -1475,7 +1481,33 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                     .unwrap_or_default();
                 let _ = store_status(&state, &app, snapshot);
             }
-            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Timeout) => {
+                // On timeout, do a periodic check but only if needed
+                let should_skip = state
+                    .downloads_status()
+                    .lock()
+                    .map(|status| {
+                        status.state == DownloadsWatcherState::Watching
+                            && status.active_items == 0
+                            && status.ready_items == 0
+                            && status.needs_review_items == 0
+                    })
+                    .unwrap_or(false);
+                
+                // Skip periodic check if already watching and we have no pending work
+                if should_skip {
+                    continue;
+                }
+                
+                // Do a lightweight periodic sync
+                let _ = process_downloads_once_for_paths(
+                    &app,
+                    &state,
+                    Some("Periodic check".to_owned()),
+                    false,
+                    None,
+                );
+            }
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
