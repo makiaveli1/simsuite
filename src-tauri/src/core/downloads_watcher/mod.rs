@@ -1598,6 +1598,25 @@ fn process_downloads_once_for_paths(
         )
     });
 
+    // Skip processing if no observed sources and this is an automatic (non-manual) scan
+    // This prevents unnecessary processing loops when the Downloads folder is empty
+    if observed.is_empty() && !manual {
+        // Check if this is just a periodic poll with no changes
+        let current_status = state
+            .downloads_status()
+            .lock()
+            .map_err(|_| AppError::Message("Downloads status lock poisoned".to_owned()))?
+            .clone();
+        
+        // If already in Watching state with no items, skip processing entirely
+        if current_status.state == DownloadsWatcherState::Watching 
+            && current_status.active_items == 0 
+            && current_status.ready_items == 0 
+            && current_status.needs_review_items == 0 {
+            return Ok(current_status);
+        }
+    }
+
     let existing_started_at = Instant::now();
     let existing = load_existing_items(&connection)?;
     log_slow_downloads_step("downloads_sync::existing", existing_started_at, || {
