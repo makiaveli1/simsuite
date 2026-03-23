@@ -2871,6 +2871,18 @@ fn store_status(
         let mut guard = status_handle
             .lock()
             .map_err(|_| AppError::Message("Downloads status lock poisoned".to_owned()))?;
+        
+        // Skip emitting if status hasn't actually changed (compare key fields)
+        if guard.state == status.state 
+            && guard.ready_items == status.ready_items
+            && guard.needs_review_items == status.needs_review_items
+            && guard.active_items == status.active_items
+            && guard.current_item == status.current_item
+            && guard.last_error == status.last_error
+        {
+            return Ok(());
+        }
+        
         *guard = status.clone();
     }
 
