@@ -547,9 +547,24 @@ pub fn pick_folder(title: Option<String>) -> Option<String> {
     dialog.pick_folder().map(path_to_string)
 }
 
+// Cache TTL for home overview (5 seconds)
+const HOME_OVERVIEW_CACHE_TTL_SECS: u64 = 5;
+
 #[tauri::command]
 pub async fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, String> {
     let state = state.inner().clone();
+    let cache = state.home_overview_cache();
+    
+    // Check cache first
+    {
+        let guard = cache.lock().map_err(|_| "Cache lock failed")?;
+        if let Some((overview, timestamp)) = guard.as_ref() {
+            if timestamp.elapsed().as_secs() < HOME_OVERVIEW_CACHE_TTL_SECS {
+                return Ok(overview.clone());
+            }
+        }
+    }
+    
     run_blocking_command("get_home_overview", move || {
         let started_at = Instant::now();
         let connection = state.connection().map_err(map_error)?;
@@ -557,6 +572,12 @@ pub async fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOvervie
         let seed_pack = state.seed_pack();
         let overview = library_index::get_home_overview(&connection, &settings, &seed_pack)
             .map_err(map_error)?;
+        
+        // Store in cache
+        if let Ok(mut guard) = state.home_overview_cache().lock() {
+            *guard = Some((overview.clone(), Instant::now()));
+        }
+        
         log_slow_command("get_home_overview", started_at, || {
             format!(
                 "for {} exact update item(s), {} possible item(s), {} setup item(s)",

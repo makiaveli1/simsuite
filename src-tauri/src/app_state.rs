@@ -2,7 +2,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{mpsc, Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     database,
     error::{AppError, AppResult},
-    models::{DownloadsWatcherState, DownloadsWatcherStatus, LibrarySettings, ScanStatus},
+    models::{DownloadsWatcherState, DownloadsWatcherStatus, HomeOverview, LibrarySettings, ScanStatus},
     seed::{self, SeedPack},
 };
 
@@ -39,6 +39,8 @@ pub struct AppState {
     pub downloads_processing_lock: Arc<Mutex<()>>,
     #[allow(dead_code)]
     pub app_data_dir: PathBuf,
+    // Cache for home overview to prevent repeated expensive calls
+    pub home_overview_cache: Arc<Mutex<Option<(HomeOverview, Instant)>>>,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
             watch_polling_control: Arc::new(Mutex::new(WatchPollingControl::default())),
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir,
+            home_overview_cache: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -157,6 +160,10 @@ impl AppState {
 
     pub fn watch_polling_control(&self) -> Arc<Mutex<WatchPollingControl>> {
         Arc::clone(&self.watch_polling_control)
+    }
+
+    pub fn home_overview_cache(&self) -> Arc<Mutex<Option<(HomeOverview, Instant)>>> {
+        Arc::clone(&self.home_overview_cache)
     }
 
     pub fn downloads_processing_lock(&self) -> Arc<Mutex<()>> {
