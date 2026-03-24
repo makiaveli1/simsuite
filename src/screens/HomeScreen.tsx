@@ -65,6 +65,7 @@ export function HomeScreen({
   refreshVersion,
   settings,
   onSettingsChange,
+  onNavigate,
   onScan,
   isScanning,
   userView,
@@ -400,7 +401,7 @@ export function HomeScreen({
         </m.section>
 
         {userView === "beginner" &&
-        (overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) > 0 ? (
+        (overview?.downloadsCount ?? 0) > 0 ? (
           <div
             className="casual-home-cta-card"
             role="button"
@@ -425,9 +426,9 @@ export function HomeScreen({
             <div className="casual-home-cta-text">
               <p className="casual-home-cta-headline">
                 You have{" "}
-                {(overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0)}{" "}
+                {(overview?.downloadsCount ?? 0)}{" "}
                 item
-                {(overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) !== 1
+                {(overview?.downloadsCount ?? 0) !== 1
                   ? "s"
                   : ""}{" "}
                 waiting in Downloads

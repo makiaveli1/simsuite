@@ -1,20 +1,14 @@
 import { useEffect, useState } from "react";
 import { m } from "motion/react";
 import {
-  AlertTriangle,
-  Check,
-  CheckSquare,
-  ChevronDown,
-  Folder,
   LayoutPanelLeft,
   LoaderCircle,
   Palette,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
-  Square,
-  Trash2,
   Workflow,
+  HelpCircle,
 } from "lucide-react";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
@@ -28,7 +22,6 @@ import type {
   AppBehaviorSettings,
   ExperienceMode,
   LibrarySettings,
-  StagingAreasSummary,
   UiDensity,
   WatchRefreshSummary,
 } from "../lib/types";
@@ -505,10 +498,7 @@ export function SettingsScreen({
           </m.section>
         </div>
       </div>
-
-      <StagingAreaBrowserSection />
     </div>
-  </div>
   );
 }
 
@@ -557,9 +547,16 @@ function SettingsExperienceSection({
               <div className="settings-view-card-topline">
                 <strong>{profile.label}</strong>
                 <span className="ghost-chip">{profile.badge}</span>
+      <button
+        className="settings-mode-info-btn"
+        title={card.hint}
+        aria-label="More info"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <HelpCircle size={14} strokeWidth={2} />
+      </button>
               </div>
               <span className="settings-view-headline">{card.headline}</span>
-              <p className="workspace-toolbar-copy">{card.hint}</p>
               <div className="settings-view-traits">
                 {card.traits.map((trait) => (
                   <span key={trait} className="settings-view-trait">
@@ -1058,456 +1055,6 @@ function SettingsAutomationSection({
       {backgroundModeError ? (
         <div className="settings-status-banner">{backgroundModeError}</div>
       ) : null}
-    </>
-  );
-}
-
-function StagingAreaBrowserSection() {
-  const [summary, setSummary] = useState<StagingAreasSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isReloading, setIsReloading] = useState(false);
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
-  const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
-  const [confirmingPaths, setConfirmingPaths] = useState<string[] | null>(null);
-  const [isCleaning, setIsCleaning] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState<{
-    deletedCount: number;
-    freedBytes: number;
-    errors: string[];
-  } | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void loadAreas();
-  }, []);
-
-  async function loadAreas() {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const data = await api.getStagingAreas();
-      setSummary(data);
-      // Auto-expand all areas by default
-      setExpandedAreas(new Set(data.areas.map((a) => a.itemId)));
-    } catch (err) {
-      setLoadError(
-        `Could not load staging areas: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleClean(paths: string[]) {
-    setIsCleaning(true);
-    setConfirmingPaths(null);
-    try {
-      const result = await api.cleanupStagingAreas(paths);
-      setCleanupResult(result);
-      // Deselect cleaned paths and reload
-      setSelectedPaths((prev) => {
-        const next = new Set(prev);
-        paths.forEach((p) => next.delete(p));
-        return next;
-      });
-      await loadAreas();
-    } catch (err) {
-      setCleanupResult({
-        deletedCount: 0,
-        freedBytes: 0,
-        errors: [err instanceof Error ? err.message : String(err)],
-      });
-    } finally {
-      setIsCleaning(false);
-    }
-  }
-
-  function formatBytes(bytes: number): string {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-  }
-
-  function formatAge(isoDate: string | null): string {
-    if (!isoDate) return "Unknown";
-    const ms = Date.now() - new Date(isoDate).getTime();
-    const mins = Math.floor(ms / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
-
-  const selectedArray = Array.from(selectedPaths);
-  const totalSelectedBytes = summary?.areas
-    .flatMap((a) => a.subdirectories)
-    .filter((s) => selectedPaths.has(s.path))
-    .reduce((sum, s) => sum + s.totalBytes, 0) ?? 0;
-
-  const allSubdirPaths = summary?.areas.flatMap((a) => a.subdirectories.map((s) => s.path)) ?? [];
-  const allSelected = allSubdirPaths.length > 0 && allSubdirPaths.every((p) => selectedPaths.has(p));
-
-  return (
-    <>
-      <div className="panel-heading settings-focus-heading">
-        <div>
-          <span className="section-label">
-            <Folder size={14} strokeWidth={2} />
-            Inbox staging area
-          </span>
-          <h2>Review and clean your Downloads inbox cache</h2>
-        </div>
-        <p className="workspace-toolbar-copy">
-          When SimSuite processes incoming Downloads, it stages files here before
-          moving them to Mods or Tray. This shows what&apos;s accumulated and lets
-          you reclaim disk space.
-        </p>
-      </div>
-
-      <div className="settings-summary-card settings-focus-block">
-        {/* Header row */}
-        <div className="staging-header-row">
-          <div className="staging-summary-stats">
-            {isLoading ? (
-              <span className="staging-loading-label">
-                <LoaderCircle size={13} strokeWidth={2} className="spin" />
-                Loading...
-              </span>
-            ) : summary ? (
-              <>
-                <span className="staging-stat">
-                  <strong>{summary.totalFileCount.toLocaleString()}</strong>
-                  <span className="workspace-toolbar-copy-muted"> files</span>
-                </span>
-                <span className="staging-stat-sep">·</span>
-                <span className="staging-stat">
-                  <strong>{formatBytes(summary.totalBytes)}</strong>
-                  <span className="workspace-toolbar-copy-muted"> total</span>
-                </span>
-                <span className="staging-stat-sep">·</span>
-                <span className="staging-stat">
-                  <strong>{summary.areas.length}</strong>
-                  <span className="workspace-toolbar-copy-muted">
-                    {" "}
-                    area{summary.areas.length !== 1 ? "s" : ""}
-                  </span>
-                </span>
-              </>
-            ) : (
-              <span className="workspace-toolbar-copy-muted">—</span>
-            )}
-          </div>
-
-          <div className="staging-header-actions">
-            {selectedArray.length > 0 && (
-              <span className="staging-selection-summary workspace-toolbar-copy-muted">
-                {selectedArray.length} selected ({formatBytes(totalSelectedBytes)})
-              </span>
-            )}
-            <m.button
-              type="button"
-              className="ghost-chip"
-              onClick={() => void loadAreas()}
-              disabled={isReloading || isLoading}
-              whileHover={hoverLift}
-              whileTap={tapPress}
-              title="Reload staging areas"
-            >
-              <LoaderCircle
-                size={13}
-                strokeWidth={2}
-                className={isReloading ? "spin" : undefined}
-              />
-              Refresh
-            </m.button>
-          </div>
-        </div>
-
-        {/* Error state */}
-        {loadError && (
-          <div className="staging-error-row">
-            <AlertTriangle size={13} strokeWidth={2} />
-            <span>{loadError}</span>
-          </div>
-        )}
-
-        {/* Cleanup result banner */}
-        {cleanupResult && (
-          <div
-            className={`staging-cleanup-banner ${
-              cleanupResult.errors.length > 0
-                ? "staging-cleanup-banner--partial"
-                : "staging-cleanup-banner--ok"
-            }`}
-          >
-            {cleanupResult.errors.length === 0 ? (
-              <Check size={13} strokeWidth={2} />
-            ) : (
-              <AlertTriangle size={13} strokeWidth={2} />
-            )}
-            <span>
-              {cleanupResult.deletedCount > 0
-                ? `Removed ${cleanupResult.deletedCount} item${
-                    cleanupResult.deletedCount !== 1 ? "s" : ""
-                  } and freed ${formatBytes(cleanupResult.freedBytes)}.`
-                : "Nothing was deleted."}
-              {cleanupResult.errors.length > 0 &&
-                ` ${cleanupResult.errors.length} error${
-                  cleanupResult.errors.length !== 1 ? "s" : ""
-                }.`}
-            </span>
-            <button
-              type="button"
-              className="staging-banner-close"
-              onClick={() => setCleanupResult(null)}
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!isLoading && summary && summary.areas.length === 0 && (
-          <div className="staging-empty-state">
-            <Folder size={28} strokeWidth={1.5} />
-            <p>No staging areas found.</p>
-            <span className="workspace-toolbar-copy-muted">
-              The inbox cache is clean. Staging areas appear here when SimSuite
-              processes Downloads.
-            </span>
-          </div>
-        )}
-
-        {/* Area list */}
-        {summary && summary.areas.length > 0 && (
-          <div className="staging-areas-list">
-            {/* Bulk select row */}
-            <div className="staging-bulk-row">
-              <m.button
-                type="button"
-                className="ghost-chip"
-                onClick={() => {
-                  if (allSelected) {
-                    setSelectedPaths(new Set());
-                  } else {
-                    setSelectedPaths(new Set(allSubdirPaths));
-                  }
-                }}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                {allSelected ? (
-                  <CheckSquare size={13} strokeWidth={2} />
-                ) : (
-                  <Square size={13} strokeWidth={2} />
-                )}
-                {allSelected ? "Deselect all" : "Select all"}
-              </m.button>
-
-              {selectedArray.length > 0 && (
-                <m.button
-                  type="button"
-                  className="danger-action"
-                  onClick={() => setConfirmingPaths(selectedArray)}
-                  disabled={isCleaning}
-                  whileHover={hoverLift}
-                  whileTap={tapPress}
-                >
-                  <Trash2 size={13} strokeWidth={2} />
-                  Clean selected
-                </m.button>
-              )}
-            </div>
-
-            {/* Areas */}
-            {summary.areas.map((area) => (
-              <div key={area.itemId} className="staging-area-card">
-                <div className="staging-area-header">
-                  <button
-                    type="button"
-                    className="staging-expand-btn"
-                    onClick={() => {
-                      setExpandedAreas((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(area.itemId)) {
-                          next.delete(area.itemId);
-                        } else {
-                          next.add(area.itemId);
-                        }
-                        return next;
-                      });
-                    }}
-                    aria-expanded={expandedAreas.has(area.itemId)}
-                  >
-                    <ChevronDown
-                      size={14}
-                      strokeWidth={2}
-                      className={`staging-chevron ${
-                        expandedAreas.has(area.itemId) ? "staging-chevron--open" : ""
-                      }`}
-                    />
-                    <span className="staging-area-label">{area.itemId}</span>
-                    <span className="workspace-toolbar-copy-muted staging-area-count">
-                      {area.subdirectories.length} subdir
-                      {area.subdirectories.length !== 1 ? "s" : ""}
-                    </span>
-                  </button>
-                </div>
-
-                {expandedAreas.has(area.itemId) && (
-                  <div className="staging-subdirs">
-                    {area.subdirectories.length === 0 && (
-                      <span className="workspace-toolbar-copy-muted staging-empty-subdir">
-                        No subdirectories.
-                      </span>
-                    )}
-                    {area.subdirectories.map((sub) => {
-                      const isSelected = selectedPaths.has(sub.path);
-                      return (
-                        <div
-                          key={sub.path}
-                          className={`staging-subdir-row ${
-                            isSelected ? "staging-subdir-row--selected" : ""
-                          }`}
-                        >
-                          <m.button
-                            type="button"
-                            className="staging-checkbox-btn"
-                            onClick={() => {
-                              setSelectedPaths((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(sub.path)) {
-                                  next.delete(sub.path);
-                                } else {
-                                  next.add(sub.path);
-                                }
-                                return next;
-                              });
-                            }}
-                            whileHover={hoverLift}
-                            whileTap={tapPress}
-                            aria-pressed={isSelected}
-                          >
-                            {isSelected ? (
-                              <CheckSquare size={15} strokeWidth={2} />
-                            ) : (
-                              <Square size={15} strokeWidth={2} />
-                            )}
-                          </m.button>
-
-                          <div className="staging-subdir-info">
-                            <code className="staging-subdir-name">{sub.name}</code>
-                            <span className="workspace-toolbar-copy-muted staging-subdir-path">
-                              {sub.path}
-                            </span>
-                          </div>
-
-                          <div className="staging-subdir-meta">
-                            <span
-                              className={`staging-badge ${
-                                sub.fileCount > 50
-                                  ? "staging-badge--warn"
-                                  : "staging-badge--neutral"
-                              }`}
-                            >
-                              {sub.fileCount.toLocaleString()} files
-                            </span>
-                            <span className="staging-badge staging-badge--size">
-                              {formatBytes(sub.totalBytes)}
-                            </span>
-                            <span className="workspace-toolbar-copy-muted staging-age">
-                              {formatAge(sub.createdAt)}
-                            </span>
-                          </div>
-
-                          <m.button
-                            type="button"
-                            className="staging-delete-btn"
-                            onClick={() => setConfirmingPaths([sub.path])}
-                            disabled={isCleaning}
-                            whileHover={hoverLift}
-                            whileTap={tapPress}
-                            title="Delete this subdirectory"
-                          >
-                            <Trash2 size={13} strokeWidth={2} />
-                          </m.button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Confirmation dialog */}
-      {confirmingPaths !== null && (
-        <div className="staging-confirm-overlay" role="dialog" aria-modal="true">
-          <div className="staging-confirm-dialog">
-            <div className="staging-confirm-header">
-              <AlertTriangle size={20} strokeWidth={2} />
-              <h3>Clean staging area?</h3>
-            </div>
-            <p className="workspace-toolbar-copy">
-              This will permanently delete{" "}
-              <strong>{confirmingPaths.length}</strong> director
-              {confirmingPaths.length !== 1 ? "ies" : "y"} and all their contents.
-              SimSuite will not be able to recover them.
-            </p>
-            <ul className="staging-confirm-paths">
-              {confirmingPaths.slice(0, 5).map((p) => (
-                <li key={p}>
-                  <code>{p.split(/[/\\]/).pop()}</code>
-                </li>
-              ))}
-              {confirmingPaths.length > 5 && (
-                <li className="workspace-toolbar-copy-muted">
-                  ...and {confirmingPaths.length - 5} more
-                </li>
-              )}
-            </ul>
-            <div className="staging-confirm-actions">
-              <m.button
-                type="button"
-                className="ghost-chip"
-                onClick={() => setConfirmingPaths(null)}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                Cancel
-              </m.button>
-              <m.button
-                type="button"
-                className="danger-action"
-                onClick={() => void handleClean(confirmingPaths)}
-                whileHover={hoverLift}
-                whileTap={tapPress}
-              >
-                {isCleaning ? (
-                  <>
-                    <LoaderCircle size={13} strokeWidth={2} className="spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={13} strokeWidth={2} />
-                    Delete permanently
-                  </>
-                )}
-              </m.button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
