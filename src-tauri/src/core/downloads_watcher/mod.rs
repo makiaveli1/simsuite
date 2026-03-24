@@ -32,7 +32,7 @@ use crate::{
         DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
         DownloadsTimelineEntry, DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan,
-        LibrarySettings, OrganizationPreview, CleanupResult, RejectResult, RejectedItem, SpecialReviewPlan,
+        LibrarySettings, OrganizationPreview, CleanupResult, IgnoreItemsResult, RejectResult, RejectedItem, SpecialReviewPlan,
         StagingArea, StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
     },
 };

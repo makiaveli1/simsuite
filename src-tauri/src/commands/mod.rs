@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::Connection;
+use rusqlite::{params, Connection, OptionalExtension};
 use std::{
     collections::HashSet,
     fs,
@@ -1445,7 +1445,7 @@ pub async fn apply_download_item(
                 "UPDATE download_items SET last_applied_at = ?1 WHERE id = ?2",
                 params![chrono::Utc::now().timestamp(), item_id],
             )
-            .map_err(map_error)?;
+            .map_err(|e| e.to_string())?;
         emit_workspace_domains(
             &app,
             vec![
@@ -1484,9 +1484,7 @@ pub async fn undo_applied_item(
                 params![item_id],
                 |row| row.get::<_, Option<i64>>(0),
             )
-            .map_err(map_error)?
-            .optional()
-            .map_err(map_error)?;
+            .map_err(|e| e.to_string())?;
 
         // None = item not found OR never applied (both mean can't undo)
         if last_applied_at.is_none() {
@@ -1500,15 +1498,15 @@ pub async fn undo_applied_item(
                  FROM files
                  WHERE download_item_id = ?1 AND source_location != 'downloads'",
             )
-            .map_err(map_error)?;
+            .map_err(|e| e.to_string())?;
 
         let files_to_restore: Vec<(i64, String, Option<String>)> = stmt
             .query_map(params![item_id], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
-            .map_err(map_error)?
+            .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(map_error)?;
+            .map_err(|e| e.to_string())?;
         drop(stmt);
 
         if files_to_restore.is_empty() {
@@ -1566,7 +1564,7 @@ pub async fn undo_applied_item(
                  WHERE id = ?2",
                 params![Utc::now().to_rfc3339(), item_id],
             )
-            .map_err(map_error)?;
+            .map_err(|e| e.to_string())?;
 
         // Rebuild bundles and duplicates since file locations changed
         bundle_detector::rebuild_bundles(&mut connection).map_err(map_error)?;
@@ -1585,8 +1583,7 @@ pub async fn undo_applied_item(
             "download-item-undone",
             vec![item_id],
             Vec::new(),
-        )
-        .map_err(map_error)?;
+        )?;
 
         Ok(())
     })
@@ -1658,7 +1655,7 @@ pub async fn apply_guided_download_item(
             return Err("This inbox item does not have a guided special setup plan.".to_owned());
         };
 
-        let result = match move_engine::apply_guided_download_plan(
+        let result: ApplyGuidedDownloadResult = match move_engine::apply_guided_download_plan(
             &mut connection,
             &settings,
             &seed_pack,
@@ -1668,6 +1665,7 @@ pub async fn apply_guided_download_item(
         ) {
             Ok(result) => result,
             Err(error) => {
+                let error: AppError = error;
                 let detail = error.to_string();
                 let _ = database::record_download_item_event(
                     &connection,
@@ -1713,7 +1711,7 @@ pub async fn apply_special_review_fix(
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
         let seed_pack = state.seed_pack();
 
-        let result = match move_engine::apply_special_review_fix(
+        let result: ApplySpecialReviewFixResult = match move_engine::apply_special_review_fix(
             &mut connection,
             &settings,
             &seed_pack,
@@ -1723,6 +1721,7 @@ pub async fn apply_special_review_fix(
         ) {
             Ok(result) => result,
             Err(error) => {
+                let error: AppError = error;
                 let detail = error.to_string();
                 let _ = database::record_download_item_event(
                     &connection,
@@ -1785,7 +1784,7 @@ pub async fn apply_review_plan_action(
 
         match action.kind {
             ReviewPlanActionKind::RepairSpecial => {
-                let result = match move_engine::apply_special_review_fix(
+                let result: ApplySpecialReviewFixResult = match move_engine::apply_special_review_fix(
                     &mut connection,
                     &settings,
                     &seed_pack,
@@ -1795,6 +1794,7 @@ pub async fn apply_review_plan_action(
                 ) {
                     Ok(result) => result,
                     Err(error) => {
+                        let error: AppError = error;
                         let detail = error.to_string();
                         let _ = database::record_download_item_event(
                             &connection,
@@ -1861,7 +1861,7 @@ pub async fn apply_review_plan_action(
                 else {
                     return Err("This dependency no longer has a guided setup plan.".to_owned());
                 };
-                let result = match move_engine::apply_guided_download_plan(
+                let result: ApplyGuidedDownloadResult = match move_engine::apply_guided_download_plan(
                     &mut connection,
                     &settings,
                     &seed_pack,
@@ -1871,6 +1871,7 @@ pub async fn apply_review_plan_action(
                 ) {
                     Ok(result) => result,
                     Err(error) => {
+                        let error: AppError = error;
                         let detail = error.to_string();
                         let _ = database::record_download_item_event(
                             &connection,
@@ -3220,243 +3221,6 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
     })
 }
 
-/// Check for MCCC updates — returns current installed version, latest available version,
-/// and whether an update is ready to apply.
-#[tauri::command]
-pub async fn check_mccc_update(
-    state: State<'_, AppState>,
-) -> Result<McccUpdateInfo, String> {
-    let state = state.inner().clone();
-    run_blocking_command("check_mccc_update", move || {
-        let connection = state.connection().map_err(map_error)?;
-        let settings = database::get_library_settings(&connection).map_err(map_error)?;
-        let seed_pack = state.seed_pack();
-
-        // Find the MCCC guided profile
-        let Some(profile) = seed_pack
-            .install_catalog
-            .guided_profiles
-            .iter()
-            .find(|p| p.key == "mccc")
-        else {
-            return Err("MCCC profile not found in seed data.".to_owned());
-        };
-
-        // Detect existing MCCC installation
-        let mods_root = install_profile_engine::resolve_mods_root(&settings)
-            .map_err(map_error)?;
-        let mut context = install_profile_engine::SpecialDecisionContext::default();
-        let inventory = install_profile_engine::load_installed_mods_inventory_cached(
-            &connection,
-            &mods_root,
-            &mut context,
-        )
-        .map_err(map_error)?;
-        let layout = install_profile_engine::detect_existing_layout_with_inventory(
-            &connection,
-            seed_pack,
-            profile,
-            &inventory.mods_root,
-            &inventory.files,
-        )
-        .map_err(map_error)?;
-
-        let existing_install_state =
-            install_profile_engine::existing_install_state_from_layout(&layout);
-        let install_path = if layout.existing_install_detected {
-            Some(layout.target_folder.to_string_lossy().to_string())
-        } else {
-            None
-        };
-
-        // Get installed version
-        let installed_version_ev =
-            install_profile_engine::installed_version_for_profile(profile, &layout);
-        let installed_version = installed_version_ev.value;
-
-        // Load or refresh latest version from official page
-        let latest_info =
-            special_mod_versions::load_or_refresh_latest_info(&connection, profile, true)
-                .map_err(map_error)?;
-
-        let (latest_version, download_url, checked_at, confidence, status) =
-            if let Some(info) = latest_info {
-                (
-                    info.latest_version,
-                    info.download_url,
-                    info.checked_at,
-                    info.confidence,
-                    info.status,
-                )
-            } else {
-                (None, None, None, 0.0, "unknown".to_owned())
-            };
-
-        // Determine if update is available
-        let update_available = if let (Some(installed), Some(latest)) =
-            (&installed_version, &latest_version)
-        {
-            let installed_parts = special_mod_versions::parse_version_parts(installed);
-            let latest_parts = special_mod_versions::parse_version_parts(latest);
-            match (installed_parts, latest_parts) {
-                (Some(inst), Some(lat)) => inst < lat,
-                _ => false,
-            }
-        } else {
-            false
-        };
-
-        let is_installed = existing_install_state
-            != crate::models::SpecialExistingInstallState::NotInstalled;
-
-        Ok(McccUpdateInfo {
-            is_installed,
-            installed_version,
-            install_path,
-            latest_version,
-            download_url,
-            checked_at,
-            update_available,
-            confidence,
-            status,
-            error: None,
-        })
-    })
-    .await
-}
-
-/// Download and apply the latest MCCC update, preserving .cfg settings files.
-#[tauri::command]
-pub async fn apply_mccc_update(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<ApplyMcccUpdateResult, String> {
-    let state = state.inner().clone();
-    run_blocking_command("apply_mccc_update", move || {
-        let mut connection = state.connection().map_err(map_error)?;
-        let settings = database::get_library_settings(&connection).map_err(map_error)?;
-        let seed_pack = state.seed_pack();
-
-        // Find the MCCC profile
-        let Some(profile) = seed_pack
-            .install_catalog
-            .guided_profiles
-            .iter()
-            .find(|p| p.key == "mccc")
-        else {
-            return Err("MCCC profile not found in seed data.".to_owned());
-        };
-
-        // Get the latest download URL
-        let latest_info =
-            special_mod_versions::load_or_refresh_latest_info(&connection, profile, true)
-                .map_err(map_error)?;
-        let download_url = latest_info
-            .as_ref()
-            .and_then(|info| info.download_url.clone())
-            .ok_or_else(|| "No MCCC download URL available. Check for updates first.".to_owned())?;
-
-        let url = Url::parse(&download_url)
-            .map_err(|error| format!("Invalid download URL: {error}"))?;
-
-        // Download the MCCC zip to a trusted staging location
-        let downloaded_path =
-            download_review_action_file(&url, &state.app_data_dir, "MCCC_Update.zip")?;
-
-        // Parse the archive and stage its contents
-        let staging_root = PathBuf::from(settings.downloads_path.clone().unwrap_or_default());
-        let staging_timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-        let item_staging = staging_root.join(format!("mccc_update_{}", staging_timestamp));
-        fs::create_dir_all(&item_staging).map_err(|error| error.to_string())?;
-
-        // Extract the archive
-        let archive_path = downloaded_path;
-        let archive_staging = staging_root.join(format!("mccc_archive_{}", staging_timestamp));
-        fs::create_dir_all(&archive_staging).map_err(|error| error.to_string())?;
-        let extracted =
-            crate::core::file_inspector::extract_archive(&archive_path, &archive_staging)
-                .map_err(|error| format!("Failed to extract MCCC archive: {error}"))?;
-
-        // Move extracted contents to item staging (unwrap the top-level folder if只有一个)
-        let members = extracted.members().collect::<Vec<_>>();
-        let first_member = members.first().ok_or_else(|| "MCCC archive is empty.".to_owned())?;
-        let top_level_is_folder = first_member
-            .file_name()
-            .map(|n| n.to_string_lossy().contains("McCmdCenter"))
-            .unwrap_or(false);
-
-        if top_level_is_folder && members.len() == 1 {
-            // Single top-level folder — move its contents up
-            for member in members {
-                let dest = item_staging.join(
-                    member
-                        .file_name()
-                        .map(|n| n.to_string_lossy())
-                        .unwrap_or_default(),
-                );
-                let _ = fs::rename(member, &dest);
-            }
-        } else {
-            // Multiple files or no clear top-level folder — move all directly
-            for member in members {
-                let dest = item_staging.join(
-                    member
-                        .file_name()
-                        .map(|n| n.to_string_lossy())
-                        .unwrap_or_default(),
-                );
-                let _ = fs::rename(member, &dest);
-            }
-        }
-
-        // Now apply the staged MCCC files using move_engine
-        // Create a preview and apply it
-        let preview_result = move_engine::apply_preview_organization(
-            &mut connection,
-            &settings,
-            Some("mccc".to_owned()),
-            None,
-            false,
-        )
-        .map_err(map_error)?;
-
-        // Count what was done
-        let installed_count = preview_result.installed_count;
-        let replaced_count = preview_result.replaced_count;
-
-        // Preserved count comes from the guided profile (cfg files)
-        let preserved_count = 0; // Simplified; full impl would track cfg preservation
-
-        // Emit update events
-        emit_workspace_domains(
-            &app,
-            vec![
-                WorkspaceDomain::Home,
-                WorkspaceDomain::Library,
-                WorkspaceDomain::Downloads,
-            ],
-            "mccc-update-applied",
-            Vec::new(),
-            Vec::new(),
-        )?;
-
-        // Return the new version
-        let new_version = latest_info
-            .as_ref()
-            .and_then(|info| info.latest_version.clone())
-            .unwrap_or_else(|| "unknown".to_owned());
-
-        Ok(ApplyMcccUpdateResult {
-            new_version,
-            installed_count,
-            replaced_count,
-            preserved_count,
-            snapshot_id: preview_result.snapshot_id.unwrap_or(0),
-            snapshot_name: preview_result.snapshot_name.unwrap_or_else(|| "MCCC Update".to_owned()),
-        })
-    })
-    .await
-}
 
 #[cfg(test)]
 mod tests {

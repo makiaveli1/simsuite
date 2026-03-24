@@ -1131,7 +1131,7 @@ fn delete_snapshot(connection: &Connection, snapshot_id: i64) -> AppResult<()> {
     Ok(())
 }
 
-fn move_single_file(source: &Path, destination: &Path) -> AppResult<()> {
+pub fn move_single_file(source: &Path, destination: &Path) -> AppResult<()> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)?;
     }
