@@ -18,6 +18,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { CasualGuidedTours } from "../components/CasualGuidedTours";
+import { KeyboardShortcutsDialog } from "../components/KeyboardShortcutsDialog";
 import {
   type DockSectionDefinition,
 } from "../components/DockSectionStack";
@@ -203,6 +204,7 @@ export function DownloadsScreen({
   const [isIgnoring, setIsIgnoring] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
   const [showTour, setShowTour] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
   );
@@ -1165,6 +1167,7 @@ export function DownloadsScreen({
     return {
       id: item.id,
       title: item.displayName,
+      creatorName: item.creatorName,
       meta: `${item.sourceKind === "archive" ? "Archive" : "Direct file"} · ${item.detectedFileCount.toLocaleString()} file(s)${
         userView === "power" && item.archiveFormat
           ? ` · ${item.archiveFormat.toUpperCase()}`
@@ -1384,37 +1387,115 @@ export function DownloadsScreen({
   }, [selectedItem]);
 
   useEffect(() => {
-    if (!proofSheetOpen && !pendingDialog && !filtersOpen) {
-      return;
-    }
-
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
+      // Don't fire shortcuts when typing in an input
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
         return;
       }
 
-      event.preventDefault();
-
-      if (pendingDialog) {
-        if (!dialogBusy) {
-          setPendingDialog(null);
+      switch (event.key) {
+        case "j":
+        case "J":
+        case "ArrowDown": {
+          event.preventDefault();
+          const currentIndex = activeLaneItems.findIndex(
+            (item) => item.id === selectedItemId,
+          );
+          const nextIndex =
+            currentIndex < activeLaneItems.length - 1
+              ? currentIndex + 1
+              : 0;
+          setSelectedItemId(activeLaneItems[nextIndex]?.id ?? null);
+          break;
         }
-        return;
-      }
-
-      if (proofSheetOpen) {
-        setProofSheetOpen(false);
-        return;
-      }
-
-      if (filtersOpen) {
-        setFiltersOpen(false);
+        case "k":
+        case "K":
+        case "ArrowUp": {
+          event.preventDefault();
+          const currentIndex = activeLaneItems.findIndex(
+            (item) => item.id === selectedItemId,
+          );
+          const prevIndex =
+            currentIndex > 0 ? currentIndex - 1 : activeLaneItems.length - 1;
+          setSelectedItemId(activeLaneItems[prevIndex]?.id ?? null);
+          break;
+        }
+        case "Enter": {
+          // Toggle inspector open/closed for the selected item
+          if (selectedItem) {
+            if (!proofSheetOpen) {
+              setProofSheetOpen(true);
+            }
+          }
+          break;
+        }
+        case "a":
+        case "A": {
+          event.preventDefault();
+          if (selectedItem) {
+            void handleApply();
+          }
+          break;
+        }
+        case "i":
+        case "I": {
+          event.preventDefault();
+          if (selectedItem) {
+            void handleIgnore();
+          }
+          break;
+        }
+        case "r":
+        case "R": {
+          event.preventDefault();
+          void handleRefresh();
+          break;
+        }
+        case "?": {
+          event.preventDefault();
+          setShowShortcutsHelp(true);
+          break;
+        }
+        case "Escape": {
+          if (pendingDialog) {
+            if (!dialogBusy) {
+              setPendingDialog(null);
+            }
+            return;
+          }
+          if (proofSheetOpen) {
+            setProofSheetOpen(false);
+            return;
+          }
+          if (filtersOpen) {
+            setFiltersOpen(false);
+            return;
+          }
+          if (showShortcutsHelp) {
+            setShowShortcutsHelp(false);
+          }
+          break;
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dialogBusy, filtersOpen, pendingDialog, proofSheetOpen]);
+  }, [
+    activeLaneItems,
+    dialogBusy,
+    filtersOpen,
+    pendingDialog,
+    proofSheetOpen,
+    selectedItem,
+    selectedItemId,
+    showShortcutsHelp,
+  ]);
 
   return (
     <section className="screen-shell downloads-shell">
@@ -1845,6 +1926,12 @@ export function DownloadsScreen({
 
       {showTour && (
         <CasualGuidedTours onComplete={() => setShowTour(false)} />
+      )}
+      {showShortcutsHelp && (
+        <KeyboardShortcutsDialog
+          isOpen={showShortcutsHelp}
+          onClose={() => setShowShortcutsHelp(false)}
+        />
       )}
     </section>
   );

@@ -688,6 +688,7 @@ export interface DownloadsInboxItem {
   activeFileCount: number;
   appliedFileCount: number;
   reviewFileCount: number;
+  creatorName: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
   updatedAt: string;

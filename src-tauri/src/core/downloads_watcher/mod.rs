@@ -365,7 +365,14 @@ fn list_download_items_internal(
                 JOIN files f ON f.id = rq.file_id
                 WHERE f.download_item_id = di.id
                   AND f.source_location = 'downloads'
-            ) AS review_file_count
+            ) AS review_file_count,
+            (
+                SELECT GROUP_CONCAT(DISTINCT c.canonical_name, ', ')
+                FROM files f2
+                LEFT JOIN creators c ON c.id = f2.creator_id
+                WHERE f2.download_item_id = di.id
+                  AND c.canonical_name IS NOT NULL
+            ) AS creator_name
          FROM download_items di
          WHERE 1 = 1",
     );
@@ -377,7 +384,7 @@ fn list_download_items_internal(
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
     {
-        sql.push_str(" AND (di.display_name LIKE ?1 OR di.source_path LIKE ?1)");
+        sql.push_str(" AND (di.display_name LIKE ?1 OR di.source_path LIKE ?1 OR creator_name LIKE ?1)");
         params.push(format!("%{search}%"));
     }
 
@@ -449,6 +456,7 @@ fn list_download_items_internal(
                 active_file_count: row.get(33)?,
                 applied_file_count: row.get(34)?,
                 review_file_count: row.get(35)?,
+                creator_name: row.get(36)?,
                 sample_files: Vec::new(),
                 queue_lane: DownloadQueueLane::ReadyNow,
                 queue_summary: String::new(),
@@ -3077,7 +3085,14 @@ fn load_item_by_id_cached(
                     JOIN files f ON f.id = rq.file_id
                     WHERE f.download_item_id = di.id
                       AND f.source_location = 'downloads'
-                ) AS review_file_count
+                ) AS review_file_count,
+                (
+                    SELECT GROUP_CONCAT(DISTINCT c.canonical_name, ', ')
+                    FROM files f2
+                    LEFT JOIN creators c ON c.id = f2.creator_id
+                    WHERE f2.download_item_id = di.id
+                      AND c.canonical_name IS NOT NULL
+                ) AS creator_name
              FROM download_items di
              WHERE di.id = ?1",
             params![item_id],
@@ -3121,6 +3136,7 @@ fn load_item_by_id_cached(
                     active_file_count: row.get(33)?,
                     applied_file_count: row.get(34)?,
                     review_file_count: row.get(35)?,
+                    creator_name: row.get(36)?,
                     sample_files: Vec::new(),
                     queue_lane: DownloadQueueLane::ReadyNow,
                     queue_summary: String::new(),

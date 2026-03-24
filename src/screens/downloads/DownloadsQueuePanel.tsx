@@ -37,6 +37,7 @@ const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
 export interface DownloadsQueueRowModel {
   id: number;
   title: string;
+  creatorName?: string | null;
   meta: string;
   summary: string;
   samples?: string | null;
@@ -178,6 +179,9 @@ export function DownloadsQueuePanel({
                       >
                         <div className="downloads-item-main">
                           <strong>{row.title}</strong>
+                          {row.creatorName ? (
+                            <span className="downloads-item-creator">{row.creatorName}</span>
+                          ) : null}
                           <span>{row.meta}</span>
                           <div className="downloads-item-samples">{row.summary}</div>
                           {row.samples ? (

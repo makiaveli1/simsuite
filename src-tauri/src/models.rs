@@ -1105,6 +1105,7 @@ pub struct DownloadsInboxItem {
     pub active_file_count: i64,
     pub applied_file_count: i64,
     pub review_file_count: i64,
+    pub creator_name: Option<String>,
     pub first_seen_at: String,
     pub last_seen_at: String,
     pub updated_at: String,
