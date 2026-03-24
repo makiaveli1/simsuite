@@ -41,13 +41,28 @@ export function DownloadsTopStrip({
   onLaneChange,
   userView,
   progress,
+  undoableApply,
+  onRequestUndo,
+  isUndoing,
 }: DownloadsTopStripProps) {
   const hasProgress = progress != null && progress.totalCount > 0;
   return (
     <div className="slim-strip downloads-top-strip">
       <div className="slim-strip-group">
         {statusMessage ? (
-          <span className="health-chip is-warn">{statusMessage}</span>
+          <span className="health-chip is-warn">
+            {statusMessage}
+            {undoableApply && onRequestUndo && (
+              <button
+                type="button"
+                className="health-chip-action"
+                onClick={onRequestUndo}
+                disabled={isUndoing}
+              >
+                {isUndoing ? "Moving..." : "Undo"}
+              </button>
+            )}
+          </span>
         ) : errorMessage ? (
           <span className="health-chip is-danger">{errorMessage}</span>
         ) : (

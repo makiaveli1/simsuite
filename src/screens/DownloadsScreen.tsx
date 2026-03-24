@@ -1379,7 +1379,13 @@ export function DownloadsScreen({
       ? "Pick a batch first, then open the fuller details here."
       : "Pick a batch first, then open the calmer proof sheet.";
   const dialogBusy =
-    pendingDialog?.kind === "reject" ? isRejecting : pendingDialog ? isApplying : false;
+    pendingDialog?.kind === "reject"
+      ? isRejecting
+      : pendingDialog?.kind === "undo"
+        ? isUndoing
+        : pendingDialog
+          ? isApplying
+          : false;
   const dialogConfig =
     pendingDialog && selectedResolvedItem
       ? buildDownloadsDialogConfig({
@@ -1429,6 +1435,7 @@ export function DownloadsScreen({
     if (!selectedItem) {
       setProofSheetOpen(false);
       setPendingDialog(null);
+      setUndoableApply(null);
     }
   }, [selectedItem]);
 
@@ -1565,6 +1572,17 @@ export function DownloadsScreen({
         }}
         userView={userView}
         progress={progress}
+        undoableApply={undoableApply}
+        onRequestUndo={() => {
+          if (undoableApply) {
+            setPendingDialog({
+              kind: "undo",
+              itemId: undoableApply.itemId,
+              displayName: undoableApply.displayName,
+            });
+          }
+        }}
+        isUndoing={isUndoing}
       />
 
       {showWatcherBootstrap ? (

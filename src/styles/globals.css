@@ -928,6 +928,31 @@ h2,
   background: currentColor;
 }
 
+.health-chip-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  margin-left: 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.health-chip-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.health-chip-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .health-chip-group {
   display: flex;
   flex-wrap: wrap;
