@@ -127,6 +127,7 @@ export function HomeScreen({
         modsPath: detectedPaths.modsPath ?? settings.modsPath,
         trayPath: detectedPaths.trayPath ?? settings.trayPath,
         downloadsPath: detectedPaths.downloadsPath ?? settings.downloadsPath,
+        downloadRejectFolder: settings.downloadRejectFolder,
       });
     } finally {
       setIsSaving(false);

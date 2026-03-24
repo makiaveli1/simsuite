@@ -2965,6 +2965,425 @@ h2,
   line-height: 1.45;
 }
 
+/* ── Staging Area Browser ── */
+
+.staging-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.staging-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.staging-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.staging-stat strong {
+  font-size: 0.9rem;
+}
+
+.staging-stat-sep {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.staging-loading-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.staging-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.staging-selection-summary {
+  font-size: 0.82rem;
+}
+
+.staging-error-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  color: var(--amber);
+  font-size: 0.85rem;
+}
+
+.staging-cleanup-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.35rem;
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.staging-cleanup-banner--ok {
+  background: color-mix(in srgb, var(--green) 12%, var(--surface-3));
+  border: 1px solid color-mix(in srgb, var(--green) 40%, var(--line));
+  color: var(--text);
+}
+
+.staging-cleanup-banner--partial {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface-3));
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line));
+  color: var(--text-soft);
+}
+
+.staging-banner-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+
+.staging-banner-close:hover {
+  color: var(--text);
+}
+
+.staging-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.staging-empty-state p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+}
+
+.staging-areas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.staging-bulk-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.1rem;
+}
+
+.staging-area-card {
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.staging-area-header {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.staging-expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.1rem 0.2rem;
+  width: 100%;
+  text-align: left;
+}
+
+.staging-expand-btn:hover {
+  color: var(--accent);
+}
+
+.staging-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.staging-chevron--open {
+  transform: rotate(0deg);
+}
+
+.staging-chevron:not(.staging-chevron--open) {
+  transform: rotate(-90deg);
+}
+
+.staging-area-label {
+  flex: 1;
+}
+
+.staging-area-count {
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.staging-subdirs {
+  display: flex;
+  flex-direction: column;
+}
+
+.staging-empty-subdir {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.staging-subdir-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+
+.staging-subdir-row:last-child {
+  border-bottom: none;
+}
+
+.staging-subdir-row:hover {
+  background: var(--surface-2);
+}
+
+.staging-subdir-row--selected {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.staging-checkbox-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0.1rem;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+
+.staging-checkbox-btn:hover {
+  color: var(--accent);
+}
+
+.staging-subdir-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.staging-subdir-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.staging-subdir-path {
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.staging-subdir-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.staging-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  white-space: nowrap;
+}
+
+.staging-badge--neutral {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  border: 1px solid var(--line);
+}
+
+.staging-badge--warn {
+  background: color-mix(in srgb, var(--amber) 15%, var(--surface-3));
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line));
+}
+
+.staging-badge--size {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  border: 1px solid var(--line);
+}
+
+.staging-age {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.staging-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0.2rem;
+  display: flex;
+  align-items: center;
+  border-radius: 0.25rem;
+  transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
+}
+
+.staging-delete-btn:hover {
+  color: color-mix(in srgb, var(--red) 80%, var(--text));
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.staging-delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.danger-action {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--red) 50%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, var(--surface-3));
+  color: color-mix(in srgb, var(--red) 80%, var(--text));
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.danger-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 18%, var(--surface-3));
+  border-color: color-mix(in srgb, var(--red) 70%, var(--line));
+}
+
+.danger-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Confirmation overlay */
+.staging-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.staging-confirm-dialog {
+  background: var(--surface-4);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 1.2rem 1.3rem;
+  max-width: 420px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.staging-confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--amber);
+}
+
+.staging-confirm-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.staging-confirm-dialog p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.staging-confirm-paths {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.staging-confirm-paths li {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+.staging-confirm-paths code {
+  font-size: 0.78rem;
+}
+
+.staging-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
 .panel-heading,
 .detail-header,
 .scanner-heading,
@@ -7100,6 +7519,10 @@ h2,
   to {
     transform: rotate(360deg);
   }
+}
+
+.spin {
+  animation: icon-spin 0.75s linear infinite;
 }
 
 @keyframes brand-plumbob-float {

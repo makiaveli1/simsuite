@@ -123,6 +123,8 @@ let mockDownloadsWatcherStatus: DownloadsWatcherStatus = {
   readyItems: 2,
   needsReviewItems: 1,
   activeItems: 3,
+  last_downloads_scan_at: null,
+  progress: null,
 };
 let mockAppBehaviorSettings: AppBehaviorSettings = {
   keepRunningInBackground: false,
@@ -131,6 +133,7 @@ let mockAppBehaviorSettings: AppBehaviorSettings = {
   lastWatchCheckAt: null,
   lastWatchCheckError: null,
   silentSpecialModUpdates: null,
+  downloadIgnorePatterns: [],
 };
 const emptyInsights = {
   format: null,

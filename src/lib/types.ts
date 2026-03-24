@@ -94,6 +94,7 @@ export interface DownloadsWatcherStatus {
   readyItems: number;
   needsReviewItems: number;
   activeItems: number;
+  last_downloads_scan_at: string | null;
   progress: DownloadProgress | null;
 }
 
