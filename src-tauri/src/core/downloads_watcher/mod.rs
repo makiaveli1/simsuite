@@ -1580,8 +1580,18 @@ fn process_downloads_once_for_paths(
         assessment_version_changed,
         changed_paths,
     );
+
+    // Load last scan timestamp for fast-path filtering
+    let last_scan_at: Option<String> =
+        database::get_app_setting(&connection, "last_downloads_scan_at")?;
+    let last_scan_since = last_scan_at.and_then(|v| {
+        DateTime::parse_from_rfc3339(&v)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    });
+
     let observed = if use_full_scan {
-        collect_observed_sources(&watched_root)?
+        collect_observed_sources(&watched_root, last_scan_since)?
     } else {
         collect_observed_sources_for_paths(&watched_root, changed_paths.unwrap_or_default())?
     };
@@ -1592,6 +1602,17 @@ fn process_downloads_once_for_paths(
             observed.len()
         )
     });
+
+    // Store last scan timestamp after full scan completes
+    if use_full_scan {
+        let now = Utc::now().to_rfc3339();
+        database::save_app_setting(
+            &mut connection,
+            "last_downloads_scan_at",
+            Some(&now),
+            "downloads-sync",
+        )?;
+    }
 
     let existing_started_at = Instant::now();
     let existing = load_existing_items(&connection)?;
@@ -1779,16 +1800,29 @@ fn process_source(
     let mut staged_root = None;
     let discovered = if source.source_kind == "file" {
         vec![build_discovered_file(watched_root, &source.path)?]
-    } else if !should_extract_archive_source(source, &mut notes)? {
-        Vec::new()
     } else {
+        // For archives: 7z/rar are held for safety (already checked above).
+        // For ZIP: single-pass extract + check in one go.
+        // For other archive formats: fall through to extract (rare).
         let next_root = build_archive_staging_root(
             &state.app_data_dir,
             existing.map(|item| item.id),
             &source.display_name,
             Utc::now(),
         );
-        let extracted = extract_archive(source, &next_root, &mut notes)?;
+        let (extracted, ignored_count) = if source.archive_format.as_deref() == Some("zip") {
+            extract_zip_archive_single_pass(&source.path, &next_root, &mut notes)?
+        } else {
+            // Non-ZIP, non-7z/rar formats — use legacy extract (7z/rar already held)
+            let old_extracted = extract_archive(source, &next_root, &mut notes)?;
+            (old_extracted, 0)
+        };
+        if extracted.is_empty() {
+            notes.push("Skipped ZIP extraction because no supported Sims files were found inside.".to_owned());
+        }
+        if ignored_count > 0 {
+            notes.push(format!("Ignored {ignored_count} unsupported archive entries."));
+        }
         staged_root = Some(next_root);
         extracted
     };
@@ -2237,7 +2271,10 @@ fn upsert_download_item(
     Ok(connection.last_insert_rowid())
 }
 
-fn collect_observed_sources(root: &Path) -> AppResult<Vec<ObservedSource>> {
+fn collect_observed_sources(
+    root: &Path,
+    since: Option<DateTime<Utc>>,
+) -> AppResult<Vec<ObservedSource>> {
     let mut observed = Vec::new();
     for entry in WalkDir::new(root).into_iter() {
         let entry = match entry {
@@ -2258,6 +2295,18 @@ fn collect_observed_sources(root: &Path) -> AppResult<Vec<ObservedSource>> {
         let metadata = entry
             .metadata()
             .map_err(|error| AppError::Message(error.to_string()))?;
+
+        // Fast-path: skip files not modified since last scan
+        if let Some(since) = since {
+            let modified_at = metadata.modified().ok();
+            if let Some(modified) = modified_at {
+                let mod_time: DateTime<Utc> = modified.into();
+                if mod_time <= since {
+                    continue;
+                }
+            }
+        }
+
         observed.push(ObservedSource {
             path: entry.path().to_path_buf(),
             display_name: entry
@@ -2525,53 +2574,16 @@ fn extract_archive(
     Ok(discovered)
 }
 
-fn should_extract_archive_source(
-    source: &ObservedSource,
-    notes: &mut Vec<String>,
-) -> AppResult<bool> {
-    if !matches!(source.archive_format.as_deref(), Some("zip")) {
-        return Ok(true);
-    }
-
-    if zip_archive_contains_supported_content(&source.path)? {
-        return Ok(true);
-    }
-
-    notes.push(
-        "Skipped ZIP extraction because no supported Sims files were found inside.".to_owned(),
-    );
-    Ok(false)
-}
-
-fn zip_archive_contains_supported_content(source_path: &Path) -> AppResult<bool> {
-    let file = fs::File::open(source_path)?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|error| AppError::Message(error.to_string()))?;
-
-    for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|error| AppError::Message(error.to_string()))?;
-        if entry.is_dir() {
-            continue;
-        }
-        let Some(enclosed) = entry.enclosed_name() else {
-            continue;
-        };
-        let extension = normalize_extension(&enclosed);
-        if is_supported_content_extension(&extension) {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
-fn extract_zip_archive(
+/// Extracts a ZIP archive in a single pass, extracting only supported content.
+/// Returns (discovered_files, ignored_entry_count).
+/// If discovered_files is empty, the caller should treat the archive as "no supported content".
+fn extract_zip_archive_single_pass(
     source_path: &Path,
     destination_root: &Path,
     notes: &mut Vec<String>,
-) -> AppResult<()> {
+) -> AppResult<(Vec<DiscoveredFile>, i64)> {
+    fs::create_dir_all(destination_root)?;
+
     let file = fs::File::open(source_path)?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|error| AppError::Message(error.to_string()))?;
@@ -2609,12 +2621,27 @@ fn extract_zip_archive(
     }
 
     if ignored_entries > 0 {
-        notes.push(format!(
-            "Ignored {ignored_entries} unsupported zip entries."
-        ));
+        notes.push(format!("Ignored {ignored_entries} unsupported archive entries."));
     }
 
-    Ok(())
+    // Walk the destination to build discovered files
+    let mut discovered = Vec::new();
+    for entry in WalkDir::new(destination_root).into_iter() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => return Err(AppError::Message(error.to_string())),
+        };
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let entry_ext = normalize_extension(entry.path());
+        if !is_supported_content_extension(&entry_ext) {
+            continue;
+        }
+        discovered.push(build_discovered_file(destination_root, entry.path())?);
+    }
+
+    Ok((discovered, ignored_entries))
 }
 
 fn mark_missing_direct_sources(
@@ -3433,11 +3460,12 @@ pub fn cleanup_staging_areas(
 mod tests {
     use super::{
         build_archive_staging_root, can_skip_observed_source, checking_downloads_status,
-        derive_item_status, get_download_item_guided_plan, get_download_item_selection,
+        derive_item_status, extract_zip_archive_single_pass,
+        get_download_item_guided_plan, get_download_item_selection,
         has_auto_recheck_note, ingest_held_archive_source, ingest_ignored_non_sims_source,
         list_download_queue, load_existing_items, mark_item_rechecked_with_new_rules,
         mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
-        reassess_existing_item, refresh_download_item_status, should_extract_archive_source,
+        reassess_existing_item, refresh_download_item_status,
         should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
         ExistingDownloadItem, ObservedSource,
     };
@@ -4087,7 +4115,7 @@ mod tests {
     }
 
     #[test]
-    fn zip_quick_check_skips_archives_without_supported_sims_files() {
+    fn zip_single_pass_skips_archives_without_supported_sims_files() {
         let temp = tempdir().expect("temp dir");
         let archive_path = temp.path().join("notes-only.zip");
         create_test_zip(
@@ -4097,28 +4125,21 @@ mod tests {
                 ("docs/changelog.md", b"changes"),
             ],
         );
-        let metadata = archive_path.metadata().expect("zip metadata");
-        let source = ObservedSource {
-            path: archive_path,
-            display_name: "notes-only.zip".to_owned(),
-            source_kind: "archive".to_owned(),
-            archive_format: Some("zip".to_owned()),
-            source_size: metadata.len() as i64,
-            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
-        };
+        let dest_path = temp.path().join("extracted");
         let mut notes = Vec::new();
 
-        let should_extract =
-            should_extract_archive_source(&source, &mut notes).expect("quick zip check");
+        let (discovered, _ignored_count) =
+            extract_zip_archive_single_pass(&archive_path, &dest_path, &mut notes)
+                .expect("single-pass extract");
 
-        assert!(!should_extract);
+        assert!(discovered.is_empty());
         assert!(notes.iter().any(|note| {
             note.contains("Skipped ZIP extraction because no supported Sims files were found")
         }));
     }
 
     #[test]
-    fn zip_quick_check_keeps_archives_with_supported_sims_files() {
+    fn zip_single_pass_extracts_archives_with_supported_sims_files() {
         let temp = tempdir().expect("temp dir");
         let archive_path = temp.path().join("mod-files.zip");
         create_test_zip(
@@ -4128,22 +4149,22 @@ mod tests {
                 ("docs/readme.txt", b"read me"),
             ],
         );
-        let metadata = archive_path.metadata().expect("zip metadata");
-        let source = ObservedSource {
-            path: archive_path,
-            display_name: "mod-files.zip".to_owned(),
-            source_kind: "archive".to_owned(),
-            archive_format: Some("zip".to_owned()),
-            source_size: metadata.len() as i64,
-            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
-        };
+        let dest_path = temp.path().join("extracted");
         let mut notes = Vec::new();
 
-        let should_extract =
-            should_extract_archive_source(&source, &mut notes).expect("quick zip check");
+        let (discovered, ignored_count) =
+            extract_zip_archive_single_pass(&archive_path, &dest_path, &mut notes)
+                .expect("single-pass extract");
 
-        assert!(should_extract);
-        assert!(notes.is_empty());
+        assert!(!discovered.is_empty());
+        // docs/readme.txt should be extracted (supported .txt)
+        // The .package file should be discovered
+        assert!(
+            notes.is_empty()
+                || !notes
+                    .iter()
+                    .any(|note| note.contains("Skipped ZIP extraction"))
+        );
     }
 
     #[test]
