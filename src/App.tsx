@@ -669,6 +669,7 @@ function AppShell({
           experienceMode={experienceMode}
           currentScreen={screen}
           onOpenSettings={() => setScreen("settings")}
+          isScanning={isScanning}
         />
         <AnimatePresence mode="wait" initial={false}>
           <m.div

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Check, CheckCircle, Clock, Inbox, Settings, ShieldAlert } from "lucide-react";
 import { m } from "motion/react";
 import { StatePanel } from "../../components/StatePanel";
+import { SkeletonLoader } from "../../components/SkeletonLoader";
 import {
   rowHover,
   rowPress,
@@ -120,7 +121,9 @@ export function DownloadsQueuePanel({
 
       <div className="vertical-dock downloads-queue-dock">
         <m.div className="queue-list downloads-queue-list" layoutScroll>
-          {hasItems ? (
+          {isLoading ? (
+            <SkeletonLoader rows={6} height={56} />
+          ) : hasItems ? (
             rows.length ? (
               <div className="downloads-lane-group">
                 {userView === "beginner" && !isLaneExplained(lane) && (

@@ -1,5 +1,5 @@
 import { m } from "motion/react";
-import { LayoutPanelLeft, SlidersHorizontal } from "lucide-react";
+import { LayoutPanelLeft, RefreshCw, SlidersHorizontal } from "lucide-react";
 import type { ExperienceMode, Screen, UiDensity } from "../lib/types";
 import { getExperienceModeProfile } from "../lib/experienceMode";
 import { hoverLift, tapPress } from "../lib/motion";
@@ -17,12 +17,14 @@ interface WorkspaceToolbarProps {
   experienceMode: ExperienceMode;
   currentScreen: Screen;
   onOpenSettings: () => void;
+  isScanning?: boolean;
 }
 
 export function WorkspaceToolbar({
   experienceMode,
   currentScreen,
   onOpenSettings,
+  isScanning,
 }: WorkspaceToolbarProps) {
   const { theme, density } = useUiPreferences();
   const activeTheme = getThemeDefinition(theme);
@@ -34,6 +36,12 @@ export function WorkspaceToolbar({
   if (experienceMode === "casual") {
     return (
       <div className="workspace-toolbar workspace-toolbar--casual">
+        {isScanning && (
+          <div className="toolbar-scanning-indicator" aria-live="polite">
+            <RefreshCw size={14} className="spin" />
+            <span>Scanning…</span>
+          </div>
+        )}
         <m.button
           type="button"
           className="secondary-action workspace-toolbar-settings-link"
@@ -65,6 +73,12 @@ export function WorkspaceToolbar({
             <span className="workspace-toolbar-meta-item">{densityLabel}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
             <span className="workspace-toolbar-meta-item">{activeTheme.label}</span>
+            {isScanning && (
+              <span className="toolbar-scanning-indicator" aria-live="polite">
+                <RefreshCw size={14} className="spin" />
+                <span>Scanning…</span>
+              </span>
+            )}
           </div>
         </div>
       </div>

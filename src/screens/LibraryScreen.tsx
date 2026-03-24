@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
+import { SkeletonLoader } from "../components/SkeletonLoader";
 import { ExternalLink } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
@@ -782,16 +783,20 @@ export function LibraryScreen({
           ) : null}
         </AnimatePresence>
 
-        <LibraryCollectionTable
-          userView={userView}
-          rows={rows?.items ?? []}
-          selectedId={selected?.id ?? null}
-          page={page}
-          totalPages={totalPages}
-          onSelect={(row) => void openFile(row)}
-          onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
-          onNextPage={() => setPage((current) => current + 1)}
-        />
+        {rows === null ? (
+          <SkeletonLoader rows={8} height={44} />
+        ) : (
+          <LibraryCollectionTable
+            userView={userView}
+            rows={rows?.items ?? []}
+            selectedId={selected?.id ?? null}
+            page={page}
+            totalPages={totalPages}
+            onSelect={(row) => void openFile(row)}
+            onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
+            onNextPage={() => setPage((current) => current + 1)}
+          />
+        )}
       </WorkbenchStage>
 
       {/* Right inspector panel */}

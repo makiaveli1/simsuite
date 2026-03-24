@@ -9334,6 +9334,54 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+/* ============================================================
+   SKELETON LOADERS
+   ============================================================ */
+
+.skeleton-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.skeleton-row {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Toolbar scanning indicator */
+.toolbar-scanning-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.toolbar-scanning-indicator .spin {
+  color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
