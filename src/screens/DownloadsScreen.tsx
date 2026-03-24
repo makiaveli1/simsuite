@@ -121,7 +121,7 @@ interface DownloadsScreenCache {
 type DownloadsDialogRequest =
   | { kind: "guided_apply" }
   | { kind: "safe_move" }
-  | { kind: "ignore" }
+  | { kind: "reject" }
   | { kind: "review_action"; action: ReviewPlanAction };
 
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
@@ -201,7 +201,7 @@ export function DownloadsScreen({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingSelection, setIsLoadingSelection] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
-  const [isIgnoring, setIsIgnoring] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
   const [showTour, setShowTour] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
@@ -214,7 +214,7 @@ export function DownloadsScreen({
   const latestBusyState = useRef({
     isLoadingInbox: false,
     isApplying: false,
-    isIgnoring: false,
+    isRejecting: false,
     isRefreshing: false,
   });
   const inboxRetryTimer = useRef<number | null>(null);
@@ -247,7 +247,7 @@ export function DownloadsScreen({
     latestBusyState.current = {
       isLoadingInbox,
       isApplying,
-      isIgnoring,
+      isRejecting,
       isRefreshing,
     };
     downloadsScreenCache.refreshVersion = refreshVersion;
@@ -262,7 +262,7 @@ export function DownloadsScreen({
     activeLane,
     inbox,
     isApplying,
-    isIgnoring,
+    isRejecting,
     isLoadingInbox,
     isRefreshing,
     refreshVersion,
@@ -417,7 +417,7 @@ export function DownloadsScreen({
     void loadVisibleInbox();
   }, [
     isApplying,
-    isIgnoring,
+    isRejecting,
     isLoadingInbox,
     isRefreshing,
     refreshVersion,
@@ -441,7 +441,7 @@ export function DownloadsScreen({
     void loadVisibleInbox();
   }, [
     isApplying,
-    isIgnoring,
+    isRejecting,
     isLoadingInbox,
     isRefreshing,
     watcherStatus?.configured,
@@ -617,7 +617,7 @@ export function DownloadsScreen({
     return (
       busyState.isLoadingInbox ||
       busyState.isApplying ||
-      busyState.isIgnoring ||
+      busyState.isRejecting ||
       busyState.isRefreshing ||
       currentWatcherStatus?.state === "processing"
     );
@@ -969,29 +969,29 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleIgnore(skipConfirm = false) {
+  async function handleReject(skipConfirm = false) {
     if (!selectedItem) {
       return;
     }
 
     if (!skipConfirm) {
-      setPendingDialog({ kind: "ignore" });
+      setPendingDialog({ kind: "reject" });
       return;
     }
 
-    setIsIgnoring(true);
+    setIsRejecting(true);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
       await api.ignoreDownloadItem(selectedItem.id);
-      setStatusMessage(`${selectedItem.displayName} was removed from the active inbox.`);
+      setStatusMessage(`${selectedItem.displayName} was rejected from the active inbox.`);
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
     } finally {
-      setIsIgnoring(false);
+      setIsRejecting(false);
     }
   }
 
@@ -1021,18 +1021,18 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleBatchIgnore() {
+  async function handleBatchReject() {
     if (batchSelectedIds.size === 0) return;
-    setIsIgnoring(true);
+    setIsRejecting(true);
     setStatusMessage(null);
     setErrorMessage(null);
     try {
       const itemIds = Array.from(batchSelectedIds);
       const result = await api.ignoreDownloadItems(itemIds);
       const parts: string[] = [];
-      if (result.ignoredCount > 0) parts.push(`${result.ignoredCount} ignored`);
+      if (result.ignoredCount > 0) parts.push(`${result.ignoredCount} rejected`);
       if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
-      setStatusMessage(`Batch ignore: ${parts.join(", ")}.`);
+      setStatusMessage(`Batch reject: ${parts.join(", ")}.`);
       if (result.errors.length > 0) {
         setErrorMessage(result.errors.slice(0, 3).join("; "));
       }
@@ -1042,7 +1042,7 @@ export function DownloadsScreen({
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
     } finally {
-      setIsIgnoring(false);
+      setIsRejecting(false);
     }
   }
 
@@ -1089,8 +1089,8 @@ export function DownloadsScreen({
       case "safe_move":
         await handleApply(true);
         break;
-      case "ignore":
-        await handleIgnore(true);
+      case "reject":
+        await handleReject(true);
         break;
       case "review_action":
         await handleReviewAction(pendingDialog.action, true);
@@ -1333,7 +1333,7 @@ export function DownloadsScreen({
       ? "Pick a batch first, then open the fuller details here."
       : "Pick a batch first, then open the calmer proof sheet.";
   const dialogBusy =
-    pendingDialog?.kind === "ignore" ? isIgnoring : pendingDialog ? isApplying : false;
+    pendingDialog?.kind === "reject" ? isRejecting : pendingDialog ? isApplying : false;
   const dialogConfig =
     pendingDialog && selectedResolvedItem
       ? buildDownloadsDialogConfig({
@@ -1446,7 +1446,7 @@ export function DownloadsScreen({
         case "I": {
           event.preventDefault();
           if (selectedItem) {
-            void handleIgnore();
+            void handleReject();
           }
           break;
         }
@@ -1825,9 +1825,9 @@ export function DownloadsScreen({
                 primaryActionLabel={showPrimaryAction ? applyLabel : null}
                 primaryActionDisabled={primaryActionDisabled}
                 onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
-                secondaryActionLabel={isIgnoring ? "Ignoring..." : "Ignore"}
-                secondaryActionDisabled={isIgnoring}
-                onSecondaryAction={() => setPendingDialog({ kind: "ignore" })}
+                secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
+                secondaryActionDisabled={isRejecting}
+                onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
                 onOpenProof={() => setProofSheetOpen(true)}
                 proofSummary={proofSummary}
                 idleNote={
@@ -1909,10 +1909,10 @@ export function DownloadsScreen({
           <button
             type="button"
             className="secondary-action"
-            onClick={() => void handleBatchIgnore()}
-            disabled={isIgnoring}
+            onClick={() => void handleBatchReject()}
+            disabled={isRejecting}
           >
-            {isIgnoring ? "Ignoring..." : "Ignore"}
+            {isRejecting ? "Rejecting..." : "Reject"}
           </button>
           <button
             type="button"
@@ -2002,15 +2002,15 @@ function buildDownloadsDialogConfig({
     };
   }
 
-  if (request.kind === "ignore") {
+  if (request.kind === "reject") {
     return {
       eyebrow: "Queue cleanup",
-      title: `Hide ${item.displayName} from the inbox?`,
+      title: `Reject ${item.displayName}?`,
       description:
         userView === "beginner"
           ? "This removes the batch from the active inbox for now. It can come back later if the download changes."
           : "Use this to quiet a batch without deleting it. SimSuite can surface it again if the source changes later.",
-      confirmLabel: "Ignore for now",
+      confirmLabel: "Reject",
       tone: "warn" as const,
       metrics: [
         { label: "Files in batch", value: item.detectedFileCount.toLocaleString() },
@@ -4192,7 +4192,7 @@ function downloadsInspectorIdleNote(
 
   if (specialDecision?.queueLane === "done" && specialDecision.familyRole === "superseded") {
     return userView === "beginner"
-      ? "A fuller pack from this family is already installed, so this leftover download can stay ignored."
+      ? "A fuller pack from this family is already installed, so this leftover download can stay rejected."
       : "A fuller family pack is already installed, so this leftover batch no longer needs a repair or update step.";
   }
 
@@ -4781,7 +4781,7 @@ function friendlyItemStatus(status: string) {
   }
 
   if (status === "ignored") {
-    return "Ignored";
+    return "Rejected";
   }
 
   return "Ready";
