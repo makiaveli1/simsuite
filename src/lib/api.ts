@@ -39,6 +39,8 @@ import type {
   HomeOverview,
   IgnoreItemsResult,
   InstalledVersionSummary,
+  RejectResult,
+  RejectedItem,
   McccUpdateInfo,
   OrganizationPreview,
   LibraryFacets,
@@ -5572,6 +5574,14 @@ export const api = {
     }),
   ignoreDownloadItems: (itemIds: number[]) =>
     invoke<IgnoreItemsResult>("ignore_download_items", { itemIds }),
+  rejectDownloadItem: (itemId: number) =>
+    invoke<RejectResult>("reject_download_item", { itemId }),
+  listRejectedItems: () =>
+    invoke<RejectedItem[]>("list_rejected_items"),
+  restoreRejectedItem: (itemId: number) =>
+    invoke<boolean>("restore_rejected_item", { itemId }),
+  rejectDownloadItems: (itemIds: number[]) =>
+    invoke<IgnoreItemsResult>("reject_download_items", { itemIds }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
   listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>

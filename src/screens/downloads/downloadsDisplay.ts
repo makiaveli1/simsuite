@@ -6,6 +6,7 @@ const DOWNLOADS_LANE_PRIORITY: DownloadQueueLane[] = [
   "ready_now",
   "blocked",
   "done",
+  "rejected",
 ];
 
 export type DownloadsLaneCounts = Record<DownloadQueueLane, number>;
@@ -15,6 +16,7 @@ export const DOWNLOADS_LANE_SUMMARY_ORDER: DownloadQueueLane[] = [
   "waiting_on_you",
   "blocked",
   "done",
+  "rejected",
 ];
 
 export function pickInitialDownloadsLane(counts: DownloadsLaneCounts) {
@@ -58,6 +60,8 @@ export function downloadsLaneLabel(lane: DownloadQueueLane, userView: UserView) 
       return "Blocked";
     case "done":
       return "Done";
+    case "rejected":
+      return "Rejected";
     default:
       return "Inbox";
   }
@@ -85,6 +89,10 @@ export function downloadsLaneHint(lane: DownloadQueueLane, userView: UserView) {
       return userView === "beginner"
         ? "Already handled or tucked away."
         : "Applied or hidden batches.";
+    case "rejected":
+      return userView === "beginner"
+        ? "Moved to Reject folder for review."
+        : "Moved to SimSuite_Rejected for review.";
     default:
       return "";
   }

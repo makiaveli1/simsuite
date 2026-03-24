@@ -17,6 +17,7 @@ it("shows compact lane counts and hides advanced filters in casual mode", () => 
         waiting_on_you: 1,
         blocked: 3,
         done: 0,
+        rejected: 0,
       }}
       search=""
       statusFilter=""

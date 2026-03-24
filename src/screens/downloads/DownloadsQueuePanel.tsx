@@ -18,6 +18,7 @@ const LANE_ACCENTS: Record<string, string> = {
   special_setup: "var(--tone-info)",
   blocked: "var(--tone-danger)",
   done: "var(--text-dim)",
+  rejected: "var(--text-dim)",
 };
 
 const LANE_LABELS: Record<string, string> = {
@@ -26,6 +27,7 @@ const LANE_LABELS: Record<string, string> = {
   special_setup: "Special Setup",
   blocked: "Needs Review",
   done: "Done",
+  rejected: "Rejected",
 };
 
 const LANE_ICONS: Record<string, ReactNode> = {
@@ -34,6 +36,7 @@ const LANE_ICONS: Record<string, ReactNode> = {
   special_setup: <Settings size={16} />,
   blocked: <ShieldAlert size={16} />,
   done: <CheckCircle size={16} />,
+  rejected: <CheckCircle size={16} />,
 };
 
 const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
@@ -56,6 +59,10 @@ const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
   done: {
     title: "Already handled",
     body: "These are already added or set aside. Click one to undo and move it somewhere else.",
+  },
+  rejected: {
+    title: "Moved to Reject folder",
+    body: "These items were moved to SimSuite_Rejected for review. You can restore them from there.",
   },
 };
 

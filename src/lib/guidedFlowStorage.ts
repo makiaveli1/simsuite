@@ -34,7 +34,8 @@ export type DownloadQueueLane =
   | "waiting_on_you"
   | "special_setup"
   | "blocked"
-  | "done";
+  | "done"
+  | "rejected";
 
 /** True if the user has already seen the explanation for this lane. */
 export function isLaneExplained(lane: DownloadQueueLane): boolean {

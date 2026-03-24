@@ -14,6 +14,7 @@ const LANE_MEANINGS: Record<DownloadQueueLane, string> = {
   special_setup: "This needs a few extra steps first",
   blocked: "This was stopped — check the warning if you want to add it",
   done: "This has already been added or set aside",
+  rejected: "This was rejected and moved to SimSuite_Rejected",
 };
 
 export interface DownloadsDecisionSignal {

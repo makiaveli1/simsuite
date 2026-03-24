@@ -753,6 +753,24 @@ pub struct IgnoreItemsResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RejectResult {
+    pub item_id: i64,
+    pub reject_path: String,
+    pub file_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RejectedItem {
+    pub item_id: i64,
+    pub display_name: String,
+    pub rejected_at: String,
+    pub file_count: i64,
+    pub reject_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreSnapshotResult {
     pub snapshot_id: i64,
     pub restored_count: i64,
@@ -1020,6 +1038,7 @@ pub enum DownloadQueueLane {
     WaitingOnYou,
     Blocked,
     Done,
+    Rejected,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1195,6 +1214,7 @@ pub struct DownloadsInboxOverview {
     pub waiting_on_you_items: i64,
     pub blocked_items: i64,
     pub done_items: i64,
+    pub rejected_items: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

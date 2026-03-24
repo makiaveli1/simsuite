@@ -32,7 +32,7 @@ use crate::{
         DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
         DownloadsTimelineEntry, DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan,
-        LibrarySettings, OrganizationPreview, CleanupResult, SpecialReviewPlan,
+        LibrarySettings, OrganizationPreview, CleanupResult, RejectResult, RejectedItem, SpecialReviewPlan,
         StagingArea, StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
     },
 };
@@ -399,7 +399,7 @@ fn list_download_items_internal(
         sql.push_str(&format!(" AND di.status = ?{index}"));
         params.push(status.to_owned());
     } else {
-        sql.push_str(" AND di.status <> 'ignored'");
+        sql.push_str(" AND di.status <> 'ignored' AND di.status <> 'rejected'");
     }
 
     let limit = query.limit.unwrap_or(120);
@@ -521,6 +521,7 @@ fn list_download_items_internal(
         .iter()
         .filter(|item| item.queue_lane == DownloadQueueLane::Done)
         .count() as i64;
+    overview.rejected_items = 0; // Rejected items are filtered out of the queue
     log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
@@ -656,6 +657,10 @@ fn hydrate_download_item(
 }
 
 fn derive_queue_lane(item: &DownloadsInboxItem) -> DownloadQueueLane {
+    if item.status == "rejected" {
+        return DownloadQueueLane::Rejected;
+    }
+
     if matches!(item.status.as_str(), "applied" | "ignored") {
         return DownloadQueueLane::Done;
     }
@@ -766,6 +771,9 @@ fn build_queue_summary(item: &DownloadsInboxItem) -> String {
             } else {
                 "This batch is hidden from the active Inbox.".to_owned()
             }
+        }
+        DownloadQueueLane::Rejected => {
+            "This batch was moved to the Reject folder for review.".to_owned()
         }
     }
 }
@@ -926,6 +934,7 @@ fn build_download_timeline(
                     "Done"
                 }
             }
+            DownloadQueueLane::Rejected => "Rejected",
         }
         .to_owned(),
         detail: Some(item.queue_summary.clone()),
@@ -1186,6 +1195,303 @@ pub fn ignore_download_item(connection: &mut Connection, item_id: i64) -> AppRes
     bundle_detector::rebuild_bundles(connection)?;
     duplicate_detector::rebuild_duplicates(connection)?;
     Ok(())
+}
+
+/// Moves a download item's staging files to the SimSuite_Rejected folder.
+/// Returns the number of files moved and the reject folder path.
+pub fn reject_download_item(
+    connection: &mut Connection,
+    app_data_dir: &Path,
+    item_id: i64,
+) -> AppResult<RejectResult> {
+    // Get the item's staging_path from the database
+    let staging_path: Option<String> = connection
+        .query_row(
+            "SELECT staging_path FROM download_items WHERE id = ?1",
+            params![item_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+
+    // Get file count for this item (active files in downloads staging)
+    let file_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE download_item_id = ?1 AND source_location = 'downloads'",
+            params![item_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let reject_root = app_data_dir.join("SimSuite_Rejected");
+    let reject_item_path = reject_root.join(item_id.to_string());
+
+    // Create reject folder
+    fs::create_dir_all(&reject_item_path)
+        .map_err(|e| AppError::Message(format!("Failed to create reject folder: {e}")))?;
+
+    let mut moved_count: i64 = 0;
+
+    // Move the staging directory if it exists
+    if let Some(staging) = staging_path {
+        let staging = PathBuf::from(&staging);
+        if staging.exists() {
+            // Move each entry from the staging dir to the reject folder
+            if staging.is_dir() {
+                for entry in fs::read_dir(&staging)
+                    .map_err(|e| AppError::Message(format!("Failed to read staging folder: {e}")))?
+                {
+                    let entry = entry.map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
+                    let dest = reject_item_path.join(entry.file_name());
+                    fs::rename(entry.path(), &dest)
+                        .map_err(|e| AppError::Message(format!("Failed to move file: {e}")))?;
+                    moved_count += 1;
+                }
+                // Try to remove the now-empty staging directory
+                let _ = fs::remove_dir(&staging);
+            } else {
+                // Single file staging
+                let dest = reject_item_path.join(staging.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| item_id.to_string()));
+                fs::rename(&staging, &dest)
+                    .map_err(|e| AppError::Message(format!("Failed to move staging file: {e}")))?;
+                moved_count += 1;
+            }
+        }
+    }
+
+    // If no staging path or staging was empty, just record the reject
+    // (the item may have been in the queue but not yet extracted)
+    if moved_count == 0 && file_count > 0 {
+        // Files are tracked in DB but staging may be elsewhere — try to move by file path
+        let mut stmt = connection.prepare(
+            "SELECT path FROM files WHERE download_item_id = ?1 AND source_location = 'downloads'"
+        )?;
+        let paths: Vec<PathBuf> = stmt
+            .query_map(params![item_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for path in paths {
+            if path.exists() {
+                let dest = reject_item_path.join(
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| format!("file_{}", moved_count))
+                );
+                match fs::rename(&path, &dest) {
+                    Ok(()) => moved_count += 1,
+                    Err(_) => {
+                        // File may already be moved or missing, continue
+                    }
+                }
+            }
+        }
+    }
+
+    let now = Utc::now().to_rfc3339();
+
+    // Update the item: mark as rejected, clear staging_path
+    connection.execute(
+        "UPDATE download_items
+         SET status = 'rejected',
+             staging_path = NULL,
+             error_message = NULL,
+             updated_at = ?2,
+             rejected_at = ?2
+         WHERE id = ?1",
+        params![item_id, now],
+    )?;
+
+    // Remove file tracking for the downloads source files
+    connection.execute(
+        "DELETE FROM files
+         WHERE download_item_id = ?1
+           AND source_location = 'downloads'",
+        params![item_id],
+    )?;
+
+    bundle_detector::rebuild_bundles(connection)?;
+    duplicate_detector::rebuild_duplicates(connection)?;
+
+    Ok(RejectResult {
+        item_id,
+        reject_path: reject_item_path.to_string_lossy().to_string(),
+        file_count: moved_count,
+    })
+}
+
+/// Lists all rejected items from the database.
+pub fn list_rejected_items(connection: &Connection) -> AppResult<Vec<RejectedItem>> {
+    let mut stmt = connection.prepare(
+        "SELECT id, display_name, rejected_at
+         FROM download_items
+         WHERE status = 'rejected'
+         ORDER BY rejected_at DESC"
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        ))
+    })?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        let (item_id, display_name, rejected_at) = row?;
+        let reject_path = format!("SimSuite_Rejected/{}/", item_id);
+
+        // Count files in reject folder (we don't have a file_count tracking for rejected items easily)
+        let file_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM files WHERE download_item_id = ?1",
+                params![item_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        items.push(RejectedItem {
+            item_id,
+            display_name,
+            rejected_at: rejected_at.into(),
+            file_count,
+            reject_path,
+        });
+    }
+
+    Ok(items)
+}
+
+/// Restores a rejected item back to the queue by moving files from the reject folder
+/// back to a new staging area and updating the item status.
+pub fn restore_rejected_item(
+    connection: &mut Connection,
+    app_data_dir: &Path,
+    item_id: i64,
+) -> AppResult<()> {
+    // Verify the item is actually rejected
+    let current_status: String = connection
+        .query_row(
+            "SELECT status FROM download_items WHERE id = ?1",
+            params![item_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| AppError::Message(format!("Item {} not found", item_id)))?;
+
+    if current_status != "rejected" {
+        return Err(AppError::Message(format!(
+            "Item {} is not rejected (status: {})", item_id, current_status
+        )));
+    }
+
+    let reject_item_path = app_data_dir.join("SimSuite_Rejected").join(item_id.to_string());
+
+    // Create a new staging area under downloads_inbox/<item_id>/
+    let now = Utc::now();
+    let staging_path = app_data_dir
+        .join("downloads_inbox")
+        .join(item_id.to_string())
+        .join(format!("{}-restored", now.format("%Y%m%d%H%M%S%f")));
+
+    if reject_item_path.exists() {
+        fs::create_dir_all(&staging_path)
+            .map_err(|e| AppError::Message(format!("Failed to create staging: {e}")))?;
+
+        // Move files from reject folder back to staging
+        for entry in fs::read_dir(&reject_item_path)
+            .map_err(|e| AppError::Message(format!("Failed to read reject folder: {e}")))?
+        {
+            let entry = entry.map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
+            let dest = staging_path.join(entry.file_name());
+            fs::rename(entry.path(), &dest)
+                .map_err(|e| AppError::Message(format!("Failed to restore file: {e}")))?;
+        }
+
+        // Clean up the now-empty reject folder
+        let _ = fs::remove_dir(&reject_item_path);
+    }
+
+    let now_str = Utc::now().to_rfc3339();
+
+    // Restore the item: set status back to 'ready' (will re-derive queue_lane)
+    connection.execute(
+        "UPDATE download_items
+         SET status = 'ready',
+             staging_path = ?2,
+             error_message = NULL,
+             updated_at = ?3,
+             rejected_at = NULL
+         WHERE id = ?1",
+        params![item_id, staging_path.to_string_lossy().to_string(), now_str],
+    )?;
+
+    // Re-create file records for the restored staging files
+    // Walk the staging directory and insert file records
+    if staging_path.exists() && staging_path.is_dir() {
+        for entry in WalkDir::new(&staging_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let file_path = entry.path();
+            let filename = file_path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let extension = file_path.extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let size = fs::metadata(file_path)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
+
+            let relative_depth = file_path.strip_prefix(&staging_path)
+                .map(|p| p.components().count() as i64)
+                .unwrap_or(0);
+
+            connection.execute(
+                "INSERT INTO files (path, filename, extension, size, source_location, relative_depth, download_item_id)
+                 VALUES (?1, ?2, ?3, ?4, 'downloads', ?5, ?6)",
+                params![file_path.to_string_lossy().to_string(), filename, extension, size, relative_depth, item_id],
+            )?;
+        }
+    }
+
+    bundle_detector::rebuild_bundles(connection)?;
+    duplicate_detector::rebuild_duplicates(connection)?;
+
+    Ok(())
+}
+
+/// Batch version of reject_download_item — rejects multiple items.
+pub fn reject_download_items(
+    connection: &mut Connection,
+    app_data_dir: &Path,
+    item_ids: &[i64],
+) -> AppResult<IgnoreItemsResult> {
+    let mut rejected_count: i64 = 0;
+    let mut failed_count: i64 = 0;
+    let mut errors: Vec<String> = Vec::new();
+
+    for item_id in item_ids {
+        match reject_download_item(connection, app_data_dir, *item_id) {
+            Ok(_) => rejected_count += 1,
+            Err(e) => {
+                failed_count += 1;
+                errors.push(format!("Item {} failed to reject: {}", item_id, e));
+            }
+        }
+    }
+
+    Ok(IgnoreItemsResult {
+        ignored_count: rejected_count,
+        failed_count,
+        errors,
+    })
 }
 
 pub fn refresh_download_item_status(connection: &Connection, item_id: i64) -> AppResult<()> {
@@ -2955,7 +3261,8 @@ fn load_overview(
         waiting_on_you_items,
         blocked_items,
         done_items,
-    ): (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = connection.query_row(
+        rejected_items,
+    ): (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = connection.query_row(
         "SELECT
             COUNT(*),
             SUM(CASE WHEN status IN ('ready', 'partial') THEN 1 ELSE 0 END),
@@ -2969,7 +3276,7 @@ fn load_overview(
             ),
             SUM(
                 CASE
-                    WHEN status NOT IN ('applied', 'ignored')
+                    WHEN status NOT IN ('applied', 'ignored', 'rejected')
                      AND intake_mode = 'standard'
                      AND status IN ('ready', 'partial')
                     THEN 1
@@ -2978,7 +3285,7 @@ fn load_overview(
             ),
             SUM(
                 CASE
-                    WHEN status NOT IN ('applied', 'ignored')
+                    WHEN status NOT IN ('applied', 'ignored', 'rejected')
                      AND intake_mode = 'guided'
                     THEN 1
                     ELSE 0
@@ -2986,7 +3293,7 @@ fn load_overview(
             ),
             SUM(
                 CASE
-                    WHEN status NOT IN ('applied', 'ignored')
+                    WHEN status NOT IN ('applied', 'ignored', 'rejected')
                      AND (intake_mode = 'needs_review' OR status = 'needs_review')
                     THEN 1
                     ELSE 0
@@ -2996,16 +3303,17 @@ fn load_overview(
                 CASE
                     WHEN status = 'error'
                       OR (
-                        status NOT IN ('applied', 'ignored')
+                        status NOT IN ('applied', 'ignored', 'rejected')
                         AND intake_mode = 'blocked'
                       )
                     THEN 1
                     ELSE 0
                 END
              ),
-             SUM(CASE WHEN status IN ('applied', 'ignored') THEN 1 ELSE 0 END)
+             SUM(CASE WHEN status IN ('applied', 'ignored', 'rejected') THEN 1 ELSE 0 END),
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)
          FROM download_items
-         WHERE status <> 'ignored'",
+         WHERE status <> 'ignored' AND status <> 'rejected'",
         [],
         |row| {
             Ok((
@@ -3020,6 +3328,7 @@ fn load_overview(
                 row.get::<_, Option<i64>>(8)?.unwrap_or_default(),
                 row.get::<_, Option<i64>>(9)?.unwrap_or_default(),
                 row.get::<_, Option<i64>>(10)?.unwrap_or_default(),
+                row.get::<_, Option<i64>>(11)?.unwrap_or_default(),
             ))
         },
     )?;
@@ -3037,6 +3346,7 @@ fn load_overview(
         waiting_on_you_items,
         blocked_items,
         done_items,
+        rejected_items,
     })
 }
 

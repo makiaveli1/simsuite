@@ -42,6 +42,35 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    // Migration v2: add rejected_at column to download_items
+    let v2_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 2",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v2_exists.is_none() {
+        let column_exists: bool = connection
+            .query_row(
+                "SELECT 1 FROM pragma_table_info('download_items') WHERE name = 'rejected_at'",
+                [],
+                |_row| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !column_exists {
+            connection.execute(
+                "ALTER TABLE download_items ADD COLUMN rejected_at TEXT",
+                [],
+            )?;
+        }
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![2_i64, "add_rejected_at"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -691,7 +720,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             source_size INTEGER NOT NULL DEFAULT 0,
             source_modified_at TEXT,
             detected_file_count INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'error')),
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'needs_review', 'partial', 'applied', 'ignored', 'rejected', 'error')),
             intake_mode TEXT NOT NULL DEFAULT 'standard' CHECK (intake_mode IN ('standard', 'guided', 'needs_review', 'blocked')),
             risk_level TEXT NOT NULL DEFAULT 'low' CHECK (risk_level IN ('low', 'medium', 'high')),
             matched_profile_key TEXT,

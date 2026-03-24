@@ -574,6 +574,20 @@ export interface IgnoreItemsResult {
   errors: string[];
 }
 
+export interface RejectResult {
+  itemId: number;
+  rejectPath: string;
+  fileCount: number;
+}
+
+export interface RejectedItem {
+  itemId: number;
+  displayName: string;
+  rejectedAt: string;
+  fileCount: number;
+  rejectPath: string;
+}
+
 export interface RestoreSnapshotResult {
   snapshotId: number;
   restoredCount: number;
@@ -732,7 +746,8 @@ export type DownloadQueueLane =
   | "special_setup"
   | "waiting_on_you"
   | "blocked"
-  | "done";
+  | "done"
+  | "rejected";
 
 export interface DownloadsTimelineEntry {
   label: string;
@@ -753,6 +768,7 @@ export interface DownloadsInboxOverview {
   waitingOnYouItems?: number;
   blockedItems?: number;
   doneItems?: number;
+  rejectedItems?: number;
 }
 
 export interface DownloadsInboxResponse {

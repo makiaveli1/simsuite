@@ -35,7 +35,7 @@ use crate::{
         GuidedInstallPlan, HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse,
         LibraryQuery, LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
         LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
-        McccUpdateInfo, OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction,
+        McccUpdateInfo, OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
         ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
         ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
         StagingAreasSummary, CleanupResult, StagingCommitResult, WatchListFilter,
@@ -2238,6 +2238,115 @@ pub async fn ignore_download_items(
             failed_count,
             errors,
         })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reject_download_item(
+    app: AppHandle,
+    item_id: i64,
+    state: State<'_, AppState>,
+) -> Result<RejectResult, String> {
+    let state = state.inner().clone();
+    let app_data_dir = state.app_data_dir.clone();
+    run_blocking_command("reject_download_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let result = downloads_watcher::reject_download_item(
+            &mut connection,
+            &app_data_dir,
+            item_id,
+        )
+        .map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+            ],
+            "download-item-rejected",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(result)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_rejected_items(
+    state: State<'_, AppState>,
+) -> Result<Vec<RejectedItem>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_rejected_items", move || {
+        let connection = state.connection().map_err(map_error)?;
+        downloads_watcher::list_rejected_items(&connection).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn restore_rejected_item(
+    app: AppHandle,
+    item_id: i64,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let state = state.inner().clone();
+    let app_data_dir = state.app_data_dir.clone();
+    run_blocking_command("restore_rejected_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        downloads_watcher::restore_rejected_item(&mut connection, &app_data_dir, item_id)
+            .map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+            ],
+            "download-item-restored",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(true)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reject_download_items(
+    app: AppHandle,
+    item_ids: Vec<i64>,
+    state: State<'_, AppState>,
+) -> Result<IgnoreItemsResult, String> {
+    let state = state.inner().clone();
+    let app_data_dir = state.app_data_dir.clone();
+    run_blocking_command("reject_download_items", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let result = downloads_watcher::reject_download_items(
+            &mut connection,
+            &app_data_dir,
+            &item_ids,
+        )
+        .map_err(map_error)?;
+        if !item_ids.is_empty() {
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                ],
+                "download-items-rejected",
+                item_ids,
+                Vec::new(),
+            )?;
+        }
+        Ok(result)
     })
     .await
 }

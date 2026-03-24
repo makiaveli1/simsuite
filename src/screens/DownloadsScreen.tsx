@@ -984,8 +984,8 @@ export function DownloadsScreen({
     setErrorMessage(null);
 
     try {
-      await api.ignoreDownloadItem(selectedItem.id);
-      setStatusMessage(`${selectedItem.displayName} was rejected from the active inbox.`);
+      const result = await api.rejectDownloadItem(selectedItem.id);
+      setStatusMessage(`${selectedItem.displayName} was moved to SimSuite_Rejected.`);
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
@@ -1028,7 +1028,7 @@ export function DownloadsScreen({
     setErrorMessage(null);
     try {
       const itemIds = Array.from(batchSelectedIds);
-      const result = await api.ignoreDownloadItems(itemIds);
+      const result = await api.rejectDownloadItems(itemIds);
       const parts: string[] = [];
       if (result.ignoredCount > 0) parts.push(`${result.ignoredCount} rejected`);
       if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
