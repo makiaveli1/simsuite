@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use std::{
     collections::HashSet,
     fs,
@@ -20,13 +20,13 @@ use crate::{
     core::{
         bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
         duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
-        scanner, snapshot_manager, special_mod_versions, watch_polling,
+        scanner, snapshot_manager, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyMcccUpdateResult, ApplyPreviewResult,
+        ApplyGuidedDownloadResult, ApplyPreviewResult,
         ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult, CategoryAuditFile,
         CategoryAuditQuery, CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery,
         CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse,
@@ -35,7 +35,7 @@ use crate::{
         GuidedInstallPlan, HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse,
         LibraryQuery, LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
         LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
-        McccUpdateInfo, OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
+        OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
         ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
         ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
         StagingAreasSummary, CleanupResult, StagingCommitResult, WatchListFilter,
