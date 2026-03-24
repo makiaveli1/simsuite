@@ -1817,12 +1817,9 @@ fn process_source(
             let old_extracted = extract_archive(source, &next_root, &mut notes)?;
             (old_extracted, 0)
         };
-        if extracted.is_empty() {
-            notes.push("Skipped ZIP extraction because no supported Sims files were found inside.".to_owned());
-        }
-        if ignored_count > 0 {
-            notes.push(format!("Ignored {ignored_count} unsupported archive entries."));
-        }
+        // Note: for ZIP, the "Skipped..." and "Ignored..." notes are pushed by
+        // extract_zip_archive_single_pass() itself when applicable.
+        // For non-ZIP, extract_archive() handles its own notes via WalkDir.
         staged_root = Some(next_root);
         extracted
     };
@@ -2528,8 +2525,18 @@ fn extract_archive(
 ) -> AppResult<Vec<DiscoveredFile>> {
     fs::create_dir_all(destination_root)?;
 
+    // ZIP uses single-pass — extract and return discovered in one step, no WalkDir needed
+    if source.archive_format.as_deref() == Some("zip") {
+        return extract_zip_archive_single_pass(&source.path, destination_root, notes)
+            .map(|(mut files, ignored_count)| {
+                if ignored_count > 0 {
+                    notes.push(format!("Ignored {ignored_count} unsupported archive entries."));
+                }
+                files
+            });
+    }
+
     match source.archive_format.as_deref() {
-        Some("zip") => extract_zip_archive(&source.path, destination_root, notes)?,
         Some("7z") => {
             sevenz_rust::decompress_file(&source.path, destination_root)
                 .map_err(|error| AppError::Message(error.to_string()))?;
@@ -2639,6 +2646,10 @@ fn extract_zip_archive_single_pass(
             continue;
         }
         discovered.push(build_discovered_file(destination_root, entry.path())?);
+    }
+
+    if discovered.is_empty() {
+        notes.push("Skipped ZIP extraction because no supported Sims files were found inside.".to_owned());
     }
 
     Ok((discovered, ignored_entries))
@@ -4152,7 +4163,7 @@ mod tests {
         let dest_path = temp.path().join("extracted");
         let mut notes = Vec::new();
 
-        let (discovered, ignored_count) =
+        let (discovered, _ignored_count) =
             extract_zip_archive_single_pass(&archive_path, &dest_path, &mut notes)
                 .expect("single-pass extract");
 

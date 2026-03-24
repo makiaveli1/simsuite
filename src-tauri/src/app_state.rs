@@ -270,6 +270,7 @@ mod tests {
             mods_path: None,
             tray_path: None,
             downloads_path: None,
+            download_reject_folder: None,
         };
 
         let status = build_initial_downloads_status(&settings);
@@ -284,6 +285,7 @@ mod tests {
             mods_path: None,
             tray_path: None,
             downloads_path: Some(downloads_root.to_string_lossy().to_string()),
+            download_reject_folder: None,
         };
 
         fs::create_dir_all(settings.downloads_path.as_ref().expect("downloads path"))
