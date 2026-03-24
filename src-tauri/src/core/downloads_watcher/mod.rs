@@ -1281,6 +1281,14 @@ pub fn import_download_source(
         Some(item_id) => load_existing_download_item(connection, item_id)?,
         None => None,
     };
+
+    // Load auto-ignore patterns
+    let ignore_patterns_raw = database::get_app_setting(connection, "download_ignore_patterns")?;
+    let ignore_patterns: Vec<String> = ignore_patterns_raw
+        .as_ref()
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .unwrap_or_default();
+
     let mut special_context = SpecialDecisionContext::default();
 
     process_source(
@@ -1292,6 +1300,7 @@ pub fn import_download_source(
         &source,
         existing_item.as_ref(),
         &mut special_context,
+        &ignore_patterns,
     )
 }
 
@@ -1627,6 +1636,14 @@ fn process_downloads_once_for_paths(
     log_slow_downloads_step("downloads_sync::existing", existing_started_at, || {
         format!("existing_items={}", existing.len())
     });
+
+    // Load auto-ignore patterns from settings (case-insensitive substring match)
+    let ignore_patterns_raw = database::get_app_setting(&connection, "download_ignore_patterns")?;
+    let ignore_patterns: Vec<String> = ignore_patterns_raw
+        .as_ref()
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .unwrap_or_default();
+
     let mut changed = false;
     let mut reassessed_existing = false;
     let should_reassess_unchanged = manual || assessment_version_changed;
@@ -1655,6 +1672,7 @@ fn process_downloads_once_for_paths(
                     source,
                     Some(existing_item),
                     &mut special_context,
+                    &ignore_patterns,
                 )?;
                 mark_item_rechecked_with_new_rules(&connection, existing_item.id)?;
                 changed = true;
@@ -1683,6 +1701,7 @@ fn process_downloads_once_for_paths(
             source,
             existing_item,
             &mut special_context,
+            &ignore_patterns,
         )?;
         changed = true;
         processed_items += 1;
@@ -1799,7 +1818,24 @@ fn process_source(
     source: &ObservedSource,
     existing: Option<&ExistingDownloadItem>,
     special_context: &mut SpecialDecisionContext,
+    ignore_patterns: &[String],
 ) -> AppResult<i64> {
+    // Auto-ignore check: if display name matches any ignore pattern, mark as ignored
+    if !ignore_patterns.is_empty() {
+        let display_lower = source.display_name.to_lowercase();
+        for pattern in ignore_patterns {
+            if display_lower.contains(&pattern.to_lowercase()) {
+                let note = format!("Auto-ignored: filename contains \"{}\"", pattern);
+                return ingest_ignored_non_sims_source(
+                    connection,
+                    source,
+                    existing.map(|item| item.id),
+                    &[note],
+                );
+            }
+        }
+    }
+
     if should_hold_archive_for_safety(source) {
         return ingest_held_archive_source(connection, source, existing.map(|item| item.id));
     }
