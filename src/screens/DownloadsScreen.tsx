@@ -46,6 +46,7 @@ import type {
   DependencyStatus,
   DownloadInboxDetail,
   DownloadIntakeMode,
+  DownloadProgress,
   DownloadQueueLane,
   DownloadsInboxItem,
   DownloadsInboxResponse,
@@ -165,6 +166,7 @@ export function DownloadsScreen({
   const [watcherStatus, setWatcherStatus] = useState<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
   );
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [inbox, setInbox] = useState<DownloadsInboxResponse | null>(
     downloadsScreenCache.inbox,
   );
@@ -197,6 +199,7 @@ export function DownloadsScreen({
   const [isLoadingSelection, setIsLoadingSelection] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
   const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
   );
@@ -292,6 +295,18 @@ export function DownloadsScreen({
     const unlisten = api.listenToDownloadsStatus((status) => {
       startTransition(() => {
         setWatcherStatus(status);
+      });
+    });
+
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = api.listenToDownloadsProgress((dlProgress) => {
+      startTransition(() => {
+        setProgress(dlProgress);
       });
     });
 
@@ -961,6 +976,57 @@ export function DownloadsScreen({
     }
   }
 
+  async function handleBatchApply() {
+    if (batchSelectedIds.size === 0) return;
+    setIsApplying(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const itemIds = Array.from(batchSelectedIds);
+      const result = await api.applyDownloadItems(itemIds, selectedPreset, true);
+      const parts: string[] = [];
+      if (result.appliedCount > 0) parts.push(`${result.appliedCount} applied`);
+      if (result.skippedCount > 0) parts.push(`${result.skippedCount} skipped`);
+      if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
+      setStatusMessage(`Batch apply: ${parts.join(", ")}.`);
+      if (result.errors.length > 0) {
+        setErrorMessage(result.errors.slice(0, 3).join("; "));
+      }
+      setBatchSelectedIds(new Set());
+      onDataChanged();
+      await reloadInboxAfterMutation();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
+  async function handleBatchIgnore() {
+    if (batchSelectedIds.size === 0) return;
+    setIsIgnoring(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const itemIds = Array.from(batchSelectedIds);
+      const result = await api.ignoreDownloadItems(itemIds);
+      const parts: string[] = [];
+      if (result.ignoredCount > 0) parts.push(`${result.ignoredCount} ignored`);
+      if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
+      setStatusMessage(`Batch ignore: ${parts.join(", ")}.`);
+      if (result.errors.length > 0) {
+        setErrorMessage(result.errors.slice(0, 3).join("; "));
+      }
+      setBatchSelectedIds(new Set());
+      onDataChanged();
+      await reloadInboxAfterMutation();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    } finally {
+      setIsIgnoring(false);
+    }
+  }
+
   function handlePrimaryAction() {
     if (!selectedResolvedItem) {
       return;
@@ -1092,6 +1158,7 @@ export function DownloadsScreen({
       badges,
       tone: inboxItemTone(item),
       selected: selectedItemId === item.id,
+      batchSelected: batchSelectedIds.has(item.id),
       sourcePath: item.sourcePath,
     };
   });
@@ -1276,6 +1343,7 @@ export function DownloadsScreen({
     readyItems: 0,
     needsReviewItems: 0,
     activeItems: 0,
+    progress: null,
   };
   const stageStatusMessage =
     activeWatcherStatus.state === "processing"
@@ -1343,6 +1411,7 @@ export function DownloadsScreen({
         reviewActionLabel={reviewLabel(userView)}
         onRefresh={() => void handleRefresh()}
         onOpenReview={() => onNavigate("review")}
+        progress={progress}
       />
 
       {showWatcherBootstrap ? (
@@ -1465,6 +1534,22 @@ export function DownloadsScreen({
                   setStatusMessage(null);
                   setSelectedItemId(itemId);
                 }}
+                onToggleBatchSelect={(id) => {
+                  setBatchSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) {
+                      next.delete(id);
+                    } else {
+                      next.add(id);
+                    }
+                    return next;
+                  });
+                }}
+                onSelectAll={() => {
+                  setBatchSelectedIds(new Set(activeLaneItems.map((item) => item.id)));
+                }}
+                onClearSelection={() => setBatchSelectedIds(new Set())}
+                selectedCount={batchSelectedIds.size}
                 footer={
                   splitStage ? (
                     <div className="downloads-queue-footer-card">
@@ -1699,6 +1784,37 @@ export function DownloadsScreen({
         notes={dialogConfig?.notes ?? []}
         isWorking={dialogBusy}
       />
+
+      {batchSelectedIds.size > 0 && (
+        <div className="downloads-batch-action-bar">
+          <span className="downloads-batch-count">
+            {batchSelectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            className="primary-action"
+            onClick={() => void handleBatchApply()}
+            disabled={isApplying}
+          >
+            {isApplying ? "Applying..." : `Apply ${batchSelectedIds.size}`}
+          </button>
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={() => void handleBatchIgnore()}
+            disabled={isIgnoring}
+          >
+            {isIgnoring ? "Ignoring..." : "Ignore"}
+          </button>
+          <button
+            type="button"
+            className="ghost-chip"
+            onClick={() => setBatchSelectedIds(new Set())}
+          >
+            Clear
+          </button>
+        </div>
+      )}
     </section>
   );
 }

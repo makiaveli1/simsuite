@@ -139,8 +139,11 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
         checked_subjects += 1;
     }
 
+    let silent_special_mod_updates = database::get_app_setting(&connection, "silent_special_mod_updates")?
+        .as_deref()
+        == Some("true");
     let (exact_update_items, possible_update_items, unknown_watch_items) =
-        content_versions::load_watch_counts(&connection)?;
+        content_versions::load_watch_counts(&connection, silent_special_mod_updates)?;
     let checked_at = Utc::now().to_rfc3339();
 
     database::save_app_setting(
@@ -173,8 +176,10 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
 
 fn refresh_tray_tooltip(app: &AppHandle, state: &AppState) -> AppResult<()> {
     let connection = state.connection()?;
+    let silent_special_mod_updates = database::get_app_setting(&connection, "silent_special_mod_updates")?
+        .as_deref() == Some("true");
     let (exact_update_items, possible_update_items, unknown_watch_items) =
-        content_versions::load_watch_counts(&connection)?;
+        content_versions::load_watch_counts(&connection, silent_special_mod_updates)?;
 
     if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
         tray.set_tooltip(Some(build_tray_tooltip(

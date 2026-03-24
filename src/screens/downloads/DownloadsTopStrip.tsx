@@ -1,4 +1,5 @@
 import { RefreshCw, ShieldAlert } from "lucide-react";
+import type { DownloadProgress } from "../../lib/types";
 
 interface DownloadsTopStripProps {
   statusMessage: string | null;
@@ -13,6 +14,7 @@ interface DownloadsTopStripProps {
   reviewActionLabel: string;
   onRefresh: () => void;
   onOpenReview: () => void;
+  progress?: DownloadProgress | null;
 }
 
 export function DownloadsTopStrip({
@@ -28,7 +30,9 @@ export function DownloadsTopStrip({
   reviewActionLabel,
   onRefresh,
   onOpenReview,
+  progress,
 }: DownloadsTopStripProps) {
+  const hasProgress = progress != null && progress.totalCount > 0;
   return (
     <div className="slim-strip downloads-top-strip">
       <div className="slim-strip-group">
@@ -54,6 +58,17 @@ export function DownloadsTopStrip({
       </div>
 
       <div className="slim-strip-group">
+        {hasProgress && (
+          <span className="ghost-chip download-progress-chip">
+            {progress.phase}: {progress.currentFile}
+            {progress.totalCount > 0 && (
+              <span className="download-progress-count">
+                {" "}
+                ({progress.processedCount}/{progress.totalCount})
+              </span>
+            )}
+          </span>
+        )}
         <span className="ghost-chip">{lastCheckLabel}</span>
         <button
           type="button"

@@ -20,6 +20,7 @@ import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type {
   AppBehaviorSettings,
   ExperienceMode,
+  LibrarySettings,
   UiDensity,
   WatchRefreshSummary,
 } from "../lib/types";
@@ -103,6 +104,7 @@ export function SettingsScreen({
   const { theme, density, setTheme, setDensity, resetPanelSizes } =
     useUiPreferences();
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
+  const [librarySettings, setLibrarySettings] = useState<LibrarySettings | null>(null);
   const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
   const [isRefreshingWatchedSources, setIsRefreshingWatchedSources] = useState(false);
@@ -185,6 +187,17 @@ export function SettingsScreen({
         }
       });
 
+    void api
+      .getLibrarySettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setLibrarySettings(settings);
+        }
+      })
+      .catch(() => {
+        // Library settings are not critical; fail silently
+      });
+
     return () => {
       cancelled = true;
     };
@@ -239,6 +252,49 @@ export function SettingsScreen({
     await saveBehaviorSettings({
       watchCheckIntervalHours: hours,
     });
+  }
+
+  async function updateIgnorePatterns(patterns: string[]) {
+    if (
+      JSON.stringify(appBehavior?.downloadIgnorePatterns ?? []) ===
+      JSON.stringify(patterns)
+    ) {
+      return;
+    }
+
+    await saveBehaviorSettings({
+      downloadIgnorePatterns: patterns,
+    });
+  }
+
+  async function updateSpecialModAlerts(silent: boolean | null) {
+    if (appBehavior?.silentSpecialModUpdates === silent) {
+      return;
+    }
+
+    await saveBehaviorSettings({
+      silentSpecialModUpdates: silent,
+    });
+  }
+
+  async function updateRejectFolder(path: string | null) {
+    if (!librarySettings) {
+      return;
+    }
+    await api.saveLibraryPaths({
+      ...librarySettings,
+      downloadRejectFolder: path,
+    });
+    setLibrarySettings((current) =>
+      current ? { ...current, downloadRejectFolder: path } : null,
+    );
+  }
+
+  async function pickRejectFolder() {
+    const picked = await api.pickFolder("Choose a quick-reject folder");
+    if (picked) {
+      await updateRejectFolder(picked);
+    }
   }
 
   async function refreshWatchedSources() {
@@ -416,6 +472,7 @@ export function SettingsScreen({
             {activeSection === "automation" ? (
               <SettingsAutomationSection
                 appBehavior={appBehavior}
+                librarySettings={librarySettings}
                 keepRunningInBackground={keepRunningInBackground}
                 automaticWatchChecks={automaticWatchChecks}
                 watchCheckIntervalHours={watchCheckIntervalHours}
@@ -427,6 +484,10 @@ export function SettingsScreen({
                 onUpdateAutomaticWatchChecks={updateAutomaticWatchChecks}
                 onUpdateWatchCheckInterval={updateWatchCheckInterval}
                 onRefreshWatchedSources={refreshWatchedSources}
+                onUpdateIgnorePatterns={updateIgnorePatterns}
+                onUpdateRejectFolder={updateRejectFolder}
+                onPickRejectFolder={pickRejectFolder}
+                onUpdateSpecialModAlerts={updateSpecialModAlerts}
               />
             ) : null}
 
@@ -638,6 +699,7 @@ function SettingsDensitySection({
 
 function SettingsAutomationSection({
   appBehavior,
+  librarySettings,
   keepRunningInBackground,
   automaticWatchChecks,
   watchCheckIntervalHours,
@@ -649,8 +711,13 @@ function SettingsAutomationSection({
   onUpdateAutomaticWatchChecks,
   onUpdateWatchCheckInterval,
   onRefreshWatchedSources,
+  onUpdateIgnorePatterns,
+  onUpdateRejectFolder,
+  onPickRejectFolder,
+  onUpdateSpecialModAlerts,
 }: {
   appBehavior: AppBehaviorSettings | null;
+  librarySettings: LibrarySettings | null;
   keepRunningInBackground: boolean;
   automaticWatchChecks: boolean;
   watchCheckIntervalHours: number;
@@ -662,6 +729,10 @@ function SettingsAutomationSection({
   onUpdateAutomaticWatchChecks: (enabled: boolean) => Promise<void>;
   onUpdateWatchCheckInterval: (hours: number) => Promise<void>;
   onRefreshWatchedSources: () => Promise<void>;
+  onUpdateIgnorePatterns: (patterns: string[]) => Promise<void>;
+  onUpdateRejectFolder: (path: string | null) => Promise<void>;
+  onPickRejectFolder: () => Promise<void>;
+  onUpdateSpecialModAlerts: (silent: boolean | null) => Promise<void>;
 }) {
   return (
     <>
@@ -787,6 +858,70 @@ function SettingsAutomationSection({
             </select>
           </label>
 
+          <div className="settings-summary-card settings-focus-block">
+            <span className="section-label">Special mod update alerts</span>
+            <p className="workspace-toolbar-copy">
+              When SimSuite finds an update for MCCC or another tracked special mod, decide
+              how to be notified.
+            </p>
+            <div
+              className="segmented-control"
+              role="tablist"
+              aria-label="Special mod update alerts"
+            >
+              <m.button
+                type="button"
+                className={`segment-button ${
+                  appBehavior?.silentSpecialModUpdates === null ? "is-active" : ""
+                }`}
+                onClick={() =>
+                  void onUpdateSpecialModAlerts(null)
+                }
+                disabled={!appBehavior || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Ask
+              </m.button>
+              <m.button
+                type="button"
+                className={`segment-button ${
+                  appBehavior?.silentSpecialModUpdates === true ? "is-active" : ""
+                }`}
+                onClick={() =>
+                  void onUpdateSpecialModAlerts(true)
+                }
+                disabled={!appBehavior || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Silent
+              </m.button>
+              <m.button
+                type="button"
+                className={`segment-button ${
+                  appBehavior?.silentSpecialModUpdates === false ? "is-active" : ""
+                }`}
+                onClick={() =>
+                  void onUpdateSpecialModAlerts(false)
+                }
+                disabled={!appBehavior || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Notify
+              </m.button>
+            </div>
+            <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+              {appBehavior?.silentSpecialModUpdates === null &&
+                "When an update is found, SimSuite will ask before applying."}
+              {appBehavior?.silentSpecialModUpdates === true &&
+                "Special mod updates are checked but hidden from counts and tray."}
+              {appBehavior?.silentSpecialModUpdates === false &&
+                "You'll be notified through counts and tray when updates are found."}
+            </p>
+          </div>
+
           <div className="settings-action-row">
             <m.button
               type="button"
@@ -826,6 +961,88 @@ function SettingsAutomationSection({
           </p>
         </div>
       </div>
+
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <Workflow size={14} strokeWidth={2} />
+            Quick reject folder
+          </span>
+          <h2>Auto-ignore a Downloads subfolder</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          Anything in the chosen folder is automatically ignored when it appears in your
+          Inbox. Useful for non-Sims downloads that land in your Downloads folder.
+        </p>
+      </div>
+
+      <div className="settings-summary-card settings-focus-block">
+        <span className="section-label">Reject folder</span>
+        {librarySettings?.downloadRejectFolder ? (
+          <>
+            <div className="path-display-card">
+              <code className="settings-folder-path">
+                {librarySettings.downloadRejectFolder}
+              </code>
+            </div>
+            <div className="settings-action-row">
+              <m.button
+                type="button"
+                className="secondary-action"
+                onClick={() => void onPickRejectFolder()}
+                disabled={!librarySettings || isSavingBackgroundMode}
+                whileHover={hoverLift}
+                whileTap={tapPress}
+              >
+                Change folder
+              </m.button>
+              <m.button
+                type="button"
+                className="ghost-chip"
+                onClick={() => void onUpdateRejectFolder(null)}
+                disabled={!librarySettings || isSavingBackgroundMode}
+              >
+                Remove
+              </m.button>
+            </div>
+          </>
+        ) : (
+          <div className="settings-action-row">
+            <m.button
+              type="button"
+              className="secondary-action"
+              onClick={() => void onPickRejectFolder()}
+              disabled={!librarySettings || isSavingBackgroundMode}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              Browse...
+            </m.button>
+            <span className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+              No folder selected. Set one to auto-reject non-Sims content.
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="panel-heading settings-focus-heading">
+        <div>
+          <span className="section-label">
+            <Workflow size={14} strokeWidth={2} />
+            Auto-ignore patterns
+          </span>
+          <h2>Skip files matching patterns</h2>
+        </div>
+        <p className="workspace-toolbar-copy">
+          SimSuite can auto-ignore new Downloads files whose filenames contain any of these patterns. Enter one pattern per line. Patterns are case-insensitive substrings.
+        </p>
+      </div>
+
+      <IgnorePatternsEditor
+        patterns={appBehavior?.downloadIgnorePatterns ?? []}
+        onSave={onUpdateIgnorePatterns}
+        disabled={!appBehavior || isSavingBackgroundMode}
+      />
 
       {backgroundModeError ? (
         <div className="settings-status-banner">{backgroundModeError}</div>
@@ -881,6 +1098,80 @@ function SettingsLayoutSection({
         </div>
       </div>
     </>
+  );
+}
+
+function IgnorePatternsEditor({
+  patterns,
+  onSave,
+  disabled,
+}: {
+  patterns: string[];
+  onSave: (patterns: string[]) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [localPatterns, setLocalPatterns] = useState(patterns.join("\n"));
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sync local state when props change
+  useEffect(() => {
+    setLocalPatterns(patterns.join("\n"));
+  }, [patterns]);
+
+  async function handleSave() {
+    const trimmed = localPatterns
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSave(trimmed);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="settings-focus-grid">
+      <div className="settings-summary-card settings-focus-block">
+        <span className="section-label">Current patterns</span>
+        <textarea
+          className="ignore-patterns-textarea"
+          value={localPatterns}
+          onChange={(e) => setLocalPatterns(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void handleSave();
+            }
+          }}
+          disabled={disabled || isSaving}
+          rows={Math.max(4, localPatterns.split("\n").length + 1)}
+          placeholder="e.g. sample, wallpaper, default"
+
+        />
+        <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
+          {isSaving ? (
+            <span className="settings-inline-status">
+              <LoaderCircle size={14} strokeWidth={2} className="spin" />
+              Saving...
+            </span>
+          ) : (
+            "One pattern per line. Case-insensitive. Changes save automatically."
+          )}
+        </p>
+        {error ? (
+          <p className="workspace-toolbar-copy workspace-toolbar-copy-muted settings-status-banner">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

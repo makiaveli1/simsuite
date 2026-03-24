@@ -8,6 +8,7 @@ import type {
   ApplyCreatorAuditResult,
   ApplyGuidedDownloadResult,
   ApplyPreviewResult,
+  BatchApplyResult,
   ApplySpecialReviewFixResult,
   CatalogSourceInfo,
   CategoryAuditFile,
@@ -29,11 +30,13 @@ import type {
   DownloadsSelectionResponse,
   DownloadsWatcherStatus,
   DetectedLibraryPaths,
+  DownloadProgress,
   DuplicateOverview,
   DuplicatePair,
   FileDetail,
   GuidedInstallPlan,
   HomeOverview,
+  IgnoreItemsResult,
   InstalledVersionSummary,
   OrganizationPreview,
   LibraryFacets,
@@ -54,6 +57,8 @@ import type {
   ScanProgress,
   ScanStatus,
   ScanSummary,
+  CleanupResult,
+  StagingAreasSummary,
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
@@ -79,6 +84,7 @@ let mockSettings: LibrarySettings = {
   modsPath: DEFAULT_MODS_PATH,
   trayPath: DEFAULT_TRAY_PATH,
   downloadsPath: DEFAULT_DOWNLOADS_PATH,
+  downloadRejectFolder: null,
 };
 
 let mockLastScanAt = "2026-03-08T03:48:00.000Z";
@@ -99,6 +105,9 @@ const mockProgressListeners = new Set<(progress: ScanProgress) => void>();
 const mockStatusListeners = new Set<(status: ScanStatus) => void>();
 const mockDownloadsStatusListeners = new Set<
   (status: DownloadsWatcherStatus) => void
+>();
+const mockDownloadsProgressListeners = new Set<
+  (progress: DownloadProgress) => void
 >();
 const mockWorkspaceChangeListeners = new Set<
   (change: WorkspaceChange) => void
@@ -121,6 +130,7 @@ let mockAppBehaviorSettings: AppBehaviorSettings = {
   watchCheckIntervalHours: 12,
   lastWatchCheckAt: null,
   lastWatchCheckError: null,
+  silentSpecialModUpdates: null,
 };
 const emptyInsights = {
   format: null,
@@ -3796,6 +3806,12 @@ function emitMockDownloadsStatus(status: DownloadsWatcherStatus) {
   }
 }
 
+function emitMockDownloadsProgress(progress: DownloadProgress) {
+  for (const listener of mockDownloadsProgressListeners) {
+    listener(progress);
+  }
+}
+
 function emitMockProgress(progress: ScanProgress) {
   for (const listener of mockProgressListeners) {
     listener(progress);
@@ -5317,6 +5333,21 @@ function listenToDownloadsStatus(
   });
 }
 
+function listenToDownloadsProgress(
+  handler: (progress: DownloadProgress) => void,
+) {
+  if (hasTauriRuntime) {
+    return tauriListen<DownloadProgress>("downloads-progress", (event) =>
+      handler(event.payload),
+    );
+  }
+
+  mockDownloadsProgressListeners.add(handler);
+  return Promise.resolve(() => {
+    mockDownloadsProgressListeners.delete(handler);
+  });
+}
+
 function listenToWorkspaceChanges(
   handler: (change: WorkspaceChange) => void,
 ) {
@@ -5421,11 +5452,15 @@ export const api = {
   getScanStatus: () => invoke<ScanStatus>("get_scan_status"),
   getDownloadsWatcherStatus: () =>
     invoke<DownloadsWatcherStatus>("get_downloads_watcher_status"),
+  getStagingAreas: () => invoke<StagingAreasSummary>("get_staging_areas"),
+  cleanupStagingAreas: (pathsToDelete: string[]) =>
+    invoke<CleanupResult>("cleanup_staging_areas", { pathsToDelete }),
   refreshDownloadsInbox: () =>
     invoke<DownloadsWatcherStatus>("refresh_downloads_inbox"),
   listenToScanProgress,
   listenToScanStatus,
   listenToDownloadsStatus,
+  listenToDownloadsProgress,
   listenToWorkspaceChanges,
   getDownloadsBootstrap,
   getDownloadsQueue,
@@ -5507,6 +5542,18 @@ export const api = {
     }),
   ignoreDownloadItem: (itemId: number) =>
     invoke<boolean>("ignore_download_item", { itemId }),
+  applyDownloadItems: (
+    itemIds: number[],
+    presetName?: string,
+    approved = false,
+  ) =>
+    invoke<BatchApplyResult>("apply_download_items", {
+      itemIds,
+      presetName,
+      approved,
+    }),
+  ignoreDownloadItems: (itemIds: number[]) =>
+    invoke<IgnoreItemsResult>("ignore_download_items", { itemIds }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
   listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>

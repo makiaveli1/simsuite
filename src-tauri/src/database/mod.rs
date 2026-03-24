@@ -551,6 +551,7 @@ pub fn get_library_settings(connection: &Connection) -> AppResult<LibrarySetting
         mods_path: get_app_setting(connection, "mods_path")?,
         tray_path: get_app_setting(connection, "tray_path")?,
         downloads_path: get_app_setting(connection, "downloads_path")?,
+        ..Default::default()
     }))
 }
 
@@ -649,6 +650,7 @@ fn apply_library_settings_override_values(
         mods_path: mods_override.or(settings.mods_path),
         tray_path: tray_override.or(settings.tray_path),
         downloads_path: downloads_override.or(settings.downloads_path),
+        ..Default::default()
     }
 }
 
@@ -1216,6 +1218,7 @@ mod tests {
                 mods_path: Some("C:/Mods/Real".to_owned()),
                 tray_path: Some("C:/Tray/Real".to_owned()),
                 downloads_path: Some("C:/Downloads/Real".to_owned()),
+                ..Default::default()
             },
             Some("C:/Mods/Test".to_owned()),
             None,
@@ -1316,6 +1319,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
                 downloads_path: None,
+                ..Default::default()
             },
             file_id,
             "CustomMaker",

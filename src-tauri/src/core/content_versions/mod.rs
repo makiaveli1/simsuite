@@ -464,7 +464,7 @@ pub fn refresh_watch_source_for_library_file(
     resolve_watch_result(connection, seed_pack, &subject)
 }
 
-pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> {
+pub fn load_watch_counts(connection: &Connection, silent_special_mod_updates: bool) -> AppResult<(i64, i64, i64)> {
     let exact_generic = scalar(
         connection,
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'exact_update_available'",
@@ -478,22 +478,27 @@ pub fn load_watch_counts(connection: &Connection) -> AppResult<(i64, i64, i64)> 
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'unknown'",
     )?;
 
-    let exact_special = scalar(
-        connection,
-        "SELECT COUNT(*)
-         FROM special_mod_family_state
-         WHERE installed_version IS NOT NULL
-           AND latest_version IS NOT NULL
-           AND latest_status = 'known'
-           AND latest_version <> installed_version",
-    )?;
-    let unknown_special = scalar(
-        connection,
-        "SELECT COUNT(*)
-         FROM special_mod_family_state
-         WHERE installed_version IS NOT NULL
-           AND (latest_status = 'unknown' OR latest_status = '')",
-    )?;
+    let (exact_special, unknown_special) = if silent_special_mod_updates {
+        (0, 0)
+    } else {
+        let exact_special = scalar(
+            connection,
+            "SELECT COUNT(*)
+             FROM special_mod_family_state
+             WHERE installed_version IS NOT NULL
+               AND latest_version IS NOT NULL
+               AND latest_status = 'known'
+               AND latest_version <> installed_version",
+        )?;
+        let unknown_special = scalar(
+            connection,
+            "SELECT COUNT(*)
+             FROM special_mod_family_state
+             WHERE installed_version IS NOT NULL
+               AND (latest_status = 'unknown' OR latest_status = '')",
+        )?;
+        (exact_special, unknown_special)
+    };
 
     Ok((
         exact_generic + exact_special,
@@ -2959,6 +2964,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             creator_hints: vec!["TestCreator".to_owned()],
@@ -3070,6 +3076,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             family_hints: vec!["s4cl".to_owned()],
@@ -3140,6 +3147,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             family_hints: vec![
@@ -3358,6 +3366,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             version_hints: vec!["1.0".to_owned()],
@@ -3415,6 +3424,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
 
         insert_compare_download_item(&connection, 1, "creator_version_only.package");
@@ -3467,6 +3477,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
 
         insert_compare_download_item(&connection, 1, "identified_family.package");
@@ -3563,6 +3574,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
 
         let installed_insights = FileInsights {
@@ -3641,6 +3653,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
 
         connection
@@ -3967,6 +3980,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             family_hints: vec!["s4cl".to_owned()],
@@ -4033,6 +4047,7 @@ mod tests {
             mods_path: Some("C:/Users/Test/Documents/Electronic Arts/The Sims 4/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Users/Test/Downloads".to_owned()),
+            ..Default::default()
         };
         let insights = FileInsights {
             family_hints: vec!["s4cl".to_owned()],

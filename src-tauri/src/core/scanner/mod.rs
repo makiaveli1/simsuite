@@ -1563,6 +1563,7 @@ mod tests {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: Some(tray.to_string_lossy().to_string()),
                     downloads_path: None,
+                    ..Default::default()
                 },
             )
             .expect("save settings");
@@ -1599,6 +1600,7 @@ mod tests {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
                     downloads_path: None,
+                    ..Default::default()
                 },
             )
             .expect("save settings");
@@ -1642,6 +1644,7 @@ mod tests {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
                     downloads_path: None,
+                    ..Default::default()
                 },
             )
             .expect("save settings");
@@ -1868,6 +1871,7 @@ mod tests {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
                     downloads_path: None,
+                    ..Default::default()
                 },
             )
             .expect("save settings");
@@ -1897,6 +1901,7 @@ mod tests {
                     mods_path: Some(mods.to_string_lossy().to_string()),
                     tray_path: None,
                     downloads_path: None,
+                    ..Default::default()
                 },
             )
             .expect("save settings");

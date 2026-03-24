@@ -22,6 +22,7 @@ export interface DownloadsQueueRowModel {
   }>;
   tone: "good" | "medium" | "low" | "neutral";
   selected: boolean;
+  batchSelected: boolean;
   sourcePath: string;
 }
 
@@ -32,6 +33,10 @@ interface DownloadsQueuePanelProps {
   isLoading: boolean;
   hasItems: boolean;
   onSelect: (id: number) => void;
+  onToggleBatchSelect: (id: number) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  selectedCount: number;
   footer?: ReactNode;
 }
 
@@ -42,8 +47,15 @@ export function DownloadsQueuePanel({
   isLoading,
   hasItems,
   onSelect,
+  onToggleBatchSelect,
+  onSelectAll,
+  onClearSelection,
+  selectedCount,
   footer,
 }: DownloadsQueuePanelProps) {
+  const allSelected = hasItems && rows.length > 0 && selectedCount === rows.length;
+  const someSelected = selectedCount > 0;
+
   return (
     <div className="panel-card downloads-queue-panel workbench-panel">
       <div className="panel-heading">
@@ -64,6 +76,22 @@ export function DownloadsQueuePanel({
               <div className="downloads-lane-group">
                 <div className="downloads-lane-header">
                   <div>
+                    <input
+                      type="checkbox"
+                      className="downloads-batch-checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someSelected && !allSelected;
+                      }}
+                      onChange={() => {
+                        if (allSelected) {
+                          onClearSelection();
+                        } else {
+                          onSelectAll();
+                        }
+                      }}
+                      aria-label={allSelected ? "Deselect all" : "Select all"}
+                    />
                     <strong>{downloadsLaneLabel(lane, userView)}</strong>
                     <span>{downloadsLaneHint(lane, userView)}</span>
                   </div>
@@ -75,41 +103,53 @@ export function DownloadsQueuePanel({
                   layout
                 >
                   {rows.map((row, index) => (
-                    <m.button
+                    <div
                       key={row.id}
-                      type="button"
-                      className={`downloads-item-row ${
+                      className={`downloads-item-row-wrapper ${
                         row.selected ? "is-selected" : ""
-                      } downloads-item-row-${row.tone}`}
-                      onClick={() => onSelect(row.id)}
-                      title={row.sourcePath}
-                      layout
-                      whileHover={rowHover}
-                      whileTap={rowPress}
+                      } ${row.batchSelected ? "is-batch-selected" : ""} downloads-item-row-${row.tone}`}
                       {...stagedListItem(index)}
                     >
-                      <div className="downloads-item-main">
-                        <strong>{row.title}</strong>
-                        <span>{row.meta}</span>
-                        <div className="downloads-item-samples">{row.summary}</div>
-                        {row.samples ? (
-                          <div className="downloads-item-samples downloads-item-samples-muted">
-                            {row.samples}
-                          </div>
-                        ) : null}
-                      </div>
+                      <input
+                        type="checkbox"
+                        className="downloads-batch-checkbox"
+                        checked={row.batchSelected}
+                        onChange={() => onToggleBatchSelect(row.id)}
+                        aria-label={`Select ${row.title}`}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <m.button
+                        type="button"
+                        className="downloads-item-row"
+                        onClick={() => onSelect(row.id)}
+                        title={row.sourcePath}
+                        layout
+                        whileHover={rowHover}
+                        whileTap={rowPress}
+                      >
+                        <div className="downloads-item-main">
+                          <strong>{row.title}</strong>
+                          <span>{row.meta}</span>
+                          <div className="downloads-item-samples">{row.summary}</div>
+                          {row.samples ? (
+                            <div className="downloads-item-samples downloads-item-samples-muted">
+                              {row.samples}
+                            </div>
+                          ) : null}
+                        </div>
 
-                      <div className="downloads-item-meta">
-                        {row.badges.map((badge) => (
-                          <span
-                            key={`${row.id}-${badge.label}`}
-                            className={`confidence-badge ${badge.tone}`}
-                          >
-                            {badge.label}
-                          </span>
-                        ))}
-                      </div>
-                    </m.button>
+                        <div className="downloads-item-meta">
+                          {row.badges.map((badge) => (
+                            <span
+                              key={`${row.id}-${badge.label}`}
+                              className={`confidence-badge ${badge.tone}`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                      </m.button>
+                    </div>
                   ))}
                 </m.div>
               </div>

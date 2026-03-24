@@ -782,6 +782,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
                 downloads_path: None,
+                ..Default::default()
             },
             &seed,
             crate::models::CategoryAuditQuery::default(),

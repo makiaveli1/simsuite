@@ -26,18 +26,19 @@ use crate::{
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
         ApplyGuidedDownloadResult, ApplyPreviewResult, ApplyReviewPlanActionResult,
-        ApplySpecialReviewFixResult, CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse,
-        CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse, DetectedLibraryPaths,
-        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
+        ApplySpecialReviewFixResult, BatchApplyResult, CategoryAuditFile, CategoryAuditQuery,
+        CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
+        DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, GuidedInstallPlan,
-        HomeOverview, LibraryFacets, LibraryListResponse, LibraryQuery, LibrarySettings,
-        LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult, LibraryWatchListResponse,
-        LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview,
-        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, WatchListFilter, WatchRefreshSummary,
-        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibraryQuery,
+        LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
+        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
+        OrganizationPreview, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
+        ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState,
+        ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan, StagingAreasSummary,
+        CleanupResult, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -392,6 +393,24 @@ pub fn get_app_behavior_settings(
     state: State<'_, AppState>,
 ) -> Result<AppBehaviorSettings, String> {
     let connection = state.connection().map_err(map_error)?;
+    let patterns_raw = database::get_app_setting(&connection, "download_ignore_patterns")
+        .map_err(map_error)?;
+    let download_ignore_patterns = patterns_raw
+        .as_ref()
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+        .unwrap_or_default();
+    let silent_special_mod_updates_raw =
+        database::get_app_setting(&connection, "silent_special_mod_updates")
+            .map_err(map_error)?;
+    let silent_special_mod_updates = silent_special_mod_updates_raw.as_deref().and_then(|raw| {
+        if raw == "true" {
+            Some(true)
+        } else if raw == "false" {
+            Some(false)
+        } else {
+            None
+        }
+    });
     Ok(AppBehaviorSettings {
         keep_running_in_background: state.keep_running_in_background(),
         automatic_watch_checks: state.automatic_watch_checks(),
@@ -400,6 +419,8 @@ pub fn get_app_behavior_settings(
             .map_err(map_error)?,
         last_watch_check_error: database::get_app_setting(&connection, "watch_auto_last_error")
             .map_err(map_error)?,
+        download_ignore_patterns,
+        silent_special_mod_updates,
     })
 }
 
@@ -444,6 +465,27 @@ pub fn save_app_behavior_settings(
         &mut connection,
         "watch_check_interval_hours",
         Some(&settings.watch_check_interval_hours.to_string()),
+        "user",
+    )
+    .map_err(map_error)?;
+    let patterns_json =
+        serde_json::to_string(&settings.download_ignore_patterns).map_err(|e| e.to_string())?;
+    database::save_app_setting(
+        &mut connection,
+        "download_ignore_patterns",
+        Some(&patterns_json),
+        "user",
+    )
+    .map_err(map_error)?;
+    let silent_value = match settings.silent_special_mod_updates {
+        Some(true) => Some("true"),
+        Some(false) => Some("false"),
+        None => None,
+    };
+    database::save_app_setting(
+        &mut connection,
+        "silent_special_mod_updates",
+        silent_value,
         "user",
     )
     .map_err(map_error)?;
@@ -681,6 +723,33 @@ pub fn get_downloads_watcher_status(
         .lock()
         .map(|status| status.clone())
         .map_err(|_| "Downloads status lock poisoned".to_owned())
+}
+
+#[tauri::command]
+pub async fn get_staging_areas(
+    state: State<'_, AppState>,
+) -> Result<StagingAreasSummary, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_staging_areas", move || {
+        let app_data_dir = state.app_data_dir;
+        downloads_watcher::list_staging_areas(&app_data_dir)
+            .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn cleanup_staging_areas(
+    state: State<'_, AppState>,
+    paths_to_delete: Vec<String>,
+) -> Result<CleanupResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("cleanup_staging_areas", move || {
+        let app_data_dir = state.app_data_dir;
+        downloads_watcher::cleanup_staging_areas(&app_data_dir, paths_to_delete)
+            .map_err(map_error)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1729,6 +1798,171 @@ pub async fn ignore_download_item(
 }
 
 #[tauri::command]
+pub async fn apply_download_items(
+    app: AppHandle,
+    item_ids: Vec<i64>,
+    preset_name: Option<String>,
+    approved: bool,
+    state: State<'_, AppState>,
+) -> Result<BatchApplyResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("apply_download_items", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        let seed_pack = state.seed_pack();
+
+        let mut applied_count = 0;
+        let mut skipped_count = 0;
+        let mut failed_count = 0;
+        let mut errors = Vec::new();
+        let mut affected_ids = Vec::new();
+
+        for item_id in item_ids {
+            let item_detail = match downloads_watcher::get_download_item_detail(
+                &connection,
+                &settings,
+                &seed_pack,
+                item_id,
+            ) {
+                Ok(Some(detail)) => detail,
+                Ok(None) => {
+                    failed_count += 1;
+                    errors.push(format!("Item {item_id} was not found."));
+                    continue;
+                }
+                Err(err) => {
+                    failed_count += 1;
+                    errors.push(format!("Item {item_id} could not be loaded: {err}"));
+                    continue;
+                }
+            };
+
+            // Skip items not in ReadyNow lane
+            if item_detail.item.queue_lane != crate::models::DownloadQueueLane::ReadyNow {
+                skipped_count += 1;
+                continue;
+            }
+
+            // Skip items that need special setup
+            if item_detail.item.intake_mode != crate::models::DownloadIntakeMode::Standard {
+                skipped_count += 1;
+                continue;
+            }
+
+            let file_ids = match downloads_watcher::load_active_file_ids(&connection, item_id) {
+                Ok(ids) => ids,
+                Err(err) => {
+                    failed_count += 1;
+                    errors.push(format!("Item {item_id} could not load files: {err}"));
+                    continue;
+                }
+            };
+
+            match move_engine::apply_preview_moves_for_files(
+                &mut connection,
+                &settings,
+                preset_name.clone(),
+                &file_ids,
+                approved,
+            ) {
+                Ok(_) => {
+                    applied_count += 1;
+                    affected_ids.push(item_id);
+                }
+                Err(err) => {
+                    failed_count += 1;
+                    errors.push(format!("Item {item_id} failed to apply: {err}"));
+                }
+            }
+
+            if let Err(err) =
+                downloads_watcher::refresh_download_item_status(&connection, item_id)
+            {
+                eprintln!("[apply_download_items] failed to refresh status for {item_id}: {err}");
+            }
+        }
+
+        if !affected_ids.is_empty() {
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Library,
+                    WorkspaceDomain::Organize,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                    WorkspaceDomain::Snapshots,
+                ],
+                "download-items-applied",
+                affected_ids,
+                Vec::new(),
+            )?;
+        }
+
+        Ok(BatchApplyResult {
+            applied_count,
+            skipped_count,
+            failed_count,
+            errors,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn ignore_download_items(
+    app: AppHandle,
+    item_ids: Vec<i64>,
+    state: State<'_, AppState>,
+) -> Result<IgnoreItemsResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("ignore_download_items", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+
+        let mut ignored_count = 0;
+        let mut failed_count = 0;
+        let mut errors = Vec::new();
+        let mut affected_ids = Vec::new();
+
+        for item_id in item_ids {
+            match downloads_watcher::ignore_download_item(&mut connection, item_id) {
+                Ok(()) => {
+                    ignored_count += 1;
+                    affected_ids.push(item_id);
+                }
+                Err(err) => {
+                    failed_count += 1;
+                    errors.push(format!("Item {item_id} failed to ignore: {err}"));
+                }
+            }
+        }
+
+        if !affected_ids.is_empty() {
+            emit_workspace_domains(
+                &app,
+                vec![
+                    WorkspaceDomain::Home,
+                    WorkspaceDomain::Downloads,
+                    WorkspaceDomain::Review,
+                    WorkspaceDomain::Duplicates,
+                ],
+                "download-items-ignored",
+                affected_ids,
+                Vec::new(),
+            )?;
+        }
+
+        Ok(IgnoreItemsResult {
+            ignored_count,
+            failed_count,
+            errors,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn list_library_files(
     query: LibraryQuery,
     state: State<'_, AppState>,
@@ -2397,6 +2631,14 @@ pub fn emit_downloads_status(
     status: &crate::models::DownloadsWatcherStatus,
 ) -> Result<(), String> {
     app.emit("downloads-status", status)
+        .map_err(|error| error.to_string())
+}
+
+pub fn emit_downloads_progress(
+    app: &AppHandle,
+    progress: &crate::models::DownloadProgress,
+) -> Result<(), String> {
+    app.emit("downloads-progress", progress)
         .map_err(|error| error.to_string())
 }
 

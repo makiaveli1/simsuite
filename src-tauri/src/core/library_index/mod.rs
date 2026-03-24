@@ -43,8 +43,18 @@ pub fn get_home_overview(
         connection,
         "SELECT COUNT(*) FROM files WHERE safety_notes <> '[]'",
     )?;
+    let silent_special_mod_updates = {
+        let val = connection
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'silent_special_mod_updates'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+        val.as_deref() == Some("true")
+    };
     let (exact_update_items, possible_update_items, unknown_watch_items) =
-        content_versions::load_watch_counts(connection)?;
+        content_versions::load_watch_counts(connection, silent_special_mod_updates)?;
     let watch_review_items =
         content_versions::list_library_watch_review_items(connection, settings, seed_pack, 1)?
             .total;
@@ -414,6 +424,7 @@ mod tests {
             mods_path: Some("C:/Mods".to_owned()),
             tray_path: Some("C:/Tray".to_owned()),
             downloads_path: Some("C:/Downloads".to_owned()),
+            ..Default::default()
         };
 
         connection

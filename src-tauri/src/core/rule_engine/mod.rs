@@ -920,6 +920,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Category First".to_owned()),
             20,
@@ -978,6 +979,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Category First".to_owned()),
             20,
@@ -1027,6 +1029,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Mirror Mode".to_owned()),
             20,
@@ -1076,6 +1079,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: Some("C:/Tray".to_owned()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Category First".to_owned()),
             2,

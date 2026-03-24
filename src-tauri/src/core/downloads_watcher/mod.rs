@@ -32,7 +32,8 @@ use crate::{
         DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
         DownloadsTimelineEntry, DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan,
-        LibrarySettings, OrganizationPreview, SpecialReviewPlan, WorkspaceChange, WorkspaceDomain,
+        LibrarySettings, OrganizationPreview, CleanupResult, SpecialReviewPlan,
+        StagingArea, StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
     },
 };
 
@@ -108,6 +109,8 @@ fn checking_downloads_status(
         ready_items: 0,
         needs_review_items: 0,
         active_items: 0,
+    
+        ..Default::default()
     }
 }
 
@@ -174,7 +177,8 @@ pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            },
+            ..Default::default()
+        },
         )?;
         return Ok(());
     }
@@ -236,7 +240,8 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
         ready_items: current_status.ready_items,
         needs_review_items: current_status.needs_review_items,
         active_items: current_status.active_items,
-    };
+            ..Default::default()
+        };
 
     store_status(state, app, starting_status.clone())?;
 
@@ -263,7 +268,8 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
                     ready_items: status.ready_items,
                     needs_review_items: status.needs_review_items,
                     active_items: status.active_items,
-                })
+            ..Default::default()
+        })
                 .unwrap_or_default();
             let _ = store_status(&thread_state, &thread_app, fallback);
         }
@@ -1359,7 +1365,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                     ready_items: 0,
                     needs_review_items: 0,
                     active_items: 0,
-                },
+            ..Default::default()
+        },
             );
             return;
         }
@@ -1380,7 +1387,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            },
+            ..Default::default()
+        },
         );
         return;
     }
@@ -1405,7 +1413,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: status.ready_items,
                 needs_review_items: status.needs_review_items,
                 active_items: status.active_items,
-            })
+            ..Default::default()
+        })
             .unwrap_or(DownloadsWatcherStatus {
                 state: DownloadsWatcherState::Error,
                 watched_path: Some(watched_root.to_string_lossy().to_string()),
@@ -1417,7 +1426,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            });
+            ..Default::default()
+        });
         let _ = store_status(&state, &app, fallback);
     }
 
@@ -1470,7 +1480,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                         ready_items: status.ready_items,
                         needs_review_items: status.needs_review_items,
                         active_items: status.active_items,
-                    })
+            ..Default::default()
+        })
                     .unwrap_or_default();
                 let _ = store_status(&state, &app, snapshot);
             }
@@ -1531,6 +1542,7 @@ fn process_downloads_once_for_paths(
             ready_items: 0,
             needs_review_items: 0,
             active_items: 0,
+            ..Default::default()
         };
         store_status(state, app, status.clone())?;
         return Ok(status);
@@ -2803,7 +2815,8 @@ fn summarize_status(
         ready_items,
         needs_review_items,
         active_items,
-    })
+            ..Default::default()
+        })
 }
 
 fn store_status(
@@ -3277,6 +3290,145 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
     date_time.to_rfc3339()
 }
 
+
+/// Lists all staging areas under the downloads inbox.
+/// Returns file counts, sizes, and ages for each subdirectory.
+pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary> {
+    let inbox_root = app_data_dir.join("downloads_inbox");
+    if !inbox_root.exists() {
+        return Ok(StagingAreasSummary {
+            areas: vec![],
+            total_bytes: 0,
+            total_file_count: 0,
+        });
+    }
+
+    let mut areas = Vec::new();
+    let mut total_bytes = 0u64;
+    let mut total_file_count = 0usize;
+
+    for entry in std::fs::read_dir(&inbox_root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let item_id = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_owned();
+
+        let mut subdirectories = Vec::new();
+        let mut area_bytes = 0u64;
+        let mut area_file_count = 0usize;
+
+        for sub_entry in std::fs::read_dir(&path)? {
+            let sub_entry = sub_entry?;
+            let sub_path = sub_entry.path();
+            if !sub_path.is_dir() {
+                continue;
+            }
+
+            let (file_count, dir_bytes) = count_dir_contents(&sub_path);
+            let created_at = std::fs::metadata(&sub_path)
+                .and_then(|m| m.created())
+                .ok()
+                .map(|t| system_time_to_rfc3339(t));
+
+            subdirectories.push(StagingSubDirectory {
+                path: sub_path.to_string_lossy().into_owned(),
+                name: sub_path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?")
+                    .to_owned(),
+                file_count,
+                total_bytes: dir_bytes,
+                created_at,
+            });
+
+            area_bytes += dir_bytes;
+            area_file_count += file_count;
+        }
+
+        total_bytes += area_bytes;
+        total_file_count += area_file_count;
+
+        areas.push(StagingArea {
+            item_id,
+            subdirectories,
+        });
+    }
+
+    Ok(StagingAreasSummary {
+        areas,
+        total_bytes,
+        total_file_count,
+    })
+}
+
+/// Counts files and total bytes (recursive) in a directory.
+fn count_dir_contents(path: &Path) -> (usize, u64) {
+    let mut file_count = 0usize;
+    let mut total_bytes = 0u64;
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            file_count += 1;
+            total_bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
+        }
+    }
+    (file_count, total_bytes)
+}
+
+/// Deletes the specified staging subdirectory paths.
+/// Only deletes within the staging root for safety.
+pub fn cleanup_staging_areas(
+    app_data_dir: &Path,
+    paths_to_delete: Vec<String>,
+) -> AppResult<CleanupResult> {
+    let staging_root = app_data_dir.join("downloads_inbox");
+    let mut deleted_count = 0;
+    let mut freed_bytes = 0u64;
+    let mut errors = Vec::new();
+
+    for path_str in paths_to_delete {
+        let path = PathBuf::from(&path_str);
+        // Safety: must be inside staging root
+        if !path.starts_with(&staging_root) {
+            errors.push(format!("Path is outside staging root: {}", path_str));
+            continue;
+        }
+        if !path.exists() {
+            continue;
+        }
+
+        // Calculate size before deleting
+        let (file_count, bytes) = count_dir_contents(&path);
+        if path.is_dir() {
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                errors.push(format!("Failed to delete {}: {}", path_str, e));
+            } else {
+                deleted_count += 1;
+                freed_bytes += bytes;
+            }
+        } else {
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            if let Err(e) = std::fs::remove_file(&path) {
+                errors.push(format!("Failed to delete {}: {}", path_str, e));
+            } else {
+                deleted_count += file_count;
+                freed_bytes += size + bytes;
+            }
+        }
+    }
+
+    Ok(CleanupResult {
+        deleted_count,
+        freed_bytes,
+        errors,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -3623,6 +3775,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
                 downloads_path: Some("C:/Downloads".to_owned()),
+                ..Default::default()
             },
             &seed_pack,
             20,
@@ -3645,6 +3798,7 @@ mod tests {
                 mods_path: Some("C:/Mods".to_owned()),
                 tray_path: None,
                 downloads_path: Some("C:/Downloads".to_owned()),
+                ..Default::default()
             },
             &seed_pack,
             21,
@@ -3688,6 +3842,7 @@ mod tests {
             mods_path: Some("C:/Mods".to_owned()),
             tray_path: None,
             downloads_path: Some("C:/Downloads".to_owned()),
+            ..Default::default()
         };
         let mut special_context = SpecialDecisionContext::default();
 
@@ -3729,6 +3884,7 @@ mod tests {
             mods_path: Some(mods.to_string_lossy().to_string()),
             tray_path: None,
             downloads_path: Some(downloads.to_string_lossy().to_string()),
+            ..Default::default()
         };
 
         connection
@@ -3810,6 +3966,7 @@ mod tests {
             mods_path: Some(mods.to_string_lossy().to_string()),
             tray_path: None,
             downloads_path: Some(downloads.to_string_lossy().to_string()),
+            ..Default::default()
         };
 
         connection
@@ -4043,6 +4200,7 @@ mod tests {
             mods_path: None,
             tray_path: None,
             downloads_path: Some("C:/Downloads".to_owned()),
+            ..Default::default()
         };
         let seed_pack = seed::load_seed_pack().expect("seed pack");
         insert_download_item(&connection, 51, "ignored");

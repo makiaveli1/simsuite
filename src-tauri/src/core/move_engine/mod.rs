@@ -1296,6 +1296,7 @@ mod tests {
             mods_path: Some(mods.to_string_lossy().to_string()),
             tray_path: Some(tray.to_string_lossy().to_string()),
             downloads_path: Some(downloads.to_string_lossy().to_string()),
+            ..Default::default()
         };
         database::save_library_paths(&mut connection, &settings).expect("settings");
 
@@ -1404,6 +1405,7 @@ mod tests {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
                 downloads_path: None,
+                ..Default::default()
             },
         )
         .expect("settings");
@@ -1439,6 +1441,7 @@ mod tests {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Category First".to_owned()),
             20,
@@ -1486,6 +1489,7 @@ mod tests {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
                 downloads_path: None,
+                ..Default::default()
             },
         )
         .expect("settings");
@@ -1527,6 +1531,7 @@ mod tests {
                 mods_path: Some(mods.to_string_lossy().to_string()),
                 tray_path: Some(tray.to_string_lossy().to_string()),
                 downloads_path: None,
+                ..Default::default()
             },
             Some("Category First".to_owned()),
             1,

@@ -33,6 +33,7 @@ export interface LibrarySettings {
   modsPath: string | null;
   trayPath: string | null;
   downloadsPath: string | null;
+  downloadRejectFolder: string | null;
 }
 
 export interface AppBehaviorSettings {
@@ -41,6 +42,8 @@ export interface AppBehaviorSettings {
   watchCheckIntervalHours: number;
   lastWatchCheckAt: string | null;
   lastWatchCheckError: string | null;
+  downloadIgnorePatterns: string[];
+  silentSpecialModUpdates: boolean | null;
 }
 
 export interface WatchRefreshSummary {
@@ -91,6 +94,41 @@ export interface DownloadsWatcherStatus {
   readyItems: number;
   needsReviewItems: number;
   activeItems: number;
+  progress: DownloadProgress | null;
+}
+
+export interface DownloadProgress {
+  phase: string;
+  currentFile: string;
+  processedCount: number;
+  totalCount: number;
+  bytesProcessed: number;
+  bytesTotal: number;
+}
+
+export interface StagingSubDirectory {
+  path: string;
+  name: string;
+  fileCount: number;
+  totalBytes: number;
+  createdAt: string | null;
+}
+
+export interface StagingArea {
+  itemId: string;
+  subdirectories: StagingSubDirectory[];
+}
+
+export interface StagingAreasSummary {
+  areas: StagingArea[];
+  totalBytes: number;
+  totalFileCount: number;
+}
+
+export interface CleanupResult {
+  deletedCount: number;
+  freedBytes: number;
+  errors: string[];
 }
 
 export type ScanMode = "full" | "incremental";
@@ -512,6 +550,19 @@ export interface ApplyPreviewResult {
   deferredReviewCount: number;
   skippedCount: number;
   snapshotName: string;
+}
+
+export interface BatchApplyResult {
+  appliedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  errors: string[];
+}
+
+export interface IgnoreItemsResult {
+  ignoredCount: number;
+  failedCount: number;
+  errors: string[];
 }
 
 export interface RestoreSnapshotResult {

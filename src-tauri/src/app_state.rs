@@ -233,6 +233,7 @@ fn build_initial_downloads_status(settings: &LibrarySettings) -> DownloadsWatche
             ready_items: 0,
             needs_review_items: 0,
             active_items: 0,
+            ..Default::default()
         };
     }
 
@@ -247,6 +248,7 @@ fn build_initial_downloads_status(settings: &LibrarySettings) -> DownloadsWatche
         ready_items: 0,
         needs_review_items: 0,
         active_items: 0,
+        ..Default::default()
     }
 }
 

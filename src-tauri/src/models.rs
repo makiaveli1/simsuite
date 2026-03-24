@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LibrarySettings {
     pub mods_path: Option<String>,
     pub tray_path: Option<String>,
     pub downloads_path: Option<String>,
+    #[serde(default)]
+    pub download_reject_folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +18,12 @@ pub struct AppBehaviorSettings {
     pub watch_check_interval_hours: i64,
     pub last_watch_check_at: Option<String>,
     pub last_watch_check_error: Option<String>,
+    pub download_ignore_patterns: Vec<String>,
+    /// If `Some(true)`, special mod (MCCC) version updates are excluded from the
+    /// update counts shown in the UI and tray tooltip. If `None` or `Some(false)`,
+    /// they are shown normally.
+    #[serde(default)]
+    pub silent_special_mod_updates: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +78,60 @@ pub enum DownloadsWatcherState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DownloadProgress {
+    pub phase: String,
+    pub current_file: String,
+    pub processed_count: usize,
+    pub total_count: usize,
+    pub bytes_processed: u64,
+    pub bytes_total: u64,
+}
+
+/// A single timestamped staging subdirectory for one download item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingSubDirectory {
+    /// Full path to the subdirectory.
+    pub path: String,
+    /// Human-readable name (the directory name itself).
+    pub name: String,
+    /// Number of files directly inside this subdirectory.
+    pub file_count: usize,
+    /// Total size in bytes of all files in this subdirectory (recursive).
+    pub total_bytes: u64,
+    /// When this subdirectory was created (extracted), as RFC3339.
+    pub created_at: Option<String>,
+}
+
+/// All staging subdirectories for one download item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingArea {
+    /// The item ID, or "new" for uncommitted items.
+    pub item_id: String,
+    /// Subdirectories belonging to this item.
+    pub subdirectories: Vec<StagingSubDirectory>,
+}
+
+/// Summary of all staging areas.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingAreasSummary {
+    pub areas: Vec<StagingArea>,
+    pub total_bytes: u64,
+    pub total_file_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub deleted_count: usize,
+    pub freed_bytes: u64,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadsWatcherStatus {
     pub state: DownloadsWatcherState,
     pub watched_path: Option<String>,
@@ -81,6 +143,13 @@ pub struct DownloadsWatcherStatus {
     pub ready_items: i64,
     pub needs_review_items: i64,
     pub active_items: i64,
+    /// Timestamp (RFC3339) of the last full downloads folder scan start.
+    /// Used by the fast-path to skip files not modified since the last scan.
+    #[serde(default)]
+    pub last_downloads_scan_at: Option<String>,
+    /// Live progress of long-running operations (ZIP extraction, scanning, etc.)
+    #[serde(default)]
+    pub progress: Option<DownloadProgress>,
 }
 
 impl Default for DownloadsWatcherStatus {
@@ -96,6 +165,8 @@ impl Default for DownloadsWatcherStatus {
             ready_items: 0,
             needs_review_items: 0,
             active_items: 0,
+            last_downloads_scan_at: None,
+            progress: None,
         }
     }
 }
@@ -661,6 +732,23 @@ pub struct ApplyPreviewResult {
     pub deferred_review_count: i64,
     pub skipped_count: i64,
     pub snapshot_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchApplyResult {
+    pub applied_count: i64,
+    pub skipped_count: i64,
+    pub failed_count: i64,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IgnoreItemsResult {
+    pub ignored_count: i64,
+    pub failed_count: i64,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
