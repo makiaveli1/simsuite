@@ -155,6 +155,7 @@ const SCREEN_TEMPO = {
   review: 0.92,
   duplicates: 0.94,
   settings: 1,
+  staging: 0.94,
 } satisfies Record<Screen, number>;
 
 export const screenTransition = {

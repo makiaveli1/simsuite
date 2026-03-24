@@ -22,6 +22,7 @@ const SCREEN_LABELS: Record<
   duplicates: { default: "Duplicates", beginner: "Same file?" },
   organize: { default: "Organize", beginner: "Tidy Up" },
   review: { default: "Review" },
+  staging: { default: "Staging" },
   settings: { default: "Settings" },
 };
 
@@ -215,6 +216,11 @@ export function screenHelperLine(
       beginner: "These files hit a speed bump. Check why, then decide the safest next stop.",
       standard: "Use Review as the hold queue for anything that still needs a human look.",
       power: "Work through the blocked items with fuller reasons, paths, and confidence clues.",
+    },
+    staging: {
+      beginner: "Review staged files before they go to your Library.",
+      standard: "Commit or reject staged items in batches.",
+      power: "Use the staging desk as a pre-Library checkpoint for bulk operations.",
     },
     settings: {
       beginner: "Change the app feel here without touching your files or your safety rules.",

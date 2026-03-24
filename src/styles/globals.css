@@ -9966,3 +9966,370 @@ select:focus-visible {
   font-size: 10px;
   font-family: monospace;
 }
+
+/* ── Staging Browser Screen ── */
+.staging-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+
+.staging-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.staging-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.staging-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.staging-count {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.staging-summary {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.staging-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.staging-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.staging-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.staging-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  gap: 0.5rem;
+}
+
+.staging-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.staging-card-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.staging-card-item-id {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.staging-card-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.staging-card-badge--pending {
+  background: color-mix(in srgb, var(--amber) 20%, var(--surface-3));
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+}
+
+.staging-card-stats {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.staging-card-sep {
+  opacity: 0.5;
+}
+
+.staging-card-subs {
+  padding: 0.4rem 0;
+}
+
+.staging-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.85rem;
+  gap: 0.5rem;
+}
+
+.staging-sub-name {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  font-family: monospace;
+}
+
+.staging-sub-info {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.staging-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 50%, var(--surface-2));
+}
+
+.staging-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, opacity 0.12s, color 0.12s;
+}
+
+.staging-btn--commit {
+  background: color-mix(in srgb, var(--green) 15%, var(--surface-2));
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.staging-btn--commit:hover:not(.staging-btn--disabled) {
+  background: color-mix(in srgb, var(--green) 22%, var(--surface-2));
+}
+
+.staging-btn--reject {
+  background: color-mix(in srgb, var(--red) 12%, var(--surface-2));
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.staging-btn--reject:hover:not(.staging-btn--disabled) {
+  background: color-mix(in srgb, var(--red) 20%, var(--surface-2));
+}
+
+.staging-btn--commit-all {
+  background: color-mix(in srgb, var(--green) 15%, var(--surface-2));
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.staging-btn--commit-all:hover:not(.staging-btn--disabled) {
+  background: color-mix(in srgb, var(--green) 22%, var(--surface-2));
+}
+
+.staging-btn--reject-all {
+  background: color-mix(in srgb, var(--red) 12%, var(--surface-2));
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.staging-btn--reject-all:hover:not(.staging-btn--disabled) {
+  background: color-mix(in srgb, var(--red) 20%, var(--surface-2));
+}
+
+.staging-btn--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.staging-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.staging-empty-icon {
+  opacity: 0.35;
+  margin-bottom: 0.25rem;
+}
+
+.staging-empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin: 0;
+}
+
+.staging-empty-body {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 32ch;
+  line-height: 1.5;
+}
+
+.staging-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.35rem;
+  font-size: 0.82rem;
+  margin-bottom: 0.75rem;
+  position: relative;
+}
+
+.staging-result--ok {
+  background: color-mix(in srgb, var(--green) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  color: var(--green);
+}
+
+.staging-result--warn {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--border));
+  color: var(--amber);
+}
+
+.staging-result-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0.1rem;
+  display: flex;
+  align-items: center;
+}
+
+.staging-result-close:hover {
+  opacity: 1;
+}
+
+.screen-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── MCCC Auto-Update Card ─────────────────────────────────────────────────── */
+
+.mccc-update-card {
+  background: color-mix(in srgb, var(--blue) 8%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--border));
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mccc-update-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mccc-update-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mccc-update-title-row .eyebrow {
+  margin: 0;
+}
+
+.mccc-update-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.mccc-update-creator {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.mccc-update-versions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.mccc-version-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.mccc-version-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mccc-version-value {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.mccc-version-arrow {
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.mccc-update-checked {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.mccc-update-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mccc-update-actions .primary-action,
+.mccc-update-actions .secondary-action {
+  font-size: 0.85rem;
+}

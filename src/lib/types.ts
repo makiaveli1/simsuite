@@ -8,7 +8,8 @@ export type Screen =
   | "organize"
   | "review"
   | "duplicates"
-  | "settings";
+  | "settings"
+  | "staging";
 export type ExperienceMode = "casual" | "seasoned" | "creator";
 export type UserView = "beginner" | "standard" | "power";
 export type UiTheme =
@@ -129,6 +130,13 @@ export interface StagingAreasSummary {
 export interface CleanupResult {
   deletedCount: number;
   freedBytes: number;
+  errors: string[];
+}
+
+export interface StagingCommitResult {
+  committedCount: number;
+  skippedCount: number;
+  failedCount: number;
   errors: string[];
 }
 
@@ -1008,4 +1016,28 @@ export interface ApplyReviewPlanActionResult {
   deferredReviewCount: number;
   snapshotName: string | null;
   message: string;
+}
+
+/// MCCC auto-update info returned by checkMcccUpdate().
+export interface McccUpdateInfo {
+  isInstalled: boolean;
+  installedVersion: string | null;
+  installPath: string | null;
+  latestVersion: string | null;
+  downloadUrl: string | null;
+  checkedAt: string | null;
+  updateAvailable: boolean;
+  confidence: number;
+  status: string;
+  error: string | null;
+}
+
+/// Result of applying an MCCC update.
+export interface ApplyMcccUpdateResult {
+  newVersion: string;
+  installedCount: number;
+  replacedCount: number;
+  preservedCount: number;
+  snapshotId: number;
+  snapshotName: string;
 }

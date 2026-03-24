@@ -68,6 +68,9 @@ const DuplicatesScreen = lazy(async () => ({
 const SettingsScreen = lazy(async () => ({
   default: (await import("./screens/SettingsScreen")).SettingsScreen,
 }));
+const StagingScreen = lazy(async () => ({
+  default: (await import("./screens/StagingScreen")).StagingScreen,
+}));
 
 function createInitialWorkspaceVersions(): Record<WorkspaceDomain, number> {
   return WORKSPACE_DOMAINS.reduce(
@@ -113,6 +116,7 @@ const VALID_SCREEN_NAMES: Screen[] = [
   "organize",
   "review",
   "settings",
+  "staging",
 ];
 
 function isValidScreen(s: string): s is Screen {
@@ -636,6 +640,8 @@ function AppShell({
         experienceMode={experienceMode}
         onExperienceModeChange={onExperienceModeChange}
       />
+    ) : screen === "staging" ? (
+      <StagingScreen onNavigate={setScreen} userView={userView} />
     ) : (
       <ReviewScreen
         refreshVersion={workspaceVersions.review}

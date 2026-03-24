@@ -8,6 +8,7 @@ import {
   Fingerprint,
   FolderTree,
   House,
+  Inbox,
   ListChecks,
   RefreshCw,
   ShieldAlert,
@@ -481,6 +482,34 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         { label: "Moves allowed", value: "No" },
         { label: "Best use", value: "Resolve blockers" },
         { label: "Usually leads to", value: "Library or audits" },
+      ],
+    ),
+    staging: makeScreenTopic(
+      "staging",
+      Inbox,
+      "Staging",
+      "Review staged files before committing them to your Library.",
+      viewCopy(userView, {
+        beginner: "Use this after reviewing downloads but before filing them.",
+        standard: "Use this to batch-commit or reject staged items.",
+        power: "Use this as your pre-Library checkpoint for bulk operations.",
+      }),
+      "Stage files",
+      "Go to Library after staging is clean.",
+      [
+        section("What is staging", [
+          "Files extracted from archives land here for review.",
+          "Commit moves them to Library. Reject removes them.",
+        ]),
+        section("Batch actions", [
+          "Commit all sends everything to Library at once.",
+          "Reject all clears the staging area.",
+        ]),
+      ],
+      [
+        { label: "Files", value: "From downloads" },
+        { label: "Leads to", value: "Library" },
+        { label: "Best for", value: "Bulk pre-filing" },
       ],
     ),
   };

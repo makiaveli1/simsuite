@@ -8,6 +8,7 @@ import type {
   ApplyCreatorAuditResult,
   ApplyGuidedDownloadResult,
   ApplyPreviewResult,
+  ApplyMcccUpdateResult,
   BatchApplyResult,
   ApplySpecialReviewFixResult,
   CatalogSourceInfo,
@@ -38,6 +39,7 @@ import type {
   HomeOverview,
   IgnoreItemsResult,
   InstalledVersionSummary,
+  McccUpdateInfo,
   OrganizationPreview,
   LibraryFacets,
   LibraryWatchBulkSaveResult,
@@ -59,6 +61,7 @@ import type {
   ScanSummary,
   CleanupResult,
   StagingAreasSummary,
+  StagingCommitResult,
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
@@ -5466,6 +5469,10 @@ export const api = {
   getStagingAreas: () => invoke<StagingAreasSummary>("get_staging_areas"),
   cleanupStagingAreas: (pathsToDelete: string[]) =>
     invoke<CleanupResult>("cleanup_staging_areas", { pathsToDelete }),
+  commitStagingArea: (itemId: string) =>
+    invoke<StagingCommitResult>("commit_staging_area", { itemId }),
+  commitAllStagingAreas: () =>
+    invoke<StagingCommitResult>("commit_all_staging_areas"),
   refreshDownloadsInbox: () =>
     invoke<DownloadsWatcherStatus>("refresh_downloads_inbox"),
   listenToScanProgress,
@@ -5648,4 +5655,12 @@ export const api = {
       kind,
       subtype,
     }),
+
+  // ── MCCC Auto-Update ──────────────────────────────────────────────────────
+
+  /** Check for MCCC updates. Returns current installed version and latest available. */
+  checkMcccUpdate: () => invoke<McccUpdateInfo>("check_mccc_update"),
+
+  /** Download and apply the latest MCCC update. */
+  applyMcccUpdate: () => invoke<ApplyMcccUpdateResult>("apply_mccc_update"),
 };

@@ -42,6 +42,7 @@ import type {
   LibraryWatchReviewResponse,
   LibraryWatchSetupItem,
   LibraryWatchSetupResponse,
+  McccUpdateInfo,
   Screen,
   UserView,
   WatchListFilter,
@@ -229,6 +230,9 @@ export function UpdatesScreen({
   const [clearingWatch, setClearingWatch] = useState(false);
   const [refreshingWatch, setRefreshingWatch] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [mcccUpdateInfo, setMcccUpdateInfo] = useState<McccUpdateInfo | null>(null);
+  const [loadingMccc, setLoadingMccc] = useState(false);
+  const [applyingMccc, setApplyingMccc] = useState(false);
 
   useEffect(() => {
     if (initialMode) {
@@ -264,6 +268,39 @@ export function UpdatesScreen({
 
     void loadSelectedFile(initialFileId, { edit: initialMode === "setup" });
   }, [initialFileId, initialMode]);
+
+  // Load MCCC update info on mount and whenever refreshVersion changes
+  useEffect(() => {
+    void loadMcccUpdateInfo();
+  }, [refreshVersion]);
+
+  async function loadMcccUpdateInfo() {
+    setLoadingMccc(true);
+    try {
+      const info = await api.checkMcccUpdate();
+      setMcccUpdateInfo(info);
+    } catch (error) {
+      console.error("Could not check MCCC updates.", error);
+      setMcccUpdateInfo(null);
+    } finally {
+      setLoadingMccc(false);
+    }
+  }
+
+  async function handleApplyMcccUpdate() {
+    setApplyingMccc(true);
+    setMessage(null);
+    try {
+      const result = await api.applyMcccUpdate();
+      setMessage(`MCCC updated to ${result.newVersion}.`);
+      void loadMcccUpdateInfo();
+      onDataChanged?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update MCCC.");
+    } finally {
+      setApplyingMccc(false);
+    }
+  }
 
   async function loadTrackedList(skipLoading = false, nextFilter = filter) {
     if (!skipLoading) {
@@ -868,6 +905,67 @@ export function UpdatesScreen({
         {message ? <div className="updates-inline-message">{message}</div> : null}
 
         <div className="updates-stage-body">
+          {/* MCCC Auto-Update Card */}
+          {mcccUpdateInfo && (
+            <div className="workbench-panel mccc-update-card">
+              <div className="mccc-update-header">
+                <div className="mccc-update-title-row">
+                  <span className="eyebrow">Special mod</span>
+                  {mcccUpdateInfo.updateAvailable ? (
+                    <span className="health-chip is-warn">Update available</span>
+                  ) : mcccUpdateInfo.isInstalled ? (
+                    <span className="health-chip is-good">Up to date</span>
+                  ) : (
+                    <span className="health-chip is-muted">Not installed</span>
+                  )}
+                </div>
+                <h3>MC Command Center</h3>
+                <p className="mccc-update-creator">by Deaderpool</p>
+              </div>
+
+              <div className="mccc-update-versions">
+                <div className="mccc-version-item">
+                  <span className="mccc-version-label">Installed</span>
+                  <span className="mccc-version-value">
+                    {mcccUpdateInfo.installedVersion ?? "Unknown"}
+                  </span>
+                </div>
+                <div className="mccc-version-arrow">→</div>
+                <div className="mccc-version-item">
+                  <span className="mccc-version-label">Latest</span>
+                  <span className="mccc-version-value">
+                    {mcccUpdateInfo.latestVersion ?? "Unknown"}
+                  </span>
+                </div>
+              </div>
+
+              {mcccUpdateInfo.checkedAt && (
+                <p className="mccc-update-checked">
+                  Checked {new Date(mcccUpdateInfo.checkedAt).toLocaleString()}
+                </p>
+              )}
+
+              <div className="mccc-update-actions">
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => void handleApplyMcccUpdate()}
+                  disabled={applyingMccc || loadingMccc || !mcccUpdateInfo.updateAvailable}
+                >
+                  {applyingMccc ? "Updating..." : "Update MCCC"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => void loadMcccUpdateInfo()}
+                  disabled={loadingMccc}
+                >
+                  {loadingMccc ? "Checking..." : "Check again"}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="workbench-panel updates-stage-focus-band">
             <div className="updates-stage-focus">
               <p className="eyebrow">

@@ -1091,6 +1091,50 @@ pub struct SpecialModDecision {
     pub primary_action: Option<ReviewPlanAction>,
 }
 
+/// MCCC auto-update info returned by check_mccc_update command.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McccUpdateInfo {
+    /// Whether MCCC is currently installed.
+    pub is_installed: bool,
+    /// The currently installed version, if detected.
+    pub installed_version: Option<String>,
+    /// The path where MCCC is installed.
+    pub install_path: Option<String>,
+    /// The latest version available on the official page.
+    pub latest_version: Option<String>,
+    /// Direct URL to download the latest MCCC zip.
+    pub download_url: Option<String>,
+    /// When the latest version was checked.
+    pub checked_at: Option<String>,
+    /// Whether a newer version is available.
+    pub update_available: bool,
+    /// Confidence score of the latest version detection (0.0 to 1.0).
+    pub confidence: f64,
+    /// Status message or note.
+    pub status: String,
+    /// Error message if the check failed.
+    pub error: Option<String>,
+}
+
+/// Result of applying an MCCC update.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyMcccUpdateResult {
+    /// The new version installed.
+    pub new_version: String,
+    /// Number of files installed.
+    pub installed_count: i64,
+    /// Number of files replaced.
+    pub replaced_count: i64,
+    /// Number of files preserved (.cfg files kept).
+    pub preserved_count: i64,
+    /// ID of the snapshot created before the update.
+    pub snapshot_id: i64,
+    /// Name of the snapshot.
+    pub snapshot_name: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadsInboxItem {
@@ -1306,4 +1350,13 @@ pub struct ApplyReviewPlanActionResult {
     pub deferred_review_count: i64,
     pub snapshot_name: Option<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingCommitResult {
+    pub committed_count: usize,
+    pub skipped_count: usize,
+    pub failed_count: usize,
+    pub errors: Vec<String>,
 }

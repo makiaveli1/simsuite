@@ -44,6 +44,7 @@ const NAV_ITEMS: Array<{
   { id: "organize", label: "Organize", icon: Workflow },
   { id: "review", label: "Review", icon: ShieldAlert },
   { id: "settings", label: "Settings", icon: SlidersHorizontal },
+  { id: "staging", label: "Staging", icon: Inbox },
 ];
 
 interface SidebarProps {
