@@ -3960,6 +3960,7 @@ const DOWNLOAD_LANE_ORDER: DownloadQueueLane[] = [
   "waiting_on_you",
   "blocked",
   "done",
+  "rejected",
 ];
 
 function groupDownloadItems(items: DownloadsInboxItem[]) {
