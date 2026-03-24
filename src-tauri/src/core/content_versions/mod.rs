@@ -11,12 +11,12 @@ use crate::{
     },
     error::AppResult,
     models::{
-        FileInsights, InstalledVersionSummary, LibrarySettings, LibraryWatchListItem,
-        LibraryWatchListResponse, LibraryWatchReviewItem, LibraryWatchReviewReason,
-        LibraryWatchReviewResponse, LibraryWatchSetupItem, LibraryWatchSetupResponse,
-        SpecialVersionStatus, VersionCompareStatus, VersionConfidence, VersionResolution,
-        VersionSignal, WatchCapability, WatchListFilter, WatchResult, WatchSourceKind,
-        WatchSourceOrigin, WatchStatus,
+        detect_update_source, FileInsights, InstalledVersionSummary, LibrarySettings,
+        LibraryWatchListItem, LibraryWatchListResponse, LibraryWatchReviewItem,
+        LibraryWatchReviewReason, LibraryWatchReviewResponse, LibraryWatchSetupItem,
+        LibraryWatchSetupResponse, SpecialVersionStatus, UpdateSource, VersionCompareStatus,
+        VersionConfidence, VersionResolution, VersionSignal, WatchCapability, WatchListFilter,
+        WatchResult, WatchSourceKind, WatchSourceOrigin, WatchStatus,
     },
     seed::{GuidedInstallProfileSeed, SeedPack},
 };
@@ -2418,17 +2418,25 @@ fn resolve_watch_result(
                 evidence.push(note.to_owned());
             }
 
+            let computed_source_url = source_url.or_else(|| {
+                profile
+                    .latest_check_url
+                    .clone()
+                    .or_else(|| Some(profile.official_source_url.clone()))
+            });
+            let (source, patreon_url) = computed_source_url
+                .as_ref()
+                .map(|u| detect_update_source(u))
+                .unwrap_or((UpdateSource::Unknown, None));
+
             return Ok(Some(WatchResult {
                 status,
                 source_kind: Some(WatchSourceKind::ExactPage),
                 source_origin: WatchSourceOrigin::BuiltInSpecial,
                 source_label: Some(profile.display_name.clone()),
-                source_url: source_url.or_else(|| {
-                    profile
-                        .latest_check_url
-                        .clone()
-                        .or_else(|| Some(profile.official_source_url.clone()))
-                }),
+                source_url: computed_source_url,
+                source: Some(source),
+                patreon_url,
                 capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
@@ -2443,15 +2451,23 @@ fn resolve_watch_result(
             }));
         }
 
+        let computed_source_url = profile
+            .latest_check_url
+            .clone()
+            .or_else(|| Some(profile.official_source_url.clone()));
+        let (source, patreon_url) = computed_source_url
+            .as_ref()
+            .map(|u| detect_update_source(u))
+            .unwrap_or((UpdateSource::Unknown, None));
+
         return Ok(Some(WatchResult {
             status: WatchStatus::NotWatched,
             source_kind: Some(WatchSourceKind::ExactPage),
             source_origin: WatchSourceOrigin::BuiltInSpecial,
             source_label: Some(profile.display_name.clone()),
-            source_url: profile
-                .latest_check_url
-                .clone()
-                .or_else(|| Some(profile.official_source_url.clone())),
+            source_url: computed_source_url,
+            source: Some(source),
+            patreon_url,
             capability: map_watch_capability_kind(capability.kind),
             can_refresh_now: matches!(capability.kind, WatchSourceCapabilityKind::CanRefreshNow),
             provider_name: capability.provider_name.clone(),
@@ -2468,12 +2484,15 @@ fn resolve_watch_result(
     match (source, result) {
         (Some(source), Some(result)) => {
             let capability = watch_source_capability(seed_pack, Some(subject), &source);
+            let (src, patreon_url) = detect_update_source(&source.source_url);
             Ok(Some(WatchResult {
                 status: result.status,
                 source_kind: Some(source.source_kind),
                 source_origin: WatchSourceOrigin::SavedByUser,
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
+                source: Some(src),
+                patreon_url,
                 capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
@@ -2489,12 +2508,15 @@ fn resolve_watch_result(
         }
         (Some(source), None) => {
             let capability = watch_source_capability(seed_pack, Some(subject), &source);
+            let (src, patreon_url) = detect_update_source(&source.source_url);
             Ok(Some(WatchResult {
                 status: WatchStatus::NotWatched,
                 source_kind: Some(source.source_kind),
                 source_origin: WatchSourceOrigin::SavedByUser,
                 source_label: source.source_label,
                 source_url: Some(source.source_url),
+                source: Some(src),
+                patreon_url,
                 capability: map_watch_capability_kind(capability.kind),
                 can_refresh_now: matches!(
                     capability.kind,
@@ -2514,6 +2536,8 @@ fn resolve_watch_result(
             source_origin: WatchSourceOrigin::None,
             source_label: None,
             source_url: None,
+            source: None,
+            patreon_url: None,
             capability: WatchCapability::SavedReferenceOnly,
             can_refresh_now: false,
             provider_name: None,
@@ -2529,6 +2553,8 @@ fn resolve_watch_result(
             source_origin: WatchSourceOrigin::None,
             source_label: None,
             source_url: None,
+            source: None,
+            patreon_url: None,
             capability: WatchCapability::SavedReferenceOnly,
             can_refresh_now: false,
             provider_name: None,

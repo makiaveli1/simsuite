@@ -1383,6 +1383,27 @@ h2,
   color: var(--accent-strong);
 }
 
+.patreon-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #FF424D;
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+}
+
+.patreon-badge:hover {
+  opacity: 0.85;
+}
+
 .updates-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -5864,6 +5885,41 @@ h2,
   font-size: 0.69rem;
 }
 
+.version-compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  color: var(--tone-warn);
+  background: color-mix(in srgb, var(--tone-warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone-warn) 28%, transparent);
+  border-radius: 5px;
+  padding: 2px 7px;
+  margin-top: 2px;
+  width: fit-content;
+}
+
+.version-compare-chip svg {
+  color: var(--tone-warn);
+  flex-shrink: 0;
+}
+
+.version-compare-chip .open-in-library-btn {
+  background: none;
+  border: none;
+  color: var(--accent-bright);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 0 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.version-compare-chip .open-in-library-btn:hover {
+  color: var(--accent);
+}
+
 .downloads-item-meta {
   display: flex;
   flex-wrap: wrap;
@@ -6149,6 +6205,131 @@ h2,
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+}
+
+/* Snooze picker */
+.snooze-picker-wrapper {
+  position: relative;
+}
+
+.snooze-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.snooze-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tone-warn) 12%, var(--surface-2));
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--tone-warn) 40%, var(--border));
+}
+
+.snooze-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.snooze-picker {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 100;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.snooze-picker-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.snooze-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.snooze-preset-btn {
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s;
+}
+
+.snooze-preset-btn:hover {
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface-2));
+}
+
+.snooze-custom {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.snooze-custom-input {
+  width: 72px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.snooze-custom-unit {
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.snooze-apply-btn {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--surface-1);
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.12s;
+}
+
+.snooze-apply-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.snooze-apply-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .downloads-decision-proof {

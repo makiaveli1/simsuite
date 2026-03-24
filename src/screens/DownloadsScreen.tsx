@@ -122,7 +122,8 @@ type DownloadsDialogRequest =
   | { kind: "guided_apply" }
   | { kind: "safe_move" }
   | { kind: "reject" }
-  | { kind: "review_action"; action: ReviewPlanAction };
+  | { kind: "review_action"; action: ReviewPlanAction }
+  | { kind: "undo"; itemId: number; displayName: string };
 
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
 const DEFAULT_DOWNLOADS_PRESET = "Category First";
@@ -202,6 +203,8 @@ export function DownloadsScreen({
   const [isLoadingSelection, setIsLoadingSelection] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
+  const [undoableApply, setUndoableApply] = useState<{ itemId: number; displayName: string } | null>(null);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
   const [showTour, setShowTour] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
@@ -960,6 +963,7 @@ export function DownloadsScreen({
       setStatusMessage(
         `Moved ${result.movedCount} safe file(s) from ${selectedItem.displayName}. ${result.deferredReviewCount} file(s) stayed in the inbox.`,
       );
+      setUndoableApply({ itemId: selectedItem.id, displayName: selectedItem.displayName });
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
@@ -992,6 +996,20 @@ export function DownloadsScreen({
       setErrorMessage(toErrorMessage(error));
     } finally {
       setIsRejecting(false);
+    }
+  }
+
+  async function handleSnooze(durationSeconds: number) {
+    if (!selectedItem) return;
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      await api.snoozeDownloadItem(selectedItem.id, durationSeconds);
+      setStatusMessage(`${selectedItem.displayName} snoozed. It will reappear later.`);
+      onDataChanged();
+      await reloadInboxAfterMutation();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     }
   }
 
@@ -1095,11 +1113,31 @@ export function DownloadsScreen({
       case "review_action":
         await handleReviewAction(pendingDialog.action, true);
         break;
+      case "undo":
+        await handleUndo(pendingDialog.itemId, pendingDialog.displayName);
+        break;
       default:
         break;
     }
 
     setPendingDialog(null);
+  }
+
+  async function handleUndo(itemId: number, displayName: string) {
+    setIsUndoing(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      await api.undoAppliedItem(itemId);
+      setStatusMessage(`"${displayName}" was moved back to Downloads.`);
+      setUndoableApply(null);
+      onDataChanged();
+      await reloadInboxAfterMutation();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    } finally {
+      setIsUndoing(false);
+    }
   }
 
   const overview = inbox?.overview ?? null;
@@ -1180,6 +1218,14 @@ export function DownloadsScreen({
       selected: selectedItemId === item.id,
       batchSelected: batchSelectedIds.has(item.id),
       sourcePath: item.sourcePath,
+      libraryVersionInfo:
+        item.versionResolution?.status === "incoming_newer"
+          ? {
+              libraryLabel: item.versionResolution.matchedSubjectLabel,
+              installedVersion: item.versionResolution.installedVersion,
+              incomingVersion: item.versionResolution.incomingVersion,
+            }
+          : undefined,
     };
   });
   const batchCanvasPreviewItems = previewSuggestions.length
@@ -1657,6 +1703,7 @@ export function DownloadsScreen({
                 }}
                 onClearSelection={() => setBatchSelectedIds(new Set())}
                 selectedCount={batchSelectedIds.size}
+                onOpenInLibrary={() => onNavigate("library")}
                 footer={
                   splitStage ? (
                     <div className="downloads-queue-footer-card">
@@ -1830,6 +1877,7 @@ export function DownloadsScreen({
                 onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
                 onOpenProof={() => setProofSheetOpen(true)}
                 proofSummary={proofSummary}
+                onSnooze={handleSnooze}
                 idleNote={
                   !showPrimaryAction
                     ? downloadsInspectorIdleNote(
@@ -2020,6 +2068,24 @@ function buildDownloadsDialogConfig({
         },
       ],
       notes: ["This only hides the batch from the active queue."],
+    };
+  }
+
+  if (request.kind === "undo") {
+    return {
+      eyebrow: "Undo apply",
+      title: `Move "${request.displayName}" back to Downloads?`,
+      description:
+        userView === "beginner"
+          ? "This will remove the files from your Library and put them back in the Downloads queue. You can apply them again later."
+          : "This will move the files from the Library back to the staging area and reset the item to the waiting queue.",
+      confirmLabel: "Yes, move back",
+      tone: "warn" as const,
+      metrics: [],
+      notes: [
+        "The files will be removed from your Library.",
+        "The item will go back to the waiting queue.",
+      ],
     };
   }
 

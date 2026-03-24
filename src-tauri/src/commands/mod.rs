@@ -18,9 +18,9 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        category_audit, content_versions, creator_audit, downloads_watcher, install_profile_engine,
-        library_index, move_engine, rule_engine, scanner, snapshot_manager, special_mod_versions,
-        watch_polling,
+        bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
+        duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
+        scanner, snapshot_manager, special_mod_versions, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
@@ -1439,6 +1439,13 @@ pub async fn apply_download_item(
         )
         .map_err(map_error)?;
         downloads_watcher::refresh_download_item_status(&connection, item_id).map_err(map_error)?;
+        // Mark the item as applied with a timestamp for undo tracking
+        connection
+            .execute(
+                "UPDATE download_items SET last_applied_at = ?1 WHERE id = ?2",
+                params![chrono::Utc::now().timestamp(), item_id],
+            )
+            .map_err(map_error)?;
         emit_workspace_domains(
             &app,
             vec![
@@ -1455,6 +1462,133 @@ pub async fn apply_download_item(
             Vec::new(),
         )?;
         Ok(result)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn undo_applied_item(
+    app: AppHandle,
+    item_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    run_blocking_command("undo_applied_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+
+        // Check if item exists and has been applied
+        let last_applied_at: Option<i64> = connection
+            .query_row(
+                "SELECT last_applied_at FROM download_items WHERE id = ?1",
+                params![item_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .map_err(map_error)?
+            .optional()
+            .map_err(map_error)?;
+
+        // None = item not found OR never applied (both mean can't undo)
+        if last_applied_at.is_none() {
+            return Err("This item has not been applied and cannot be undone.".to_owned());
+        }
+
+        // Get all files for this download_item that are currently in the library (not downloads)
+        let mut stmt = connection
+            .prepare(
+                "SELECT id, path, source_origin_path
+                 FROM files
+                 WHERE download_item_id = ?1 AND source_location != 'downloads'",
+            )
+            .map_err(map_error)?;
+
+        let files_to_restore: Vec<(i64, String, Option<String>)> = stmt
+            .query_map(params![item_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(map_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_error)?;
+        drop(stmt);
+
+        if files_to_restore.is_empty() {
+            // No files in library - might already be undone or never had files
+            return Err("No files found in Library to move back.".to_owned());
+        }
+
+        // Move each file back to its source_origin_path
+        for (file_id, current_path, origin_path) in &files_to_restore {
+            let Some(origin) = origin_path else {
+                // No origin path recorded - cannot restore
+                continue;
+            };
+
+            let current = PathBuf::from(current_path);
+            let original = PathBuf::from(origin);
+
+            // Check if current file exists
+            if !current.exists() {
+                return Err(format!(
+                    "File no longer exists at '{}'. Undo is not possible.",
+                    current.display()
+                ));
+            }
+
+            // Check if original destination already exists (and is different)
+            if original.exists() && original != current {
+                return Err(format!(
+                    "A file already exists at '{}'. Cannot restore.",
+                    original.display()
+                ));
+            }
+
+            // Move file back
+            move_engine::move_single_file(&current, &original).map_err(map_error)?;
+
+            // Update file record using the restore helper
+            move_engine::update_file_record_on_restore(
+                &connection,
+                &settings,
+                *file_id,
+                &original,
+            )
+            .map_err(map_error)?;
+        }
+
+        // Update download_item status and clear last_applied_at
+        // Set status to 'needs_review' so queue_lane becomes 'WaitingOnYou'
+        connection
+            .execute(
+                "UPDATE download_items
+                 SET last_applied_at = NULL,
+                     status = 'needs_review',
+                     updated_at = ?1
+                 WHERE id = ?2",
+                params![Utc::now().to_rfc3339(), item_id],
+            )
+            .map_err(map_error)?;
+
+        // Rebuild bundles and duplicates since file locations changed
+        bundle_detector::rebuild_bundles(&mut connection).map_err(map_error)?;
+        duplicate_detector::rebuild_duplicates(&mut connection).map_err(map_error)?;
+
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Library,
+                WorkspaceDomain::Organize,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+            ],
+            "download-item-undone",
+            vec![item_id],
+            Vec::new(),
+        )
+        .map_err(map_error)?;
+
+        Ok(())
     })
     .await
 }
@@ -2160,6 +2294,11 @@ pub async fn apply_download_items(
             {
                 eprintln!("[apply_download_items] failed to refresh status for {item_id}: {err}");
             }
+            // Mark as applied with timestamp for undo tracking
+            let _ = connection.execute(
+                "UPDATE download_items SET last_applied_at = ?1 WHERE id = ?2",
+                params![chrono::Utc::now().timestamp(), item_id],
+            );
         }
 
         if !affected_ids.is_empty() {
@@ -2271,6 +2410,35 @@ pub async fn reject_download_item(
             Vec::new(),
         )?;
         Ok(result)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn snooze_download_item(
+    app: AppHandle,
+    item_id: i64,
+    duration_seconds: i64,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let state = state.inner().clone();
+    run_blocking_command("snooze_download_item", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        downloads_watcher::snooze_download_item(&mut connection, item_id, duration_seconds)
+            .map_err(map_error)?;
+        emit_workspace_domains(
+            &app,
+            vec![
+                WorkspaceDomain::Home,
+                WorkspaceDomain::Downloads,
+                WorkspaceDomain::Review,
+                WorkspaceDomain::Duplicates,
+            ],
+            "download-item-snoozed",
+            vec![item_id],
+            Vec::new(),
+        )?;
+        Ok(true)
     })
     .await
 }

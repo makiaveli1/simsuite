@@ -80,7 +80,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Build flat list for keyboard nav
   const allResults: CommandPaletteResult[] = [...downloads, ...library, ...updates];

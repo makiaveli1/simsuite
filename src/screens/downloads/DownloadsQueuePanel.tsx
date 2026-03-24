@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Check, CheckCircle, Clock, Inbox, Settings, ShieldAlert } from "lucide-react";
+import { ArrowUp, Check, CheckCircle, Clock, Inbox, Settings, ShieldAlert } from "lucide-react";
 import { m } from "motion/react";
 import { StatePanel } from "../../components/StatePanel";
 import { SkeletonLoader } from "../../components/SkeletonLoader";
@@ -11,6 +11,30 @@ import {
 import { isLaneExplained, setLaneExplained, type DownloadQueueLane } from "../../lib/guidedFlowStorage";
 import type { UserView } from "../../lib/types";
 import { downloadsLaneHint, downloadsLaneLabel } from "./downloadsDisplay";
+
+export interface LibraryVersionInfo {
+  libraryLabel: string | null;
+  installedVersion: string | null;
+  incomingVersion: string | null;
+}
+
+export interface DownloadsQueueRowModel {
+  id: number;
+  title: string;
+  creatorName?: string | null;
+  meta: string;
+  summary: string;
+  samples?: string | null;
+  badges: Array<{
+    label: string;
+    tone: string;
+  }>;
+  tone: "good" | "medium" | "low" | "neutral";
+  selected: boolean;
+  batchSelected: boolean;
+  sourcePath: string;
+  libraryVersionInfo?: LibraryVersionInfo;
+}
 
 const LANE_ACCENTS: Record<string, string> = {
   ready_now: "var(--accent)",
@@ -66,23 +90,6 @@ const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
   },
 };
 
-export interface DownloadsQueueRowModel {
-  id: number;
-  title: string;
-  creatorName?: string | null;
-  meta: string;
-  summary: string;
-  samples?: string | null;
-  badges: Array<{
-    label: string;
-    tone: string;
-  }>;
-  tone: "good" | "medium" | "low" | "neutral";
-  selected: boolean;
-  batchSelected: boolean;
-  sourcePath: string;
-}
-
 interface DownloadsQueuePanelProps {
   lane: DownloadQueueLane;
   userView: UserView;
@@ -94,6 +101,7 @@ interface DownloadsQueuePanelProps {
   onSelectAll: () => void;
   onClearSelection: () => void;
   selectedCount: number;
+  onOpenInLibrary?: () => void;
   footer?: ReactNode;
 }
 
@@ -108,6 +116,7 @@ export function DownloadsQueuePanel({
   onSelectAll,
   onClearSelection,
   selectedCount,
+  onOpenInLibrary,
   footer,
 }: DownloadsQueuePanelProps) {
   const allSelected = hasItems && rows.length > 0 && selectedCount === rows.length;
@@ -248,6 +257,28 @@ export function DownloadsQueuePanel({
                           {row.samples ? (
                             <div className="downloads-item-samples downloads-item-samples-muted">
                               {row.samples}
+                            </div>
+                          ) : null}
+                          {row.libraryVersionInfo ? (
+                            <div className="version-compare-chip">
+                              <ArrowUp size={11} strokeWidth={2.5} />
+                              <span>
+                                {row.libraryVersionInfo.installedVersion
+                                  ? `v${row.libraryVersionInfo.installedVersion} in Library → `
+                                  : "Library → "}
+                                v{row.libraryVersionInfo.incomingVersion ?? "?"} available
+                              </span>
+                              {onOpenInLibrary && (
+                                <button
+                                  className="open-in-library-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenInLibrary();
+                                  }}
+                                >
+                                  Open in Library
+                                </button>
+                              )}
                             </div>
                           ) : null}
                         </div>

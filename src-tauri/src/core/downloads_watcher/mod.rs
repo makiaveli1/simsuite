@@ -1467,6 +1467,38 @@ pub fn restore_rejected_item(
     Ok(())
 }
 
+/// Snooze a download item for a given duration (in seconds).
+/// The item's status is set to 'ignored' so it disappears from the active queue,
+/// and snoozed_until stores the expiry timestamp.
+pub fn snooze_download_item(
+    connection: &mut Connection,
+    item_id: i64,
+    duration_seconds: i64,
+) -> AppResult<()> {
+    let until = Utc::now().timestamp() + duration_seconds;
+    let affected = connection.execute(
+        "UPDATE download_items SET snoozed_until = ?1, status = 'ignored' WHERE id = ?2",
+        params![until, item_id],
+    )?;
+    if affected == 0 {
+        return Err(AppError::Message(format!("Item {} not found", item_id)));
+    }
+    Ok(())
+}
+
+/// Move any snoozed items whose snooze period has expired back to 'ready' status
+/// and the waiting_on_you lane. Called on app load and after each scan.
+pub fn unsnooze_stale_items(connection: &Connection) -> AppResult<usize> {
+    let now = Utc::now().timestamp();
+    let affected = connection.execute(
+        "UPDATE download_items
+         SET snoozed_until = NULL, status = 'ready'
+         WHERE snoozed_until IS NOT NULL AND snoozed_until < ?1",
+        params![now],
+    )?;
+    Ok(affected)
+}
+
 /// Batch version of reject_download_item — rejects multiple items.
 pub fn reject_download_items(
     connection: &mut Connection,
@@ -1839,6 +1871,16 @@ fn process_downloads_once_for_paths(
     let connection_started_at = Instant::now();
     let mut connection = state.connection()?;
     let settings = database::get_library_settings(&connection)?;
+
+    // Unsnooze any items whose snooze period has expired
+    let unsnoozed_count = unsnooze_stale_items(&connection)?;
+    if unsnoozed_count > 0 {
+        eprintln!(
+            "[downloads] unsnoozed {} stale item(s)",
+            unsnoozed_count
+        );
+    }
+
     log_slow_downloads_step("downloads_sync::connection", connection_started_at, || {
         "opened database connection and loaded settings".to_owned()
     });

@@ -19,6 +19,9 @@ interface DownloadsTopStripProps {
   onLaneChange: (lane: DownloadQueueLane) => void;
   userView: UserView;
   progress?: DownloadProgress | null;
+  undoableApply?: { itemId: number; displayName: string } | null;
+  onRequestUndo?: () => void;
+  isUndoing?: boolean;
 }
 
 export function DownloadsTopStrip({

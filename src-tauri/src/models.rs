@@ -390,6 +390,31 @@ pub enum WatchSourceOrigin {
     BuiltInSpecial,
 }
 
+/// Which update platform the watch source is from.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateSource {
+    #[default]
+    Unknown,
+    Curseforge,
+    Modrinth,
+    Patreon,
+    Website,
+}
+
+/// Detects update source from a URL string.
+pub fn detect_update_source(url: &str) -> (UpdateSource, Option<String>) {
+    if url.contains("curseforge.com") {
+        (UpdateSource::Curseforge, None)
+    } else if url.contains("modrinth.com") {
+        (UpdateSource::Modrinth, None)
+    } else if url.contains("patreon.com") {
+        (UpdateSource::Patreon, Some(url.to_string()))
+    } else {
+        (UpdateSource::Website, None)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WatchResult {
@@ -398,6 +423,8 @@ pub struct WatchResult {
     pub source_origin: WatchSourceOrigin,
     pub source_label: Option<String>,
     pub source_url: Option<String>,
+    pub source: Option<UpdateSource>,
+    pub patreon_url: Option<String>,
     pub capability: WatchCapability,
     pub can_refresh_now: bool,
     pub provider_name: Option<String>,

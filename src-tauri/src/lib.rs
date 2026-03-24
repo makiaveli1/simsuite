@@ -92,6 +92,16 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let state = AppState::initialise(app.handle())?;
+
+            // Unsnooze any stale items on startup
+            if let Ok(connection) = state.connection() {
+                if let Ok(count) = downloads_watcher::unsnooze_stale_items(&connection) {
+                    if count > 0 {
+                        tracing::info!("Unsnoozed {} stale download item(s) on startup", count);
+                    }
+                }
+            }
+
             downloads_watcher::restart_watcher(app.handle(), &state)?;
             watch_polling::restart_poller(app.handle(), &state)?;
             app.manage(state);
@@ -151,6 +161,7 @@ pub fn run() {
             commands::restore_snapshot,
             commands::apply_download_item,
             commands::apply_download_items,
+            commands::undo_applied_item,
             commands::apply_guided_download_item,
             commands::apply_special_review_fix,
             commands::apply_review_plan_action,
@@ -159,6 +170,7 @@ pub fn run() {
             commands::reject_download_item,
             commands::list_rejected_items,
             commands::restore_rejected_item,
+            commands::snooze_download_item,
             commands::reject_download_items,
             commands::list_library_files,
             commands::list_library_watch_items,

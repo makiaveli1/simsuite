@@ -1509,6 +1509,18 @@ function UpdatesTrackedTable({
                 <div className="file-title">{item.subjectLabel}</div>
                 <div className="updates-table-meta">
                   {watchStatusLabel(item.watchResult.status, userView)}
+                  {item.watchResult.source === "patreon" && (
+                    <a
+                      href={item.watchResult.patreonUrl ?? "https://www.patreon.com"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="patreon-badge"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Patreon source"
+                    >
+                      Patreon
+                    </a>
+                  )}
                 </div>
               </td>
               <td>

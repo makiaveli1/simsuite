@@ -410,6 +410,12 @@ export interface VersionResolution {
   installedEvidence: string[];
 }
 
+export interface LibraryVersionInfo {
+  libraryLabel: string | null;
+  installedVersion: string | null;
+  incomingVersion: string | null;
+}
+
 export interface InstalledVersionSummary {
   subjectLabel: string;
   subjectKey: string;
@@ -433,12 +439,16 @@ export type WatchStatus =
   | "possible_update"
   | "unknown";
 
+export type UpdateSource = "curseforge" | "modrinth" | "patreon" | "website" | "unknown";
+
 export interface WatchResult {
   status: WatchStatus;
   sourceKind: WatchSourceKind | null;
   sourceOrigin: WatchSourceOrigin;
   sourceLabel: string | null;
   sourceUrl: string | null;
+  source?: UpdateSource | null;
+  patreonUrl?: string | null;
   capability: WatchCapability;
   canRefreshNow: boolean;
   providerName: string | null;

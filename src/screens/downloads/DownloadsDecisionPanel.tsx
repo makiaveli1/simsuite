@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Eye, Workflow } from "lucide-react";
+import { Clock, Eye, Workflow } from "lucide-react";
 import {
   downloadsSelectionTransition,
   hoverLift,
@@ -49,6 +50,8 @@ interface DownloadsDecisionPanelProps {
   onOpenProof: () => void;
   proofSummary: string;
   idleNote?: string | null;
+  onSnooze?: (durationSeconds: number) => void;
+  snoozeDisabled?: boolean;
 }
 
 export function DownloadsDecisionPanel({
@@ -70,6 +73,8 @@ export function DownloadsDecisionPanel({
   onOpenProof,
   proofSummary,
   idleNote,
+  onSnooze,
+  snoozeDisabled,
 }: DownloadsDecisionPanelProps) {
   return (
     <div className="downloads-decision-panel">
@@ -202,6 +207,13 @@ export function DownloadsDecisionPanel({
           >
             {secondaryActionLabel}
           </m.button>
+
+          {onSnooze ? (
+            <SnoozePickerWrapper
+              onSnooze={onSnooze}
+              disabled={!!snoozeDisabled}
+            />
+          ) : null}
         </div>
 
         {idleNote ? <div className="downloads-inspector-note">{idleNote}</div> : null}
@@ -238,3 +250,106 @@ export function DownloadsDecisionPanel({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Snooze picker — rendered inline in the decision panel actions area
+// ---------------------------------------------------------------------------
+
+const SNOOZE_PRESETS = [
+  { label: "1 day",    seconds: 86400 },
+  { label: "3 days",   seconds: 259200 },
+  { label: "1 week",   seconds: 604800 },
+  { label: "2 weeks",  seconds: 1209600 },
+];
+
+interface SnoozePickerWrapperProps {
+  onSnooze: (durationSeconds: number) => void;
+  disabled: boolean;
+}
+
+function SnoozePickerWrapper({ onSnooze, disabled }: SnoozePickerWrapperProps) {
+  const [open, setOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+  const [customUnit, setCustomUnit] = useState<"hours" | "days">("days");
+
+  function handleSnooze(seconds: number) {
+    onSnooze(seconds);
+    setOpen(false);
+    setCustomValue("");
+  }
+
+  return (
+    <div className="snooze-picker-wrapper">
+      <m.button
+        type="button"
+        className="snooze-action"
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+        whileHover={disabled ? undefined : hoverLift}
+        whileTap={disabled ? undefined : tapPress}
+        title="Remind me later"
+      >
+        <Clock size={14} strokeWidth={2} />
+        Snooze
+      </m.button>
+
+      <AnimatePresence>
+        {open && (
+          <m.div
+            className="snooze-picker"
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="snooze-picker-label">Remind me in...</p>
+            <div className="snooze-presets">
+              {SNOOZE_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  className="snooze-preset-btn"
+                  onClick={() => handleSnooze(p.seconds)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="snooze-custom">
+              <input
+                type="number"
+                className="snooze-custom-input"
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+                placeholder="Custom"
+                min={1}
+              />
+              <select
+                className="snooze-custom-unit"
+                value={customUnit}
+                onChange={(e) => setCustomUnit(e.target.value as "hours" | "days")}
+              >
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+              <button
+                className="snooze-apply-btn"
+                disabled={!customValue || Number(customValue) <= 0}
+                onClick={() => {
+                  const n = Number(customValue);
+                  if (n > 0) {
+                    const secs = customUnit === "hours" ? n * 3600 : n * 86400;
+                    handleSnooze(secs);
+                  }
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+

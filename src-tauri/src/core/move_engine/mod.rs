@@ -932,7 +932,7 @@ fn update_file_record_after_move(
     Ok(())
 }
 
-fn update_file_record_on_restore(
+pub fn update_file_record_on_restore(
     connection: &Connection,
     settings: &LibrarySettings,
     file_id: i64,
@@ -1151,7 +1151,7 @@ fn file_hash(path: &Path) -> AppResult<String> {
     Ok(hex::encode(sha2::Sha256::digest(bytes)))
 }
 
-fn relative_depth(settings: &LibrarySettings, path: &Path, kind: &str) -> i64 {
+pub fn relative_depth(settings: &LibrarySettings, path: &Path, kind: &str) -> i64 {
     let root = if let Some(downloads_root) = settings.downloads_path.as_deref() {
         if path.starts_with(downloads_root) {
             Some(downloads_root)

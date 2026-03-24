@@ -5536,6 +5536,8 @@ export const api = {
       presetName,
       approved,
     }),
+  undoAppliedItem: (itemId: number) =>
+    invoke<void>("undo_applied_item", { itemId }),
   applyGuidedDownloadItem: (itemId: number, approved = false) =>
     invoke<ApplyGuidedDownloadResult>("apply_guided_download_item", {
       itemId,
@@ -5580,6 +5582,8 @@ export const api = {
     invoke<RejectedItem[]>("list_rejected_items"),
   restoreRejectedItem: (itemId: number) =>
     invoke<boolean>("restore_rejected_item", { itemId }),
+  snoozeDownloadItem: (itemId: number, durationSeconds: number) =>
+    invoke<boolean>("snooze_download_item", { itemId, durationSeconds }),
   rejectDownloadItems: (itemIds: number[]) =>
     invoke<IgnoreItemsResult>("reject_download_items", { itemIds }),
   listLibraryFiles: (query: LibraryQuery) =>

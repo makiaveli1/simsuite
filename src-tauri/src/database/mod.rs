@@ -897,6 +897,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
     ensure_column(connection, "download_items", "catalog_reviewed_at", "TEXT")?;
+    ensure_column(connection, "download_items", "snoozed_until", "INTEGER")?;
     ensure_column(
         connection,
         "download_items",
@@ -908,6 +909,12 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "download_items",
         "guided_install_available",
         "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        connection,
+        "download_items",
+        "last_applied_at",
+        "INTEGER",
     )?;
     ensure_column(
         connection,
