@@ -4,6 +4,7 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { FieldGuide } from "./components/FieldGuide";
 import { ScannerOverlay } from "./components/ScannerOverlay";
 import { ThemeBackdrop } from "./components/ThemeBackdrop";
+import { CommandPalette } from "./components/CommandPalette";
 import { useUiPreferences, UiPreferencesProvider } from "./components/UiPreferencesContext";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { api, hasTauriRuntime } from "./lib/api";
@@ -185,6 +186,7 @@ function AppShell({
     createInitialWorkspaceVersions,
   );
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
@@ -407,6 +409,18 @@ function AppShell({
       throw error;
     }
   }
+
+  // Global Cmd+K / Ctrl+K shortcut for command palette
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   const attemptStartupRefresh = useEffectEvent(() => {
     void startScan().catch((error) => {
@@ -634,6 +648,14 @@ function AppShell({
         screen={screen}
         experienceMode={experienceMode}
         onClose={() => setIsGuideOpen(false)}
+      />
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onNavigate={(targetScreen, id) => {
+          setCommandPaletteOpen(false);
+          setScreen(targetScreen);
+        }}
       />
     </div>
   );
