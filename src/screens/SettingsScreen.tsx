@@ -354,52 +354,222 @@ export function SettingsScreen({
         </div>
       </header>
 
-      <div className="settings-layout settings-preferences-layout">
-        <aside className="settings-nav-column">
-          <m.section className="panel-card settings-nav-panel" {...stagedListItem(0)}>
-            <div className="panel-heading">
-              <div>
-                <span className="section-label">
-                  <SlidersHorizontal size={14} strokeWidth={2} />
-                  Preferences
-                </span>
-                <h2>Pick one section at a time</h2>
+      {experienceMode === "casual" ? (
+        <div className="settings-layout settings-preferences-layout">
+          <aside className="settings-nav-column">
+            <m.section className="panel-card settings-nav-panel" {...stagedListItem(0)}>
+              <div className="panel-heading">
+                <div>
+                  <span className="section-label">
+                    <SlidersHorizontal size={14} strokeWidth={2} />
+                    Preferences
+                  </span>
+                  <h2>Pick one section at a time</h2>
+                </div>
+                <p className="workspace-toolbar-copy">
+                  Only the group you are changing stays open, so the screen feels more like
+                  a proper desktop preferences window.
+                </p>
               </div>
-              <p className="workspace-toolbar-copy">
-                Only the group you are changing stays open, so the screen feels more like
-                a proper desktop preferences window.
-              </p>
-            </div>
 
-            <div className="settings-section-list" aria-label="Settings sections">
-              {settingsSections.map((section) => {
-                const Icon = section.icon;
-                return (
-                  <m.button
-                    key={section.id}
-                    type="button"
-                    className={`settings-section-button ${
-                      activeSection === section.id ? "is-active" : ""
-                    }`}
-                    onClick={() => setActiveSection(section.id)}
-                    whileHover={hoverLift}
-                    whileTap={tapPress}
-                    aria-pressed={activeSection === section.id}
-                  >
-                    <div className="settings-section-button-topline">
-                      <span className="section-label">
-                        <Icon size={14} strokeWidth={2} />
-                        {section.label}
-                      </span>
-                      <span className="ghost-chip">{section.summary}</span>
-                    </div>
-                    <strong>{section.title}</strong>
-                    <p className="workspace-toolbar-copy">{section.hint}</p>
-                  </m.button>
-                );
-              })}
+              <div className="settings-section-list" aria-label="Settings sections">
+                {settingsSections.map((section) => {
+                  const Icon = section.icon;
+                  return (
+                    <m.button
+                      key={section.id}
+                      type="button"
+                      className={`settings-section-button ${
+                        activeSection === section.id ? "is-active" : ""
+                      }`}
+                      onClick={() => setActiveSection(section.id)}
+                      whileHover={hoverLift}
+                      whileTap={tapPress}
+                      aria-pressed={activeSection === section.id}
+                    >
+                      <div className="settings-section-button-topline">
+                        <span className="section-label">
+                          <Icon size={14} strokeWidth={2} />
+                          {section.label}
+                        </span>
+                        <span className="ghost-chip">{section.summary}</span>
+                      </div>
+                      <strong>{section.title}</strong>
+                      <p className="workspace-toolbar-copy">{section.hint}</p>
+                    </m.button>
+                  );
+                })}
+              </div>
+            </m.section>
+          </aside>
+
+          <div className="settings-detail-column" style={{ position: "relative" }}>
+            <div className="settings-fit-chip" style={{ position: "absolute", top: "12px", right: "12px", zIndex: 10 }}>
+              <span style={{ color: "var(--accent)", fontWeight: 600 }}>{activeView.badge}</span>
             </div>
-          </m.section>
+            <m.section
+              key={activeSection}
+              className="panel-card settings-focus-panel"
+              {...stagedListItem(2)}
+            >
+              {activeSection === "experience" ? (
+                <SettingsExperienceSection
+                  experienceMode={experienceMode}
+                  activeView={activeView}
+                  onExperienceModeChange={onExperienceModeChange}
+                />
+              ) : null}
+
+              {activeSection === "appearance" ? (
+                <SettingsAppearanceSection
+                  activeTheme={activeTheme}
+                  theme={theme}
+                  onThemeChange={setTheme}
+                />
+              ) : null}
+
+              {activeSection === "density" ? (
+                <SettingsDensitySection
+                  density={density}
+                  activeDensity={activeDensity}
+                  onDensityChange={setDensity}
+                />
+              ) : null}
+
+              {activeSection === "automation" ? (
+                <SettingsAutomationSection
+                  appBehavior={appBehavior}
+                  librarySettings={librarySettings}
+                  keepRunningInBackground={keepRunningInBackground}
+                  automaticWatchChecks={automaticWatchChecks}
+                  watchCheckIntervalHours={watchCheckIntervalHours}
+                  isSavingBackgroundMode={isSavingBackgroundMode}
+                  isRefreshingWatchedSources={isRefreshingWatchedSources}
+                  backgroundModeError={backgroundModeError}
+                  watchAutomationMessage={watchAutomationMessage}
+                  onUpdateBackgroundMode={updateBackgroundMode}
+                  onUpdateAutomaticWatchChecks={updateAutomaticWatchChecks}
+                  onUpdateWatchCheckInterval={updateWatchCheckInterval}
+                  onRefreshWatchedSources={refreshWatchedSources}
+                  onUpdateIgnorePatterns={updateIgnorePatterns}
+                  onUpdateRejectFolder={updateRejectFolder}
+                  onPickRejectFolder={pickRejectFolder}
+                  onUpdateSpecialModAlerts={updateSpecialModAlerts}
+                />
+              ) : null}
+
+              {activeSection === "layout" ? (
+                <SettingsLayoutSection onResetPanelSizes={resetPanelSizes} />
+              ) : null}
+            </m.section>
+          </div>
+        </div>
+      ) : (
+        <div className="settings-layout settings-preferences-layout settings-layout-three-col">
+          <aside className="settings-nav-column">
+            <m.section className="panel-card settings-nav-panel" {...stagedListItem(0)}>
+              <div className="panel-heading">
+                <div>
+                  <span className="section-label">
+                    <SlidersHorizontal size={14} strokeWidth={2} />
+                    Preferences
+                  </span>
+                  <h2>Pick one section at a time</h2>
+                </div>
+                <p className="workspace-toolbar-copy">
+                  Only the group you are changing stays open, so the screen feels more like
+                  a proper desktop preferences window.
+                </p>
+              </div>
+
+              <div className="settings-section-list" aria-label="Settings sections">
+                {settingsSections.map((section) => {
+                  const Icon = section.icon;
+                  return (
+                    <m.button
+                      key={section.id}
+                      type="button"
+                      className={`settings-section-button ${
+                        activeSection === section.id ? "is-active" : ""
+                      }`}
+                      onClick={() => setActiveSection(section.id)}
+                      whileHover={hoverLift}
+                      whileTap={tapPress}
+                      aria-pressed={activeSection === section.id}
+                    >
+                      <div className="settings-section-button-topline">
+                        <span className="section-label">
+                          <Icon size={14} strokeWidth={2} />
+                          {section.label}
+                        </span>
+                        <span className="ghost-chip">{section.summary}</span>
+                      </div>
+                      <strong>{section.title}</strong>
+                      <p className="workspace-toolbar-copy">{section.hint}</p>
+                    </m.button>
+                  );
+                })}
+              </div>
+            </m.section>
+          </aside>
+
+          <div className="settings-detail-column">
+            <m.section
+              key={activeSection}
+              className="panel-card settings-focus-panel"
+              {...stagedListItem(2)}
+            >
+              {activeSection === "experience" ? (
+                <SettingsExperienceSection
+                  experienceMode={experienceMode}
+                  activeView={activeView}
+                  onExperienceModeChange={onExperienceModeChange}
+                />
+              ) : null}
+
+              {activeSection === "appearance" ? (
+                <SettingsAppearanceSection
+                  activeTheme={activeTheme}
+                  theme={theme}
+                  onThemeChange={setTheme}
+                />
+              ) : null}
+
+              {activeSection === "density" ? (
+                <SettingsDensitySection
+                  density={density}
+                  activeDensity={activeDensity}
+                  onDensityChange={setDensity}
+                />
+              ) : null}
+
+              {activeSection === "automation" ? (
+                <SettingsAutomationSection
+                  appBehavior={appBehavior}
+                  librarySettings={librarySettings}
+                  keepRunningInBackground={keepRunningInBackground}
+                  automaticWatchChecks={automaticWatchChecks}
+                  watchCheckIntervalHours={watchCheckIntervalHours}
+                  isSavingBackgroundMode={isSavingBackgroundMode}
+                  isRefreshingWatchedSources={isRefreshingWatchedSources}
+                  backgroundModeError={backgroundModeError}
+                  watchAutomationMessage={watchAutomationMessage}
+                  onUpdateBackgroundMode={updateBackgroundMode}
+                  onUpdateAutomaticWatchChecks={updateAutomaticWatchChecks}
+                  onUpdateWatchCheckInterval={updateWatchCheckInterval}
+                  onRefreshWatchedSources={refreshWatchedSources}
+                  onUpdateIgnorePatterns={updateIgnorePatterns}
+                  onUpdateRejectFolder={updateRejectFolder}
+                  onPickRejectFolder={pickRejectFolder}
+                  onUpdateSpecialModAlerts={updateSpecialModAlerts}
+                />
+              ) : null}
+
+              {activeSection === "layout" ? (
+                <SettingsLayoutSection onResetPanelSizes={resetPanelSizes} />
+              ) : null}
+            </m.section>
+          </div>
 
           <m.section className="panel-card settings-side-panel" {...stagedListItem(1)}>
             <div className="panel-heading">
@@ -438,66 +608,8 @@ export function SettingsScreen({
               </div>
             </div>
           </m.section>
-        </aside>
-
-        <div className="settings-detail-column">
-          <m.section
-            key={activeSection}
-            className="panel-card settings-focus-panel"
-            {...stagedListItem(2)}
-          >
-            {activeSection === "experience" ? (
-              <SettingsExperienceSection
-                experienceMode={experienceMode}
-                activeView={activeView}
-                onExperienceModeChange={onExperienceModeChange}
-              />
-            ) : null}
-
-            {activeSection === "appearance" ? (
-              <SettingsAppearanceSection
-                activeTheme={activeTheme}
-                theme={theme}
-                onThemeChange={setTheme}
-              />
-            ) : null}
-
-            {activeSection === "density" ? (
-              <SettingsDensitySection
-                density={density}
-                activeDensity={activeDensity}
-                onDensityChange={setDensity}
-              />
-            ) : null}
-
-            {activeSection === "automation" ? (
-              <SettingsAutomationSection
-                appBehavior={appBehavior}
-                librarySettings={librarySettings}
-                keepRunningInBackground={keepRunningInBackground}
-                automaticWatchChecks={automaticWatchChecks}
-                watchCheckIntervalHours={watchCheckIntervalHours}
-                isSavingBackgroundMode={isSavingBackgroundMode}
-                isRefreshingWatchedSources={isRefreshingWatchedSources}
-                backgroundModeError={backgroundModeError}
-                watchAutomationMessage={watchAutomationMessage}
-                onUpdateBackgroundMode={updateBackgroundMode}
-                onUpdateAutomaticWatchChecks={updateAutomaticWatchChecks}
-                onUpdateWatchCheckInterval={updateWatchCheckInterval}
-                onRefreshWatchedSources={refreshWatchedSources}
-                onUpdateIgnorePatterns={updateIgnorePatterns}
-                onUpdateRejectFolder={updateRejectFolder}
-                onPickRejectFolder={pickRejectFolder}
-                onUpdateSpecialModAlerts={updateSpecialModAlerts}
-              />
-            ) : null}
-
-            {activeSection === "layout" ? (
-              <SettingsLayoutSection onResetPanelSizes={resetPanelSizes} />
-            ) : null}
-          </m.section>
         </div>
-      </div>
+      )}
     </div>
   );
 }

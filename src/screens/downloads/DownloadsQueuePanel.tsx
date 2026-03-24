@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Inbox } from "lucide-react";
+import { Check, CheckCircle, Clock, Inbox, Settings, ShieldAlert } from "lucide-react";
 import { m } from "motion/react";
 import { StatePanel } from "../../components/StatePanel";
 import {
@@ -10,6 +10,30 @@ import {
 import { isLaneExplained, setLaneExplained, type DownloadQueueLane } from "../../lib/guidedFlowStorage";
 import type { UserView } from "../../lib/types";
 import { downloadsLaneHint, downloadsLaneLabel } from "./downloadsDisplay";
+
+const LANE_ACCENTS: Record<string, string> = {
+  ready_now: "var(--accent)",
+  waiting_on_you: "var(--tone-warn)",
+  special_setup: "var(--tone-info)",
+  blocked: "var(--tone-danger)",
+  done: "var(--text-dim)",
+};
+
+const LANE_LABELS: Record<string, string> = {
+  ready_now: "Ready Now",
+  waiting_on_you: "Waiting on You",
+  special_setup: "Special Setup",
+  blocked: "Needs Review",
+  done: "Done",
+};
+
+const LANE_ICONS: Record<string, ReactNode> = {
+  ready_now: <Check size={16} />,
+  waiting_on_you: <Clock size={16} />,
+  special_setup: <Settings size={16} />,
+  blocked: <ShieldAlert size={16} />,
+  done: <CheckCircle size={16} />,
+};
 
 const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
   ready_now: {
@@ -122,6 +146,33 @@ export function DownloadsQueuePanel({
                         <line x1="6" y1="6" x2="18" y2="18"/>
                       </svg>
                     </button>
+                  </div>
+                )}
+                {userView === "beginner" && (
+                  <div
+                    className="downloads-lane-sticky-header"
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 10,
+                      background: `color-mix(in srgb, ${LANE_ACCENTS[lane]} 12%, var(--surface-2))`,
+                      borderLeft: `3px solid ${LANE_ACCENTS[lane]}`,
+                      padding: "6px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      borderRadius: "6px 6px 0 0",
+                    }}
+                  >
+                    <span style={{ color: LANE_ACCENTS[lane], display: "flex", alignItems: "center" }}>
+                      {LANE_ICONS[lane]}
+                    </span>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>
+                      {LANE_LABELS[lane]}
+                    </span>
+                    <span style={{ fontSize: "11px", color: "var(--text-dim)", marginLeft: "auto" }}>
+                      {rows.length} item{rows.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
                 )}
                 <div className="downloads-lane-header">

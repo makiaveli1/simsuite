@@ -1744,20 +1744,28 @@ h2,
 }
 
 .workspace-toolbar {
-  display: none;
-  /* Toolbar hidden for cleaner desktop workbench - screen title shown in sidebar instead */
-  /* display: grid; */
-  /* grid-template-columns: minmax(0, 1fr) auto; */
-  /* align-items: center; */
-  /* gap: 0.7rem; */
-  /* align-self: start; */
-  /* padding: 0.25rem 0.5rem; */
-  /* border: 1px solid var(--line); */
-  /* border-bottom: none; */
-  /* background: var(--chrome-surface); */
-  /* backdrop-filter: blur(10px); */
-  /* box-shadow: var(--shadow); */
-  /* animation: surface-enter 220ms var(--ease-standard) both; */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  align-self: start;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  background: var(--chrome-surface);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+  animation: surface-enter 220ms var(--ease-standard) both;
+}
+
+.workspace-toolbar--casual {
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .workspace-toolbar-status,
@@ -1842,10 +1850,6 @@ h2,
   white-space: nowrap;
   min-height: 30px;
   padding-inline: 0.7rem;
-}
-
-:root[data-user-view="casual"] .workspace-toolbar {
-  padding: 0.5rem 0.7rem;
 }
 
 :root[data-user-view="casual"] .workspace-toolbar-meta {
@@ -2749,6 +2753,10 @@ h2,
   min-width: 0;
 }
 
+.settings-layout-three-col {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(200px, 240px);
+}
+
 .settings-nav-column,
 .settings-detail-column {
   display: grid;
@@ -2956,6 +2964,19 @@ h2,
 
 .settings-header-chips {
   justify-content: flex-start;
+}
+
+.settings-fit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-soft);
+  white-space: nowrap;
 }
 
 .settings-note-list {
@@ -9632,6 +9653,98 @@ select:focus-visible {
   height: 16px;
   stroke: var(--bg);
   fill: none;
+}
+
+/* ─── Casual Collapsed Module Bands ───────────────────────────────────────── */
+.home-hub-view-beginner .home-module-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home-hub-view-beginner .home-module-band {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  grid-template-columns: unset;
+}
+
+.casual-collapsed-module {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  user-select: none;
+}
+
+.casual-collapsed-module:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.casual-collapsed-module:active {
+  transform: scale(0.99);
+}
+
+.casual-collapsed-module.is-tone-warn {
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border));
+}
+
+.casual-collapsed-module.is-tone-warn:hover {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border-strong));
+}
+
+.casual-collapsed-module.is-tone-danger {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.casual-collapsed-module.is-tone-danger:hover {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+}
+
+.casual-collapsed-module-icon {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.casual-collapsed-module-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.casual-collapsed-module-summary {
+  font-size: 0.78rem;
+  color: var(--muted);
+  flex: 1;
+  text-align: right;
+  padding-right: 0.25rem;
+}
+
+.casual-collapsed-module-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.casual-collapsed-module-arrow svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.casual-collapsed-module:hover .casual-collapsed-module-arrow {
+  transform: translateX(2px);
 }
 
 /* ─── Command Palette ──────────────────────────────────────────────────────── */

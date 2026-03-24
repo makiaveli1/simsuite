@@ -30,6 +30,25 @@ export function WorkspaceToolbar({
   const viewLabel = viewModeLabel(experienceMode);
   const densityLabel = DENSITY_LABELS[density];
 
+  // Casual mode: only show the settings button — everything else is redundant with the sidebar
+  if (experienceMode === "casual") {
+    return (
+      <div className="workspace-toolbar workspace-toolbar--casual">
+        <m.button
+          type="button"
+          className="secondary-action workspace-toolbar-settings-link"
+          onClick={onOpenSettings}
+          disabled={currentScreen === "settings"}
+          whileHover={currentScreen === "settings" ? undefined : hoverLift}
+          whileTap={currentScreen === "settings" ? undefined : tapPress}
+        >
+          <SlidersHorizontal size={16} strokeWidth={2} />
+          {currentScreen === "settings" ? "Settings" : "Open settings"}
+        </m.button>
+      </div>
+    );
+  }
+
   return (
     <div className="workspace-toolbar">
       <div className="workspace-toolbar-status">
