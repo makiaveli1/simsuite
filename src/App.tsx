@@ -102,7 +102,34 @@ function resolveInitialExperienceMode(): ExperienceMode {
   return normalizeExperienceMode(stored) ?? "seasoned";
 }
 
+const VALID_SCREEN_NAMES: Screen[] = [
+  "home",
+  "downloads",
+  "library",
+  "updates",
+  "creatorAudit",
+  "categoryAudit",
+  "duplicates",
+  "organize",
+  "review",
+  "settings",
+];
+
+function isValidScreen(s: string): s is Screen {
+  return VALID_SCREEN_NAMES.includes(s as Screen);
+}
+
 function resolveInitialScreen(): Screen {
+  // Check URL hash first (e.g. #downloads, #library)
+  const hash = globalThis.location?.hash?.replace("#", "") ?? "";
+  if (hash) {
+    const [screenPart] = hash.split("?");
+    if (screenPart && isValidScreen(screenPart)) {
+      return screenPart as Screen;
+    }
+  }
+
+  // Fall back to ?screen= query param
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("screen");
   if (
     value === "home" ||
@@ -225,6 +252,28 @@ function AppShell({
     globalThis.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     screenFrameRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [screen]);
+
+  // Sync screen state → URL hash (back/forward support)
+  useEffect(() => {
+    const hash = `#${screen}`;
+    if (globalThis.location.hash !== hash) {
+      globalThis.history.pushState(null, "", hash);
+    }
+  }, [screen]);
+
+  useEffect(() => {
+    function handlePopState() {
+      const hash = globalThis.location.hash.replace("#", "");
+      if (hash) {
+        const [screenPart] = hash.split("?");
+        if (screenPart && isValidScreen(screenPart)) {
+          setScreen(screenPart as Screen);
+        }
+      }
+    }
+    globalThis.addEventListener("popstate", handlePopState);
+    return () => globalThis.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     globalThis.localStorage?.setItem("simsuite:user-view", experienceMode);
