@@ -17,6 +17,7 @@ import {
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { hoverLift, overlayTransition, panelSpring, stagedListItem, tapPress } from "../lib/motion";
+import { isNudgeDismissed, clearNudgeDismissed } from "../lib/guidedFlowStorage";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type {
   DetectedLibraryPaths,
@@ -397,6 +398,52 @@ export function HomeScreen({
             ))}
           </div>
         </m.section>
+
+        {userView === "beginner" &&
+        (overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) > 0 ? (
+          <div
+            className="casual-home-cta-card"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              clearNudgeDismissed();
+              onNavigate("downloads");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                clearNudgeDismissed();
+                onNavigate("downloads");
+              }
+            }}
+          >
+            <div className="casual-home-cta-icon">
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.8">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+                <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+              </svg>
+            </div>
+            <div className="casual-home-cta-text">
+              <p className="casual-home-cta-headline">
+                You have{" "}
+                {(overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0)}{" "}
+                item
+                {(overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) !== 1
+                  ? "s"
+                  : ""}{" "}
+                waiting in Downloads
+              </p>
+              <p className="casual-home-cta-sub">
+                Review them before they get added to your game
+              </p>
+            </div>
+            <div className="casual-home-cta-arrow">
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </div>
+          </div>
+        ) : null}
 
         <div className="home-module-stack">
           {moduleBands.map((band, bandIndex) => (

@@ -6,6 +6,15 @@ import {
   tapPress,
 } from "../../lib/motion";
 import type { UserView } from "../../lib/types";
+import type { DownloadQueueLane } from "../../lib/guidedFlowStorage";
+
+const LANE_MEANINGS: Record<DownloadQueueLane, string> = {
+  ready_now: "This is safe and ready to add to your game",
+  waiting_on_you: "Something needs your attention before this can be added",
+  special_setup: "This needs a few extra steps first",
+  blocked: "This was stopped — check the warning if you want to add it",
+  done: "This has already been added or set aside",
+};
 
 export interface DownloadsDecisionSignal {
   id: string;
@@ -25,6 +34,7 @@ interface DownloadsDecisionPanelProps {
   title: string;
   summary: string;
   laneLabel: string;
+  resolvedLane?: DownloadQueueLane;
   badges: DownloadsDecisionBadge[];
   signals: DownloadsDecisionSignal[];
   nextStepTitle: string | null;
@@ -45,6 +55,7 @@ export function DownloadsDecisionPanel({
   title,
   summary,
   laneLabel,
+  resolvedLane,
   badges,
   signals,
   nextStepTitle,
@@ -86,6 +97,42 @@ export function DownloadsDecisionPanel({
           ))}
         </div>
       </m.div>
+
+      {userView === "beginner" && resolvedLane && (
+        <div
+          style={{
+            background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
+            borderRadius: "10px",
+            padding: "12px 14px",
+            marginBottom: "16px",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "var(--text)",
+              margin: "0 0 4px",
+            }}
+          >
+            {laneLabel}: {LANE_MEANINGS[resolvedLane]}
+          </p>
+          <p
+            style={{
+              fontSize: "12px",
+              color: "var(--text-soft)",
+              margin: 0,
+            }}
+          >
+            Action available:{" "}
+            <strong style={{ color: "var(--text)" }}>
+              {primaryActionLabel}
+            </strong>{" "}
+            — tap to move this to your game
+          </p>
+        </div>
+      )}
 
       {signals.length ? (
         <div className="downloads-signal-strip">

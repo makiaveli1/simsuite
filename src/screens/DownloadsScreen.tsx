@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   Workflow,
 } from "lucide-react";
+import { CasualGuidedTours } from "../components/CasualGuidedTours";
 import {
   type DockSectionDefinition,
 } from "../components/DockSectionStack";
@@ -28,6 +29,7 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api, hasTauriRuntime } from "../lib/api";
+import { isDownloadsTourDismissed } from "../lib/guidedFlowStorage";
 import {
   downloadsSelectionTransition,
   rowHover,
@@ -200,6 +202,7 @@ export function DownloadsScreen({
   const [isApplying, setIsApplying] = useState(false);
   const [isIgnoring, setIsIgnoring] = useState(false);
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
+  const [showTour, setShowTour] = useState(false);
   const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
   );
@@ -219,6 +222,7 @@ export function DownloadsScreen({
   const selectionRequestId = useRef(0);
   const pendingWorkspaceReload = useRef(false);
   const pendingPreferredSelectionId = useRef<number | null>(null);
+  const tourShownRef = useRef(false);
   const previousRefreshVersion = useRef(refreshVersion);
   const latestRefreshVersion = useRef(refreshVersion);
   const skipWorkspaceReloadUntil = useRef(0);
@@ -529,6 +533,19 @@ export function DownloadsScreen({
 
     void loadSelectedItem(selectedItem);
   }, [selectedItem?.id, selectedItem?.updatedAt, selectedPreset]);
+
+  // Show the downloads tour once when inbox data first loads in Casual mode
+  useEffect(() => {
+    if (
+      userView === "beginner" &&
+      inbox !== null &&
+      !isDownloadsTourDismissed() &&
+      !tourShownRef.current
+    ) {
+      tourShownRef.current = true;
+      setShowTour(true);
+    }
+  }, [userView, inbox]);
 
   function clearScheduledInboxRetry() {
     if (inboxRetryTimer.current !== null) {
@@ -1302,6 +1319,9 @@ export function DownloadsScreen({
         userView,
       )
     : queueLaneLabel(resolvedActiveLane, userView);
+  const decisionResolvedLane = selectedResolvedItem
+    ? (selectedResolvedItem.queueLane ?? deriveQueueLane(selectedResolvedItem))
+    : resolvedActiveLane;
   const proofSummary = selectedResolvedItem
     ? userView === "beginner"
       ? `Open ${inspectorSections.length.toLocaleString()} detail section(s) for files, versions, and the fuller safety notes.`
@@ -1404,6 +1424,7 @@ export function DownloadsScreen({
         totalItems={overview?.totalItems ?? 0}
         readyCount={overview?.readyNowItems ?? overview?.readyItems ?? 0}
         waitingCount={overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0}
+        specialSetupCount={visibleLaneCounts.special_setup}
         blockedCount={overview?.blockedItems ?? overview?.errorItems ?? 0}
         lastCheckLabel={stageStatusMessage}
         isRefreshing={isRefreshing}
@@ -1411,6 +1432,11 @@ export function DownloadsScreen({
         reviewActionLabel={reviewLabel(userView)}
         onRefresh={() => void handleRefresh()}
         onOpenReview={() => onNavigate("review")}
+        onLaneChange={(lane) => {
+          setStatusMessage(null);
+          setActiveLane(lane);
+        }}
+        userView={userView}
         progress={progress}
       />
 
@@ -1710,6 +1736,7 @@ export function DownloadsScreen({
                 title={selectedItem.displayName}
                 summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
                 laneLabel={decisionLaneLabel}
+                resolvedLane={decisionResolvedLane}
                 badges={decisionBadges}
                 signals={visibleInspectorSignals}
                 nextStepTitle={nextStepTitle}
@@ -1814,6 +1841,10 @@ export function DownloadsScreen({
             Clear
           </button>
         </div>
+      )}
+
+      {showTour && (
+        <CasualGuidedTours onComplete={() => setShowTour(false)} />
       )}
     </section>
   );

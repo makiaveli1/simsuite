@@ -7,8 +7,32 @@ import {
   rowPress,
   stagedListItem,
 } from "../../lib/motion";
-import type { DownloadQueueLane, UserView } from "../../lib/types";
+import { isLaneExplained, setLaneExplained, type DownloadQueueLane } from "../../lib/guidedFlowStorage";
+import type { UserView } from "../../lib/types";
 import { downloadsLaneHint, downloadsLaneLabel } from "./downloadsDisplay";
+
+const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
+  ready_now: {
+    title: "Safe and ready to go",
+    body: "These files passed the safety check. Add them to your game whenever you're ready.",
+  },
+  waiting_on_you: {
+    title: "Needs your input",
+    body: "Something about these needs your attention. Click one to get started.",
+  },
+  special_setup: {
+    title: "Has special setup steps",
+    body: "These need a few extra steps before they can work. SimSuite will walk you through it.",
+  },
+  blocked: {
+    title: "Held for safety",
+    body: "SimSuite stopped these to protect your game. Check the warning, then decide.",
+  },
+  done: {
+    title: "Already handled",
+    body: "These are already added or set aside. Click one to undo and move it somewhere else.",
+  },
+};
 
 export interface DownloadsQueueRowModel {
   id: number;
@@ -74,6 +98,31 @@ export function DownloadsQueuePanel({
           {hasItems ? (
             rows.length ? (
               <div className="downloads-lane-group">
+                {userView === "beginner" && !isLaneExplained(lane) && (
+                  <div className="casual-lane-banner" role="note">
+                    <div className="casual-lane-banner-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                    </div>
+                    <div className="casual-lane-banner-content">
+                      <p className="casual-lane-banner-title">{BANNER_CONTENT[lane]?.title}</p>
+                      <p className="casual-lane-banner-body">{BANNER_CONTENT[lane]?.body}</p>
+                    </div>
+                    <button
+                      className="casual-lane-banner-dismiss"
+                      onClick={() => setLaneExplained(lane)}
+                      aria-label="Dismiss"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                )}
                 <div className="downloads-lane-header">
                   <div>
                     <input

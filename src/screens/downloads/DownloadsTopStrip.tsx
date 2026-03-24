@@ -1,5 +1,6 @@
 import { RefreshCw, ShieldAlert } from "lucide-react";
-import type { DownloadProgress } from "../../lib/types";
+import { isNudgeDismissed, setNudgeDismissed, type DownloadQueueLane } from "../../lib/guidedFlowStorage";
+import type { DownloadProgress, UserView } from "../../lib/types";
 
 interface DownloadsTopStripProps {
   statusMessage: string | null;
@@ -7,6 +8,7 @@ interface DownloadsTopStripProps {
   totalItems: number;
   readyCount: number;
   waitingCount: number;
+  specialSetupCount: number;
   blockedCount: number;
   lastCheckLabel: string;
   isRefreshing: boolean;
@@ -14,6 +16,8 @@ interface DownloadsTopStripProps {
   reviewActionLabel: string;
   onRefresh: () => void;
   onOpenReview: () => void;
+  onLaneChange: (lane: DownloadQueueLane) => void;
+  userView: UserView;
   progress?: DownloadProgress | null;
 }
 
@@ -23,6 +27,7 @@ export function DownloadsTopStrip({
   totalItems,
   readyCount,
   waitingCount,
+  specialSetupCount,
   blockedCount,
   lastCheckLabel,
   isRefreshing,
@@ -30,6 +35,8 @@ export function DownloadsTopStrip({
   reviewActionLabel,
   onRefresh,
   onOpenReview,
+  onLaneChange,
+  userView,
   progress,
 }: DownloadsTopStripProps) {
   const hasProgress = progress != null && progress.totalCount > 0;
@@ -87,6 +94,32 @@ export function DownloadsTopStrip({
           <ShieldAlert size={14} strokeWidth={2} />
           {reviewActionLabel}
         </button>
+        {userView === "beginner" && !isNudgeDismissed() && (waitingCount > 0 || specialSetupCount > 0 || blockedCount > 0) && (
+          <button
+            className="casual-nudge-chip"
+            onClick={() => {
+              setNudgeDismissed();
+              const targetLane: DownloadQueueLane =
+                waitingCount > 0 ? "waiting_on_you" :
+                specialSetupCount > 0 ? "special_setup" :
+                blockedCount > 0 ? "blocked" : "ready_now";
+              onLaneChange(targetLane);
+            }}
+            aria-label="You have items waiting for review"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span className="casual-nudge-chip-text">
+              {waitingCount > 0
+                ? `${waitingCount} item${waitingCount !== 1 ? "s" : ""} waiting for you`
+                : specialSetupCount > 0
+                  ? `${specialSetupCount} item${specialSetupCount !== 1 ? "s" : ""} need${specialSetupCount === 1 ? "s" : ""} setup`
+                  : `${blockedCount} item${blockedCount !== 1 ? "s" : ""} held for safety`}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

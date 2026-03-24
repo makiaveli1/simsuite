@@ -61,7 +61,7 @@
   --panel-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 24%);
   --stage-glow: radial-gradient(circle at 82% 88%, rgba(120, 240, 161, 0.09), transparent 28%);
   --shell-glow: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 18%);
-  --body-size: 13px;
+  --body-size: 14px;
   --shell-gap: 0.75rem;
   --panel-gap: 0.65rem;
   --panel-pad: 0.75rem;
@@ -2850,6 +2850,20 @@ h2,
   color: var(--text-soft);
   font-size: 0.72rem;
   line-height: 1.4;
+}
+
+.settings-mode-info-btn {
+  margin-left: auto;
+  padding: 0.1rem 0.28rem;
+  cursor: help;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  transition: color 0.15s ease;
+}
+
+.settings-mode-info-btn:hover {
+  color: var(--text-soft);
 }
 
 .settings-screen .panel-heading {
@@ -9218,4 +9232,308 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   CASUAL GUIDED FLOWS
+   ============================================================ */
+
+/* --- Tour Overlay ------------------------------------------------ */
+.casual-tour-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  /* Prevent body scroll while tour is open */
+  pointer-events: all;
+}
+
+.casual-tour-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  max-width: 480px;
+  width: 100%;
+  padding: 36px 40px 32px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.casual-tour-step-dot-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+  justify-content: center;
+}
+
+.casual-tour-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.casual-tour-step-dot.is-active {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+.casual-tour-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 12px;
+  line-height: 1.3;
+}
+
+.casual-tour-body {
+  font-size: var(--body-size);
+  color: var(--text-soft);
+  line-height: 1.65;
+  margin: 0 0 32px;
+}
+
+.casual-tour-body strong {
+  color: var(--text);
+}
+
+.casual-tour-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.casual-tour-skip {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 4px;
+  transition: color 0.15s ease;
+}
+
+.casual-tour-skip:hover {
+  color: var(--text-soft);
+}
+
+.casual-tour-btn-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.casual-tour-step-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.casual-tour-icon {
+  color: var(--accent);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Lane Explanation Banner ------------------------------------- */
+.casual-lane-banner {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 10px;
+  padding: 14px 16px 14px 18px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.casual-lane-banner-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 8px;
+  margin-top: 1px;
+}
+
+.casual-lane-banner-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--accent);
+  fill: none;
+}
+
+.casual-lane-banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.casual-lane-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.casual-lane-banner-body {
+  font-size: 12px;
+  color: var(--text-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.casual-lane-banner-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.casual-lane-banner-dismiss:hover {
+  color: var(--text-soft);
+}
+
+/* --- Context-Aware Nudge Chip ----------------------------------- */
+.casual-nudge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--tone-warn-bg) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone-warn) 30%, transparent);
+  color: var(--tone-warn);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px 5px 8px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 320px;
+}
+
+.casual-nudge-chip:hover {
+  background: color-mix(in srgb, var(--tone-warn-bg) 80%, transparent);
+  border-color: color-mix(in srgb, var(--tone-warn) 50%, transparent);
+}
+
+.casual-nudge-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.casual-nudge-chip svg {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* --- Home Screen CTA Card --------------------------------------- */
+.casual-home-cta-card {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 12%, var(--surface-1)) 0%,
+    color-mix(in srgb, var(--accent) 6%, var(--surface-1)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 16px;
+  padding: 24px 28px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 16px;
+}
+
+.casual-home-cta-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.casual-home-cta-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.casual-home-cta-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: var(--accent);
+  fill: none;
+}
+
+.casual-home-cta-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.casual-home-cta-headline {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.casual-home-cta-sub {
+  font-size: 12px;
+  color: var(--text-soft);
+  margin: 0;
+}
+
+.casual-home-cta-arrow {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.casual-home-cta-card:hover .casual-home-cta-arrow {
+  transform: translateX(3px);
+}
+
+.casual-home-cta-arrow svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--bg);
+  fill: none;
 }
