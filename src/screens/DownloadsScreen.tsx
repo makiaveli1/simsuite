@@ -123,7 +123,9 @@ type DownloadsDialogRequest =
   | { kind: "safe_move" }
   | { kind: "reject" }
   | { kind: "review_action"; action: ReviewPlanAction }
-  | { kind: "undo"; itemId: number; displayName: string };
+  | { kind: "undo"; itemId: number; displayName: string }
+  | { kind: "batch_apply"; count: number }
+  | { kind: "batch_reject"; count: number };
 
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
 const DEFAULT_DOWNLOADS_PRESET = "Category First";
@@ -1013,8 +1015,12 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleBatchApply() {
+  async function handleBatchApply(skipConfirm = false) {
     if (batchSelectedIds.size === 0) return;
+    if (!skipConfirm) {
+      setPendingDialog({ kind: "batch_apply", count: batchSelectedIds.size });
+      return;
+    }
     setIsApplying(true);
     setStatusMessage(null);
     setErrorMessage(null);
@@ -1039,8 +1045,12 @@ export function DownloadsScreen({
     }
   }
 
-  async function handleBatchReject() {
+  async function handleBatchReject(skipConfirm = false) {
     if (batchSelectedIds.size === 0) return;
+    if (!skipConfirm) {
+      setPendingDialog({ kind: "batch_reject", count: batchSelectedIds.size });
+      return;
+    }
     setIsRejecting(true);
     setStatusMessage(null);
     setErrorMessage(null);
@@ -1115,6 +1125,12 @@ export function DownloadsScreen({
         break;
       case "undo":
         await handleUndo(pendingDialog.itemId, pendingDialog.displayName);
+        break;
+      case "batch_apply":
+        await handleBatchApply(true);
+        break;
+      case "batch_reject":
+        await handleBatchReject(true);
         break;
       default:
         break;
@@ -1386,11 +1402,20 @@ export function DownloadsScreen({
         : pendingDialog
           ? isApplying
           : false;
+  // Batch dialogs don't need a selectedResolvedItem; use a dummy for the config builder
+  const isBatchDialog =
+    pendingDialog?.kind === "batch_apply" ||
+    pendingDialog?.kind === "batch_reject";
   const dialogConfig =
-    pendingDialog && selectedResolvedItem
+    pendingDialog && (isBatchDialog || selectedResolvedItem)
       ? buildDownloadsDialogConfig({
           request: pendingDialog,
-          item: selectedResolvedItem,
+          item: selectedResolvedItem ?? ({
+            id: 0,
+            displayName: "",
+            queueLane: null,
+            detectedFileCount: 0,
+          } as unknown as DownloadsInboxItem),
           guidedPlan: selectedGuidedPlan,
           reviewPlan: selectedReviewPlan,
           specialDecision: selectedSpecialDecision,
@@ -1398,6 +1423,7 @@ export function DownloadsScreen({
           reviewCount,
           unchangedCount,
           userView,
+          selectedPreset,
         })
       : null;
   const hasWatcherStatus = watcherStatus !== null;
@@ -2013,6 +2039,7 @@ function buildDownloadsDialogConfig({
   reviewCount,
   unchangedCount,
   userView,
+  selectedPreset,
 }: {
   request: DownloadsDialogRequest;
   item: DownloadsInboxItem;
@@ -2023,6 +2050,7 @@ function buildDownloadsDialogConfig({
   reviewCount: number;
   unchangedCount: number;
   userView: UserView;
+  selectedPreset: string;
 }) {
   if (request.kind === "guided_apply" && guidedPlan) {
     const isSameVersion = specialDecision?.sameVersion ?? false;
@@ -2104,6 +2132,39 @@ function buildDownloadsDialogConfig({
         "The files will be removed from your Library.",
         "The item will go back to the waiting queue.",
       ],
+    };
+  }
+
+  if (request.kind === "batch_apply") {
+    return {
+      eyebrow: "Batch apply",
+      title: `Apply ${request.count} item${request.count === 1 ? "" : "s"}?`,
+      description:
+        userView === "beginner"
+          ? "All selected items will be applied using the current preset. This may replace some installed mods."
+          : "All selected items will be applied. Review the per-item results after completion.",
+      confirmLabel: `Apply ${request.count}`,
+      tone: "accent" as const,
+      metrics: [
+        { label: "Items", value: request.count.toLocaleString() },
+        { label: "Preset", value: selectedPreset },
+      ],
+      notes: ["A restore point is created before files are moved."],
+    };
+  }
+
+  if (request.kind === "batch_reject") {
+    return {
+      eyebrow: "Batch reject",
+      title: `Reject ${request.count} item${request.count === 1 ? "" : "s"}?`,
+      description:
+        userView === "beginner"
+          ? "All selected items will be moved to the rejected queue. They can be recovered later if needed."
+          : "All selected items will be moved to the rejected queue and hidden from the active inbox.",
+      confirmLabel: `Reject ${request.count}`,
+      tone: "warn" as const,
+      metrics: [{ label: "Items", value: request.count.toLocaleString() }],
+      notes: ["Rejected items can be recovered from the Rejected lane."],
     };
   }
 
