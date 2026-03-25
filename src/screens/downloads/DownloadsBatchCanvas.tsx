@@ -37,7 +37,7 @@ export function DownloadsBatchCanvas({
 
   return (
     <m.div
-      className="panel-card downloads-preview-panel downloads-batch-canvas workbench-panel"
+      className={`panel-card downloads-preview-panel downloads-batch-canvas workbench-panel downloads-batch-canvas-lane-${lane}`}
       layout
       transition={downloadsSelectionTransition}
     >

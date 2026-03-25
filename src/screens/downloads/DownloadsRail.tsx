@@ -102,11 +102,9 @@ export function DownloadsRail({
                     {laneCounts[lane].toLocaleString()}
                   </span>
                 </span>
-                {isActive ? (
-                  <span className="downloads-lane-button-hint">
-                    {downloadsLaneHint(lane, userView)}
-                  </span>
-                ) : null}
+                <span className="downloads-lane-button-hint">
+                  {downloadsLaneHint(lane, userView)}
+                </span>
               </button>
             );
           })}
@@ -129,8 +127,8 @@ export function DownloadsRail({
           </label>
 
           {!showFiltersToggle ? (
-            <label className="field">
-              <span>{userView === "beginner" ? "Show" : "Status"}</span>
+            <label className="field downloads-rail-status-filter">
+              <span>{userView === "beginner" ? "Filter" : "Status"}</span>
               <select
                 value={statusFilter}
                 onChange={(event) => onStatusFilterChange(event.target.value)}

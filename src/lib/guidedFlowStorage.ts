@@ -56,6 +56,20 @@ export function isNudgeDismissed(): boolean {
   return localStorage.getItem(`${PREFIX}nudge-dismissed`) === "true";
 }
 
+// ---------------------------------------------------------------------------
+// Keyboard shortcut hint — shown once, permanently dismissed after
+// ---------------------------------------------------------------------------
+
+const KEYBOARD_HINT_KEY = `${PREFIX}keyboard-hint-dismissed`;
+
+export function isKeyboardHintDismissed(): boolean {
+  return localStorage.getItem(KEYBOARD_HINT_KEY) === "true";
+}
+
+export function setKeyboardHintDismissed(): void {
+  localStorage.setItem(KEYBOARD_HINT_KEY, "true");
+}
+
 /**
  * Dismiss the nudge for the current session.
  * The nudge will re-appear on next session if items are still waiting.

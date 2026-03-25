@@ -1,6 +1,7 @@
 import {
   startTransition,
   type ReactNode,
+  useCallback,
   useDeferredValue,
   useEffect,
   useRef,
@@ -30,7 +31,11 @@ import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
 import { StatePanel } from "../components/StatePanel";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api, hasTauriRuntime } from "../lib/api";
-import { isDownloadsTourDismissed } from "../lib/guidedFlowStorage";
+import {
+  isDownloadsTourDismissed,
+  isKeyboardHintDismissed,
+  setKeyboardHintDismissed,
+} from "../lib/guidedFlowStorage";
 import {
   downloadsSelectionTransition,
   rowHover,
@@ -210,6 +215,9 @@ export function DownloadsScreen({
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
   const [showTour, setShowTour] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showKeyboardHint, setShowKeyboardHint] = useState(
+    () => !isKeyboardHintDismissed() && userView === "beginner",
+  );
   const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
   );
@@ -526,6 +534,17 @@ export function DownloadsScreen({
 
   const selectedItem =
     activeLaneItems.find((item) => item.id === selectedItemId) ?? null;
+
+  // Show keyboard shortcut hint on first item selection (beginner only)
+  useEffect(() => {
+    if (selectedItem && showKeyboardHint) {
+      const timer = setTimeout(() => {
+        setShowKeyboardHint(false);
+        setKeyboardHintDismissed();
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedItem, showKeyboardHint]);
 
   useEffect(() => {
     if (!selectedItem) {
@@ -1706,9 +1725,15 @@ export function DownloadsScreen({
                 <span className="health-chip">
                   {queueLaneLabel(resolvedActiveLane, userView)}
                 </span>
-                <span className={`health-chip${selectedItem ? " is-good" : ""}`}>
-                  {selectedItem ? "1 selected" : "No selection"}
-                </span>
+                {selectedItem ? (
+                  <span className="health-chip is-good">
+                    1 selected
+                  </span>
+                ) : (
+                  <span className="health-chip downloads-stage-hint" title="Select a row below to inspect">
+                    ← Select an item
+                  </span>
+                )}
                 {userView !== "beginner" ? (
                   <span className="health-chip">
                     {userView === "power" ? "Rule" : "Tidy"}: {selectedPreset}
@@ -1716,7 +1741,21 @@ export function DownloadsScreen({
                 ) : null}
               </div>
               <div className="downloads-stage-status">
-                <span className="ghost-chip">{stageStatusMessage}</span>
+                {activeWatcherStatus.state === "processing" ? (
+                  <span className="health-chip is-warn downloads-stage-processing">
+                    {activeWatcherStatus.currentItem
+                      ? `Checking ${activeWatcherStatus.currentItem}`
+                      : "Checking the Downloads folder"}
+                  </span>
+                ) : activeWatcherStatus.lastError ? (
+                  <span className="health-chip is-danger">{activeWatcherStatus.lastError}</span>
+                ) : (
+                  <span className="ghost-chip downloads-stage-idle">
+                    {activeWatcherStatus.lastRunAt
+                      ? `Last check ${formatDate(activeWatcherStatus.lastRunAt)}`
+                      : "Watcher ready"}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2025,6 +2064,35 @@ export function DownloadsScreen({
           onClose={() => setShowShortcutsHelp(false)}
         />
       )}
+
+      {/* First-time keyboard shortcut hint — shown once, auto-dismissed after 8s */}
+      <AnimatePresence>
+        {showKeyboardHint && (
+          <m.div
+            className="downloads-keyboard-hint"
+            role="note"
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <span className="downloads-keyboard-hint-text">
+              Press <kbd>?</kbd> for keyboard shortcuts
+            </span>
+            <button
+              type="button"
+              className="downloads-keyboard-hint-close"
+              onClick={() => {
+                setShowKeyboardHint(false);
+                setKeyboardHintDismissed();
+              }}
+              aria-label="Dismiss shortcut hint"
+            >
+              ×
+            </button>
+          </m.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
