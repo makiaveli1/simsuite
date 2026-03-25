@@ -1819,38 +1819,68 @@ export function DownloadsScreen({
                   )
                 }
               />
-              <DownloadsBatchCanvas
-                lane={resolvedActiveLane}
-                userView={userView}
-                selectionTitle={selectedItem?.displayName ?? null}
-                summary={batchCanvasSummary}
-                safeCount={safeCount}
-                reviewCount={reviewCount}
-                unchangedCount={unchangedCount}
-                previewItems={batchCanvasPreviewItems}
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  <m.div
-                    key={`${resolvedActiveLane}-${selectedItem?.id ?? "empty"}-${isLoadingSelection ? "loading" : "ready"}`}
-                    className="downloads-batch-stage"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={downloadsSelectionTransition}
-                  >
-                  {isLoadingSelection ? (
-                    <StatePanel
-                      eyebrow="Preview"
-                      title="Loading batch details"
-                      body="SimSuite is checking the selected download and preparing the safest next step."
-                      icon={LoaderCircle}
-                      tone="info"
-                      compact
-                      badge="Working"
-                    />
-                  ) : selectedItem?.intakeMode === "guided" ? (
-                    selectedGuidedPlan ? (
-                      guidedNeedsReview && selectedReviewPlan ? (
+              {/* In split mode (standard/power), show batch canvas inline. */}
+              {/* In casual mode, batch canvas is hidden from stage flow and */}
+              {/* shown as a right-side drawer instead (see below). */}
+              {splitStage && (
+                <DownloadsBatchCanvas
+                  lane={resolvedActiveLane}
+                  userView={userView}
+                  selectionTitle={selectedItem?.displayName ?? null}
+                  summary={batchCanvasSummary}
+                  safeCount={safeCount}
+                  reviewCount={reviewCount}
+                  unchangedCount={unchangedCount}
+                  previewItems={batchCanvasPreviewItems}
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    <m.div
+                      key={`${resolvedActiveLane}-${selectedItem?.id ?? "empty"}-${isLoadingSelection ? "loading" : "ready"}`}
+                      className="downloads-batch-stage"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={downloadsSelectionTransition}
+                    >
+                    {isLoadingSelection ? (
+                      <StatePanel
+                        eyebrow="Preview"
+                        title="Loading batch details"
+                        body="SimSuite is checking the selected download and preparing the safest next step."
+                        icon={LoaderCircle}
+                        tone="info"
+                        compact
+                        badge="Working"
+                      />
+                    ) : selectedItem?.intakeMode === "guided" ? (
+                      selectedGuidedPlan ? (
+                        guidedNeedsReview && selectedReviewPlan ? (
+                          <SpecialReviewPanel
+                            item={selectedItem}
+                            reviewPlan={selectedReviewPlan}
+                            files={selectedFiles}
+                            userView={userView}
+                            reviewActions={reviewActions}
+                            onResolveAction={handleReviewAction}
+                            isApplying={isApplying}
+                          />
+                        ) : (
+                        <GuidedPreviewPanel plan={selectedGuidedPlan} userView={userView} />
+                        )
+                      ) : (
+                        <StatePanel
+                          eyebrow="Special setup"
+                          title="Guided plan not ready yet"
+                          body="SimSuite recognized a special setup item, but the install plan is not ready. Refresh the inbox and try again."
+                          icon={AlertTriangle}
+                          tone="warn"
+                          compact
+                        />
+                      )
+                    ) : selectedItem &&
+                      (selectedItem.intakeMode === "needs_review" ||
+                        selectedItem.intakeMode === "blocked") ? (
+                      selectedReviewPlan ? (
                         <SpecialReviewPanel
                           item={selectedItem}
                           reviewPlan={selectedReviewPlan}
@@ -1861,140 +1891,187 @@ export function DownloadsScreen({
                           isApplying={isApplying}
                         />
                       ) : (
-                      <GuidedPreviewPanel plan={selectedGuidedPlan} userView={userView} />
+                        <StatePanel
+                          eyebrow={intakeModeLabel(selectedItem.intakeMode)}
+                          title={
+                            selectedItem.intakeMode === "blocked"
+                              ? "Blocked details are not ready yet"
+                              : "Review details are not ready yet"
+                          }
+                          body="SimSuite recognized a special case, but the review plan is not ready. Refresh the inbox and try again."
+                          icon={AlertTriangle}
+                          tone="warn"
+                          compact
+                        />
                       )
-                    ) : (
-                      <StatePanel
-                        eyebrow="Special setup"
-                        title="Guided plan not ready yet"
-                        body="SimSuite recognized a special setup item, but the install plan is not ready. Refresh the inbox and try again."
-                        icon={AlertTriangle}
-                        tone="warn"
-                        compact
-                      />
-                    )
-                  ) : selectedItem &&
-                    (selectedItem.intakeMode === "needs_review" ||
-                      selectedItem.intakeMode === "blocked") ? (
-                    selectedReviewPlan ? (
-                      <SpecialReviewPanel
-                        item={selectedItem}
-                        reviewPlan={selectedReviewPlan}
-                        files={selectedFiles}
+                    ) : previewSuggestions.length ? (
+                      <StandardPreviewPanel
+                        suggestions={previewSuggestions}
+                        safeCount={safeCount}
+                        reviewCount={reviewCount}
+                        unchangedCount={unchangedCount}
                         userView={userView}
-                        reviewActions={reviewActions}
-                        onResolveAction={handleReviewAction}
-                        isApplying={isApplying}
                       />
+                    ) : selectedFiles.length ? (
+                      <TrackedFilesPanel files={selectedFiles} userView={userView} />
                     ) : (
                       <StatePanel
-                        eyebrow={intakeModeLabel(selectedItem.intakeMode)}
-                        title={
-                          selectedItem.intakeMode === "blocked"
-                            ? "Blocked details are not ready yet"
-                            : "Review details are not ready yet"
-                        }
-                        body="SimSuite recognized a special case, but the review plan is not ready. Refresh the inbox and try again."
-                        icon={AlertTriangle}
-                        tone="warn"
+                        eyebrow="Preview"
+                        title="Select a download item to inspect"
+                        body="Select a staged archive or file batch to load the correct inbox preview."
+                        icon={Download}
                         compact
+                        meta={["Normal", "Special setup", "Needs review", "Blocked"]}
                       />
-                    )
-                  ) : previewSuggestions.length ? (
-                    <StandardPreviewPanel
-                      suggestions={previewSuggestions}
-                      safeCount={safeCount}
-                      reviewCount={reviewCount}
-                      unchangedCount={unchangedCount}
-                      userView={userView}
-                    />
-                  ) : selectedFiles.length ? (
-                    <TrackedFilesPanel files={selectedFiles} userView={userView} />
-                  ) : (
-                    <StatePanel
-                      eyebrow="Preview"
-                      title={
-                        userView === "beginner"
-                          ? "Select an inbox item"
-                          : "Select a download item to inspect"
-                      }
-                        body={
-                          userView === "beginner"
-                            ? "Pick one batch from the queue to see whether it is a normal sort, a special setup, or something that needs review."
-                            : "Select a staged archive or file batch to load the correct inbox preview."
-                        }
-                      icon={Download}
-                      compact
-                      meta={["Normal", "Special setup", "Needs review", "Blocked"]}
-                    />
-                  )}
-                  </m.div>
-                </AnimatePresence>
-              </DownloadsBatchCanvas>
+                    )}
+                    </m.div>
+                  </AnimatePresence>
+                </DownloadsBatchCanvas>
+              )}
             </div>
           </WorkbenchStage>
 
-          <WorkbenchInspector
-            ariaLabel="Downloads inbox details"
-            width={downloadsDetailWidth}
-            onWidthChange={setDownloadsDetailWidth}
-            minWidth={320}
-            maxWidth={780}
-            className="downloads-inspector-shell"
-            noBorder
-          >
-            {selectedItem ? (
-              <DownloadsDecisionPanel
-                userView={userView}
-                title={selectedItem.displayName}
-                summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
-                laneLabel={decisionLaneLabel}
-                resolvedLane={decisionResolvedLane}
-                badges={decisionBadges}
-                signals={visibleInspectorSignals}
-                nextStepTitle={nextStepTitle}
-                nextStepDescription={nextStepDescription}
-                primaryActionLabel={showPrimaryAction ? applyLabel : null}
-                primaryActionDisabled={primaryActionDisabled}
-                onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
-                secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
-                secondaryActionDisabled={isRejecting}
-                onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
-                onOpenProof={() => setProofSheetOpen(true)}
-                proofSummary={proofSummary}
-                onSnooze={handleSnooze}
-                idleNote={
-                  !showPrimaryAction
-                    ? downloadsInspectorIdleNote(
-                        effectiveSelectedIntakeMode ?? selectedItem.intakeMode,
-                        userView,
-                        safeCount,
-                        selectedGuidedPlan,
-                        selectedSpecialDecision,
-                        selectedVersionResolution,
-                        selectedReviewPlan,
-                      )
-                    : null
-                }
-              />
-            ) : (
-              <StatePanel
-                eyebrow={userView === "beginner" ? "Downloads inbox" : "Inbox"}
-                title={
-                  userView === "beginner"
-                    ? "Select a batch"
-                    : "Select an inbox item to inspect"
-                }
-                body={
-                  userView === "beginner"
-                    ? "The right panel shows what the batch contains, what can move safely, and whether it needs special setup."
-                    : "The inspector shows intake mode, evidence, and the file set for the selected batch."
-                }
-                icon={Download}
-                meta={["Approval first", "Snapshots happen before moves"]}
+          {/* Only show the inspector in standard/power mode. */}
+          {/* In casual mode, the decision drawer (above) handles item decisions. */}
+          {userView !== "beginner" && (
+            <WorkbenchInspector
+              ariaLabel="Downloads inbox details"
+              width={downloadsDetailWidth}
+              onWidthChange={setDownloadsDetailWidth}
+              minWidth={320}
+              maxWidth={780}
+              className="downloads-inspector-shell"
+              noBorder
+            >
+              {selectedItem ? (
+                <DownloadsDecisionPanel
+                  userView={userView}
+                  title={selectedItem.displayName}
+                  summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+                  laneLabel={decisionLaneLabel}
+                  resolvedLane={decisionResolvedLane}
+                  badges={decisionBadges}
+                  signals={visibleInspectorSignals}
+                  nextStepTitle={nextStepTitle}
+                  nextStepDescription={nextStepDescription}
+                  primaryActionLabel={showPrimaryAction ? applyLabel : null}
+                  primaryActionDisabled={primaryActionDisabled}
+                  onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
+                  secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
+                  secondaryActionDisabled={isRejecting}
+                  onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
+                  onOpenProof={() => setProofSheetOpen(true)}
+                  proofSummary={proofSummary}
+                  onSnooze={handleSnooze}
+                  idleNote={
+                    !showPrimaryAction
+                      ? downloadsInspectorIdleNote(
+                          effectiveSelectedIntakeMode ?? selectedItem.intakeMode,
+                          userView,
+                          safeCount,
+                          selectedGuidedPlan,
+                          selectedSpecialDecision,
+                          selectedVersionResolution,
+                          selectedReviewPlan,
+                        )
+                      : null
+                  }
+                />
+              ) : (
+                <StatePanel
+                  eyebrow="Inbox"
+                  title="Select an inbox item to inspect"
+                  body="The inspector shows intake mode, evidence, and the file set for the selected batch."
+                  icon={Download}
+                  meta={["Approval first", "Snapshots happen before moves"]}
+                />
+              )}
+            </WorkbenchInspector>
+          )}
+
+          {/* Casual mode: decision drawer — slides in from right, overlay on top of the stage.
+              Unlike the split layout (which divides space between queue and detail),
+              this overlay keeps the queue fully visible and focused. */}
+          <AnimatePresence>
+            {userView === "beginner" && selectedItem && (
+              <m.div
+                className="downloads-casual-drawer"
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", stiffness: 320, damping: 34 }}
+                aria-label="Item decision panel"
+              >
+                <div className="downloads-casual-drawer-header">
+                  <div className="downloads-casual-drawer-title-group">
+                    <p className="eyebrow">Inbox item</p>
+                    <h2 className="downloads-casual-drawer-title">
+                      {selectedItem.displayName}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="downloads-casual-drawer-close"
+                    onClick={() => setSelectedItemId(null)}
+                    aria-label="Close and return to queue"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="downloads-casual-drawer-content">
+                  <DownloadsDecisionPanel
+                    userView={userView}
+                    title={selectedItem.displayName}
+                    summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
+                    laneLabel={decisionLaneLabel}
+                    resolvedLane={decisionResolvedLane}
+                    badges={decisionBadges}
+                    signals={visibleInspectorSignals}
+                    nextStepTitle={nextStepTitle}
+                    nextStepDescription={nextStepDescription}
+                    primaryActionLabel={showPrimaryAction ? applyLabel : null}
+                    primaryActionDisabled={primaryActionDisabled}
+                    onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
+                    secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
+                    secondaryActionDisabled={isRejecting}
+                    onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
+                    onOpenProof={() => setProofSheetOpen(true)}
+                    proofSummary={proofSummary}
+                    onSnooze={handleSnooze}
+                    idleNote={
+                      !showPrimaryAction
+                        ? downloadsInspectorIdleNote(
+                            effectiveSelectedIntakeMode ?? selectedItem.intakeMode,
+                            userView,
+                            safeCount,
+                            selectedGuidedPlan,
+                            selectedSpecialDecision,
+                            selectedVersionResolution,
+                            selectedReviewPlan,
+                          )
+                        : null
+                    }
+                  />
+                </div>
+              </m.div>
+            )}
+          </AnimatePresence>
+
+          {/* Casual mode: dark backdrop when drawer is open — keeps focus on the queue context */}
+          <AnimatePresence>
+            {userView === "beginner" && selectedItem && (
+              <m.div
+                className="downloads-casual-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setSelectedItemId(null)}
+                aria-hidden="true"
               />
             )}
-          </WorkbenchInspector>
+          </AnimatePresence>
         </Workbench>
       )}
 

@@ -5575,6 +5575,11 @@ h2,
   min-width: 0;
 }
 
+/* Casual mode: wider rail for breathing room, calmer aesthetic */
+:root[data-user-view="casual"] .downloads-rail-shell {
+  width: clamp(280px, 22vw, 320px);
+}
+
 .downloads-workbench .panel-card,
 .downloads-workbench .workbench-panel {
   box-shadow: none;
@@ -5901,6 +5906,11 @@ h2,
   overflow: hidden;
 }
 
+/* Casual mode: queue fills the full stage. The decision drawer overlays from the right. */
+.workbench[data-user-view="casual"] .downloads-stage {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .downloads-stage-split {
   grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
   grid-template-rows: minmax(0, 1fr);
@@ -5909,6 +5919,87 @@ h2,
 
 .downloads-stage > * {
   min-height: 0;
+}
+
+/* Casual mode: queue panel fills full stage height */
+.workbench[data-user-view="casual"] .downloads-queue-panel {
+  height: 100%;
+}
+
+/* Casual decision drawer — slides in from the right, overlays the stage.
+   The queue stays visible in the background for context. */
+.downloads-casual-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  width: min(480px, 92vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.3);
+}
+
+.downloads-casual-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem 1.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.downloads-casual-drawer-title-group {
+  min-width: 0;
+}
+
+.downloads-casual-drawer-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.downloads-casual-drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0 0 0 0.5rem;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.downloads-casual-drawer-close:hover {
+  color: var(--text);
+}
+
+.downloads-casual-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.4rem 2rem;
+}
+
+/* Backdrop behind the casual drawer — subtle, click-to-dismiss */
+.downloads-casual-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
 }
 
 .downloads-queue-panel,
@@ -6484,6 +6575,22 @@ h2,
 
 :root[data-user-view="creator"] .downloads-next-step-card {
   padding: 0.5rem 0.56rem;
+}
+
+/* Casual mode: more breathing room in the queue */
+:root[data-user-view="casual"] .downloads-item-row,
+:root[data-user-view="casual"] .downloads-file-row {
+  padding: 0.85rem 1rem;
+  gap: 0.8rem;
+}
+
+:root[data-user-view="casual"] .downloads-item-row-wrapper + .downloads-item-row-wrapper {
+  margin-top: 0.28rem;
+}
+
+:root[data-user-view="casual"] .downloads-lane-list,
+:root[data-user-view="casual"] .downloads-timeline {
+  gap: 0.5rem;
 }
 
 .downloads-inspector-actions {
