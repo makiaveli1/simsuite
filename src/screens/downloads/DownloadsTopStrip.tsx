@@ -6,6 +6,7 @@ import type { DownloadProgress, UserView } from "../../lib/types";
 interface DownloadsTopStripProps {
   statusMessage: string | null;
   errorMessage: string | null;
+  /** Total items visible after the current filter is applied */
   totalItems: number;
   readyCount: number;
   waitingCount: number;
@@ -18,12 +19,23 @@ interface DownloadsTopStripProps {
   onRefresh: () => void;
   onOpenReview: () => void;
   onLaneChange: (lane: DownloadQueueLane) => void;
+  onClearFilter?: () => void;
   userView: UserView;
+  statusFilter: string;
   progress?: DownloadProgress | null;
   undoableApply?: { itemId: number; displayName: string } | null;
   onRequestUndo?: () => void;
   isUndoing?: boolean;
 }
+
+const STATUS_FILTER_LABELS: Record<string, { label: string; tone: string }> = {
+  ready:       { label: "Ready",       tone: "is-good"   },
+  partial:     { label: "Partial",     tone: ""          },
+  needs_review:{ label: "Needs review",tone: "is-warn"   },
+  applied:     { label: "Applied",     tone: "is-good"   },
+  error:       { label: "Error",       tone: "is-danger" },
+  ignored:     { label: "Ignored",     tone: ""          },
+};
 
 export function DownloadsTopStrip({
   statusMessage,
@@ -40,7 +52,9 @@ export function DownloadsTopStrip({
   onRefresh,
   onOpenReview,
   onLaneChange,
+  onClearFilter,
   userView,
+  statusFilter,
   progress,
   undoableApply,
   onRequestUndo,
@@ -49,6 +63,8 @@ export function DownloadsTopStrip({
   const hasProgress = progress != null && progress.totalCount > 0;
   const showAlertRow = Boolean(errorMessage) || Boolean(statusMessage);
   const isError = Boolean(errorMessage);
+  const isFiltered = statusFilter !== "";
+  const filterMeta = isFiltered ? STATUS_FILTER_LABELS[statusFilter] : null;
 
   return (
     <div className="downloads-top-strip">
@@ -75,19 +91,46 @@ export function DownloadsTopStrip({
       <div className="slim-strip downloads-top-strip-data">
         {/* Counter chips */}
         <div className="slim-strip-group downloads-top-strip-counters">
-          <span className="health-chip is-good">
-            <span className="health-chip-dot" />
-            {totalItems.toLocaleString()} {totalItems === 1 ? "item" : "items"}
-          </span>
-          <span className="health-chip">
-            {readyCount.toLocaleString()} ready
-          </span>
-          <span className={`health-chip${waitingCount > 0 ? " is-warn" : ""}`}>
-            {waitingCount.toLocaleString()} needs review
-          </span>
-          <span className={`health-chip${blockedCount > 0 ? " is-danger" : ""}`}>
-            {blockedCount.toLocaleString()} blocked
-          </span>
+          {isFiltered && filterMeta ? (
+            /* Filtered view: one prominent count + active filter chip + clear button */
+            <>
+              <span className={`health-chip ${filterMeta.tone}`}>
+                {totalItems.toLocaleString()}{" "}
+                {totalItems === 1 ? "item" : "items"}
+              </span>
+              <span className="health-chip downloads-top-strip-filter-chip">
+                {filterMeta.label}
+              </span>
+              {onClearFilter && (
+                <button
+                  type="button"
+                  className="health-chip health-chip-clear"
+                  onClick={onClearFilter}
+                  title="Clear filter and show all"
+                >
+                  × Clear filter
+                </button>
+              )}
+            </>
+          ) : (
+            /* All view: four counters */
+            <>
+              <span className="health-chip is-good">
+                <span className="health-chip-dot" />
+                {totalItems.toLocaleString()}{" "}
+                {totalItems === 1 ? "item" : "items"}
+              </span>
+              <span className="health-chip">
+                {readyCount.toLocaleString()} ready
+              </span>
+              <span className={`health-chip${waitingCount > 0 ? " is-warn" : ""}`}>
+                {waitingCount.toLocaleString()} needs review
+              </span>
+              <span className={`health-chip${blockedCount > 0 ? " is-danger" : ""}`}>
+                {blockedCount.toLocaleString()} blocked
+              </span>
+            </>
+          )}
         </div>
 
         {/* Progress + actions */}
@@ -131,9 +174,11 @@ export function DownloadsTopStrip({
             <ShieldAlert size={14} strokeWidth={2} />
             {reviewActionLabel}
           </button>
-          {userView === "beginner" &&
-           !isNudgeDismissed() &&
-           (waitingCount > 0 || specialSetupCount > 0 || blockedCount > 0) && (
+          {/* Nudge chip only shown in "All" view for beginners */
+          !isFiltered &&
+          userView === "beginner" &&
+          !isNudgeDismissed() &&
+          (waitingCount > 0 || specialSetupCount > 0 || blockedCount > 0) && (
             <button
               className="casual-nudge-chip"
               onClick={() => {

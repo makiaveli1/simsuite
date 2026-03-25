@@ -1600,7 +1600,7 @@ export function DownloadsScreen({
       <DownloadsTopStrip
         statusMessage={statusMessage}
         errorMessage={errorMessage}
-        totalItems={overview?.totalItems ?? 0}
+        totalItems={statusFilter ? (inbox?.items.length ?? 0) : (overview?.totalItems ?? 0)}
         readyCount={overview?.readyNowItems ?? overview?.readyItems ?? 0}
         waitingCount={overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0}
         specialSetupCount={overview?.specialSetupItems ?? 0}
@@ -1616,6 +1616,8 @@ export function DownloadsScreen({
           setActiveLane(lane);
         }}
         userView={userView}
+        statusFilter={statusFilter}
+        onClearFilter={statusFilter ? () => setStatusFilter("") : undefined}
         progress={progress}
         undoableApply={undoableApply}
         onRequestUndo={() => {

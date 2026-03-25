@@ -1777,6 +1777,29 @@ h2,
   color: var(--text-dim);
 }
 
+/* Active filter chip in the counter strip */
+.downloads-top-strip-filter-chip {
+  color: var(--text-soft);
+}
+
+/* "× Clear filter" button chip */
+.health-chip-clear {
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  padding: 0.15rem 0.45rem;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+
+.health-chip-clear:hover {
+  background: var(--surface-4);
+  color: var(--text);
+}
+
 /* Mono text for paths, hashes, file evidence */
 .text-mono {
   font-family: "Cascadia Code", "Consolas", "Monaco", monospace;
