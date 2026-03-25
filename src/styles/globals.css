@@ -1741,8 +1741,8 @@ h2,
 .downloads-top-strip-alert {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
+  gap: 0.4rem;
+  padding: 0.2rem 0.5rem;
   border-bottom: 1px solid transparent;
 }
 
@@ -1761,15 +1761,15 @@ h2,
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.2rem 0.5rem;
+  padding: 0.15rem 0.5rem;
 }
 
 .downloads-top-strip-counters {
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
 
 .downloads-top-strip-actions {
-  gap: 0.35rem;
+  gap: 0.3rem;
   flex-shrink: 0;
 }
 
@@ -5824,12 +5824,13 @@ h2,
 
 .downloads-stage-header {
   align-items: center;
-  padding: 0 0 0.1rem;
+  padding: 0.2rem 0.4rem;
   border-bottom: 1px solid var(--line);
+  min-height: 0;
 }
 
 .downloads-stage-metrics {
-  gap: 0.34rem;
+  gap: 0.3rem;
 }
 
 .downloads-stage-status {
