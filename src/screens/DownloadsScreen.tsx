@@ -216,7 +216,7 @@ export function DownloadsScreen({
   const [showTour, setShowTour] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showKeyboardHint, setShowKeyboardHint] = useState(
-    () => !isKeyboardHintDismissed() && userView === "beginner",
+    () => !isKeyboardHintDismissed() && userView !== "power",
   );
   const latestWatcherStatus = useRef<DownloadsWatcherStatus | null>(
     downloadsScreenCache.watcherStatus,
@@ -2077,7 +2077,9 @@ export function DownloadsScreen({
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
             <span className="downloads-keyboard-hint-text">
-              Press <kbd>?</kbd> for keyboard shortcuts
+              {userView === "beginner"
+                ? <>Press <kbd>?</kbd> for keyboard shortcuts</>
+                : <>Press <kbd>?</kbd> or <kbd>⌘K</kbd> for shortcuts</>}
             </span>
             <button
               type="button"

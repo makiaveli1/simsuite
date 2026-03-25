@@ -178,7 +178,9 @@ export function DownloadsRail({
                     <strong>
                       {userView === "power"
                         ? "Keep the queue short without crowding the rail"
-                        : "Tuck the extra sorting choices away until you need them"}
+                        : userView === "standard"
+                          ? "Fine-tune what you see without leaving the rail"
+                          : "Tuck the extra sorting choices away until you need them"}
                     </strong>
                   </div>
                 </div>
