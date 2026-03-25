@@ -417,6 +417,13 @@ export function UpdatesScreen({
       return;
     }
 
+    const confirmed = globalThis.confirm(
+      userView === "beginner"
+        ? `Stop tracking "${selectedItem.filename}" from this source? SimSuite will no longer watch this source for updates to this file.`
+        : `Clear the tracked source for "${selectedItem.filename}"? SimSuite will stop watching this source path for updates.`,
+    );
+    if (!confirmed) return;
+
     setClearingWatch(true);
     setMessage(null);
 

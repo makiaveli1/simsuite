@@ -627,6 +627,26 @@ function SettingsExperienceSection({
   };
   onExperienceModeChange: (view: ExperienceMode) => void;
 }) {
+  const [transitionMessage, setTransitionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (transitionMessage === null) return;
+    const timer = globalThis.setTimeout(() => setTransitionMessage(null), 4500);
+    return () => globalThis.clearTimeout(timer);
+  }, [transitionMessage]);
+
+  function handleModeChange(mode: ExperienceMode) {
+    if (mode === experienceMode) return;
+    const msg =
+      mode === "casual"
+        ? "Switched to Casual. Layout saved — you can return to Seasoned anytime."
+        : mode === "seasoned"
+          ? "Switched to Seasoned. More detail and filters are now visible."
+          : "Switched to Creator. Dense layout and audit tools are to the fore.";
+    setTransitionMessage(msg);
+    onExperienceModeChange(mode);
+  }
+
   return (
     <>
       <div className="panel-heading settings-focus-heading">
@@ -642,6 +662,13 @@ function SettingsExperienceSection({
         </p>
       </div>
 
+      {transitionMessage && (
+        <div className="settings-mode-transition-msg" role="status">
+          <Sparkles size={13} strokeWidth={2} />
+          {transitionMessage}
+        </div>
+      )}
+
       <div className="settings-view-grid" role="tablist" aria-label="User view">
         {EXPERIENCE_MODE_ORDER.map((mode) => {
           const profile = EXPERIENCE_MODE_PROFILES[mode];
@@ -651,7 +678,7 @@ function SettingsExperienceSection({
               key={mode}
               type="button"
               className={`settings-view-card ${experienceMode === mode ? "is-active" : ""}`}
-              onClick={() => onExperienceModeChange(mode)}
+              onClick={() => handleModeChange(mode)}
               title={card.hint}
               whileHover={hoverLift}
               whileTap={tapPress}

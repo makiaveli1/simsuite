@@ -172,6 +172,12 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
   };
 
   const handleReject = async (itemId: string, paths: string[]) => {
+    const confirmed = globalThis.confirm(
+      userView === "beginner"
+        ? "Remove this staged content? The files will stay in your Downloads folder."
+        : `Reject this staging area and remove its extracted files?`,
+    );
+    if (!confirmed) return;
     setRejectingId(itemId);
     try {
       await api.cleanupStagingAreas(paths);
@@ -200,6 +206,12 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
 
   const handleRejectAll = async () => {
     if (!summary || summary.areas.length === 0) return;
+    const confirmed = globalThis.confirm(
+      userView === "beginner"
+        ? `Remove all ${summary.areas.length} staged areas? Files will stay in your Downloads folder.`
+        : `Reject all ${summary.areas.length} staging areas and remove extracted files?`,
+    );
+    if (!confirmed) return;
     setRejectingAll(true);
     try {
       const allPaths = summary.areas.flatMap((a) =>

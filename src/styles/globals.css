@@ -2946,6 +2946,32 @@ h2,
   gap: 0.5rem;
 }
 
+.settings-mode-transition-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.52rem 0.72rem;
+  margin-bottom: 0.6rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .settings-view-card {
   display: grid;
   gap: 0.45rem;
@@ -3023,6 +3049,15 @@ h2,
 .settings-side-panel {
   border: 1px solid var(--line);
   background: var(--surface-4);
+}
+
+/* Casual: collapse to 2-column, side panel floats as chip in detail column instead */
+:root[data-user-view="casual"] .settings-side-panel {
+  display: none;
+}
+
+:root[data-user-view="casual"] .settings-layout-three-col {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
 }
 
 .settings-summary-card {
@@ -4385,7 +4420,7 @@ h2,
 
 .dock-stack-copy {
   margin: 0;
-  color: var(--text-dim);
+  color: var(--text-soft);
   font-size: 0.7rem;
   line-height: 1.35;
 }
@@ -4485,7 +4520,7 @@ h2,
 }
 
 .dock-section-copy span {
-  color: var(--text-dim);
+  color: var(--text-soft);
   font-size: 0.68rem;
   line-height: 1.25;
   display: -webkit-box;
@@ -5906,7 +5941,7 @@ h2,
 }
 
 .downloads-item-samples-muted {
-  color: var(--text-dim);
+  color: var(--text-soft);
   font-size: 0.69rem;
 }
 
@@ -6473,7 +6508,7 @@ h2,
 }
 
 .downloads-preview-route-note {
-  color: var(--text-dim);
+  color: var(--text-soft);
   font-size: 0.73rem;
   line-height: 1.35;
 }
@@ -10192,7 +10227,7 @@ select:focus-visible {
 
 .command-palette-row-sub {
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--text-soft);
   white-space: nowrap;
 }
 
