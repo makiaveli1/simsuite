@@ -68,7 +68,14 @@ export function WorkspaceToolbar({
           <div className="workspace-toolbar-meta" aria-label="Current workspace preferences" style={{ margin: 0 }}>
             <span className="workspace-toolbar-meta-item">{viewLabel}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
-            <span className="workspace-toolbar-meta-item">{modeProfile.badge}</span>
+            <button
+              type="button"
+              className="workspace-toolbar-mode-badge"
+              onClick={onOpenSettings}
+              title="Change experience mode in Settings"
+            >
+              {modeProfile.badge}
+            </button>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
             <span className="workspace-toolbar-meta-item">{densityLabel}</span>
             <span className="workspace-toolbar-meta-divider" aria-hidden="true" />
