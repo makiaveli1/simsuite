@@ -1957,7 +1957,7 @@ fn process_downloads_once_for_paths(
             &mut connection,
             "last_downloads_scan_at",
             Some(&now),
-            "downloads-sync",
+            "user",
         )?;
     }
 
