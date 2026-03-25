@@ -5410,6 +5410,12 @@ h2,
   height: 100%;
 }
 
+/* When the batch action bar is visible, push the queue dock content up
+   so the last items aren't hidden behind the fixed bar. */
+.downloads-shell-batch-active .downloads-queue-dock {
+  padding-bottom: 5rem;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -6077,6 +6083,48 @@ h2,
   padding-top: 0.42rem;
   border-top: 1px solid var(--line);
 }
+
+/* Beginner-mode sticky lane header — replaces inline styles */
+.downloads-lane-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px 6px 0 0;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.downloads-lane-sticky-header .downloads-lane-sticky-icon {
+  display: flex;
+  align-items: center;
+  color: var(--lane-accent);
+}
+
+.downloads-lane-sticky-header .downloads-lane-sticky-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.downloads-lane-sticky-header .downloads-lane-sticky-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* Per-lane accent colours — set --lane-accent custom property inline */
+.downloads-lane-sticky-header-lane-ready-now    { --lane-accent: var(--accent); }
+.downloads-lane-sticky-header-lane-special-setup { --lane-accent: var(--tone-info); }
+.downloads-lane-sticky-header-lane-waiting_on_you { --lane-accent: var(--tone-warn); }
+.downloads-lane-sticky-header-lane-blocked        { --lane-accent: var(--tone-danger); }
+.downloads-lane-sticky-header-lane-done           { --lane-accent: var(--text-dim); }
+.downloads-lane-sticky-header-lane-rejected       { --lane-accent: var(--text-dim); }
 
 .downloads-lane-header {
   display: flex;

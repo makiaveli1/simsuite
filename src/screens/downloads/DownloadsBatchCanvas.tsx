@@ -90,11 +90,14 @@ function buildBatchStats({
   unchangedCount: number;
   previewCount: number;
 }) {
+  const filesShownLabel = userView === "beginner"
+    ? (previewCount === 1 ? "File shown" : "Files shown")
+    : "Preview";
   const allStats = [
     { label: "Safe", value: safeCount, tone: "good" },
     { label: userView === "beginner" ? "Needs care" : "Review", value: reviewCount, tone: "warn" },
     { label: userView === "beginner" ? "Already set" : "Already fine", value: unchangedCount, tone: "neutral" },
-    { label: userView === "beginner" ? "Files shown" : "Preview", value: previewCount, tone: "muted" },
+    { label: filesShownLabel, value: previewCount, tone: "muted" },
   ] as const;
 
   if (userView === "power") {
@@ -106,7 +109,7 @@ function buildBatchStats({
   }
 
   const beginnerStats = allStats.filter(
-    (stat) => stat.label === "Needs care" || stat.label === "Files shown" || stat.value > 0,
+    (stat) => stat.label === "Needs care" || stat.label === filesShownLabel || stat.value > 0,
   );
 
   return beginnerStats.slice(0, 2);

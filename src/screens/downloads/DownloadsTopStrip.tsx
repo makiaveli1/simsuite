@@ -69,11 +69,11 @@ export function DownloadsTopStrip({
           <>
             <span className="health-chip is-good">
               <span className="health-chip-dot"></span>
-              {totalItems.toLocaleString()} items
+              {totalItems.toLocaleString()} {totalItems === 1 ? "item" : "items"}
             </span>
             <span className="health-chip">{readyCount.toLocaleString()} ready</span>
             <span className={`health-chip${waitingCount > 0 ? " is-warn" : ""}`}>
-              {waitingCount.toLocaleString()} waiting
+              {waitingCount.toLocaleString()} needs review
             </span>
             <span className={`health-chip${blockedCount > 0 ? " is-danger" : ""}`}>
               {blockedCount.toLocaleString()} blocked
@@ -85,7 +85,7 @@ export function DownloadsTopStrip({
       <div className="slim-strip-group">
         {hasProgress && (
           <span className="ghost-chip download-progress-chip">
-            {progress.phase}: {progress.currentFile}
+            {progress.phase}: {progress.currentFile.length > 30 ? `${progress.currentFile.slice(0, 30)}…` : progress.currentFile}
             {progress.totalCount > 0 && (
               <span className="download-progress-count">
                 {" "}

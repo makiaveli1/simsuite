@@ -169,27 +169,15 @@ export function DownloadsQueuePanel({
                 )}
                 {userView === "beginner" && (
                   <div
-                    className="downloads-lane-sticky-header"
-                    style={{
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 10,
-                      background: `color-mix(in srgb, ${LANE_ACCENTS[lane]} 12%, var(--surface-2))`,
-                      borderLeft: `3px solid ${LANE_ACCENTS[lane]}`,
-                      padding: "6px 12px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      borderRadius: "6px 6px 0 0",
-                    }}
+                    className={`downloads-lane-sticky-header downloads-lane-sticky-header-lane-${lane}`}
                   >
-                    <span style={{ color: LANE_ACCENTS[lane], display: "flex", alignItems: "center" }}>
+                    <span className="downloads-lane-sticky-icon">
                       {LANE_ICONS[lane]}
                     </span>
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>
+                    <span className="downloads-lane-sticky-title">
                       {LANE_LABELS[lane]}
                     </span>
-                    <span style={{ fontSize: "11px", color: "var(--text-dim)", marginLeft: "auto" }}>
+                    <span className="downloads-lane-sticky-count">
                       {rows.length} item{rows.length !== 1 ? "s" : ""}
                     </span>
                   </div>

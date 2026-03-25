@@ -1577,14 +1577,14 @@ export function DownloadsScreen({
   ]);
 
   return (
-    <section className="screen-shell downloads-shell">
+    <section className={`screen-shell downloads-shell${batchSelectedIds.size > 0 ? " downloads-shell-batch-active" : ""}`}>
       <DownloadsTopStrip
         statusMessage={statusMessage}
         errorMessage={errorMessage}
         totalItems={overview?.totalItems ?? 0}
         readyCount={overview?.readyNowItems ?? overview?.readyItems ?? 0}
         waitingCount={overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0}
-        specialSetupCount={visibleLaneCounts.special_setup}
+        specialSetupCount={overview?.specialSetupItems ?? 0}
         blockedCount={overview?.blockedItems ?? overview?.errorItems ?? 0}
         lastCheckLabel={stageStatusMessage}
         isRefreshing={isRefreshing}
