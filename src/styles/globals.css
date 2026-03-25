@@ -5580,6 +5580,12 @@ h2,
   width: clamp(280px, 22vw, 320px);
 }
 
+/* Power/creator mode: fixed slim rail per PRD spec (252px) */
+:root[data-user-view="creator"] .downloads-rail-shell {
+  width: 252px;
+  min-width: 252px;
+}
+
 .downloads-workbench .panel-card,
 .downloads-workbench .workbench-panel {
   box-shadow: none;
@@ -5776,6 +5782,21 @@ h2,
   padding: 0.34rem 0.52rem;
   min-height: auto;
   font-size: 0.74rem;
+}
+
+/* Power/creator mode: compact lane buttons — show more at once, less padding */
+:root[data-user-view="creator"] .downloads-lane-button {
+  padding: 0.38rem 0.5rem;
+  gap: 0.16rem;
+}
+
+:root[data-user-view="creator"] .downloads-lane-button-title {
+  font-size: 0.78rem;
+}
+
+:root[data-user-view="creator"] .downloads-lane-button-count {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.26rem;
 }
 
 .downloads-rail-section-muted {
