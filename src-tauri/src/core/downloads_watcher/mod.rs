@@ -367,7 +367,7 @@ fn list_download_items_internal(
                   AND f.source_location = 'downloads'
             ) AS review_file_count,
             (
-                SELECT GROUP_CONCAT(DISTINCT c.canonical_name, ', ')
+                SELECT GROUP_CONCAT(DISTINCT c.canonical_name)
                 FROM files f2
                 LEFT JOIN creators c ON c.id = f2.creator_id
                 WHERE f2.download_item_id = di.id
@@ -3335,7 +3335,7 @@ fn load_overview(
                 END
              ),
              SUM(CASE WHEN status IN ('applied', 'ignored', 'rejected') THEN 1 ELSE 0 END),
-            (SELECT COUNT(*) FROM download_items di_rej WHERE di_rej.status = 'rejected') AS rejected_items
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)
          FROM download_items
          WHERE status <> 'ignored' AND status <> 'rejected'",
         [],
@@ -3457,7 +3457,7 @@ fn load_item_by_id_cached(
                       AND f.source_location = 'downloads'
                 ) AS review_file_count,
                 (
-                    SELECT GROUP_CONCAT(DISTINCT c.canonical_name, ', ')
+                    SELECT GROUP_CONCAT(DISTINCT c.canonical_name)
                     FROM files f2
                     LEFT JOIN creators c ON c.id = f2.creator_id
                     WHERE f2.download_item_id = di.id
