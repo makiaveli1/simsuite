@@ -150,9 +150,9 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
         &mut connection,
         "watch_auto_last_run_at",
         Some(&checked_at),
-        "system",
+        "user",
     )?;
-    database::save_app_setting(&mut connection, "watch_auto_last_error", None, "system")?;
+    database::save_app_setting(&mut connection, "watch_auto_last_error", None, "user")?;
 
     let summary = WatchRefreshSummary {
         checked_subjects,
@@ -224,7 +224,7 @@ fn save_watch_refresh_error(state: &AppState, error: Option<String>) -> AppResul
         &mut connection,
         "watch_auto_last_error",
         error.as_deref(),
-        "system",
+        "user",
     )
 }
 
