@@ -1043,27 +1043,3 @@ export interface ApplyReviewPlanActionResult {
   snapshotName: string | null;
   message: string;
 }
-
-/// MCCC auto-update info returned by checkMcccUpdate().
-export interface McccUpdateInfo {
-  isInstalled: boolean;
-  installedVersion: string | null;
-  installPath: string | null;
-  latestVersion: string | null;
-  downloadUrl: string | null;
-  checkedAt: string | null;
-  updateAvailable: boolean;
-  confidence: number;
-  status: string;
-  error: string | null;
-}
-
-/// Result of applying an MCCC update.
-export interface ApplyMcccUpdateResult {
-  newVersion: string;
-  installedCount: number;
-  replacedCount: number;
-  preservedCount: number;
-  snapshotId: number;
-  snapshotName: string;
-}

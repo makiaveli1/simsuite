@@ -500,28 +500,10 @@ fn list_download_items_internal(
     log_slow_downloads_step("downloads_queue::enrich", enrich_started_at, || {
         format!("for {} visible item(s)", items.len())
     });
-    overview.total_items = items.len() as i64;
-    overview.ready_now_items = items
-        .iter()
-        .filter(|item| item.queue_lane == DownloadQueueLane::ReadyNow)
-        .count() as i64;
-    overview.special_setup_items = items
-        .iter()
-        .filter(|item| item.queue_lane == DownloadQueueLane::SpecialSetup)
-        .count() as i64;
-    overview.waiting_on_you_items = items
-        .iter()
-        .filter(|item| item.queue_lane == DownloadQueueLane::WaitingOnYou)
-        .count() as i64;
-    overview.blocked_items = items
-        .iter()
-        .filter(|item| item.queue_lane == DownloadQueueLane::Blocked)
-        .count() as i64;
-    overview.done_items = items
-        .iter()
-        .filter(|item| item.queue_lane == DownloadQueueLane::Done)
-        .count() as i64;
-    overview.rejected_items = 0; // Rejected items are filtered out of the queue
+    // Keep the SQL-accurate overview counts from load_overview.
+    // The per-item lane recalculation was overwriting correct counts
+    // when the items query returned 0 rows (e.g. search/filter parameter issues).
+    // lane information is still correctly reflected per-item via queue_lane.
     log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
@@ -3353,7 +3335,7 @@ fn load_overview(
                 END
              ),
              SUM(CASE WHEN status IN ('applied', 'ignored', 'rejected') THEN 1 ELSE 0 END),
-            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)
+            (SELECT COUNT(*) FROM download_items di_rej WHERE di_rej.status = 'rejected') AS rejected_items
          FROM download_items
          WHERE status <> 'ignored' AND status <> 'rejected'",
         [],

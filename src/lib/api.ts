@@ -8,7 +8,6 @@ import type {
   ApplyCreatorAuditResult,
   ApplyGuidedDownloadResult,
   ApplyPreviewResult,
-  ApplyMcccUpdateResult,
   BatchApplyResult,
   ApplySpecialReviewFixResult,
   CatalogSourceInfo,
@@ -41,7 +40,6 @@ import type {
   InstalledVersionSummary,
   RejectResult,
   RejectedItem,
-  McccUpdateInfo,
   OrganizationPreview,
   LibraryFacets,
   LibraryWatchBulkSaveResult,
@@ -5669,12 +5667,4 @@ export const api = {
       kind,
       subtype,
     }),
-
-  // ── MCCC Auto-Update ──────────────────────────────────────────────────────
-
-  /** Check for MCCC updates. Returns current installed version and latest available. */
-  checkMcccUpdate: () => invoke<McccUpdateInfo>("check_mccc_update"),
-
-  /** Download and apply the latest MCCC update. */
-  applyMcccUpdate: () => invoke<ApplyMcccUpdateResult>("apply_mccc_update"),
 };
