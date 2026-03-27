@@ -17,6 +17,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Workflow,
+  X,
 } from "lucide-react";
 import { CasualGuidedTours } from "../components/CasualGuidedTours";
 import { KeyboardShortcutsDialog } from "../components/KeyboardShortcutsDialog";
@@ -2016,10 +2017,10 @@ export function DownloadsScreen({
                   <button
                     type="button"
                     className="downloads-casual-drawer-close"
-                    onClick={() => setSelectedItemId(null) }
+                    onClick={() => setSelectedItemId(null)}
                     aria-label="Close and return to queue"
                   >
-                    ×
+                    <X size={16} strokeWidth={2} />
                   </button>
                 </div>
 
@@ -2173,7 +2174,7 @@ export function DownloadsScreen({
               }}
               aria-label="Dismiss shortcut hint"
             >
-              ×
+              <X size={12} strokeWidth={2.5} />
             </button>
           </m.div>
         )}

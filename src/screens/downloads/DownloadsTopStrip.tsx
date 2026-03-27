@@ -1,4 +1,4 @@
-import { RefreshCw, ShieldAlert } from "lucide-react";
+import { RefreshCw, ShieldAlert, X } from "lucide-react";
 import { m } from "motion/react";
 import { isNudgeDismissed, setNudgeDismissed, type DownloadQueueLane } from "../../lib/guidedFlowStorage";
 import type { DownloadProgress, UserView } from "../../lib/types";
@@ -108,7 +108,8 @@ export function DownloadsTopStrip({
                   onClick={onClearFilter}
                   title="Clear filter and show all"
                 >
-                  × Clear filter
+                  <X size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                  Clear filter
                 </button>
               )}
             </>

@@ -5994,19 +5994,31 @@ h2,
 }
 
 .downloads-casual-drawer-close {
-  background: none;
-  border: none;
-  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-soft);
   cursor: pointer;
-  font-size: 1.5rem;
+  font-size: 1rem;
   line-height: 1;
-  padding: 0 0 0 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  transition: color 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .downloads-casual-drawer-close:hover {
+  background: var(--surface-3);
   color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.downloads-casual-drawer-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .downloads-casual-drawer-content {
