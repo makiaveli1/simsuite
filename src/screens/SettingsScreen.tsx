@@ -709,13 +709,12 @@ function SettingsExperienceSection({
         })}
       </div>
 
-      <div className="settings-summary-card">
+      <div className="settings-summary-card settings-summary-card--compact">
         <span className="section-label">Current fit</span>
-        <strong>{activeView.label} mode</strong>
-        <p className="workspace-toolbar-copy">{activeView.hint}</p>
-        <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
-          {activeView.workspaceSummary}
-        </p>
+        <span className="settings-mode-chip">
+          {activeView.label}
+          <span className="ghost-chip">{activeView.hint}</span>
+        </span>
       </div>
     </>
   );
@@ -836,10 +835,12 @@ function SettingsDensitySection({
         ))}
       </div>
 
-      <div className="settings-summary-card">
+      <div className="settings-summary-card settings-summary-card--compact">
         <span className="section-label">Current spacing</span>
-        <strong>{activeDensity.label}</strong>
-        <p className="workspace-toolbar-copy">{activeDensity.hint}</p>
+        <span className="settings-mode-chip">
+          {activeDensity.label}
+          <span className="ghost-chip">{activeDensity.hint}</span>
+        </span>
       </div>
     </>
   );

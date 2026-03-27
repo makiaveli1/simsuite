@@ -3166,6 +3166,21 @@ h2,
   padding: 0.65rem 0.72rem;
 }
 
+.settings-summary-card--compact {
+  padding: 0.5rem 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-4));
+}
+
+.settings-mode-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .settings-summary-card strong,
 .settings-theme-copy strong {
   font-size: 0.92rem;
