@@ -1952,7 +1952,9 @@ export function DownloadsScreen({
               In creator mode, the inspector stays visible for audit depth. */}
           {userView === "power" && (
             <WorkbenchInspector
-              ariaLabel="Downloads inbox details"
+              ariaLabel="Inspector"
+              collapsible
+              defaultCollapsed
               width={downloadsDetailWidth}
               onWidthChange={setDownloadsDetailWidth}
               minWidth={320}
