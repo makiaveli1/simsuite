@@ -1878,7 +1878,7 @@ h2,
 .workspace-toolbar--casual {
   justify-content: flex-end;
   gap: 8px;
-  padding: 0 16px;
+  padding: 0.1rem 0.35rem 0.2rem;
   min-height: 40px;
   border: none;
   background: transparent;
@@ -1985,8 +1985,17 @@ h2,
 
 .workspace-toolbar-settings-link {
   white-space: nowrap;
-  min-height: 30px;
-  padding-inline: 0.7rem;
+  min-height: 34px;
+  padding-inline: 0.76rem;
+}
+
+.workspace-toolbar--casual .workspace-toolbar-settings-link {
+  justify-self: end;
+  min-height: 36px;
+  padding-inline: 0.82rem;
+  border-color: color-mix(in srgb, var(--line-strong) 48%, var(--line));
+  background: color-mix(in srgb, var(--surface-4) 88%, black);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
 :root[data-user-view="casual"] .workspace-toolbar-meta {
@@ -5605,7 +5614,7 @@ h2,
 .downloads-rail,
 .downloads-inspector {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.85rem;
   min-height: 100%;
   align-content: start;
 }
@@ -5641,9 +5650,11 @@ h2,
 }
 
 .downloads-rail-card {
-  padding: 0.58rem 0.62rem;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.015);
+  padding: 0.72rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 50%, var(--line));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.015);
 }
 
 .downloads-rail-note {
@@ -5690,10 +5701,10 @@ h2,
 .downloads-search-input {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.5rem;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 0.55rem;
+  padding: 0.6rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 55%, var(--line));
+  background: rgba(255, 255, 255, 0.024);
 }
 
 .downloads-search-input svg,
@@ -5728,29 +5739,37 @@ h2,
 
 .downloads-lane-button {
   display: grid;
-  gap: 0.24rem;
-  padding: 0.54rem 0.58rem;
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.018);
+  gap: 0.28rem;
+  padding: 0.68rem 0.74rem;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.018);
   text-align: left;
   cursor: pointer;
   transition:
+    transform 160ms var(--ease-swift),
     background 160ms var(--ease-swift),
     border-color 180ms var(--ease-swift),
     box-shadow 200ms var(--ease-standard);
 }
 
 .downloads-lane-button:hover {
+  transform: translateX(2px);
   border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.028);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 48%),
+    rgba(255, 255, 255, 0.034);
 }
 
 .downloads-lane-button.is-active {
   border-color: var(--accent-line);
   background:
-    linear-gradient(90deg, var(--accent-soft), transparent 42%),
-    rgba(255, 255, 255, 0.03);
-  box-shadow: inset 2px 0 0 var(--accent);
+    linear-gradient(90deg, var(--accent-soft), transparent 48%),
+    rgba(255, 255, 255, 0.038);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 0 0 1px color-mix(in srgb, var(--accent-line) 36%, transparent);
 }
 
 .downloads-lane-button-main {
@@ -5830,9 +5849,11 @@ h2,
 
 .downloads-stage-header {
   align-items: center;
-  padding: 0.2rem 0.4rem;
-  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 0.58rem 0.52rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 50%, var(--line));
   min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 92%);
 }
 
 .downloads-stage-metrics {
@@ -5962,14 +5983,17 @@ h2,
   right: 0;
   bottom: 0;
   z-index: 200;
-  width: min(480px, 92vw);
-  background: var(--surface);
-  border-left: 1px solid var(--line-strong);
+  width: min(520px, 94vw);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    color-mix(in srgb, var(--surface) 94%, black);
+  border-left: 1px solid color-mix(in srgb, var(--accent-line) 34%, var(--line-strong));
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.3);
+  box-shadow: -16px 0 56px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
 }
 
 .downloads-casual-drawer-header {
@@ -5977,12 +6001,15 @@ h2,
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.2rem 1.4rem 1rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  padding: 1.12rem 1.28rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 55%, var(--line));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 100%),
+    color-mix(in srgb, var(--surface) 92%, black);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
+  backdrop-filter: blur(16px);
 }
 
 .downloads-casual-drawer-title-group {
@@ -5990,13 +6017,14 @@ h2,
 }
 
 .downloads-casual-drawer-title {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.04rem;
+  font-weight: 650;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
+  max-width: 34ch;
 }
 
 .downloads-casual-drawer-close {
@@ -6030,7 +6058,7 @@ h2,
 .downloads-casual-drawer-content {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem 1.4rem 2rem;
+  padding: 1rem 1.28rem 2rem;
 }
 
 /* Backdrop behind the casual drawer — subtle, click-to-dismiss */
@@ -6038,7 +6066,8 @@ h2,
   position: fixed;
   inset: 0;
   z-index: 199;
-  background: rgba(0, 0, 0, 0.38);
+  background: linear-gradient(90deg, rgba(3, 6, 10, 0.56), rgba(3, 6, 10, 0.44));
+  backdrop-filter: blur(2px);
   cursor: pointer;
 }
 
@@ -6177,16 +6206,19 @@ h2,
 .downloads-file-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.55rem;
+  gap: 0.6rem;
   align-items: center;
-  padding: 0.55rem 0.6rem;
-  border: 1px solid transparent;
-  border-left-width: 2px;
-  background: rgba(255, 255, 255, 0.018);
+  padding: 0.68rem 0.76rem;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-left-width: 3px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.018);
   text-align: left;
   transform-origin: left center;
   will-change: transform;
   transition:
+    transform 180ms var(--ease-standard),
     background 180ms var(--ease-swift),
     border-color 180ms var(--ease-swift),
     box-shadow 220ms var(--ease-standard);
@@ -6220,12 +6252,25 @@ h2,
     rgba(255, 255, 255, 0.018);
 }
 
+.downloads-item-row:hover,
+.downloads-file-row:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--line-strong) 72%, var(--line));
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.055), transparent 42%),
+    rgba(255, 255, 255, 0.034);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
 .downloads-item-row.is-selected {
   border-color: var(--accent-line);
   background:
-    linear-gradient(90deg, var(--accent-soft), transparent 32%),
-    rgba(255, 255, 255, 0.03);
-  box-shadow: inset 2px 0 0 var(--accent);
+    linear-gradient(90deg, var(--accent-soft), transparent 44%),
+    rgba(255, 255, 255, 0.042);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 0 0 1px color-mix(in srgb, var(--accent-line) 40%, transparent),
+    0 12px 28px rgba(0, 0, 0, 0.18);
 }
 
 .downloads-item-main,
@@ -6243,15 +6288,19 @@ h2,
   word-break: break-word;
 }
 
+.downloads-item-main strong {
+  line-height: 1.3;
+}
+
 .downloads-item-creator {
-  font-size: 0.72rem;
-  color: var(--text-soft);
-  font-weight: normal;
+  font-size: 0.75rem;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .downloads-item-samples-muted {
-  color: var(--text-soft);
-  font-size: 0.69rem;
+  color: color-mix(in srgb, var(--text-soft) 88%, var(--text));
+  font-size: 0.71rem;
 }
 
 .version-compare-chip {
@@ -6319,15 +6368,21 @@ h2,
 
 .downloads-decision-header {
   display: grid;
-  gap: 0.55rem;
-  padding-bottom: 0.62rem;
-  border-bottom: 1px solid var(--line);
+  gap: 0.7rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 55%, var(--line));
 }
 
 .downloads-decision-copy {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.3rem;
   min-width: 0;
+}
+
+.downloads-decision-copy h2 {
+  font-size: 1.02rem;
+  line-height: 1.24;
+  overflow-wrap: anywhere;
 }
 
 .downloads-decision-badges {
@@ -6339,11 +6394,13 @@ h2,
 
 .downloads-signal-card {
   display: grid;
-  gap: 0.14rem;
-  padding: 0.28rem 0 0.28rem 0.64rem;
-  border: 0;
-  border-left: 2px solid var(--line);
-  background: transparent;
+  gap: 0.18rem;
+  padding: 0.56rem 0.62rem 0.56rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-left: 3px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.012)),
+    transparent;
 }
 
 .downloads-signal-card strong {
@@ -6570,13 +6627,14 @@ h2,
 
 .downloads-next-step-card {
   display: grid;
-  gap: 0.52rem;
+  gap: 0.64rem;
   margin-bottom: 0.55rem;
-  padding: 0.78rem 0.82rem;
+  padding: 0.96rem 1rem;
   border: 1px solid var(--accent-line);
   background:
-    linear-gradient(130deg, var(--accent-soft), transparent 52%),
+    linear-gradient(130deg, var(--accent-soft), transparent 58%),
     rgba(255, 255, 255, 0.02);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
 }
 
 .downloads-decision-card {
@@ -6590,8 +6648,9 @@ h2,
 }
 
 .downloads-next-step-title {
-  font-size: 0.98rem;
-  line-height: 1.15;
+  font-size: 1rem;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
 }
 
 .downloads-next-step-description {
@@ -6640,8 +6699,22 @@ h2,
 .downloads-next-step-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.48rem;
   align-items: center;
+}
+
+.downloads-next-step-actions .primary-action,
+.downloads-next-step-actions .secondary-action,
+.downloads-next-step-actions .snooze-action {
+  min-height: 38px;
+}
+
+.downloads-next-step-actions .primary-action {
+  justify-content: flex-start;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
 }
 
 /* Snooze picker */
@@ -6771,11 +6844,11 @@ h2,
 
 .downloads-decision-proof {
   display: grid;
-  gap: 0.6rem;
-  padding: 0.72rem 0.78rem;
-  border: 1px solid rgba(205, 223, 214, 0.08);
+  gap: 0.72rem;
+  padding: 0.82rem 0.9rem;
+  border: 1px solid rgba(205, 223, 214, 0.1);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.018), transparent 62%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.026), transparent 62%),
     var(--surface-3);
 }
 
@@ -6797,12 +6870,45 @@ h2,
 .downloads-inspector-note {
   display: grid;
   gap: 0.12rem;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.018);
+  padding: 0.58rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 42%, var(--line));
+  background: rgba(255, 255, 255, 0.022);
   color: var(--text-soft);
   font-size: 0.76rem;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.downloads-casual-lane-explainer {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.82rem 0.9rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent-line) 55%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%),
+    rgba(255, 255, 255, 0.018);
+}
+
+.downloads-casual-lane-explainer-title,
+.downloads-casual-lane-explainer-body {
+  margin: 0;
+}
+
+.downloads-casual-lane-explainer-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.downloads-casual-lane-explainer-body {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.downloads-casual-lane-explainer-body strong {
+  color: var(--text);
 }
 
 .downloads-batch-stage {
@@ -9950,6 +10056,56 @@ input:focus-visible,
 select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.downloads-queue-list,
+.downloads-preview-list,
+.downloads-casual-drawer,
+.downloads-casual-drawer-content,
+.workbench-inspector,
+.inspector-content {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 38%, var(--line-strong)) transparent;
+}
+
+.downloads-queue-list::-webkit-scrollbar,
+.downloads-preview-list::-webkit-scrollbar,
+.downloads-casual-drawer::-webkit-scrollbar,
+.downloads-casual-drawer-content::-webkit-scrollbar,
+.workbench-inspector::-webkit-scrollbar,
+.inspector-content::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.downloads-queue-list::-webkit-scrollbar-track,
+.downloads-preview-list::-webkit-scrollbar-track,
+.downloads-casual-drawer::-webkit-scrollbar-track,
+.downloads-casual-drawer-content::-webkit-scrollbar-track,
+.workbench-inspector::-webkit-scrollbar-track,
+.inspector-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.downloads-queue-list::-webkit-scrollbar-thumb,
+.downloads-preview-list::-webkit-scrollbar-thumb,
+.downloads-casual-drawer::-webkit-scrollbar-thumb,
+.downloads-casual-drawer-content::-webkit-scrollbar-thumb,
+.workbench-inspector::-webkit-scrollbar-thumb,
+.inspector-content::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface-3));
+  background-clip: padding-box;
+}
+
+.downloads-queue-list::-webkit-scrollbar-thumb:hover,
+.downloads-preview-list::-webkit-scrollbar-thumb:hover,
+.downloads-casual-drawer::-webkit-scrollbar-thumb:hover,
+.downloads-casual-drawer-content::-webkit-scrollbar-thumb:hover,
+.workbench-inspector::-webkit-scrollbar-thumb:hover,
+.inspector-content::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 42%, var(--surface-2));
+  background-clip: padding-box;
 }
 
 /* ============================================================

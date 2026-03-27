@@ -105,34 +105,13 @@ export function DownloadsDecisionPanel({
       </m.div>
 
       {userView === "beginner" && resolvedLane && (
-        <div
-          style={{
-            background: "color-mix(in srgb, var(--accent) 8%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
-            borderRadius: "10px",
-            padding: "12px 14px",
-            marginBottom: "16px",
-          }}
-        >
-          <p
-            style={{
-              fontSize: "12px",
-              fontWeight: 600,
-              color: "var(--text)",
-              margin: "0 0 4px",
-            }}
-          >
+        <div className="downloads-casual-lane-explainer">
+          <p className="downloads-casual-lane-explainer-title">
             {laneLabel}: {LANE_MEANINGS[resolvedLane]}
           </p>
-          <p
-            style={{
-              fontSize: "12px",
-              color: "var(--text-soft)",
-              margin: 0,
-            }}
-          >
+          <p className="downloads-casual-lane-explainer-body">
             Action available:{" "}
-            <strong style={{ color: "var(--text)" }}>
+            <strong>
               {primaryActionLabel}
             </strong>{" "}
             — tap to move this to your game
