@@ -6201,7 +6201,7 @@ h2,
 .downloads-queue-panel,
 .downloads-preview-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -6620,6 +6620,34 @@ h2,
 .downloads-batch-canvas-lane-blocked         { border-left: 4px solid var(--tone-danger) !important; }
 .downloads-batch-canvas-lane-done,
 .downloads-batch-canvas-lane-rejected        { border-left: 4px solid var(--text-dim) !important; }
+
+/* Seasoned: proof sheet shortcut — shown below the preview content */
+.proof-expand-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.75rem;
+  border: none;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-top: auto;
+}
+
+.proof-expand-trigger:hover {
+  background: color-mix(in srgb, var(--surface-3) 80%, transparent);
+  color: var(--text);
+}
+
+.proof-expand-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 .downloads-lane-header {
   display: flex;

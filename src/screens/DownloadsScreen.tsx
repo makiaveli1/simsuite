@@ -1930,6 +1930,16 @@ export function DownloadsScreen({
                       />
                     )}
                     </m.div>
+                    {/* Seasoned: show a proof shortcut below the preview so it's not hidden */}
+                    {selectedItem && (
+                      <button
+                        type="button"
+                        className="secondary-action proof-expand-trigger"
+                        onClick={() => setProofSheetOpen(true)}
+                      >
+                        View full proof sheet →
+                      </button>
+                    )}
                   </AnimatePresence>
                 </DownloadsBatchCanvas>
               )}
