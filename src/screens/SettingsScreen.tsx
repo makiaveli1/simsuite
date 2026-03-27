@@ -573,14 +573,20 @@ export function SettingsScreen({
           </div>
 
           <m.section className="panel-card settings-side-panel" {...stagedListItem(1)}>
-            <div className="panel-heading">
+            <div className="panel-heading settings-side-panel-heading">
               <div>
                 <span className="section-label">Saved here</span>
                 <h2>Applies right away</h2>
+                <p className="workspace-toolbar-copy settings-side-panel-copy">
+                  These are immediate comfort tweaks for this PC only.
+                </p>
               </div>
+              <span className="ghost-chip settings-side-panel-focus-chip">
+                {activeSectionMeta.label}
+              </span>
             </div>
 
-            <div className="summary-matrix">
+            <div className="summary-matrix settings-side-panel-matrix">
               <div className="summary-stat">
                 <span>Mode</span>
                 <strong>{activeView.label}</strong>
