@@ -1803,12 +1803,12 @@ export function DownloadsScreen({
                       <strong>
                         {userView === "power"
                           ? "Queue first, receipts second"
-                          : "Scan here, act on the right"}
+                          : "Scan here, act in the middle"}
                       </strong>
                       <p>
                         {userView === "power"
                           ? "Rows stay short on purpose. Keep the action in the inspector and open proof only when you want the full receipt trail."
-                          : "Pick the batch here, use the middle for context, and keep the deeper proof tucked away until you actually need it."}
+                          : "Select an item and decide in the preview. Open proof only when you want the full receipt trail."}
                       </p>
                     </div>
                   ) : (
@@ -1937,8 +1937,10 @@ export function DownloadsScreen({
           </WorkbenchStage>
 
           {/* Only show the inspector in standard/power mode. */}
-          {/* In casual mode, the decision drawer (above) handles item decisions. */}
-          {userView !== "beginner" && (
+          {/* In casual mode, the decision drawer (above) handles item decisions.
+              In seasoned mode, the preview panel (right) is the decision surface.
+              In creator mode, the inspector stays visible for audit depth. */}
+          {userView === "power" && (
             <WorkbenchInspector
               ariaLabel="Downloads inbox details"
               width={downloadsDetailWidth}
