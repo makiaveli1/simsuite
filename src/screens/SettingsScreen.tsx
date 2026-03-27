@@ -10,6 +10,7 @@ import {
   Workflow,
   HelpCircle,
 } from "lucide-react";
+import { Tooltip } from "../components/Tooltip";
 import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import {
@@ -679,21 +680,21 @@ function SettingsExperienceSection({
               type="button"
               className={`settings-view-card ${experienceMode === mode ? "is-active" : ""}`}
               onClick={() => handleModeChange(mode)}
-              title={card.hint}
               whileHover={hoverLift}
               whileTap={tapPress}
             >
               <div className="settings-view-card-topline">
                 <strong>{profile.label}</strong>
                 <span className="ghost-chip">{profile.badge}</span>
-      <button
-        className="settings-mode-info-btn"
-        title={card.hint}
-        aria-label="More info"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <HelpCircle size={14} strokeWidth={2} />
-      </button>
+      <Tooltip content={card.hint}>
+        <button
+          className="settings-mode-info-btn"
+          aria-label="More info"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <HelpCircle size={14} strokeWidth={2} />
+        </button>
+      </Tooltip>
               </div>
               <span className="settings-view-headline">{card.headline}</span>
               <div className="settings-view-traits">
@@ -746,15 +747,14 @@ function SettingsAppearanceSection({
 
       <div className="theme-strip settings-theme-strip">
         {UI_THEMES.map((item) => (
-          <m.button
-            key={item.id}
-            type="button"
-            className={`theme-chip ${theme === item.id ? "is-active" : ""}`}
-            onClick={() => onThemeChange(item.id)}
-            title={`${item.label}: ${item.hint}`}
-            whileHover={hoverLift}
-            whileTap={tapPress}
-          >
+          <Tooltip key={item.id} content={`${item.label}: ${item.hint}`} side="top">
+            <m.button
+              type="button"
+              className={`theme-chip ${theme === item.id ? "is-active" : ""}`}
+              onClick={() => onThemeChange(item.id)}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
             <div className="theme-chip-swatches" aria-hidden="true">
               {item.swatch.map((value) => (
                 <span
@@ -769,6 +769,7 @@ function SettingsAppearanceSection({
               <span>{item.mood}</span>
             </div>
           </m.button>
+          </Tooltip>
         ))}
       </div>
 
@@ -821,17 +822,17 @@ function SettingsDensitySection({
 
       <div className="segmented-control" role="tablist" aria-label="Density">
         {DENSITIES.map((item) => (
-          <m.button
-            key={item.id}
-            type="button"
-            className={`segment-button ${density === item.id ? "is-active" : ""}`}
-            onClick={() => onDensityChange(item.id)}
-            title={item.hint}
-            whileHover={hoverLift}
-            whileTap={tapPress}
-          >
-            {item.label}
-          </m.button>
+          <Tooltip key={item.id} content={item.hint} side="top">
+            <m.button
+              type="button"
+              className={`segment-button ${density === item.id ? "is-active" : ""}`}
+              onClick={() => onDensityChange(item.id)}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+            >
+              {item.label}
+            </m.button>
+          </Tooltip>
         ))}
       </div>
 

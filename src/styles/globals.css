@@ -10981,3 +10981,26 @@ select:focus-visible {
 .mccc-update-actions .secondary-action {
   font-size: 0.85rem;
 }
+
+/* ── Tooltip ─────────────────────────────────────────────────── */
+.tooltip-root {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tooltip-box {
+  background: var(--surface-3);
+  color: var(--text-1);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  font-family: var(--font-sans);
+  max-width: 240px;
+  white-space: normal;
+  text-align: center;
+}
