@@ -2012,7 +2012,7 @@ export function DownloadsScreen({
                   <button
                     type="button"
                     className="downloads-casual-drawer-close"
-                    onClick={() => setSelectedItemId(null)}
+                    onClick={() => setSelectedItemId(null) }
                     aria-label="Close and return to queue"
                   >
                     ×
@@ -2067,7 +2067,7 @@ export function DownloadsScreen({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                onClick={() => setSelectedItemId(null)}
+                onClick={() => setSelectedItemId(null) }
                 aria-hidden="true"
               />
             )}
