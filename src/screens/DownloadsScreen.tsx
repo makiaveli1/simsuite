@@ -1807,7 +1807,7 @@ export function DownloadsScreen({
                       </strong>
                       <p>
                         {userView === "power"
-                          ? "Rows stay short on purpose. Keep the action in the inspector and open proof only when you want the full receipt trail."
+                          ? "Rows stay short on purpose. Keep the action in the preview and expand the inspector only when you want the full receipt trail."
                           : "Select an item and decide in the preview. Open proof only when you want the full receipt trail."}
                       </p>
                     </div>
@@ -1930,15 +1930,38 @@ export function DownloadsScreen({
                       />
                     )}
                     </m.div>
-                    {/* Seasoned: show a proof shortcut below the preview so it's not hidden */}
+                    {/* Seasoned: action footer — proof shortcut + Creator approve/reject */}
                     {selectedItem && (
-                      <button
-                        type="button"
-                        className="secondary-action proof-expand-trigger"
-                        onClick={() => setProofSheetOpen(true)}
-                      >
-                        View full proof sheet →
-                      </button>
+                      <div className="preview-action-footer">
+                        {userView === "power" ? (
+                          <>
+                            <button
+                              type="button"
+                              className="primary-action preview-action-btn"
+                              disabled={primaryActionDisabled}
+                              onClick={showPrimaryAction ? handlePrimaryAction : undefined}
+                            >
+                              {applyLabel ?? "Apply"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-action preview-action-btn"
+                              disabled={isRejecting}
+                              onClick={() => setPendingDialog({ kind: "reject" })}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="secondary-action proof-expand-trigger"
+                            onClick={() => setProofSheetOpen(true)}
+                          >
+                            View full proof sheet →
+                          </button>
+                        )}
+                      </div>
                     )}
                   </AnimatePresence>
                 </DownloadsBatchCanvas>
