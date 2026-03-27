@@ -226,10 +226,12 @@ export function DownloadsQueuePanel({
                         aria-label={`Select ${row.title}`}
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <m.button
-                        type="button"
+                      <m.div
+                        role="button"
+                        tabIndex={0}
                         className="downloads-item-row"
                         onClick={() => onSelect(row.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(row.id); }}
                         title={row.sourcePath}
                         layout
                         whileHover={rowHover}
@@ -281,7 +283,7 @@ export function DownloadsQueuePanel({
                             </span>
                           ))}
                         </div>
-                      </m.button>
+                      </m.div>
                     </div>
                   ))}
                 </m.div>
