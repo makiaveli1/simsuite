@@ -747,6 +747,7 @@ h2,
   display: grid;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   will-change: transform, opacity;
   transform-origin: top center;
@@ -2988,7 +2989,8 @@ h2,
 }
 
 .settings-layout-three-col {
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(200px, 240px);
+  grid-template-columns: minmax(232px, 284px) minmax(380px, 1.22fr) minmax(248px, 296px);
+  align-items: start;
 }
 
 .settings-nav-column,
@@ -3003,41 +3005,93 @@ h2,
   min-height: 0;
 }
 
+.settings-focus-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 12%),
+    var(--surface-4);
+}
+
 .settings-section-list {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.55rem;
 }
 
 .settings-section-button {
+  position: relative;
   display: grid;
-  gap: 0.34rem;
+  gap: 0.38rem;
   min-width: 0;
-  padding: 0.72rem;
+  padding: 0.8rem 0.82rem 0.82rem 0.96rem;
   border: 1px solid rgba(205, 223, 214, 0.08);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%),
     var(--surface-4);
   text-align: left;
+  transition:
+    border-color 160ms var(--ease-swift),
+    background 160ms var(--ease-swift),
+    box-shadow 180ms var(--ease-standard),
+    transform 180ms var(--ease-standard);
+}
+
+.settings-section-button::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  background: transparent;
+  transition: background 160ms var(--ease-swift), opacity 160ms var(--ease-swift);
+  opacity: 0;
+}
+
+.settings-section-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 24%),
+    color-mix(in srgb, var(--surface-4) 90%, var(--accent-soft));
 }
 
 .settings-section-button.is-active {
-  border-color: var(--accent-line);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 68%, transparent), transparent 76%),
-    var(--selection-fill);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 76%, transparent), transparent 74%),
+    color-mix(in srgb, var(--selection-fill) 84%, var(--surface-4));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.settings-section-button.is-active::before {
+  background: var(--accent);
+  opacity: 1;
 }
 
 .settings-section-button-topline {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
 .settings-section-button strong {
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+.settings-section-button .workspace-toolbar-copy {
+  line-height: 1.45;
+}
+
+.settings-section-button .ghost-chip {
+  flex-shrink: 0;
+}
+
+.settings-section-button.is-active .ghost-chip {
+  border-color: color-mix(in srgb, var(--accent) 26%, rgba(205, 223, 214, 0.09));
+  background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.024));
 }
 
 .settings-view-grid {
@@ -3149,6 +3203,44 @@ h2,
 .settings-side-panel {
   border: 1px solid var(--line);
   background: var(--surface-4);
+}
+
+.settings-side-panel {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 0.82rem;
+  align-content: start;
+  padding: 0.88rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 28%, transparent), transparent 68%),
+    var(--surface-4);
+}
+
+.settings-side-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding-bottom: 0.62rem;
+  border-bottom: 1px solid rgba(205, 223, 214, 0.08);
+}
+
+.settings-side-panel-copy {
+  margin-top: 0.28rem;
+  max-width: 28ch;
+}
+
+.settings-side-panel-focus-chip {
+  align-self: flex-start;
+  border-color: color-mix(in srgb, var(--accent) 20%, rgba(205, 223, 214, 0.09));
+  background: color-mix(in srgb, var(--accent) 9%, rgba(255, 255, 255, 0.024));
+}
+
+.settings-side-panel-matrix .summary-stat {
+  padding: 0.58rem 0.6rem;
+  background: color-mix(in srgb, var(--surface-5) 68%, transparent);
 }
 
 /* Casual: collapse to 2-column, side panel floats as chip in detail column instead */
@@ -3265,13 +3357,20 @@ h2,
 
 .settings-note-list {
   display: grid;
-  gap: 0.42rem;
+  gap: 0.52rem;
 }
 
 .settings-note {
-  padding: 0.6rem 0.68rem;
+  padding: 0.68rem 0.74rem;
   color: var(--text-soft);
-  line-height: 1.45;
+  line-height: 1.5;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 28%),
+    var(--surface-5);
+}
+
+.settings-note strong {
+  color: var(--text);
 }
 
 .settings-status-banner {
@@ -5610,6 +5709,11 @@ h2,
   width: clamp(280px, 22vw, 320px);
 }
 
+/* Casual: workbench fills the shell */
+:root[data-user-view="casual"] .downloads-workbench {
+  height: 100%;
+}
+
 /* Power/creator mode: fixed slim rail per PRD spec (252px) */
 :root[data-user-view="creator"] .downloads-rail-shell {
   width: 252px;
@@ -5972,7 +6076,15 @@ h2,
 
 /* Casual mode: queue fills the full stage. The decision drawer overlays from the right. */
 .workbench[data-user-view="casual"] .downloads-stage {
-  grid-template-rows: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workbench[data-user-view="casual"] .downloads-queue-panel {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .downloads-stage-split {
