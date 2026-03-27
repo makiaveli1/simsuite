@@ -527,6 +527,10 @@ export function DownloadsScreen({
       return;
     }
 
+    if (selectedItemId === null) {
+      return;
+    }
+
     if (!items.some((item) => item.id === selectedItemId)) {
       setSelectedItemId(items[0].id);
     }
