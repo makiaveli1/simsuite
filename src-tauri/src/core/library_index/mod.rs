@@ -6,6 +6,7 @@ use crate::{
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, HomeOverview,
         LibraryFacets, LibraryFileRow, LibraryListResponse, LibraryQuery, LibrarySettings,
+        LibrarySortField, LibrarySummary, LibraryWatchFilter, WatchStatus,
     },
     seed::{SeedPack, TaxonomySeed},
 };
@@ -145,17 +146,92 @@ pub fn get_library_facets(
     })
 }
 
+/// Returns summary counts for the Library strip, filtered to installed content only.
+pub fn get_library_summary(connection: &Connection) -> AppResult<LibrarySummary> {
+    let total = scalar(
+        connection,
+        "SELECT COUNT(*) FROM files WHERE source_location <> 'downloads'",
+    )?;
+
+    let tracked = scalar(
+        connection,
+        "SELECT COUNT(DISTINCT f.id)\
+         FROM files f\
+         JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\
+         WHERE f.source_location <> 'downloads'",
+    )?;
+
+    let not_tracked = scalar(
+        connection,
+        "SELECT COUNT(*)\
+         FROM files f\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\
+         WHERE f.source_location <> 'downloads' AND cws.subject_key IS NULL",
+    )?;
+
+    let has_updates = scalar(
+        connection,
+        "SELECT COUNT(DISTINCT f.id)\
+         FROM files f\
+         JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\
+         JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\
+         WHERE f.source_location <> 'downloads'\
+         AND cwr.status IN ('exact_update_available', 'possible_update')",
+    )?;
+
+    let needs_review = scalar(
+        connection,
+        "SELECT COUNT(*)\
+         FROM files f\
+         WHERE f.source_location <> 'downloads'\
+         AND (f.safety_notes <> '[]' OR f.parser_warnings <> '[]')",
+    )?;
+
+    let duplicates = scalar(
+        connection,
+        "SELECT COUNT(DISTINCT d.file_id_a)\
+         FROM duplicates d",
+    )?;
+
+    let disabled = scalar(
+        connection,
+        "SELECT COUNT(*) FROM files WHERE source_location = 'tray'",
+    )?;
+
+    Ok(LibrarySummary {
+        total: total as i64,
+        tracked: tracked as i64,
+        not_tracked: not_tracked as i64,
+        has_updates: has_updates as i64,
+        needs_review: needs_review as i64,
+        duplicates: duplicates as i64,
+        disabled: disabled as i64,
+    })
+}
+
 pub fn list_library_files(
     connection: &Connection,
     query: LibraryQuery,
 ) -> AppResult<LibraryListResponse> {
     let (filters, params) = build_filters(&query);
+    let order_by = build_order_by(query.sort_by);
+
+    // Common JOIN fragment for watch tables.
+    // NOTE: content_versions table not yet created — joined columns held as None for now.
+    let watch_join =
+        " LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key";
+
     let total_sql = format!(
-        "SELECT COUNT(*)
-         FROM files f
-         LEFT JOIN creators c ON f.creator_id = c.id
-         LEFT JOIN bundles b ON f.bundle_id = b.id
-         WHERE f.source_location <> 'downloads' {filters}"
+        "SELECT COUNT(*)\n\
+         FROM files f\n\
+         LEFT JOIN creators c ON f.creator_id = c.id\n\
+         LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+         WHERE f.source_location <> 'downloads'\n\
+        {filters}",
+        filters = filters
     );
 
     let total = connection.query_row(&total_sql, params_from_iter(params.iter()), |row| {
@@ -167,33 +243,54 @@ pub fn list_library_files(
     row_params.push(Value::Integer(query.offset.unwrap_or(0)));
 
     let rows_sql = format!(
-        "SELECT
-            f.id,
-            f.filename,
-            f.path,
-            f.extension,
-            f.kind,
-            f.subtype,
-            f.confidence,
-            f.source_location,
-            f.size,
-            f.modified_at,
-            c.canonical_name,
-            b.bundle_name,
-            b.bundle_type,
-            f.relative_depth,
-            f.safety_notes
-         FROM files f
-         LEFT JOIN creators c ON f.creator_id = c.id
-         LEFT JOIN bundles b ON f.bundle_id = b.id
-         WHERE f.source_location <> 'downloads' {filters}
-         ORDER BY f.filename COLLATE NOCASE
-         LIMIT ? OFFSET ?"
+        "SELECT\n\
+         f.id,\n\
+         f.filename,\n\
+         f.path,\n\
+         f.extension,\n\
+         f.kind,\n\
+         f.subtype,\n\
+         f.confidence,\n\
+         f.source_location,\n\
+         f.size,\n\
+         f.modified_at,\n\
+         c.canonical_name,\n\
+         b.bundle_name,\n\
+         b.bundle_type,\n\
+         f.relative_depth,\n\
+         f.safety_notes,\n\
+         f.parser_warnings,\n\
+         cwr.status,\n\
+         EXISTS (\n\
+           SELECT 1 FROM duplicates d\n\
+           WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
+         ) AS has_duplicate\n\
+         FROM files f\n\
+         LEFT JOIN creators c ON f.creator_id = c.id\n\
+         LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+         WHERE f.source_location <> 'downloads'\n\
+        {filters}\n\
+         {order_by}\n\
+         LIMIT ? OFFSET ?",
+        filters = filters,
+        order_by = order_by
     );
 
     let mut statement = connection.prepare(&rows_sql)?;
     let items = statement
         .query_map(params_from_iter(row_params.iter()), |row| {
+            let watch_status_str: Option<String> = row.get(16)?;
+            let watch_status = watch_status_str
+                .map(|s| match s.as_str() {
+                    "current" => WatchStatus::Current,
+                    "exact_update_available" => WatchStatus::ExactUpdateAvailable,
+                    "possible_update" => WatchStatus::PossibleUpdate,
+                    "unknown" => WatchStatus::Unknown,
+                    _ => WatchStatus::NotWatched,
+                })
+                .unwrap_or_default();
             Ok(LibraryFileRow {
                 id: row.get(0)?,
                 filename: row.get(1)?,
@@ -210,6 +307,10 @@ pub fn list_library_files(
                 bundle_type: row.get(12)?,
                 relative_depth: row.get(13)?,
                 safety_notes: parse_string_array(row.get::<_, String>(14)?),
+                parser_warnings: parse_string_array(row.get::<_, String>(15)?),
+                watch_status,
+                has_duplicate: row.get::<_, i64>(17)? != 0,
+                installed_version: None,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -293,6 +394,9 @@ pub fn get_file_detail(
                             subtype: row.get(23)?,
                         }
                     },
+                    duplicates_count: 0,
+                    duplicate_types: Vec::new(),
+                    installed_version: None,
                 })
             },
         )
@@ -310,6 +414,19 @@ pub fn get_file_detail(
                 )?;
             detail.installed_version_summary = installed_version_summary;
             detail.watch_result = watch_result;
+
+            // Load duplicate info for this file.
+            let duplicate_types: Vec<String> = connection
+                .prepare(
+                    "SELECT DISTINCT duplicate_type FROM duplicates
+                     WHERE file_id_a = ?1 OR file_id_b = ?1
+                     ORDER BY duplicate_type",
+                )?
+                .query_map(params![file_id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            detail.duplicates_count = duplicate_types.len();
+            detail.duplicate_types = duplicate_types;
+
             Ok(Some(detail))
         }
         None => Ok(None),
@@ -359,7 +476,61 @@ fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
         params.push(Value::Real(min_confidence));
     }
 
+    // Apply watch-state quick filter. Relies on cws/cwr JOIN being present.
+    match query.watch_filter.unwrap_or_default() {
+        LibraryWatchFilter::HasUpdates => {
+            sql.push_str(" AND cwr.status IN ('exact_update_available', 'possible_update')");
+        }
+        LibraryWatchFilter::NeedsAttention => {
+            // Includes both safety notes (genuine concerns) and parser warnings
+            // (uncertain metadata) — items the user should manually review.
+            sql.push_str(
+                " AND (f.safety_notes <> '[]' OR f.parser_warnings <> '[]')",
+            );
+        }
+        LibraryWatchFilter::NotTracked => {
+            sql.push_str(" AND cws.subject_key IS NULL");
+        }
+        LibraryWatchFilter::Duplicates => {
+            sql.push_str(
+                " AND EXISTS (\
+                 SELECT 1 FROM duplicates d\
+                 WHERE d.file_id_a = f.id OR d.file_id_b = f.id)",
+            );
+        }
+        LibraryWatchFilter::All => {}
+    }
+
     (sql, params)
+}
+
+fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
+    match sort_by.unwrap_or_default() {
+        LibrarySortField::Name => {
+            String::from("ORDER BY f.filename COLLATE NOCASE")
+        }
+        LibrarySortField::Creator => {
+            String::from("ORDER BY c.canonical_name COLLATE NOCASE ASC, f.filename COLLATE NOCASE ASC")
+        }
+        LibrarySortField::RecentlyModified => {
+            String::from("ORDER BY f.modified_at DESC NULLS LAST, f.filename COLLATE NOCASE ASC")
+        }
+        LibrarySortField::HasUpdatesFirst => {
+            // Sort by update priority: exact_update_available first, then possible_update,
+            // then unknown, then current, then not_watched. Tie-break by filename.
+            String::from(
+                "ORDER BY\
+                 CASE cwr.status\
+                 WHEN 'exact_update_available' THEN 1\
+                 WHEN 'possible_update' THEN 2\
+                 WHEN 'unknown' THEN 3\
+                 WHEN 'current' THEN 4\
+                 ELSE 5\
+                 END ASC,\
+                 f.filename COLLATE NOCASE ASC",
+            )
+        }
+    }
 }
 
 fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {

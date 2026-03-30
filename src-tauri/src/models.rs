@@ -288,8 +288,43 @@ pub struct LibraryQuery {
     pub creator: Option<String>,
     pub source: Option<String>,
     pub min_confidence: Option<f64>,
+    pub watch_filter: Option<LibraryWatchFilter>,
+    pub sort_by: Option<LibrarySortField>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+/// Quick-filter for watch/state-based Library filtering.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryWatchFilter {
+    /// Show all files (no filter).
+    #[default]
+    All,
+    /// Files with an update available or possible update.
+    HasUpdates,
+    /// Files with safety notes or other attention signals.
+    NeedsAttention,
+    /// Files that have no watch source set.
+    NotTracked,
+    /// Files that appear in any duplicate pair (exact, filename, or version).
+    Duplicates,
+}
+
+/// Sort field for Library file listing.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySortField {
+    /// Sort by filename alphabetically.
+    #[default]
+    Name,
+    /// Sort by creator name alphabetically.
+    Creator,
+    /// Sort by last modified date, newest first.
+    RecentlyModified,
+    /// Sort by update priority: updates first, then not tracked.
+    /// Tie-break by filename.
+    HasUpdatesFirst,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -482,6 +517,19 @@ pub struct LibraryFileRow {
     pub bundle_type: Option<String>,
     pub relative_depth: i64,
     pub safety_notes: Vec<String>,
+    /// Pre-computed watch status for list display. Derived from content_watch_results.
+    #[serde(default)]
+    pub watch_status: WatchStatus,
+    /// Parser warnings for this file (e.g. missing script, unusual structure).
+    #[serde(default)]
+    pub parser_warnings: Vec<String>,
+    /// True if this file appears in any duplicate pair (exact hash, filename, or version).
+    #[serde(default)]
+    pub has_duplicate: bool,
+    /// Installed version string for list display — populated from content_versions
+    /// resolution for the detail panel; list query leaves this None.
+    #[serde(skip)]
+    pub installed_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -489,6 +537,20 @@ pub struct LibraryFileRow {
 pub struct LibraryListResponse {
     pub total: i64,
     pub items: Vec<LibraryFileRow>,
+}
+
+/// Summary counts for the Library strip. All counts are filtered to
+/// source_location <> 'downloads' (i.e. installed content only).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySummary {
+    pub total: i64,
+    pub tracked: i64,
+    pub not_tracked: i64,
+    pub has_updates: i64,
+    pub needs_review: i64,
+    pub duplicates: i64,
+    pub disabled: i64,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -667,6 +729,15 @@ pub struct FileDetail {
     pub watch_result: Option<WatchResult>,
     pub creator_learning: CreatorLearningInfo,
     pub category_override: CategoryOverrideInfo,
+    /// Number of duplicate pairs this file appears in (exact hash, filename, or version match).
+    #[serde(default)]
+    pub duplicates_count: usize,
+    /// Types of duplicates this file is involved in.
+    #[serde(default)]
+    pub duplicate_types: Vec<String>,
+    /// Installed version string, if this file has a watch source with version data.
+    #[serde(default)]
+    pub installed_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
