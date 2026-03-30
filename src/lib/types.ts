@@ -212,9 +212,15 @@ export interface LibraryQuery {
   creator?: string;
   source?: string;
   minConfidence?: number;
+  watchFilter?: LibraryWatchFilter;
+  sortBy?: LibrarySortField;
   limit?: number;
   offset?: number;
 }
+
+export type LibraryWatchFilter = "all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates";
+
+export type LibrarySortField = "name" | "creator" | "recently_modified" | "has_updates_first";
 
 export interface LibraryFileRow {
   id: number;
@@ -232,11 +238,29 @@ export interface LibraryFileRow {
   bundleType: string | null;
   relativeDepth: number;
   safetyNotes: string[];
+  /** Watch status for this file, if tracked. */
+  watchStatus?: WatchStatus;
+  /** Parser warnings for this file (e.g. missing script, unusual structure). */
+  parserWarnings: string[];
+  /** True if this file appears in any duplicate pair (exact, filename, or version). */
+  hasDuplicate?: boolean;
+  /** Installed version string, if this file has a watch source with version data. */
+  installedVersion?: string | null;
 }
 
 export interface LibraryListResponse {
   total: number;
   items: LibraryFileRow[];
+}
+
+export interface LibrarySummary {
+  total: number;
+  tracked: number;
+  notTracked: number;
+  hasUpdates: number;
+  needsReview: number;
+  duplicates: number;
+  disabled: number;
 }
 
 export type WatchListFilter =
@@ -491,6 +515,10 @@ export interface FileDetail extends LibraryFileRow {
   watchResult: WatchResult | null;
   creatorLearning: CreatorLearningInfo;
   categoryOverride: CategoryOverrideInfo;
+  /** How many duplicate pairs this file appears in. */
+  duplicatesCount: number;
+  /** Types of duplicates: 'exact', 'filename', 'version'. */
+  duplicateTypes: string[];
 }
 
 export interface RulePreset {

@@ -26,6 +26,8 @@ import type {
   UserView,
   VersionConfidence,
   WatchListFilter,
+  LibrarySummary,
+  LibrarySortField,
 } from "../lib/types";
 import { libraryViewFlags } from "./library/libraryDisplay";
 import {
@@ -40,12 +42,16 @@ import { LibraryTopStrip } from "./library/LibraryTopStrip";
 interface LibraryScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
+  /** Navigate to Updates with optional context. */
   onNavigateWithParams?: (
     screen: Screen,
     mode?: "tracked" | "setup" | "review",
     filter?: WatchListFilter,
     fileId?: number,
+    fileIds?: number[],
   ) => void;
+  /** Navigate to Duplicates screen with the given file IDs pre-scoped. */
+  onNavigateDuplicates?: (fileIds: number[]) => void;
   userView: UserView;
 }
 
@@ -54,11 +60,14 @@ export function LibraryScreen({
   refreshVersion,
   onNavigate,
   onNavigateWithParams,
+  onNavigateDuplicates,
   userView,
 }: LibraryScreenProps) {
   const {
     libraryFiltersCollapsed,
     setLibraryFiltersCollapsed,
+    librarySortBy,
+    setLibrarySortBy,
   } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
@@ -69,6 +78,10 @@ export function LibraryScreen({
   const [creator, setCreator] = useState("");
   const [source, setSource] = useState("");
   const [minConfidence, setMinConfidence] = useState("");
+  const [watchFilter, setWatchFilter] = useState<"all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates">("all");
+  const [sortBy, setSortBy] = useState<LibrarySortField>(librarySortBy);
+  const [librarySummary, setLibrarySummary] = useState<LibrarySummary | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(0);
   const [creatorDraft, setCreatorDraft] = useState("");
   const [aliasDraft, setAliasDraft] = useState("");
@@ -87,7 +100,15 @@ export function LibraryScreen({
 
   useEffect(() => {
     void api.getLibraryFacets().then(setFacets);
+    void api.getLibrarySummary().then(setLibrarySummary).catch(() => {
+      // If getLibrarySummary fails (e.g. not yet implemented), fall through silently.
+    });
   }, [refreshVersion]);
+
+  // Clear selection when page changes to prevent phantom selections.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
 
   useEffect(() => {
     void loadRows();
@@ -99,6 +120,8 @@ export function LibraryScreen({
     creator,
     source,
     minConfidence,
+    watchFilter,
+    sortBy,
     page,
   ]);
 
@@ -134,6 +157,8 @@ export function LibraryScreen({
       creator: creator || undefined,
       source: source || undefined,
       minConfidence: minConfidence ? Number(minConfidence) : undefined,
+      watchFilter: watchFilter || undefined,
+      sortBy: sortBy || undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     });
@@ -714,12 +739,24 @@ export function LibraryScreen({
           activeFilterCount={activeFilterCount}
           filtersCollapsed={libraryFiltersCollapsed}
           moreFiltersOpen={moreFiltersOpen}
+          watchFilter={watchFilter}
+          sortBy={sortBy}
+          librarySummary={librarySummary}
           onSearchChange={(value) => {
             setSearch(value);
             setPage(0);
           }}
           onToggleFiltersRail={() => setLibraryFiltersCollapsed(false)}
           onToggleMoreFilters={() => setMoreFiltersOpen((current) => !current)}
+          onWatchFilterChange={(value) => {
+            setWatchFilter(value);
+            setPage(0);
+          }}
+          onSortByChange={(value) => {
+            setSortBy(value);
+            setLibrarySortBy(value);
+            setPage(0);
+          }}
         />
 
         <AnimatePresence>
@@ -783,6 +820,107 @@ export function LibraryScreen({
           ) : null}
         </AnimatePresence>
 
+        {selectedIds.size > 0 ? (
+          <div className="library-selection-strip">
+            <span className="library-selection-count">
+              {selectedIds.size} selected
+            </span>
+            <div className="library-selection-actions">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  const selected = rows?.items.filter((r) => selectedIds.has(r.id)) ?? [];
+                  const paths = selected.map((r) => r.path).join("\n");
+                  void navigator.clipboard.writeText(paths);
+                }}
+                title="Copy file paths to clipboard"
+              >
+                Copy path{selectedIds.size > 1 ? "s" : ""}
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  const selected = rows?.items.filter((r) => selectedIds.has(r.id)) ?? [];
+                  const names = selected.map((r) => r.filename).join("\n");
+                  void navigator.clipboard.writeText(names);
+                }}
+                title="Copy filenames to clipboard"
+              >
+                Copy names
+              </button>
+              {selectedIds.size === 1 ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    const selected = rows?.items.find((r) => selectedIds.has(r.id));
+                    if (selected) {
+                      void api.revealFileInFolder(selected.path);
+                    }
+                  }}
+                  title="Open containing folder"
+                >
+                  Open folder
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  const pageIds = (rows?.items ?? []).map((r) => r.id);
+                  setSelectedIds((current) => {
+                    const next = new Set(current);
+                    pageIds.forEach((id) => next.add(id));
+                    return next;
+                  });
+                }}
+                title="Select all items on this page"
+              >
+                Select all
+              </button>
+              {selectedIds.size > 0 && onNavigateDuplicates ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    onNavigateDuplicates(Array.from(selectedIds));
+                  }}
+                  title="View duplicate pairs for selected files"
+                >
+                  Open in Duplicates
+                </button>
+              ) : null}
+              {selectedIds.size > 0 && onNavigateWithParams ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    onNavigateWithParams(
+                      "updates",
+                      undefined,
+                      undefined,
+                      undefined,
+                      Array.from(selectedIds),
+                    );
+                  }}
+                  title="Open update status for selected files"
+                >
+                  Open in Updates
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {rows === null ? (
           <SkeletonLoader rows={8} height={44} />
         ) : (
@@ -790,9 +928,21 @@ export function LibraryScreen({
             userView={userView}
             rows={rows?.items ?? []}
             selectedId={selected?.id ?? null}
+            selectedIds={selectedIds}
             page={page}
             totalPages={totalPages}
             onSelect={(row) => void openFile(row)}
+            onToggleSelect={(id) => {
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                return next;
+              });
+            }}
             onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
             onNextPage={() => setPage((current) => current + 1)}
           />

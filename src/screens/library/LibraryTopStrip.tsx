@@ -1,6 +1,23 @@
-import { ListFilter, PanelLeftOpen, Search } from "lucide-react";
-import type { UserView } from "../../lib/types";
+import { ArrowUpDown, ListFilter, PanelLeftOpen, Search } from "lucide-react";
+import type { LibrarySortField, LibrarySummary, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
+
+type WatchFilter = "all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates";
+
+const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "has_updates", label: "Has Updates" },
+  { value: "needs_attention", label: "Needs review" },
+  { value: "not_tracked", label: "Not Tracked" },
+  { value: "duplicates", label: "Duplicates" },
+];
+
+const SORT_OPTIONS: { value: LibrarySortField; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "creator", label: "Creator" },
+  { value: "recently_modified", label: "Recently Modified" },
+  { value: "has_updates_first", label: "Has updates first" },
+];
 
 interface LibraryTopStripProps {
   userView: UserView;
@@ -10,9 +27,14 @@ interface LibraryTopStripProps {
   activeFilterCount: number;
   filtersCollapsed: boolean;
   moreFiltersOpen: boolean;
+  watchFilter: WatchFilter;
+  sortBy: LibrarySortField;
+  librarySummary: LibrarySummary | null;
   onSearchChange: (value: string) => void;
   onToggleFiltersRail: () => void;
   onToggleMoreFilters: () => void;
+  onWatchFilterChange: (value: WatchFilter) => void;
+  onSortByChange: (value: LibrarySortField) => void;
 }
 
 export function LibraryTopStrip({
@@ -23,9 +45,14 @@ export function LibraryTopStrip({
   activeFilterCount,
   filtersCollapsed,
   moreFiltersOpen,
+  watchFilter,
+  sortBy,
+  librarySummary,
   onSearchChange,
   onToggleFiltersRail,
   onToggleMoreFilters,
+  onWatchFilterChange,
+  onSortByChange,
 }: LibraryTopStripProps) {
   const flags = libraryViewFlags(userView);
 
@@ -82,7 +109,86 @@ export function LibraryTopStrip({
             Show filters
           </button>
         ) : null}
+
+        <div className="library-sort-control" aria-label="Sort library">
+          <ArrowUpDown size={13} strokeWidth={2} />
+          <select
+            value={sortBy}
+            onChange={(e) => onSortByChange(e.target.value as LibrarySortField)}
+            aria-label="Sort by"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      <div className="library-quick-chips" role="group" aria-label="Quick filters">
+        {WATCH_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={`library-quick-chip${watchFilter === opt.value ? " is-active" : ""}`}
+            onClick={() => onWatchFilterChange(opt.value)}
+            aria-pressed={watchFilter === opt.value}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {librarySummary ? (
+        <div className="library-summary-strip" aria-label="Library health summary">
+          <span className="library-summary-stat">
+            <strong>{librarySummary.total.toLocaleString()}</strong>
+            {" files"}
+          </span>
+          <span className="library-summary-sep" aria-hidden="true">·</span>
+          <span className="library-summary-stat">
+            <strong>{librarySummary.tracked.toLocaleString()}</strong>
+            {" tracked"}
+          </span>
+          {librarySummary.hasUpdates > 0 && (
+            <>
+              <span className="library-summary-sep" aria-hidden="true">·</span>
+              <span className="library-summary-stat has-updates">
+                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong>
+                {" with updates"}
+              </span>
+            </>
+          )}
+          {librarySummary.needsReview > 0 && (
+            <>
+              <span className="library-summary-sep" aria-hidden="true">·</span>
+              <span className="library-summary-stat needs-review">
+                <strong>{librarySummary.needsReview.toLocaleString()}</strong>
+                {" need review"}
+              </span>
+            </>
+          )}
+          {librarySummary.duplicates > 0 && (
+            <>
+              <span className="library-summary-sep" aria-hidden="true">·</span>
+              <span className="library-summary-stat has-duplicates">
+                <strong>{librarySummary.duplicates.toLocaleString()}</strong>
+                {" duplicates"}
+              </span>
+            </>
+          )}
+          {librarySummary.disabled > 0 && (
+            <>
+              <span className="library-summary-sep" aria-hidden="true">·</span>
+              <span className="library-summary-stat is-disabled">
+                <strong>{librarySummary.disabled.toLocaleString()}</strong>
+                {" disabled"}
+              </span>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

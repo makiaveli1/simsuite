@@ -20,6 +20,7 @@ const SAMPLE_ROWS: LibraryFileRow[] = [
     bundleType: null,
     relativeDepth: 2,
     safetyNotes: [],
+    parserWarnings: [],
   },
 ];
 
@@ -29,9 +30,11 @@ it("shows a calm row in casual mode without the full path", () => {
       userView="beginner"
       rows={SAMPLE_ROWS}
       selectedId={1}
+      selectedIds={new Set()}
       page={0}
       totalPages={1}
       onSelect={() => {}}
+      onToggleSelect={() => {}}
       onPrevPage={() => {}}
       onNextPage={() => {}}
     />,

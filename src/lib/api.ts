@@ -42,6 +42,7 @@ import type {
   RejectedItem,
   OrganizationPreview,
   LibraryFacets,
+  LibrarySummary,
   LibraryWatchBulkSaveResult,
   LibraryListResponse,
   LibraryQuery,
@@ -5460,6 +5461,8 @@ export const api = {
     invoke<DetectedLibraryPaths>("detect_default_library_paths"),
   pickFolder: (title?: string) =>
     invoke<string | null>("pick_folder", { title }),
+  revealFileInFolder: (path: string) =>
+    invoke<void>("reveal_file_in_folder", { path }),
   getHomeOverview: () => invoke<HomeOverview>("get_home_overview"),
   scanLibrary: () => invoke<ScanSummary>("scan_library"),
   startScan: () => invoke<ScanStatus>("start_scan"),
@@ -5494,6 +5497,7 @@ export const api = {
   previewDownloadItem: (itemId: number, presetName?: string) =>
     invoke<OrganizationPreview>("preview_download_item", { itemId, presetName }),
   getLibraryFacets: () => invoke<LibraryFacets>("get_library_facets"),
+  getLibrarySummary: () => invoke<LibrarySummary>("get_library_summary"),
   getDuplicateOverview: () => invoke<DuplicateOverview>("get_duplicate_overview"),
   listDuplicatePairs: (duplicateType?: string, limit?: number) =>
     invoke<DuplicatePair[]>("list_duplicate_pairs", { duplicateType, limit }),
