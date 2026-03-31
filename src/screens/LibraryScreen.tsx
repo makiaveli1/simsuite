@@ -66,8 +66,6 @@ export function LibraryScreen({
   const {
     libraryFiltersCollapsed,
     setLibraryFiltersCollapsed,
-    librarySortBy,
-    setLibrarySortBy,
   } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
@@ -79,7 +77,7 @@ export function LibraryScreen({
   const [source, setSource] = useState("");
   const [minConfidence, setMinConfidence] = useState("");
   const [watchFilter, setWatchFilter] = useState<"all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates">("all");
-  const [sortBy, setSortBy] = useState<LibrarySortField>(librarySortBy);
+  const [sortBy, setSortBy] = useState<LibrarySortField>("name");
   const [librarySummary, setLibrarySummary] = useState<LibrarySummary | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(0);
@@ -754,7 +752,6 @@ export function LibraryScreen({
           }}
           onSortByChange={(value) => {
             setSortBy(value);
-            setLibrarySortBy(value);
             setPage(0);
           }}
         />
