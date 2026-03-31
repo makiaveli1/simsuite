@@ -4,10 +4,8 @@ import { SkeletonLoader } from "../components/SkeletonLoader";
 import { ExternalLink } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
-import { WorkbenchRail } from "../components/layout/WorkbenchRail";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
-import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import { downloadsSheetTransition } from "../lib/motion";
 import {
@@ -30,10 +28,6 @@ import type {
   LibrarySortField,
 } from "../lib/types";
 import { libraryViewFlags } from "./library/libraryDisplay";
-import {
-  LibraryFilterRail,
-  type LibraryFilterValues,
-} from "./library/LibraryFilterRail";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
@@ -63,10 +57,6 @@ export function LibraryScreen({
   onNavigateDuplicates,
   userView,
 }: LibraryScreenProps) {
-  const {
-    libraryFiltersCollapsed,
-    setLibraryFiltersCollapsed,
-  } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
   const [selected, setSelected] = useState<FileDetail | null>(null);
@@ -91,7 +81,6 @@ export function LibraryScreen({
   const [categorySubtypeDraft, setCategorySubtypeDraft] = useState("");
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
-  const [libraryRailWidth, setLibraryRailWidth] = useState(292);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const deferredSearch = useDeferredValue(search);
@@ -671,27 +660,18 @@ export function LibraryScreen({
 
   return (
     <>
-    <Workbench threePanel fullHeight>
-      {/* Left rail for filters */}
-      <WorkbenchRail 
-        className="library-rail-shell"
-        resizable 
-        width={libraryFiltersCollapsed ? 0 : libraryRailWidth}
-        onWidthChange={(width) => {
-          if (width === 0) {
-            setLibraryFiltersCollapsed(true);
-          } else {
-            setLibraryFiltersCollapsed(false);
-            setLibraryRailWidth(width);
-          }
-        }}
-        minWidth={248}
-        maxWidth={360}
-        noBorder
-      >
-        {/* Filter panel content */}
-        <LibraryFilterRail
+    <Workbench fullHeight>
+      <WorkbenchStage className="library-stage-shell">
+        <LibraryTopStrip
           userView={userView}
+          search={search}
+          shownCount={rows?.items.length ?? 0}
+          totalCount={rows?.total ?? 0}
+          activeFilterCount={activeFilterCount}
+          moreFiltersOpen={moreFiltersOpen}
+          watchFilter={watchFilter}
+          sortBy={sortBy}
+          librarySummary={librarySummary}
           facets={facets}
           filters={{
             kind,
@@ -700,51 +680,19 @@ export function LibraryScreen({
             subtype,
             minConfidence,
           }}
-          activeFilterCount={activeFilterCount}
-          resultsCount={rows?.items.length ?? 0}
-          isCollapsed={libraryFiltersCollapsed}
-          onToggleCollapsed={() => setLibraryFiltersCollapsed(true)}
-          onFilterChange={(next: Partial<LibraryFilterValues>) => {
-            if (typeof next.kind === "string") {
-              setKind(next.kind);
-            }
-            if (typeof next.creator === "string") {
-              setCreator(next.creator);
-            }
-            if (typeof next.source === "string") {
-              setSource(next.source);
-            }
-            if (typeof next.subtype === "string") {
-              setSubtype(next.subtype);
-            }
-            if (typeof next.minConfidence === "string") {
-              setMinConfidence(next.minConfidence);
-            }
-            setPage(0);
-          }}
-          onReset={resetFilters}
-          onOpenMoreFilters={() => setMoreFiltersOpen((current) => !current)}
-        />
-      </WorkbenchRail>
-
-      {/* Central work area - table */}
-      <WorkbenchStage className="library-stage-shell">
-        <LibraryTopStrip
-          userView={userView}
-          search={search}
-          shownCount={rows?.items.length ?? 0}
-          totalCount={rows?.total ?? 0}
-          activeFilterCount={activeFilterCount}
-          filtersCollapsed={libraryFiltersCollapsed}
-          moreFiltersOpen={moreFiltersOpen}
-          watchFilter={watchFilter}
-          sortBy={sortBy}
-          librarySummary={librarySummary}
           onSearchChange={(value) => {
             setSearch(value);
             setPage(0);
           }}
-          onToggleFiltersRail={() => setLibraryFiltersCollapsed(false)}
+          onFiltersChange={(next) => {
+            if (typeof next.kind === "string") setKind(next.kind);
+            if (typeof next.creator === "string") setCreator(next.creator);
+            if (typeof next.source === "string") setSource(next.source);
+            if (typeof next.subtype === "string") setSubtype(next.subtype);
+            if (typeof next.minConfidence === "string") setMinConfidence(next.minConfidence);
+            setPage(0);
+          }}
+          onResetFilters={resetFilters}
           onToggleMoreFilters={() => setMoreFiltersOpen((current) => !current)}
           onWatchFilterChange={(value) => {
             setWatchFilter(value);

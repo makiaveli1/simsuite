@@ -1,8 +1,10 @@
-import { ArrowUpDown, ListFilter, PanelLeftOpen, Search } from "lucide-react";
-import type { LibrarySortField, LibrarySummary, UserView } from "../../lib/types";
+import { ArrowUpDown, ListFilter, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
+import type { LibraryFacets, LibrarySortField, LibrarySummary, LibraryWatchFilter, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
+import { friendlyTypeLabel } from "../../lib/uiLanguage";
 
-type WatchFilter = "all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates";
+type WatchFilter = LibraryWatchFilter;
+type SortField = LibrarySortField;
 
 const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -12,121 +14,202 @@ const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
   { value: "duplicates", label: "Duplicates" },
 ];
 
-const SORT_OPTIONS: { value: LibrarySortField; label: string }[] = [
+const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: "name", label: "Name" },
   { value: "creator", label: "Creator" },
   { value: "recently_modified", label: "Recently Modified" },
   { value: "has_updates_first", label: "Has updates first" },
 ];
 
+export interface LibraryToolbarFilters {
+  kind: string;
+  creator: string;
+  source: string;
+  subtype: string;
+  minConfidence: string;
+}
+
 interface LibraryTopStripProps {
   userView: UserView;
-  search: string;
   shownCount: number;
   totalCount: number;
   activeFilterCount: number;
-  filtersCollapsed: boolean;
-  moreFiltersOpen: boolean;
+  search: string;
+  sortBy: SortField;
   watchFilter: WatchFilter;
-  sortBy: LibrarySortField;
+  filters: LibraryToolbarFilters;
+  facets: LibraryFacets | null;
+  moreFiltersOpen: boolean;
   librarySummary: LibrarySummary | null;
   onSearchChange: (value: string) => void;
-  onToggleFiltersRail: () => void;
-  onToggleMoreFilters: () => void;
+  onSortByChange: (value: SortField) => void;
   onWatchFilterChange: (value: WatchFilter) => void;
-  onSortByChange: (value: LibrarySortField) => void;
+  onFiltersChange: (next: Partial<LibraryToolbarFilters>) => void;
+  onToggleMoreFilters: () => void;
+  onResetFilters: () => void;
 }
 
 export function LibraryTopStrip({
   userView,
-  search,
   shownCount,
   totalCount,
   activeFilterCount,
-  filtersCollapsed,
-  moreFiltersOpen,
-  watchFilter,
+  search,
   sortBy,
+  watchFilter,
+  filters,
+  facets,
+  moreFiltersOpen,
   librarySummary,
   onSearchChange,
-  onToggleFiltersRail,
-  onToggleMoreFilters,
-  onWatchFilterChange,
   onSortByChange,
+  onWatchFilterChange,
+  onFiltersChange,
+  onToggleMoreFilters,
+  onResetFilters,
 }: LibraryTopStripProps) {
   const flags = libraryViewFlags(userView);
+  const hasActiveFilters = activeFilterCount > 0;
 
   return (
     <div className="library-top-strip">
-      <div className="library-top-strip-metrics" aria-label="Library summary">
-        <div className="library-top-strip-metric">
-          <span>Shown</span>
-          <strong>{shownCount.toLocaleString()}</strong>
+      {/* Row 1: counts + search + inline filter dropdowns + sort + advanced */}
+      <div className="library-toolbar-row">
+        {/* Left: file counts */}
+        <div className="library-toolbar-metrics" aria-label="Library counts">
+          <span className="library-metric">
+            <strong>{shownCount.toLocaleString()}</strong>
+            <span className="library-metric-label">shown</span>
+          </span>
+          <span className="library-metric-sep" aria-hidden="true">/</span>
+          <span className="library-metric">
+            <strong>{totalCount.toLocaleString()}</strong>
+            <span className="library-metric-label">in library</span>
+          </span>
         </div>
-        <div className="library-top-strip-metric">
-          <span>In library</span>
-          <strong>{totalCount.toLocaleString()}</strong>
-        </div>
-        <div className="library-top-strip-metric">
-          <span>Filters</span>
-          <strong>{activeFilterCount}</strong>
-        </div>
-      </div>
 
-      <div className="library-top-strip-tools">
-        <label className="field library-top-strip-search">
-          <span className="sr-only">Search library</span>
-          <div className="downloads-search-input">
-            <Search size={14} strokeWidth={2} />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search by file or creator"
-              aria-label="Search library"
-            />
+        {/* Center: search + inline filter dropdowns */}
+        <div className="library-toolbar-controls">
+          {/* Search */}
+          <label className="field library-toolbar-search">
+            <span className="sr-only">Search by file or creator</span>
+            <div className="downloads-search-input">
+              <Search size={14} strokeWidth={2} />
+              <input
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search by name or creator…"
+                aria-label="Search library"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  className="search-clear"
+                  onClick={() => onSearchChange("")}
+                  aria-label="Clear search"
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              ) : null}
+            </div>
+          </label>
+
+          {/* Type dropdown */}
+          <div className="field library-toolbar-select">
+            <label className="sr-only" htmlFor="lib-filter-kind">Type</label>
+            <select
+              id="lib-filter-kind"
+              value={filters.kind}
+              onChange={(e) => onFiltersChange({ kind: e.target.value })}
+              aria-label="Filter by type"
+            >
+              <option value="">All types</option>
+              {facets?.kinds.map((k) => (
+                <option key={k} value={k}>{friendlyTypeLabel(k)}</option>
+              ))}
+            </select>
           </div>
-        </label>
 
-        {flags.showAdvancedFilters ? (
-          <button
-            type="button"
-            className={`secondary-action${moreFiltersOpen ? " is-active" : ""}`}
-            onClick={onToggleMoreFilters}
-            aria-expanded={moreFiltersOpen}
-          >
-            <ListFilter size={14} strokeWidth={2} />
-            More filters
-          </button>
-        ) : null}
+          {/* Creator dropdown */}
+          <div className="field library-toolbar-select">
+            <label className="sr-only" htmlFor="lib-filter-creator">Creator</label>
+            <select
+              id="lib-filter-creator"
+              value={filters.creator}
+              onChange={(e) => onFiltersChange({ creator: e.target.value })}
+              aria-label="Filter by creator"
+            >
+              <option value="">All creators</option>
+              {facets?.creators.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
 
-        {filtersCollapsed ? (
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={onToggleFiltersRail}
-          >
-            <PanelLeftOpen size={14} strokeWidth={2} />
-            Show filters
-          </button>
-        ) : null}
+          {/* Source dropdown */}
+          <div className="field library-toolbar-select">
+            <label className="sr-only" htmlFor="lib-filter-source">Source</label>
+            <select
+              id="lib-filter-source"
+              value={filters.source}
+              onChange={(e) => onFiltersChange({ source: e.target.value })}
+              aria-label="Filter by source"
+            >
+              <option value="">All sources</option>
+              <option value="mods">Mods</option>
+              <option value="tray">Tray</option>
+            </select>
+          </div>
+        </div>
 
-        <div className="library-sort-control" aria-label="Sort library">
-          <ArrowUpDown size={13} strokeWidth={2} />
-          <select
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as LibrarySortField)}
-            aria-label="Sort by"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+        {/* Right: reset + sort + advanced */}
+        <div className="library-toolbar-actions">
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="library-reset-btn"
+              onClick={onResetFilters}
+              title="Clear all filters"
+            >
+              <RotateCcw size={13} strokeWidth={2} />
+              Reset
+              <span className="library-active-filter-badge">{activeFilterCount}</span>
+            </button>
+          )}
+
+          <div className="library-sort-control" aria-label="Sort library">
+            <ArrowUpDown size={13} strokeWidth={2} />
+            <select
+              value={sortBy}
+              onChange={(e) => onSortByChange(e.target.value as SortField)}
+              aria-label="Sort by"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {flags.showAdvancedFilters && (
+            <button
+              type="button"
+              className={`secondary-action${moreFiltersOpen ? " is-active" : ""}`}
+              onClick={onToggleMoreFilters}
+              aria-expanded={moreFiltersOpen}
+              title="More filters"
+            >
+              <SlidersHorizontal size={14} strokeWidth={2} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="library-active-filter-badge">{activeFilterCount}</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="library-quick-chips" role="group" aria-label="Quick filters">
+      {/* Row 2: Quick chips (watch filter tabs) */}
+      <div className="library-quick-chips" role="group" aria-label="Quick filters by status">
         {WATCH_FILTER_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -140,6 +223,7 @@ export function LibraryTopStrip({
         ))}
       </div>
 
+      {/* Row 3: Summary health strip */}
       {librarySummary ? (
         <div className="library-summary-strip" aria-label="Library health summary">
           <span className="library-summary-stat">
