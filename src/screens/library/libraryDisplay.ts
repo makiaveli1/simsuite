@@ -113,7 +113,7 @@ export function buildLibraryRowModel(
 }
 
 /** Maps SimSuite kind (PascalCase) to a CSS type-color key */
-function typeColorForKind(kind: string): TypeColor {
+export function typeColorForKind(kind: string): TypeColor {
   switch (kind) {
     case "CAS":
       return "cas";

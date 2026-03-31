@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import { ExternalLink, Eye, PencilLine, ShieldAlert } from "lucide-react";
 import { summarizeLibraryCareState } from "./libraryDisplay";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
+import { typeColorForKind } from "./libraryDisplay";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
 
 interface LibraryDetailsPanelProps {
@@ -52,16 +53,37 @@ export function LibraryDetailsPanel({
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
 
+  const isTray = selectedFile.sourceLocation === 'tray';
+  const typeColor = typeColorForKind(selectedFile.kind);
+  const confidenceColor =
+    selectedFile.confidence >= 0.8 ? 'high' :
+    selectedFile.confidence >= 0.55 ? 'medium' : 'low';
+
   return (
-    <div className="library-details-panel">
+    <div className={`library-details-panel${isTray ? " is-tray-item" : ""}`}>
       <div className="detail-header">
-        <div>
+        <div className="detail-header-top">
           <p className="eyebrow">{userView === "beginner" ? "Selected file" : "Inspector"}</p>
-          <h2>{selectedFile.filename}</h2>
+          {isTray && (
+            <span className="library-tray-badge">Tray</span>
+          )}
         </div>
-        <span className="confidence-badge neutral">
-          {Math.round(selectedFile.confidence * 100)}%
-        </span>
+        <h2 className="detail-filename">{selectedFile.filename}</h2>
+        <div className="detail-header-meta">
+          {/* Type badge with color accent */}
+          <span className={`library-type-pill type-pill--${typeColor}`}>
+            {friendlyTypeLabel(selectedFile.kind)}
+          </span>
+          {/* Confidence */}
+          <span className={`library-confidence-badge confidence--${confidenceColor}`}
+            title={`${confidenceLabel} confidence`}
+            aria-label={`${confidenceLabel} confidence`}
+          >
+            {selectedFile.confidence >= 0.8 ? '✓' :
+             selectedFile.confidence >= 0.55 ? '⚠' : '?'}
+          </span>
+          <span className="detail-confidence-text">{confidenceLabel} confidence</span>
+        </div>
       </div>
 
       <section className="library-details-card">
@@ -72,6 +94,37 @@ export function LibraryDetailsPanel({
             value={selectedFile.creator ?? unknownCreatorLabel(userView)}
           />
           <DetailLine label="Type" value={friendlyTypeLabel(selectedFile.kind)} />
+          {selectedFile.subtype?.trim() ? (
+            <DetailLine label="Subtype" value={selectedFile.subtype} />
+          ) : null}
+          {selectedFile.installedVersionSummary?.version ? (
+            <DetailLine
+              label="Installed"
+              value={selectedFile.installedVersionSummary.version}
+            />
+          ) : null}
+          {watchStatus ? (
+            <DetailLine
+              label="Watch"
+              value={
+                <span className={`library-health-pill is-${watchStatusTone}`}>
+                  {watchStatusLabel}
+                  {watchSourceLabel ? ` · ${watchSourceLabel}` : null}</span>
+              }
+            />
+          ) : null}
+          {/* Show update info for script mods if available */}
+          {selectedFile.installedVersionSummary?.version &&
+           selectedFile.watchResult?.status !== 'current' ? (
+            <DetailLine
+              label="Updates"
+              value={
+                <span className="library-health-pill is-attention">
+                  {watchStatusLabel}
+                </span>
+              }
+            />
+          ) : null}
           {selectedFile.subtype?.trim() ? (
             <DetailLine label="Subtype" value={selectedFile.subtype} />
           ) : null}

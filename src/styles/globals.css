@@ -11781,3 +11781,156 @@ select:focus-visible {
 .library-status-cell {
   vertical-align: top;
 }
+
+/* ─── Library inspector panel enhancements ──────────────────────────────────── */
+
+.library-details-panel.is-tray-item {
+  border-top: 3px solid var(--kind-tray, #78909c);
+}
+
+.detail-header-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.detail-filename {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.35rem 0;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.detail-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.detail-confidence-text {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+/* Detail list lines */
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.detail-row > span {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.detail-row > strong {
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+  font-size: 0.78rem;
+}
+
+/* Care summary text */
+.library-care-summary {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  line-height: 1.5;
+  margin: 0 0 0.4rem 0;
+}
+
+/* Tag lists (safety notes, parser warnings) */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.warning-tag {
+  display: inline-flex;
+  padding: 0.15rem 0.42rem;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  background: rgba(239, 83, 80, 0.08);
+  color: #ef5350;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 2px;
+}
+
+.ghost-chip {
+  display: inline-flex;
+  padding: 0.12rem 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  border-radius: 2px;
+}
+
+/* Detail section cards */
+.library-details-card {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.section-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 0.4rem;
+}
+
+/* Detail actions row */
+.library-details-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.library-details-actions .secondary-action {
+  justify-content: flex-start;
+  font-size: 0.78rem;
+}
+
+/* Empty state */
+.library-details-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 2rem;
+}
+
+.library-details-empty h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0.4rem 0 0.3rem;
+  color: var(--text);
+}
+
+.library-details-empty p {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin: 0;
+  max-width: 16rem;
+  line-height: 1.5;
+}
