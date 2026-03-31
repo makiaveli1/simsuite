@@ -24,6 +24,7 @@ export type TypeColor =
 export interface LibraryRowModel {
   id: number;
   title: string;
+  kind: string;
   typeLabel: string;
   /** CSS type-color key for the type indicator dot/border */
   typeColor: TypeColor;
@@ -88,6 +89,7 @@ export function buildLibraryRowModel(
   return {
     id: row.id,
     title: row.filename,
+    kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
     isTray,
