@@ -513,7 +513,12 @@ fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
             String::from("ORDER BY c.canonical_name COLLATE NOCASE ASC, f.filename COLLATE NOCASE ASC")
         }
         LibrarySortField::RecentlyModified => {
-            String::from("ORDER BY f.modified_at DESC NULLS LAST, f.filename COLLATE NOCASE ASC")
+            String::from(
+                "ORDER BY\
+                 CASE WHEN f.modified_at IS NULL THEN 1 ELSE 0 END ASC,\
+                 f.modified_at DESC,\
+                 f.filename COLLATE NOCASE ASC",
+            )
         }
         LibrarySortField::HasUpdatesFirst => {
             // Sort by update priority: exact_update_available first, then possible_update,

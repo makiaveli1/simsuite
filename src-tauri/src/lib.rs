@@ -151,6 +151,7 @@ pub fn run() {
             commands::get_download_item_guided_plan,
             commands::get_download_item_review_plan,
             commands::get_library_facets,
+            commands::get_library_summary,
             commands::get_duplicate_overview,
             commands::list_duplicate_pairs,
             commands::list_rule_presets,

@@ -32,7 +32,7 @@ use crate::{
         CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
         DownloadsWatcherState, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail,
-        GuidedInstallPlan, HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse,
+        GuidedInstallPlan, HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibrarySummary,
         LibraryQuery, LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
         LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
         OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
@@ -591,6 +591,28 @@ pub async fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOvervie
     })
     .await
 }
+#[tauri::command]
+pub async fn get_library_summary(state: State<'_, AppState>) -> Result<LibrarySummary, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_library_summary", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let summary = library_index::get_library_summary(&connection)
+            .map_err(map_error)?;
+        log_slow_command("get_library_summary", started_at, || {
+            format!(
+                "for {} total, {} tracked, {} not tracked, {} has updates",
+                summary.total,
+                summary.tracked,
+                summary.not_tracked,
+                summary.has_updates
+            )
+        });
+        Ok(summary)
+    })
+    .await
+}
+
 
 #[tauri::command]
 pub fn scan_library(app: AppHandle, state: State<'_, AppState>) -> Result<ScanSummary, String> {
