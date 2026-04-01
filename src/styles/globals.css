@@ -11942,29 +11942,33 @@ select:focus-visible {
   line-height: 1.5;
 }
 
-/* ─── Pagination and scroll container fix (2026-04-01) ──────────────── */
-/* ─── Pagination anchor (2026-04-01 rev.2) ─────────────────────────── */
-/* Scroll container fills the grid cell — flex:1 overrides fixed height */
+/* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
+/* Grid row 2 (minmax 0,1fr) fills available space */
 .library-stage-shell .library-table-scroll {
   display: flex !important;
   flex-direction: column !important;
   flex: 1 !important;
   min-height: 0 !important;
-  overflow: hidden !important;
-  padding-bottom: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
-/* The table itself is the scrollable element */
+/* Table fills scroll container */
 .library-stage-shell .library-table-scroll .library-table {
   flex: 1 !important;
   min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: auto !important;
-  margin-bottom: 0 !important;
 }
-/* table thead stays visible while scrolling */
+/* Keep thead/tbody as table so header stays fixed while tbody scrolls */
 .library-stage-shell .library-table thead { display: table !important; width: 100% !important; }
 .library-stage-shell .library-table tbody { display: table !important; width: 100% !important; }
-/* Footer: grid row 3, anchored at bottom, no top gap */
+/* Scroll container: flex column, overflow-y:auto, flex:1 = fills grid cell */
+.table-scroll {
+  padding-bottom: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+/* Footer: sibling of scroll container, grid row 3 = auto height, sits below table */
 .table-footer {
   flex-shrink: 0 !important;
   display: flex !important;
@@ -11974,14 +11978,6 @@ select:focus-visible {
   padding: 0.45rem 0.75rem !important;
   border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
   background: var(--surface-3) !important;
-  margin-top: 0 !important;
-}
-/* Override .table-scroll base to work with the grid cell fill */
-.table-scroll {
-  padding-bottom: 0 !important;
-  overflow: hidden !important;
-  flex: 1 !important;
-  min-height: 0 !important;
 }
 
 /* ─── Row height consistency (2026-04-01) ───────────────────────────── */
