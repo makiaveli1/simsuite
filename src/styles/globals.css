@@ -11936,21 +11936,28 @@ select:focus-visible {
 }
 
 /* ─── Pagination and scroll container fix (2026-04-01) ──────────────── */
+/* ─── Pagination anchor (2026-04-01 rev.2) ─────────────────────────── */
+/* Scroll container fills the grid cell — flex:1 overrides fixed height */
 .library-stage-shell .library-table-scroll {
   display: flex !important;
   flex-direction: column !important;
-  height: var(--library-table-height) !important;
-  padding-bottom: 0 !important;
+  flex: 1 !important;
+  min-height: 0 !important;
   overflow: hidden !important;
+  padding-bottom: 0 !important;
 }
+/* The table itself is the scrollable element */
 .library-stage-shell .library-table-scroll .library-table {
   flex: 1 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
+  overflow-x: auto !important;
   margin-bottom: 0 !important;
 }
-.library-stage-shell .library-table thead,
+/* table thead stays visible while scrolling */
+.library-stage-shell .library-table thead { display: table !important; width: 100% !important; }
 .library-stage-shell .library-table tbody { display: table !important; width: 100% !important; }
+/* Footer: grid row 3, anchored at bottom, no top gap */
 .table-footer {
   flex-shrink: 0 !important;
   display: flex !important;
@@ -11962,7 +11969,13 @@ select:focus-visible {
   background: var(--surface-3) !important;
   margin-top: 0 !important;
 }
-.table-scroll { padding-bottom: 0 !important; overflow: auto !important; }
+/* Override .table-scroll base to work with the grid cell fill */
+.table-scroll {
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
 
 /* ─── Row height consistency (2026-04-01) ───────────────────────────── */
 .library-name-cell { min-height: 2.6rem !important; vertical-align: top !important; }
