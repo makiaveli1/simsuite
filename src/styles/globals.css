@@ -12006,4 +12006,22 @@ select:focus-visible {
 .type-accent { width: 4px !important; min-height: 100% !important; height: 100% !important; opacity: 0.8 !important; }
 
 /* ─── Detail sheet panel sizing (2026-04-01) ────────────────────────── */
-.library-detail-sheet { max-width: min(480px, 95vw) !important; overflow-y: auto !important; }
+.library-detail-sheet {
+  max-width: min(480px, 95vw) !important;
+}
+/* Sheet body is the scrollable region inside the sheet */
+.library-detail-sheet-body {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important; /* allows grid item to shrink and scroll */
+  overscroll-behavior: contain !important;
+}
+/* Lead section: filename wraps cleanly, meta stays right-aligned */
+.library-detail-sheet-lead strong {
+  display: block !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  font-size: 0.94rem !important;
+  line-height: 1.35 !important;
+  min-width: 0 !important;
+}
