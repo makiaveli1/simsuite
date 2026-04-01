@@ -11936,21 +11936,21 @@ select:focus-visible {
 }
 
 /* ─── Pagination and scroll container fix (2026-04-01) ──────────────── */
-.listing-shell .library-table-scroll {
+.library-stage-shell .library-table-scroll {
   display: flex !important;
   flex-direction: column !important;
   height: var(--library-table-height) !important;
   padding-bottom: 0 !important;
   overflow: hidden !important;
 }
-.listing-shell .library-table-scroll .library-table {
+.library-stage-shell .library-table-scroll .library-table {
   flex: 1 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   margin-bottom: 0 !important;
 }
-.listing-shell .library-table thead,
-.listing-shell .library-table tbody { display: table !important; width: 100% !important; }
+.library-stage-shell .library-table thead,
+.library-stage-shell .library-table tbody { display: table !important; width: 100% !important; }
 .table-footer {
   flex-shrink: 0 !important;
   display: flex !important;
