@@ -1180,6 +1180,53 @@ h2,
   gap: 0.42rem;
 }
 
+/* Filter section group with section label */
+.filter-section {
+  display: grid;
+  gap: 0.28rem;
+  align-content: start;
+}
+
+/* Watch status pill row */
+.watch-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+/* Confidence segmented control */
+.confidence-segmented {
+  display: flex;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.confidence-seg-btn {
+  flex: 1 1 0;
+  padding: 0.3rem 0.25rem;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  letter-spacing: 0.03em;
+}
+.confidence-seg-btn:last-child {
+  border-right: none;
+}
+.confidence-seg-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.confidence-seg-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 .library-filter-rail-footer {
   display: flex;
   flex-wrap: wrap;
@@ -4211,8 +4258,10 @@ h2,
 }
 
 .ledger-row strong,
-.detail-row strong {
-  max-width: 60%;
+.detail-row > strong {
+  /* max-width removed: row uses flex:1/min-width:0 to allocate space naturally.
+     The pill and text take their natural width; flex:1 on strong means the row
+     shrinks before the value column does. No overflow. */
   color: var(--text);
   text-align: right;
 }
@@ -12038,18 +12087,28 @@ select:focus-visible {
 /* ─── Type accent bar refinement (2026-04-01) ──────────────────────── */
 .type-accent { width: 4px !important; min-height: 100% !important; height: 100% !important; opacity: 0.8 !important; }
 
-/* ─── Detail sheet panel sizing (2026-04-01 rev.2) ──────────────────── */
-/* Sheet fills the available viewport height minus margins */
+/* ─── Detail sheet panel sizing (2026-04-01 rev.3) ──────────────────── */
+/* Sheet inherits height from .workbench-sheet (grid). The body's overflow
+   must not exceed the grid row height. grid-template-rows: auto minmax(0,1fr) auto
+   means the body row = available space after header+footer. */
 .library-detail-sheet {
-  height: calc(100vh - 0.8rem) !important;
-  overflow: hidden !important;    /* shell clips; body scrolls */
+  height: 100% !important;   /* fill the grid track height exactly */
+  overflow: hidden !important;
 }
-/* Body scrolls within the sheet's fixed height (grid row 2 = minmax(0,1fr)) */
+/* Body fills the grid row; DockSectionStack is the scroll region */
 .library-detail-sheet-body {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;       /* allows shrinking below content size */
+  overflow: hidden !important;    /* body does not scroll; DockSectionStack does */
+  height: 100% !important;
+}
+/* DockSectionStack: the scrollable region inside the body */
+.library-detail-sheet-body > .dock-section-stack {
+  flex: 1 1 auto !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
-  max-height: 100% !important;     /* fills the grid auto row */
   overscroll-behavior: contain !important;
 }
 /* Lead section: filename wraps cleanly, meta stays right-aligned */

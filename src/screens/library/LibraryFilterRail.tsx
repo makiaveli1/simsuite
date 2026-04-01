@@ -1,6 +1,11 @@
 import { PanelLeftClose } from "lucide-react";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
-import type { LibraryFacets, UserView } from "../../lib/types";
+import {
+  type LibraryFacets,
+  type LibraryWatchFilter,
+  type LibrarySummary,
+  type UserView,
+} from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
 
 export interface LibraryFilterValues {
@@ -15,34 +20,72 @@ interface LibraryFilterRailProps {
   userView: UserView;
   facets: LibraryFacets | null;
   filters: LibraryFilterValues;
+  watchFilter: LibraryWatchFilter;
   activeFilterCount: number;
   resultsCount: number;
   isCollapsed: boolean;
+  moreFiltersOpen: boolean;
+  librarySummary: LibrarySummary | null;
   onToggleCollapsed: () => void;
-  onFilterChange: (next: Partial<LibraryFilterValues>) => void;
-  onReset: () => void;
-  onOpenMoreFilters: () => void;
+  onFiltersChange: (next: Partial<LibraryFilterValues>) => void;
+  onResetFilters: () => void;
+  onToggleMoreFilters: () => void;
+  onWatchFilterChange: (value: LibraryWatchFilter) => void;
 }
+
+const WATCH_FILTER_OPTIONS: Array<{ value: LibraryWatchFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "has_updates", label: "Updates" },
+  { value: "needs_attention", label: "Attention" },
+  { value: "not_tracked", label: "Not tracked" },
+  { value: "duplicates", label: "Dupes" },
+];
+
+const CONFIDENCE_OPTIONS = [
+  { value: "", label: "Any" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Med" },
+  { value: "low", label: "Low" },
+] as const;
 
 export function LibraryFilterRail({
   userView,
   facets,
   filters,
+  watchFilter,
   activeFilterCount,
   resultsCount,
   isCollapsed,
+  moreFiltersOpen,
+  librarySummary,
   onToggleCollapsed,
-  onFilterChange,
-  onReset,
+  onFiltersChange,
+  onResetFilters,
+  onToggleMoreFilters,
+  onWatchFilterChange,
 }: LibraryFilterRailProps) {
-  const flags = libraryViewFlags(userView);
-
   if (isCollapsed) {
     return null;
   }
 
+  const flags = libraryViewFlags(userView);
+
+  // Build subtype options — include only subtypes that exist for the selected kind
+  const subtypeOptions = (() => {
+    if (!facets?.subtypes?.length) return null;
+    // Filter subtypes to those relevant for the selected kind
+    // (backend returns all subtypes; we show them all with kind as a pre-filter)
+    return facets.subtypes;
+  })();
+
+  const selectedConfidence =
+    filters.minConfidence === "" || !filters.minConfidence
+      ? ""
+      : filters.minConfidence;
+
   return (
     <div className="library-filter-rail">
+      {/* ── Header ── */}
       <div className="library-filter-rail-header">
         <div>
           <p className="eyebrow">Narrow library</p>
@@ -59,6 +102,7 @@ export function LibraryFilterRail({
         </button>
       </div>
 
+      {/* ── Metrics bar ── */}
       <div className="library-filter-rail-metrics">
         <div className="library-filter-rail-metric">
           <span>Visible</span>
@@ -70,13 +114,34 @@ export function LibraryFilterRail({
         </div>
       </div>
 
+      {/* ── Watch status — quick-access pills (always shown) ── */}
+      <div className="filter-section">
+        <div className="section-label">Status</div>
+        <div className="watch-filter-row">
+          {WATCH_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`watch-filter-chip${
+                watchFilter === opt.value ? " is-active" : ""
+              }`}
+              onClick={() => onWatchFilterChange(opt.value)}
+              aria-pressed={watchFilter === opt.value}
+            >
+              <strong>{opt.label}</strong>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Body — type, creator, source ── */}
       <div className="library-filter-rail-body">
         <label className="field">
           <span>Type</span>
           <select
             aria-label="Type"
             value={filters.kind}
-            onChange={(event) => onFilterChange({ kind: event.target.value })}
+            onChange={(event) => onFiltersChange({ kind: event.target.value })}
           >
             <option value="">All types</option>
             {facets?.kinds.map((item) => (
@@ -92,7 +157,9 @@ export function LibraryFilterRail({
           <select
             aria-label="Creator"
             value={filters.creator}
-            onChange={(event) => onFilterChange({ creator: event.target.value })}
+            onChange={(event) =>
+              onFiltersChange({ creator: event.target.value })
+            }
           >
             <option value="">All creators</option>
             {facets?.creators.map((item) => (
@@ -103,13 +170,59 @@ export function LibraryFilterRail({
           </select>
         </label>
 
+        {/* Subtype — only show if subtypes exist in the facet data */}
+        {subtypeOptions ? (
+          <label className="field">
+            <span>Subtype</span>
+            <select
+              aria-label="Subtype"
+              value={filters.subtype}
+              onChange={(event) =>
+                onFiltersChange({ subtype: event.target.value })
+              }
+            >
+              <option value="">All subtypes</option>
+              {subtypeOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {/* Confidence — quick-select buttons (seasoned+) */}
+        {userView !== "beginner" && (
+          <div className="field">
+            <span>Confidence</span>
+            <div className="confidence-segmented">
+              {CONFIDENCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`confidence-seg-btn${
+                    selectedConfidence === opt.value ? " is-active" : ""
+                  }`}
+                  onClick={() => onFiltersChange({ minConfidence: opt.value })}
+                  aria-pressed={selectedConfidence === opt.value}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Root/source — power only */}
         {flags.showRootFacts ? (
           <label className="field">
             <span>{userView === "power" ? "Root" : "Folder"}</span>
             <select
               aria-label={userView === "power" ? "Root" : "Folder"}
               value={filters.source}
-              onChange={(event) => onFilterChange({ source: event.target.value })}
+              onChange={(event) =>
+                onFiltersChange({ source: event.target.value })
+              }
             >
               <option value="">All roots</option>
               {facets?.sources.map((item) => (
@@ -122,18 +235,24 @@ export function LibraryFilterRail({
         ) : null}
       </div>
 
+      {/* ── Footer ── */}
       <div className="library-filter-rail-footer">
         <button
           type="button"
           className="secondary-action"
-          onClick={onReset}
+          onClick={onResetFilters}
           disabled={activeFilterCount === 0}
         >
-          Reset filters
+          Reset
         </button>
         <span className="ghost-chip">
           {facets?.creators.length ?? 0} creators
         </span>
+        {librarySummary ? (
+          <span className="ghost-chip">
+            {librarySummary.total.toLocaleString()} files
+          </span>
+        ) : null}
       </div>
     </div>
   );

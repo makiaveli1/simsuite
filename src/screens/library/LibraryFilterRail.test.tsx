@@ -20,13 +20,17 @@ it("keeps only the core filters visible in casual mode", () => {
         subtype: "",
         minConfidence: "",
       }}
+      watchFilter="all"
       activeFilterCount={1}
       resultsCount={12}
       isCollapsed={false}
+      moreFiltersOpen={false}
+      librarySummary={null}
       onToggleCollapsed={() => {}}
-      onFilterChange={() => {}}
-      onReset={() => {}}
-      onOpenMoreFilters={() => {}}
+      onFiltersChange={() => {}}
+      onResetFilters={() => {}}
+      onToggleMoreFilters={() => {}}
+      onWatchFilterChange={() => {}}
     />,
   );
 
