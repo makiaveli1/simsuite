@@ -11851,6 +11851,13 @@ select:focus-visible {
   min-width: 0;
   white-space: nowrap;
 }
+.detail-row > .detail-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
+}
 
 /* Care summary text */
 .library-care-summary {
@@ -12008,12 +12015,15 @@ select:focus-visible {
 /* ─── Detail sheet panel sizing (2026-04-01) ────────────────────────── */
 .library-detail-sheet {
   max-width: min(480px, 95vw) !important;
+  max-height: 100vh !important; /* prevent lower-screen overflow */
+  overflow: hidden !important;    /* container clips, body scrolls */
 }
 /* Sheet body is the scrollable region inside the sheet */
 .library-detail-sheet-body {
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  min-height: 0 !important; /* allows grid item to shrink and scroll */
+  min-height: 0 !important;
+  max-height: 100vh !important;   /* respect viewport height */
   overscroll-behavior: contain !important;
 }
 /* Lead section: filename wraps cleanly, meta stays right-aligned */
