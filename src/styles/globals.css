@@ -1783,7 +1783,7 @@ h2,
     linear-gradient(135deg, rgba(255, 255, 255, 0.016), transparent 42%),
     var(--chrome-surface);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .workbench-sheet-header,
@@ -4154,7 +4154,7 @@ h2,
 .ledger-row,
 .detail-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
   padding: 0.48rem 0;
@@ -11729,6 +11729,17 @@ select:focus-visible {
 .type-accent--tray      { background: var(--kind-tray, #78909c); }
 .type-accent--unknown    { background: var(--kind-unknown, #607d8b); }
 
+/* Type pill color modifiers — make kind pills visually distinct */
+.type-pill--cas      { border-color: color-mix(in srgb, var(--kind-cas) 35%, transparent);      background: color-mix(in srgb, var(--kind-cas) 12%, transparent);      color: var(--kind-cas); }
+.type-pill--script    { border-color: color-mix(in srgb, var(--kind-script) 35%, transparent);    background: color-mix(in srgb, var(--kind-script) 12%, transparent);    color: var(--kind-script); }
+.type-pill--gameplay  { border-color: color-mix(in srgb, var(--kind-gameplay) 35%, transparent);  background: color-mix(in srgb, var(--kind-gameplay) 12%, transparent);  color: var(--kind-gameplay); }
+.type-pill--buildbuy  { border-color: color-mix(in srgb, var(--kind-buildbuy) 35%, transparent);  background: color-mix(in srgb, var(--kind-buildbuy) 12%, transparent);  color: var(--kind-buildbuy); }
+.type-pill--override  { border-color: color-mix(in srgb, var(--kind-override) 35%, transparent);  background: color-mix(in srgb, var(--kind-override) 12%, transparent);  color: var(--kind-override); }
+.type-pill--poses      { border-color: color-mix(in srgb, var(--kind-poses) 35%, transparent);      background: color-mix(in srgb, var(--kind-poses) 12%, transparent);      color: var(--kind-poses); }
+.type-pill--presets    { border-color: color-mix(in srgb, var(--kind-presets) 35%, transparent);    background: color-mix(in srgb, var(--kind-presets) 12%, transparent);    color: var(--kind-presets); }
+.type-pill--tray      { border-color: color-mix(in srgb, var(--kind-tray) 35%, transparent);      background: color-mix(in srgb, var(--kind-tray) 12%, transparent);      color: var(--kind-tray); }
+.type-pill--unknown    { border-color: color-mix(in srgb, var(--kind-unknown) 35%, transparent);    background: color-mix(in srgb, var(--kind-unknown) 12%, transparent);    color: var(--kind-unknown); }
+
 /* Tray row treatment — visually muted / disabled */
 .library-table tbody tr.is-tray {
   opacity: 0.6;
@@ -11893,21 +11904,21 @@ select:focus-visible {
 
 .detail-row {
   display: flex;
-  align-items: flex-start;  /* row height = tallest child; pill never clips */
+  align-items: center;     /* was flex-start — row now stretches to tallest child (pill) */
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.8rem;
-  min-height: 1.5rem;       /* pill breathing room without baseline height */
+  min-height: 1.5rem;
 }
 
 .detail-row > span {
   color: var(--text-dim);
   flex-shrink: 0;
-  max-width: 5.5rem;      /* label capped; value column always gets priority */
+  max-width: 7rem;        /* was 5.5rem — gives "Confidence", "Installed" room */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-top: 0.12rem;   /* approx vertical-centre alignment vs pill */
+  padding-top: 0.12rem;
 }
 
 .detail-row > strong {
@@ -11915,13 +11926,10 @@ select:focus-visible {
   font-weight: 600;
   text-align: right;
   font-size: 0.78rem;
-  flex-shrink: 1;
+  flex-shrink: 0;          /* was 1 — pill container must not compress */
   min-width: 0;
-  /* No overflow:hidden here — let the pill and text be as wide as needed.
-     The flex:1 on strong means the row itself shrinks before strong does. */
 }
-/* Pill: nowrap single line, as wide as its text. Row takes its natural width
-   from flex:1 on strong; the pill goes wide naturally without clipping. */
+/* Pill: nowrap single line, as wide as its text. */
 .detail-row > strong > .library-health-pill {
   white-space: nowrap;
   flex-shrink: 0;
@@ -12093,16 +12101,16 @@ select:focus-visible {
    DockSectionStack must be the one and only scroll region. */
 .library-detail-sheet {
   height: 100% !important;
-  overflow: hidden !important;
+  overflow: visible !important;   /* was hidden — DockSectionStack handles scroll */
 }
 .workbench-sheet-body {
-  overflow: hidden !important;   /* row 2 is not the scroll region */
+  overflow: auto !important;       /* was hidden — allow body to pass through */
 }
 .library-detail-sheet-body {
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow: auto !important;       /* was hidden — DockSectionStack is the scroll region */
   height: 100% !important;
   width: 100% !important;
 }
