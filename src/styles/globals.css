@@ -11934,3 +11934,60 @@ select:focus-visible {
   max-width: 16rem;
   line-height: 1.5;
 }
+
+/* ─── Pagination and scroll container fix (2026-04-01) ──────────────── */
+.listing-shell .library-table-scroll {
+  display: flex !important;
+  flex-direction: column !important;
+  height: var(--library-table-height) !important;
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+}
+.listing-shell .library-table-scroll .library-table {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  margin-bottom: 0 !important;
+}
+.listing-shell .library-table thead,
+.listing-shell .library-table tbody { display: table !important; width: 100% !important; }
+.table-footer {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.75rem !important;
+  padding: 0.45rem 0.75rem !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: var(--surface-3) !important;
+  margin-top: 0 !important;
+}
+.table-scroll { padding-bottom: 0 !important; overflow: auto !important; }
+
+/* ─── Row height consistency (2026-04-01) ───────────────────────────── */
+.library-name-cell { min-height: 2.6rem !important; vertical-align: top !important; }
+.library-status-cell { vertical-align: top !important; }
+.library-facts-cell { vertical-align: top !important; }
+.library-table tbody td { vertical-align: top !important; }
+.library-table-checkbox-col { vertical-align: top !important; padding-top: 0.5rem !important; }
+
+/* ─── Inspector card spacing consistency (2026-04-01) ───────────────── */
+.library-details-card { padding: 0.7rem 0.9rem !important; border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important; }
+.library-details-card .section-label { font-size: 0.62rem !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; color: var(--text-dim) !important; margin-bottom: 0.35rem !important; }
+.library-care-summary { margin: 0 0 0.35rem 0 !important; font-size: 0.8rem !important; color: var(--text-soft) !important; line-height: 1.45 !important; }
+.library-details-actions { padding: 0.6rem 0.9rem !important; gap: 0.28rem !important; }
+
+/* ─── Summary strip breathing room (2026-04-01) ──────────────────────── */
+.library-summary-strip { padding-top: 0.45rem !important; padding-bottom: 0.35rem !important; min-height: 1.5rem !important; gap: 0.4rem !important; }
+
+/* ─── Table layout fixed (2026-04-01) ────────────────────────────────── */
+.library-table { table-layout: fixed !important; }
+.library-table th:nth-child(5), .library-table td.library-facts-cell { width: 155px !important; min-width: 130px !important; max-width: 175px !important; }
+.library-table th.library-type-accent-col, .library-table td.library-type-accent-col { width: 6px !important; min-width: 6px !important; max-width: 6px !important; overflow: hidden !important; }
+.library-table th.library-table-checkbox-col, .library-table td.library-table-checkbox-col { width: 36px !important; min-width: 36px !important; max-width: 36px !important; }
+
+/* ─── Type accent bar refinement (2026-04-01) ──────────────────────── */
+.type-accent { width: 4px !important; min-height: 100% !important; height: 100% !important; opacity: 0.8 !important; }
+
+/* ─── Detail sheet panel sizing (2026-04-01) ────────────────────────── */
+.library-detail-sheet { max-width: min(480px, 95vw) !important; overflow-y: auto !important; }
