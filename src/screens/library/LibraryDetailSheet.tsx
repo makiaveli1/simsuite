@@ -59,8 +59,11 @@ export function LibraryDetailSheet({
                 <p className="eyebrow">{librarySheetEyebrow(mode, userView)}</p>
                 <h2 id="library-detail-sheet-title">{librarySheetTitle(mode, userView)}</h2>
                 <p className="workbench-sheet-copy">
-                  Keep the main Library page quiet and open the fuller file story here only when
-                  you need it.
+                  {mode === "health"
+                    ? "Version tracking, warnings, and bundle notes — the deeper health picture."
+                    : mode === "inspect"
+                      ? "File size, path, embedded names, and clues — the full file story."
+                      : "Creator learning and type overrides — change how SimSuite reads this file."}
                 </p>
               </div>
               <button
@@ -129,14 +132,14 @@ function librarySheetEyebrow(mode: Exclude<LibrarySheetMode, null>, userView: Us
 function librarySheetTitle(mode: Exclude<LibrarySheetMode, null>, userView: UserView) {
   if (mode === "health") {
     return userView === "beginner"
-      ? "See the warnings and care notes"
-      : "See warnings, bundle notes, and update context";
+      ? "File facts, warnings, and update context"
+      : "Diagnostics — version signals, warnings, and bundle context";
   }
 
   if (mode === "inspect") {
     return userView === "beginner"
-      ? "See the fuller file details"
-      : "See the path, clues, and deeper file facts";
+      ? "File facts and embedded details"
+      : "The file's embedded identity, clues, and full path";
   }
 
   return userView === "beginner"

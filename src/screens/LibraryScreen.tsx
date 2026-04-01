@@ -270,6 +270,7 @@ export function LibraryScreen({
   
   const hasVersionWatchInfo = Boolean(selected?.installedVersionSummary);
   const updatesTarget = selected ? getUpdatesWorkspaceTarget(selected) : null;
+  const isCasualView = userView === "beginner";
   const activeFilterCount = [
     search.trim(),
     kind,
@@ -286,7 +287,7 @@ export function LibraryScreen({
           id: "facts",
           label:
             userView === "beginner"
-              ? "What matters"
+              ? "File facts"
               : isPowerView
                 ? "File details"
                 : "Overview",
@@ -294,86 +295,159 @@ export function LibraryScreen({
             isPowerView
               ? "Core classification, file metadata, and confidence."
               : "Only the details most simmers usually care about.",
-          children: isPowerView ? (
-            <div className="detail-list">
-              <DetailRow
-                label="Creator"
-                value={selected.creator ?? unknownCreatorLabel(userView)}
-              />
-              <DetailRow
-                label="Type"
-                value={friendlyTypeLabel(selected.kind)}
-              />
-              <DetailRow
-                label="Subtype"
-                value={
-                  selected.subtype ??
-                  "Unspecified"
-                }
-              />
-              <DetailRow label="Format" value={formatLibraryFileFormat(selected)} />
-              <DetailRow label="Root" value={selected.sourceLocation} />
-              <DetailRow label="Depth" value={`${selected.relativeDepth}`} />
-              <DetailRow label="Size" value={formatBytes(selected.size)} />
-              <DetailRow
-                label="Modified"
-                value={
-                  selected.modifiedAt
-                    ? new Date(selected.modifiedAt).toLocaleString()
-                    : "Unknown"
-                }
-              />
-              <DetailRow label="Hash" value={selected.hash ?? "Not available"} mono />
-            </div>
-          ) : (
+          children: (
             <>
-              <div className="detail-list">
-                <DetailRow
-                  label="Creator"
-                  value={selected.creator ?? unknownCreatorLabel(userView)}
-                />
-                <DetailRow
-                  label="Type"
-                  value={friendlyTypeLabel(selected.kind)}
-                />
-                {selected.subtype?.trim() ? (
-                  <DetailRow label="Subtype" value={selected.subtype} />
-                ) : null}
-                <DetailRow label="File format" value={formatLibraryFileFormat(selected)} />
-              </div>
-              {playerFacingNames.length ? (
-                <div className="detail-block">
-                  <div className="section-label">Found in game as</div>
-                  {playerFacingNames.length === 1 ? (
-                    <p>{playerFacingNames[0]}</p>
-                  ) : (
-                    <div className="tag-list">
-                      {playerFacingNames.map((item) => (
-                        <span key={item} className="ghost-chip">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
+              {/* ── Casual: file identity + size/date (genuinely new vs sidebar Snapshot) ── */}
+              {isCasualView ? (
+                <div className="detail-list">
+                  <DetailRow
+                    label="Type"
+                    value={`${friendlyTypeLabel(selected.kind)}${
+                      selected.subtype?.trim() ? ` / ${selected.subtype}` : ""
+                    }`}
+                  />
+                  {selected.size > 0 && (
+                    <DetailRow
+                      label="Size"
+                      value={formatBytes(selected.size)}
+                    />
+                  )}
+                  {selected.modifiedAt && (
+                    <DetailRow
+                      label="Modified"
+                      value={new Date(selected.modifiedAt).toLocaleDateString()}
+                    />
                   )}
                 </div>
-              ) : null}
+              ) : isPowerView ? (
+                /* ── Power: full file story ── */
+                <div className="detail-list">
+                  <DetailRow
+                    label="Creator"
+                    value={selected.creator ?? unknownCreatorLabel(userView)}
+                  />
+                  <DetailRow
+                    label="Type"
+                    value={friendlyTypeLabel(selected.kind)}
+                  />
+                  <DetailRow
+                    label="Subtype"
+                    value={selected.subtype ?? "Unspecified"}
+                  />
+                  <DetailRow label="Format" value={formatLibraryFileFormat(selected)} />
+                  <DetailRow label="Root" value={selected.sourceLocation} />
+                  <DetailRow label="Depth" value={`${selected.relativeDepth}`} />
+                  <DetailRow label="Size" value={formatBytes(selected.size)} />
+                  <DetailRow
+                    label="Modified"
+                    value={
+                      selected.modifiedAt
+                        ? new Date(selected.modifiedAt).toLocaleString()
+                        : "Unknown"
+                    }
+                  />
+                  <DetailRow label="Hash" value={selected.hash ?? "Not available"} mono />
+                </div>
+              ) : (
+                /* ── Seasoned: middle ground ── */
+                <>
+                  <div className="detail-list">
+                    <DetailRow
+                      label="Creator"
+                      value={selected.creator ?? unknownCreatorLabel(userView)}
+                    />
+                    <DetailRow
+                      label="Type"
+                      value={friendlyTypeLabel(selected.kind)}
+                    />
+                    {selected.subtype?.trim() ? (
+                      <DetailRow label="Subtype" value={selected.subtype} />
+                    ) : null}
+                    <DetailRow label="File format" value={formatLibraryFileFormat(selected)} />
+                    <DetailRow
+                      label="Size"
+                      value={formatBytes(selected.size)}
+                    />
+                  </div>
+                  {playerFacingNames.length ? (
+                    <div className="detail-block">
+                      <div className="section-label">Found in game as</div>
+                      <div className="tag-list">
+                        {playerFacingNames.map((item) => (
+                          <span key={item} className="ghost-chip">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </>
           ),
         },
-        ...(hasVersionWatchInfo
+        ...(hasVersionWatchInfo || selected
           ? [
               {
                 id: "updatesHint",
-                label: "Updates",
-                hint: "Version tracking and updates have moved to the Updates workspace.",
+                label: "File facts",
+                hint:
+                  isPowerView
+                    ? "File path, size, and modification date — useful for identifying and organizing."
+                    : isCasualView
+                      ? "The file's size and last-modified date — useful context when deciding what to keep."
+                      : "File size and modification date.",
                 children: (
                   <div className="detail-block">
-                    <p>
-                      <strong>{selected.installedVersionSummary?.version ?? "Version unknown"}</strong>
-                    </p>
-                    <p className="text-muted">
-                      Check the Updates tab to manage tracking, edit sources, and review changes for this file.
-                    </p>
+                    {/* File metadata — always shown in sheet, not in Casual sidebar */}
+                    {selected.size > 0 && (
+                      <DetailRow
+                        label="Size"
+                        value={formatBytes(selected.size)}
+                      />
+                    )}
+                    {selected.modifiedAt ? (
+                      <DetailRow
+                        label="Modified"
+                        value={new Date(selected.modifiedAt).toLocaleString()}
+                      />
+                    ) : null}
+                    {selected.createdAt ? (
+                      <DetailRow
+                        label="Created"
+                        value={new Date(selected.createdAt).toLocaleString()}
+                      />
+                    ) : null}
+
+                    {/* Version tracking — only if tracked */}
+                    {hasVersionWatchInfo ? (
+                      <>
+                        <DetailRow
+                          label="Installed"
+                          value={selected.installedVersionSummary?.version ?? "Unknown"}
+                        />
+                        {isPowerView && selected.watchResult?.checkedAt ? (
+                          <DetailRow
+                            label="Last checked"
+                            value={new Date(selected.watchResult.checkedAt).toLocaleString()}
+                          />
+                        ) : null}
+                        {isPowerView && selected.watchResult?.capability ? (
+                          <DetailRow
+                            label="Watch capability"
+                            value={selected.watchResult.capability}
+                          />
+                        ) : null}
+                        <p className="text-muted" style={{ marginTop: "0.4rem" }}>
+                          Open Updates to manage sources, check for new versions, and review changes.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-muted">
+                        No version tracking yet. Open Updates to start tracking this file.
+                      </p>
+                    )}
+
                     {onNavigateWithParams && updatesTarget ? (
                       <button
                         type="button"
@@ -386,7 +460,7 @@ export function LibraryScreen({
                             selected.id,
                           )
                         }
-                        style={{ marginTop: '0.5rem' }}
+                        style={{ marginTop: "0.5rem" }}
                       >
                         <ExternalLink size={12} strokeWidth={2} />
                         Open in Updates
@@ -451,9 +525,10 @@ export function LibraryScreen({
                       </div>
                     ) : null}
 
-                    {isPowerView ? (
+                    {/* Parser warnings — uncapped in sheet, shown for seasoned+ */}
+                    {isPowerView || selected.parserWarnings.length > 0 ? (
                       <div className="detail-block">
-                        <div className="section-label">Parser</div>
+                        <div className="section-label">Parser notes</div>
                         {selected.parserWarnings.length ? (
                           <div className="tag-list">
                             {selected.parserWarnings.map((note) => (
@@ -463,8 +538,46 @@ export function LibraryScreen({
                             ))}
                           </div>
                         ) : (
-                          <p>No parser warnings.</p>
+                          <p>No parser notes.</p>
                         )}
+                      </div>
+                    ) : null}
+
+                    {/* Version signals — rich structured data for power users only */}
+                    {isPowerView && selected.insights.versionSignals.length > 0 ? (
+                      <div className="detail-block">
+                        <div className="section-label">Version signals</div>
+                        <p className="text-muted" style={{ marginBottom: "0.4rem" }}>
+                          Where SimSuite found version clues and how confident it is.
+                        </p>
+                        {selected.insights.versionSignals.map((signal) => (
+                          <div
+                            key={signal.rawValue}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: "0.4rem",
+                              marginBottom: "0.3rem",
+                            }}
+                          >
+                            <span
+                              className="ghost-chip"
+                              style={{ fontSize: "0.72rem" }}
+                            >
+                              {signal.sourceKind}
+                              {signal.matchedBy ? ` · ${signal.matchedBy}` : null}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "0.68rem",
+                                color: "var(--text-dim)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {Math.round(signal.confidence * 100)}%
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     ) : null}
                   </>
@@ -643,18 +756,51 @@ export function LibraryScreen({
           : []),
       ]
     : [];
+  // ─── Sheet sections — view-aware ──────────────────────────────────────────
+  // health: genuinely deeper diagnostics not shown in the sidebar
+  //   • file path + size + modified date (shown nowhere else in Casual)
+  //   • version signals with source + confidence (only in power view)
+  //   • last-checked-at + watch capability (never shown anywhere)
+  //   • full warnings list uncapped for all views
+  // inspect: the file's embedded identity and structural facts
+  //   • all insights (creator hints, version numbers, embedded names, etc.)
+  //   • file path (shown in sidebar only for power)
+  // edit: creator learning + category override (always the same — interactive)
+  // ─────────────────────────────────────────────────────────────────────────
+
   const librarySheetSections =
     activeLibrarySheet && selected
       ? libraryInspectorSections.filter((section) => {
           if (activeLibrarySheet === "health") {
-            return ["updatesHint", "safety"].includes(section.id);
+            // health = deep diagnostics:
+            // Casual: path/size/date (genuinely new) + full warnings (uncapped)
+            // Seasoned: + bundle info + watch signals (versionSignals)
+            // Creator: + watch capability + last-checked-at
+            if (isCasualView) {
+              return ["safety", "updatesHint"].includes(section.id);
+            }
+            if (isPowerView) {
+              return ["safety", "updatesHint", "inspection"].includes(section.id);
+            }
+            // Seasoned
+            return ["safety", "updatesHint"];
           }
 
           if (activeLibrarySheet === "inspect") {
-            return ["facts", "inspection", "path"].includes(section.id);
+            // inspect = file's full story: facts + insights + path
+            if (isCasualView) {
+              // Casual: just the facts section with compact metadata
+              return ["facts"];
+            }
+            if (isPowerView) {
+              return ["facts", "inspection", "path"];
+            }
+            // Seasoned: facts + insights (no path)
+            return ["facts", "inspection"];
           }
 
-          return ["creator", "category"].includes(section.id);
+          // edit: always creator + category
+          return ["creator", "category"];
         })
       : [];
 

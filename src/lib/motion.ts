@@ -4,13 +4,13 @@ export const easeStandard: [number, number, number, number] = [0.22, 1, 0.36, 1]
 
 export const panelSpring = {
   type: "spring" as const,
-  stiffness: 280,
-  damping: 32,
-  mass: 0.88,
+  stiffness: 360,
+  damping: 36,
+  mass: 0.82,
 };
 
 export const overlayTransition = {
-  duration: 0.24,
+  duration: 0.2,
   ease: easeStandard,
 };
 

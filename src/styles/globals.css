@@ -8364,7 +8364,8 @@ h2,
 .warning-tag,
 .source-pill,
 .kind-pill,
-.confidence-badge {
+.confidence-badge,
+.ghost-chip-inline-button {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -8374,6 +8375,19 @@ h2,
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.ghost-chip-inline-button {
+  background: none;
+  border-color: rgba(205, 223, 214, 0.15);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.65rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.ghost-chip-inline-button:hover {
+  color: var(--text);
+  border-color: rgba(205, 223, 214, 0.3);
 }
 
 .ghost-chip,
@@ -11830,38 +11844,38 @@ select:focus-visible {
 
 .detail-row {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;  /* row height = tallest child; pill never clips */
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.8rem;
+  min-height: 1.5rem;       /* pill breathing room without baseline height */
 }
 
 .detail-row > span {
   color: var(--text-dim);
   flex-shrink: 0;
-  max-width: 6rem;      /* label never steals space from the value */
+  max-width: 5.5rem;      /* label capped; value column always gets priority */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-top: 0.12rem;   /* approx vertical-centre alignment vs pill */
 }
 
 .detail-row > strong {
   color: var(--text);
   font-weight: 600;
   text-align: right;
-  word-break: break-word;
   font-size: 0.78rem;
   flex-shrink: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;   /* guard: long pill text truncates gracefully */
+  /* No overflow:hidden here — let the pill and text be as wide as needed.
+     The flex:1 on strong means the row itself shrinks before strong does. */
 }
-/* Pill inside a strong: let it be as wide as it needs, but cap at the strong's box */
+/* Pill: nowrap single line, as wide as its text. Row takes its natural width
+   from flex:1 on strong; the pill goes wide naturally without clipping. */
 .detail-row > strong > .library-health-pill {
   white-space: nowrap;
   flex-shrink: 0;
-  overflow: visible;           /* pill itself does not truncate */
 }
 .detail-row > .detail-value {
   overflow: hidden;
