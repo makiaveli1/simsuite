@@ -12115,7 +12115,7 @@ select:focus-visible {
   width: 100% !important;
 }
 /* DockSectionStack: THE scroll region — must expand to fill body and scroll */
-.library-detail-sheet-body > .dock-section-stack {
+.library-detail-sheet-body > .dock-stack {
   flex: 1 1 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
