@@ -899,9 +899,7 @@ export function LibraryScreen({
         <LibraryDetailsPanel
           userView={userView}
           selectedFile={selected}
-          onOpenHealthDetails={() => setActiveLibrarySheet("health")}
-          onOpenInspectFile={() => setActiveLibrarySheet("inspect")}
-          onOpenEditDetails={() => setActiveLibrarySheet("edit")}
+          onOpenMoreDetails={() => setActiveLibrarySheet("health")}
           onOpenUpdates={() => {
             if (!selected || !onNavigateWithParams || !updatesTarget) {
               return;

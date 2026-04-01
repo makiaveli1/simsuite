@@ -19,14 +19,12 @@ it("shows snapshot, care, and more instead of inline edit forms", () => {
           installedVersionSummary: null,
         } as never
       }
-      onOpenHealthDetails={() => {}}
-      onOpenInspectFile={() => {}}
-      onOpenEditDetails={() => {}}
+      onOpenMoreDetails={() => {}}
       onOpenUpdates={() => {}}
     />,
   );
 
   expect(screen.getByText(/snapshot/i)).toBeVisible();
   expect(screen.getByText(/care/i)).toBeVisible();
-  expect(screen.getByRole("button", { name: /inspect file/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /more details/i })).toBeVisible();
 });

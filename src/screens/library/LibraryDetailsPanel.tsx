@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { ExternalLink, Eye, PencilLine, ShieldAlert } from "lucide-react";
+import { ExternalLink, SlidersHorizontal } from "lucide-react";
 import { summarizeLibraryCareState } from "./libraryDisplay";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
 import { typeColorForKind } from "./libraryDisplay";
@@ -8,18 +8,15 @@ import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
 interface LibraryDetailsPanelProps {
   userView: UserView;
   selectedFile: FileDetail | null;
-  onOpenHealthDetails: () => void;
-  onOpenInspectFile: () => void;
-  onOpenEditDetails: () => void;
+  /** Opens the full detail sheet (health/inspect/edit accessible inside) */
+  onOpenMoreDetails: () => void;
   onOpenUpdates: () => void;
 }
 
 export function LibraryDetailsPanel({
   userView,
   selectedFile,
-  onOpenHealthDetails,
-  onOpenInspectFile,
-  onOpenEditDetails,
+  onOpenMoreDetails,
   onOpenUpdates,
 }: LibraryDetailsPanelProps) {
   if (!selectedFile) {
@@ -113,7 +110,6 @@ export function LibraryDetailsPanel({
               }
             />
           ) : null}
-          {/* Show update info for script mods if available */}
           {selectedFile.installedVersionSummary?.version &&
            selectedFile.watchResult?.status !== 'current' ? (
             <DetailLine
@@ -121,26 +117,6 @@ export function LibraryDetailsPanel({
               value={
                 <span className="library-health-pill is-attention">
                   {watchStatusLabel}
-                </span>
-              }
-            />
-          ) : null}
-          {selectedFile.subtype?.trim() ? (
-            <DetailLine label="Subtype" value={selectedFile.subtype} />
-          ) : null}
-          {selectedFile.installedVersionSummary?.version ? (
-            <DetailLine
-              label="Installed"
-              value={selectedFile.installedVersionSummary.version}
-            />
-          ) : null}
-          {watchStatus ? (
-            <DetailLine
-              label="Watch"
-              value={
-                <span className={`library-health-pill is-${watchStatusTone}`}>
-                  {watchStatusLabel}
-                  {watchSourceLabel ? ` · ${watchSourceLabel}` : null}
                 </span>
               }
             />
@@ -215,26 +191,10 @@ export function LibraryDetailsPanel({
           <button
             type="button"
             className="secondary-action"
-            onClick={onOpenHealthDetails}
+            onClick={onOpenMoreDetails}
           >
-            <ShieldAlert size={14} strokeWidth={2} />
-            Health details
-          </button>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={onOpenInspectFile}
-          >
-            <Eye size={14} strokeWidth={2} />
-            Inspect file
-          </button>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={onOpenEditDetails}
-          >
-            <PencilLine size={14} strokeWidth={2} />
-            Edit details
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            More details
           </button>
           {hasUpdates ? (
             <button

@@ -11839,6 +11839,10 @@ select:focus-visible {
 .detail-row > span {
   color: var(--text-dim);
   flex-shrink: 0;
+  max-width: 6rem;      /* label never steals space from the value */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-row > strong {
@@ -11850,6 +11854,14 @@ select:focus-visible {
   flex-shrink: 1;
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* guard: long pill text truncates gracefully */
+}
+/* Pill inside a strong: let it be as wide as it needs, but cap at the strong's box */
+.detail-row > strong > .library-health-pill {
+  white-space: nowrap;
+  flex-shrink: 0;
+  overflow: visible;           /* pill itself does not truncate */
 }
 .detail-row > .detail-value {
   overflow: hidden;
@@ -12012,18 +12024,18 @@ select:focus-visible {
 /* ─── Type accent bar refinement (2026-04-01) ──────────────────────── */
 .type-accent { width: 4px !important; min-height: 100% !important; height: 100% !important; opacity: 0.8 !important; }
 
-/* ─── Detail sheet panel sizing (2026-04-01) ────────────────────────── */
+/* ─── Detail sheet panel sizing (2026-04-01 rev.2) ──────────────────── */
+/* Sheet fills the available viewport height minus margins */
 .library-detail-sheet {
-  max-width: min(480px, 95vw) !important;
-  max-height: 100vh !important; /* prevent lower-screen overflow */
-  overflow: hidden !important;    /* container clips, body scrolls */
+  height: calc(100vh - 0.8rem) !important;
+  overflow: hidden !important;    /* shell clips; body scrolls */
 }
-/* Sheet body is the scrollable region inside the sheet */
+/* Body scrolls within the sheet's fixed height (grid row 2 = minmax(0,1fr)) */
 .library-detail-sheet-body {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
-  max-height: 100vh !important;   /* respect viewport height */
+  max-height: 100% !important;     /* fills the grid auto row */
   overscroll-behavior: contain !important;
 }
 /* Lead section: filename wraps cleanly, meta stays right-aligned */
@@ -12035,3 +12047,4 @@ select:focus-visible {
   line-height: 1.35 !important;
   min-width: 0 !important;
 }
+
