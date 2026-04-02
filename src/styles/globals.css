@@ -4252,14 +4252,14 @@ h2,
   background: var(--selection-fill);
 }
 
-.ledger-row span,
-.detail-row span {
+.ledger-row > span,
+.detail-row > span {
   max-width: 40%;
 }
 
 .ledger-row strong,
 .detail-row > strong {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: flex-end;
   color: var(--text);
@@ -11922,7 +11922,7 @@ select:focus-visible {
 }
 
 .detail-row > strong {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: flex-end;
   color: var(--text);
@@ -12134,5 +12134,16 @@ select:focus-visible {
   font-size: 0.94rem !important;
   line-height: 1.35 !important;
   min-width: 0 !important;
+}
+
+/* Inspector sidebar detail rows: pill container must be flex, overrides
+   .library-detail-sheet-lead strong above which forces block for filename. */
+.library-inspector-shell .detail-row > strong {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  min-width: 0;
+  gap: 0;
 }
 
