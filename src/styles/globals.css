@@ -619,9 +619,10 @@ h2,
   /* Single-column on narrow viewports: sidebar stacks above main content */
   grid-template-columns: var(--sidebar-width) 1fr;
   gap: 0.35rem;
-  /* Fill the full viewport height — don't grow beyond it */
+  /* Fill the full viewport height */
   height: 100vh;
-  overflow: hidden;
+  /* Allow content to grow beyond viewport — workbench may be taller than 100vh */
+  overflow: visible;
   padding: 0.35rem;
 }
 
@@ -770,13 +771,38 @@ h2,
 
 /* Desktop-First Workbench: Scroll Rules
  * Page does not scroll - only list area, preview area, and inspector should scroll */
+/* Workbench: single column — inspector overlays from the right */
 .workbench {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: row;
   overflow: hidden;
   width: 100%;
   height: 100%;
+}
+
+.workbench-surface {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  /* Fill ALL available width — inspector overlays on top if present */
+  flex: 1 1 100% !important;
+  width: 100% !important;
+}
+
+.workbench-inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  z-index: 50;
+  height: 100%;
+  overflow-y: auto;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
 }
 
 .workbench-three-panel {
@@ -801,10 +827,17 @@ h2,
 }
 
 .workbench-surface {
+  /* Override any display:grid from other rules — this MUST be flex for the layout */
+  display: flex !important;
+  flex-direction: column;
   min-height: 0;
-  height: 100%; /* fill the full workbench height */
+  height: 100%;
   overflow-y: auto;
-  width: 100%; /* fill the full grid column even if content is narrower */
+  /* flex: 1 1 auto makes it grow to fill remaining space */
+  flex: 1 1 0% !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
 }
 
 .workbench-inspector {
@@ -9334,16 +9367,33 @@ h2,
   }
 }
 
+  /* Library: inspector goes overlay so table gets full width (note: Tauri enforces minWidth:1100) */
+  .screen-shell.workbench .workbench-inspector {
+    position: absolute;
+    right: 0;
+    z-index: 100;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* Library: facts/at-a-glance column hidden — type pill + status cell tell the story */
+  .library-table th:nth-child(5),
+  .library-table td.library-facts-cell {
+    display: none;
+  }
+}
+
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 1fr;
     height: 100vh;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .sidebar-shell {
     min-height: auto;
-    width: var(--sidebar-width); /* never expand beyond intended sidebar width */
+    width: var(--sidebar-width);
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
@@ -9361,6 +9411,26 @@ h2,
     grid-auto-columns: minmax(80px, 1fr);
   }
 
+  /* Library: main-shell fills full available height */
+  .screen-frame,
+  .main-shell {
+    min-height: 100%;
+    height: 100%;
+  }
+
+  /* Library: workbench fills full screen-frame */
+  .workbench {
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* Library: workbench surface fills full workbench */
+  .workbench-surface {
+    height: 100% !important;
+    width: 100% !important;
+    min-height: 0;
+  }
+
   .home-layout,
   .downloads-layout,
   .duplicates-workbench,
@@ -9370,143 +9440,6 @@ h2,
   .audit-layout {
     grid-template-columns: 1fr;
   }
-
-  .downloads-workbench {
-    grid-template-columns: 1fr;
-  }
-
-  .duplicates-workbench {
-    height: auto;
-  }
-
-  .workspace-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-toolbar-status,
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-toolbar-copy {
-    white-space: normal;
-  }
-
-  .theme-strip {
-    grid-template-columns: repeat(3, minmax(112px, 1fr));
-  }
-
-  .settings-action-row {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-focus-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-toolbar-settings-link {
-    justify-self: start;
-  }
-
-  .organize-step-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .layout-strip {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
-  .layout-strip-group {
-    flex-wrap: wrap;
-  }
-
-  .creator-learning-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar-resize-handle,
-  .downloads-queue-height-handle,
-  .library-table-height-handle,
-  .review-queue-height-handle,
-  .duplicates-queue-height-handle,
-  .audit-stage-handle,
-  .organize-stage-handle {
-    display: none;
-  }
-
-  .downloads-rail-shell .resize-handle,
-  .downloads-inspector-shell .resize-handle {
-    display: none;
-  }
-
-  .library-table-scroll,
-  .downloads-stage,
-  .review-queue-list,
-  .duplicates-queue-list,
-  .audit-stage,
-  .organize-stage {
-    height: auto;
-  }
-
-  .audit-stage,
-  .downloads-stage,
-  .duplicates-stage,
-  .organize-stage {
-    grid-template-rows: auto;
-    min-height: auto;
-  }
-
-  .organize-main-column {
-    grid-template-rows: auto auto;
-  }
-
-  .organize-preview-panel {
-    height: auto;
-  }
-
-  .downloads-control-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .downloads-stage-status {
-    justify-content: flex-start;
-  }
-
-  .downloads-action-dialog-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .guide-drawer {
-    width: min(var(--guide-width), calc(100vw - 0.6rem));
-  }
-
-  .guide-workbench,
-  .guide-section-grid,
-  .guide-hero-grid,
-  .guide-fact-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .guide-workbench {
-    overflow: auto;
-  }
-
-  .guide-nav-panel,
-  .guide-content-panel {
-    min-height: auto;
-  }
-
-  /* Library: workbench surface fills full width in single-column layout */
-  .workbench {
-    height: 100%;
-  }
-
-  .workbench-surface {
-    width: 100% !important;
-    min-height: 0;
-  }
-}
 
 @media (max-width: 760px) {
   .metrics-grid,
@@ -12450,7 +12383,7 @@ select:focus-visible {
 }
 /* DockSectionStack: THE scroll region — must expand to fill body and scroll */
 .library-detail-sheet-body > .dock-stack {
-  flex: 1 1 auto !important;
+  flex: 1 1 0% !important;
   overflow: visible !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
