@@ -50,6 +50,7 @@ export function LibraryCollectionTable({
                 return (
                   <m.tr
                     key={row.id}
+                    data-kind={model.kind}
                     className={[
                       selectedId === row.id ? "is-selected" : "",
                       isChecked ? "is-multiselected" : "",

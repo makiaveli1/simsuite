@@ -5496,7 +5496,7 @@ export const api = {
     invoke<SpecialReviewPlan | null>("get_download_item_review_plan", { itemId }),
   previewDownloadItem: (itemId: number, presetName?: string) =>
     invoke<OrganizationPreview>("preview_download_item", { itemId, presetName }),
-  getLibraryFacets: () => invoke<LibraryFacets>("get_library_facets"),
+  getLibraryFacets: (kind?: string) => invoke<LibraryFacets>("get_library_facets", kind ? { kind } : {}),
   getLibrarySummary: () => invoke<LibrarySummary>("get_library_summary"),
   getDuplicateOverview: () => invoke<DuplicateOverview>("get_duplicate_overview"),
   listDuplicatePairs: (duplicateType?: string, limit?: number) =>

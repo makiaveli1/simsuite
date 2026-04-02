@@ -1250,13 +1250,17 @@ pub async fn preview_download_item(
 }
 
 #[tauri::command]
-pub async fn get_library_facets(state: State<'_, AppState>) -> Result<LibraryFacets, String> {
+pub async fn get_library_facets(
+    state: State<'_, AppState>,
+    kind: Option<String>,
+) -> Result<LibraryFacets, String> {
     let state = state.inner().clone();
     run_blocking_command("get_library_facets", move || {
         let started_at = Instant::now();
         let connection = state.connection().map_err(map_error)?;
         let seed_pack = state.seed_pack();
-        let facets = library_index::get_library_facets(&connection, &seed_pack.taxonomy)
+        let kind_filter = kind.as_deref().filter(|k| !k.is_empty());
+        let facets = library_index::get_library_facets(&connection, &seed_pack.taxonomy, kind_filter)
             .map_err(map_error)?;
         log_slow_command("get_library_facets", started_at, || {
             format!(

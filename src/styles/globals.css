@@ -2733,6 +2733,58 @@ h2,
     var(--surface-hover);
 }
 
+/* Kind-colored row hover — reinforces type identity at a glance */
+.library-table tbody tr[data-kind="CAS"]:hover {
+  background:
+    linear-gradient(90deg, rgba(224, 123, 211, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="ScriptMods"]:hover {
+  background:
+    linear-gradient(90deg, rgba(240, 165, 0, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="Gameplay"]:hover {
+  background:
+    linear-gradient(90deg, rgba(76, 175, 130, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="BuildBuy"]:hover {
+  background:
+    linear-gradient(90deg, rgba(91, 155, 213, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="OverridesAndDefaults"]:hover {
+  background:
+    linear-gradient(90deg, rgba(224, 92, 92, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="PresetsAndSliders"]:hover {
+  background:
+    linear-gradient(90deg, rgba(155, 135, 232, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+.library-table tbody tr[data-kind="PosesAndAnimation"]:hover {
+  background:
+    linear-gradient(90deg, rgba(155, 127, 232, 0.08), transparent 42%),
+    var(--surface-hover);
+}
+
+/* Widen type accent bar slightly for better type visibility */
+.library-table th.library-type-accent-col,
+.library-table td.library-type-accent-col {
+  width: 8px !important;
+  min-width: 8px !important;
+  max-width: 8px !important;
+  overflow: hidden !important;
+}
+
 .brand-panel:hover,
 .brand-panel:focus-visible,
 .rail-action:hover,
@@ -8553,6 +8605,22 @@ h2,
   .home-refresh-banner {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  /* Library: at compact widths, inspector goes overlay-only so table gets full width */
+  .screen-shell.workbench .workbench-inspector {
+    position: absolute;
+    right: 0;
+    z-index: 100;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* Library: facts/at-a-glance column hidden at compact — type pill + status cell tell the story */
+  .library-table th:nth-child(5),
+  .library-table td.library-facts-cell {
+    display: none;
   }
 }
 

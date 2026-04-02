@@ -99,6 +99,7 @@ pub fn get_home_overview(
 pub fn get_library_facets(
     connection: &Connection,
     taxonomy: &TaxonomySeed,
+    kind_filter: Option<&str>,
 ) -> AppResult<LibraryFacets> {
     let creators = string_list(
         connection,
@@ -115,15 +116,35 @@ pub fn get_library_facets(
          WHERE source_location <> 'downloads'
          ORDER BY kind COLLATE NOCASE",
     )?;
-    let subtypes = string_list(
-        connection,
-        "SELECT DISTINCT subtype
-         FROM files
-         WHERE source_location <> 'downloads'
-           AND subtype IS NOT NULL
-           AND subtype <> ''
-         ORDER BY subtype COLLATE NOCASE",
-    )?;
+    // Subtypes are scoped to the selected kind when kind_filter is provided.
+    // This makes the subtype chips in the UI truthful — they only show subtypes
+    // that actually exist on files of the selected kind.
+    let subtypes = if let Some(kind) = kind_filter {
+        // Parameterized query — kind is bound as ?1
+        let sql = "SELECT DISTINCT subtype
+                   FROM files
+                   WHERE source_location <> 'downloads'
+                     AND kind = ?1
+                     AND subtype IS NOT NULL
+                     AND subtype <> ''
+                   ORDER BY subtype COLLATE NOCASE";
+        let mut stmt = connection.prepare(sql)?;
+        let items = stmt
+            .query_map([kind], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(crate::error::AppError::from)?;
+        items
+    } else {
+        string_list(
+            connection,
+            "SELECT DISTINCT subtype
+             FROM files
+             WHERE source_location <> 'downloads'
+               AND subtype IS NOT NULL
+               AND subtype <> ''
+             ORDER BY subtype COLLATE NOCASE",
+        )?
+    };
     let sources = string_list(
         connection,
         "SELECT DISTINCT source_location
@@ -685,7 +706,7 @@ mod tests {
         assert_eq!(listing.items[0].filename, "installed.package");
         assert_eq!(listing.items[0].source_location, "mods");
 
-        let facets = get_library_facets(&connection, &seed_pack.taxonomy).expect("facets");
+        let facets = get_library_facets(&connection, &seed_pack.taxonomy, None).expect("facets");
         assert_eq!(facets.sources, vec!["mods".to_owned()]);
         assert_eq!(facets.creators, vec!["TestCreator".to_owned()]);
 

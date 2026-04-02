@@ -85,6 +85,11 @@ export function LibraryScreen({
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const deferredSearch = useDeferredValue(search);
 
+  // Reload facets when kind changes so subtype chips are kind-scoped.
+  useEffect(() => {
+    void api.getLibraryFacets(kind || undefined).then(setFacets);
+  }, [kind]);
+
   // Monotonic sequence counter — discards stale async responses from overlapping filter changes.
   const loadSeqRef = useRef(0);
 
