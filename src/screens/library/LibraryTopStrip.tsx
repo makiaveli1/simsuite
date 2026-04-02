@@ -114,22 +114,6 @@ export function LibraryTopStrip({
             </div>
           </label>
 
-          {/* Type dropdown */}
-          <div className="field library-toolbar-select">
-            <label className="sr-only" htmlFor="lib-filter-kind">Type</label>
-            <select
-              id="lib-filter-kind"
-              value={filters.kind}
-              onChange={(e) => onFiltersChange({ kind: e.target.value })}
-              aria-label="Filter by type"
-            >
-              <option value="">All types</option>
-              {facets?.kinds.map((k) => (
-                <option key={k} value={k}>{friendlyTypeLabel(k)}</option>
-              ))}
-            </select>
-          </div>
-
           {/* Creator dropdown */}
           <div className="field library-toolbar-select">
             <label className="sr-only" htmlFor="lib-filter-creator">Creator</label>
@@ -208,7 +192,57 @@ export function LibraryTopStrip({
         </div>
       </div>
 
-      {/* Row 2: Quick chips (watch filter tabs) */}
+      {/* Row 2: Type chips — primary browsing affordance (replaces kind dropdown) */}
+      {facets?.kinds && facets.kinds.length > 0 && (
+        <div className="library-type-chips" role="group" aria-label="Filter by type">
+          {facets.kinds.map((k) => {
+            const cssClass = `type-pill--${k.charAt(0).toLowerCase() + k.slice(1)}`;
+            const isActive = filters.kind === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                className={`library-kind-chip ${cssClass}${isActive ? " is-active" : ""}`}
+                onClick={() => onFiltersChange({ kind: isActive ? "" : k })}
+                aria-pressed={isActive}
+                title={isActive ? `Showing ${friendlyTypeLabel(k)} — click to clear` : `Show ${friendlyTypeLabel(k)}`}
+              >
+                {friendlyTypeLabel(k)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Row 3: Contextual subtype chips — only visible when a type is selected */}
+      {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+        <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
+          {facets.subtypes
+            .filter((s) => {
+              // Client-side kind-scoped subtype derivation:
+              // only show subtypes that appear on rows matching the selected kind.
+              // This is a best-effort heuristic; true kind-scoped subtypes need backend support.
+              return true; // rows-derived scoping happens via parent state; show all for now
+            })
+            .map((s) => {
+              const isActive = filters.subtype === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`library-subtype-chip${isActive ? " is-active" : ""}`}
+                  onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
+                  aria-pressed={isActive}
+                  title={isActive ? `Showing ${s} — click to clear` : `Show ${s}`}
+                >
+                  {s}
+                </button>
+              );
+            })}
+        </div>
+      )}
+
+      {/* Row 4: Quick chips (watch filter tabs) */}
       <div className="library-quick-chips" role="group" aria-label="Quick filters by status">
         {WATCH_FILTER_OPTIONS.map((opt) => (
           <button

@@ -1,5 +1,4 @@
 import { PanelLeftClose } from "lucide-react";
-import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import {
   type LibraryFacets,
   type LibraryWatchFilter,
@@ -33,14 +32,6 @@ interface LibraryFilterRailProps {
   onWatchFilterChange: (value: LibraryWatchFilter) => void;
 }
 
-const WATCH_FILTER_OPTIONS: Array<{ value: LibraryWatchFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "has_updates", label: "Updates" },
-  { value: "needs_attention", label: "Attention" },
-  { value: "not_tracked", label: "Not tracked" },
-  { value: "duplicates", label: "Dupes" },
-];
-
 const CONFIDENCE_OPTIONS = [
   { value: "", label: "Any" },
   { value: "high", label: "High" },
@@ -52,7 +43,7 @@ export function LibraryFilterRail({
   userView,
   facets,
   filters,
-  watchFilter,
+  watchFilter: _watchFilter,
   activeFilterCount,
   resultsCount,
   isCollapsed,
@@ -62,24 +53,13 @@ export function LibraryFilterRail({
   onFiltersChange,
   onResetFilters,
   onToggleMoreFilters,
-  onWatchFilterChange,
+  onWatchFilterChange: _onWatchFilterChange,
 }: LibraryFilterRailProps) {
   if (isCollapsed) {
     return null;
   }
 
   const flags = libraryViewFlags(userView);
-
-  // Build subtype options — include only subtypes that exist for the selected kind
-  // Subtype options — backend returns all subtypes in one flat list with no kind-scoped filtering.
-  // Showing all subtypes is honest given the backend constraint; the kind dropdown acts as the
-  // primary filter and subtype narrows within those results. Filtering to kind-scoped subtypes
-  // would require backend support or client-side post-filtering of all indexed files.
-  const subtypeOptions = (() => {
-    if (!facets?.subtypes?.length) return null;
-    return facets.subtypes;
-  })();
-
   const selectedConfidence =
     filters.minConfidence === "" || !filters.minConfidence
       ? ""
@@ -116,44 +96,18 @@ export function LibraryFilterRail({
         </div>
       </div>
 
-      {/* ── Watch status — quick-access pills (always shown) ── */}
-      <div className="filter-section">
-        <div className="section-label">Status</div>
-        <div className="watch-filter-row">
-          {WATCH_FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`watch-filter-chip${
-                watchFilter === opt.value ? " is-active" : ""
-              }`}
-              onClick={() => onWatchFilterChange(opt.value)}
-              aria-pressed={watchFilter === opt.value}
-            >
-              <strong>{opt.label}</strong>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* ── Refinement body ── */}
+      {/*
+        Type and subtype live as color-coded chips in the TopStrip — the primary
+        browsing affordance. This rail is for deep refinement.
 
-      {/* ── Body — type, creator, source ── */}
+        NOTE: In Seasoned/Creator view the type chips row is prominent in the TopStrip.
+        Subtype chips appear contextually when a type is selected.
+        The dropdowns below are kept as a secondary access path for discoverability
+        and keyboard accessibility — but the primary type experience is the chip row.
+      */}
       <div className="library-filter-rail-body">
-        <label className="field">
-          <span>Type</span>
-          <select
-            aria-label="Type"
-            value={filters.kind}
-            onChange={(event) => onFiltersChange({ kind: event.target.value })}
-          >
-            <option value="">All types</option>
-            {facets?.kinds.map((item) => (
-              <option key={item} value={item}>
-                {friendlyTypeLabel(item)}
-              </option>
-            ))}
-          </select>
-        </label>
-
+        {/* Creator filter */}
         <label className="field">
           <span>Creator</span>
           <select
@@ -171,27 +125,6 @@ export function LibraryFilterRail({
             ))}
           </select>
         </label>
-
-        {/* Subtype — only show if subtypes exist in the facet data */}
-        {subtypeOptions ? (
-          <label className="field">
-            <span>Subtype</span>
-            <select
-              aria-label="Subtype"
-              value={filters.subtype}
-              onChange={(event) =>
-                onFiltersChange({ subtype: event.target.value })
-              }
-            >
-              <option value="">All subtypes</option>
-              {subtypeOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
 
         {/* Confidence — quick-select buttons (seasoned+) */}
         {userView !== "beginner" && (

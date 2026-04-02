@@ -1471,6 +1471,100 @@ h2,
   font-weight: 700;
 }
 
+/* ── Type browsing chips (primary kind filter — replaces kind dropdown) ── */
+.library-type-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.library-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.library-kind-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+}
+
+/* Active state — filled with kind color */
+.library-kind-chip.is-active {
+  font-weight: 700;
+  box-shadow: 0 0 0 1px currentColor opacity 0.3;
+}
+
+/* Kind-specific color variants — match existing .type-pill--* palette */
+.library-kind-chip.type-pill--cas.is-active      { background: var(--kind-cas);      border-color: var(--kind-cas);      color: #fff; }
+.library-kind-chip.type-pill--script.is-active    { background: var(--kind-script);  border-color: var(--kind-script);  color: #fff; }
+.library-kind-chip.type-pill--gameplay.is-active  { background: var(--kind-gameplay); border-color: var(--kind-gameplay); color: #fff; }
+.library-kind-chip.type-pill--buildbuy.is-active  { background: var(--kind-buildbuy); border-color: var(--kind-buildbuy); color: #fff; }
+.library-kind-chip.type-pill--override.is-active  { background: var(--kind-override); border-color: var(--kind-override); color: #fff; }
+.library-kind-chip.type-pill--poses.is-active      { background: var(--kind-poses);    border-color: var(--kind-poses);   color: #fff; }
+.library-kind-chip.type-pill--presets.is-active    { background: var(--kind-presets);  border-color: var(--kind-presets); color: #fff; }
+.library-kind-chip.type-pill--tray.is-active      { background: var(--kind-tray);     border-color: var(--kind-tray);    color: #fff; }
+.library-kind-chip.type-pill--unknown.is-active   { background: var(--kind-unknown);  border-color: var(--kind-unknown);  color: #fff; }
+
+/* ── Contextual subtype chips (appear when a type is active) ── */
+.library-subtype-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+
+.library-subtype-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.library-subtype-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+}
+
+.library-subtype-chip.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
 /* Summary strip row */
 .library-summary-strip {
   display: flex;
