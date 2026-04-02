@@ -616,9 +616,12 @@ h2,
 .app-shell {
   position: relative;
   display: grid;
+  /* Single-column on narrow viewports: sidebar stacks above main content */
   grid-template-columns: var(--sidebar-width) 1fr;
   gap: 0.35rem;
-  min-height: 100vh;
+  /* Fill the full viewport height — don't grow beyond it */
+  height: 100vh;
+  overflow: hidden;
   padding: 0.35rem;
 }
 
@@ -735,6 +738,8 @@ h2,
   flex-direction: column;
   gap: 0.24rem;
   min-height: calc(100vh - (var(--shell-gap) * 2));
+  /* Constrain to grid column width — prevents it from expanding the entire row */
+  width: var(--sidebar-width);
   padding: 0.3rem;
   border: 1px solid rgba(205, 223, 214, 0.08);
   background:
@@ -767,9 +772,11 @@ h2,
  * Page does not scroll - only list area, preview area, and inspector should scroll */
 .workbench {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
+  width: 100%;
+  height: 100%;
 }
 
 .workbench-three-panel {
@@ -777,7 +784,8 @@ h2,
 }
 
 .workbench-two-panel {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  /* Ensure the 1fr column fills available space, not content size */
 }
 
 .workbench-rail,
@@ -793,7 +801,10 @@ h2,
 }
 
 .workbench-surface {
+  min-height: 0;
+  height: 100%; /* fill the full workbench height */
   overflow-y: auto;
+  width: 100%; /* fill the full grid column even if content is narrower */
 }
 
 .workbench-inspector {
@@ -9326,10 +9337,13 @@ h2,
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 1fr;
+    height: 100vh;
+    overflow: hidden;
   }
 
   .sidebar-shell {
     min-height: auto;
+    width: var(--sidebar-width); /* never expand beyond intended sidebar width */
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
@@ -9481,6 +9495,16 @@ h2,
   .guide-nav-panel,
   .guide-content-panel {
     min-height: auto;
+  }
+
+  /* Library: workbench surface fills full width in single-column layout */
+  .workbench {
+    height: 100%;
+  }
+
+  .workbench-surface {
+    width: 100% !important;
+    min-height: 0;
   }
 }
 
