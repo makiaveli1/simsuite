@@ -4259,9 +4259,9 @@ h2,
 
 .ledger-row strong,
 .detail-row > strong {
-  /* max-width removed: row uses flex:1/min-width:0 to allocate space naturally.
-     The pill and text take their natural width; flex:1 on strong means the row
-     shrinks before the value column does. No overflow. */
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   color: var(--text);
   text-align: right;
 }
@@ -11922,12 +11922,16 @@ select:focus-visible {
 }
 
 .detail-row > strong {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   color: var(--text);
   font-weight: 600;
   text-align: right;
   font-size: 0.78rem;
-  flex-shrink: 0;          /* was 1 — pill container must not compress */
+  flex-shrink: 0;
   min-width: 0;
+  gap: 0;
 }
 /* Pill: nowrap single line, as wide as its text. */
 .detail-row > strong > .library-health-pill {
