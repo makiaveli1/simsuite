@@ -1769,11 +1769,12 @@ h2,
 }
 
 .workbench-sheet {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 0.8rem;
   width: min(460px, calc(100vw - 0.8rem));
-  height: calc(100vh - 0.8rem);
+  min-height: calc(100vh - 0.8rem);
+  height: auto;
   margin: 0.4rem;
   min-width: 0;
   padding: calc(var(--panel-pad) + 0.12rem);
@@ -1783,7 +1784,7 @@ h2,
     linear-gradient(135deg, rgba(255, 255, 255, 0.016), transparent 42%),
     var(--chrome-surface);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
-  overflow: clip;
+  overflow: visible;
 }
 
 .workbench-sheet-header,
@@ -1809,7 +1810,7 @@ h2,
 }
 
 .workbench-sheet-footer {
-  align-items: center;
+  align-items: flex-start;     /* was center — Done button needs to be at flex-start */
   justify-content: flex-end;
 }
 
@@ -12114,17 +12115,20 @@ select:focus-visible {
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
-  overflow: auto !important;       /* was hidden — DockSectionStack is the scroll region */
-  height: 100% !important;
+  overflow: visible !important;
+  height: auto !important;
   width: 100% !important;
+  flex-shrink: 0 !important;          /* was 1 — prevent body from shrinking below children */
+  gap: 0 !important;                  /* was 0.72rem — no gap between body items and footer */
 }
 /* DockSectionStack: THE scroll region — must expand to fill body and scroll */
 .library-detail-sheet-body > .dock-stack {
-  flex: 1 1 0 !important;
-  overflow-y: auto !important;
+  flex: 1 1 auto !important;
+  overflow: visible !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
   overscroll-behavior: contain !important;
+  flex-shrink: 0 !important;          /* was 1 — let dock expand to full content height */
 }
 /* Lead section: filename wraps cleanly, meta stays right-aligned */
 .library-detail-sheet-lead strong {
