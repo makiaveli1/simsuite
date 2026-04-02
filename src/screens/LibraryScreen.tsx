@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { SkeletonLoader } from "../components/SkeletonLoader";
 import { ExternalLink } from "lucide-react";
@@ -85,12 +85,20 @@ export function LibraryScreen({
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const deferredSearch = useDeferredValue(search);
 
+  // Monotonic sequence counter — discards stale async responses from overlapping filter changes.
+  const loadSeqRef = useRef(0);
+
   useEffect(() => {
     void api.getLibraryFacets().then(setFacets);
     void api.getLibrarySummary().then(setLibrarySummary).catch(() => {
       // If getLibrarySummary fails (e.g. not yet implemented), fall through silently.
     });
   }, [refreshVersion]);
+
+  // Close the detail sheet whenever a different file is selected so stale sections don't show.
+  useEffect(() => {
+    setActiveLibrarySheet(null);
+  }, [selected?.id]);
 
   // Clear selection when page changes to prevent phantom selections.
   useEffect(() => {
@@ -137,6 +145,8 @@ export function LibraryScreen({
 
 
   async function loadRows(preferredSelectedId?: number) {
+    const seq = ++loadSeqRef.current;
+
     const result = await api.listLibraryFiles({
       search: deferredSearch || undefined,
       kind: kind || undefined,
@@ -150,13 +160,22 @@ export function LibraryScreen({
       offset: page * PAGE_SIZE,
     });
 
+    // Discard stale response — a newer request may have fired since this one started.
+    if (seq !== loadSeqRef.current) return;
+
     setRows(result);
 
-    const detailId = preferredSelectedId ?? selected?.id ?? result.items[0]?.id;
+    // If the previously selected file is no longer in the filtered results,
+    // clear selection so the inspector doesn't show a phantom file.
+    const currentSelectedId = preferredSelectedId ?? selected?.id;
+    const stillInResults = currentSelectedId != null && result.items.some((r) => r.id === currentSelectedId);
+    const detailId = stillInResults ? currentSelectedId : result.items[0]?.id;
+
     if (detailId) {
       setSelected(await api.getFileDetail(detailId));
     } else {
       setSelected(null);
+      setActiveLibrarySheet(null);
     }
   }
 
@@ -229,6 +248,8 @@ export function LibraryScreen({
     setCreator("");
     setSource("");
     setMinConfidence("");
+    setWatchFilter("all");
+    setSortBy("name");
     setPage(0);
   }
 
@@ -271,14 +292,28 @@ export function LibraryScreen({
   const hasVersionWatchInfo = Boolean(selected?.installedVersionSummary);
   const updatesTarget = selected ? getUpdatesWorkspaceTarget(selected) : null;
   const isCasualView = userView === "beginner";
-  const activeFilterCount = [
-    search.trim(),
-    kind,
-    subtype,
-    creator,
-    source,
-    minConfidence,
-  ].filter(Boolean).length;
+  // Tracks every active narrowing dimension so the reset button and badge are honest.
+  const hasActiveFilters =
+    search.trim().length > 0 ||
+    kind !== "" ||
+    subtype !== "" ||
+    creator !== "" ||
+    source !== "" ||
+    minConfidence !== "" ||
+    watchFilter !== "all" ||
+    sortBy !== "name";
+  const activeFilterCount = hasActiveFilters
+    ? [
+        search.trim(),
+        kind,
+        subtype,
+        creator,
+        source,
+        minConfidence,
+        watchFilter !== "all" ? "watch" : null,
+        sortBy !== "name" ? "sort" : null,
+      ].filter(Boolean).length
+    : 0;
   const viewFlags = libraryViewFlags(userView);
 
   const libraryInspectorSections = selected

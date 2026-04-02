@@ -71,10 +71,12 @@ export function LibraryFilterRail({
   const flags = libraryViewFlags(userView);
 
   // Build subtype options — include only subtypes that exist for the selected kind
+  // Subtype options — backend returns all subtypes in one flat list with no kind-scoped filtering.
+  // Showing all subtypes is honest given the backend constraint; the kind dropdown acts as the
+  // primary filter and subtype narrows within those results. Filtering to kind-scoped subtypes
+  // would require backend support or client-side post-filtering of all indexed files.
   const subtypeOptions = (() => {
     if (!facets?.subtypes?.length) return null;
-    // Filter subtypes to those relevant for the selected kind
-    // (backend returns all subtypes; we show them all with kind as a pre-filter)
     return facets.subtypes;
   })();
 
