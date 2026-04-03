@@ -757,7 +757,7 @@ h2,
   gap: 0;
   min-width: 0;
   min-height: 0;
-  align-content: start;
+  align-content: stretch;
   overflow: hidden;
 }
 
