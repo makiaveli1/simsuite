@@ -747,6 +747,9 @@ h2,
     linear-gradient(180deg, rgba(120, 240, 161, 0.035), transparent 14%),
     var(--shell-surface);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.012);
+  /* Clip nav-stack overflow — without this, the nav-stack (631px) extends beyond
+     the sidebar's 430px height, creating 776px of page scroll height */
+  overflow-y: auto;
 }
 
 .main-shell {

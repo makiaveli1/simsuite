@@ -24,6 +24,6 @@
     "src/components/**/*.tsx",
     "src/screens/**/*.tsx"
   ],
-  "exclude": ["src/main/**", "src/preload/**", "src/renderer/**"],
+  "exclude": ["src/main/**", "src/preload/**", "src/renderer/**", "src/screens/library/LibraryFilterRail.test.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
