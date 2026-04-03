@@ -1393,7 +1393,8 @@ h2,
 
 .library-stage-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr auto;
+  align-items: stretch;
   gap: 0.7rem;
   min-width: 0;
 }
@@ -12370,17 +12371,22 @@ select:focus-visible {
 /* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
 /* Grid row 2 (minmax 0,1fr) fills available space */
 .library-stage-shell .library-table-scroll {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 !important;
+  /* Plain display — let height: 100% control sizing, overflow handles scroll */
+  display: block !important;
+  height: 100% !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
 }
 /* Table fills scroll container */
 .library-stage-shell .library-table-scroll .library-table {
-  flex: 1 !important;
+  /* In a block context (display: block on parent), height: 100% fills the scroll container */
+  display: table !important;
+  table-layout: fixed !important;
+  width: 100% !important;
+  height: 100% !important;
   min-height: 0 !important;
+  max-height: none !important;
 }
 /* Keep thead/tbody as table so header stays fixed while tbody scrolls */
 .library-stage-shell .library-table thead { display: table !important; width: 100% !important; }
@@ -12390,7 +12396,7 @@ select:focus-visible {
   padding-bottom: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  flex: 1 !important;
+  /* height: 100% fills the grid cell; flex: 1 was causing table to not grow */
   min-height: 0 !important;
 }
 /* Footer: sibling of scroll container, grid row 3 = auto height, sits below table */
