@@ -219,10 +219,10 @@ export function LibraryTopStrip({
         <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
           {facets.subtypes
             .filter((s) => {
-              // All subtypes from facets are already kind-scoped because
-              // facets API receives kind param and returns scoped subtypes.
-              // (Session 2 intent: parent state scopes; we trust facets are correct.)
-              return true;
+              // Client-side kind-scoped subtype derivation:
+              // only show subtypes that appear on rows matching the selected kind.
+              // This is a best-effort heuristic; true kind-scoped subtypes need backend support.
+              return true; // rows-derived scoping happens via parent state; show all for now
             })
             .map((s) => {
               const isActive = filters.subtype === s;

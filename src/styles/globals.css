@@ -12351,70 +12351,46 @@ select:focus-visible {
 /* ─── Summary strip breathing room (2026-04-01) ──────────────────────── */
 .library-summary-strip { padding-top: 0.45rem !important; padding-bottom: 0.35rem !important; min-height: 1.5rem !important; gap: 0.4rem !important; }
 
-/* ─── Table layout — auto (content-driven), with proportional column guidance ────── */
-.library-table { table-layout: auto !important; }
-/* Accent bar: fixed narrow column, never grows */
-.library-table th.library-type-accent-col,
-.library-table td.library-type-accent-col {
-  width: 8px !important;
-  min-width: 8px !important;
-  max-width: 8px !important;
-  overflow: hidden !important;
-}
-/* Checkbox: fixed narrow column */
-.library-table th.library-table-checkbox-col,
-.library-table td.library-table-checkbox-col {
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-}
-/* Facts/clues column: bounded but flexible */
-.library-table th:nth-child(5),
-.library-table td.library-facts-cell {
-  width: 160px !important;
-  min-width: 120px !important;
-  max-width: 200px !important;
-}
-/* ─── Library name cell — allow flex meta to wrap, no overflow from cell ─── */
-.library-table td.library-name-cell {
-  min-width: 0 !important;
-  width: auto !important;
-  overflow: hidden !important;
-}
-.library-row-meta {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  align-items: center !important;
-  gap: 0.28rem !important;
-  margin-top: 0.3rem !important;
-  min-width: 0 !important;
-  overflow: visible !important;
-}
+/* ─── Table layout fixed (2026-04-01) ────────────────────────────────── */
+.library-table { table-layout: fixed !important; }
+.library-table th:nth-child(5), .library-table td.library-facts-cell { width: 155px !important; min-width: 130px !important; max-width: 175px !important; }
+.library-table th.library-type-accent-col, .library-table td.library-type-accent-col { width: 6px !important; min-width: 6px !important; max-width: 6px !important; overflow: hidden !important; }
+.library-table th.library-table-checkbox-col, .library-table td.library-table-checkbox-col { width: 36px !important; min-width: 36px !important; max-width: 36px !important; }
 
 /* ─── Type accent bar refinement (2026-04-01) ──────────────────────── */
 .type-accent { width: 4px !important; min-height: 100% !important; height: 100% !important; opacity: 0.8 !important; }
 
-/* ─── Detail sheet panel sizing (2026-04-03 rev.5 — clean overflow stack) ── */
-/* The sheet fills the full workbench-sheet-shell viewport.
-   Scrollable regions, innermost first:
-   1. .workbench-sheet-body = the scrollable sheet content container
-   2. .library-detail-sheet-body = sheet content wrapper
-   3. .dock-stack inside sheet = section scroll regions */
+/* ─── Detail sheet panel sizing (2026-04-01 rev.4 — force overrides) ── */
+/* .workbench-sheet is height:calc(100vh-0.8rem); grid rows: auto | minmax(0,1fr) | auto.
+   The sheet (row 2 grid item) must fill row 2 height exactly.
+   DockSectionStack must be the one and only scroll region. */
 .library-detail-sheet {
   height: 100% !important;
-  overflow: hidden !important;
+  overflow: visible !important;   /* was hidden — DockSectionStack handles scroll */
+}
+.workbench-sheet-body {
+  overflow: auto !important;       /* was hidden — allow body to pass through */
 }
 .library-detail-sheet-body {
-  height: 100% !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  height: auto !important;
+  width: 100% !important;
+  flex-shrink: 0 !important;          /* was 1 — prevent body from shrinking below children */
+  gap: 0 !important;                  /* was 0.72rem — no gap between body items and footer */
 }
-/* DockSectionStack inside sheet: each section is individually scrollable */
+/* DockSectionStack: THE scroll region — must expand to fill body and scroll */
 .library-detail-sheet-body > .dock-stack {
+  flex: 1 1 0% !important;
   overflow: visible !important;
   overflow-x: hidden !important;
+  min-height: 0 !important;
+  overscroll-behavior: contain !important;
+  flex-shrink: 0 !important;          /* was 1 — let dock expand to full content height */
 }
-/* Lead section: filename wraps cleanly */
+/* Lead section: filename wraps cleanly, meta stays right-aligned */
 .library-detail-sheet-lead strong {
   display: block !important;
   overflow-wrap: anywhere !important;
@@ -12424,40 +12400,14 @@ select:focus-visible {
   min-width: 0 !important;
 }
 
-/* ─── Inspector sidebar detail rows — value text handling ────────────── */
-.library-inspector-shell .detail-row {
-  display: flex !important;
-  align-items: baseline !important;
-  justify-content: space-between !important;
-  gap: 0.4rem !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-}
-.library-inspector-shell .detail-row > span:first-child {
-  flex-shrink: 0 !important;
-  color: var(--text-dim) !important;
-  font-size: 0.72rem !important;
-  font-weight: 500 !important;
-}
+/* Inspector sidebar detail rows: pill container must be flex, overrides
+   .library-detail-sheet-lead strong above which forces block for filename. */
 .library-inspector-shell .detail-row > strong {
   display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  flex-wrap: wrap !important;
-  gap: 0.25rem !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: normal !important;
-  font-size: 0.8rem !important;
-  font-weight: 600 !important;
-  color: var(--text) !important;
-}
-/* Inspector sidebar cards: consistent padding */
-.library-inspector-shell .library-details-card {
-  padding: 0.65rem 0.75rem !important;
-}
-.library-inspector-shell .library-details-empty {
-  padding: 0.65rem 0.75rem !important;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  min-width: 0;
+  gap: 0;
 }
 
