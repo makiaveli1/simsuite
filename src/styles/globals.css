@@ -761,6 +761,13 @@ h2,
   overflow: hidden;
 }
 
+/* Force the workbench grid item to fill its grid track height instead of sizing to
+   content — this breaks the circular dependency where workbench height referenced
+   the mainShell grid row which was sized by workbench content */
+.main-shell > .workbench {
+  align-self: stretch;
+}
+
 .screen-frame {
   display: grid;
   min-width: 0;
@@ -806,7 +813,9 @@ h2,
 .workbench-surface {
   min-height: 0;
   height: 100%; /* fill the full workbench height */
-  overflow-y: auto;
+  /* overflow: hidden constrains the nested .library-stage-shell grid to this cell's
+     height, so its 1fr row actually stretches instead of sizing to content */
+  overflow: hidden;
   width: 100%; /* fill the full grid column even if content is narrower */
 }
 
@@ -1397,6 +1406,10 @@ h2,
   align-items: stretch;
   gap: 0.7rem;
   min-width: 0;
+  /* min-height: 0 + overflow: hidden = fills the workbench-surface grid cell,
+     so the 1fr row stretches to fill available space */
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ─── Library top toolbar (new railless layout) ─────────────────────────────── */
