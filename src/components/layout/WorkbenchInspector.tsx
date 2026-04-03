@@ -58,7 +58,7 @@ export function WorkbenchInspector({
 
   const inlineStyle = collapsed
     ? { width: 0, minWidth: 0, overflow: "hidden" }
-    : { width: `${activeWidth}px` };
+    : { '--inspector-width': `${activeWidth}px` };
 
   return (
     <aside
