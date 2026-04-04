@@ -12465,33 +12465,47 @@ select:focus-visible {
 /* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
 /* Grid row 2 (minmax 0,1fr) fills available space */
 .library-stage-shell .library-table-scroll {
-  /* Plain display — let height: 100% control sizing, overflow handles scroll */
-  display: block;
+  /* Flex column so .library-table (flex: 1) can stretch to fill available height */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden; /* allow media query at 1024px to override */
+  overflow-x: hidden;
 }
 /* Table fills scroll container */
 .library-stage-shell .library-table-scroll .library-table {
-  /* In a block context (display: block on parent), height: 100% fills the scroll container */
-  display: table !important;
-  table-layout: fixed !important;
+  /* Flex column so thead (flex-shrink: 0) stays fixed and tbody (flex: 1) stretches */
+  display: flex !important;
+  flex-direction: column !important;
   width: 100% !important;
   height: 100% !important;
   min-height: 0 !important;
   max-height: none !important;
 }
-/* Keep thead/tbody as table so header stays fixed while tbody scrolls */
-.library-stage-shell .library-table thead { display: table !important; width: 100% !important; }
-.library-stage-shell .library-table tbody { display: table !important; width: 100% !important; }
+/* Thead stays fixed at the top of the scroll container */
+.library-stage-shell .library-table thead {
+  display: table !important;
+  width: 100% !important;
+  flex-shrink: 0 !important;
+}
+/* Tbody scrolls and stretches to fill all available space */
+.library-stage-shell .library-table tbody {
+  display: table !important;
+  width: 100% !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
 /* Scroll container: flex column, overflow-y:auto, flex:1 = fills grid cell */
 .table-scroll {
   padding-bottom: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  /* height: 100% fills the grid cell; flex: 1 was causing table to not grow */
   min-height: 0 !important;
+  /* Fill the full grid cell height — aligns children to stretch */
+  align-items: stretch;
 }
 /* Footer: sibling of scroll container, grid row 3 = auto height, sits below table */
 .table-footer {
