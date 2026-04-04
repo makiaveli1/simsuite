@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ResizableEdgeHandle } from "../ResizableEdgeHandle";
+import { PanelLeftClose, ChevronRight } from "lucide-react";
 import { useUiPreferences } from "../UiPreferencesContext";
 
 interface WorkbenchInspectorProps {
@@ -73,10 +74,9 @@ export function WorkbenchInspector({
     .filter(Boolean)
     .join(" ");
 
-  // When collapsed: leave 20px visible so the expand tab can be seen
-  // The expand button is absolutely positioned inside the aside
+  // When collapsed: 64px wide so the expand tab is visible and clickable
   const inlineStyle = collapsed
-    ? { width: "20px", minWidth: "20px", overflow: "hidden" }
+    ? { width: "64px", minWidth: "64px" }
     : { '--inspector-width': `${activeWidth}px` };
 
   return (
@@ -96,11 +96,11 @@ export function WorkbenchInspector({
           aria-label="Collapse inspector panel"
           title="Collapse inspector"
         >
-          ‹
+          <PanelLeftClose size={16} strokeWidth={2} />
         </button>
       )}
 
-      {/* Expand trigger — shown when collapsed */}
+      {/* Expand trigger — outside the aside so it is never clipped by overflow:hidden on the workbench */}
       {collapsible && collapsed && (
         <button
           type="button"
@@ -109,8 +109,7 @@ export function WorkbenchInspector({
           aria-label="Expand inspector panel"
           title="Show inspector"
         >
-          ›
-          <span>Inspector</span>
+          <ChevronRight size={16} strokeWidth={2.5} />
         </button>
       )}
 

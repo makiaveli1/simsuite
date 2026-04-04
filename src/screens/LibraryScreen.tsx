@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { SkeletonLoader } from "../components/SkeletonLoader";
-import { ExternalLink, Search, X } from "lucide-react";
+import { ExternalLink, Search, X, PanelLeftClose } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
@@ -1171,12 +1171,12 @@ export function LibraryScreen({
           headerRight={
             <button
               type="button"
-              className="inspector-header-collapse-btn"
+              className="inspector-collapse-btn"
               onClick={() => setInspectorCollapsed(true)}
               aria-label="Collapse inspector"
               title="Collapse inspector"
             >
-              ‹
+              <PanelLeftClose size={16} strokeWidth={2} />
             </button>
           }
         />

@@ -850,99 +850,154 @@ h2,
 }
 
 /* Inspector collapse/expand (Creator mode) */
+
+/* ── Collapse button: circular accent button in the detail header ── */
 .inspector-collapse-btn {
-  /* Non-collapsible mode: floating button at top-right of the inspector */
-  position: absolute;
-  top: 0.5rem;
-  right: 0.4rem;
-  z-index: 10;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
   background: var(--surface-2);
-  border: 1px solid rgba(205, 223, 214, 0.22);
-  border-radius: 4px;
-  color: var(--text-soft);
+  border: 1.5px solid var(--accent-line);
+  border-radius: 50%;
+  color: var(--accent);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+  transition:
+    background 150ms var(--ease-standard, ease),
+    border-color 150ms var(--ease-standard, ease),
+    color 150ms var(--ease-standard, ease),
+    transform 150ms var(--ease-standard, ease);
 }
 
 .inspector-collapse-btn:hover {
   background: var(--surface-3);
-  color: var(--text);
-  border-color: rgba(205, 223, 214, 0.5);
-}
-
-/* Header-embedded collapse button — used by LibraryDetailsPanel via headerRight */
-.inspector-header-collapse-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.6rem;
-  height: 1.5rem;
-  padding: 0;
-  background: var(--surface-2);
-  border: 1px solid rgba(205, 223, 214, 0.3);
-  border-radius: 4px;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-  flex-shrink: 0;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.inspector-header-collapse-btn:hover {
-  background: var(--surface-3);
-  border-color: rgba(205, 223, 214, 0.55);
-}
-
-.inspector-expand-btn {
-  position: absolute;
-  top: 50%;
-  /* right edge of the collapsed inspector panel — sits just inside the right boundary */
-  right: 0;
-  transform: translateY(-50%) translateX(50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 72px;
-  background: var(--surface-3);
-  border: none;
-  border-radius: 0 6px 6px 0;
-  border-left: 2px solid var(--accent);
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-family: var(--font-sans);
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  z-index: 10;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
-}
-
-.inspector-expand-btn:hover {
-  background: var(--accent-soft);
+  border-color: var(--accent);
   color: var(--accent-strong);
-  border-left-color: var(--accent-strong);
+  transform: scale(1.06);
 }
 
-.inspector-expand-btn:focus-visible,
+.inspector-collapse-btn:active {
+  transform: scale(0.94);
+}
+
 .inspector-collapse-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.workbench-inspector.inspector-collapsed {
+/* ── Expand trigger: 64px full-height tab on the right edge when collapsed ── */
+/* ── Expand trigger: floating pill on the right edge when collapsed ── */
+/* ── Expand trigger: floating circular button on the right edge ── */
+.inspector-expand-btn {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1.5px solid var(--accent-line);
+  border-radius: 50%;
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease-standard, ease),
+    border-color 150ms var(--ease-standard, ease),
+    color 150ms var(--ease-standard, ease),
+    transform 150ms var(--ease-standard, ease),
+    box-shadow 150ms var(--ease-standard, ease);
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(120,240,161,0.1);
+}
+
+.inspector-expand-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.6), 0 0 0 1px rgba(120,240,161,0.3);
+}
+
+.inspector-expand-btn:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.inspector-expand-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+
+.inspector-expand-btn:hover {
+  width: 52px;
+  background: var(--surface-3);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.inspector-expand-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.inspector-expand-label {
+  font-size: 0.58rem;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  user-select: none;
+  opacity: 0;
+  width: 0;
   overflow: hidden;
-  transition: width 0.2s ease;
-  /* Width is controlled inline by the component (20px min). 
-     This class provides the transition; width is set via inline style. */
+  transition: opacity 200ms, width 200ms;
+  white-space: nowrap;
+}
+
+.inspector-expand-btn:hover .inspector-expand-label {
+  opacity: 1;
+  width: auto;
+}
+
+
+.inspector-expand-btn:hover {
+  background: var(--surface-2);
+  border-left-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.inspector-expand-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.inspector-expand-label {
+  font-size: 0.6rem;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  user-select: none;
+}
+
+/* ── Collapsed state: 64px wide, content hidden, expand tab visible ── */
+.workbench-inspector.inspector-collapsed {
+  overflow: visible;
+  transition: width 220ms var(--ease-standard);
+}
+
+.workbench-inspector.inspector-collapsed .inspector-content {
+  display: none;
 }
 
 /* Desktop-First Workbench: Flat Surfaces */
