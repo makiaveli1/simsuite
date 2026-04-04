@@ -1145,7 +1145,7 @@ export function LibraryScreen({
       </WorkbenchStage>
 
       {/* Right inspector panel */}
-      <WorkbenchInspector className="library-inspector-shell">
+      <WorkbenchInspector className="library-inspector-shell" collapsible defaultCollapsed={false}>
         <LibraryDetailsPanel
           userView={userView}
           selectedFile={selected}
