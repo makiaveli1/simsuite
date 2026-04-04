@@ -12462,38 +12462,113 @@ select:focus-visible {
 }
 
 /* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
-/* Library table scroll container: flex column so header + body div stack */
-.library-stage-shell .library-table-scroll {
+.library-stage-shell .library-table-scroll.library-list-shell {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  align-items: stretch;
 }
-.library-stage-shell .library-table-scroll .library-table {
-  display: block;
-  height: 100%;
-  width: 100%;
-  min-height: 0;
-  max-height: none;
-  overflow: hidden;
+
+/* Grid list: fixed header + scrollable body */
+.library-list-header,
+.library-list-row {
+  display: grid;
+  grid-template-columns: 6px 36px minmax(0, 1.8fr) 9rem 155px;
+  align-items: stretch;
 }
-.library-stage-shell .library-table thead {
-  display: table-header-group;
+
+.library-list-header {
   flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
 }
-.library-stage-shell .library-table tbody {
-  display: block;
+
+.library-list-header .library-list-col {
+  padding: 0.5rem 0.58rem;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.library-list-header .library-list-col--type,
+.library-list-header .library-list-col--select {
+  padding-left: 0;
+  padding-right: 0;
+  height: 100%;
+}
+
+.library-list-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
 }
-/* Scroll container: flex column, overflow-y:auto, flex:1 = fills grid cell */
+
+.library-list-row {
+  cursor: pointer;
+  transform-origin: left center;
+  will-change: transform;
+  align-items: stretch;
+}
+
+.library-list-row:nth-child(even):not(.is-selected) {
+  background: var(--row-zebra);
+}
+
+.library-list-row.is-selected {
+  background: var(--selection-fill);
+}
+
+.library-list-row.is-tray {
+  opacity: 0.6;
+}
+
+.library-list-row.is-tray:hover {
+  opacity: 0.85;
+}
+
+.library-list-row > .library-list-col {
+  padding: 0.58rem 0.62rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.82rem;
+  min-width: 0;
+}
+
+.library-list-row > .library-list-col--type {
+  padding: 0 !important;
+  overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+}
+
+.library-list-row > .library-list-col--select {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.5rem !important;
+}
+
+.library-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 1.25rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* Base scroll container utility */
 .table-scroll {
   padding-bottom: 0 !important;
-  overflow-y: auto !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
 }
