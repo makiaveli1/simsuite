@@ -12,8 +12,12 @@ interface WorkbenchInspectorProps {
   maxWidth?: number;
   /** Make the inspector collapsible with a toggle button */
   collapsible?: boolean;
-  /** Start collapsed (only used when collapsible=true) */
+  /** Start collapsed (only used when collapsible=true and no controlled collapsed prop) */
   defaultCollapsed?: boolean;
+  /** Controlled collapse state — if provided, component is controlled */
+  collapsed?: boolean;
+  /** Callback when collapse state changes — required when collapsed is controlled */
+  onCollapse?: (collapsed: boolean) => void;
   noPadding?: boolean;
   noBorder?: boolean;
   hideHandle?: boolean;
@@ -29,6 +33,8 @@ export function WorkbenchInspector({
   maxWidth = 720,
   collapsible = false,
   defaultCollapsed = false,
+  collapsed: controlledCollapsed,
+  onCollapse,
   noPadding = false,
   noBorder = false,
   hideHandle = false,
@@ -43,7 +49,18 @@ export function WorkbenchInspector({
         ? "inspector-balanced"
         : "inspector-spacious";
 
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  // Support both controlled (props) and uncontrolled (local) collapse state
+  const isControlled = controlledCollapsed !== undefined;
+  const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed);
+  const collapsed = isControlled ? controlledCollapsed : internalCollapsed;
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    if (isControlled) {
+      onCollapse?.(next);
+    } else {
+      setInternalCollapsed(next);
+    }
+  };
 
   const classes = [
     "workbench-inspector",
@@ -56,8 +73,10 @@ export function WorkbenchInspector({
     .filter(Boolean)
     .join(" ");
 
+  // When collapsed: leave 20px visible so the expand tab can be seen
+  // The expand button is absolutely positioned inside the aside
   const inlineStyle = collapsed
-    ? { width: 0, minWidth: 0, overflow: "hidden" }
+    ? { width: "20px", minWidth: "20px", overflow: "hidden" }
     : { '--inspector-width': `${activeWidth}px` };
 
   return (
@@ -67,12 +86,13 @@ export function WorkbenchInspector({
       aria-expanded={collapsible ? !collapsed : undefined}
       style={inlineStyle}
     >
-      {/* Collapse button — shown when open and collapsible */}
-      {collapsible && !collapsed && (
+      {/* Collapse button — only shown when collapsible but children don't provide their own (non-collapsible mode) */}
+      {/* When collapsible=true, LibraryDetailsPanel handles the collapse button via its headerRight prop */}
+      {!collapsible && (
         <button
           type="button"
           className="inspector-collapse-btn"
-          onClick={() => setCollapsed(true)}
+          onClick={toggleCollapsed}
           aria-label="Collapse inspector panel"
           title="Collapse inspector"
         >
@@ -85,7 +105,7 @@ export function WorkbenchInspector({
         <button
           type="button"
           className="inspector-expand-btn"
-          onClick={() => setCollapsed(false)}
+          onClick={toggleCollapsed}
           aria-label="Expand inspector panel"
           title="Show inspector"
         >

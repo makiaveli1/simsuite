@@ -83,6 +83,7 @@ export function LibraryScreen({
   const [savingCategory, setSavingCategory] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
   // Reload facets when kind changes so subtype chips are kind-scoped.
@@ -1145,7 +1146,12 @@ export function LibraryScreen({
       </WorkbenchStage>
 
       {/* Right inspector panel */}
-      <WorkbenchInspector className="library-inspector-shell" collapsible defaultCollapsed={false}>
+      <WorkbenchInspector
+        className="library-inspector-shell"
+        collapsible
+        collapsed={inspectorCollapsed}
+        onCollapse={setInspectorCollapsed}
+      >
         <LibraryDetailsPanel
           userView={userView}
           selectedFile={selected}
@@ -1162,6 +1168,17 @@ export function LibraryScreen({
               selected.id,
             );
           }}
+          headerRight={
+            <button
+              type="button"
+              className="inspector-header-collapse-btn"
+              onClick={() => setInspectorCollapsed(true)}
+              aria-label="Collapse inspector"
+              title="Collapse inspector"
+            >
+              ‹
+            </button>
+          }
         />
       </WorkbenchInspector>
     </Workbench>

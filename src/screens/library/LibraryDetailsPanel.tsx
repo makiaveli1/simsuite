@@ -12,6 +12,8 @@ interface LibraryDetailsPanelProps {
   /** Opens the full detail sheet (health/inspect/edit accessible inside) */
   onOpenMoreDetails: () => void;
   onOpenUpdates: () => void;
+  /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
+  headerRight?: ReactNode;
 }
 
 export function LibraryDetailsPanel({
@@ -19,6 +21,7 @@ export function LibraryDetailsPanel({
   selectedFile,
   onOpenMoreDetails,
   onOpenUpdates,
+  headerRight,
 }: LibraryDetailsPanelProps) {
   const isCasual = userView === "beginner";
   const isPower = userView === "power";
@@ -135,6 +138,7 @@ export function LibraryDetailsPanel({
         <div className="detail-header-top">
           <p className="eyebrow">{isCasual ? "Selected file" : "Inspector"}</p>
           {isTray && <span className="library-tray-badge">Tray</span>}
+          {headerRight}
         </div>
         <h2 className="detail-filename">{selectedFile.filename}</h2>
         <div className="detail-header-meta">

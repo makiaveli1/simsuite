@@ -851,6 +851,7 @@ h2,
 
 /* Inspector collapse/expand (Creator mode) */
 .inspector-collapse-btn {
+  /* Non-collapsible mode: floating button at top-right of the inspector */
   position: absolute;
   top: 0.5rem;
   right: 0.4rem;
@@ -861,8 +862,8 @@ h2,
   width: 1.7rem;
   height: 1.7rem;
   background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 5px;
+  border: 1px solid rgba(205, 223, 214, 0.22);
+  border-radius: 4px;
   color: var(--text-soft);
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
@@ -871,32 +872,64 @@ h2,
 .inspector-collapse-btn:hover {
   background: var(--surface-3);
   color: var(--text);
-  border-color: var(--line-strong);
+  border-color: rgba(205, 223, 214, 0.5);
+}
+
+/* Header-embedded collapse button — used by LibraryDetailsPanel via headerRight */
+.inspector-header-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.5rem;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid rgba(205, 223, 214, 0.3);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.inspector-header-collapse-btn:hover {
+  background: var(--surface-3);
+  border-color: rgba(205, 223, 214, 0.55);
 }
 
 .inspector-expand-btn {
+  position: absolute;
+  top: 50%;
+  /* right edge of the collapsed inspector panel — sits just inside the right boundary */
+  right: 0;
+  transform: translateY(-50%) translateX(50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.6rem 0.35rem;
-  background: var(--surface-2);
+  justify-content: center;
+  width: 20px;
+  height: 72px;
+  background: var(--surface-3);
   border: none;
-  border-left: 1px solid var(--line);
-  color: var(--text-soft);
+  border-radius: 0 6px 6px 0;
+  border-left: 2px solid var(--accent);
+  color: var(--accent);
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: 0.8rem;
   font-family: var(--font-sans);
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  transition: background 0.12s, color 0.12s;
-  width: 100%;
-  min-height: 80px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  z-index: 10;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
 }
 
 .inspector-expand-btn:hover {
-  background: var(--surface-3);
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-left-color: var(--accent-strong);
 }
 
 .inspector-expand-btn:focus-visible,
@@ -908,6 +941,8 @@ h2,
 .workbench-inspector.inspector-collapsed {
   overflow: hidden;
   transition: width 0.2s ease;
+  /* Width is controlled inline by the component (20px min). 
+     This class provides the transition; width is set via inline style. */
 }
 
 /* Desktop-First Workbench: Flat Surfaces */
@@ -12245,6 +12280,7 @@ select:focus-visible {
 .detail-header-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.3rem;
 }
