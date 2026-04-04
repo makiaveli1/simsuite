@@ -1455,14 +1455,13 @@ h2,
 }
 
 .library-stage-shell {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   align-items: stretch;
   gap: 0.7rem;
   min-width: 0;
-  /* min-height: 0 + overflow: hidden = fills the workbench-surface grid cell,
-     so the 1fr row stretches to fill available space */
-  min-height: 0;
+  /* Fill the full workbench-surface height */
+  flex: 1;
   overflow: hidden;
 }
 
@@ -12463,40 +12462,43 @@ select:focus-visible {
 }
 
 /* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
-/* Grid row 2 (minmax 0,1fr) fills available space */
+/* Library table scroll container: flex column so header + body div stack */
 .library-stage-shell .library-table-scroll {
-  /* Flex column so .library-table (flex: 1) can stretch to fill available height */
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Header table: fixed at top, never scrolls */
+.library-table--header {
+  table-layout: fixed !important;
+  width: 100% !important;
+  flex-shrink: 0 !important;
+  border-collapse: collapse;
+}
+.library-table--header thead th {
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+/* Body scroll container: fills remaining space, scrolls vertically */
+.library-table-body-scroll {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
-/* Table fills scroll container */
-.library-stage-shell .library-table-scroll .library-table {
-  /* Flex column so thead (flex-shrink: 0) stays fixed and tbody (flex: 1) stretches */
-  display: flex !important;
-  flex-direction: column !important;
+/* Body table: fills the scroll container */
+.library-table--body {
+  table-layout: fixed !important;
   width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: none !important;
-}
-/* Thead stays fixed at the top of the scroll container */
-.library-stage-shell .library-table thead {
-  display: table !important;
-  width: 100% !important;
-  flex-shrink: 0 !important;
-}
-/* Tbody scrolls and stretches to fill all available space */
-.library-stage-shell .library-table tbody {
-  display: table !important;
-  width: 100% !important;
-  flex: 1 !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
+  border-collapse: collapse;
 }
 /* Scroll container: flex column, overflow-y:auto, flex:1 = fills grid cell */
 .table-scroll {
@@ -12504,8 +12506,6 @@ select:focus-visible {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   min-height: 0 !important;
-  /* Fill the full grid cell height — aligns children to stretch */
-  align-items: stretch;
 }
 /* Footer: sibling of scroll container, grid row 3 = auto height, sits below table */
 .table-footer {
