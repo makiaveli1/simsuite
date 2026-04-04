@@ -937,52 +937,6 @@ h2,
   outline-offset: 3px;
 }
 
-
-.inspector-expand-btn:hover {
-  width: 52px;
-  background: var(--surface-3);
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-.inspector-expand-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.inspector-expand-label {
-  font-size: 0.58rem;
-  font-family: var(--font-sans);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  user-select: none;
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
-  transition: opacity 200ms, width 200ms;
-  white-space: nowrap;
-}
-
-.inspector-expand-btn:hover .inspector-expand-label {
-  opacity: 1;
-  width: auto;
-}
-
-
-.inspector-expand-btn:hover {
-  background: var(--surface-2);
-  border-left-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-.inspector-expand-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
 .inspector-expand-label {
   font-size: 0.6rem;
   font-family: var(--font-sans);
