@@ -136,8 +136,6 @@ export function LibraryDetailsPanel({
       {/* ── Header ── */}
       <div className="detail-header">
         <div className="detail-header-top">
-          <p className="eyebrow">{isCasual ? "Selected file" : "Inspector"}</p>
-          {isTray && <span className="library-tray-badge">Tray</span>}
           {headerRight}
         </div>
         <h2 className="detail-filename">{selectedFile.filename}</h2>

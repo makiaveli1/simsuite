@@ -896,8 +896,8 @@ h2,
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -908,24 +908,26 @@ h2,
   cursor: pointer;
   transition:
     background 150ms var(--ease-standard, ease),
-    border-color 150ms var(--ease-standard, ease),
+    border-color 200ms var(--ease-standard, ease),
     color 150ms var(--ease-standard, ease),
     transform 150ms var(--ease-standard, ease),
-    box-shadow 150ms var(--ease-standard, ease);
+    box-shadow 200ms var(--ease-standard, ease);
   z-index: 9999;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(120,240,161,0.1);
+  /* Soft ambient glow — no hard edges, just a subtle halo */
+  box-shadow: 0 0 0 0px transparent, 0 2px 16px rgba(0,0,0,0.4);
 }
 
 .inspector-expand-btn:hover {
   background: var(--surface-3);
   border-color: var(--accent);
   color: var(--accent-strong);
-  transform: translateY(-50%) scale(1.08);
-  box-shadow: 0 6px 28px rgba(0,0,0,0.6), 0 0 0 1px rgba(120,240,161,0.3);
+  transform: translateY(-50%) scale(1.05);
+  /* Sleek glow on hover: soft outer halo in accent color */
+  box-shadow: 0 0 12px 2px rgba(120,240,161,0.22), 0 4px 20px rgba(0,0,0,0.5);
 }
 
 .inspector-expand-btn:active {
-  transform: translateY(-50%) scale(0.94);
+  transform: translateY(-50%) scale(0.95);
 }
 
 .inspector-expand-btn:focus-visible {
