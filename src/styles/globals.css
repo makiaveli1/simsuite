@@ -876,11 +876,13 @@ h2,
   background: var(--surface-3);
   border-color: var(--accent);
   color: var(--accent-strong);
-  transform: scale(1.06);
+  /* No scale — circular icon buttons distort when scaled. Just brighten. */
+  box-shadow: 0 0 10px rgba(120,240,161,0.2), 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .inspector-collapse-btn:active {
-  transform: scale(0.94);
+  background: var(--surface-press);
+  transform: scale(0.96);
 }
 
 .inspector-collapse-btn:focus-visible {
@@ -921,13 +923,13 @@ h2,
   background: var(--surface-3);
   border-color: var(--accent);
   color: var(--accent-strong);
-  transform: translateY(-50%) scale(1.05);
-  /* Sleek glow on hover: soft outer halo in accent color */
-  box-shadow: 0 0 12px 2px rgba(120,240,161,0.22), 0 4px 20px rgba(0,0,0,0.5);
+  /* No scale — circular icon buttons distort when scaled. Just brighten. */
+  box-shadow: 0 0 16px rgba(120,240,161,0.28), 0 4px 20px rgba(0,0,0,0.55);
 }
 
 .inspector-expand-btn:active {
-  transform: translateY(-50%) scale(0.95);
+  background: var(--surface-press);
+  transform: translateY(-50%) scale(0.96);
 }
 
 .inspector-expand-btn:focus-visible {
