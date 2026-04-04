@@ -1744,12 +1744,11 @@ h2,
 .library-type-chips {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.45rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  /* Chips wrap naturally — no scrolling, no cutoff */
 }
 
 .library-kind-chip {
