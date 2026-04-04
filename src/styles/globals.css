@@ -1458,7 +1458,7 @@ h2,
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.7rem;
+  gap: 0;
   min-width: 0;
   /* Fill the full workbench-surface height */
   flex: 1;
@@ -12470,35 +12470,25 @@ select:focus-visible {
   min-height: 0;
   overflow: hidden;
 }
-/* Header table: fixed at top, never scrolls */
-.library-table--header {
-  table-layout: fixed !important;
-  width: 100% !important;
-  flex-shrink: 0 !important;
-  border-collapse: collapse;
-}
-.library-table--header thead th {
-  padding: 0.45rem 0.5rem;
-  text-align: left;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-2);
-}
-/* Body scroll container: fills remaining space, scrolls vertically */
-.library-table-body-scroll {
-  flex: 1;
+.library-stage-shell .library-table-scroll .library-table {
+  display: block;
+  height: 100%;
+  width: 100%;
   min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+.library-stage-shell .library-table thead {
+  display: table-header-group;
+  flex-shrink: 0;
+}
+.library-stage-shell .library-table tbody {
+  display: block;
   overflow-y: auto;
   overflow-x: hidden;
-}
-/* Body table: fills the scroll container */
-.library-table--body {
-  table-layout: fixed !important;
-  width: 100% !important;
-  border-collapse: collapse;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 /* Scroll container: flex column, overflow-y:auto, flex:1 = fills grid cell */
 .table-scroll {
