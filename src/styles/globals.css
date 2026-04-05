@@ -12464,12 +12464,10 @@ select:focus-visible {
 
 /* ─── Pagination anchor + scroll fix (2026-04-01 rev.3) ────────────── */
 .library-stage-shell .library-table-scroll.library-list-shell {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+  display: grid;
+  grid-template-rows: auto 1fr;
   min-height: 0;
-  overflow: hidden;
-  align-items: stretch;
+  overflow: auto;
 }
 
 /* Grid list: fixed header + scrollable body */
@@ -12503,10 +12501,7 @@ select:focus-visible {
 }
 
 .library-list-body {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  align-self: stretch;
   overflow-y: auto;
   overflow-x: hidden;
 }
