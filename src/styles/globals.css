@@ -756,6 +756,7 @@ h2,
 .main-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   min-width: 0;
   min-height: 0;
