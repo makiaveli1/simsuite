@@ -619,10 +619,11 @@ h2,
   /* Single-column on narrow viewports: sidebar stacks above main content */
   grid-template-columns: var(--sidebar-width) 1fr;
   gap: 0.35rem;
-  /* Fill the full viewport height — don't grow beyond it */
-  height: 100vh;
+  /* Fill the full viewport height — 100dvh accounts for OS chrome (title bars) */
+  height: 100dvh;
   overflow: hidden;
-  padding: 0.35rem;
+  /* Top padding is handled by the sidebar/toolbar gap; left/right/bottom get 0.35rem */
+  padding: 0 0.35rem 0.35rem;
 }
 
 .app-shell > * {

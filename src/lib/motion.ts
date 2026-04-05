@@ -210,12 +210,13 @@ export function stagedListItem(index: number) {
 export function getScreenFrameMotion(theme: UiTheme, screen: Screen) {
   const themeProfile = THEME_MOTION[theme];
   const tempo = SCREEN_TEMPO[screen];
-  const offset = Math.round(themeProfile.screenOffset * tempo);
   const exit = Math.round(themeProfile.screenExit * tempo);
 
   return {
-    initial: { opacity: 0, y: offset, scale: 0.998 },
-    animate: { opacity: 1, y: 0, scale: 1 },
+    // No y: offset on initial — prevents a visual gap at the top of the app
+    // when the screen first mounts. Fade + subtle scale only.
+    initial: { opacity: 0, scale: 0.998 },
+    animate: { opacity: 1, scale: 1 },
     exit: { opacity: 0, y: exit, scale: 0.996 },
     transition: {
       duration: Number((themeProfile.screenDuration * tempo).toFixed(3)),
