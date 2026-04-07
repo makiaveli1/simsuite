@@ -434,6 +434,26 @@ export function LibraryScreen({
                       </div>
                     </div>
                   ) : null}
+                  {selected.insights.resourceSummary.length ? (
+                    <div className="detail-block">
+                      <div className="section-label">Contents</div>
+                      <div className="tag-list">
+                        {selected.insights.resourceSummary.map((item) => (
+                          <span key={item} className="ghost-chip">{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {selected.insights.familyHints.length ? (
+                    <div className="detail-block">
+                      <div className="section-label">Family</div>
+                      <div className="tag-list">
+                        {selected.insights.familyHints.map((hint) => (
+                          <span key={hint} className="ghost-chip">{hint}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               )}
             </>

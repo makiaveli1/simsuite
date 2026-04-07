@@ -30,3 +30,4 @@ To update before finish:
 - 2026-04-07: Confirmed real UI issues were sheet mode overscoping (inspect/health/edit showing nearly the same content) and footer clipping on desktop heights.
 - 2026-04-07: Added live Playwright audit scripts and verified the fixed sheet routing + visible footer state across required desktop sizes.
 - 2026-04-07: Specialist agent spawn path remained degraded during this pass because gateway WS timeouts persisted after restart; no fake agent conclusions were written.
+- 2026-04-07: Agent-path fix found: use `timeoutSeconds: 300` (not default 10s) on `sessions_spawn`. With 300s timeout, all specialist agents (Ariadne, Scout, Sentinel, Forge) can be spawned reliably. Root cause was the embedded agent initialization taking longer than the default 10s gateway spawn timeout.
