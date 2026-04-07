@@ -44,6 +44,7 @@ export function LibraryDetailSheet({
           onClick={onClose}
         >
           <m.aside
+            key={`library-sheet:${selectedFile.id}:${mode}:${userView}`}
             className="workbench-sheet library-detail-sheet"
             role="dialog"
             aria-modal="true"
@@ -91,6 +92,7 @@ export function LibraryDetailSheet({
               </div>
 
               <DockSectionStack
+                key={`librarySheetStack:${selectedFile.id}:${mode}:${userView}`}
                 layoutId={`librarySheet:${mode}`}
                 sections={sections}
                 intro="Reset this detail view"

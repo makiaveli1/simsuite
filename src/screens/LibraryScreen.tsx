@@ -897,24 +897,24 @@ export function LibraryScreen({
               return ["safety", "updatesHint", "inspection"].includes(section.id);
             }
             // Seasoned
-            return ["safety", "updatesHint"];
+            return ["safety", "updatesHint"].includes(section.id);
           }
 
           if (activeLibrarySheet === "inspect") {
             // inspect = file's full story: facts + insights + path
             if (isCasualView) {
               // Casual: just the facts section with compact metadata
-              return ["facts"];
+              return ["facts"].includes(section.id);
             }
             if (isPowerView) {
-              return ["facts", "inspection", "path"];
+              return ["facts", "inspection", "path"].includes(section.id);
             }
             // Seasoned: facts + insights (no path)
-            return ["facts", "inspection"];
+            return ["facts", "inspection"].includes(section.id);
           }
 
           // edit: always creator + category
-          return ["creator", "category"];
+          return ["creator", "category"].includes(section.id);
         })
       : [];
 
