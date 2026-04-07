@@ -155,13 +155,109 @@ export function summarizeLibraryCareState(
 }
 
 export function formatLibraryFileFormat(file: Pick<FileDetail, "insights" | "extension" | "path">): string {
-  if (file.insights?.format === "ts4script-zip" || file.extension === ".ts4script") {
+  if (isLibraryScriptArchive(file)) {
     return "Script archive (.ts4script)";
   }
   if (file.insights?.format === "dbpf-package" || file.extension === ".package") {
     return "Package file (.package)";
   }
   return file.insights?.format ?? file.extension ?? file.path.split(".").pop()?.toUpperCase() ?? "Unknown";
+}
+
+export function isLibraryScriptArchive(
+  file: Pick<FileDetail, "insights" | "extension">,
+): boolean {
+  return file.insights?.format === "ts4script-zip" || file.extension === ".ts4script";
+}
+
+export function summarizeLibraryScriptContent(
+  file: Pick<FileDetail, "insights" | "extension">,
+): string | null {
+  if (!isLibraryScriptArchive(file)) {
+    return null;
+  }
+
+  const namespaceCount = file.insights?.scriptNamespaces?.length ?? 0;
+  if (namespaceCount > 0) {
+    return `${namespaceCount} script ${namespaceCount === 1 ? "folder" : "folders"}`;
+  }
+
+  return file.insights?.resourceSummary?.find((item) => /archive entries:/i.test(item)) ?? "Script archive";
+}
+
+export function summarizeLibraryResourceBadge(
+  file: Pick<FileDetail, "insights" | "extension">,
+): string | null {
+  if (isLibraryScriptArchive(file)) {
+    return null;
+  }
+
+  return file.insights?.resourceSummary?.[0] ?? null;
+}
+
+export function formatLibraryFamilyHintLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return value;
+  }
+
+  if (!/[\s_-]/.test(trimmed) && /^[a-z0-9]+$/i.test(trimmed) && trimmed.length <= 5) {
+    return trimmed.toUpperCase();
+  }
+
+  const aliases = new Map<string, string>([
+    ["mccc", "MCCC"],
+    ["s4cl", "S4CL"],
+    ["tmex", "TMEX"],
+    ["xml", "XML"],
+  ]);
+
+  return trimmed
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      if (aliases.has(lower)) {
+        return aliases.get(lower) ?? part;
+      }
+      if (/^[0-9]+$/.test(part)) {
+        return part;
+      }
+      return `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    })
+    .join(" ");
+}
+
+export function describeLibraryFamilyContext(
+  file: Pick<FileDetail, "kind" | "subtype" | "insights">,
+): string | null {
+  const primaryFamily = file.insights?.familyHints?.find((item) => item.trim());
+  if (!primaryFamily) {
+    return null;
+  }
+
+  const familyLabel = formatLibraryFamilyHintLabel(primaryFamily);
+  const subtype = file.subtype?.trim();
+  const hasRoleLikeSubtype = subtype
+    ? ["core", "module", "library", "utility", "utilities", "framework"].includes(
+        subtype.toLowerCase(),
+      )
+    : false;
+
+  if (hasRoleLikeSubtype && subtype) {
+    return `${subtype} role in the ${familyLabel} family`;
+  }
+
+  if (file.kind === "ScriptMods") {
+    return `Part of the ${familyLabel} script family`;
+  }
+  if (file.kind === "Gameplay") {
+    return `Part of the ${familyLabel} gameplay family`;
+  }
+  if (file.kind === "CAS") {
+    return `Linked to the ${familyLabel} set`;
+  }
+  return `Part of the ${familyLabel} family`;
 }
 
 /** Builds type-specific supporting facts for a library row */

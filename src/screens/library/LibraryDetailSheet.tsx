@@ -8,6 +8,11 @@ import {
 } from "../../lib/motion";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView } from "../../lib/types";
+import {
+  describeLibraryFamilyContext,
+  summarizeLibraryResourceBadge,
+  summarizeLibraryScriptContent,
+} from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;
 
@@ -31,6 +36,15 @@ export function LibraryDetailSheet({
   if (!selectedFile || !mode) {
     return null;
   }
+
+  const inspectFamilyContext =
+    mode === "inspect" ? describeLibraryFamilyContext(selectedFile) : null;
+  const inspectContentBadge =
+    mode === "inspect"
+      ? summarizeLibraryScriptContent(selectedFile) ?? summarizeLibraryResourceBadge(selectedFile)
+      : null;
+  const inspectVersionBadge =
+    mode === "inspect" ? selectedFile.insights?.versionHints?.[0] ?? null : null;
 
   return (
     <AnimatePresence>
@@ -80,6 +94,19 @@ export function LibraryDetailSheet({
                     {friendlyTypeLabel(selectedFile.kind)}
                     {selectedFile.subtype?.trim() ? ` / ${selectedFile.subtype}` : ""}
                   </p>
+                  {inspectFamilyContext ? (
+                    <p className="workspace-toolbar-copy">{inspectFamilyContext}</p>
+                  ) : null}
+                  {mode === "inspect" && (inspectVersionBadge || inspectContentBadge) ? (
+                    <div className="tag-list" style={{ marginTop: "0.6rem" }}>
+                      {inspectVersionBadge ? (
+                        <span className="ghost-chip">Version {inspectVersionBadge}</span>
+                      ) : null}
+                      {inspectContentBadge ? (
+                        <span className="ghost-chip">{inspectContentBadge}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="library-detail-sheet-meta">
                   <span className="ghost-chip">

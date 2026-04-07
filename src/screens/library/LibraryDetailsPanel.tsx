@@ -1,6 +1,12 @@
 import { type ReactNode } from "react";
 import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-react";
-import { formatLibraryFileFormat, summarizeLibraryCareState, typeColorForKind } from "./libraryDisplay";
+import {
+  formatLibraryFileFormat,
+  summarizeLibraryCareState,
+  summarizeLibraryResourceBadge,
+  summarizeLibraryScriptContent,
+  typeColorForKind,
+} from "./libraryDisplay";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
 import { api } from "../../lib/api";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
@@ -58,6 +64,8 @@ export function LibraryDetailsPanel({
 
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
+  const scriptContentSummary = summarizeLibraryScriptContent(selectedFile);
+  const resourceBadge = summarizeLibraryResourceBadge(selectedFile);
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
       selectedFile.watchResult ||
@@ -91,6 +99,18 @@ export function LibraryDetailsPanel({
   // Subtype: useful for CAS/Gameplay categorization
   if (!isCasual && selectedFile.subtype?.trim()) {
     snapshotLines.push({ label: "Subtype", value: selectedFile.subtype });
+  }
+
+  if (!isCasual && scriptContentSummary) {
+    snapshotLines.push({
+      label: "Script content",
+      value: <span className="ghost-chip">{scriptContentSummary}</span>,
+    });
+  } else if (!isCasual && resourceBadge) {
+    snapshotLines.push({
+      label: "Contents",
+      value: <span className="ghost-chip">{resourceBadge}</span>,
+    });
   }
 
   // Installed version: relevant for seasoned simmer workflows
