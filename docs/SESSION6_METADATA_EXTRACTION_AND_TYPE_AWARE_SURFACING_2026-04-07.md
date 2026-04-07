@@ -142,7 +142,40 @@ Already comprehensive. Shows: version evidence (with sourceKind, matchedBy, conf
 - Inspect sheet: comprehensive facts + full inspection section
 - Family hints in Seasoned+ facts show expansion/game family signals
 
-## Remaining honest limitations
+## Sentinel truthfulness findings (from full audit)
+
+### Genuinely extracted
+- `embedded_names` (STBL/catalog/name_map) — honest ✅
+- `script_namespaces` (ts4script archive directories) — honest ✅
+- `creator_hints` (from embedded names + manifest fields) — honest ✅
+- `resource_summary` (DBPF resource type counts) — honest ✅
+
+### Overclaiming issues found
+
+**Issue A (HIGH):** Inspect sheet hint copy said "pulled from the file itself" — false for filename-sourced version signals.
+**Fix applied:** Changed to "Extracted clues, version signals, and structural facts about this file."
+
+**Issue B (HIGH):** "Version evidence" label implies confirmed extraction for filename-derived signals.
+**Fix applied:** Changed to "Version signals" (honest label).
+
+**Issue C (HIGH):** `sourceKind === "filename"` version signals mixed with genuine ones, indistinguishable in the UI.
+**Fix applied:** Added sort order — payload and embedded_name signals sorted to top, filename/archive_path signals sorted to bottom.
+
+**Issue D (MEDIUM):** `creator` field shown as confirmed fact while being filename-inferred.
+**Status:** Not fixed in this pass — requires a larger review of how creator is surfaced in the facts section.
+
+**Issue E (LOW):** "In-game names" label for non-CAS items is a loose claim.
+**Status:** Deferred — low severity.
+
+**Issue F (LOW):** `scriptNamespaces` fallback uses `identity_stems` as path-derived content.
+**Status:** Deferred — only triggers when namespaces list is empty, and the data is still from inside the archive.
+
+### Regression risks identified
+- New surfacing amplifies overclaim if version signals are dominated by filename-sourced signals
+- Confidence number without source context is misleading
+- Path-derived version signals indistinguishable from genuine in the UI
+
+---
 - Structured `FamilySignal` (role, key, primary_item_id) exists in Rust backend but is not transmitted to frontend — only `familyHints: string[]` (family names) is available
 - Version signals for packages are largely filename-based, not content-based — the UI already shows `sourceKind` to indicate this
 - Creator hints for packages without embedded names are still path-based — no honest fix without deeper manifest parsing

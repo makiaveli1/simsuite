@@ -666,7 +666,7 @@ export function LibraryScreen({
                 label: "Inside the file",
                 hint: isPowerView
                   ? "Signals pulled from package or script contents."
-                  : "Embedded names, version clues, and structural hints pulled from the file itself.",
+                  : "Extracted clues, version signals, and structural facts about this file.",
                 defaultCollapsed: false,
                 badge: selected.insights.format ?? null,
                 children: (
@@ -697,10 +697,16 @@ export function LibraryScreen({
                     ) : null}
                     {selected.insights.versionSignals.length ? (
                       <div className="detail-block">
-                        <div className="section-label">Version evidence</div>
+                        <div className="section-label">Version signals</div>
                         {isPowerView ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                            {selected.insights.versionSignals.map((signal, i) => (
+                            {selected.insights.versionSignals
+                              .slice()
+                              .sort((a, b) => {
+                                const order: Record<string, number> = { payload: 0, embedded_name: 1, resource_summary: 2, filename: 3, archive_path: 4 };
+                                return (order[a.sourceKind] ?? 99) - (order[b.sourceKind] ?? 99);
+                              })
+                              .map((signal, i) => (
                               <div
                                 key={i}
                                 style={{
