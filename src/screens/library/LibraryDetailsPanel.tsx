@@ -171,7 +171,7 @@ export function LibraryDetailsPanel({
 
       {/* ── Snapshot — view-aware depth ── */}
       <section className="library-details-card">
-        <div className="section-label">Snapshot</div>
+        <div className="section-label">At a glance</div>
         <div className="detail-list">
           {snapshotLines.map((line) => (
             <DetailLine key={line.label} label={line.label} value={line.value} />
@@ -181,7 +181,9 @@ export function LibraryDetailsPanel({
 
       {/* ── Care — view-aware depth ── */}
       <section className="library-details-card">
-        <div className="section-label">Care</div>
+        <div className="section-label">
+          {hasSafetyNotes || hasParserWarnings ? "Needs attention" : "Care"}
+        </div>
         <p className="library-care-summary">{careSummary}</p>
 
         {/* Warnings shown inline for seasoned+ so they don't need to open More details */}
@@ -238,7 +240,7 @@ export function LibraryDetailsPanel({
         {/* Casual gets a simple nudge instead of raw tags */}
         {isCasual && (hasSafetyNotes || hasParserWarnings) ? (
           <p className="text-muted">
-            Open More details to see the full picture.
+            Open More details to inspect file clues and warnings.
           </p>
         ) : null}
       </section>
@@ -272,64 +274,69 @@ export function LibraryDetailsPanel({
       {/* ── More actions — view-aware ── */}
       <section className="library-details-card">
         <div className="section-label">Open</div>
+        {!isCasual ? (
+          <p className="text-muted library-details-actions-copy">
+            Inspect first, then open warnings, updates, or fixes only if you need them.
+          </p>
+        ) : null}
         <div className="library-details-actions">
           <button
             type="button"
-            className="secondary-action"
+            className="primary-action library-details-action-primary"
             onClick={onOpenInspectDetails}
           >
             <Eye size={14} strokeWidth={2} />
             {isCasual ? "More details" : "Inspect file"}
           </button>
 
-          {!isCasual && hasHealthDetails ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={onOpenHealthDetails}
-            >
-              <ShieldAlert size={14} strokeWidth={2} />
-              Warnings & updates
-            </button>
-          ) : null}
+          <div className="library-details-actions-grid">
+            {!isCasual && hasHealthDetails ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenHealthDetails}
+              >
+                <ShieldAlert size={14} strokeWidth={2} />
+                Warnings & updates
+              </button>
+            ) : null}
 
-          {!isCasual ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={onOpenEditDetails}
-            >
-              <PencilLine size={14} strokeWidth={2} />
-              Edit details
-            </button>
-          ) : null}
+            {!isCasual ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenEditDetails}
+              >
+                <PencilLine size={14} strokeWidth={2} />
+                Edit details
+              </button>
+            ) : null}
 
-          {/* Open in Updates — useful for seasoned+ maintenance */}
-          {hasUpdates && !isCasual ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={onOpenUpdates}
-            >
-              <ExternalLink size={14} strokeWidth={2} />
-              Open in Updates
-            </button>
-          ) : null}
+            {hasUpdates && !isCasual ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenUpdates}
+              >
+                <ExternalLink size={14} strokeWidth={2} />
+                Open in Updates
+              </button>
+            ) : null}
 
-          {/* Open folder — useful for creator-level file operations */}
-          {isPower ? (
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => {
-                void api.revealFileInFolder(selectedFile.path);
-              }}
-              title={selectedFile.path}
-            >
-              <FolderOpen size={14} strokeWidth={2} />
-              Open folder
-            </button>
-          ) : null}
+            {isPower ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  void api.revealFileInFolder(selectedFile.path);
+                }}
+                title={selectedFile.path}
+              >
+                <FolderOpen size={14} strokeWidth={2} />
+                Open folder
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
     </div>

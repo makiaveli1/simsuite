@@ -31,8 +31,8 @@ it("shows inspect, health, and edit actions instead of a single generic details 
     />,
   );
 
-  expect(screen.getByText(/snapshot/i)).toBeVisible();
-  expect(screen.getByText(/care/i)).toBeVisible();
+  expect(screen.getByText(/at a glance/i)).toBeVisible();
+  expect(screen.getByText(/needs attention/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /inspect file/i })).toBeVisible();
   expect(screen.getByRole("button", { name: /warnings & updates/i })).toBeVisible();
   expect(screen.getByRole("button", { name: /edit details/i })).toBeVisible();
