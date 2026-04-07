@@ -443,43 +443,38 @@ export function LibraryScreen({
           ? [
               {
                 id: "updatesHint",
-                label: "File facts",
+                label: userView === "beginner" ? "Updates" : "Update watch",
                 hint:
                   isPowerView
-                    ? "File path, size, and modification date — useful for identifying and organizing."
+                    ? "Tracking status, latest version clues, and watch source details."
                     : isCasualView
-                      ? "The file's size and last-modified date — useful context when deciding what to keep."
-                      : "File size and modification date.",
+                      ? "Whether this file is being tracked for updates."
+                      : "Whether this file is tracked and what SimSuite knows about new versions.",
                 children: (
                   <div className="detail-block">
-                    {/* File metadata — always shown in sheet, not in Casual sidebar */}
-                    {selected.size > 0 && (
-                      <DetailRow
-                        label="Size"
-                        value={formatBytes(selected.size)}
-                      />
-                    )}
-                    {selected.modifiedAt ? (
-                      <DetailRow
-                        label="Modified"
-                        value={new Date(selected.modifiedAt).toLocaleString()}
-                      />
-                    ) : null}
-                    {selected.createdAt ? (
-                      <DetailRow
-                        label="Created"
-                        value={new Date(selected.createdAt).toLocaleString()}
-                      />
-                    ) : null}
-
-                    {/* Version tracking — only if tracked */}
                     {hasVersionWatchInfo ? (
                       <>
+                        <DetailRow
+                          label="Watch status"
+                          value={selected.watchResult?.status ? watchStatusLabel(selected.watchResult.status) : "Tracked"}
+                        />
                         <DetailRow
                           label="Installed"
                           value={selected.installedVersionSummary?.version ?? "Unknown"}
                         />
-                        {isPowerView && selected.watchResult?.checkedAt ? (
+                        {selected.watchResult?.sourceLabel ? (
+                          <DetailRow
+                            label="Source"
+                            value={selected.watchResult.sourceLabel}
+                          />
+                        ) : null}
+                        {selected.watchResult?.latestVersion ? (
+                          <DetailRow
+                            label="Latest seen"
+                            value={selected.watchResult.latestVersion}
+                          />
+                        ) : null}
+                        {selected.watchResult?.checkedAt ? (
                           <DetailRow
                             label="Last checked"
                             value={new Date(selected.watchResult.checkedAt).toLocaleString()}
@@ -491,9 +486,15 @@ export function LibraryScreen({
                             value={selected.watchResult.capability}
                           />
                         ) : null}
-                        <p className="text-muted" style={{ marginTop: "0.4rem" }}>
-                          Open Updates to manage sources, check for new versions, and review changes.
-                        </p>
+                        {selected.watchResult?.note ? (
+                          <p className="text-muted" style={{ marginTop: "0.4rem" }}>
+                            {selected.watchResult.note}
+                          </p>
+                        ) : (
+                          <p className="text-muted" style={{ marginTop: "0.4rem" }}>
+                            Open Updates to manage sources, check for new versions, and review changes.
+                          </p>
+                        )}
                       </>
                     ) : (
                       <p className="text-muted">
@@ -638,20 +639,18 @@ export function LibraryScreen({
               },
             ]
           : []),
-        ...(isPowerView && hasInspectionSignals
+        ...(!isCasualView && hasInspectionSignals
           ? [
               {
                 id: "inspection",
                 label: "Inside the file",
-                hint: "Signals pulled from package or script contents.",
+                hint: isPowerView
+                  ? "Signals pulled from package or script contents."
+                  : "Embedded names, version clues, and structural hints pulled from the file itself.",
                 defaultCollapsed: false,
                 badge: selected.insights.format ?? null,
                 children: (
                   <>
-                    {/* Type-aware labels applied inline in section-label divs below */}
-                    {selected.insights.format ? (
-                      <DetailRow label="Format" value={selected.insights.format} />
-                    ) : null}
                     {selected.insights.creatorHints.length ? (
                       <div className="detail-block">
                         <div className="section-label">Creator names found</div>
@@ -679,44 +678,54 @@ export function LibraryScreen({
                     {selected.insights.versionSignals.length ? (
                       <div className="detail-block">
                         <div className="section-label">Version evidence</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                          {selected.insights.versionSignals.map((signal, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                fontSize: "0.78rem",
-                              }}
-                            >
-                              <span
-                                className="ghost-chip"
-                                style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}
-                              >
-                                {signal.normalizedValue || signal.rawValue}
-                              </span>
-                              <span className="text-muted" style={{ fontSize: "0.7rem" }}>
-                                {signal.sourceKind}
-                                {signal.matchedBy ? ` · ${signal.matchedBy}` : ""}
-                              </span>
-                              <span
+                        {isPowerView ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                            {selected.insights.versionSignals.map((signal, i) => (
+                              <div
+                                key={i}
                                 style={{
-                                  marginLeft: "auto",
-                                  fontSize: "0.65rem",
-                                  color:
-                                    signal.confidence >= 0.8
-                                      ? "var(--success, #4ade80)"
-                                      : signal.confidence >= 0.5
-                                        ? "var(--warning, #fb923c)"
-                                        : "var(--text-dim, #888)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "0.5rem",
+                                  fontSize: "0.78rem",
                                 }}
                               >
-                                {Math.round(signal.confidence * 100)}% confident
+                                <span
+                                  className="ghost-chip"
+                                  style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}
+                                >
+                                  {signal.normalizedValue || signal.rawValue}
+                                </span>
+                                <span className="text-muted" style={{ fontSize: "0.7rem" }}>
+                                  {signal.sourceKind}
+                                  {signal.matchedBy ? ` · ${signal.matchedBy}` : ""}
+                                </span>
+                                <span
+                                  style={{
+                                    marginLeft: "auto",
+                                    fontSize: "0.65rem",
+                                    color:
+                                      signal.confidence >= 0.8
+                                        ? "var(--success, #4ade80)"
+                                        : signal.confidence >= 0.5
+                                          ? "var(--warning, #fb923c)"
+                                          : "var(--text-dim, #888)",
+                                  }}
+                                >
+                                  {Math.round(signal.confidence * 100)}% confident
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="tag-list">
+                            {selected.insights.versionSignals.map((signal, i) => (
+                              <span key={i} className="ghost-chip">
+                                {signal.normalizedValue || signal.rawValue}
                               </span>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : null}
                     {selected.insights.resourceSummary.length ? (
@@ -780,7 +789,7 @@ export function LibraryScreen({
               },
             ]
           : []),
-        ...(isPowerView
+        ...(!isCasualView
           ? [
               {
                 id: "creator",
@@ -1528,6 +1537,22 @@ function hasConfirmedInstalledVersion(summary: InstalledVersionSummary | null) {
 
 function formatInstalledVersionValue(value: string | null) {
   return value?.trim() ? value : "Not clear yet";
+}
+
+function watchStatusLabel(status: NonNullable<FileDetail["watchResult"]>["status"]) {
+  switch (status) {
+    case "current":
+      return "Up to date";
+    case "exact_update_available":
+      return "Update available";
+    case "possible_update":
+      return "Possible update";
+    case "unknown":
+      return "Unknown";
+    case "not_watched":
+    default:
+      return "Not tracked";
+  }
 }
 
 function versionConfidenceLabel(confidence: VersionConfidence) {
