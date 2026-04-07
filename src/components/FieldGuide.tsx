@@ -285,12 +285,12 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         power: "Use Library for the full indexed view, source paths, confidence, and metadata hints.",
       }),
       "Inspect files",
-      "If the name or type is wrong, save a creator or type fix here or jump to a batch audit.",
+      "Use Inspect for embedded clues, Warnings & updates for watch health, or Edit details when the saved creator or type is wrong.",
       [
         section("What the details panel is for", [
-          "Fix creators one file at a time.",
-          "Correct types without moving the file.",
-          "Inspect parser warnings, internal file hints, and full paths.",
+          "Inspect embedded names, version clues, and file facts.",
+          "Open warnings and updates when you need bundle notes, parser warnings, or tracking context.",
+          "Fix creators and types one file at a time without moving the file.",
         ]),
         section("What the tags mean", [
           "Confidence shows how sure SimSuite is.",

@@ -58,13 +58,7 @@ export function LibraryDetailSheet({
               <div>
                 <p className="eyebrow">{librarySheetEyebrow(mode, userView)}</p>
                 <h2 id="library-detail-sheet-title">{librarySheetTitle(mode, userView)}</h2>
-                <p className="workbench-sheet-copy">
-                  {mode === "health"
-                    ? "Version tracking, warnings, and bundle notes — the deeper health picture."
-                    : mode === "inspect"
-                      ? "File size, path, embedded names, and clues — the full file story."
-                      : "Creator learning and type overrides — change how SimSuite reads this file."}
-                </p>
+                <p className="workbench-sheet-copy">{librarySheetCopy(mode, userView)}</p>
               </div>
               <button
                 type="button"
@@ -119,7 +113,7 @@ export function LibraryDetailSheet({
 
 function librarySheetEyebrow(mode: Exclude<LibrarySheetMode, null>, userView: UserView) {
   if (mode === "health") {
-    return userView === "beginner" ? "Health" : "Health details";
+    return userView === "beginner" ? "Warnings" : "Warnings and updates";
   }
 
   if (mode === "inspect") {
@@ -132,17 +126,41 @@ function librarySheetEyebrow(mode: Exclude<LibrarySheetMode, null>, userView: Us
 function librarySheetTitle(mode: Exclude<LibrarySheetMode, null>, userView: UserView) {
   if (mode === "health") {
     return userView === "beginner"
-      ? "File facts, warnings, and update context"
-      : "Diagnostics — version signals, warnings, and bundle context";
+      ? "Warnings, updates, and bundle notes"
+      : userView === "power"
+        ? "Diagnostics, watch evidence, and bundle context"
+        : "Warnings, updates, and bundle context";
   }
 
   if (mode === "inspect") {
     return userView === "beginner"
-      ? "File facts and embedded details"
-      : "The file's embedded identity, clues, and full path";
+      ? "File facts and deeper clues"
+      : userView === "power"
+        ? "Embedded identity, clues, and full path"
+        : "Embedded names, version clues, and file facts";
   }
 
   return userView === "beginner"
     ? "Fix the saved details here"
-    : "Edit creator and type details without crowding the main page";
+    : userView === "power"
+      ? "Edit creator learning and type overrides"
+      : "Fix creator and type details without moving the file";
+}
+
+function librarySheetCopy(mode: Exclude<LibrarySheetMode, null>, userView: UserView) {
+  if (mode === "health") {
+    return userView === "power"
+      ? "Warnings, update watch evidence, and bundle notes that affect how safely this file can live in your library."
+      : "Warnings, update status, and bundle notes that matter before you keep, replace, or trust this file.";
+  }
+
+  if (mode === "inspect") {
+    return userView === "power"
+      ? "Embedded names, version evidence, structure clues, and the full file path."
+      : "The most useful clues SimSuite pulled from inside the file, plus the facts you need to identify it properly.";
+  }
+
+  return userView === "power"
+    ? "Save creator learning and type overrides that change how SimSuite reads this file later."
+    : "Fix creator and type details here without moving the file or leaving Library.";
 }

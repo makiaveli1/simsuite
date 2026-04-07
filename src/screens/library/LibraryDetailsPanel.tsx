@@ -271,7 +271,7 @@ export function LibraryDetailsPanel({
 
       {/* ── More actions — view-aware ── */}
       <section className="library-details-card">
-        <div className="section-label">More</div>
+        <div className="section-label">Open</div>
         <div className="library-details-actions">
           <button
             type="button"
@@ -289,7 +289,7 @@ export function LibraryDetailsPanel({
               onClick={onOpenHealthDetails}
             >
               <ShieldAlert size={14} strokeWidth={2} />
-              Health details
+              Warnings & updates
             </button>
           ) : null}
 

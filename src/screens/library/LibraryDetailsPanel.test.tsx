@@ -34,7 +34,7 @@ it("shows inspect, health, and edit actions instead of a single generic details 
   expect(screen.getByText(/snapshot/i)).toBeVisible();
   expect(screen.getByText(/care/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /inspect file/i })).toBeVisible();
-  expect(screen.getByRole("button", { name: /health details/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /warnings & updates/i })).toBeVisible();
   expect(screen.getByRole("button", { name: /edit details/i })).toBeVisible();
 });
 
@@ -64,6 +64,6 @@ it("keeps the beginner action simple", () => {
   );
 
   expect(screen.getByRole("button", { name: /more details/i })).toBeVisible();
-  expect(screen.queryByRole("button", { name: /health details/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: /warnings & updates/i })).toBeNull();
   expect(screen.queryByRole("button", { name: /edit details/i })).toBeNull();
 });
