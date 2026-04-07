@@ -44,9 +44,12 @@ function ensureDir(dir) {
 
 async function waitForApp(driver) {
   await driver.wait(async () => {
-    const body = await driver.findElement(By.css("body"));
-    const text = await body.getText();
-    return /HOME|INBOX|SETTINGS/i.test(text);
+    try {
+      const shell = await driver.findElement(By.css('.app-shell'));
+      return await shell.isDisplayed();
+    } catch {
+      return false;
+    }
   }, 60000);
 }
 

@@ -693,13 +693,14 @@ function SettingsExperienceSection({
                 <strong>{profile.label}</strong>
                 <span className="ghost-chip">{profile.badge}</span>
       <Tooltip content={card.hint}>
-        <button
+        <span
           className="settings-mode-info-btn"
+          role="img"
           aria-label="More info"
           onClick={(e) => e.stopPropagation()}
         >
           <HelpCircle size={14} strokeWidth={2} />
-        </button>
+        </span>
       </Tooltip>
               </div>
               <span className="settings-view-headline">{card.headline}</span>

@@ -81,20 +81,20 @@
   --home-secondary-width: 320px;
   --detail-panel-width: 380px;
   --library-detail-width: 392px;
-  --library-table-height: 510px;
+  --library-table-height: clamp(420px, 68vh, 1520px);
   --review-detail-width: 404px;
-  --review-queue-height: 520px;
+  --review-queue-height: clamp(420px, 68vh, 1520px);
   --duplicates-detail-width: 430px;
-  --duplicates-queue-height: 520px;
+  --duplicates-queue-height: clamp(420px, 68vh, 1520px);
   --duplicates-rail-width: 272px;
   --guide-width: 820px;
   --scanner-width: 560px;
   --audit-left-width: 316px;
   --audit-stage-top-height: 330px;
   --organize-rail-width: 304px;
-  --organize-preview-height: 414px;
+  --organize-preview-height: clamp(340px, 44vh, 960px);
   --downloads-detail-width: 420px;
-  --downloads-queue-height: 320px;
+  --downloads-queue-height: clamp(280px, 38vh, 840px);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-swift: cubic-bezier(0.2, 0, 0, 1);
   font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
@@ -1849,6 +1849,7 @@ h2,
 .library-details-empty {
   display: grid;
   gap: 0.72rem;
+  min-height: 100%;
 }
 
 .library-details-card {
@@ -1874,6 +1875,7 @@ h2,
 .library-details-actions {
   display: grid;
   gap: 0.38rem;
+  margin-top: auto;
 }
 
 .library-details-actions .secondary-action {
@@ -3248,6 +3250,11 @@ h2,
   overflow: hidden;
 }
 
+.screen-shell.settings-screen {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--panel-gap);
+}
+
 .screen-shell.workbench-screen {
   display: flex;
   flex-direction: column;
@@ -3670,18 +3677,19 @@ h2,
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  grid-template-columns: clamp(260px, 17vw, 320px) minmax(0, 1fr);
   gap: var(--panel-gap);
   align-items: stretch;
   min-width: 0;
   min-height: 100%;
+  height: 100%;
   max-width: 1720px;
   margin: 0 auto;
   width: 100%;
 }
 
 .settings-layout-three-col {
-  grid-template-columns: minmax(232px, 284px) minmax(380px, 1.22fr) minmax(248px, 296px);
+  grid-template-columns: clamp(232px, 15vw, 284px) minmax(420px, 1.18fr) clamp(280px, 22vw, 420px);
   align-items: stretch;
 }
 
@@ -3690,6 +3698,12 @@ h2,
   display: grid;
   gap: var(--panel-gap);
   min-width: 0;
+  min-height: 0;
+  align-content: stretch;
+}
+
+.settings-detail-column {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .settings-nav-panel,
@@ -3698,6 +3712,9 @@ h2,
 }
 
 .settings-focus-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 12%),
     var(--surface-4);
@@ -9955,6 +9972,7 @@ h2,
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: var(--panel-gap);
+  flex: 1 1 auto;
   min-height: 0;
   padding-top: 0.15rem;
 }
@@ -10049,6 +10067,12 @@ h2,
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
   gap: var(--panel-gap);
   align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .updates-stage-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .updates-stage-summary-grid {
@@ -10495,9 +10519,9 @@ h2,
 
 .home-hub-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(280px, auto) minmax(0, 1fr);
   gap: clamp(0.75rem, 1vw, 1rem);
-  width: min(1220px, 100%);
+  width: min(1560px, 100%);
   height: 100%;
   min-height: 0;
   margin: 0 auto;
@@ -10755,8 +10779,9 @@ h2,
 .home-module-stack {
   display: grid;
   gap: clamp(0.7rem, 1vw, 0.9rem);
-  align-content: start;
+  align-content: stretch;
   min-height: 0;
+  height: 100%;
 }
 
 .home-module-band {
@@ -11529,6 +11554,7 @@ select:focus-visible {
   gap: 0.5rem;
   flex: 1 1 auto;
   min-height: 320px;
+  height: 100%;
 }
 
 .home-hub-view-beginner .home-module-band {
@@ -11536,6 +11562,14 @@ select:focus-visible {
   flex-direction: column;
   gap: 0.5rem;
   grid-template-columns: unset;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+@media (min-width: 3000px) and (min-height: 1400px) {
+  .home-hub-shell {
+    width: min(1880px, 100%);
+  }
 }
 
 .casual-collapsed-module {

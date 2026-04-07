@@ -992,7 +992,7 @@ export function UiPreferencesProvider({
     root.style.setProperty("--organize-rail-width", `${organizeRailWidth}px`);
     root.style.setProperty(
       "--organize-preview-height",
-      `${organizePreviewHeight}px`,
+      `max(${organizePreviewHeight}px, min(44vh, 960px))`,
     );
     root.style.setProperty(
       "--downloads-detail-width",
@@ -1000,19 +1000,25 @@ export function UiPreferencesProvider({
     );
     root.style.setProperty(
       "--downloads-queue-height",
-      `${downloadsQueueHeight}px`,
+      `max(${downloadsQueueHeight}px, min(38vh, 840px))`,
     );
     root.style.setProperty("--library-detail-width", `${libraryDetailWidth}px`);
-    root.style.setProperty("--library-table-height", `${libraryTableHeight}px`);
+    root.style.setProperty(
+      "--library-table-height",
+      `max(${libraryTableHeight}px, min(68vh, 1520px))`,
+    );
     root.style.setProperty("--review-detail-width", `${reviewDetailWidth}px`);
-    root.style.setProperty("--review-queue-height", `${reviewQueueHeight}px`);
+    root.style.setProperty(
+      "--review-queue-height",
+      `max(${reviewQueueHeight}px, min(68vh, 1520px))`,
+    );
     root.style.setProperty(
       "--duplicates-detail-width",
       `${duplicatesDetailWidth}px`,
     );
     root.style.setProperty(
       "--duplicates-queue-height",
-      `${duplicatesQueueHeight}px`,
+      `max(${duplicatesQueueHeight}px, min(68vh, 1520px))`,
     );
 
     globalThis.localStorage?.setItem(STORAGE_KEYS.theme, theme);
