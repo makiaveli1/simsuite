@@ -154,6 +154,16 @@ export function summarizeLibraryCareState(
   return "Nothing stands out right now.";
 }
 
+export function formatLibraryFileFormat(file: Pick<FileDetail, "insights" | "extension" | "path">): string {
+  if (file.insights?.format === "ts4script-zip" || file.extension === ".ts4script") {
+    return "Script archive (.ts4script)";
+  }
+  if (file.insights?.format === "dbpf-package" || file.extension === ".package") {
+    return "Package file (.package)";
+  }
+  return file.insights?.format ?? file.extension ?? file.path.split(".").pop()?.toUpperCase() ?? "Unknown";
+}
+
 /** Builds type-specific supporting facts for a library row */
 function buildSupportingFacts(
   row: LibraryFileRow,

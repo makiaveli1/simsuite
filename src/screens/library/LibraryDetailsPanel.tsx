@@ -1,16 +1,16 @@
 import { type ReactNode } from "react";
-import { ExternalLink, FolderOpen, SlidersHorizontal } from "lucide-react";
-import { summarizeLibraryCareState } from "./libraryDisplay";
+import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-react";
+import { formatLibraryFileFormat, summarizeLibraryCareState, typeColorForKind } from "./libraryDisplay";
 import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
-import { typeColorForKind } from "./libraryDisplay";
 import { api } from "../../lib/api";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
 
 interface LibraryDetailsPanelProps {
   userView: UserView;
   selectedFile: FileDetail | null;
-  /** Opens the full detail sheet (health/inspect/edit accessible inside) */
-  onOpenMoreDetails: () => void;
+  onOpenInspectDetails: () => void;
+  onOpenHealthDetails: () => void;
+  onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
   /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
   headerRight?: ReactNode;
@@ -19,7 +19,9 @@ interface LibraryDetailsPanelProps {
 export function LibraryDetailsPanel({
   userView,
   selectedFile,
-  onOpenMoreDetails,
+  onOpenInspectDetails,
+  onOpenHealthDetails,
+  onOpenEditDetails,
   onOpenUpdates,
   headerRight,
 }: LibraryDetailsPanelProps) {
@@ -56,6 +58,13 @@ export function LibraryDetailsPanel({
 
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
+  const hasHealthDetails = Boolean(
+    selectedFile.bundleName ||
+      selectedFile.watchResult ||
+      selectedFile.installedVersionSummary ||
+      hasSafetyNotes ||
+      hasParserWarnings,
+  );
 
   const isTray = selectedFile.sourceLocation === "tray";
   const typeColor = typeColorForKind(selectedFile.kind);
@@ -215,7 +224,7 @@ export function LibraryDetailsPanel({
                     <button
                       type="button"
                       className="ghost-chip-inline-button"
-                      onClick={onOpenMoreDetails}
+                      onClick={onOpenHealthDetails}
                     >
                       +{selectedFile.parserWarnings.length - 5} more
                     </button>
@@ -267,11 +276,33 @@ export function LibraryDetailsPanel({
           <button
             type="button"
             className="secondary-action"
-            onClick={onOpenMoreDetails}
+            onClick={onOpenInspectDetails}
           >
-            <SlidersHorizontal size={14} strokeWidth={2} />
-            {isCasual ? "More details" : "Open details"}
+            <Eye size={14} strokeWidth={2} />
+            {isCasual ? "More details" : "Inspect file"}
           </button>
+
+          {!isCasual && hasHealthDetails ? (
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={onOpenHealthDetails}
+            >
+              <ShieldAlert size={14} strokeWidth={2} />
+              Health details
+            </button>
+          ) : null}
+
+          {!isCasual ? (
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={onOpenEditDetails}
+            >
+              <PencilLine size={14} strokeWidth={2} />
+              Edit details
+            </button>
+          ) : null}
 
           {/* Open in Updates — useful for seasoned+ maintenance */}
           {hasUpdates && !isCasual ? (
@@ -344,31 +375,3 @@ function watchStatusToTone(status: WatchStatus | null): "calm" | "attention" | "
   }
 }
 
-function formatLibraryFileFormat(file: FileDetail): string {
-  if (file.insights?.format) return file.insights.format;
-  const ext = file.path.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "package":
-      return "SimPack (package)";
-    case "ts4script":
-    case "py":
-    case "pyc":
-    case "pyo":
-      return "Script";
-    case "sgr":
-    case "blueprint":
-    case "xml":
-      return "Data";
-    case "png":
-    case "jpg":
-    case "jpeg":
-    case "bmp":
-    case "dds":
-    case "tga":
-      return "Image";
-    case "imspec":
-      return "ImageSpec";
-    default:
-      return ext ? `${ext.toUpperCase()} file` : "Unknown";
-  }
-}

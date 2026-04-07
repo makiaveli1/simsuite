@@ -27,7 +27,7 @@ import type {
   LibrarySummary,
   LibrarySortField,
 } from "../lib/types";
-import { libraryViewFlags } from "./library/libraryDisplay";
+import { formatLibraryFileFormat, libraryViewFlags } from "./library/libraryDisplay";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
@@ -1155,7 +1155,9 @@ export function LibraryScreen({
         <LibraryDetailsPanel
           userView={userView}
           selectedFile={selected}
-          onOpenMoreDetails={() => setActiveLibrarySheet("health")}
+          onOpenInspectDetails={() => setActiveLibrarySheet("inspect")}
+          onOpenHealthDetails={() => setActiveLibrarySheet("health")}
+          onOpenEditDetails={() => setActiveLibrarySheet("edit")}
           onOpenUpdates={() => {
             if (!selected || !onNavigateWithParams || !updatesTarget) {
               return;
@@ -1470,16 +1472,6 @@ function DetailRow({
       <strong className={mono ? "mono-text" : ""}>{value}</strong>
     </div>
   );
-}
-
-function formatLibraryFileFormat(detail: FileDetail) {
-  if (detail.insights.format === "ts4script-zip" || detail.extension === ".ts4script") {
-    return "Script archive (.ts4script)";
-  }
-  if (detail.insights.format === "dbpf-package" || detail.extension === ".package") {
-    return "Package file (.package)";
-  }
-  return detail.insights.format ?? detail.extension ?? "Unknown";
 }
 
 function collectPlayerFacingNames(detail: FileDetail) {
