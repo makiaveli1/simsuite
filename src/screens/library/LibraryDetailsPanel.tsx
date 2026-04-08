@@ -3,11 +3,14 @@ import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-r
 import {
   describeCreatorForInspector,
   describeLibraryFamilyContext,
+  describeTrayIdentity,
   describeVersionForInspector,
   formatLibraryFileFormat,
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
+  trayKindLabel,
+  trayLocationLabel,
   typeColorForKind,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
@@ -70,13 +73,16 @@ export function LibraryDetailsPanel({
   const scriptContentSummary = summarizeLibraryScriptContent(selectedFile);
   const resourceBadge = summarizeLibraryResourceBadge(selectedFile);
   const creatorInfo = describeCreatorForInspector(selectedFile);
+  const trayIdentity = describeTrayIdentity(selectedFile);
+  const isTrayKind = trayIdentity.kind !== "standard";
   const familyContext = !isCasual ? describeLibraryFamilyContext(selectedFile) : null;
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
       selectedFile.watchResult ||
       selectedFile.installedVersionSummary ||
       hasSafetyNotes ||
-      hasParserWarnings,
+      hasParserWarnings ||
+      isTrayKind,
   );
 
   const isTray = selectedFile.sourceLocation === "tray";
@@ -113,8 +119,29 @@ export function LibraryDetailsPanel({
     { label: "Type", value: friendlyTypeLabel(selectedFile.kind) },
   ];
 
+  if (!isCasual && isTrayKind) {
+    snapshotLines.push({
+      label: "Tray type",
+      value: (
+        <span>
+          {trayKindLabel(trayIdentity.kind)}
+          <span className="detail-row-suffix"> ({trayIdentity.evidenceKind})</span>
+        </span>
+      ),
+    });
+    snapshotLines.push({
+      label: "Stored",
+      value: trayIdentity.isMisplaced
+        ? `${trayLocationLabel(trayIdentity.location)} · review needed`
+        : trayLocationLabel(trayIdentity.location),
+    });
+    if (selectedFile.bundleName?.trim()) {
+      snapshotLines.push({ label: "Grouped as", value: selectedFile.bundleName.trim() });
+    }
+  }
+
   // Subtype: useful for CAS/Gameplay categorization
-  if (!isCasual && selectedFile.subtype?.trim()) {
+  if (!isCasual && selectedFile.subtype?.trim() && !isTrayKind) {
     snapshotLines.push({ label: "Subtype", value: selectedFile.subtype });
   }
 

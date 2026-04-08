@@ -38,11 +38,14 @@ import {
   buildSheetCompatibilitySection,
   buildSheetContentsSection,
   buildSheetDiagnosticsSection,
+  buildSheetTraySection,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
+  describeTrayIdentity,
   describeVersionForInspector,
   formatLibraryFileFormat,
   libraryViewFlags,
+  trayLocationLabel,
 } from "./library/libraryDisplay";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
@@ -290,9 +293,12 @@ export function LibraryScreen({
   const totalPages = rows ? Math.max(1, Math.ceil(rows.total / PAGE_SIZE)) : 1;
 
   const isPowerView = userView === "power";
+  const traySelection = selected ? describeTrayIdentity(selected) : null;
+  const isTraySelection = Boolean(traySelection && traySelection.kind !== "standard");
   const hasInspectionSignals = Boolean(
     selected &&
-      (selected.insights.format ||
+      (isTraySelection ||
+        selected.insights.format ||
         selected.insights.creatorHints.length ||
         selected.insights.familyHints.length ||
         selected.insights.versionHints.length ||
@@ -399,6 +405,21 @@ export function LibraryScreen({
                     label="Type"
                     value={friendlyTypeLabel(selected.kind)}
                   />
+                  {isTraySelection ? (
+                    <>
+                      <DetailRow
+                        label="Tray type"
+                        value={`${traySelection?.label ?? "Tray Item"} (${traySelection?.evidenceKind ?? "inferred"})`}
+                      />
+                      <DetailRow
+                        label="Stored"
+                        value={traySelection?.isMisplaced ? `${trayLocationLabel(traySelection?.location ?? "mods")} · review needed` : trayLocationLabel(traySelection?.location ?? "tray")}
+                      />
+                      {selected.bundleName?.trim() ? (
+                        <DetailRow label="Grouped as" value={selected.bundleName.trim()} />
+                      ) : null}
+                    </>
+                  ) : null}
                   <DetailRow
                     label="Subtype"
                     value={selected.subtype ?? "Unspecified"}
@@ -441,6 +462,17 @@ export function LibraryScreen({
                       label="Type"
                       value={friendlyTypeLabel(selected.kind)}
                     />
+                    {isTraySelection ? (
+                      <>
+                        <DetailRow
+                          label="Stored"
+                          value={traySelection?.isMisplaced ? `${trayLocationLabel(traySelection?.location ?? "mods")} · review needed` : trayLocationLabel(traySelection?.location ?? "tray")}
+                        />
+                        {selected.bundleName?.trim() ? (
+                          <DetailRow label="Grouped as" value={selected.bundleName.trim()} />
+                        ) : null}
+                      </>
+                    ) : null}
                     {selected.subtype?.trim() ? (
                       <DetailRow label="Subtype" value={selected.subtype} />
                     ) : null}
@@ -726,19 +758,33 @@ export function LibraryScreen({
         // Replaced inspection soup with three focused sections
         ...(userView !== "beginner" && hasInspectionSignals
           ? [
-              {
-                id: "whats-inside",
-                label: "What's Inside",
-                hint:
-                  "What SimSuite extracted from the file — namespaces, contents, and embedded names.",
-                defaultCollapsed: false,
-                children: buildSheetContentsSection(selected, userView),
-              },
+              ...(isTraySelection
+                ? [
+                    {
+                      id: "tray-context",
+                      label: "Tray Context",
+                      hint:
+                        "What kind of tray item this is, where it lives, and what SimSuite is inferring versus actually knows.",
+                      defaultCollapsed: false,
+                      children: buildSheetTraySection(selected, userView),
+                    },
+                  ]
+                : [
+                    {
+                      id: "whats-inside",
+                      label: "What's Inside",
+                      hint:
+                        "What SimSuite extracted from the file — namespaces, contents, and embedded names.",
+                      defaultCollapsed: false,
+                      children: buildSheetContentsSection(selected, userView),
+                    },
+                  ]),
               {
                 id: "attribution",
-                label: "Attribution",
-                hint:
-                  "Who made this, what set it belongs to, and the evidence behind those clues.",
+                label: isTraySelection ? "Identity & Attribution" : "Attribution",
+                hint: isTraySelection
+                  ? "Creator clues, tray grouping, and any related identity hints SimSuite can support honestly."
+                  : "Who made this, what set it belongs to, and the evidence behind those clues.",
                 defaultCollapsed: false,
                 children: buildSheetAttributionSection(selected, userView),
               },
@@ -864,16 +910,21 @@ export function LibraryScreen({
           }
 
           if (activeLibrarySheet === "inspect") {
-            // inspect = file's full story: facts + insights + path
+            // inspect = file's full story: facts + type-aware insight sections + path
             if (isCasualView) {
-              // Casual: just the facts section with compact metadata
               return ["facts"].includes(section.id);
             }
             if (isPowerView) {
-              return ["facts", "inspection", "path"].includes(section.id);
+              return [
+                "facts",
+                "tray-context",
+                "whats-inside",
+                "attribution",
+                "compatibility",
+                "path",
+              ].includes(section.id);
             }
-            // Seasoned: facts + insights (no path)
-            return ["facts", "inspection"].includes(section.id);
+            return ["facts", "tray-context", "whats-inside", "attribution", "compatibility"].includes(section.id);
           }
 
           // edit: always creator + category

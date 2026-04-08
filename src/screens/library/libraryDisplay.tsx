@@ -9,7 +9,14 @@ import {
   type CreatorConfidenceTier,
 } from "../../lib/uiLanguage";
 import type { ReactNode } from "react";
-import type { FileDetail, LibraryFileRow, UserView, WatchStatus, FileInsights, VersionConfidence } from "../../lib/types";
+import type {
+  FileDetail,
+  FileInsights,
+  LibraryFileRow,
+  UserView,
+  VersionConfidence,
+  WatchStatus,
+} from "../../lib/types";
 
 export interface LibraryViewFlags {
   showCreatorInList: boolean;
@@ -40,6 +47,10 @@ export interface LibraryRowModel {
   typeColor: TypeColor;
   /** True if this item lives in the tray (effectively disabled) */
   isTray: boolean;
+  /** True if this item is in the wrong folder for its type (e.g. tray item in Mods) */
+  isMisplaced: boolean;
+  /** Tray identity facts if this is a tray kind, null otherwise */
+  trayIdentity: TrayIdentity | null;
   /** Duplicate flag — renders only when this file appears in a duplicate pair. */
   hasDuplicate: boolean;
   watchStatusLabel: string;
@@ -60,7 +71,7 @@ export interface LibraryRowModel {
 
 type LibraryCareSummarySource = Pick<
   FileDetail,
-  "installedVersionSummary" | "safetyNotes" | "parserWarnings"
+  "installedVersionSummary" | "safetyNotes" | "parserWarnings" | "kind" | "sourceLocation"
 >;
 
 export function libraryViewFlags(userView: UserView): LibraryViewFlags {
@@ -96,6 +107,12 @@ export function buildLibraryRowModel(
 
   const healthIssue = computeLibraryHealthIssue(row);
 
+  const trayIdentity = describeTrayIdentity({
+    kind: row.kind,
+    subtype: row.subtype,
+    sourceLocation: row.sourceLocation,
+  });
+
   return {
     id: row.id,
     title: row.filename,
@@ -103,6 +120,8 @@ export function buildLibraryRowModel(
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
     isTray,
+    isMisplaced: trayIdentity.isMisplaced,
+    trayIdentity,
     hasDuplicate: row.hasDuplicate ?? false,
     watchStatusLabel,
     watchStatusTone,
@@ -143,6 +162,9 @@ export function typeColorForKind(kind: string): TypeColor {
     case "TrayLot":
     case "TrayRoom":
     case "TrayItem":
+    case "Household":
+    case "Lot":
+    case "Room":
       return "tray";
     default:
       return "unknown";
@@ -152,6 +174,14 @@ export function typeColorForKind(kind: string): TypeColor {
 export function summarizeLibraryCareState(
   detail: LibraryCareSummarySource,
 ): string {
+  const isTrayItem = ["TrayHousehold", "TrayLot", "TrayRoom", "TrayItem", "Household", "Lot", "Room"].includes(detail.kind);
+
+  if (isTrayItem && detail.sourceLocation === "mods") {
+    return "This looks like tray content outside the Tray folder, so it deserves a quick review.";
+  }
+  if (isTrayItem && detail.sourceLocation === "tray") {
+    return "This file lives in Tray and behaves like library content, not an active mod.";
+  }
   if (detail.safetyNotes.length) {
     return "This file has safety notes that deserve attention.";
   }
@@ -356,6 +386,199 @@ export function describeScriptNamespaces(
     count: namespaces.length,
     samples: namespaces.slice(0, 5),
   };
+}
+
+// ─── Tray identity ─────────────────────────────────────────────────────────────
+// Used to surface tray-specific file identity in rows, inspector, and sheet.
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type TrayKind = "household" | "lot" | "room" | "item" | "standard";
+
+export interface TrayIdentity {
+  kind: TrayKind;
+  label: string;
+  /** Optional suffix — usually the family hint for tray items */
+  suffix: string | null;
+  /** Where this file lives */
+  location: string;
+  /** Whether this tray item is outside its proper folder */
+  isMisplaced: boolean;
+  evidenceKind: EvidenceKind;
+}
+
+/**
+ * Describes the tray identity of a file.
+ * Returns structured identity facts for tray kinds, or a standard-mod descriptor.
+ * Never makes up metadata — only surfaces what the file actually carries.
+ */
+export function describeTrayIdentity(
+  file: Pick<FileDetail, "kind" | "subtype" | "sourceLocation"> & { insights?: FileInsights },
+): TrayIdentity {
+  const isTray = file.sourceLocation === "tray";
+  switch (file.kind) {
+    case "TrayHousehold":
+    case "Household":
+      return {
+        kind: "household",
+        label: "Household",
+        suffix: file.insights?.familyHints?.[0] ?? null,
+        location: file.sourceLocation,
+        isMisplaced: !isTray,
+        evidenceKind: file.insights?.familyHints?.length ? "derived" : "inferred",
+      };
+    case "TrayLot":
+    case "Lot":
+      return {
+        kind: "lot",
+        label: "Lot",
+        suffix: file.insights?.familyHints?.[0] ?? null,
+        location: file.sourceLocation,
+        isMisplaced: !isTray,
+        evidenceKind: file.insights?.familyHints?.length ? "derived" : "inferred",
+      };
+    case "TrayRoom":
+    case "Room":
+      return {
+        kind: "room",
+        label: "Room",
+        suffix: file.insights?.familyHints?.[0] ?? null,
+        location: file.sourceLocation,
+        isMisplaced: !isTray,
+        evidenceKind: file.insights?.familyHints?.length ? "derived" : "inferred",
+      };
+    case "TrayItem":
+      return {
+        kind: "item",
+        label: "Item",
+        suffix: file.insights?.familyHints?.[0] ?? null,
+        location: file.sourceLocation,
+        isMisplaced: !isTray,
+        evidenceKind: file.insights?.familyHints?.length ? "derived" : "inferred",
+      };
+    default:
+      return {
+        kind: "standard",
+        label: "",
+        suffix: null,
+        location: file.sourceLocation,
+        isMisplaced: false,
+        evidenceKind: "inferred",
+      };
+  }
+}
+
+/** Returns a human-readable location label */
+export function trayLocationLabel(location: string): string {
+  return location === "tray" ? "Stored in Tray" : "Stored in Mods";
+}
+
+/** Returns a human-readable label for what the item is, e.g. "Household" or "Lot" */
+export function trayKindLabel(kind: TrayKind): string {
+  switch (kind) {
+    case "household":
+      return "Household";
+    case "lot":
+      return "Lot";
+    case "room":
+      return "Room";
+    case "item":
+      return "Tray Item";
+    default:
+      return "";
+  }
+}
+
+export function buildSheetTraySection(
+  file: Pick<
+    FileDetail,
+    "kind" | "subtype" | "sourceLocation" | "insights" | "bundleName" | "bundleType" | "safetyNotes"
+  >,
+  userView: "beginner" | "standard" | "power",
+): ReactNode {
+  const trayIdentity = describeTrayIdentity(file);
+
+  if (trayIdentity.kind === "standard") {
+    return null;
+  }
+
+  const relatedHints = [
+    ...(file.bundleName?.trim() ? [file.bundleName.trim()] : []),
+    ...(file.insights?.familyHints ?? []).filter((item) => item.trim()),
+  ].slice(0, 6);
+
+  return (
+    <div className="detail-list">
+      <div className="detail-row">
+        <span>
+          Tray type
+          <span className="detail-row-evidence-badge">Inferred</span>
+        </span>
+        <strong>{trayKindLabel(trayIdentity.kind)}</strong>
+      </div>
+      <div className="detail-row">
+        <span>
+          Stored
+          <span className="detail-row-evidence-badge">Inferred</span>
+        </span>
+        <strong>{trayLocationLabel(trayIdentity.location)}</strong>
+      </div>
+      {file.bundleName?.trim() ? (
+        <div className="detail-row">
+          <span>
+            Grouped as
+            <span className="detail-row-evidence-badge">Derived</span>
+          </span>
+          <strong>{file.bundleName.trim()}</strong>
+        </div>
+      ) : null}
+      {file.bundleType?.trim() ? (
+        <div className="detail-row">
+          <span>
+            Tray group
+            <span className="detail-row-evidence-badge">Derived</span>
+          </span>
+          <strong>{file.bundleType}</strong>
+        </div>
+      ) : null}
+      <div className="detail-row detail-row--block">
+        <span>Load behavior</span>
+        <strong>
+          {trayIdentity.isMisplaced
+            ? "Tray content detected outside Tray. Review before moving or trusting it."
+            : "Library object only. It stays in Tray and does not behave like an active mod."}
+        </strong>
+      </div>
+      {relatedHints.length > 0 && userView !== "beginner" ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Related tray files
+            <span className="detail-row-evidence-badge">
+              {trayIdentity.evidenceKind === "derived" ? "Derived" : "Inferred"}
+            </span>
+          </span>
+          <div className="tag-list">
+            {relatedHints.map((item) => (
+              <span key={item} className="ghost-chip">
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {file.safetyNotes.length > 0 ? (
+        <div className="detail-row detail-row--block">
+          <span>Tray notes</span>
+          <div className="tag-list">
+            {file.safetyNotes.map((note) => (
+              <span key={note} className="warning-tag">
+                {note}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 // ─── Evidence-kind labeling ────────────────────────────────────────────────────
@@ -842,8 +1065,12 @@ function buildSupportingFacts(
     case "TrayLot":
     case "TrayRoom":
     case "TrayItem":
-      facts.push("🔖 Tray");
-      facts.push(creatorLabel);
+    case "Household":
+    case "Lot":
+    case "Room":
+      if (row.bundleName?.trim()) facts.push(row.bundleName.trim());
+      facts.push(isTray ? "🔖 Tray" : "Misplaced tray");
+      if (row.creator?.trim()) facts.push(creatorLabel);
       break;
 
     // Unknown: show source + creator

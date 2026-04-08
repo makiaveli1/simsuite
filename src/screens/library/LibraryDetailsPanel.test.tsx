@@ -123,3 +123,41 @@ it("keeps the beginner action simple", () => {
   expect(screen.queryByRole("button", { name: /warnings & updates/i })).toBeNull();
   expect(screen.queryByRole("button", { name: /edit details/i })).toBeNull();
 });
+
+it("surfaces tray identity and storage context in the inspector", () => {
+  render(
+    <LibraryDetailsPanel
+      userView="power"
+      selectedFile={
+        {
+          id: 4,
+          filename: "OakHousehold_0x00ABCDEF.trayitem",
+          path: "Tray\\OakHousehold_0x00ABCDEF.trayitem",
+          extension: ".trayitem",
+          creator: "Oakby",
+          kind: "TrayHousehold",
+          subtype: "Household",
+          bundleName: "OakHousehold",
+          bundleType: "household",
+          sourceLocation: "tray",
+          confidence: 0.92,
+          safetyNotes: [],
+          parserWarnings: [],
+          installedVersionSummary: null,
+          watchResult: null,
+          insights: emptyInsights,
+        } as never
+      }
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+    />,
+  );
+
+  expect(screen.getByText(/tray type/i)).toBeVisible();
+  expect(screen.getAllByText(/stored/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/stored in tray/i)).toBeVisible();
+  expect(screen.getByText(/grouped as/i)).toBeVisible();
+  expect(screen.getAllByText(/oakhousehold/i).length).toBeGreaterThan(0);
+});

@@ -37,6 +37,28 @@ describe("buildLibraryRowModel", () => {
 
     expect(row.supportingFacts).toHaveLength(2);
   });
+
+  it("surfaces tray grouping and placement for tray items", () => {
+    const row = buildLibraryRowModel(
+      {
+        ...SAMPLE_ROW,
+        id: 2,
+        filename: "LooseBlueprint.blueprint",
+        extension: ".blueprint",
+        kind: "TrayLot",
+        subtype: "Lot",
+        sourceLocation: "mods",
+        creator: null,
+        bundleName: "LooseBlueprint",
+        bundleType: "lot",
+      },
+      "power",
+    );
+
+    expect(row.isMisplaced).toBe(true);
+    expect(row.supportingFacts).toContain("LooseBlueprint");
+    expect(row.supportingFacts).toContain("Misplaced tray");
+  });
 });
 
 describe("summarizeLibraryCareState", () => {
@@ -46,7 +68,21 @@ describe("summarizeLibraryCareState", () => {
         installedVersionSummary: null,
         safetyNotes: ["Possible conflict"],
         parserWarnings: [],
+        kind: "ScriptMods",
+        sourceLocation: "mods",
       }),
     ).toContain("deserve attention");
+  });
+
+  it("uses tray-specific wording for tray content", () => {
+    expect(
+      summarizeLibraryCareState({
+        installedVersionSummary: null,
+        safetyNotes: [],
+        parserWarnings: [],
+        kind: "TrayHousehold",
+        sourceLocation: "tray",
+      }),
+    ).toContain("lives in Tray");
   });
 });
