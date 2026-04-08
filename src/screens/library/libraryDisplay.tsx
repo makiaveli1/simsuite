@@ -8,6 +8,7 @@ import {
   versionConfidenceTierLabel,
   type CreatorConfidenceTier,
 } from "../../lib/uiLanguage";
+import type { ReactNode } from "react";
 import type { FileDetail, LibraryFileRow, UserView, WatchStatus, FileInsights, VersionConfidence } from "../../lib/types";
 
 export interface LibraryViewFlags {
@@ -355,6 +356,406 @@ export function describeScriptNamespaces(
     count: namespaces.length,
     samples: namespaces.slice(0, 5),
   };
+}
+
+// ─── Evidence-kind labeling ────────────────────────────────────────────────────
+// Used to label sheet section content with its evidence origin.
+// ──────────────────────────────────────────────────────────────────────────────
+export type EvidenceKind = "extracted" | "derived" | "inferred";
+
+/** Returns an evidence-kind badge label */
+export function evidenceKindLabel(kind: EvidenceKind): string {
+  switch (kind) {
+    case "extracted":
+      return "Extracted";
+    case "derived":
+      return "Derived";
+    case "inferred":
+      return "Inferred";
+  }
+}
+
+/** Maps a field name to its evidence kind for the sheet sections */
+export function fieldEvidenceKind(
+  field: "embeddedNames" | "scriptNamespaces" | "resourceSummary" | "familyHints" | "creatorHints" | "versionSignals" | "subtype" | "kind" | "creator",
+): EvidenceKind {
+  switch (field) {
+    case "embeddedNames":
+    case "scriptNamespaces":
+    case "resourceSummary":
+      return "extracted";
+    case "familyHints":
+    case "creatorHints":
+      return "derived";
+    case "versionSignals":
+    case "subtype":
+    case "kind":
+    case "creator":
+      return "inferred";
+  }
+}
+
+// ─── Sheet section content builders ───────────────────────────────────────────
+// These helpers build the content for each sheet section.
+// Each returns a ReactNode block suitable for a DockSectionDefinition.children.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Section: Attribution & Tracking — creator evidence + family grouping */
+export function buildSheetAttributionSection(
+  file: FileDetail,
+  userView: "beginner" | "standard" | "power",
+): ReactNode {
+  const creatorTier = creatorConfidenceTier(
+    file.creator,
+    file.creatorLearning ?? null,
+    file.insights?.creatorHints ?? [],
+  );
+  const creatorLabel = creatorLabelWithConfidence(
+    file.creator,
+    file.creatorLearning ?? null,
+    file.insights?.creatorHints ?? [],
+  );
+
+  // Evidence list: what signals drove the creator conclusion
+  const evidenceItems: Array<{ label: string; kind: EvidenceKind }> = [];
+
+  if (file.insights?.creatorHints?.length) {
+    file.insights.creatorHints.forEach((hint) => {
+      evidenceItems.push({ label: hint, kind: "derived" });
+    });
+  }
+  if (file.creatorLearning?.learnedAliases?.length) {
+    file.creatorLearning.learnedAliases.forEach((alias) => {
+      evidenceItems.push({ label: alias, kind: "derived" });
+    });
+  }
+  // Path folder as weakest signal
+  if (file.path.includes("/Mods/") || file.path.includes("/Downloads/")) {
+    const folder = file.path.split("/").filter(Boolean).slice(-2).join("/");
+    if (folder) {
+      evidenceItems.push({ label: `Folder: ${folder}`, kind: "inferred" });
+    }
+  }
+
+  // Family grouping
+  const familyItems = (file.insights?.familyHints ?? [])
+    .filter((f) => f.trim())
+    .slice(0, 6);
+
+  return (
+    <div className="detail-list">
+      {/* Creator attribution */}
+      <div className="detail-row">
+        <span>Creator</span>
+        <strong>
+          {creatorLabel}
+          <span
+            className="detail-row-suffix"
+            title={`Creator ${creatorConfidenceTier(
+              file.creator,
+              file.creatorLearning ?? null,
+              file.insights?.creatorHints ?? [],
+            ) === "known" ? "saved" : creatorTier === "strong_hint" ? "from file" : "from folder"}`}
+          >
+            {" "}
+            (
+            {creatorTier === "known"
+              ? "saved"
+              : creatorTier === "strong_hint"
+                ? "from file"
+                : "from folder"}
+            )
+          </span>
+        </strong>
+      </div>
+
+      {/* Family grouping */}
+      {familyItems.length > 0 ? (
+        <div className="detail-row detail-row--block">
+          <span>Family / Set</span>
+          <div className="tag-list">
+            {familyItems.map((f) => (
+              <span key={f} className="ghost-chip">
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Creator evidence signals */}
+      {evidenceItems.length > 0 && userView !== "beginner" ? (
+        <div className="detail-row detail-row--block">
+          <span>Evidence</span>
+          <div className="tag-list">
+            {evidenceItems.slice(0, 8).map((item) => (
+              <span key={item.label} className={`ghost-chip evidence-${item.kind}`}>
+                {item.label}
+              </span>
+            ))}
+            {evidenceItems.length > 8 ? (
+              <span className="ghost-chip-inline-button">+{evidenceItems.length - 8} more</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Section: What's Inside — extracted file contents */
+export function buildSheetContentsSection(
+  file: FileDetail,
+  userView: "beginner" | "standard" | "power",
+): ReactNode {
+  const embedded = describeEmbeddedNames(file.insights);
+  const namespaces = describeScriptNamespaces(file.insights);
+  const resource = file.insights?.resourceSummary ?? [];
+
+  // Nothing to show?
+  if (!embedded.length && !namespaces.count && !resource.length) {
+    return (
+      <p className="text-muted">No extracted content details available for this file.</p>
+    );
+  }
+
+  return (
+    <div className="detail-list">
+      {/* Script namespaces — most meaningful for ScriptMods */}
+      {namespaces.count > 0 ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Namespaces
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <div className="tag-list">
+            {namespaces.samples.map((ns) => (
+              <span key={ns} className="ghost-chip">
+                {ns}
+              </span>
+            ))}
+            {namespaces.count > 5 ? (
+              <span className="ghost-chip-inline-button">+{namespaces.count - 5} more</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Resource/contents summary */}
+      {resource.length > 0 ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Contains
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <div className="tag-list">
+            {resource.map((r) => (
+              <span key={r} className="ghost-chip">
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Embedded names — meaningful for CAS, less for scripts */}
+      {embedded.length > 0 && userView !== "beginner" ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Included names
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <div className="tag-list">
+            {embedded.slice(0, 6).map((name) => (
+              <span key={name} className="ghost-chip">
+                {name}
+              </span>
+            ))}
+            {embedded.length > 6 ? (
+              <span className="ghost-chip-inline-button">+{embedded.length - 6} more</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Section: Compatibility & Health — version signals and warnings */
+export function buildSheetCompatibilitySection(
+  file: FileDetail,
+  mode: "inspect" | "health",
+  userView: "beginner" | "standard" | "power",
+): ReactNode {
+  const versionInfo = file.installedVersionSummary;
+  const watch = file.watchResult;
+  const hasWarnings =
+    file.safetyNotes.length > 0 || file.parserWarnings.length > 0;
+
+  return (
+    <div className="detail-list">
+      {/* Version tracking */}
+      {watch ? (
+        <div className="detail-row">
+          <span>Watch status</span>
+          <strong
+            className={`library-health-pill is-${watch.status === "current" ? "calm" : watch.status === "exact_update_available" ? "attention" : "muted"}`}
+          >
+            {watch.status === "current"
+              ? "Up to date"
+              : watch.status === "exact_update_available"
+                ? "Update available"
+                : watch.status === "possible_update"
+                  ? "May have update"
+                  : watch.status === "unknown"
+                    ? "Check updates"
+                    : "Not tracked"}
+          </strong>
+        </div>
+      ) : null}
+
+      {/* Installed version with confidence */}
+      {versionInfo?.version ? (
+        <div className="detail-row">
+          <span>Installed</span>
+          <strong>
+            {versionInfo.version}
+            {versionInfo.confidence !== "exact" && versionInfo.confidence !== "strong" ? (
+              <span
+                className="detail-row-suffix"
+                title={`Version ${versionInfo.confidence}`}
+              >
+                {" "}
+                ({versionInfo.confidence === "medium" ? "Possible" : versionInfo.confidence === "weak" ? "Speculative" : "Unconfirmed"})
+              </span>
+            ) : null}
+          </strong>
+        </div>
+      ) : null}
+
+      {/* Version signals */}
+      {file.insights?.versionSignals?.length && userView !== "beginner" ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Version evidence
+            <span className="detail-row-evidence-badge">Inferred</span>
+          </span>
+          <div className="tag-list">
+            {file.insights.versionSignals.slice(0, 6).map((sig) => (
+              <span key={sig.rawValue} className="ghost-chip">
+                {sig.normalizedValue || sig.rawValue}
+              </span>
+            ))}
+            {file.insights.versionSignals.length > 6 ? (
+              <span className="ghost-chip-inline-button">
+                +{file.insights.versionSignals.length - 6} more
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Warnings — always show in health mode */}
+      {(hasWarnings || mode === "health") && userView !== "beginner" ? (
+        <>
+          {file.safetyNotes.length > 0 ? (
+            <div className="detail-row detail-row--block">
+              <span>Safety notes</span>
+              <div className="tag-list">
+                {file.safetyNotes.map((note) => (
+                  <span key={note} className="warning-tag">
+                    {note}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {file.parserWarnings.length > 0 ? (
+            <div className="detail-row detail-row--block">
+              <span>Parser warnings</span>
+              <div className="tag-list">
+                {file.parserWarnings.slice(0, 5).map((warn) => (
+                  <span key={warn} className="ghost-chip">
+                    {warn}
+                  </span>
+                ))}
+                {file.parserWarnings.length > 5 ? (
+                  <span className="ghost-chip-inline-button">
+                    +{file.parserWarnings.length - 5} more
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Section: File & Diagnostics — path, size, structure */
+export function buildSheetDiagnosticsSection(
+  file: FileDetail,
+  userView: "beginner" | "standard" | "power",
+): ReactNode {
+  if (userView === "beginner") {
+    return null; // not shown in Casual
+  }
+
+  const sizeLabel =
+    file.size > 1024 * 1024
+      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+      : file.size > 1024
+        ? `${(file.size / 1024).toFixed(0)} KB`
+        : `${file.size} B`;
+
+  const modifiedLabel = file.modifiedAt
+    ? new Date(file.modifiedAt).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : "Unknown";
+
+  return (
+    <div className="detail-list">
+      <div className="detail-row">
+        <span>Location</span>
+        <strong className="mono-text" style={{ fontSize: "0.75rem" }}>
+          {file.path}
+        </strong>
+      </div>
+      <div className="detail-row">
+        <span>Size</span>
+        <strong>{sizeLabel}</strong>
+      </div>
+      <div className="detail-row">
+        <span>Last modified</span>
+        <strong>{modifiedLabel}</strong>
+      </div>
+      <div className="detail-row">
+        <span>Format</span>
+        <strong>{formatLibraryFileFormat(file)}</strong>
+      </div>
+      {file.hash ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Fingerprint
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <strong className="mono-text" style={{ fontSize: "0.7rem", wordBreak: "break-all" }}>
+            {file.hash.slice(0, 16)}...
+          </strong>
+        </div>
+      ) : null}
+      {file.sourceLocation === "tray" ? (
+        <div className="detail-row">
+          <span>Status</span>
+          <span className="library-health-pill is-muted">Disabled (in tray)</span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Builds type-specific supporting facts for a library row */

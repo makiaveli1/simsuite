@@ -34,6 +34,10 @@ import type {
   LibrarySortField,
 } from "../lib/types";
 import {
+  buildSheetAttributionSection,
+  buildSheetCompatibilitySection,
+  buildSheetContentsSection,
+  buildSheetDiagnosticsSection,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeVersionForInspector,
@@ -719,159 +723,32 @@ export function LibraryScreen({
               },
             ]
           : []),
-        ...(!isCasualView && hasInspectionSignals
+        // Replaced inspection soup with three focused sections
+        ...(userView !== "beginner" && hasInspectionSignals
           ? [
               {
-                id: "inspection",
-                label: "Inside the file",
-                hint: isPowerView
-                  ? "Signals pulled from package or script contents."
-                  : "Extracted clues, version signals, and structural facts about this file.",
+                id: "whats-inside",
+                label: "What's Inside",
+                hint:
+                  "What SimSuite extracted from the file — namespaces, contents, and embedded names.",
                 defaultCollapsed: false,
-                badge: selected.insights.format ?? null,
-                children: (
-                  <>
-                    {selected.insights.creatorHints.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Creator names found</div>
-                        <div className="tag-list">
-                          {selected.insights.creatorHints.map((hint) => (
-                            <span key={hint} className="ghost-chip">
-                              {hint}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.versionHints.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Version numbers found</div>
-                        <div className="tag-list">
-                          {selected.insights.versionHints.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.versionSignals.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Version signals</div>
-                        {isPowerView ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                            {selected.insights.versionSignals
-                              .slice()
-                              .sort((a, b) => {
-                                const order: Record<string, number> = { payload: 0, embedded_name: 1, resource_summary: 2, filename: 3, archive_path: 4 };
-                                return (order[a.sourceKind] ?? 99) - (order[b.sourceKind] ?? 99);
-                              })
-                              .map((signal, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "0.5rem",
-                                  fontSize: "0.78rem",
-                                }}
-                              >
-                                <span
-                                  className="ghost-chip"
-                                  style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}
-                                >
-                                  {signal.normalizedValue || signal.rawValue}
-                                </span>
-                                <span className="text-muted" style={{ fontSize: "0.7rem" }}>
-                                  {signal.sourceKind}
-                                  {signal.matchedBy ? ` · ${signal.matchedBy}` : ""}
-                                </span>
-                                <span
-                                  style={{
-                                    marginLeft: "auto",
-                                    fontSize: "0.65rem",
-                                    color:
-                                      signal.confidence >= 0.8
-                                        ? "var(--success, #4ade80)"
-                                        : signal.confidence >= 0.5
-                                          ? "var(--warning, #fb923c)"
-                                          : "var(--text-dim, #888)",
-                                  }}
-                                >
-                                  {Math.round(signal.confidence * 100)}% confident
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="tag-list">
-                            {selected.insights.versionSignals.map((signal, i) => (
-                              <span key={i} className="ghost-chip">
-                                {signal.normalizedValue || signal.rawValue}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-                    {selected.insights.resourceSummary.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Package contents</div>
-                        <div className="tag-list">
-                          {selected.insights.resourceSummary.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.scriptNamespaces.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">Script folders</div>
-                        <div className="tag-list">
-                          {selected.insights.scriptNamespaces.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.embeddedNames.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">
-                          {selected.kind === "CAS" ? "In CAS as" : "In-game names"}
-                        </div>
-                        <div className="tag-list">
-                          {selected.insights.embeddedNames.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selected.insights.familyHints.length ? (
-                      <div className="detail-block">
-                        <div className="section-label">
-                          {selected.kind === "Gameplay"
-                            ? "Related packs"
-                            : selected.kind === "CAS"
-                              ? "Family ties"
-                              : "Family hints"}
-                        </div>
-                        <div className="tag-list">
-                          {selected.insights.familyHints.map((item) => (
-                            <span key={item} className="ghost-chip">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ),
+                children: buildSheetContentsSection(selected, userView),
+              },
+              {
+                id: "attribution",
+                label: "Attribution",
+                hint:
+                  "Who made this, what set it belongs to, and the evidence behind those clues.",
+                defaultCollapsed: false,
+                children: buildSheetAttributionSection(selected, userView),
+              },
+              {
+                id: "compatibility",
+                label: "Compatibility & Health",
+                hint:
+                  "Version signals, update status, and what might need attention.",
+                defaultCollapsed: true,
+                children: buildSheetCompatibilitySection(selected, "inspect", userView),
               },
             ]
           : []),

@@ -4580,6 +4580,10 @@ h2,
   border-top: 1px solid var(--line);
 }
 
+.detail-row--block {
+  align-items: flex-start;
+}
+
 .folder-row:first-child,
 .ledger-row:first-child,
 .detail-row:first-child {
@@ -4591,6 +4595,46 @@ h2,
 .ledger-row:last-child,
 .detail-row:last-child {
   padding-bottom: 0;
+}
+
+/* ── Detail row suffixes and evidence labels ─────────────────────────────── */
+.detail-row-suffix {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted, #888a8d);
+  margin-left: 0.25rem;
+}
+
+.detail-row-evidence-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 500;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  background: var(--bg-tertiary, #2e2e2e);
+  color: var(--text-muted, #888a8d);
+  border: 1px solid var(--border-subtle, #3a3a3a);
+  vertical-align: middle;
+}
+
+/* Evidence-kind colored chips for the sheet sections */
+.ghost-chip.evidence-extracted {
+  background: color-mix(in srgb, var(--accent-color, #4a9eff) 12%, transparent);
+  color: color-mix(in srgb, var(--accent-color, #4a9eff) 90%, var(--text-default, #e0e0e0));
+  border-color: color-mix(in srgb, var(--accent-color, #4a9eff) 30%, transparent);
+}
+
+.ghost-chip.evidence-derived {
+  background: color-mix(in srgb, var(--accent-secondary, #7c6aff) 12%, transparent);
+  color: color-mix(in srgb, var(--accent-secondary, #7c6aff) 90%, var(--text-default, #e0e0e0));
+  border-color: color-mix(in srgb, var(--accent-secondary, #7c6aff) 30%, transparent);
+}
+
+.ghost-chip.evidence-inferred {
+  background: color-mix(in srgb, var(--warning-color, #e8a020) 12%, transparent);
+  color: color-mix(in srgb, var(--warning-color, #e8a020) 90%, var(--text-default, #e0e0e0));
+  border-color: color-mix(in srgb, var(--warning-color, #e8a020) 30%, transparent);
 }
 
 .folder-main {
