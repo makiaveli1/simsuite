@@ -157,9 +157,10 @@ it("surfaces tray identity and storage context in the inspector", () => {
 
   expect(screen.getByText(/tray type/i)).toBeVisible();
   expect(screen.getAllByText(/stored/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/stored in tray/i)).toBeVisible();
-  expect(screen.getByText(/grouped as/i)).toBeVisible();
+  expect(screen.getAllByText(/stored in tray/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/grouped as/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/oakhousehold/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/stored in tray as library content/i)).toBeVisible();
 });
 
 it("hides raw path-like tray grouping values from inspector summary", () => {

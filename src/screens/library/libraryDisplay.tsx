@@ -472,6 +472,29 @@ export function trayLocationLabel(location: string): string {
   return location === "tray" ? "Stored in Tray" : "Stored in Mods";
 }
 
+export function describeTraySummary(
+  file: Pick<FileDetail, "kind" | "subtype" | "sourceLocation" | "bundleName" | "insights">,
+): string | null {
+  const trayIdentity = describeTrayIdentity(file);
+  if (trayIdentity.kind === "standard") {
+    return null;
+  }
+
+  const kindLabel = trayKindLabel(trayIdentity.kind);
+  const kindPhrase = `Classified as ${kindLabel}`;
+  const groupingValue = usefulTrayGroupingValue(file);
+
+  if (trayIdentity.isMisplaced) {
+    return groupingValue
+      ? `${kindPhrase}, grouped as ${groupingValue}, is sitting in Mods and needs review.`
+      : `${kindPhrase}. This tray content is sitting in Mods and needs review.`;
+  }
+
+  return groupingValue
+    ? `${kindPhrase}, grouped as ${groupingValue}, is stored in Tray as library content.`
+    : `${kindPhrase}. It is stored in Tray as library content, not an active mod.`;
+}
+
 /** Returns a human-readable label for what the item is, e.g. "Household" or "Lot" */
 export function trayKindLabel(kind: TrayKind): string {
   switch (kind) {
@@ -572,17 +595,18 @@ export function buildSheetTraySection(
         </div>
       ) : null}
       <div className="detail-row detail-row--block">
-        <span>Load behavior</span>
+        <span>Tray summary</span>
         <strong>
-          {trayIdentity.isMisplaced
-            ? "Tray content detected outside Tray. Review before moving or trusting it."
-            : "Library object only. It stays in Tray and does not behave like an active mod."}
+          {describeTraySummary(file) ??
+            (trayIdentity.isMisplaced
+              ? "Tray content detected outside Tray. Review before moving or trusting it."
+              : "Library object only. It stays in Tray and does not behave like an active mod.")}
         </strong>
       </div>
       {relatedHints.length > 0 && userView !== "beginner" ? (
         <div className="detail-row detail-row--block">
           <span>
-            Related tray files
+            Grouping hint
             <span className="detail-row-evidence-badge">
               {trayIdentity.evidenceKind === "derived" ? "Derived" : "Inferred"}
             </span>
@@ -1104,8 +1128,8 @@ function buildSupportingFacts(
         insights: undefined,
       });
       if (groupingValue) facts.push(groupingValue);
-      facts.push(isTray ? "🔖 Tray" : "Misplaced tray");
-      if (row.creator?.trim()) facts.push(creatorLabel);
+      facts.push(isTray ? "Stored in Tray" : "Stored in Mods");
+      if (row.creator?.trim() && flags.maxSupportingFacts > 2) facts.push(creatorLabel);
       break;
 
     // Unknown: show source + creator

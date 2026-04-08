@@ -57,7 +57,7 @@ describe("buildLibraryRowModel", () => {
 
     expect(row.isMisplaced).toBe(true);
     expect(row.supportingFacts).toContain("LooseBlueprint");
-    expect(row.supportingFacts).toContain("Misplaced tray");
+    expect(row.supportingFacts).toContain("Stored in Mods");
   });
 
   it("suppresses raw path-like tray grouping values in row clues", () => {
@@ -78,7 +78,7 @@ describe("buildLibraryRowModel", () => {
     );
 
     expect(row.supportingFacts.join(" ")).not.toMatch(/C:\\Users\\Player/i);
-    expect(row.supportingFacts).toContain("🔖 Tray");
+    expect(row.supportingFacts).toContain("Stored in Tray");
   });
 });
 

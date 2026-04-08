@@ -4,6 +4,7 @@ import {
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeTrayIdentity,
+  describeTraySummary,
   describeVersionForInspector,
   formatLibraryFileFormat,
   summarizeLibraryCareState,
@@ -78,6 +79,7 @@ export function LibraryDetailsPanel({
   const isTrayKind = trayIdentity.kind !== "standard";
   const familyContext = !isCasual ? describeLibraryFamilyContext(selectedFile) : null;
   const trayGroupingValue = usefulTrayGroupingValue(selectedFile);
+  const traySummary = isTrayKind ? describeTraySummary(selectedFile) : null;
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
       selectedFile.watchResult ||
@@ -265,6 +267,7 @@ export function LibraryDetailsPanel({
           {hasSafetyNotes || hasParserWarnings ? "Needs attention" : "Care"}
         </div>
         <p className="library-care-summary">{careSummary}</p>
+        {traySummary ? <p className="library-care-summary">{traySummary}</p> : null}
 
         {/* Warnings shown inline for seasoned+ so they don't need to open More details */}
         {showCareTags ? (
