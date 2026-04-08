@@ -46,6 +46,7 @@ import {
   formatLibraryFileFormat,
   libraryViewFlags,
   trayLocationLabel,
+  usefulTrayGroupingValue,
 } from "./library/libraryDisplay";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
@@ -309,6 +310,7 @@ export function LibraryScreen({
   );
   
   const playerFacingNames = selected ? collectPlayerFacingNames(selected) : [];
+  const trayGroupingValue = selected ? usefulTrayGroupingValue(selected) : null;
   const showSafetySection = Boolean(
     selected &&
       (isPowerView ||
@@ -415,8 +417,8 @@ export function LibraryScreen({
                         label="Stored"
                         value={traySelection?.isMisplaced ? `${trayLocationLabel(traySelection?.location ?? "mods")} · review needed` : trayLocationLabel(traySelection?.location ?? "tray")}
                       />
-                      {selected.bundleName?.trim() ? (
-                        <DetailRow label="Grouped as" value={selected.bundleName.trim()} />
+                      {trayGroupingValue ? (
+                        <DetailRow label="Grouped as" value={trayGroupingValue} />
                       ) : null}
                     </>
                   ) : null}
@@ -468,8 +470,8 @@ export function LibraryScreen({
                           label="Stored"
                           value={traySelection?.isMisplaced ? `${trayLocationLabel(traySelection?.location ?? "mods")} · review needed` : trayLocationLabel(traySelection?.location ?? "tray")}
                         />
-                        {selected.bundleName?.trim() ? (
-                          <DetailRow label="Grouped as" value={selected.bundleName.trim()} />
+                        {trayGroupingValue ? (
+                          <DetailRow label="Grouped as" value={trayGroupingValue} />
                         ) : null}
                       </>
                     ) : null}

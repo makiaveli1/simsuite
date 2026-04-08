@@ -59,6 +59,27 @@ describe("buildLibraryRowModel", () => {
     expect(row.supportingFacts).toContain("LooseBlueprint");
     expect(row.supportingFacts).toContain("Misplaced tray");
   });
+
+  it("suppresses raw path-like tray grouping values in row clues", () => {
+    const row = buildLibraryRowModel(
+      {
+        ...SAMPLE_ROW,
+        id: 3,
+        filename: "OakHousehold_0x00ABCDEF.trayitem",
+        extension: ".trayitem",
+        kind: "TrayHousehold",
+        subtype: "Household",
+        sourceLocation: "tray",
+        creator: "Oakby",
+        bundleName: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Tray\\OakHousehold",
+        bundleType: "household",
+      },
+      "power",
+    );
+
+    expect(row.supportingFacts.join(" ")).not.toMatch(/C:\\Users\\Player/i);
+    expect(row.supportingFacts).toContain("🔖 Tray");
+  });
 });
 
 describe("summarizeLibraryCareState", () => {

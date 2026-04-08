@@ -139,5 +139,36 @@ Added/updated coverage for:
 - no swatch/preview extraction was started
 - no fake creator identity was introduced for unknown tray files
 
+## Focused cleanup — tray grouping path leak
+
+### Root cause
+The leak was frontend formatting, not a backend requirement.
+
+Primary UI tray grouping was trusting raw grouping inputs too early:
+- row clues trusted `bundleName`
+- inspector tray summary trusted `bundleName`
+- tray More Details related hints were built from raw `bundleName` + `familyHints`
+
+If any of those values were path-like, the UI would surface a full local machine path as if it were useful grouping information.
+
+### Formatting rule adopted
+Primary tray UI now follows this rule:
+- show short human-readable grouping only
+- suppress path-like grouping values from row clues, inspector summaries, and tray More Details summary rows
+- use tray storage labels like `Stored in Tray` and `Stored in Mods · review needed`
+- allow raw paths only in deep technical/file-facts areas where the user explicitly expects diagnostics
+
+### Fix applied
+Added helper-layer sanitization in `libraryDisplay.tsx`:
+- `isPathLikeValue(...)`
+- `usefulTrayGroupingValue(...)`
+
+Then rewired tray surfaces to use the sanitized value:
+- row clues
+- inspector tray summary
+- tray More Details grouping
+
+If the grouping signal is only a raw path, it is now hidden from primary UI.
+
 ## Session 10 outcome
 Tray content is materially clearer in rows and inspector, with explicit storage and grouping context, and the trust model stays honest about what is inferred versus actually known.

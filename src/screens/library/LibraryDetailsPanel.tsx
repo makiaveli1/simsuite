@@ -12,6 +12,7 @@ import {
   trayKindLabel,
   trayLocationLabel,
   typeColorForKind,
+  usefulTrayGroupingValue,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import { api } from "../../lib/api";
@@ -76,6 +77,7 @@ export function LibraryDetailsPanel({
   const trayIdentity = describeTrayIdentity(selectedFile);
   const isTrayKind = trayIdentity.kind !== "standard";
   const familyContext = !isCasual ? describeLibraryFamilyContext(selectedFile) : null;
+  const trayGroupingValue = usefulTrayGroupingValue(selectedFile);
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
       selectedFile.watchResult ||
@@ -135,8 +137,8 @@ export function LibraryDetailsPanel({
         ? `${trayLocationLabel(trayIdentity.location)} · review needed`
         : trayLocationLabel(trayIdentity.location),
     });
-    if (selectedFile.bundleName?.trim()) {
-      snapshotLines.push({ label: "Grouped as", value: selectedFile.bundleName.trim() });
+    if (trayGroupingValue) {
+      snapshotLines.push({ label: "Grouped as", value: trayGroupingValue });
     }
   }
 

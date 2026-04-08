@@ -488,6 +488,34 @@ export function trayKindLabel(kind: TrayKind): string {
   }
 }
 
+function isPathLikeValue(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return (
+    /^[a-zA-Z]:[\\/]/.test(trimmed) ||
+    trimmed.startsWith("/mnt/") ||
+    trimmed.startsWith("/home/") ||
+    trimmed.startsWith("\\\\") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("/")
+  );
+}
+
+export function usefulTrayGroupingValue(
+  file: { bundleName?: string | null; insights?: FileInsights },
+): string | null {
+  const bundleName = file.bundleName?.trim();
+  if (bundleName && !isPathLikeValue(bundleName)) {
+    return bundleName;
+  }
+
+  const familyHint = (file.insights?.familyHints ?? [])
+    .map((item) => item.trim())
+    .find((item) => item && !isPathLikeValue(item));
+
+  return familyHint ?? null;
+}
+
 export function buildSheetTraySection(
   file: Pick<
     FileDetail,
@@ -501,9 +529,12 @@ export function buildSheetTraySection(
     return null;
   }
 
+  const groupingValue = usefulTrayGroupingValue(file);
   const relatedHints = [
-    ...(file.bundleName?.trim() ? [file.bundleName.trim()] : []),
-    ...(file.insights?.familyHints ?? []).filter((item) => item.trim()),
+    ...(groupingValue ? [groupingValue] : []),
+    ...(file.insights?.familyHints ?? [])
+      .map((item) => item.trim())
+      .filter((item) => item && item !== groupingValue && !isPathLikeValue(item)),
   ].slice(0, 6);
 
   return (
@@ -522,13 +553,13 @@ export function buildSheetTraySection(
         </span>
         <strong>{trayLocationLabel(trayIdentity.location)}</strong>
       </div>
-      {file.bundleName?.trim() ? (
+      {groupingValue ? (
         <div className="detail-row">
           <span>
             Grouped as
             <span className="detail-row-evidence-badge">Derived</span>
           </span>
-          <strong>{file.bundleName.trim()}</strong>
+          <strong>{groupingValue}</strong>
         </div>
       ) : null}
       {file.bundleType?.trim() ? (
@@ -1068,7 +1099,11 @@ function buildSupportingFacts(
     case "Household":
     case "Lot":
     case "Room":
-      if (row.bundleName?.trim()) facts.push(row.bundleName.trim());
+      const groupingValue = usefulTrayGroupingValue({
+        bundleName: row.bundleName ?? null,
+        insights: undefined,
+      });
+      if (groupingValue) facts.push(groupingValue);
       facts.push(isTray ? "🔖 Tray" : "Misplaced tray");
       if (row.creator?.trim()) facts.push(creatorLabel);
       break;

@@ -161,3 +161,38 @@ it("surfaces tray identity and storage context in the inspector", () => {
   expect(screen.getByText(/grouped as/i)).toBeVisible();
   expect(screen.getAllByText(/oakhousehold/i).length).toBeGreaterThan(0);
 });
+
+it("hides raw path-like tray grouping values from inspector summary", () => {
+  render(
+    <LibraryDetailsPanel
+      userView="power"
+      selectedFile={
+        {
+          id: 5,
+          filename: "OakHousehold_0x00ABCDEF.trayitem",
+          path: "Tray\\OakHousehold_0x00ABCDEF.trayitem",
+          extension: ".trayitem",
+          creator: "Oakby",
+          kind: "TrayHousehold",
+          subtype: "Household",
+          bundleName: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Tray\\OakHousehold",
+          bundleType: "household",
+          sourceLocation: "tray",
+          confidence: 0.92,
+          safetyNotes: [],
+          parserWarnings: [],
+          installedVersionSummary: null,
+          watchResult: null,
+          insights: emptyInsights,
+        } as never
+      }
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+    />,
+  );
+
+  expect(screen.queryByText(/grouped as/i)).toBeNull();
+  expect(screen.queryByText(/C:\\Users\\Player/i)).toBeNull();
+});
