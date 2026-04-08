@@ -1,5 +1,14 @@
-import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
-import type { FileDetail, LibraryFileRow, UserView, WatchStatus } from "../../lib/types";
+import {
+  creatorConfidenceTier,
+  creatorLabelWithConfidence,
+  creatorConfidenceSuffix,
+  friendlyTypeLabel,
+  unknownCreatorLabel,
+  versionLabelWithConfidence,
+  versionConfidenceTierLabel,
+  type CreatorConfidenceTier,
+} from "../../lib/uiLanguage";
+import type { FileDetail, LibraryFileRow, UserView, WatchStatus, FileInsights, VersionConfidence } from "../../lib/types";
 
 export interface LibraryViewFlags {
   showCreatorInList: boolean;
@@ -249,15 +258,103 @@ export function describeLibraryFamilyContext(
   }
 
   if (file.kind === "ScriptMods") {
-    return `Part of the ${familyLabel} script family`;
+    return `${familyLabel} script family`;
   }
   if (file.kind === "Gameplay") {
-    return `Part of the ${familyLabel} gameplay family`;
+    return `${familyLabel} gameplay family`;
   }
   if (file.kind === "CAS") {
-    return `Linked to the ${familyLabel} set`;
+    return `Linked to ${familyLabel} set`;
   }
-  return `Part of the ${familyLabel} family`;
+  return `${familyLabel} family`;
+}
+
+/**
+ * Returns a disclosure-aware creator label for use in the inspector snapshot.
+ * Handles tier 1–4 creator certainty without showing raw confidence jargon.
+ */
+export function describeCreatorForInspector(
+  file: Pick<FileDetail, "creator" | "creatorLearning" | "insights">,
+): { label: string; suffix: string | null; tier: CreatorConfidenceTier } {
+  const tier = creatorConfidenceTier(
+    file.creator,
+    file.creatorLearning ?? null,
+    file.insights?.creatorHints ?? [],
+  );
+  const label = creatorLabelWithConfidence(
+    file.creator,
+    file.creatorLearning ?? null,
+    file.insights?.creatorHints ?? [],
+  );
+  const suffix = creatorConfidenceSuffix(
+    file.creator,
+    file.creatorLearning ?? null,
+    file.insights?.creatorHints ?? [],
+  );
+  return { label, suffix, tier };
+}
+
+/**
+ * Returns a version label with appropriate confidence disclosure.
+ * Versions with unknown confidence are returned as null — caller should not render.
+ */
+export function describeVersionForInspector(
+  version: string | null,
+  confidence: VersionConfidence | null,
+): { label: string | null; tierLabel: string } {
+  return {
+    label: versionLabelWithConfidence(version, confidence),
+    tierLabel: versionConfidenceTierLabel(confidence),
+  };
+}
+
+/**
+ * Returns the primary family hint with a label prefix indicating it is
+ * a derived clue, not raw extracted content.
+ */
+export function describeFamilyHintForSheet(
+  file: Pick<FileDetail, "kind" | "subtype" | "insights">,
+): { hint: string | null; role: string } {
+  const primaryFamily = file.insights?.familyHints?.find((item) => item.trim());
+  if (!primaryFamily) {
+    return { hint: null, role: "family" };
+  }
+  return { hint: primaryFamily, role: "family" };
+}
+
+/**
+ * Returns embedded names filtered to likely human-readable values for display.
+ * Filters out raw STBL UUID-style entries and other non-meaningful strings.
+ */
+export function describeEmbeddedNames(
+  insights: FileInsights | undefined,
+): string[] {
+  if (!insights?.embeddedNames?.length) return [];
+  // Filter: skip entries that look like raw UUIDs or numeric IDs
+  return insights.embeddedNames.filter((name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    // Skip pure hex/UUID-looking strings
+    if (/^[0-9a-f]{8}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{12}$/i.test(trimmed)) return false;
+    // Skip very short numeric strings
+    if (/^\d+$/.test(trimmed) && trimmed.length < 4) return false;
+    // Skip strings that are mostly internal markers
+    if (trimmed.startsWith("#") && trimmed.length < 10) return false;
+    return true;
+  }).slice(0, 8); // cap at 8 for display
+}
+
+/**
+ * Describes script namespaces for display — shows count and first few examples.
+ */
+export function describeScriptNamespaces(
+  insights: FileInsights | undefined,
+): { count: number; samples: string[] } {
+  const namespaces = insights?.scriptNamespaces ?? [];
+  return {
+    count: namespaces.length,
+    samples: namespaces.slice(0, 5),
+  };
 }
 
 /** Builds type-specific supporting facts for a library row */

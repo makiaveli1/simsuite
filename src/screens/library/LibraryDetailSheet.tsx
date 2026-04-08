@@ -6,9 +6,10 @@ import {
   overlayTransition,
   panelSpring,
 } from "../../lib/motion";
-import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
+import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView } from "../../lib/types";
 import {
+  describeCreatorForInspector,
   describeLibraryFamilyContext,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
@@ -110,7 +111,10 @@ export function LibraryDetailSheet({
                 </div>
                 <div className="library-detail-sheet-meta">
                   <span className="ghost-chip">
-                    {selectedFile.creator ?? unknownCreatorLabel(userView)}
+                    {describeCreatorForInspector(selectedFile).label}
+                    {describeCreatorForInspector(selectedFile).suffix
+                      ? ` (${describeCreatorForInspector(selectedFile).suffix})`
+                      : null}
                   </span>
                   <span className="confidence-badge neutral">
                     {Math.round(selectedFile.confidence * 100)}%

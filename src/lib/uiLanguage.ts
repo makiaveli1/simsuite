@@ -1,4 +1,4 @@
-import type { ExperienceMode, Screen, UserView } from "./types";
+import type { ExperienceMode, Screen, UserView, CreatorLearningInfo, VersionConfidence } from "./types";
 import {
   experienceModeToLegacyView,
   normalizeExperienceMode,
@@ -77,6 +77,116 @@ export function reviewLabel(userView: UserView | ExperienceMode) {
 
 export function reviewStateLabel(userView: UserView | ExperienceMode) {
   return normalizeUserView(userView) === "beginner" ? "Needs review" : "Review";
+}
+
+// ─── Creator disclosure tiers ──────────────────────────────────────────────
+//
+// Tier 1 — Known: user saved this creator override → "by [Creator]"
+// Tier 2 — Strong hint: manifest or embedded name evidence → "likely by [Creator]"
+// Tier 3 — Weak inference: path-folder guess only → "probably [Creator]"
+// Tier 4 — Unknown: no meaningful clues → "Unknown creator"
+//
+// creatorHints: string[] from FileInsights — raw embedded name patterns found
+// confidence: 0–1 overall file parse confidence (not creator-specific)
+// ──────────────────────────────────────────────────────────────────────────
+export type CreatorConfidenceTier = "known" | "strong_hint" | "weak_inference" | "unknown";
+
+export function creatorConfidenceTier(
+  creator: string | null,
+  creatorLearning: CreatorLearningInfo | null,
+  creatorHints: string[],
+): CreatorConfidenceTier {
+  // Tier 1: user locked this creator
+  if (creator && creatorLearning?.lockedByUser) {
+    return "known";
+  }
+  // Tier 2: creator present + strong embedded evidence
+  if (creator && creatorHints.length > 0) {
+    return "strong_hint";
+  }
+  // Tier 3: creator present but only path inference (no embedded evidence)
+  if (creator) {
+    return "weak_inference";
+  }
+  // Tier 4: no creator at all
+  return "unknown";
+}
+
+export function creatorLabelWithConfidence(
+  creator: string | null,
+  creatorLearning: CreatorLearningInfo | null,
+  creatorHints: string[],
+): string {
+  const tier = creatorConfidenceTier(creator, creatorLearning, creatorHints);
+  switch (tier) {
+    case "known":
+      return creator ?? "Unknown creator";
+    case "strong_hint":
+      return `${creator}?`;
+    case "weak_inference":
+      return `? ${creator}`;
+    case "unknown":
+    default:
+      return "Unknown creator";
+  }
+}
+
+/** Returns a suffix label describing creator certainty for use in tooltips or secondary labels */
+export function creatorConfidenceSuffix(
+  creator: string | null,
+  creatorLearning: CreatorLearningInfo | null,
+  creatorHints: string[],
+): string | null {
+  const tier = creatorConfidenceTier(creator, creatorLearning, creatorHints);
+  switch (tier) {
+    case "known":
+      return "saved";
+    case "strong_hint":
+      return "from file";
+    case "weak_inference":
+      return "from folder";
+    case "unknown":
+    default:
+      return null;
+  }
+}
+
+// ─── Version confidence ────────────────────────────────────────────────────────
+// InstalledVersionSummary.confidence tells us how certain the version signal is.
+// ──────────────────────────────────────────────────────────────────────────────
+export function versionLabelWithConfidence(
+  version: string | null,
+  confidence: VersionConfidence | null,
+): string | null {
+  if (!version) return null;
+  switch (confidence) {
+    case "exact":
+    case "strong":
+      return version;
+    case "medium":
+      return `${version}?`;
+    case "weak":
+      return `~${version}`;
+    case "unknown":
+    default:
+      return null; // don't show version when confidence is unknown
+  }
+}
+
+export function versionConfidenceTierLabel(confidence: VersionConfidence | null): string {
+  switch (confidence) {
+    case "exact":
+      return "Confirmed";
+    case "strong":
+      return "Strong";
+    case "medium":
+      return "Possible";
+    case "weak":
+      return "Speculative";
+    case "unknown":
+    default:
+      return "Unconfirmed";
+  }
 }
 
 export function unknownCreatorLabel(userView: UserView | ExperienceMode) {

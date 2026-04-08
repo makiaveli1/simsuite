@@ -22,6 +22,7 @@ const SAMPLE_ROW: LibraryFileRow = {
   bundleType: null,
   relativeDepth: 2,
   safetyNotes: [],
+  parserWarnings: [],
 };
 
 describe("libraryViewFlags", () => {
@@ -46,6 +47,6 @@ describe("summarizeLibraryCareState", () => {
         safetyNotes: ["Possible conflict"],
         parserWarnings: [],
       }),
-    ).toContain("needs attention");
+    ).toContain("deserve attention");
   });
 });

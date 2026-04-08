@@ -1,13 +1,16 @@
 import { type ReactNode } from "react";
 import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-react";
 import {
+  describeCreatorForInspector,
+  describeLibraryFamilyContext,
+  describeVersionForInspector,
   formatLibraryFileFormat,
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
   typeColorForKind,
 } from "./libraryDisplay";
-import { friendlyTypeLabel, unknownCreatorLabel } from "../../lib/uiLanguage";
+import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import { api } from "../../lib/api";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
 
@@ -66,6 +69,8 @@ export function LibraryDetailsPanel({
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
   const scriptContentSummary = summarizeLibraryScriptContent(selectedFile);
   const resourceBadge = summarizeLibraryResourceBadge(selectedFile);
+  const creatorInfo = describeCreatorForInspector(selectedFile);
+  const familyContext = !isCasual ? describeLibraryFamilyContext(selectedFile) : null;
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
       selectedFile.watchResult ||
@@ -88,10 +93,22 @@ export function LibraryDetailsPanel({
   // Seasoned: adds installed version and confidence for maintenance workflows
   // Creator: adds file format for deep inspection
   // ────────────────────────────────────────────────────────────────────────
+  // Creator — tier-aware: shows creator name with disclosure suffix in tooltip
+  const creatorSuffix = creatorInfo.suffix ? (
+    <span className="detail-creator-suffix" title={`Creator ${creatorInfo.suffix}`}>
+      {` (${creatorInfo.suffix})`}
+    </span>
+  ) : null;
+
   const snapshotLines: Array<{ label: string; value: ReactNode }> = [
     {
       label: "Creator",
-      value: selectedFile.creator ?? unknownCreatorLabel(userView),
+      value: (
+        <span>
+          {creatorInfo.label}
+          {creatorSuffix}
+        </span>
+      ),
     },
     { label: "Type", value: friendlyTypeLabel(selectedFile.kind) },
   ];
@@ -99,6 +116,14 @@ export function LibraryDetailsPanel({
   // Subtype: useful for CAS/Gameplay categorization
   if (!isCasual && selectedFile.subtype?.trim()) {
     snapshotLines.push({ label: "Subtype", value: selectedFile.subtype });
+  }
+
+  // Family context — derived clue, shown in seasoned+ (not casual)
+  if (!isCasual && familyContext) {
+    snapshotLines.push({
+      label: "Family",
+      value: <span className="ghost-chip">{familyContext}</span>,
+    });
   }
 
   if (!isCasual && scriptContentSummary) {
@@ -113,12 +138,18 @@ export function LibraryDetailsPanel({
     });
   }
 
-  // Installed version: relevant for seasoned simmer workflows
-  if (!isCasual && selectedFile.installedVersionSummary?.version) {
-    snapshotLines.push({
-      label: "Installed",
-      value: selectedFile.installedVersionSummary.version,
-    });
+  // Installed version — show only when we have a label (confidence not unknown)
+  if (!isCasual) {
+    const versionInfo = describeVersionForInspector(
+      selectedFile.installedVersionSummary?.version ?? null,
+      selectedFile.installedVersionSummary?.confidence ?? null,
+    );
+    if (versionInfo.label) {
+      snapshotLines.push({
+        label: "Installed",
+        value: versionInfo.label,
+      });
+    }
   }
 
   // Watch: always — core state indicator

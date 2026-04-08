@@ -1,4 +1,10 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { AnimatePresence, m } from "motion/react";
 import { SkeletonLoader } from "../components/SkeletonLoader";
 import { ExternalLink, Search, X, PanelLeftClose } from "lucide-react";
@@ -9,8 +15,8 @@ import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
 import { api } from "../lib/api";
 import { downloadsSheetTransition } from "../lib/motion";
 import {
+  creatorConfidenceSuffix,
   friendlyTypeLabel,
-  unknownCreatorLabel,
 } from "../lib/uiLanguage";
 import type {
   CategoryOverrideInfo,
@@ -27,7 +33,13 @@ import type {
   LibrarySummary,
   LibrarySortField,
 } from "../lib/types";
-import { formatLibraryFileFormat, libraryViewFlags } from "./library/libraryDisplay";
+import {
+  describeCreatorForInspector,
+  describeLibraryFamilyContext,
+  describeVersionForInspector,
+  formatLibraryFileFormat,
+  libraryViewFlags,
+} from "./library/libraryDisplay";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
@@ -365,7 +377,19 @@ export function LibraryScreen({
                 <div className="detail-list">
                   <DetailRow
                     label="Creator"
-                    value={selected.creator ?? unknownCreatorLabel(userView)}
+                    value={((): string | ReactNode => {
+                      const info = describeCreatorForInspector(selected);
+                      return (
+                        <span>
+                          {info.label}
+                          {info.suffix ? (
+                            <span className="detail-row-suffix" title={`Creator ${info.suffix}`}>
+                              {" "}({info.suffix})
+                            </span>
+                          ) : null}
+                        </span>
+                      );
+                    })()}
                   />
                   <DetailRow
                     label="Type"
@@ -395,7 +419,19 @@ export function LibraryScreen({
                   <div className="detail-list">
                     <DetailRow
                       label="Creator"
-                      value={selected.creator ?? unknownCreatorLabel(userView)}
+                      value={((): string | ReactNode => {
+                        const info = describeCreatorForInspector(selected);
+                        return (
+                          <span>
+                            {info.label}
+                            {info.suffix ? (
+                              <span className="detail-row-suffix" title={`Creator ${info.suffix}`}>
+                                {" "}({info.suffix})
+                              </span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
                     />
                     <DetailRow
                       label="Type"
@@ -480,7 +516,31 @@ export function LibraryScreen({
                         />
                         <DetailRow
                           label="Installed"
-                          value={selected.installedVersionSummary?.version ?? "Unknown"}
+                          value={
+                            ((): string | ReactNode => {
+                              const vInfo = describeVersionForInspector(
+                                selected.installedVersionSummary?.version ?? null,
+                                selected.installedVersionSummary?.confidence ?? null,
+                              );
+                              if (!vInfo.label) {
+                                return "Unknown";
+                              }
+                              return (
+                                <span>
+                                  {vInfo.label}
+                                  {vInfo.tierLabel !== "Confirmed" ? (
+                                    <span
+                                      className="detail-row-suffix"
+                                      title={`Version ${vInfo.tierLabel.toLowerCase()}`}
+                                    >
+                                      {" "}
+                                      ({vInfo.tierLabel})
+                                    </span>
+                                  ) : null}
+                                </span>
+                              );
+                            })()
+                          }
                         />
                         {selected.watchResult?.sourceLabel ? (
                           <DetailRow
@@ -1498,7 +1558,7 @@ function DetailRow({
   mono,
 }: {
   label: string;
-  value: string;
+  value: string | ReactNode;
   mono?: boolean;
 }) {
   return (
