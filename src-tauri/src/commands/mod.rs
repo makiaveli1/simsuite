@@ -53,9 +53,12 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(operation)
-        .await
-        .map_err(|error| format!("{command} task failed: {error}"))?
+    let join_handle = tauri::async_runtime::spawn_blocking(operation);
+    let join_result = join_handle.await;
+    match join_result {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("{command} task failed: {e}")),
+    }
 }
 
 const SLOW_COMMAND_LOG_THRESHOLD_MS: u128 = 40;
