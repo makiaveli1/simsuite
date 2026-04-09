@@ -331,7 +331,7 @@ pub fn list_library_files(
                 relative_depth: row.get(14)?,
                 safety_notes: parse_string_array(row.get::<_, String>(15)?),
                 parser_warnings: parse_string_array(row.get::<_, String>(16)?),
-                insights: parse_insights(row.get::<_, String>(17)?),
+                insights: parse_insights(row.get::<_, Option<String>>(17)?),
                 watch_status,
                 has_duplicate: row.get::<_, i64>(19)? != 0,
                 installed_version: None,
@@ -404,7 +404,7 @@ pub fn get_file_detail(
                     hash: row.get(16)?,
                     created_at: row.get(17)?,
                     parser_warnings: parse_string_array(row.get::<_, String>(18)?),
-                    insights: parse_insights(row.get::<_, String>(19)?),
+                    insights: parse_insights(Some(row.get::<_, String>(19)?)),
                     installed_version_summary: None,
                     watch_result: None,
                     creator_learning: CreatorLearningInfo {
@@ -583,8 +583,11 @@ fn parse_string_array(value: String) -> Vec<String> {
     serde_json::from_str(&value).unwrap_or_default()
 }
 
-fn parse_insights(value: String) -> FileInsights {
-    serde_json::from_str(&value).unwrap_or_default()
+fn parse_insights(value: Option<String>) -> FileInsights {
+    match value {
+        Some(v) => serde_json::from_str(&v).unwrap_or_default(),
+        None => FileInsights::default(),
+    }
 }
 
 fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppResult<Vec<String>> {
