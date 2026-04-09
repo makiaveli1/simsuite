@@ -303,7 +303,7 @@ pub fn list_library_files(
     let mut statement = connection.prepare(&rows_sql)?;
     let items = statement
         .query_map(params_from_iter(row_params.iter()), |row| {
-            let watch_status_str: Option<String> = row.get(16)?;
+            let watch_status_str: Option<String> = row.get(18)?;
             let watch_status = watch_status_str
                 .map(|s| match s.as_str() {
                     "current" => WatchStatus::Current,
