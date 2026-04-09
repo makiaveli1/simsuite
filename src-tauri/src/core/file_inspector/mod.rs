@@ -266,10 +266,10 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
     Ok(InspectionOutcome {
         insights: FileInsights {
             format: Some("ts4script-zip".to_owned()),
-            resource_summary: vec![
-                format!("Archive entries: {}", archive.len()),
-                format!("Top-level namespaces: {}", script_namespaces.len()),
-            ],
+            resource_summary: build_ts4script_resource_summary(
+                &archive_paths,
+                script_namespaces.len(),
+            ),
             script_namespaces,
             embedded_names,
             creator_hints: creator_hints.clone(),
@@ -1076,6 +1076,47 @@ fn build_resource_summary(
     }
 
     summary.truncate(MAX_DISPLAY_VALUES);
+    summary
+}
+
+/// Builds a human-readable content profile for ts4script files,
+/// replacing generic "Archive entries: N" strings with meaningful content signals.
+fn build_ts4script_resource_summary(
+    archive_paths: &[String],
+    namespace_count: usize,
+) -> Vec<String> {
+    let mut summary = Vec::new();
+    summary.push("Script mod".to_owned());
+
+    // Detect content types from file extensions in archive paths
+    let has_python = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".py"));
+    let has_yaml = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".yml") || p.to_ascii_lowercase().ends_with(".yaml"));
+    let has_mod_manifest = archive_paths.iter().any(|p| {
+        let lower = p.to_ascii_lowercase();
+        lower.contains("modfilemanifest")
+    });
+    let has_json = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".json"));
+
+    if has_python {
+        summary.push("Python modules".to_owned());
+    }
+    // Only show "Config files" when there are actual YAML files, not just the manifest
+    // (modfilemanifest is present in all ts4script archives and is not a user config file)
+    if has_yaml {
+        summary.push("YAML config".to_owned());
+    }
+    // Mod manifest: indicates this is a properly structured script mod with a descriptor file
+    if has_mod_manifest && !has_yaml {
+        summary.push("Script config".to_owned());
+    }
+    if has_json && !has_yaml {
+        summary.push("JSON data".to_owned());
+    }
+
+    if namespace_count > 1 {
+        summary.push(format!("{} namespaces", namespace_count));
+    }
+
     summary
 }
 

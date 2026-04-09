@@ -825,7 +825,45 @@ export function buildSheetAttributionSection(
   );
 }
 
-/** Section: What's Inside — extracted file contents */
+/**
+ * Returns a content-type label for package files, derived from resource summary.
+ * E.g. ["Catalog x6", "CASPart x2"] → "Catalog items, CAS parts"
+ */
+export function summarizePackageContentProfile(
+  insights: FileInsights | undefined,
+  subtype: string | null,
+): string | null {
+  if (!insights?.resourceSummary?.length) return null;
+  const resource = insights.resourceSummary;
+  // For CAS subtypes, derive a readable content profile
+  const casTerms = ["CASPart", "Skintone", "Hair", "Tops", "Bottoms", "Dress", "Shoes", "Accessory", "Outfit"];
+  const hasCas = resource.some((r) => casTerms.some((t) => r.includes(t)));
+  const hasCatalog = resource.some((r) => r.includes("Catalog"));
+  const hasDefinition = resource.some((r) => r.includes("Definition"));
+  const hasScript = resource.some((r) => r.includes("ScriptResource"));
+  if (hasCas && hasCatalog) {
+    return "CAS items";
+  }
+  if (hasCas && !hasCatalog) {
+    return "CAS content";
+  }
+  if (hasCatalog && hasDefinition) {
+    return "Catalog + gameplay content";
+  }
+  if (hasCatalog) {
+    return "Catalog content";
+  }
+  if (hasScript) {
+    return "Script package";
+  }
+  // Generic fallback — subtype is usually more informative than raw counts
+  if (subtype?.trim()) {
+    return subtype.trim();
+  }
+  return null;
+}
+
+/** Section: What's Inside — extracted file contents, ordered by type-specific usefulness */
 export function buildSheetContentsSection(
   file: FileDetail,
   userView: "beginner" | "standard" | "power",
@@ -833,6 +871,15 @@ export function buildSheetContentsSection(
   const embedded = describeEmbeddedNames(file.insights);
   const namespaces = describeScriptNamespaces(file.insights);
   const resource = file.insights?.resourceSummary ?? [];
+  const isScriptMod = file.kind === "ScriptMods";
+  // CAS: detected by kind or resource type signatures in the file's extracted content
+  const isCas =
+    file.kind === "CAS" ||
+    (file.insights?.resourceSummary ?? []).some((r) =>
+      ["CASPart", "Skintone", "Hair", "Tops", "Bottoms", "Dress", "Shoes", "Accessory", "Outfit"].some(
+        (t) => r.includes(t),
+      ),
+    );
 
   // Nothing to show?
   if (!embedded.length && !namespaces.count && !resource.length) {
@@ -843,7 +890,14 @@ export function buildSheetContentsSection(
 
   return (
     <div className="detail-list">
-      {/* Script namespaces — most meaningful for ScriptMods */}
+      {/*
+       * Content order is type-dependent:
+       * - ScriptMods: Namespaces first (primary signal), skip redundant "Contains"
+       * - CAS: Included names first (actual item names), then resource profile
+       * - Other packages: resource profile first, then names
+       */}
+
+      {/* For ScriptMods: Namespaces — the primary content signal */}
       {namespaces.count > 0 ? (
         <div className="detail-row detail-row--block">
           <span>
@@ -863,15 +917,19 @@ export function buildSheetContentsSection(
         </div>
       ) : null}
 
-      {/* Resource/contents summary */}
-      {resource.length > 0 ? (
+      {/*
+       * "Contains" — hidden for ScriptMods (resource_summary now says "Script mod,
+       * Python modules" which is redundant with the Namespaces section above).
+       * Shown for all other types as a content-type label.
+       */}
+      {!isScriptMod && resource.length > 0 ? (
         <div className="detail-row detail-row--block">
           <span>
             Contains
             <span className="detail-row-evidence-badge">Extracted</span>
           </span>
           <div className="tag-list">
-            {resource.map((r) => (
+            {resource.slice(0, 5).map((r) => (
               <span key={r} className="ghost-chip">
                 {r}
               </span>
@@ -880,21 +938,70 @@ export function buildSheetContentsSection(
         </div>
       ) : null}
 
-      {/* Embedded names — meaningful for CAS, less for scripts */}
-      {embedded.length > 0 && userView !== "beginner" ? (
+      {/*
+       * "Included names" — order depends on file type:
+       * - CAS: shown FIRST (item names like "NSW_Skinblend" are the most useful signal)
+       * - ScriptMods: shown last (module stems are secondary to namespaces)
+       * - Other packages: shown after content profile
+       * Hidden in beginner view for ScriptMods and generic packages.
+       */}
+      {embedded.length > 0 && userView !== "beginner" && isCas ? (
         <div className="detail-row detail-row--block">
           <span>
             Included names
             <span className="detail-row-evidence-badge">Extracted</span>
           </span>
           <div className="tag-list">
-            {embedded.slice(0, 6).map((name) => (
+            {embedded.slice(0, 8).map((name) => (
               <span key={name} className="ghost-chip">
                 {name}
               </span>
             ))}
-            {embedded.length > 6 ? (
-              <span className="ghost-chip-inline-button">+{embedded.length - 6} more</span>
+            {embedded.length > 8 ? (
+              <span className="ghost-chip-inline-button">+{embedded.length - 8} more</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/*
+       * "Contains" — hidden for ScriptMods, shown for all package types.
+       * For CAS, shown AFTER "Included names" since raw counts are secondary.
+       */}
+      {!isScriptMod && resource.length > 0 ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Contains
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <div className="tag-list">
+            {resource.slice(0, 5).map((r) => (
+              <span key={r} className="ghost-chip">
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/*
+       * "Included names" — for non-CAS types, shown after the content profile.
+       * Hidden in beginner view.
+       */}
+      {embedded.length > 0 && userView !== "beginner" && !isCas ? (
+        <div className="detail-row detail-row--block">
+          <span>
+            Included names
+            <span className="detail-row-evidence-badge">Extracted</span>
+          </span>
+          <div className="tag-list">
+            {embedded.slice(0, 8).map((name) => (
+              <span key={name} className="ghost-chip">
+                {name}
+              </span>
+            ))}
+            {embedded.length > 8 ? (
+              <span className="ghost-chip-inline-button">+{embedded.length - 8} more</span>
             ) : null}
           </div>
         </div>
