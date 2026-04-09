@@ -388,6 +388,25 @@ export function describeScriptNamespaces(
   };
 }
 
+/** Single-line script scope label for list rows and inspectors. */
+export function summarizeScriptScopeForUi(
+  insights: FileInsights | undefined,
+): string | null {
+  const ns = describeScriptNamespaces(insights);
+  if (!ns.count) return null;
+  if (ns.count === 1) return ns.samples[0] ?? null;
+  return `${ns.samples[0] ?? "?"}+${ns.count - 1}`;
+}
+
+/** Single-line resource profile label for package/collection rows. */
+export function summarizeResourceProfileForUi(
+  insights: FileInsights | undefined,
+): string | null {
+  const summary = insights?.resourceSummary ?? [];
+  if (!summary.length) return null;
+  return summary[0] ?? null;
+}
+
 // ─── Tray identity ─────────────────────────────────────────────────────────────
 // Used to surface tray-specific file identity in rows, inspector, and sheet.
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1086,17 +1105,23 @@ function buildSupportingFacts(
       facts.push(creatorLabel);
       break;
 
-    // Script mods: show creator + confidence level
+    // Script mods: show creator + extracted script scope (namespace)
+    // Falls back to confidence tier only when no namespace data is available.
     case "ScriptMods":
       facts.push(creatorLabel);
-      if (row.confidence != null) {
-        const confLevel =
-          row.confidence >= 0.8
-            ? "High confidence"
-            : row.confidence >= 0.55
-              ? "Medium confidence"
-              : "Low confidence";
-        facts.push(confLevel);
+      {
+        const scope = summarizeScriptScopeForUi(row.insights);
+        if (scope) {
+          facts.push(scope);
+        } else if (row.confidence != null) {
+          const confLevel =
+            row.confidence >= 0.8
+              ? "High confidence"
+              : row.confidence >= 0.55
+                ? "Medium confidence"
+                : "Low confidence";
+          facts.push(confLevel);
+        }
       }
       break;
 
@@ -1150,7 +1175,7 @@ function buildSupportingFacts(
     case "Room":
       const groupingValue = usefulTrayGroupingValue({
         bundleName: row.bundleName ?? null,
-        insights: undefined,
+        insights: row.insights,
       });
       if (groupingValue) facts.push(groupingValue);
       const groupedCount = groupedFilesLabel(row.groupedFileCount);

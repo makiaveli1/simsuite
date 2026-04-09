@@ -331,8 +331,9 @@ pub fn list_library_files(
                 relative_depth: row.get(14)?,
                 safety_notes: parse_string_array(row.get::<_, String>(15)?),
                 parser_warnings: parse_string_array(row.get::<_, String>(16)?),
+                insights: parse_insights(row.get::<_, String>(17)?),
                 watch_status,
-                has_duplicate: row.get::<_, i64>(18)? != 0,
+                has_duplicate: row.get::<_, i64>(19)? != 0,
                 installed_version: None,
             })
         })?

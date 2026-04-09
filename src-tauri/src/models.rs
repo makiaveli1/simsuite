@@ -518,12 +518,14 @@ pub struct LibraryFileRow {
     pub grouped_file_count: Option<i64>,
     pub relative_depth: i64,
     pub safety_notes: Vec<String>,
-    /// Pre-computed watch status for list display. Derived from content_watch_results.
-    #[serde(default)]
-    pub watch_status: WatchStatus,
     /// Parser warnings for this file (e.g. missing script, unusual structure).
     #[serde(default)]
     pub parser_warnings: Vec<String>,
+    #[serde(default)]
+    pub insights: FileInsights,
+    /// Pre-computed watch status for list display. Derived from content_watch_results.
+    #[serde(default)]
+    pub watch_status: WatchStatus,
     /// True if this file appears in any duplicate pair (exact hash, filename, or version).
     #[serde(default)]
     pub has_duplicate: bool,

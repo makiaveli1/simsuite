@@ -239,6 +239,7 @@ export interface LibraryFileRow {
   groupedFileCount?: number | null;
   relativeDepth: number;
   safetyNotes: string[];
+  insights?: FileInsights;
   /** Watch status for this file, if tracked. */
   watchStatus?: WatchStatus;
   /** Parser warnings for this file (e.g. missing script, unusual structure). */
