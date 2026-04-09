@@ -236,6 +236,7 @@ export interface LibraryFileRow {
   creator: string | null;
   bundleName: string | null;
   bundleType: string | null;
+  groupedFileCount?: number | null;
   relativeDepth: number;
   safetyNotes: string[];
   /** Watch status for this file, if tracked. */

@@ -472,8 +472,15 @@ export function trayLocationLabel(location: string): string {
   return location === "tray" ? "Stored in Tray" : "Stored in Mods";
 }
 
+export function groupedFilesLabel(count?: number | null): string | null {
+  if (!count || count <= 1) {
+    return null;
+  }
+  return `${count} grouped files`;
+}
+
 export function describeTraySummary(
-  file: Pick<FileDetail, "kind" | "subtype" | "sourceLocation" | "bundleName" | "insights">,
+  file: Pick<FileDetail, "kind" | "subtype" | "sourceLocation" | "bundleName" | "groupedFileCount" | "insights">,
 ): string | null {
   const trayIdentity = describeTrayIdentity(file);
   if (trayIdentity.kind === "standard") {
@@ -484,10 +491,19 @@ export function describeTraySummary(
   const kindPhrase = `Classified as ${kindLabel}`;
   const groupingValue = usefulTrayGroupingValue(file);
 
+  const groupedCountLabel = groupedFilesLabel(file.groupedFileCount);
+
   if (trayIdentity.isMisplaced) {
+    if (groupingValue && groupedCountLabel) {
+      return `${kindPhrase}, grouped as ${groupingValue}, is in a tray set with ${groupedCountLabel} and is sitting in Mods, so it needs review.`;
+    }
     return groupingValue
       ? `${kindPhrase}, grouped as ${groupingValue}, is sitting in Mods and needs review.`
       : `${kindPhrase}. This tray content is sitting in Mods and needs review.`;
+  }
+
+  if (groupingValue && groupedCountLabel) {
+    return `${kindPhrase}, grouped as ${groupingValue}, is in a tray set with ${groupedCountLabel} and is stored in Tray as library content.`;
   }
 
   return groupingValue
@@ -542,7 +558,7 @@ export function usefulTrayGroupingValue(
 export function buildSheetTraySection(
   file: Pick<
     FileDetail,
-    "kind" | "subtype" | "sourceLocation" | "insights" | "bundleName" | "bundleType" | "safetyNotes"
+    "kind" | "subtype" | "sourceLocation" | "insights" | "bundleName" | "bundleType" | "groupedFileCount" | "safetyNotes"
   >,
   userView: "beginner" | "standard" | "power",
 ): ReactNode {
@@ -592,6 +608,15 @@ export function buildSheetTraySection(
             <span className="detail-row-evidence-badge">Derived</span>
           </span>
           <strong>{file.bundleType}</strong>
+        </div>
+      ) : null}
+      {groupedFilesLabel(file.groupedFileCount) ? (
+        <div className="detail-row">
+          <span>
+            Tray set
+            <span className="detail-row-evidence-badge">Derived</span>
+          </span>
+          <strong>{groupedFilesLabel(file.groupedFileCount)}</strong>
         </div>
       ) : null}
       <div className="detail-row detail-row--block">
@@ -1128,8 +1153,10 @@ function buildSupportingFacts(
         insights: undefined,
       });
       if (groupingValue) facts.push(groupingValue);
+      const groupedCount = groupedFilesLabel(row.groupedFileCount);
+      if (groupedCount) facts.push(groupedCount);
       facts.push(isTray ? "Stored in Tray" : "Stored in Mods");
-      if (row.creator?.trim() && flags.maxSupportingFacts > 2) facts.push(creatorLabel);
+      if (row.creator?.trim() && flags.maxSupportingFacts > 3) facts.push(creatorLabel);
       break;
 
     // Unknown: show source + creator

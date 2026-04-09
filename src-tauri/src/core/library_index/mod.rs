@@ -278,6 +278,7 @@ pub fn list_library_files(
          c.canonical_name,\n\
          b.bundle_name,\n\
          b.bundle_type,\n\
+         b.file_count,\n\
          f.relative_depth,\n\
          f.safety_notes,\n\
          f.parser_warnings,\n\
@@ -326,11 +327,12 @@ pub fn list_library_files(
                 creator: row.get(10)?,
                 bundle_name: row.get(11)?,
                 bundle_type: row.get(12)?,
-                relative_depth: row.get(13)?,
-                safety_notes: parse_string_array(row.get::<_, String>(14)?),
-                parser_warnings: parse_string_array(row.get::<_, String>(15)?),
+                grouped_file_count: row.get(13)?,
+                relative_depth: row.get(14)?,
+                safety_notes: parse_string_array(row.get::<_, String>(15)?),
+                parser_warnings: parse_string_array(row.get::<_, String>(16)?),
                 watch_status,
-                has_duplicate: row.get::<_, i64>(17)? != 0,
+                has_duplicate: row.get::<_, i64>(18)? != 0,
                 installed_version: None,
             })
         })?
@@ -361,6 +363,7 @@ pub fn get_file_detail(
                 c.canonical_name,
                 b.bundle_name,
                 b.bundle_type,
+                b.file_count,
                 f.relative_depth,
                 f.safety_notes,
                 f.hash,
@@ -394,25 +397,26 @@ pub fn get_file_detail(
                     creator: row.get(10)?,
                     bundle_name: row.get(11)?,
                     bundle_type: row.get(12)?,
-                    relative_depth: row.get(13)?,
-                    safety_notes: parse_string_array(row.get::<_, String>(14)?),
-                    hash: row.get(15)?,
-                    created_at: row.get(16)?,
-                    parser_warnings: parse_string_array(row.get::<_, String>(17)?),
-                    insights: parse_insights(row.get::<_, String>(18)?),
+                    grouped_file_count: row.get(13)?,
+                    relative_depth: row.get(14)?,
+                    safety_notes: parse_string_array(row.get::<_, String>(15)?),
+                    hash: row.get(16)?,
+                    created_at: row.get(17)?,
+                    parser_warnings: parse_string_array(row.get::<_, String>(18)?),
+                    insights: parse_insights(row.get::<_, String>(19)?),
                     installed_version_summary: None,
                     watch_result: None,
                     creator_learning: CreatorLearningInfo {
-                        locked_by_user: row.get::<_, i64>(20)? != 0,
-                        preferred_path: row.get(21)?,
+                        locked_by_user: row.get::<_, i64>(21)? != 0,
+                        preferred_path: row.get(22)?,
                         learned_aliases: Vec::new(),
                     },
                     category_override: {
-                        let kind: Option<String> = row.get(22)?;
+                        let kind: Option<String> = row.get(23)?;
                         CategoryOverrideInfo {
                             saved_by_user: kind.is_some(),
                             kind,
-                            subtype: row.get(23)?,
+                            subtype: row.get(24)?,
                         }
                     },
                     duplicates_count: 0,

@@ -51,12 +51,14 @@ describe("buildLibraryRowModel", () => {
         creator: null,
         bundleName: "LooseBlueprint",
         bundleType: "lot",
+        groupedFileCount: 3,
       },
       "power",
     );
 
     expect(row.isMisplaced).toBe(true);
     expect(row.supportingFacts).toContain("LooseBlueprint");
+    expect(row.supportingFacts).toContain("3 grouped files");
     expect(row.supportingFacts).toContain("Stored in Mods");
   });
 
@@ -73,6 +75,7 @@ describe("buildLibraryRowModel", () => {
         creator: "Oakby",
         bundleName: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Tray\\OakHousehold",
         bundleType: "household",
+        groupedFileCount: 4,
       },
       "power",
     );

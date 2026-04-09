@@ -44,6 +44,7 @@ import {
   describeTrayIdentity,
   describeVersionForInspector,
   formatLibraryFileFormat,
+  groupedFilesLabel,
   libraryViewFlags,
   trayLocationLabel,
   usefulTrayGroupingValue,
@@ -311,6 +312,7 @@ export function LibraryScreen({
   
   const playerFacingNames = selected ? collectPlayerFacingNames(selected) : [];
   const trayGroupingValue = selected ? usefulTrayGroupingValue(selected) : null;
+  const trayGroupedCount = selected ? groupedFilesLabel(selected.groupedFileCount) : null;
   const showSafetySection = Boolean(
     selected &&
       (isPowerView ||
@@ -420,6 +422,9 @@ export function LibraryScreen({
                       {trayGroupingValue ? (
                         <DetailRow label="Grouped as" value={trayGroupingValue} />
                       ) : null}
+                      {trayGroupedCount ? (
+                        <DetailRow label="Tray set" value={trayGroupedCount} />
+                      ) : null}
                     </>
                   ) : null}
                   <DetailRow
@@ -472,6 +477,9 @@ export function LibraryScreen({
                         />
                         {trayGroupingValue ? (
                           <DetailRow label="Grouped as" value={trayGroupingValue} />
+                        ) : null}
+                        {trayGroupedCount ? (
+                          <DetailRow label="Tray set" value={trayGroupedCount} />
                         ) : null}
                       </>
                     ) : null}

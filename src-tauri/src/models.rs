@@ -515,6 +515,7 @@ pub struct LibraryFileRow {
     pub creator: Option<String>,
     pub bundle_name: Option<String>,
     pub bundle_type: Option<String>,
+    pub grouped_file_count: Option<i64>,
     pub relative_depth: i64,
     pub safety_notes: Vec<String>,
     /// Pre-computed watch status for list display. Derived from content_watch_results.
@@ -719,6 +720,7 @@ pub struct FileDetail {
     pub creator: Option<String>,
     pub bundle_name: Option<String>,
     pub bundle_type: Option<String>,
+    pub grouped_file_count: Option<i64>,
     pub relative_depth: i64,
     pub safety_notes: Vec<String>,
     pub hash: Option<String>,

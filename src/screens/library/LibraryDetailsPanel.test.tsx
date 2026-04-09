@@ -139,6 +139,7 @@ it("surfaces tray identity and storage context in the inspector", () => {
           subtype: "Household",
           bundleName: "OakHousehold",
           bundleType: "household",
+          groupedFileCount: 4,
           sourceLocation: "tray",
           confidence: 0.92,
           safetyNotes: [],
@@ -160,6 +161,7 @@ it("surfaces tray identity and storage context in the inspector", () => {
   expect(screen.getAllByText(/stored in tray/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/grouped as/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/oakhousehold/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/4 grouped files/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/stored in tray as library content/i)).toBeVisible();
 });
 

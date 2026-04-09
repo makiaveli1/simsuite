@@ -7,6 +7,7 @@ import {
   describeTraySummary,
   describeVersionForInspector,
   formatLibraryFileFormat,
+  groupedFilesLabel,
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
@@ -79,6 +80,7 @@ export function LibraryDetailsPanel({
   const isTrayKind = trayIdentity.kind !== "standard";
   const familyContext = !isCasual ? describeLibraryFamilyContext(selectedFile) : null;
   const trayGroupingValue = usefulTrayGroupingValue(selectedFile);
+  const trayGroupedCount = groupedFilesLabel(selectedFile.groupedFileCount);
   const traySummary = isTrayKind ? describeTraySummary(selectedFile) : null;
   const hasHealthDetails = Boolean(
     selectedFile.bundleName ||
@@ -141,6 +143,9 @@ export function LibraryDetailsPanel({
     });
     if (trayGroupingValue) {
       snapshotLines.push({ label: "Grouped as", value: trayGroupingValue });
+    }
+    if (trayGroupedCount) {
+      snapshotLines.push({ label: "Tray set", value: trayGroupedCount });
     }
   }
 
