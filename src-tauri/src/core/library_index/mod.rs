@@ -282,6 +282,7 @@ pub fn list_library_files(
          f.relative_depth,\n\
          f.safety_notes,\n\
          f.parser_warnings,\n\
+         f.insights,\n\
          cwr.status,\n\
          EXISTS (\n\
            SELECT 1 FROM duplicates d\n\
@@ -721,5 +722,55 @@ mod tests {
         let download_detail =
             get_file_detail(&connection, &settings, &seed_pack, 2).expect("download detail lookup");
         assert!(download_detail.is_none());
+    }
+
+    #[test]
+    fn facets_and_listing_respect_kind_scoped_subtypes() {
+        let (connection, _settings, seed_pack) = setup_library_env();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    subtype,
+                    confidence,
+                    source_location,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/BuildBuy/chair.package",
+                    "chair.package",
+                    ".package",
+                    "BuildBuy",
+                    "Seating",
+                    0.82_f64,
+                    "mods",
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("buildbuy file");
+
+        let facets =
+            get_library_facets(&connection, &seed_pack.taxonomy, Some("BuildBuy")).expect("facets");
+        assert_eq!(facets.subtypes, vec!["Seating".to_owned()]);
+
+        let listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                kind: Some("BuildBuy".to_owned()),
+                subtype: Some("Seating".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("filtered listing");
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items[0].kind, "BuildBuy");
+        assert_eq!(listing.items[0].subtype.as_deref(), Some("Seating"));
     }
 }

@@ -226,13 +226,13 @@ export function summarizeLibraryScriptContent(
 }
 
 export function summarizeLibraryResourceBadge(
-  file: Pick<FileDetail, "insights" | "extension">,
+  file: Pick<FileDetail, "kind" | "subtype" | "insights" | "extension">,
 ): string | null {
   if (isLibraryScriptArchive(file)) {
     return null;
   }
 
-  return file.insights?.resourceSummary?.[0] ?? null;
+  return summarizePackageContentProfile(file.insights, file.kind, file.subtype);
 }
 
 export function formatLibraryFamilyHintLabel(value: string): string {
@@ -405,6 +405,18 @@ export function summarizeResourceProfileForUi(
   const summary = insights?.resourceSummary ?? [];
   if (!summary.length) return null;
   return summary[0] ?? null;
+}
+
+/** Best version clue for quick UI surfaces. Only returns a value above the chosen confidence floor. */
+export function summarizeVersionSignalForUi(
+  insights: FileInsights | undefined,
+  minConfidence = 0.8,
+): string | null {
+  const best = insights?.versionSignals?.find((signal) => signal.confidence >= minConfidence);
+  if (!best) return null;
+  const value = (best.normalizedValue || best.rawValue || "").trim();
+  if (!value) return null;
+  return /^[0-9]/.test(value) ? `v${value}` : value;
 }
 
 // ─── Tray identity ─────────────────────────────────────────────────────────────
@@ -826,41 +838,37 @@ export function buildSheetAttributionSection(
 }
 
 /**
- * Returns a content-type label for package files, derived from resource summary.
- * E.g. ["Catalog x6", "CASPart x2"] → "Catalog items, CAS parts"
+ * Returns a short, simmer-facing content label for package files.
+ * Uses extracted summary strings when they are already readable, otherwise falls back
+ * to kind/subtype wording that stays honest and low-jargon.
  */
 export function summarizePackageContentProfile(
   insights: FileInsights | undefined,
+  kind: string | null,
   subtype: string | null,
 ): string | null {
-  if (!insights?.resourceSummary?.length) return null;
-  const resource = insights.resourceSummary;
-  // For CAS subtypes, derive a readable content profile
-  const casTerms = ["CASPart", "Skintone", "Hair", "Tops", "Bottoms", "Dress", "Shoes", "Accessory", "Outfit"];
-  const hasCas = resource.some((r) => casTerms.some((t) => r.includes(t)));
-  const hasCatalog = resource.some((r) => r.includes("Catalog"));
-  const hasDefinition = resource.some((r) => r.includes("Definition"));
-  const hasScript = resource.some((r) => r.includes("ScriptResource"));
-  if (hasCas && hasCatalog) {
-    return "CAS items";
+  const resource = insights?.resourceSummary ?? [];
+  const primary = resource.find(
+    (item) => item.trim() && !/other resource/i.test(item) && !/compressed resource/i.test(item),
+  );
+
+  if (kind === "BuildBuy") {
+    return primary ?? "Build/Buy content";
   }
-  if (hasCas && !hasCatalog) {
-    return "CAS content";
+  if (kind === "OverridesAndDefaults") {
+    return primary ?? "Override package";
   }
-  if (hasCatalog && hasDefinition) {
-    return "Catalog + gameplay content";
+  if (kind === "CAS") {
+    return subtype?.trim() ?? primary ?? "CAS content";
   }
-  if (hasCatalog) {
-    return "Catalog content";
+  if (kind === "PresetsAndSliders") {
+    return subtype?.trim() ?? primary ?? "Preset or slider";
   }
-  if (hasScript) {
-    return "Script package";
+  if (kind === "Gameplay") {
+    return subtype?.trim() ?? primary ?? "Gameplay package";
   }
-  // Generic fallback — subtype is usually more informative than raw counts
-  if (subtype?.trim()) {
-    return subtype.trim();
-  }
-  return null;
+
+  return primary ?? subtype?.trim() ?? null;
 }
 
 /** Section: What's Inside — extracted file contents, ordered by type-specific usefulness */
@@ -1206,21 +1214,19 @@ function buildSupportingFacts(
   if (!flags.showCreatorInList) return facts;
 
   switch (kind) {
-    // CAS items: show content profile (e.g. "CAS items", "Catalog content") then creator.
-    // resource_summary is more informative than raw subtype for most simmers.
+    // CAS: subtype is usually the quickest clue, with content profile as fallback.
     case "CAS": {
-      const profile = summarizeResourceProfileForUi(row.insights);
-      if (profile && flags.showInspectFactsInList) {
-        facts.push(profile);
-      } else if (row.subtype?.trim()) {
+      const profile = summarizePackageContentProfile(row.insights, row.kind, row.subtype);
+      if (row.subtype?.trim()) {
         facts.push(row.subtype.trim());
+      } else if (profile) {
+        facts.push(profile);
       }
       facts.push(creatorLabel);
       break;
     }
 
-    // Script mods: show creator + namespace scope + best version signal.
-    // Version signal is shown only when confidence is Medium or better — avoids noise.
+    // Script mods: creator + namespace + best version clue.
     case "ScriptMods":
       facts.push(creatorLabel);
       {
@@ -1236,50 +1242,41 @@ function buildSupportingFacts(
                 : "Low confidence";
           facts.push(confLevel);
         }
-        // Show version signal when we have one and it's meaningful (Medium+ confidence).
-        const topVersion = row.insights?.versionSignals?.[0];
-        if (topVersion && topVersion.confidence >= 0.5) {
-          facts.push(topVersion.normalizedValue || topVersion.rawValue);
+        const versionClue = summarizeVersionSignalForUi(row.insights, 0.55);
+        if (versionClue) {
+          facts.push(versionClue);
         }
       }
       break;
 
-    // Gameplay mods: show creator + content profile (power view) or subtype fallback.
-    case "Gameplay":
+    // Gameplay: subtype first, package profile second when available.
+    case "Gameplay": {
+      const profile = summarizePackageContentProfile(row.insights, row.kind, row.subtype);
       facts.push(creatorLabel);
-      if (flags.showInspectFactsInList) {
-        const profile = summarizeResourceProfileForUi(row.insights);
-        if (profile) {
-          facts.push(profile);
-        } else if (row.subtype?.trim()) {
-          facts.push(row.subtype.trim());
-        }
+      if (row.subtype?.trim()) {
+        facts.push(row.subtype.trim());
+      } else if (profile) {
+        facts.push(profile);
       }
       break;
+    }
 
-    // Build/Buy: show creator + content profile (power view) + source location.
-    case "BuildBuy":
+    // Build/Buy: content profile matters more than folder location.
+    case "BuildBuy": {
+      const profile = summarizePackageContentProfile(row.insights, row.kind, row.subtype);
+      if (profile) facts.push(profile);
       facts.push(creatorLabel);
-      if (flags.showInspectFactsInList) {
-        const profile = summarizeResourceProfileForUi(row.insights);
-        if (profile) facts.push(profile);
-      }
-      if (flags.showRootFacts) facts.push(isTray ? "🔖 In tray" : "Mods");
+      if (isTray) facts.push("🔖 In tray");
       break;
+    }
 
-    // Overrides & Defaults: show creator + confidence
-    case "OverridesAndDefaults":
+    // Overrides: call the package what it is, then show who it came from.
+    case "OverridesAndDefaults": {
+      const profile = summarizePackageContentProfile(row.insights, row.kind, row.subtype);
+      facts.push(profile ?? "Override package");
       facts.push(creatorLabel);
-      if (row.confidence != null) {
-        const confLevel =
-          row.confidence >= 0.8
-            ? "High confidence"
-            : row.confidence >= 0.55
-              ? "Medium confidence"
-              : "Low confidence";
-        facts.push(confLevel);
-      }
       break;
+    }
 
     // Poses and Animation: show creator + subtype (pose pack, animation set, etc.)
     case "PosesAndAnimation":

@@ -13,6 +13,8 @@ import {
   describeLibraryFamilyContext,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
+  summarizeScriptScopeForUi,
+  summarizeVersionSignalForUi,
 } from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;
@@ -42,10 +44,17 @@ export function LibraryDetailSheet({
     mode === "inspect" ? describeLibraryFamilyContext(selectedFile) : null;
   const inspectContentBadge =
     mode === "inspect"
-      ? summarizeLibraryScriptContent(selectedFile) ?? summarizeLibraryResourceBadge(selectedFile)
+      ? summarizeScriptScopeForUi(selectedFile.insights) ??
+        summarizeLibraryScriptContent(selectedFile) ??
+        summarizeLibraryResourceBadge(selectedFile)
       : null;
   const inspectVersionBadge =
-    mode === "inspect" ? selectedFile.insights?.versionHints?.[0] ?? null : null;
+    mode === "inspect"
+      ? summarizeVersionSignalForUi(selectedFile.insights, 0.8) ??
+        (selectedFile.insights?.versionSignals?.length
+          ? null
+          : selectedFile.insights?.versionHints?.[0] ?? null)
+      : null;
 
   return (
     <AnimatePresence>

@@ -116,7 +116,7 @@ export function LibraryScreen({
   const loadSeqRef = useRef(0);
 
   useEffect(() => {
-    void api.getLibraryFacets().then(setFacets);
+    void api.getLibraryFacets(kind || undefined).then(setFacets);
     void api.getLibrarySummary().then(setLibrarySummary).catch(() => {
       // If getLibrarySummary fails (e.g. not yet implemented), fall through silently.
     });
@@ -169,6 +169,16 @@ export function LibraryScreen({
     setCategorySubtypeDraft(selected.categoryOverride.subtype ?? selected.subtype ?? "");
     setCategoryMessage(null);
   }, [selected]);
+
+  useEffect(() => {
+    if (!subtype || !facets?.subtypes?.length) {
+      return;
+    }
+    if (!facets.subtypes.includes(subtype)) {
+      setSubtype("");
+      setPage(0);
+    }
+  }, [facets, subtype]);
 
 
   async function loadRows(preferredSelectedId?: number) {
@@ -234,7 +244,10 @@ export function LibraryScreen({
 
       setSelected(updated);
       setCreatorMessage("Saved for future scans.");
-      await Promise.all([loadRows(updated.id), api.getLibraryFacets().then(setFacets)]);
+      await Promise.all([
+        loadRows(updated.id),
+        api.getLibraryFacets(kind || undefined).then(setFacets),
+      ]);
     } finally {
       setSavingCreator(false);
     }
@@ -262,7 +275,10 @@ export function LibraryScreen({
 
       setSelected(updated);
       setCategoryMessage("Type override saved.");
-      await Promise.all([loadRows(updated.id), api.getLibraryFacets().then(setFacets)]);
+      await Promise.all([
+        loadRows(updated.id),
+        api.getLibraryFacets(kind || undefined).then(setFacets),
+      ]);
     } finally {
       setSavingCategory(false);
     }
@@ -969,7 +985,10 @@ export function LibraryScreen({
             setPage(0);
           }}
           onFiltersChange={(next) => {
-            if (typeof next.kind === "string") setKind(next.kind);
+            if (typeof next.kind === "string") {
+              setKind(next.kind);
+              setSubtype("");
+            }
             if (typeof next.creator === "string") setCreator(next.creator);
             if (typeof next.source === "string") setSource(next.source);
             if (typeof next.subtype === "string") setSubtype(next.subtype);

@@ -78,7 +78,7 @@ it("shows a package resource badge in the standard snapshot", () => {
           insights: {
             ...emptyInsights,
             format: "dbpf-package",
-            resourceSummary: ["Catalog x6", "Definition x6"],
+            resourceSummary: ["6 build/buy items", "2 other resources"],
           },
         } as never
       }
@@ -90,7 +90,7 @@ it("shows a package resource badge in the standard snapshot", () => {
   );
 
   expect(screen.getByText(/contents/i)).toBeVisible();
-  expect(screen.getByText(/catalog x6/i)).toBeVisible();
+  expect(screen.getByText(/6 build\/buy items/i)).toBeVisible();
 });
 
 it("keeps the beginner action simple", () => {

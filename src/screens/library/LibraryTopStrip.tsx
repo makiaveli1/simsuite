@@ -214,31 +214,24 @@ export function LibraryTopStrip({
         </div>
       )}
 
-      {/* Row 3: Contextual subtype chips — only visible when a type is selected */}
+      {/* Row 3: Contextual subtype chips — backend already scopes these to the active kind */}
       {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
         <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
-          {facets.subtypes
-            .filter((s) => {
-              // Client-side kind-scoped subtype derivation:
-              // only show subtypes that appear on rows matching the selected kind.
-              // This is a best-effort heuristic; true kind-scoped subtypes need backend support.
-              return true; // rows-derived scoping happens via parent state; show all for now
-            })
-            .map((s) => {
-              const isActive = filters.subtype === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`library-subtype-chip${isActive ? " is-active" : ""}`}
-                  onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
-                  aria-pressed={isActive}
-                  title={isActive ? `Showing ${s} — click to clear` : `Show ${s}`}
-                >
-                  {s}
-                </button>
-              );
-            })}
+          {facets.subtypes.map((s) => {
+            const isActive = filters.subtype === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                className={`library-subtype-chip${isActive ? " is-active" : ""}`}
+                onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
+                aria-pressed={isActive}
+                title={isActive ? `Showing ${s} — click to clear` : `Show ${s}`}
+              >
+                {s}
+              </button>
+            );
+          })}
         </div>
       )}
 

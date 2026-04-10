@@ -11,6 +11,8 @@ import {
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
+  summarizeScriptScopeForUi,
+  summarizeVersionSignalForUi,
   trayKindLabel,
   trayLocationLabel,
   typeColorForKind,
@@ -74,6 +76,8 @@ export function LibraryDetailsPanel({
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
   const scriptContentSummary = summarizeLibraryScriptContent(selectedFile);
+  const scriptNamespace = summarizeScriptScopeForUi(selectedFile.insights);
+  const scriptVersionClue = summarizeVersionSignalForUi(selectedFile.insights, 0.8);
   const resourceBadge = summarizeLibraryResourceBadge(selectedFile);
   const creatorInfo = describeCreatorForInspector(selectedFile);
   const trayIdentity = describeTrayIdentity(selectedFile);
@@ -162,6 +166,13 @@ export function LibraryDetailsPanel({
     });
   }
 
+  if (!isCasual && scriptNamespace) {
+    snapshotLines.push({
+      label: "Namespace",
+      value: <span className="ghost-chip">{scriptNamespace}</span>,
+    });
+  }
+
   if (!isCasual && scriptContentSummary) {
     snapshotLines.push({
       label: "Script content",
@@ -171,6 +182,13 @@ export function LibraryDetailsPanel({
     snapshotLines.push({
       label: "Contents",
       value: <span className="ghost-chip">{resourceBadge}</span>,
+    });
+  }
+
+  if (!isCasual && scriptVersionClue) {
+    snapshotLines.push({
+      label: "Version clue",
+      value: <span className="ghost-chip">{scriptVersionClue}</span>,
     });
   }
 

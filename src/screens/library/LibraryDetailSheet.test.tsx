@@ -43,5 +43,5 @@ it("surfaces family role context and script clues in inspect mode", () => {
 
   expect(screen.getByText(/core role in the MCCC family/i)).toBeInTheDocument();
   expect(screen.getByText(/version 2026.2.0/i)).toBeInTheDocument();
-  expect(screen.getByText(/2 script folders/i)).toBeInTheDocument();
+  expect(screen.getByText(/deaderpool\+1/i)).toBeInTheDocument();
 });

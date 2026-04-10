@@ -1053,46 +1053,52 @@ fn copy_compressed_text(
     Ok(())
 }
 
-/// Builds a concise, human-readable resource summary for a DBPF package.
+/// Builds a concise, simmer-facing resource summary for a DBPF package.
 ///
-/// Instead of listing each resource type individually (e.g. "Catalog x6,
-/// Definition x6, StringTable x1"), groups related types into scannable
-/// labels: "15 catalog items". Falls back to individual labels for types
-/// with no semantic group, or hex notation for completely unknown types.
+/// Important honesty rule: DBPF record counts are not the same thing as logical
+/// in-game items. For Build/Buy content we use the strongest safe proxy we have
+/// from existing extraction data, and keep the wording broad enough to avoid
+/// overstating certainty.
 fn build_resource_summary(
     type_counts: &BTreeMap<u32, usize>,
-    records: &[DbpfRecord],
+    _records: &[DbpfRecord],
 ) -> Vec<String> {
     let mut summary = Vec::new();
 
-    // Semantic group 1: catalog items (Catalog + Definition + StringTable share
-    // the same name map and represent the same logical content — surface one number)
-    let catalog_total = type_counts.get(&RESOURCE_CATALOG).unwrap_or(&0)
-        + type_counts.get(&RESOURCE_DEFINITION).unwrap_or(&0)
-        + type_counts.get(&RESOURCE_STRING_TABLE).unwrap_or(&0);
-    if catalog_total > 0 {
-        summary.push(format!("{} catalog item{}", catalog_total, if catalog_total == 1 { "" } else { "s" }));
+    let catalog_count = *type_counts.get(&RESOURCE_CATALOG).unwrap_or(&0);
+    let definition_count = *type_counts.get(&RESOURCE_DEFINITION).unwrap_or(&0);
+    let string_table_count = *type_counts.get(&RESOURCE_STRING_TABLE).unwrap_or(&0);
+    let build_buy_proxy = [catalog_count, definition_count, string_table_count]
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+    if build_buy_proxy > 0 {
+        summary.push(format!(
+            "{} build/buy item{}",
+            build_buy_proxy,
+            if build_buy_proxy == 1 { "" } else { "s" }
+        ));
     }
 
-    // Semantic group 2: CAS items (CASPart + Skintone)
-    let cas_total = type_counts.get(&RESOURCE_CAS_PART).unwrap_or(&0)
-        + type_counts.get(&RESOURCE_SKINTONE).unwrap_or(&0);
+    let cas_part_count = *type_counts.get(&RESOURCE_CAS_PART).unwrap_or(&0);
+    let skintone_count = *type_counts.get(&RESOURCE_SKINTONE).unwrap_or(&0);
+    let cas_total = cas_part_count + skintone_count;
     if cas_total > 0 {
-        summary.push(format!("{} CAS item{}", cas_total, if cas_total == 1 { "" } else { "s" }));
+        summary.push(format!(
+            "{} CAS part{}",
+            cas_total,
+            if cas_total == 1 { "" } else { "s" }
+        ));
     }
 
-    // Individual meaningful types (already handled above via groups)
     if let Some(&count) = type_counts.get(&RESOURCE_SCRIPT) {
-        summary.push(format!("ScriptResource x{count}"));
-    }
-    if let Some(&count) = type_counts.get(&RESOURCE_HOTSPOT) {
-        summary.push(format!("HotSpotControl x{count}"));
-    }
-    if let Some(&count) = type_counts.get(&RESOURCE_NAME_MAP) {
-        summary.push(format!("NameMap x{count}"));
+        summary.push(format!(
+            "{} script resource{}",
+            count,
+            if count == 1 { "" } else { "s" }
+        ));
     }
 
-    // Unknown resource types — show count only (not raw hex, more scannable)
     let known_types = [
         RESOURCE_CATALOG,
         RESOURCE_DEFINITION,
@@ -1109,16 +1115,11 @@ fn build_resource_summary(
         .map(|(_, c)| c)
         .sum();
     if unknown_total > 0 {
-        summary.push(format!("{} other resource{}", unknown_total, if unknown_total == 1 { "" } else { "s" }));
-    }
-
-    // Optional: note if the package contains compressed records (useful signal for modders)
-    let compressed_count = records
-        .iter()
-        .filter(|record| record.is_compressed())
-        .count();
-    if compressed_count > 0 {
-        summary.push(format!("{} compressed resource{}", compressed_count, if compressed_count == 1 { "" } else { "s" }));
+        summary.push(format!(
+            "{} other resource{}",
+            unknown_total,
+            if unknown_total == 1 { "" } else { "s" }
+        ));
     }
 
     summary.truncate(MAX_DISPLAY_VALUES);
@@ -1743,9 +1744,11 @@ mod tests {
     use crate::seed::load_seed_pack;
 
     use super::{
-        decompress_legacy, decompress_record_bytes, infer_kind_from_package_signals,
-        infer_kind_from_resources, inspect_file, parse_name_map_entries, parse_stbl_entries,
-        read_seven_bit_string_be, DbpfRecord, RESOURCE_STRING_TABLE,
+        build_resource_summary, decompress_legacy, decompress_record_bytes,
+        infer_kind_from_package_signals, infer_kind_from_resources, inspect_file,
+        parse_name_map_entries, parse_stbl_entries, read_seven_bit_string_be, DbpfRecord,
+        RESOURCE_CAS_PART, RESOURCE_CATALOG, RESOURCE_DEFINITION, RESOURCE_SKINTONE,
+        RESOURCE_STRING_TABLE,
     };
 
     #[test]
@@ -2068,6 +2071,21 @@ mod tests {
         ];
         let payload = decompress_legacy(&compressed, 5).expect("payload");
         assert_eq!(payload, b"Hello");
+    }
+
+    #[test]
+    fn resource_summary_uses_safer_build_buy_proxy_labels() {
+        let mut type_counts = BTreeMap::new();
+        type_counts.insert(RESOURCE_CATALOG, 6);
+        type_counts.insert(RESOURCE_DEFINITION, 6);
+        type_counts.insert(RESOURCE_STRING_TABLE, 1);
+        type_counts.insert(RESOURCE_CAS_PART, 2);
+        type_counts.insert(RESOURCE_SKINTONE, 1);
+
+        let summary = build_resource_summary(&type_counts, &[]);
+
+        assert_eq!(summary.first().map(String::as_str), Some("6 build/buy items"));
+        assert!(summary.iter().any(|item| item == "3 CAS parts"));
     }
 
     #[test]

@@ -4,6 +4,8 @@ import {
   buildLibraryRowModel,
   libraryViewFlags,
   summarizeLibraryCareState,
+  summarizePackageContentProfile,
+  summarizeVersionSignalForUi,
 } from "./libraryDisplay";
 
 const SAMPLE_ROW: LibraryFileRow = {
@@ -82,6 +84,54 @@ describe("buildLibraryRowModel", () => {
 
     expect(row.supportingFacts.join(" ")).not.toMatch(/C:\\Users\\Player/i);
     expect(row.supportingFacts).toContain("Stored in Tray");
+  });
+});
+
+describe("package and version summaries", () => {
+  it("keeps build-buy labels simmer-friendly", () => {
+    expect(
+      summarizePackageContentProfile(
+        {
+          format: "dbpf-package",
+          resourceSummary: ["6 build/buy items", "2 other resources"],
+          scriptNamespaces: [],
+          embeddedNames: [],
+          creatorHints: [],
+          versionHints: [],
+          versionSignals: [],
+          familyHints: [],
+        },
+        "BuildBuy",
+        null,
+      ),
+    ).toBe("6 build/buy items");
+  });
+
+  it("only surfaces strong-enough version clues for quick UI", () => {
+    expect(
+      summarizeVersionSignalForUi(
+        {
+          format: "ts4script-zip",
+          resourceSummary: [],
+          scriptNamespaces: [],
+          embeddedNames: [],
+          creatorHints: [],
+          versionHints: ["1.41"],
+          versionSignals: [
+            {
+              rawValue: "1.41",
+              normalizedValue: "1.41",
+              sourceKind: "payload",
+              sourcePath: "manifest.yml",
+              matchedBy: "readable archive payload",
+              confidence: 0.88,
+            },
+          ],
+          familyHints: [],
+        },
+        0.8,
+      ),
+    ).toBe("v1.41");
   });
 });
 
