@@ -89,6 +89,15 @@ export function buildLibraryRowModel(
   userView: UserView,
 ): LibraryRowModel {
   const flags = libraryViewFlags(userView);
+  // ScriptMods with a detectable version signal get a 3rd slot in standard view
+  // so the version clue appears without needing power view.
+  if (
+    userView === "standard" &&
+    row.kind === "ScriptMods" &&
+    row.insights?.versionSignals?.some((s) => s.confidence >= 0.55)
+  ) {
+    flags.maxSupportingFacts = 3;
+  }
   const creatorLabel = row.creator ?? unknownCreatorLabel(userView);
   const isTray = row.sourceLocation === "tray";
   const confidence = row.confidence ?? 0;

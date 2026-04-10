@@ -25,6 +25,25 @@ const SAMPLE_ROW: LibraryFileRow = {
   relativeDepth: 2,
   safetyNotes: [],
   parserWarnings: [],
+  insights: {
+    format: "ts4script-zip",
+    resourceSummary: ["Script mod"],
+    scriptNamespaces: ["deaderpool.mccc"],
+    embeddedNames: ["version"],
+    creatorHints: ["deaderpool"],
+    versionHints: ["2025.9.0"],
+    versionSignals: [
+      {
+        rawValue: "2025.9.0",
+        normalizedValue: "2025.9.0",
+        sourceKind: "payload",
+        sourcePath: "version.txt",
+        matchedBy: "readable archive payload",
+        confidence: 0.99,
+      },
+    ],
+    familyHints: ["MCCC"],
+  },
 };
 
 describe("libraryViewFlags", () => {
@@ -35,9 +54,21 @@ describe("libraryViewFlags", () => {
 
 describe("buildLibraryRowModel", () => {
   it("caps the row at two supporting facts for seasoned mode", () => {
-    const row = buildLibraryRowModel(SAMPLE_ROW, "standard");
+    // SAMPLE_ROW is ScriptMods with no version signal → stays at 2 facts
+    const noVersionRow = { ...SAMPLE_ROW, insights: { ...SAMPLE_ROW.insights!, versionSignals: [] } };
+    const row = buildLibraryRowModel(noVersionRow, "standard");
 
     expect(row.supportingFacts).toHaveLength(2);
+  });
+
+  it("shows version signal as a third fact in standard ScriptMods view", () => {
+    // ScriptMods with a confident version signal gets a 3rd slot in standard view
+    const row = buildLibraryRowModel(SAMPLE_ROW, "standard");
+
+    expect(row.supportingFacts).toHaveLength(3);
+    expect(row.supportingFacts[0]).toBe("Deaderpool"); // creator
+    expect(row.supportingFacts[1]).toBe("deaderpool.mccc"); // namespace scope (1 namespace)
+    expect(row.supportingFacts[2]).toMatch(/^v/); // version clue (e.g. v2025.9.0)
   });
 
   it("surfaces tray grouping and placement for tray items", () => {
@@ -84,6 +115,37 @@ describe("buildLibraryRowModel", () => {
 
     expect(row.supportingFacts.join(" ")).not.toMatch(/C:\\Users\\Player/i);
     expect(row.supportingFacts).toContain("Stored in Tray");
+  });
+
+  it("shows content profile for BuildBuy rows in standard view", () => {
+    const buildBuyRow = buildLibraryRowModel(
+      {
+        ...SAMPLE_ROW,
+        id: 4,
+        filename: "ModernChair.package",
+        extension: ".package",
+        kind: "BuildBuy",
+        subtype: "Seating",
+        confidence: 0.88,
+        insights: {
+          format: "dbpf-package",
+          resourceSummary: ["4 build/buy items"],
+          scriptNamespaces: [],
+          embeddedNames: [],
+          creatorHints: [],
+          versionHints: [],
+          versionSignals: [],
+          familyHints: [],
+        },
+      },
+      "standard",
+    );
+
+    // Content profile appears before creator in BuildBuy rows
+    expect(buildBuyRow.supportingFacts).toContain("4 build/buy items");
+    expect(buildBuyRow.supportingFacts).toContain("Deaderpool");
+    // subtype is skipped — content profile is more useful than generic "Seating"
+    expect(buildBuyRow.supportingFacts.join(" ")).not.toMatch(/Seating/);
   });
 });
 
