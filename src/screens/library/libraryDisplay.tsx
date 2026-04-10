@@ -38,6 +38,38 @@ export type TypeColor =
   | "tray"
   | "unknown";
 
+/**
+ * Card model for the thumbnail/grid view.
+ * Shows embedded item names as a "content preview" — no image extraction needed.
+ */
+export interface LibraryCardModel {
+  id: number;
+  title: string;
+  kind: string;
+  typeLabel: string;
+  typeColor: TypeColor;
+  creatorLabel: string;
+  isTray: boolean;
+  isMisplaced: boolean;
+  watchStatusLabel: string;
+  watchStatusTone: "calm" | "attention" | "muted";
+  healthLabel: string | null;
+  healthTone: "attention" | "muted" | null;
+  hasDuplicate: boolean;
+  hasIssues: boolean;
+  confidenceLevel: "high" | "medium" | "low";
+  /** Embedded item names — shown as the content preview text */
+  embeddedNames: string[];
+  /** Resource summary — e.g. "6 build/buy items" */
+  resourceSummary: string | null;
+  /** How many items total in embeddedNames (for "+N more" overflow) */
+  totalEmbeddedNames: number;
+  /** Version signal if present */
+  versionLabel: string | null;
+  /** The raw row for click handling */
+  row: LibraryFileRow;
+}
+
 export interface LibraryRowModel {
   id: number;
   title: string;
@@ -147,6 +179,69 @@ export function buildLibraryRowModel(
           ? "Medium confidence"
           : "Low confidence",
     hasIssues,
+  };
+}
+
+/**
+ * Builds a card model for the thumbnail/grid view.
+ * Uses embeddedNames as a text-based content preview — no image extraction needed.
+ */
+export function buildLibraryCardModel(
+  row: LibraryFileRow,
+  userView: UserView,
+): LibraryCardModel {
+  const creatorLabel = row.creator ?? unknownCreatorLabel(userView);
+  const isTray = row.sourceLocation === "tray";
+  const confidence = row.confidence ?? 0;
+  const confidenceLevel: LibraryCardModel["confidenceLevel"] =
+    confidence >= 0.8 ? "high" : confidence >= 0.55 ? "medium" : "low";
+  const hasIssues = row.safetyNotes.length > 0 || row.parserWarnings.length > 0;
+
+  const watchStatusLabel = describeWatchStatus(row.watchStatus);
+  const watchStatusTone = watchStatusToneFor(row.watchStatus);
+  const healthIssue = computeLibraryHealthIssue(row);
+
+  const trayIdentity = describeTrayIdentity({
+    kind: row.kind,
+    subtype: row.subtype,
+    sourceLocation: row.sourceLocation,
+  });
+
+  // Show up to 4 embedded names as the content preview
+  const allNames = row.insights?.embeddedNames ?? [];
+  const visibleNames = allNames.slice(0, 4);
+  const overflowCount = allNames.length - visibleNames.length;
+
+  // Resource summary from insights
+  const resourceSummary = row.insights?.resourceSummary?.[0] ?? null;
+
+  // Version signal for script mods
+  const versionSignal = row.insights?.versionSignals?.[0];
+  const versionLabel = versionSignal
+    ? `v${versionSignal.normalizedValue}`
+    : row.insights?.versionHints?.[0] ?? null;
+
+  return {
+    id: row.id,
+    title: row.filename,
+    kind: row.kind,
+    typeLabel: friendlyTypeLabel(row.kind),
+    typeColor: typeColorForKind(row.kind),
+    creatorLabel,
+    isTray,
+    isMisplaced: trayIdentity.isMisplaced,
+    watchStatusLabel,
+    watchStatusTone,
+    healthLabel: healthIssue?.label ?? null,
+    healthTone: healthIssue?.tone ?? null,
+    hasDuplicate: row.hasDuplicate ?? false,
+    hasIssues,
+    confidenceLevel,
+    embeddedNames: visibleNames,
+    resourceSummary,
+    totalEmbeddedNames: allNames.length,
+    versionLabel,
+    row,
   };
 }
 

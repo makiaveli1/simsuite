@@ -50,6 +50,7 @@ import {
   usefulTrayGroupingValue,
 } from "./library/libraryDisplay";
 import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
+import { LibraryThumbnailGrid } from "./library/LibraryThumbnailGrid";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
@@ -105,6 +106,7 @@ export function LibraryScreen({
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const deferredSearch = useDeferredValue(search);
 
   // Reload facets when kind changes so subtype chips are kind-scoped.
@@ -973,6 +975,8 @@ export function LibraryScreen({
           sortBy={sortBy}
           librarySummary={librarySummary}
           facets={facets}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           filters={{
             kind,
             creator,
@@ -1171,6 +1175,17 @@ export function LibraryScreen({
 
         {rows === null ? (
           <SkeletonLoader rows={8} height={44} />
+        ) : viewMode === "grid" ? (
+          <LibraryThumbnailGrid
+            userView={userView}
+            rows={rows?.items ?? []}
+            selectedId={selected?.id ?? null}
+            page={page}
+            totalPages={totalPages}
+            onSelect={(row) => void openFile(row)}
+            onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
+            onNextPage={() => setPage((current) => current + 1)}
+          />
         ) : (
           <LibraryCollectionTable
             userView={userView}

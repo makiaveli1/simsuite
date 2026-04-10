@@ -1,4 +1,4 @@
-import { ArrowUpDown, ListFilter, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUpDown, Grid3X3, LayoutList, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
 import type { LibraryFacets, LibrarySortField, LibrarySummary, LibraryWatchFilter, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
@@ -41,12 +41,14 @@ interface LibraryTopStripProps {
   facets: LibraryFacets | null;
   moreFiltersOpen: boolean;
   librarySummary: LibrarySummary | null;
+  viewMode: "list" | "grid";
   onSearchChange: (value: string) => void;
   onSortByChange: (value: SortField) => void;
   onWatchFilterChange: (value: WatchFilter) => void;
   onFiltersChange: (next: Partial<LibraryToolbarFilters>) => void;
   onToggleMoreFilters: () => void;
   onResetFilters: () => void;
+  onViewModeChange: (mode: "list" | "grid") => void;
 }
 
 export function LibraryTopStrip({
@@ -61,12 +63,14 @@ export function LibraryTopStrip({
   facets,
   moreFiltersOpen,
   librarySummary,
+  viewMode,
   onSearchChange,
   onSortByChange,
   onWatchFilterChange,
   onFiltersChange,
   onToggleMoreFilters,
   onResetFilters,
+  onViewModeChange,
 }: LibraryTopStripProps) {
   const flags = libraryViewFlags(userView);
   const hasActiveFilters = activeFilterCount > 0;
@@ -160,6 +164,28 @@ export function LibraryTopStrip({
               <span className="library-active-filter-badge">{activeFilterCount}</span>
             </button>
           )}
+
+          {/* View mode toggle: grid / list */}
+          <div className="library-view-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={`library-view-btn${viewMode === "grid" ? " is-active" : ""}`}
+              onClick={() => onViewModeChange("grid")}
+              aria-pressed={viewMode === "grid"}
+              title="Grid view"
+            >
+              <Grid3X3 size={14} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              className={`library-view-btn${viewMode === "list" ? " is-active" : ""}`}
+              onClick={() => onViewModeChange("list")}
+              aria-pressed={viewMode === "list"}
+              title="List view"
+            >
+              <LayoutList size={14} strokeWidth={2} />
+            </button>
+          </div>
 
           <div className="library-sort-control" aria-label="Sort library">
             <ArrowUpDown size={13} strokeWidth={2} />
