@@ -24,6 +24,8 @@ export interface LibraryViewFlags {
   showAdvancedFilters: boolean;
   showRootFacts: boolean;
   maxSupportingFacts: number;
+  maxCasNames: number;
+  maxScriptNamespaces: number;
 }
 
 /** CSS variable name for the type color dot/border */
@@ -140,6 +142,9 @@ export function libraryViewFlags(userView: UserView): LibraryViewFlags {
     showAdvancedFilters: userView === "power",
     showRootFacts: userView !== "beginner",
     maxSupportingFacts: userView === "power" ? 3 : 2,
+    // Grid card chip density per view
+    maxCasNames: userView === "beginner" ? 2 : userView === "power" ? 4 : 3,
+    maxScriptNamespaces: userView === "beginner" ? 1 : userView === "power" ? 4 : 2,
   };
 }
 
@@ -246,6 +251,7 @@ export function buildLibraryCardModel(
   const bundleName = row.bundleName ?? null;
 
   // CAS: embeddedNames — the item identifier strings (e.g. "NSW_Skinblend")
+  const flags = libraryViewFlags(userView);
   const allCasNames = row.insights?.embeddedNames ?? [];
   const visibleCasNames = allCasNames.slice(0, 4);
   const casNamesOverflow = Math.max(0, allCasNames.length - visibleCasNames.length);
