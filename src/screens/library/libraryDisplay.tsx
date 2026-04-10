@@ -1206,14 +1206,21 @@ function buildSupportingFacts(
   if (!flags.showCreatorInList) return facts;
 
   switch (kind) {
-    // CAS items: show subtype (e.g. "hair", "tops") + creator
-    case "CAS":
-      if (row.subtype?.trim()) facts.push(row.subtype.trim());
+    // CAS items: show content profile (e.g. "CAS items", "Catalog content") then creator.
+    // resource_summary is more informative than raw subtype for most simmers.
+    case "CAS": {
+      const profile = summarizeResourceProfileForUi(row.insights);
+      if (profile && flags.showInspectFactsInList) {
+        facts.push(profile);
+      } else if (row.subtype?.trim()) {
+        facts.push(row.subtype.trim());
+      }
       facts.push(creatorLabel);
       break;
+    }
 
-    // Script mods: show creator + extracted script scope (namespace)
-    // Falls back to confidence tier only when no namespace data is available.
+    // Script mods: show creator + namespace scope + best version signal.
+    // Version signal is shown only when confidence is Medium or better — avoids noise.
     case "ScriptMods":
       facts.push(creatorLabel);
       {
@@ -1229,20 +1236,34 @@ function buildSupportingFacts(
                 : "Low confidence";
           facts.push(confLevel);
         }
+        // Show version signal when we have one and it's meaningful (Medium+ confidence).
+        const topVersion = row.insights?.versionSignals?.[0];
+        if (topVersion && topVersion.confidence >= 0.5) {
+          facts.push(topVersion.normalizedValue || topVersion.rawValue);
+        }
       }
       break;
 
-    // Gameplay mods: show creator
+    // Gameplay mods: show creator + content profile (power view) or subtype fallback.
     case "Gameplay":
       facts.push(creatorLabel);
-      if (flags.showInspectFactsInList && row.subtype?.trim()) {
-        facts.push(row.subtype.trim());
+      if (flags.showInspectFactsInList) {
+        const profile = summarizeResourceProfileForUi(row.insights);
+        if (profile) {
+          facts.push(profile);
+        } else if (row.subtype?.trim()) {
+          facts.push(row.subtype.trim());
+        }
       }
       break;
 
-    // Build/Buy: show creator + source location
+    // Build/Buy: show creator + content profile (power view) + source location.
     case "BuildBuy":
       facts.push(creatorLabel);
+      if (flags.showInspectFactsInList) {
+        const profile = summarizeResourceProfileForUi(row.insights);
+        if (profile) facts.push(profile);
+      }
       if (flags.showRootFacts) facts.push(isTray ? "🔖 In tray" : "Mods");
       break;
 
@@ -1286,9 +1307,10 @@ function buildSupportingFacts(
       });
       if (groupingValue) facts.push(groupingValue);
       const groupedCount = groupedFilesLabel(row.groupedFileCount);
-      if (groupedCount) facts.push(groupedCount);
+      if (groupedCount && flags.showInspectFactsInList) facts.push(groupedCount);
       facts.push(isTray ? "Stored in Tray" : "Stored in Mods");
-      if (row.creator?.trim() && flags.maxSupportingFacts > 3) facts.push(creatorLabel);
+      // Creator is always the most important signal for tray items.
+      if (row.creator?.trim()) facts.push(creatorLabel);
       break;
 
     // Unknown: show source + creator
