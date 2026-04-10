@@ -221,7 +221,7 @@ export function LibraryThumbnailGrid({
                     model.isTray ? "is-tray" : "",
                     model.hasIssues ? "has-issues" : "",
                     model.isMisplaced ? "is-misplaced" : "",
-                    model.isGrouped ? "is-grouped" : "",
+                    ((model.row.groupedFileCount ?? 0) > 1) ? "is-grouped" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
