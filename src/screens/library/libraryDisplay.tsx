@@ -935,11 +935,11 @@ export function buildSheetContentsSection(
       ) : null}
 
       {/*
-       * "Contains" — hidden for ScriptMods (resource_summary now says "Script mod,
-       * Python modules" which is redundant with the Namespaces section above).
-       * Shown for all other types as a content-type label.
+       * "Contains" — shown only for non-ScriptMods, non-CAS packages.
+       * CAS shows it after "Included names" (see below).
+       * Hidden entirely for ScriptMods (namespace section is more useful).
        */}
-      {!isScriptMod && resource.length > 0 ? (
+      {!isScriptMod && resource.length > 0 && !isCas ? (
         <div className="detail-row detail-row--block">
           <span>
             Contains
@@ -982,10 +982,10 @@ export function buildSheetContentsSection(
       ) : null}
 
       {/*
-       * "Contains" — hidden for ScriptMods, shown for all package types.
-       * For CAS, shown AFTER "Included names" since raw counts are secondary.
+       * "Contains" — shown for CAS after "Included names", since raw counts
+       * are secondary to the item names themselves.
        */}
-      {!isScriptMod && resource.length > 0 ? (
+      {!isScriptMod && resource.length > 0 && isCas ? (
         <div className="detail-row detail-row--block">
           <span>
             Contains
@@ -1236,24 +1236,29 @@ function buildSupportingFacts(
     }
 
     // Script mods: creator + namespace + best version clue.
+    // When namespace is missing, prefer showing the version clue (version found
+    // in file content) rather than a generic confidence label.
     case "ScriptMods":
       facts.push(creatorLabel);
       {
         const scope = summarizeScriptScopeForUi(row.insights);
         if (scope) {
           facts.push(scope);
-        } else if (row.confidence != null) {
-          const confLevel =
-            row.confidence >= 0.8
-              ? "High confidence"
-              : row.confidence >= 0.55
-                ? "Medium confidence"
-                : "Low confidence";
-          facts.push(confLevel);
-        }
-        const versionClue = summarizeVersionSignalForUi(row.insights, 0.55);
-        if (versionClue) {
-          facts.push(versionClue);
+        } else {
+          // No namespace found — show version clue if one exists, otherwise
+          // fall back to a confidence label that describes what we know.
+          const versionClue = summarizeVersionSignalForUi(row.insights, 0.55);
+          if (versionClue) {
+            facts.push(versionClue);
+          } else if (row.confidence != null) {
+            facts.push(
+              row.confidence >= 0.8
+                ? "High confidence"
+                : row.confidence >= 0.55
+                  ? "Inferred version"
+                  : "Weak version signal",
+            );
+          }
         }
       }
       break;

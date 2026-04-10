@@ -61,14 +61,34 @@ describe("buildLibraryRowModel", () => {
     expect(row.supportingFacts).toHaveLength(2);
   });
 
-  it("shows version signal as a third fact in standard ScriptMods view", () => {
-    // ScriptMods with a confident version signal gets a 3rd slot in standard view
-    const row = buildLibraryRowModel(SAMPLE_ROW, "standard");
+  it("shows namespace first, then version clue when namespace is missing", () => {
+    // With namespace present: creator + namespace = 2 facts (version is fallback only)
+    const withNamespace = {
+      ...SAMPLE_ROW,
+      insights: {
+        ...SAMPLE_ROW.insights!,
+        scriptNamespaces: ["deaderpool.mccc"],
+        versionSignals: [{ rawValue: "2025.9.0", normalizedValue: "2025.9.0", sourceKind: "payload", sourcePath: "version.txt", matchedBy: "readable archive payload", confidence: 0.99 }],
+      },
+    };
+    const rowWithNs = buildLibraryRowModel(withNamespace, "standard");
+    expect(rowWithNs.supportingFacts).toHaveLength(2);
+    expect(rowWithNs.supportingFacts[0]).toBe("Deaderpool"); // creator
+    expect(rowWithNs.supportingFacts[1]).toBe("deaderpool.mccc"); // namespace (not version)
 
-    expect(row.supportingFacts).toHaveLength(3);
-    expect(row.supportingFacts[0]).toBe("Deaderpool"); // creator
-    expect(row.supportingFacts[1]).toBe("deaderpool.mccc"); // namespace scope (1 namespace)
-    expect(row.supportingFacts[2]).toMatch(/^v/); // version clue (e.g. v2025.9.0)
+    // Without namespace: version clue surfaces as the 2nd fact
+    const withoutNamespace = {
+      ...SAMPLE_ROW,
+      insights: {
+        ...SAMPLE_ROW.insights!,
+        scriptNamespaces: [],
+        versionSignals: [{ rawValue: "2025.9.0", normalizedValue: "2025.9.0", sourceKind: "payload", sourcePath: "version.txt", matchedBy: "readable archive payload", confidence: 0.99 }],
+      },
+    };
+    const rowWithoutNs = buildLibraryRowModel(withoutNamespace, "standard");
+    expect(rowWithoutNs.supportingFacts).toHaveLength(2);
+    expect(rowWithoutNs.supportingFacts[0]).toBe("Deaderpool"); // creator
+    expect(rowWithoutNs.supportingFacts[1]).toMatch(/^v/); // version clue (no namespace)
   });
 
   it("surfaces tray grouping and placement for tray items", () => {
