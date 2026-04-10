@@ -13176,6 +13176,43 @@ select:focus-visible {
   min-width: 0 !important;
 }
 
+/* Inspector content preview strip, type-specific content tokens */
+.library-inspector-preview-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  min-height: 40px;
+}
+
+.library-inspector-preview-strip-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.library-inspector-preview-strip-right {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.library-inspector-preview-strip .ghost-chip {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.library-inspector-preview-strip-summary {
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  font-style: italic;
+}
+
 /* Inspector sidebar detail rows: pill container must be flex, overrides
    .library-detail-sheet-lead strong above which forces block for filename. */
 .library-inspector-shell .detail-row > strong {

@@ -9,6 +9,7 @@ import {
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView } from "../../lib/types";
 import {
+  buildInspectorPreviewStrip,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   summarizeLibraryResourceBadge,
@@ -55,6 +56,8 @@ export function LibraryDetailSheet({
           ? null
           : selectedFile.insights?.versionHints?.[0] ?? null)
       : null;
+  const inspectPreviewStrip =
+    mode === "inspect" ? buildInspectorPreviewStrip(selectedFile, userView) : null;
 
   return (
     <AnimatePresence>
@@ -115,6 +118,30 @@ export function LibraryDetailSheet({
                       {inspectContentBadge ? (
                         <span className="ghost-chip">{inspectContentBadge}</span>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {mode === "inspect" && inspectPreviewStrip?.summaryLabel ? (
+                    <div className="library-inspector-preview-strip">
+                      {userView === "beginner" ? (
+                        <span className="library-inspector-preview-strip-summary">
+                          {inspectPreviewStrip.summaryLabel}
+                        </span>
+                      ) : (
+                        <>
+                          <div className="library-inspector-preview-strip-left">
+                            {inspectPreviewStrip.leftTokens.map((token, index) => (
+                              <span className="ghost-chip" key={`${token}:${index}`}>
+                                {token}
+                              </span>
+                            ))}
+                          </div>
+                          {userView === "power" && inspectPreviewStrip.rightToken ? (
+                            <div className="library-inspector-preview-strip-right">
+                              <span className="ghost-chip">{inspectPreviewStrip.rightToken}</span>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   ) : null}
                 </div>

@@ -584,6 +584,133 @@ export function summarizeVersionSignalForUi(
   return /^[0-9]/.test(value) ? `v${value}` : value;
 }
 
+function uniquePreviewTokens(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+
+  return values.reduce<string[]>((tokens, value) => {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return tokens;
+    }
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      return tokens;
+    }
+
+    seen.add(key);
+    tokens.push(trimmed);
+    return tokens;
+  }, []);
+}
+
+function formatPreviewVersionToken(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return /^[0-9]/.test(trimmed) ? `v${trimmed}` : trimmed;
+}
+
+export function buildInspectorPreviewStrip(
+  model: FileDetail,
+  userView: UserView,
+): {
+  leftTokens: string[];
+  rightToken: string | null;
+  summaryLabel: string;
+} {
+  const insights = model.insights;
+  const resourceSummary = uniquePreviewTokens(insights?.resourceSummary ?? []);
+  const scriptNamespaces = uniquePreviewTokens(insights?.scriptNamespaces ?? []);
+  const embeddedNames = uniquePreviewTokens(describeEmbeddedNames(insights));
+  const familyHints = uniquePreviewTokens(
+    (insights?.familyHints ?? []).map((hint) => formatLibraryFamilyHintLabel(hint)),
+  );
+  const subtype = model.subtype?.trim() || null;
+  const primaryResource = resourceSummary[0] ?? null;
+  const bestVersion =
+    summarizeVersionSignalForUi(insights, 0.55) ??
+    formatPreviewVersionToken(insights?.versionHints?.[0] ?? null);
+  const strongVersion = summarizeVersionSignalForUi(insights, 0.8);
+
+  let leftCandidates: string[] = [];
+  let rightToken: string | null = null;
+
+  switch (model.kind) {
+    case "CAS":
+      leftCandidates = embeddedNames.slice(0, 3);
+      rightToken = primaryResource ?? subtype;
+      break;
+
+    case "ScriptMods":
+      leftCandidates = scriptNamespaces.slice(0, 2);
+      rightToken = bestVersion ?? primaryResource;
+      break;
+
+    case "BuildBuy":
+      leftCandidates = resourceSummary.slice(0, 1);
+      rightToken = familyHints[0] ?? null;
+      break;
+
+    case "Overrides":
+    case "OverridesAndDefaults":
+      leftCandidates = resourceSummary.slice(0, 1);
+      rightToken = bestVersion;
+      break;
+
+    case "PosesAndAnimation":
+      leftCandidates = uniquePreviewTokens([subtype, primaryResource]).slice(0, 2);
+      rightToken = familyHints[0] ?? null;
+      break;
+
+    case "PresetsAndSliders":
+      leftCandidates = uniquePreviewTokens([subtype, primaryResource]).slice(0, 2);
+      rightToken = familyHints[0] ?? null;
+      break;
+
+    case "TrayHousehold":
+    case "TrayLot":
+    case "TrayRoom":
+    case "TrayItem":
+    case "Household":
+    case "Lot":
+    case "Room":
+      leftCandidates = (familyHints.length ? familyHints : embeddedNames).slice(0, 2);
+      rightToken = primaryResource;
+      break;
+
+    default:
+      leftCandidates = resourceSummary.slice(0, 1);
+      rightToken = strongVersion;
+      break;
+  }
+
+  const fallbackLeftTokens = uniquePreviewTokens([
+    ...leftCandidates,
+    ...(leftCandidates.length ? [] : [rightToken]),
+    subtype,
+    primaryResource,
+    familyHints[0] ?? null,
+  ]);
+  const leftLimit = userView === "power" ? 4 : 3;
+  const leftTokens = fallbackLeftTokens.slice(0, leftLimit);
+  const dedupedRightToken =
+    rightToken && !leftTokens.some((token) => token.toLowerCase() === rightToken.toLowerCase())
+      ? rightToken
+      : null;
+  const summaryTokens = leftTokens.length
+    ? leftTokens.slice(0, 3)
+    : uniquePreviewTokens([dedupedRightToken, subtype, primaryResource]).slice(0, 3);
+
+  return {
+    leftTokens,
+    rightToken: dedupedRightToken,
+    summaryLabel: summaryTokens.length ? `Contains: ${summaryTokens.join(", ")}` : "",
+  };
+}
+
 // ─── Tray identity ─────────────────────────────────────────────────────────────
 // Used to surface tray-specific file identity in rows, inspector, and sheet.
 // ──────────────────────────────────────────────────────────────────────────────
