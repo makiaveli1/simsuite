@@ -40,15 +40,27 @@ export type TypeColor =
 
 /**
  * Card model for the thumbnail/grid view.
- * Shows embedded item names as a "content preview" — no image extraction needed.
+ * Each mod type has a "primary content signal" — the thing a simmer most wants to know.
+ * The card renderer selects which content block to show based on kind.
+ *
+ * Content signal hierarchy:
+ * - CAS: embeddedNames chips (item identifiers)
+ * - ScriptMods: scriptNamespaces chips + version badge
+ * - BuildBuy / Overrides: resourceSummary line
+ * - Poses / Presets: subtype label
+ * - Tray items: bundleName / household identity
+ * - Unknown: resourceSummary or fallback
  */
 export interface LibraryCardModel {
+  // Identity (always shown)
   id: number;
   title: string;
   kind: string;
   typeLabel: string;
   typeColor: TypeColor;
   creatorLabel: string;
+
+  // Status signals (always shown in header)
   isTray: boolean;
   isMisplaced: boolean;
   watchStatusLabel: string;
@@ -58,15 +70,30 @@ export interface LibraryCardModel {
   hasDuplicate: boolean;
   hasIssues: boolean;
   confidenceLevel: "high" | "medium" | "low";
-  /** Embedded item names — shown as the content preview text */
-  embeddedNames: string[];
-  /** Resource summary — e.g. "6 build/buy items" */
-  resourceSummary: string | null;
-  /** How many items total in embeddedNames (for "+N more" overflow) */
-  totalEmbeddedNames: number;
-  /** Version signal if present */
+
+  // Grouping
+  isGrouped: boolean;
+  groupedCount: number;
+  bundleName: string | null;
+
+  // Type-specific content signals (one is always primary)
+  /** CAS: embedded item names as chips */
+  casNames: string[];
+  casNamesOverflow: number;
+  /** ScriptMods: script namespaces as chips */
+  scriptNamespaces: string[];
+  scriptNamespaceOverflow: number;
+  scriptVersionLabel: string | null;
+  /** BuildBuy / Overrides / generic: resource summary line */
+  contentSummary: string | null;
+  /** Poses / Presets / generic fallback: subtype */
+  subtype: string | null;
+  /** Tray items: household/lot/room identity name */
+  trayIdentityLabel: string | null;
+  /** Version signal (for ScriptMods and others) */
   versionLabel: string | null;
-  /** The raw row for click handling */
+
+  // The raw row for click handling
   row: LibraryFileRow;
 }
 
@@ -184,7 +211,13 @@ export function buildLibraryRowModel(
 
 /**
  * Builds a card model for the thumbnail/grid view.
- * Uses embeddedNames as a text-based content preview — no image extraction needed.
+ * Per-type content strategy:
+ * - CAS: embeddedNames chips (item identifier names)
+ * - ScriptMods: scriptNamespaces chips + version badge
+ * - BuildBuy / Overrides: resourceSummary line
+ * - Poses / Presets: subtype label
+ * - Tray items: bundleName / household identity
+ * - Unknown: resourceSummary or subtype or fallback
  */
 export function buildLibraryCardModel(
   row: LibraryFileRow,
@@ -207,19 +240,39 @@ export function buildLibraryCardModel(
     sourceLocation: row.sourceLocation,
   });
 
-  // Show up to 4 embedded names as the content preview
-  const allNames = row.insights?.embeddedNames ?? [];
-  const visibleNames = allNames.slice(0, 4);
-  const overflowCount = allNames.length - visibleNames.length;
+  // Grouping
+  const isGrouped = Boolean(row.bundleName && (row.groupedFileCount ?? 0) > 1);
+  const groupedCount = row.groupedFileCount ?? 0;
+  const bundleName = row.bundleName ?? null;
 
-  // Resource summary from insights
-  const resourceSummary = row.insights?.resourceSummary?.[0] ?? null;
+  // CAS: embeddedNames — the item identifier strings (e.g. "NSW_Skinblend")
+  const allCasNames = row.insights?.embeddedNames ?? [];
+  const visibleCasNames = allCasNames.slice(0, 4);
+  const casNamesOverflow = Math.max(0, allCasNames.length - visibleCasNames.length);
 
-  // Version signal for script mods
+  // ScriptMods: scriptNamespaces + version
+  const allNamespaces = row.insights?.scriptNamespaces ?? [];
+  const visibleNamespaces = allNamespaces.slice(0, 3);
+  const scriptNamespaceOverflow = Math.max(0, allNamespaces.length - visibleNamespaces.length);
   const versionSignal = row.insights?.versionSignals?.[0];
-  const versionLabel = versionSignal
+  const scriptVersionLabel = versionSignal
     ? `v${versionSignal.normalizedValue}`
     : row.insights?.versionHints?.[0] ?? null;
+
+  // Generic content summary: resourceSummary
+  const contentSummary = row.insights?.resourceSummary?.[0] ?? null;
+
+  // Subtype
+  const subtype = row.subtype?.trim() ?? null;
+
+  // Tray identity label (household/lot/room name)
+  const trayIdentityLabel = trayIdentity.kind !== "standard"
+    ? (usefulTrayGroupingValue({ bundleName: row.bundleName ?? null, insights: row.insights })
+      ?? trayKindLabel(trayIdentity.kind))
+    : null;
+
+  // Generic version label
+  const versionLabel = scriptVersionLabel;
 
   return {
     id: row.id,
@@ -237,9 +290,17 @@ export function buildLibraryCardModel(
     hasDuplicate: row.hasDuplicate ?? false,
     hasIssues,
     confidenceLevel,
-    embeddedNames: visibleNames,
-    resourceSummary,
-    totalEmbeddedNames: allNames.length,
+    isGrouped,
+    groupedCount,
+    bundleName,
+    casNames: visibleCasNames,
+    casNamesOverflow,
+    scriptNamespaces: visibleNamespaces,
+    scriptNamespaceOverflow,
+    scriptVersionLabel,
+    contentSummary,
+    subtype,
+    trayIdentityLabel,
     versionLabel,
     row,
   };

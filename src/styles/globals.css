@@ -12839,6 +12839,141 @@ select:focus-visible {
   margin-top: 0.15rem;
 }
 
+/* ─── Card content area — per-type content blocks ─────────────────── */
+
+.library-card-content-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+/* Name chips (CAS embedded item names) */
+.library-card-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.library-card-name-chip {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  color: var(--text-soft);
+  font-family: var(--font-mono, monospace);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Namespace chips are tighter and smaller */
+.library-card-namespace-chip {
+  font-size: 0.62rem;
+  max-width: 120px;
+}
+
+.library-card-name-overflow {
+  display: inline-block;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Resource summary line (BuildBuy, Overrides) */
+.library-card-resource-summary {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  line-height: 1.35;
+}
+
+/* Subtype label (secondary text below content) */
+.library-card-subtype-label {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Tray identity label (household/lot name — prominent) */
+.library-card-tray-identity {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Script mod version badge (shown when no namespaces) */
+.library-card-version-only {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.library-card-version-badge {
+  display: inline-block;
+  padding: 0.12rem 0.4rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  color: #f59e0b;
+  font-family: var(--font-mono, monospace);
+  width: fit-content;
+}
+
+/* Version label below namespace chips */
+.library-card-version-label {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Misplaced badge — prominent red, needs attention */
+.library-card-misplaced-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  font-size: 0.62rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+/* Pack badge — shows grouped file count */
+.library-card-pack-badge {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  border-radius: 4px;
+}
+
+/* Misplaced card overall treatment */
+.library-card.is-misplaced {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* Grouped card treatment */
+.library-card.is-grouped .library-card-title {
+  font-style: italic;
+}
+
+/* Empty preview — last resort only */
+.library-card-empty-preview {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* Confidence bar at card bottom */
 .library-card-confidence-bar {
   height: 3px;

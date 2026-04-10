@@ -14,6 +14,182 @@ interface LibraryThumbnailGridProps {
   totalPages: number;
 }
 
+/**
+ * Renders the type-specific content block for a grid card.
+ * One of these is always shown — no generic "no preview available" for mod types.
+ */
+function renderCardContent(model: LibraryCardModel): React.ReactNode {
+  const kind = model.kind;
+
+  // ── CAS: show embedded item name chips + subtype ──────────────────────
+  if (kind === "CAS") {
+    const hasContent = model.casNames.length > 0;
+    return (
+      <div className="library-card-content-inner">
+        {hasContent ? (
+          <>
+            <div className="library-card-names">
+              {model.casNames.map((name) => (
+                <span key={name} className="library-card-name-chip">
+                  {name}
+                </span>
+              ))}
+              {model.casNamesOverflow > 0 && (
+                <span className="library-card-name-overflow">
+                  +{model.casNamesOverflow}
+                </span>
+              )}
+            </div>
+            {model.subtype && (
+              <div className="library-card-subtype-label">{model.subtype}</div>
+            )}
+          </>
+        ) : model.contentSummary ? (
+          <>
+            <div className="library-card-resource-summary">{model.contentSummary}</div>
+            {model.subtype && (
+              <div className="library-card-subtype-label">{model.subtype}</div>
+            )}
+          </>
+        ) : (
+          <div className="library-card-subtype-label">
+            {model.subtype ?? "CAS content"}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── ScriptMods: show namespace chips + version ─────────────────────────
+  if (kind === "ScriptMods") {
+    const hasNamespaces = model.scriptNamespaces.length > 0;
+    return (
+      <div className="library-card-content-inner">
+        {hasNamespaces ? (
+          <>
+            <div className="library-card-names">
+              {model.scriptNamespaces.map((ns) => (
+                <span key={ns} className="library-card-name-chip library-card-namespace-chip">
+                  {ns}
+                </span>
+              ))}
+              {model.scriptNamespaceOverflow > 0 && (
+                <span className="library-card-name-overflow">
+                  +{model.scriptNamespaceOverflow}
+                </span>
+              )}
+            </div>
+            {model.scriptVersionLabel && (
+              <div className="library-card-version-label">{model.scriptVersionLabel}</div>
+            )}
+          </>
+        ) : model.scriptVersionLabel ? (
+          <div className="library-card-version-only">
+            <span className="library-card-version-badge">{model.scriptVersionLabel}</span>
+            <div className="library-card-subtype-label">Script mod</div>
+          </div>
+        ) : (
+          <div className="library-card-subtype-label">Script mod</div>
+        )}
+      </div>
+    );
+  }
+
+  // ── BuildBuy: show resource summary + subtype ───────────────────────────
+  if (kind === "BuildBuy") {
+    return (
+      <div className="library-card-content-inner">
+        <div className="library-card-resource-summary">
+          {model.contentSummary ?? "Build/Buy content"}
+        </div>
+        {model.subtype && (
+          <div className="library-card-subtype-label">{model.subtype}</div>
+        )}
+      </div>
+    );
+  }
+
+  // ── OverridesAndDefaults: show resource summary ────────────────────────
+  if (kind === "OverridesAndDefaults") {
+    return (
+      <div className="library-card-content-inner">
+        <div className="library-card-resource-summary">
+          {model.contentSummary ?? "Override package"}
+        </div>
+      </div>
+    );
+  }
+
+  // ── PosesAndAnimation: show subtype ────────────────────────────────────
+  if (kind === "PosesAndAnimation") {
+    return (
+      <div className="library-card-content-inner">
+        <div className="library-card-subtype-label">
+          {model.subtype ?? "Pose / Animation"}
+        </div>
+      </div>
+    );
+  }
+
+  // ── PresetsAndSliders: show subtype ───────────────────────────────────
+  if (kind === "PresetsAndSliders") {
+    return (
+      <div className="library-card-content-inner">
+        <div className="library-card-subtype-label">
+          {model.subtype ?? "Preset / Slider"}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Tray items: show household/lot/room identity ──────────────────────
+  if (
+    kind === "TrayHousehold" ||
+    kind === "TrayLot" ||
+    kind === "TrayRoom" ||
+    kind === "TrayItem" ||
+    kind === "Household" ||
+    kind === "Lot" ||
+    kind === "Room"
+  ) {
+    return (
+      <div className="library-card-content-inner">
+        {model.trayIdentityLabel ? (
+          <div className="library-card-tray-identity">{model.trayIdentityLabel}</div>
+        ) : (
+          <div className="library-card-subtype-label">{model.subtype ?? "Tray item"}</div>
+        )}
+        {model.isGrouped && model.groupedCount > 1 && (
+          <div className="library-card-subtype-label">
+            {model.groupedCount} files in pack
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Unknown: show resource summary or fallback ─────────────────────────
+  return (
+    <div className="library-card-content-inner">
+      {model.contentSummary ? (
+        <>
+          <div className="library-card-resource-summary">{model.contentSummary}</div>
+          <div className="library-card-subtype-label">Unknown type</div>
+        </>
+      ) : model.subtype ? (
+        <>
+          <div className="library-card-subtype-label">{model.subtype}</div>
+          <div className="library-card-subtype-label">Unknown type</div>
+        </>
+      ) : (
+        <div className="library-card-empty-preview">
+          No content detected
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LibraryThumbnailGrid({
   userView,
   rows,
@@ -43,6 +219,8 @@ export function LibraryThumbnailGrid({
                     isSelected ? "is-selected" : "",
                     model.isTray ? "is-tray" : "",
                     model.hasIssues ? "has-issues" : "",
+                    model.isMisplaced ? "is-misplaced" : "",
+                    model.isGrouped ? "is-grouped" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -59,19 +237,38 @@ export function LibraryThumbnailGrid({
                   whileTap={rowPress}
                   {...stagedListItem(index)}
                 >
-                  {/* Card header: type pill + watch status */}
+                  {/* Card header: type pill + status badges */}
                   <div className="library-card-header">
                     <span className={`library-type-pill type-pill--${model.typeColor}`}>
                       {model.typeLabel}
                     </span>
                     <div className="library-card-header-right">
                       {model.hasIssues && (
-                        <span className="library-issues-badge" title="Has safety notes or parser warnings">
+                        <span
+                          className="library-issues-badge"
+                          title="Has safety notes or parser warnings"
+                        >
                           ⚑
                         </span>
                       )}
                       {model.hasDuplicate && (
                         <span className="library-duplicate-badge">Duplicate</span>
+                      )}
+                      {model.isGrouped && model.groupedCount > 1 && (
+                        <span
+                          className="library-card-pack-badge"
+                          title={`Part of a ${model.groupedCount}-file pack`}
+                        >
+                          📦 {model.groupedCount} files
+                        </span>
+                      )}
+                      {model.isMisplaced && (
+                        <span
+                          className="library-card-misplaced-badge"
+                          title="This tray item is in the Mods folder — it needs review"
+                        >
+                          ⚠ misplaced
+                        </span>
                       )}
                       <span className={`library-health-pill is-${model.watchStatusTone}`}>
                         {model.watchStatusLabel}
@@ -79,30 +276,9 @@ export function LibraryThumbnailGrid({
                     </div>
                   </div>
 
-                  {/* Content preview — the "swatch" substitute */}
+                  {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">
-                    {model.embeddedNames.length > 0 ? (
-                      <div className="library-card-names">
-                        {model.embeddedNames.map((name) => (
-                          <span key={name} className="library-card-name-chip">
-                            {name}
-                          </span>
-                        ))}
-                        {model.totalEmbeddedNames > model.embeddedNames.length && (
-                          <span className="library-card-name-overflow">
-                            +{model.totalEmbeddedNames - model.embeddedNames.length} more
-                          </span>
-                        )}
-                      </div>
-                    ) : model.resourceSummary ? (
-                      <div className="library-card-resource-summary">
-                        {model.resourceSummary}
-                      </div>
-                    ) : (
-                      <div className="library-card-empty-preview">
-                        No content preview available
-                      </div>
-                    )}
+                    {renderCardContent(model)}
                   </div>
 
                   {/* Card footer: title + creator + version */}
@@ -116,12 +292,12 @@ export function LibraryThumbnailGrid({
                         <span className="library-card-version">{model.versionLabel}</span>
                       )}
                     </div>
-                    {model.isTray && (
+                    {!model.isMisplaced && model.isTray && (
                       <div className="library-card-tray-badge">tray · disabled</div>
                     )}
                   </div>
 
-                  {/* Confidence bar at bottom of card */}
+                  {/* Confidence bar at card bottom edge */}
                   <div
                     className={`library-card-confidence-bar confidence-bar--${model.confidenceLevel}`}
                     aria-label={`${model.confidenceLevel} confidence`}
