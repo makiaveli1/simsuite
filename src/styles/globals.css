@@ -12688,10 +12688,11 @@ select:focus-visible {
 
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
   gap: 0.65rem;
   padding: 0.75rem 1rem 0.75rem 1rem;
   min-height: 400px;
+  justify-content: center;
 }
 
 .library-card {
@@ -12720,6 +12721,12 @@ select:focus-visible {
 
 .library-card.is-tray {
   opacity: 0.72;
+  border-style: dashed;
+}
+
+.library-card.is-tray.is-misplaced {
+  border-style: solid;
+  opacity: 1;
 }
 
 .library-card.has-issues .library-card-header {
@@ -12962,7 +12969,23 @@ select:focus-visible {
   border-color: rgba(239, 68, 68, 0.25) !important;
 }
 
-/* Grouped card treatment */
+/* Grouped pack: 3px left stripe in type colour — all cards in pack */
+.library-card.is-grouped {
+  border-left: 3px solid rgba(255, 255, 255, 0.18);
+}
+
+/* Pack micro-label in card footer (shown on all grouped cards) */
+.library-card-pack-label {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0.15rem;
+}
+
+/* Italic title for all grouped cards */
 .library-card.is-grouped .library-card-title {
   font-style: italic;
 }

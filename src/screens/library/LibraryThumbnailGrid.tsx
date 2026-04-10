@@ -213,6 +213,7 @@ export function LibraryThumbnailGrid({
                 <m.div
                   key={row.id}
                   data-kind={model.kind}
+                  data-bundle-name={model.bundleName ?? undefined}
                   className={[
                     "library-card",
                     `library-card--${model.typeColor}`,
@@ -292,6 +293,13 @@ export function LibraryThumbnailGrid({
                         <span className="library-card-version">{model.versionLabel}</span>
                       )}
                     </div>
+                    {model.isGrouped && (
+                      <div className="library-card-pack-label">
+                        {model.bundleName
+                          ? `Pack: ${model.bundleName}`
+                          : `${model.groupedCount} grouped files`}
+                      </div>
+                    )}
                     {!model.isMisplaced && model.isTray && (
                       <div className="library-card-tray-badge">tray · disabled</div>
                     )}
