@@ -350,3 +350,41 @@ This is substantial work and should not be claimed as a quick Phase 2 addition.
 **For Phase 2:** Implement the three low-risk, high-value enhancements listed above. Then do a proper technical spike on JPEG thumbnail extraction from Build/Buy packages to assess the real effort. DDS extraction should be a separate project with clear scope.
 
 **For next session:** Manual verification of the Library grid at the machine — specifically check Casual/Standard/Creator view mode changes and type-aware card rendering across CAS, ScriptMods, BuildBuy, and tray items.
+
+---
+
+## Phase 2 — Implementation Added (2026-04-11 Evening)
+
+### What was implemented
+
+**Change 1: Type-colored ghost chips in inspector preview strip**
+- Added type-color CSS variants for all 9 type colors (`.ghost-chip--cas`, `--script`, `--gameplay`, `--buildbuy`, `--override`, `--poses`, `--presets`, `--tray`, `--unknown`)
+- Updated `LibraryDetailSheet.tsx` to apply `ghost-chip--${typeColor}` class to all preview strip tokens
+- Version badge and content badge also now use type coloring
+- CSS uses `color-mix()` for muted type-color backgrounds (15% opacity bg, 40% opacity border)
+
+**Change 2: File path in inspector footer**
+- Added `library-sheet-file-path` span to inspector footer showing the full file path
+- Truncates to last 57 chars if path is long, preceded by `…`
+- Monospace font, dimmed color, subtle opacity
+- Defensive null check added (guards against test mocks without path field)
+
+**Change 3: Preview strip visual polish**
+- Added `border-top: 2px solid rgba(255, 255, 255, 0.12)` to distinguish strip from content above
+- Increased padding slightly for better chip spacing
+
+### What was NOT implemented (honest deferral)
+- "Open file location" button — requires Tauri shell plugin setup (Cargo.toml + main.rs + capabilities + Rust command). Not a frontend-only change. Deferred.
+- DDS swatch extraction — no binary extraction pipeline in backend. Deferred.
+- JPEG thumbnail extraction — no package parsing pipeline in backend. Deferred.
+
+### Commit
+```
+187809a feat(library): type-colored preview strip chips + file path in inspector footer
+```
+
+### Test results
+17/17 tests pass. LibraryDetailSheet test fixed to include `path` field in mock.
+
+### Gateway issue
+WSL process table saturation causes WS gateway connections to fail after multiple subagent spawn attempts. HTTP gateway works. Subagent spawning unreliable after ~3-4 spawns in a session. Mitigation: do direct source work when agents are timing out.

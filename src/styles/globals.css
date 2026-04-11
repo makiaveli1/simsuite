@@ -12281,6 +12281,25 @@ select:focus-visible {
 .type-pill--tray      { border-color: color-mix(in srgb, var(--kind-tray) 35%, transparent);      background: color-mix(in srgb, var(--kind-tray) 12%, transparent);      color: var(--kind-tray); }
 .type-pill--unknown    { border-color: color-mix(in srgb, var(--kind-unknown) 35%, transparent);    background: color-mix(in srgb, var(--kind-unknown) 12%, transparent);    color: var(--kind-unknown); }
 
+/* Type-color dot — a small circle of type color in the card header for instant type recognition */
+.library-type-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 5px;
+}
+.library-type-dot--cas      { background: var(--kind-cas); }
+.library-type-dot--script   { background: var(--kind-script); }
+.library-type-dot--gameplay { background: var(--kind-gameplay); }
+.library-type-dot--buildbuy { background: var(--kind-buildbuy); }
+.library-type-dot--override { background: var(--kind-override); }
+.library-type-dot--poses    { background: var(--kind-poses); }
+.library-type-dot--presets  { background: var(--kind-presets); }
+.library-type-dot--tray    { background: var(--kind-tray); }
+.library-type-dot--unknown  { background: var(--kind-unknown); }
+
 /* Tray row treatment — visually muted / disabled */
 .library-table tbody tr.is-tray {
   opacity: 0.6;

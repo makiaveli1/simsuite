@@ -252,6 +252,7 @@ export function LibraryThumbnailGrid({
                 >
                   {/* Card header: type pill + status badges */}
                   <div className="library-card-header">
+                    <span className={`library-type-dot library-type-dot--${model.typeColor}`} aria-hidden="true" />
                     <span className={`library-type-pill type-pill--${model.typeColor}`}>
                       {model.typeLabel}
                     </span>
