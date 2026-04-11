@@ -253,13 +253,13 @@ export function buildLibraryCardModel(
   // CAS: embeddedNames — the item identifier strings (e.g. "NSW_Skinblend")
   const flags = libraryViewFlags(userView);
   const allCasNames = row.insights?.embeddedNames ?? [];
-  const visibleCasNames = allCasNames.slice(0, 4);
-  const casNamesOverflow = Math.max(0, allCasNames.length - visibleCasNames.length);
+  const visibleCasNames = allCasNames.slice(0, flags.maxCasNames);
+  const casNamesOverflow = Math.max(0, allCasNames.length - flags.maxCasNames);
 
   // ScriptMods: scriptNamespaces + version
   const allNamespaces = row.insights?.scriptNamespaces ?? [];
-  const visibleNamespaces = allNamespaces.slice(0, 3);
-  const scriptNamespaceOverflow = Math.max(0, allNamespaces.length - visibleNamespaces.length);
+  const visibleNamespaces = allNamespaces.slice(0, flags.maxScriptNamespaces);
+  const scriptNamespaceOverflow = Math.max(0, allNamespaces.length - flags.maxScriptNamespaces);
   const versionSignal = row.insights?.versionSignals?.[0];
   const scriptVersionLabel = versionSignal
     ? `v${versionSignal.normalizedValue}`

@@ -1,7 +1,11 @@
 import { m } from "motion/react";
 import { rowHover, rowPress, stagedListItem } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
-import { buildLibraryCardModel, type LibraryCardModel } from "./libraryDisplay";
+import {
+  buildLibraryCardModel,
+  type LibraryCardModel,
+  usefulTrayGroupingValue,
+} from "./libraryDisplay";
 
 interface LibraryThumbnailGridProps {
   userView: UserView;
@@ -89,7 +93,15 @@ function renderCardContent(model: LibraryCardModel): React.ReactNode {
             <div className="library-card-subtype-label">Script mod</div>
           </div>
         ) : (
-          <div className="library-card-subtype-label">Script mod</div>
+          <>
+            <div className="library-card-subtype-label">Script mod</div>
+            <div
+              className="library-card-subtype-label"
+              style={{ opacity: 0.6 }}
+            >
+              No namespace detected
+            </div>
+          </>
         )}
       </div>
     );
@@ -293,13 +305,30 @@ export function LibraryThumbnailGrid({
                         <span className="library-card-version">{model.versionLabel}</span>
                       )}
                     </div>
-                    {model.isGrouped && (
-                      <div className="library-card-pack-label">
-                        {model.bundleName
-                          ? `Pack: ${model.bundleName}`
-                          : `${model.groupedCount} grouped files`}
-                      </div>
-                    )}
+                    {model.isGrouped && (() => {
+                      const safeBundleName = usefulTrayGroupingValue({
+                        bundleName: model.bundleName ?? null,
+                        insights: model.row.insights,
+                      });
+
+                      if (safeBundleName) {
+                        return (
+                          <div className="library-card-pack-label">
+                            Pack: {safeBundleName}
+                          </div>
+                        );
+                      }
+
+                      if (model.groupedCount > 1) {
+                        return (
+                          <div className="library-card-pack-label">
+                            {model.groupedCount} grouped files
+                          </div>
+                        );
+                      }
+
+                      return null;
+                    })()}
                     {!model.isMisplaced && model.isTray && (
                       <div className="library-card-tray-badge">tray · disabled</div>
                     )}
