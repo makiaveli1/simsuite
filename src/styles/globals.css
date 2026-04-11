@@ -13156,11 +13156,26 @@ select:focus-visible {
 }
 .library-detail-sheet .workbench-sheet-footer {
   flex: 0 0 auto !important;
-  justify-content: flex-end !important;
+  justify-content: space-between !important;
+  align-items: center !important;
   margin-top: 0 !important;
   padding-top: 0.45rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(12, 19, 22, 0), rgba(12, 19, 22, 0.92) 24%);
+}
+
+.library-sheet-file-path {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+  display: inline-block;
+  vertical-align: middle;
+  opacity: 0.7;
 }
 /* Lead section: filename wraps cleanly, meta stays right-aligned */
 .library-detail-sheet-lead {
@@ -13183,9 +13198,10 @@ select:focus-visible {
   flex-wrap: wrap;
   gap: 0.3rem;
   margin-top: 0.5rem;
-  padding: 0.35rem 0.5rem;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 0.4rem 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 2px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   min-height: 40px;
 }
@@ -13205,6 +13221,61 @@ select:focus-visible {
 .library-inspector-preview-strip .ghost-chip {
   font-size: 0.65rem;
   padding: 0.1rem 0.35rem;
+}
+
+/* Type-colored ghost chips — each type gets its signature color */
+.library-inspector-preview-strip .ghost-chip--cas {
+  background: color-mix(in srgb, var(--kind-cas) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-cas) 40%, transparent);
+  color: var(--kind-cas);
+}
+
+.library-inspector-preview-strip .ghost-chip--script {
+  background: color-mix(in srgb, var(--kind-script) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-script) 40%, transparent);
+  color: var(--kind-script);
+}
+
+.library-inspector-preview-strip .ghost-chip--gameplay {
+  background: color-mix(in srgb, var(--kind-gameplay) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-gameplay) 40%, transparent);
+  color: var(--kind-gameplay);
+}
+
+.library-inspector-preview-strip .ghost-chip--buildbuy {
+  background: color-mix(in srgb, var(--kind-buildbuy) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-buildbuy) 40%, transparent);
+  color: var(--kind-buildbuy);
+}
+
+.library-inspector-preview-strip .ghost-chip--override {
+  background: color-mix(in srgb, var(--kind-override) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-override) 40%, transparent);
+  color: var(--kind-override);
+}
+
+.library-inspector-preview-strip .ghost-chip--poses {
+  background: color-mix(in srgb, var(--kind-poses) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-poses) 40%, transparent);
+  color: var(--kind-poses);
+}
+
+.library-inspector-preview-strip .ghost-chip--presets {
+  background: color-mix(in srgb, var(--kind-presets) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-presets) 40%, transparent);
+  color: var(--kind-presets);
+}
+
+.library-inspector-preview-strip .ghost-chip--tray {
+  background: color-mix(in srgb, var(--kind-tray) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-tray) 40%, transparent);
+  color: var(--kind-tray);
+}
+
+.library-inspector-preview-strip .ghost-chip--unknown {
+  background: color-mix(in srgb, var(--kind-unknown) 15%, transparent);
+  border-color: color-mix(in srgb, var(--kind-unknown) 40%, transparent);
+  color: var(--kind-unknown);
 }
 
 .library-inspector-preview-strip-summary {

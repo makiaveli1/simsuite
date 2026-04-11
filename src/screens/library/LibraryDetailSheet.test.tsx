@@ -19,6 +19,7 @@ it("surfaces family role context and script clues in inspect mode", () => {
         {
           id: 4,
           filename: "MCCC_MCCommandCenter.ts4script",
+          path: "C:\\Games\\The Sims 4\\Mods\\MCCC_MCCommandCenter.ts4script",
           kind: "ScriptMods",
           subtype: "Core",
           confidence: 0.96,

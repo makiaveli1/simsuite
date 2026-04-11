@@ -16,6 +16,7 @@ import {
   summarizeLibraryScriptContent,
   summarizeScriptScopeForUi,
   summarizeVersionSignalForUi,
+  typeColorForKind,
 } from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;
@@ -58,6 +59,7 @@ export function LibraryDetailSheet({
       : null;
   const inspectPreviewStrip =
     mode === "inspect" ? buildInspectorPreviewStrip(selectedFile, userView) : null;
+  const typeColor = typeColorForKind(selectedFile.kind);
 
   return (
     <AnimatePresence>
@@ -113,10 +115,10 @@ export function LibraryDetailSheet({
                   {mode === "inspect" && (inspectVersionBadge || inspectContentBadge) ? (
                     <div className="tag-list" style={{ marginTop: "0.6rem" }}>
                       {inspectVersionBadge ? (
-                        <span className="ghost-chip">Version {inspectVersionBadge}</span>
+                        <span className={`ghost-chip ghost-chip--${typeColor}`}>Version {inspectVersionBadge}</span>
                       ) : null}
                       {inspectContentBadge ? (
-                        <span className="ghost-chip">{inspectContentBadge}</span>
+                        <span className={`ghost-chip ghost-chip--${typeColor}`}>{inspectContentBadge}</span>
                       ) : null}
                     </div>
                   ) : null}
@@ -130,14 +132,14 @@ export function LibraryDetailSheet({
                         <>
                           <div className="library-inspector-preview-strip-left">
                             {inspectPreviewStrip.leftTokens.map((token, index) => (
-                              <span className="ghost-chip" key={`${token}:${index}`}>
+                              <span className={`ghost-chip ghost-chip--${typeColor}`} key={`${token}:${index}`}>
                                 {token}
                               </span>
                             ))}
                           </div>
                           {userView === "power" && inspectPreviewStrip.rightToken ? (
                             <div className="library-inspector-preview-strip-right">
-                              <span className="ghost-chip">{inspectPreviewStrip.rightToken}</span>
+                              <span className={`ghost-chip ghost-chip--${typeColor}`}>{inspectPreviewStrip.rightToken}</span>
                             </div>
                           ) : null}
                         </>
@@ -168,6 +170,13 @@ export function LibraryDetailSheet({
             </div>
 
             <div className="workbench-sheet-footer">
+              {selectedFile.path ? (
+                <span className="library-sheet-file-path" title={selectedFile.path}>
+                  {selectedFile.path.length > 60
+                    ? `…${selectedFile.path.slice(-57)}`
+                    : selectedFile.path}
+                </span>
+              ) : null}
               <button type="button" className="primary-action" onClick={onClose}>
                 <Eye size={14} strokeWidth={2} />
                 Done
