@@ -40,6 +40,7 @@ What was not cleanly proven end-to-end:
 - sequential subagent review flow, because session transport kept timing out
 - fully trustworthy latest screenshot interpretation for all states, because later capture attempts became contaminated/unreliable
 - final visual proof for grid type-dot and inspector chip/path states in a clean current-session capture
+- responsive sanity at 1366x768 / 1440x900 / 1920x1080 through Vite, because direct Playwright from WSL hit `net::ERR_CONNECTION_REFUSED` on `http://localhost:1420/` while the Windows-side Tauri dev wrapper was running
 
 ## Tooling failures and limits
 
