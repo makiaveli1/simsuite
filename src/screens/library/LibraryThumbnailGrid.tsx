@@ -250,12 +250,9 @@ export function LibraryThumbnailGrid({
                   whileTap={rowPress}
                   {...stagedListItem(index)}
                 >
-                  {/* Card header: type pill + status badges */}
+                  {/* Card header: tiny type dot + status badges */}
                   <div className="library-card-header">
                     <span className={`library-type-dot library-type-dot--${model.typeColor}`} aria-hidden="true" />
-                    <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                      {model.typeLabel}
-                    </span>
                     <div className="library-card-header-right">
                       {model.hasIssues && (
                         <span
@@ -290,17 +287,28 @@ export function LibraryThumbnailGrid({
                     </div>
                   </div>
 
+                  <div className="library-card-title-block">
+                    <div className="library-card-title" title={model.title}>
+                      {model.title}
+                    </div>
+                    {model.identityLabel ? (
+                      <div className="library-card-identity" title={model.identityLabel}>
+                        {model.identityLabel}
+                      </div>
+                    ) : null}
+                  </div>
+
                   {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">
                     {renderCardContent(model)}
                   </div>
 
-                  {/* Card footer: title + creator + version */}
+                  {/* Card footer: type + creator + version */}
                   <div className="library-card-footer">
-                    <div className="library-card-title" title={model.title}>
-                      {model.title}
-                    </div>
                     <div className="library-card-meta">
+                      <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                        {model.typeLabel}
+                      </span>
                       <span className="library-card-creator">{model.creatorLabel}</span>
                       {model.versionLabel && (
                         <span className="library-card-version">{model.versionLabel}</span>

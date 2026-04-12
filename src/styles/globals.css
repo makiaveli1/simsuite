@@ -1936,6 +1936,15 @@ h2,
   font-size: 0.94rem;
 }
 
+.library-detail-sheet-identity {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .library-detail-sheet-meta {
   display: flex;
   flex-wrap: wrap;
@@ -5321,9 +5330,19 @@ h2,
 }
 
 .library-row-title {
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 0.98rem;
+  font-weight: 750;
   line-height: 1.35;
+}
+
+.library-row-identity {
+  margin-top: 0.18rem;
+  margin-bottom: 0.18rem;
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-row-type {
@@ -12609,7 +12628,7 @@ select:focus-visible {
 .library-list-header,
 .library-list-row {
   display: grid;
-  grid-template-columns: 6px 36px minmax(0, 1.8fr) 9rem 155px;
+  grid-template-columns: 6px 36px minmax(0, 2.25fr) 8.2rem 140px;
   align-items: stretch;
 }
 
@@ -12654,6 +12673,7 @@ select:focus-visible {
 
 .library-list-row.is-selected {
   background: var(--selection-fill);
+  box-shadow: inset 0 0 0 1px rgba(124, 255, 185, 0.18);
 }
 
 .library-list-row.is-tray {
@@ -12752,12 +12772,12 @@ select:focus-visible {
   border-bottom-color: rgba(239, 68, 68, 0.2);
 }
 
-/* Card header: type pill + status */
+/* Card header: tiny type dot + status */
 .library-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.45rem 0.6rem;
+  padding: 0.36rem 0.6rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   gap: 0.3rem;
 }
@@ -12770,10 +12790,14 @@ select:focus-visible {
   justify-content: flex-end;
 }
 
+.library-card-title-block {
+  padding: 0.58rem 0.6rem 0.14rem;
+}
+
 /* Content preview: embedded names as swatch substitute */
 .library-card-content-preview {
   flex: 1;
-  padding: 0.5rem 0.6rem;
+  padding: 0.22rem 0.6rem 0.5rem;
   min-height: 60px;
   display: flex;
   align-items: flex-start;
@@ -12827,20 +12851,37 @@ select:focus-visible {
 }
 
 .library-card-title {
-  font-size: 0.76rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 750;
+  line-height: 1.28;
   color: var(--text);
+  margin-bottom: 0.14rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 0.2rem;
+}
+
+.library-card-identity {
+  font-size: 0.64rem;
+  color: var(--text-dim);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .library-card-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.library-card-footer .library-type-pill {
+  font-size: 0.62rem;
+  opacity: 0.78;
 }
 
 .library-card-creator {

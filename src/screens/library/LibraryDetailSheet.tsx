@@ -12,6 +12,8 @@ import {
   buildInspectorPreviewStrip,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
+  describeLibraryPrimaryLabel,
+  libraryIdentityLabelForFilename,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
   summarizeScriptScopeForUi,
@@ -60,6 +62,8 @@ export function LibraryDetailSheet({
   const inspectPreviewStrip =
     mode === "inspect" ? buildInspectorPreviewStrip(selectedFile, userView) : null;
   const typeColor = typeColorForKind(selectedFile.kind);
+  const inspectPrimaryLabel = describeLibraryPrimaryLabel(selectedFile);
+  const inspectIdentityLabel = libraryIdentityLabelForFilename(selectedFile.filename, inspectPrimaryLabel);
 
   return (
     <AnimatePresence>
@@ -104,7 +108,12 @@ export function LibraryDetailSheet({
               <div className="library-detail-sheet-lead">
                 <div>
                   <span className="section-label">Selected</span>
-                  <strong>{selectedFile.filename}</strong>
+                  <strong title={selectedFile.filename}>{selectedFile.filename}</strong>
+                  {inspectIdentityLabel ? (
+                    <p className="library-detail-sheet-identity" title={inspectIdentityLabel}>
+                      {inspectIdentityLabel}
+                    </p>
+                  ) : null}
                   <p className="workspace-toolbar-copy">
                     {friendlyTypeLabel(selectedFile.kind)}
                     {selectedFile.subtype?.trim() ? ` / ${selectedFile.subtype}` : ""}

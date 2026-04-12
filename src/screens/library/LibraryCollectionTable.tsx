@@ -108,7 +108,10 @@ export function LibraryCollectionTable({
                   </div>
 
                   <div className="library-list-col library-list-col--name library-name-cell">
-                    <div className="library-row-title">{model.title}</div>
+                    <div className="library-row-title" title={model.title}>{model.title}</div>
+                    {model.identityLabel ? (
+                      <div className="library-row-identity" title={model.identityLabel}>{model.identityLabel}</div>
+                    ) : null}
                     <div className="library-row-meta">
                       <span className={`library-type-pill type-pill--${model.typeColor}`}>
                         {model.typeLabel}

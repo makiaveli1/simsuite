@@ -57,6 +57,7 @@ export interface LibraryCardModel {
   // Identity (always shown)
   id: number;
   title: string;
+  identityLabel: string | null;
   kind: string;
   typeLabel: string;
   typeColor: TypeColor;
@@ -102,6 +103,7 @@ export interface LibraryCardModel {
 export interface LibraryRowModel {
   id: number;
   title: string;
+  identityLabel: string | null;
   kind: string;
   typeLabel: string;
   /** CSS type-color key for the type indicator dot/border */
@@ -148,6 +150,63 @@ export function libraryViewFlags(userView: UserView): LibraryViewFlags {
   };
 }
 
+function cleanTechnicalLabel(value: string): string {
+  return value
+    .replace(/\.(package|ts4script|trayitem|blueprint|bpi|householdbinary)$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function libraryIdentityLabelForFilename(filename: string, identity: string): string | null {
+  const cleanedFilename = cleanTechnicalLabel(filename).toLowerCase();
+  const cleanedIdentity = cleanTechnicalLabel(identity).toLowerCase();
+  return cleanedFilename === cleanedIdentity ? null : identity;
+}
+
+export function describeLibraryPrimaryLabel(
+  file: Pick<LibraryFileRow, "filename" | "kind" | "subtype" | "creator" | "bundleName" | "sourceLocation" | "insights">,
+): string {
+  const subtype = file.subtype?.trim() || null;
+  const creator = file.creator?.trim() || null;
+  const embeddedNames = describeEmbeddedNames(file.insights);
+  const scriptNamespaces = describeScriptNamespaces(file.insights);
+  const trayGrouping = usefulTrayGroupingValue(file);
+  const trayIdentity = describeTrayIdentity(file as Pick<FileDetail, "kind" | "subtype" | "sourceLocation"> & { insights?: FileInsights });
+  const contentProfile = summarizePackageContentProfile(file.insights, file.kind, file.subtype ?? null);
+
+  switch (file.kind) {
+    case "CAS":
+      return embeddedNames[0] ? cleanTechnicalLabel(embeddedNames[0]) : subtype ?? "CAS item";
+    case "ScriptMods":
+      if (creator) return `${creator} script mod`;
+      if (scriptNamespaces.samples[0]) return `${scriptNamespaces.samples[0]} script mod`;
+      return subtype ? `${subtype} script mod` : "Script mod";
+    case "BuildBuy":
+      return subtype ?? contentProfile ?? "Build/Buy item";
+    case "Gameplay":
+      return subtype ?? contentProfile ?? "Gameplay mod";
+    case "OverridesAndDefaults":
+      return subtype ?? contentProfile ?? "Override package";
+    case "PosesAndAnimation":
+      return subtype ?? "Pose / animation";
+    case "PresetsAndSliders":
+      return subtype ?? "Preset / slider";
+    case "TrayHousehold":
+    case "TrayLot":
+    case "TrayRoom":
+    case "TrayItem":
+    case "Household":
+    case "Lot":
+    case "Room": {
+      const trayLabel = trayIdentity.kind !== "standard" ? trayKindLabel(trayIdentity.kind) : "Tray item";
+      return trayGrouping ?? trayLabel;
+    }
+    default:
+      return subtype ?? contentProfile ?? cleanTechnicalLabel(file.filename) ?? "Unknown file";
+  }
+}
+
 export function buildLibraryRowModel(
   row: LibraryFileRow,
   userView: UserView,
@@ -185,10 +244,12 @@ export function buildLibraryRowModel(
     subtype: row.subtype,
     sourceLocation: row.sourceLocation,
   });
+  const primaryLabel = describeLibraryPrimaryLabel(row);
 
   return {
     id: row.id,
     title: row.filename,
+    identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
@@ -279,10 +340,12 @@ export function buildLibraryCardModel(
 
   // Generic version label
   const versionLabel = scriptVersionLabel;
+  const primaryLabel = describeLibraryPrimaryLabel(row);
 
   return {
     id: row.id,
     title: row.filename,
+    identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
@@ -1542,10 +1605,10 @@ function buildSupportingFacts(
           } else if (row.confidence != null) {
             facts.push(
               row.confidence >= 0.8
-                ? "High confidence"
+                ? "Strong file clue"
                 : row.confidence >= 0.55
-                  ? "Inferred version"
-                  : "Weak version signal",
+                  ? "Possible version clue"
+                  : "Very weak version clue",
             );
           }
         }
