@@ -109,15 +109,18 @@ export function LibraryDetailSheet({
                 <div>
                   <span className="section-label">Selected</span>
                   <strong title={selectedFile.filename}>{selectedFile.filename}</strong>
+                  <p className="workspace-toolbar-copy">
+                    {friendlyTypeLabel(selectedFile.kind)}
+                  </p>
                   {inspectIdentityLabel ? (
                     <p className="library-detail-sheet-identity" title={inspectIdentityLabel}>
                       {inspectIdentityLabel}
                     </p>
+                  ) : selectedFile.subtype?.trim() ? (
+                    <p className="library-detail-sheet-identity" title={selectedFile.subtype}>
+                      {selectedFile.subtype}
+                    </p>
                   ) : null}
-                  <p className="workspace-toolbar-copy">
-                    {friendlyTypeLabel(selectedFile.kind)}
-                    {selectedFile.subtype?.trim() ? ` / ${selectedFile.subtype}` : ""}
-                  </p>
                   {inspectFamilyContext ? (
                     <p className="workspace-toolbar-copy">{inspectFamilyContext}</p>
                   ) : null}

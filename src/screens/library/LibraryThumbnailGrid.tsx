@@ -291,6 +291,11 @@ export function LibraryThumbnailGrid({
                     <div className="library-card-title" title={model.title}>
                       {model.title}
                     </div>
+                    <div className="library-card-title-meta">
+                      <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                        {model.typeLabel}
+                      </span>
+                    </div>
                     {model.identityLabel ? (
                       <div className="library-card-identity" title={model.identityLabel}>
                         {model.identityLabel}
@@ -303,12 +308,9 @@ export function LibraryThumbnailGrid({
                     {renderCardContent(model)}
                   </div>
 
-                  {/* Card footer: type + creator + version */}
+                  {/* Card footer: creator + version */}
                   <div className="library-card-footer">
                     <div className="library-card-meta">
-                      <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                        {model.typeLabel}
-                      </span>
                       <span className="library-card-creator">{model.creatorLabel}</span>
                       {model.versionLabel && (
                         <span className="library-card-version">{model.versionLabel}</span>

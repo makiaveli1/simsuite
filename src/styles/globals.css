@@ -5336,8 +5336,7 @@ h2,
 }
 
 .library-row-identity {
-  margin-top: 0.18rem;
-  margin-bottom: 0.18rem;
+  margin-top: 0.22rem;
   font-size: 0.66rem;
   color: var(--text-dim);
   overflow: hidden;
@@ -12794,6 +12793,10 @@ select:focus-visible {
   padding: 0.58rem 0.6rem 0.14rem;
 }
 
+.library-card-title-meta {
+  margin-bottom: 0.18rem;
+}
+
 /* Content preview: embedded names as swatch substitute */
 .library-card-content-preview {
   flex: 1;
@@ -12872,6 +12875,11 @@ select:focus-visible {
   overflow: hidden;
 }
 
+.library-card-title-block .library-type-pill {
+  font-size: 0.62rem;
+  opacity: 0.88;
+}
+
 .library-card-meta {
   display: flex;
   align-items: center;
@@ -12879,10 +12887,6 @@ select:focus-visible {
   flex-wrap: wrap;
 }
 
-.library-card-footer .library-type-pill {
-  font-size: 0.62rem;
-  opacity: 0.78;
-}
 
 .library-card-creator {
   font-size: 0.68rem;
