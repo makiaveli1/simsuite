@@ -109,8 +109,9 @@ export function LibraryDetailsPanel({
   // Seasoned: adds installed version and confidence for maintenance workflows
   // Creator: adds file format for deep inspection
   // ────────────────────────────────────────────────────────────────────────
-  // Creator — tier-aware: shows creator name with disclosure suffix in tooltip
-  const creatorSuffix = creatorInfo.suffix ? (
+  // Casual: no suffix (no raw confidence jargon for beginners)
+  // Seasoned / Creator: show disclosure suffix when creator is uncertain
+  const creatorSuffix = !isCasual && creatorInfo.suffix ? (
     <span className="detail-creator-suffix" title={`Creator ${creatorInfo.suffix}`}>
       {` (${creatorInfo.suffix})`}
     </span>

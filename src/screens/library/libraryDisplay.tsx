@@ -59,7 +59,10 @@ export type TypeColor =
 export interface LibraryCardModel {
   // Identity (always shown)
   id: number;
+  /** Raw filename — used as fallback/anchor, use displayTitle for UI */
   title: string;
+  /** Clean display title: cleaned filename, suitable for casual eyes */
+  displayTitle: string;
   identityLabel: string | null;
   kind: string;
   typeLabel: string;
@@ -108,7 +111,10 @@ export interface LibraryCardModel {
 
 export interface LibraryRowModel {
   id: number;
+  /** Raw filename — use displayTitle for UI */
   title: string;
+  /** Clean display title for row rendering */
+  displayTitle: string;
   identityLabel: string | null;
   kind: string;
   typeLabel: string;
@@ -162,6 +168,10 @@ export function libraryViewFlags(userView: UserView): LibraryViewFlags {
 function cleanTechnicalLabel(value: string): string {
   return value
     .replace(/\.(package|ts4script|trayitem|blueprint|bpi|householdbinary)$/i, "")
+    // Strip _0xHEXID (DBPF Group/Instance IDs: _0x00ABCDEF)
+    .replace(/_0x[0-9a-f]{6,8}$/i, "")
+    // Strip plain _HEXID suffixes (raw hex without 0x prefix)
+    .replace(/_[0-9a-f]{6,16}$/i, "")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -255,10 +265,13 @@ export function buildLibraryRowModel(
     sourceLocation: row.sourceLocation,
   });
   const primaryLabel = describeLibraryPrimaryLabel(row);
+  // displayTitle: cleaned filename — the primary identity a simmer uses to recognise the file
+  const displayTitle = cleanTechnicalLabel(row.filename);
 
   return {
     id: row.id,
     title: row.filename,
+    displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
@@ -355,10 +368,13 @@ export function buildLibraryCardModel(
   // Generic version label
   const versionLabel = scriptVersionLabel;
   const primaryLabel = describeLibraryPrimaryLabel(row);
+  // Clean display title: cleaned filename — what the file is actually called
+  const displayTitle = cleanTechnicalLabel(row.filename);
 
   return {
     id: row.id,
     title: row.filename,
+    displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
@@ -617,6 +633,10 @@ export function describeEmbeddedNames(
     if (!trimmed) return false;
     // Skip pure hex/UUID-looking strings
     if (/^[0-9a-f]{8}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{12}$/i.test(trimmed)) return false;
+    // Skip plain 8-char hex IDs (no dashes, no 0x prefix)
+    if (/^[0-9a-f]{8}$/i.test(trimmed)) return false;
+    // Skip 0x-prefixed hex IDs (6-8 hex chars after 0x)
+    if (/^0x[0-9a-f]{6,8}$/i.test(trimmed)) return false;
     // Skip very short numeric strings
     if (/^\d+$/.test(trimmed) && trimmed.length < 4) return false;
     // Skip strings that are mostly internal markers

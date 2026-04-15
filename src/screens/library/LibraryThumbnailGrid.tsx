@@ -187,18 +187,17 @@ function renderCardContent(model: LibraryCardModel, userView: UserView): React.R
   return (
     <div className="library-card-content-inner">
       {model.contentSummary ? (
-        <>
-          <div className="library-card-resource-summary">{model.contentSummary}</div>
-          <div className="library-card-subtype-label">Unknown type</div>
-        </>
+        <div className="library-card-resource-summary">{model.contentSummary}</div>
       ) : model.subtype ? (
-        <>
-          <div className="library-card-subtype-label">{model.subtype}</div>
-          <div className="library-card-subtype-label">Unknown type</div>
-        </>
+        <div className="library-card-subtype-label">{model.subtype}</div>
       ) : (
         <div className="library-card-empty-preview">
-          No content detected
+          {userView === "beginner" ? "Not recognized" : "No content detected"}
+        </div>
+      )}
+      {userView !== "beginner" && model.contentSummary && (
+        <div className="library-card-subtype-label" style={{ opacity: 0.55 }}>
+          Unknown type
         </div>
       )}
     </div>
@@ -292,7 +291,7 @@ export function LibraryThumbnailGrid({
 
                   <div className="library-card-title-block">
                     <div className="library-card-title" title={model.title}>
-                      {model.title}
+                      {model.displayTitle}
                     </div>
                     <div className="library-card-title-meta">
                       <span className={`library-type-pill type-pill--${model.typeColor}`}>

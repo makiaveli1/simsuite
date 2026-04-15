@@ -40,6 +40,6 @@ it("shows a calm row in casual mode without the full path", () => {
     />,
   );
 
-  expect(screen.getByText(/betterbuildbuy\.package/i)).toBeInTheDocument();
+  expect(screen.getByText(/betterbuildbuy/i)).toBeInTheDocument();
   expect(screen.queryByText(/mods\\buildbuy/i)).not.toBeInTheDocument();
 });
