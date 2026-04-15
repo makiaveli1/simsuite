@@ -326,8 +326,9 @@ export function buildLibraryCardModel(
     ? `v${versionSignal.normalizedValue}`
     : row.insights?.versionHints?.[0] ?? null;
 
-  // Generic content summary: resourceSummary
-  const contentSummary = row.insights?.resourceSummary?.[0] ?? null;
+  // Generic content summary: resourceSummary — humanized for grid card display
+  const rawContentSummary = row.insights?.resourceSummary?.[0] ?? null;
+  const contentSummary = describeResourceSummary(rawContentSummary ?? '');
 
   // Subtype
   const subtype = row.subtype?.trim() ?? null;
@@ -632,13 +633,71 @@ export function summarizeScriptScopeForUi(
   return `${ns.samples[0] ?? "?"}+${ns.count - 1}`;
 }
 
-/** Single-line resource profile label for package/collection rows. */
+/**
+ * Transforms a raw resource-summary string into a simmer-friendly label.
+ * Handles both the Rust-backend humanized format ("N build/buy items")
+ * and any raw DBPF strings that slip through from mock data or unknown types.
+ * Returns null when the entry is too noisy or internal to be useful.
+ */
+export function describeResourceSummary(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+
+  // Already humanized by the Rust backend — pass through cleanly
+  if (/^\d+ /.test(s)) return s;
+
+  // Pattern: "Foo x N" or "Foo xN" (raw DBPF mock format) -> "N Foo items"
+  const countXMatch = s.match(/^([A-Z][a-zA-Z0-9]+)\s*x\s*(\d+)$/);
+  if (countXMatch) {
+    const [, label, count] = countXMatch;
+    // Internal/noise types - suppress entirely
+    if (/^(NameMap|Compressed|NameMapBlob|Uncomp|S4mpd|S4mpdData)/i.test(label)) return null;
+    const normalised = label.toLowerCase();
+    return count + " " + normalised + " item" + (Number(count) !== 1 ? "s" : "");
+  }
+
+  // Pattern: "Foo: N" (some raw formats use colon) -> "N Foo"
+  const colonMatch = s.match(/^([A-Za-z]+)\s*:\s*(\d+)$/);
+  if (colonMatch) {
+    const [, label, count] = colonMatch;
+    const normalised = label.toLowerCase();
+    if (/^(image|img|picture|photo)$/.test(normalised)) return count + " image" + (Number(count) !== 1 ? "s" : "");
+    if (/^(audio|sound|music|sfx)$/.test(normalised)) return count + " audio " + (Number(count) !== 1 ? "entries" : "entry");
+    if (/^(video|anim)$/.test(normalised)) return count + " animation" + (Number(count) !== 1 ? "s" : "");
+    if (/^(string|stringtable|text|strtable)$/.test(normalised)) return count + " text " + (Number(count) !== 1 ? "entries" : "entry");
+    if (/^(name|namemap)$/.test(normalised)) return null; // internal noise
+    return count + " " + label;
+  }
+
+  // Hex-like internal values (8-char hex strings, Group/Instance IDs) - suppress
+  if (/^[0-9a-f]{8}([0-9a-f]{8})?$/i.test(s)) return null;
+  if (/^(0x)?[0-9a-f]{7,16}$/i.test(s)) return null;
+
+  // "Archive entries: N" - pass through as-is (already readable)
+  if (/^archive entries/i.test(s)) return s;
+  // "Top-level namespaces: N" - pass through
+  if (/^top-?level namespaces/i.test(s)) return s;
+
+  // Unknown format - if it looks too short or too technical, suppress
+  if (s.length <= 4) return null;
+
+  return s;
+}
+
+/**
+ * Returns the first useful, humanized resource-summary entry, or null.
+ * Filters out noisy internal values that don't help a simmer understand the file.
+ */
 export function summarizeResourceProfileForUi(
   insights: FileInsights | undefined,
 ): string | null {
   const summary = insights?.resourceSummary ?? [];
   if (!summary.length) return null;
-  return summary[0] ?? null;
+  for (const raw of summary) {
+    const humanized = describeResourceSummary(raw);
+    if (humanized) return humanized;
+  }
+  return null;
 }
 
 /** Best version clue for quick UI surfaces. Only returns a value above the chosen confidence floor. */
@@ -698,7 +757,7 @@ export function buildInspectorPreviewStrip(
     (insights?.familyHints ?? []).map((hint) => formatLibraryFamilyHintLabel(hint)),
   );
   const subtype = model.subtype?.trim() || null;
-  const primaryResource = resourceSummary[0] ?? null;
+  const primaryResource = describeResourceSummary(resourceSummary[0] ?? '');
   const bestVersion =
     summarizeVersionSignalForUi(insights, 0.55) ??
     formatPreviewVersionToken(insights?.versionHints?.[0] ?? null);
@@ -719,13 +778,13 @@ export function buildInspectorPreviewStrip(
       break;
 
     case "BuildBuy":
-      leftCandidates = resourceSummary.slice(0, 1);
+      leftCandidates = resourceSummary.slice(0, 1).map((r) => describeResourceSummary(r)).filter((r): r is string => Boolean(r));
       rightToken = familyHints[0] ?? null;
       break;
 
     case "Overrides":
     case "OverridesAndDefaults":
-      leftCandidates = resourceSummary.slice(0, 1);
+      leftCandidates = resourceSummary.slice(0, 1).map((r) => describeResourceSummary(r)).filter((r): r is string => Boolean(r));
       rightToken = bestVersion;
       break;
 
@@ -751,7 +810,7 @@ export function buildInspectorPreviewStrip(
       break;
 
     default:
-      leftCandidates = resourceSummary.slice(0, 1);
+      leftCandidates = resourceSummary.slice(0, 1).map((r) => describeResourceSummary(r)).filter((r): r is string => Boolean(r));
       rightToken = strongVersion;
       break;
   }
@@ -1213,23 +1272,26 @@ export function summarizePackageContentProfile(
     (item) => item.trim() && !/other resource/i.test(item) && !/compressed resource/i.test(item),
   );
 
+  // Humanize before returning so raw DBPF strings don't leak into UI
+  const humanizedPrimary = primary ? describeResourceSummary(primary) : null;
+
   if (kind === "BuildBuy") {
-    return primary ?? "Build/Buy content";
+    return humanizedPrimary ?? "Build/Buy content";
   }
   if (kind === "OverridesAndDefaults") {
-    return primary ?? "Override package";
+    return humanizedPrimary ?? "Override package";
   }
   if (kind === "CAS") {
-    return subtype?.trim() ?? primary ?? "CAS content";
+    return subtype?.trim() ?? humanizedPrimary ?? "CAS content";
   }
   if (kind === "PresetsAndSliders") {
-    return subtype?.trim() ?? primary ?? "Preset or slider";
+    return subtype?.trim() ?? humanizedPrimary ?? "Preset or slider";
   }
   if (kind === "Gameplay") {
-    return subtype?.trim() ?? primary ?? "Gameplay package";
+    return subtype?.trim() ?? humanizedPrimary ?? "Gameplay package";
   }
 
-  return primary ?? subtype?.trim() ?? null;
+  return humanizedPrimary ?? subtype?.trim() ?? null;
 }
 
 /** Section: What's Inside — extracted file contents, ordered by type-specific usefulness */

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LibraryFileRow } from "../../lib/types";
 import {
   buildLibraryRowModel,
+  describeResourceSummary,
   libraryViewFlags,
   summarizeLibraryCareState,
   summarizePackageContentProfile,
@@ -240,5 +241,54 @@ describe("summarizeLibraryCareState", () => {
         sourceLocation: "tray",
       }),
     ).toContain("lives in Tray");
+  });
+});
+
+describe("describeResourceSummary", () => {
+  it("passes through already-humanized Rust-backend format", () => {
+    expect(describeResourceSummary("6 build/buy items")).toBe("6 build/buy items");
+    expect(describeResourceSummary("2 CAS parts")).toBe("2 CAS parts");
+    expect(describeResourceSummary("48 script entries")).toBe("48 script entries");
+  });
+
+  it("humanizes raw DBPF Foo x N format", () => {
+    expect(describeResourceSummary("Catalog x6")).toBe("6 catalog items");
+    expect(describeResourceSummary("CASPart x2")).toBe("2 caspart items");
+    expect(describeResourceSummary("HotSpotControl x1")).toBe("1 hotspotcontrol item");
+    expect(describeResourceSummary("StringTable x18")).toBe("18 stringtable items");
+  });
+
+  it("suppresses NameMap and other internal noise", () => {
+    expect(describeResourceSummary("NameMap x1")).toBe(null);
+    expect(describeResourceSummary("Compressed x4")).toBe(null);
+    expect(describeResourceSummary("S4mpdData x2")).toBe(null);
+  });
+
+  it("humanizes colon format", () => {
+    expect(describeResourceSummary("Image: 1")).toBe("1 image");
+    expect(describeResourceSummary("audio: 2")).toBe("2 audio entries");
+    expect(describeResourceSummary("StringTable: 18")).toBe("18 text entries");
+    expect(describeResourceSummary("image: 3")).toBe("3 images");
+  });
+
+  it("suppresses hex-like noise", () => {
+    expect(describeResourceSummary("e1070b30")).toBe(null);
+    expect(describeResourceSummary("0x00000000")).toBe(null);
+    expect(describeResourceSummary("00000000deadbeef")).toBe(null);
+  });
+
+  it("passes through archive-style labels", () => {
+    expect(describeResourceSummary("Archive entries: 48")).toBe("Archive entries: 48");
+    expect(describeResourceSummary("Top-level namespaces: 2")).toBe("Top-level namespaces: 2");
+  });
+
+  it("suppresses unknown short values", () => {
+    expect(describeResourceSummary("abc")).toBe(null);
+    expect(describeResourceSummary("x")).toBe(null);
+  });
+
+  it("returns null for empty/whitespace", () => {
+    expect(describeResourceSummary("")).toBe(null);
+    expect(describeResourceSummary("   ")).toBe(null);
   });
 });

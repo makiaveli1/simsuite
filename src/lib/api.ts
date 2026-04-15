@@ -1334,7 +1334,7 @@ const mockFiles = ([
     parserWarnings: [],
     insights: {
       format: "dbpf-package",
-      resourceSummary: ["Catalog x6", "Definition x6", "StringTable x1"],
+      resourceSummary: ["6 build/buy items"],
       scriptNamespaces: [],
       embeddedNames: ["Cozy Kitchen Counter", "Cozy Kitchen Shelf"],
       creatorHints: ["Aharris00britney"],
@@ -1361,7 +1361,7 @@ const mockFiles = ([
     parserWarnings: [],
     insights: {
       format: "ts4script-zip",
-      resourceSummary: ["Archive entries: 48", "Top-level namespaces: 2"],
+      resourceSummary: ["48 script entries", "2 namespaces"],
       scriptNamespaces: ["twistedmexi", "better_exceptions"],
       embeddedNames: ["__init__", "scanner", "ui"],
       creatorHints: ["TwistedMexi"],
@@ -1388,7 +1388,7 @@ const mockFiles = ([
     parserWarnings: [],
     insights: {
       format: "dbpf-package",
-      resourceSummary: ["CASPart x2", "NameMap x1"],
+      resourceSummary: ["2 CAS parts"],
       scriptNamespaces: [],
       embeddedNames: ["NSW_Skinblend", "NSW_Eyelids"],
       creatorHints: ["Northern Siberia Winds"],
@@ -1415,7 +1415,7 @@ const mockFiles = ([
     parserWarnings: ["Depth exceeds safe script placement rule."],
     insights: {
       format: "ts4script-zip",
-      resourceSummary: ["Archive entries: 124", "Top-level namespaces: 2"],
+      resourceSummary: ["124 script entries", "2 namespaces"],
       scriptNamespaces: ["deaderpool", "mccc"],
       embeddedNames: ["mc_cmd_center", "mc_settings"],
       creatorHints: ["Deaderpool"],
@@ -1498,7 +1498,7 @@ const mockFiles = ([
     parserWarnings: [],
     insights: {
       format: "dbpf-package",
-      resourceSummary: ["CASPart x1", "NameMap x1"],
+      resourceSummary: ["1 CAS part"],
       scriptNamespaces: [],
       embeddedNames: ["Miiko_Brow_03"],
       creatorHints: ["Miiko"],
@@ -1536,7 +1536,7 @@ const mockFiles = ([
     parserWarnings: ["Creator could not be identified."],
     insights: {
       format: "dbpf-package",
-      resourceSummary: ["HotSpotControl x1", "NameMap x1"],
+      resourceSummary: ["1 hotspot control"],
       scriptNamespaces: [],
       embeddedNames: ["Height Slider"],
       creatorHints: [],
