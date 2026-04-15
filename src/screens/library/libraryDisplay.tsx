@@ -24,8 +24,11 @@ export interface LibraryViewFlags {
   showAdvancedFilters: boolean;
   showRootFacts: boolean;
   maxSupportingFacts: number;
+  // Grid card chip density per view
   maxCasNames: number;
   maxScriptNamespaces: number;
+  // Card content: ScriptMods namespace limit per mode
+  cardMaxScriptNamespaces: number;
 }
 
 /** CSS variable name for the type color dot/border */
@@ -86,6 +89,9 @@ export interface LibraryCardModel {
   /** ScriptMods: script namespaces as chips */
   scriptNamespaces: string[];
   scriptNamespaceOverflow: number;
+  /** ScriptMods: namespaces limited for grid card (view-aware) */
+  cardScriptNamespaces: string[];
+  cardScriptNamespaceOverflow: number;
   scriptVersionLabel: string | null;
   /** BuildBuy / Overrides / generic: resource summary line */
   contentSummary: string | null;
@@ -147,6 +153,9 @@ export function libraryViewFlags(userView: UserView): LibraryViewFlags {
     // Grid card chip density per view
     maxCasNames: userView === "beginner" ? 2 : userView === "power" ? 4 : 3,
     maxScriptNamespaces: userView === "beginner" ? 1 : userView === "power" ? 4 : 2,
+    // Card namespace limit: Casual=0 (skip namespace chips, show creator/version fallback),
+    // Seasoned=2 (primary + 1), Creator=4 (full)
+    cardMaxScriptNamespaces: userView === "beginner" ? 0 : userView === "power" ? 4 : 2,
   };
 }
 
@@ -232,6 +241,7 @@ export function buildLibraryRowModel(
     flags,
     creatorLabel,
     isTray,
+    userView,
   });
 
   const watchStatusLabel = describeWatchStatus(row.watchStatus);
@@ -321,6 +331,9 @@ export function buildLibraryCardModel(
   const allNamespaces = row.insights?.scriptNamespaces ?? [];
   const visibleNamespaces = allNamespaces.slice(0, flags.maxScriptNamespaces);
   const scriptNamespaceOverflow = Math.max(0, allNamespaces.length - flags.maxScriptNamespaces);
+  // Grid card: may use a different (tighter) cap for Casual clarity
+  const cardVisibleNamespaces = allNamespaces.slice(0, flags.cardMaxScriptNamespaces);
+  const cardScriptNamespaceOverflow = Math.max(0, allNamespaces.length - flags.cardMaxScriptNamespaces);
   const versionSignal = row.insights?.versionSignals?.[0];
   const scriptVersionLabel = versionSignal
     ? `v${versionSignal.normalizedValue}`
@@ -367,6 +380,8 @@ export function buildLibraryCardModel(
     casNamesOverflow,
     scriptNamespaces: visibleNamespaces,
     scriptNamespaceOverflow,
+    cardScriptNamespaces: cardVisibleNamespaces,
+    cardScriptNamespaceOverflow,
     scriptVersionLabel,
     contentSummary,
     subtype,
@@ -623,14 +638,19 @@ export function describeScriptNamespaces(
   };
 }
 
-/** Single-line script scope label for list rows and inspectors. */
+/** Single-line script scope label for list rows and inspectors.
+ * viewMode tunes the sample count: Casual caps at 1, Seasoned at 2, Creator at 5.
+ */
 export function summarizeScriptScopeForUi(
   insights: FileInsights | undefined,
+  viewMode: "beginner" | "standard" | "power" = "standard",
 ): string | null {
-  const ns = describeScriptNamespaces(insights);
-  if (!ns.count) return null;
-  if (ns.count === 1) return ns.samples[0] ?? null;
-  return `${ns.samples[0] ?? "?"}+${ns.count - 1}`;
+  const maxSamples = viewMode === "beginner" ? 1 : viewMode === "power" ? 5 : 2;
+  const namespaces = insights?.scriptNamespaces ?? [];
+  if (!namespaces.length) return null;
+  const samples = namespaces.slice(0, maxSamples);
+  if (namespaces.length === 1) return samples[0] ?? null;
+  return `${samples[0] ?? "?"}+${namespaces.length - 1}`;
 }
 
 /**
@@ -1625,10 +1645,12 @@ function buildSupportingFacts(
     flags,
     creatorLabel,
     isTray,
+    userView,
   }: {
     flags: LibraryViewFlags;
     creatorLabel: string;
     isTray: boolean;
+    userView: UserView;
   },
 ): string[] {
   const facts: string[] = [];
@@ -1655,7 +1677,7 @@ function buildSupportingFacts(
     case "ScriptMods":
       facts.push(creatorLabel);
       {
-        const scope = summarizeScriptScopeForUi(row.insights);
+        const scope = summarizeScriptScopeForUi(row.insights, userView);
         if (scope) {
           facts.push(scope);
         } else {

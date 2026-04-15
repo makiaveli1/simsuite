@@ -21,8 +21,9 @@ interface LibraryThumbnailGridProps {
 /**
  * Renders the type-specific content block for a grid card.
  * One of these is always shown — no generic "no preview available" for mod types.
+ * userView tunes the level of technical detail shown (e.g. hiding "No namespace detected").
  */
-function renderCardContent(model: LibraryCardModel): React.ReactNode {
+function renderCardContent(model: LibraryCardModel, userView: UserView): React.ReactNode {
   const kind = model.kind;
 
   // ── CAS: show embedded item name chips + subtype ──────────────────────
@@ -66,20 +67,20 @@ function renderCardContent(model: LibraryCardModel): React.ReactNode {
 
   // ── ScriptMods: show namespace chips + version ─────────────────────────
   if (kind === "ScriptMods") {
-    const hasNamespaces = model.scriptNamespaces.length > 0;
+    const hasNamespaces = model.cardScriptNamespaces.length > 0;
     return (
       <div className="library-card-content-inner">
         {hasNamespaces ? (
           <>
             <div className="library-card-names">
-              {model.scriptNamespaces.map((ns) => (
+              {model.cardScriptNamespaces.map((ns) => (
                 <span key={ns} className="library-card-name-chip library-card-namespace-chip">
                   {ns}
                 </span>
               ))}
-              {model.scriptNamespaceOverflow > 0 && (
+              {model.cardScriptNamespaceOverflow > 0 && (
                 <span className="library-card-name-overflow">
-                  +{model.scriptNamespaceOverflow}
+                  +{model.cardScriptNamespaceOverflow}
                 </span>
               )}
             </div>
@@ -95,12 +96,14 @@ function renderCardContent(model: LibraryCardModel): React.ReactNode {
         ) : (
           <>
             <div className="library-card-subtype-label">Script mod</div>
-            <div
-              className="library-card-subtype-label"
-              style={{ opacity: 0.6 }}
-            >
-              No namespace detected
-            </div>
+            {userView !== "beginner" && (
+              <div
+                className="library-card-subtype-label"
+                style={{ opacity: 0.6 }}
+              >
+                No namespace detected
+              </div>
+            )}
           </>
         )}
       </div>
@@ -305,7 +308,7 @@ export function LibraryThumbnailGrid({
 
                   {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">
-                    {renderCardContent(model)}
+                    {renderCardContent(model, userView)}
                   </div>
 
                   {/* Card footer: creator + version */}
