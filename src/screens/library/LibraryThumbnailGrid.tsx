@@ -183,6 +183,21 @@ function renderCardContent(model: LibraryCardModel, userView: UserView): React.R
     );
   }
 
+  // ── Gameplay: show content profile as primary signal ───────────────────
+  if (kind === "Gameplay") {
+    return (
+      <div className="library-card-content-inner">
+        {model.contentSummary ? (
+          <div className="library-card-resource-summary">{model.contentSummary}</div>
+        ) : (
+          <div className="library-card-subtype-label">
+            {model.subtype ?? "Gameplay mod"}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── Unknown: show resource summary or fallback ─────────────────────────
   return (
     <div className="library-card-content-inner">
@@ -219,9 +234,26 @@ export function LibraryThumbnailGrid({
       <div className="library-grid-scroll library-list-shell">
         <div className="library-grid">
           {rows.length ? (
-            rows.map((row, index) => {
-              const model = buildLibraryCardModel(row, userView);
-              const isSelected = selectedId === row.id;
+            (() => {
+              // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
+              // to a single pack-head card. Also drop ghost cards (Unknown kind + empty title)
+              // that the backend returns as variant/metadata entries with no useful content.
+              const seenBundleNames = new Set<string>();
+              const filteredRows = rows.filter((row) => {
+                const model = buildLibraryCardModel(row, userView);
+                // Drop ghost cards: Unknown kind with no displayable content
+                if (model.kind === "Unknown" && !model.displayTitle) return false;
+                // Collapse tray duplicates: only keep the first file in each bundle
+                if (model.isGrouped && model.bundleName) {
+                  if (seenBundleNames.has(model.bundleName)) return false;
+                  seenBundleNames.add(model.bundleName);
+                }
+                return true;
+              });
+
+              return filteredRows.map((row, index) => {
+                const model = buildLibraryCardModel(row, userView);
+                const isSelected = selectedId === row.id;
 
               return (
                 <m.div
@@ -354,7 +386,8 @@ export function LibraryThumbnailGrid({
                   />
                 </m.div>
               );
-            })
+              });
+            })()
           ) : (
             <div className="library-grid-empty">
               {userView === "beginner"

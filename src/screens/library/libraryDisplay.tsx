@@ -620,29 +620,95 @@ export function describeFamilyHintForSheet(
 }
 
 /**
+ * Splits a concatenated CAS name into meaningful segments.
+ * e.g. "NSW_SkinblendNSW_Eyelids" → ["NSW_Skinblend", "NSW_Eyelids"]
+ * e.g. "Hairblend_Eyeliner_01_Overlay" → ["Hairblend_Eyeliner", "01_Overlay"]
+ * Detects repeated namespace prefixes and CamelCase boundaries.
+ */
+function tokenizeCasName(name: string): string[] {
+  const s = name.trim();
+  if (!s) return [];
+
+  // Strategy 1: repeated namespace prefix (e.g. "NSW_SkinblendNSW_Eyelids")
+  const firstUnderscore = s.indexOf("_");
+  if (firstUnderscore > 1 && firstUnderscore < 25) {
+    const prefix = s.substring(0, firstUnderscore);
+    // Look for the same prefix appearing again later in the string
+    const remainder = s.substring(firstUnderscore + 1);
+    const secondOccurrence = remainder.indexOf(prefix + "_");
+    if (secondOccurrence > 2) {
+      // e.g. "NSW_SkinblendNSW_Eyelids": prefix=NSW, remainder="SkinblendNSW_Eyelids",
+      // secondOccurrence=9 (finds "NSW_" at position 9 in "SkinblendNSW_Eyelids")
+      const part1 = s.substring(0, firstUnderscore + 1 + secondOccurrence);
+      const part2 = remainder.substring(secondOccurrence + prefix.length + 1);
+      if (part1.length > 3 && part2.length > 2) {
+        return [part1.replace(/_+$/, ""), part2.replace(/_+$/, "")];
+      }
+    }
+  }
+
+  // Strategy 2: long concatenated names — detect CamelCase boundary mid-name
+  // e.g. "FooBarFooBarThing" -> split at the repeated "FooBar"
+  const camelMatch = s.match(/^([A-Z][a-z]+)((?:[A-Z][a-z]+)+)(.*)$/);
+  if (camelMatch) {
+    const [, firstWord, rest] = camelMatch;
+    if (rest.length > 5) {
+      // Check if "firstWord" appears again in "rest" — that's the split point
+      const repeatIndex = rest.indexOf(firstWord);
+      if (repeatIndex > 2) {
+        const part1 = firstWord + rest.substring(0, repeatIndex);
+        const part2 = rest.substring(repeatIndex + firstWord.length);
+        if (part1.length >= 4 && part2.length >= 4) return [part1, part2];
+      }
+    }
+  }
+
+  // Strategy 3: underscore groups — only split 4+ parts into material | variant
+  // e.g. "Hairblend_Eyeliner_01_Overlay" (4 parts) → ["Hairblend_Eyeliner", "01_Overlay"]
+  // 1-3 parts are already clean and should not be split (e.g. "Miiko_Brow_03")
+  const parts = s.split("_");
+  if (parts.length >= 4) {
+    return [parts.slice(0, 2).join("_"), parts.slice(2).join("_")].filter(t => t.length > 2);
+  }
+
+  return [s];
+}
+
+/**
  * Returns embedded names filtered to likely human-readable values for display.
+ * Also tokenizes concatenated CAS names (e.g. "NSW_SkinblendNSW_Eyelids" → ["NSW_Skinblend", "NSW_Eyelids"]).
  * Filters out raw STBL UUID-style entries and other non-meaningful strings.
  */
 export function describeEmbeddedNames(
   insights: FileInsights | undefined,
 ): string[] {
   if (!insights?.embeddedNames?.length) return [];
-  // Filter: skip entries that look like raw UUIDs or numeric IDs
-  return insights.embeddedNames.filter((name) => {
+
+  const result: string[] = [];
+
+  for (const name of insights.embeddedNames) {
     const trimmed = name.trim();
-    if (!trimmed) return false;
+    if (!trimmed) continue;
     // Skip pure hex/UUID-looking strings
-    if (/^[0-9a-f]{8}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{12}$/i.test(trimmed)) return false;
+    if (/^[0-9a-f]{8}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{4}[-]?[0-9a-f]{12}$/i.test(trimmed)) continue;
     // Skip plain 8-char hex IDs (no dashes, no 0x prefix)
-    if (/^[0-9a-f]{8}$/i.test(trimmed)) return false;
+    if (/^[0-9a-f]{8}$/i.test(trimmed)) continue;
     // Skip 0x-prefixed hex IDs (6-8 hex chars after 0x)
-    if (/^0x[0-9a-f]{6,8}$/i.test(trimmed)) return false;
+    if (/^0x[0-9a-f]{6,8}$/i.test(trimmed)) continue;
     // Skip very short numeric strings
-    if (/^\d+$/.test(trimmed) && trimmed.length < 4) return false;
+    if (/^\d+$/.test(trimmed) && trimmed.length < 4) continue;
     // Skip strings that are mostly internal markers
-    if (trimmed.startsWith("#") && trimmed.length < 10) return false;
-    return true;
-  }).slice(0, 8); // cap at 8 for display
+    if (trimmed.startsWith("#") && trimmed.length < 10) continue;
+
+    // Tokenize concatenated names (e.g. "NSW_SkinblendNSW_Eyelids" → two chips)
+    const tokens = tokenizeCasName(trimmed);
+    for (const token of tokens) {
+      const cleaned = cleanTechnicalLabel(token);
+      if (cleaned.length > 1) result.push(cleaned);
+    }
+  }
+
+  return [...new Set(result)].slice(0, 8); // dedupe + cap
 }
 
 /**

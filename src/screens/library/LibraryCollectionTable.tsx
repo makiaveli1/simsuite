@@ -45,9 +45,26 @@ export function LibraryCollectionTable({
 
         <div className="library-list-body">
           {rows.length ? (
-            rows.map((row, index) => {
-              const model = buildLibraryRowModel(row, userView);
-              const isChecked = selectedIds.has(row.id);
+            (() => {
+              // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
+              // to a single pack-head row. Drop ghost rows (Unknown kind + empty title).
+              const seenBundleNames = new Set<string>();
+              const filteredRows = rows.filter((row) => {
+                const isGhost = row.kind === "Unknown" && !row.filename;
+                const isTrayDup =
+                  row.groupedFileCount != null &&
+                  row.groupedFileCount > 1 &&
+                  row.bundleName &&
+                  seenBundleNames.has(row.bundleName);
+                if (isGhost) return false;
+                if (isTrayDup) return false;
+                if (row.bundleName) seenBundleNames.add(row.bundleName);
+                return true;
+              });
+
+              return filteredRows.map((row, index) => {
+                const model = buildLibraryRowModel(row, userView);
+                const isChecked = selectedIds.has(row.id);
 
               return (
                 <m.div
@@ -174,7 +191,8 @@ export function LibraryCollectionTable({
                   </div>
                 </m.div>
               );
-            })
+              });
+            })()
           ) : (
             <div className="library-list-empty">
               {userView === "beginner"

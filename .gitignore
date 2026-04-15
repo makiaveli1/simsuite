@@ -12,3 +12,4 @@ output/
 test-results/
 user_data/
 SimSuite_*_Part_*.md
+.cocoindex_code/
