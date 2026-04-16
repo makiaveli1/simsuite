@@ -281,6 +281,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             version_signals,
             family_hints,
             thumbnail_preview: None,
+            cached_thumbnail_preview: None,
         },
         creator_hint: primary_creator,
         kind_hint: Some("ScriptMods".to_owned()),
@@ -368,6 +369,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
     );
     let resource_kind = infer_kind_from_package_signals(path, &type_counts);
     let thumbnail_preview = extract_thumbnail_preview(&mut file, &records);
+    let cached_thumbnail_preview = try_get_package_cached_thumbnail(path);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -380,6 +382,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             version_signals,
             family_hints,
             thumbnail_preview,
+            cached_thumbnail_preview,
         },
         creator_hint: creator_hints.first().cloned(),
         kind_hint: resource_kind.kind_hint,
@@ -1900,6 +1903,372 @@ fn read_u32(bytes: &[u8]) -> AppResult<u32> {
         .try_into()
         .map_err(|_| AppError::Message("Expected four bytes".to_owned()))?;
     Ok(u32::from_le_bytes(array))
+}
+
+// ─── localthumbcache Parser ────────────────────────────────────────────────────
+// Parses %LOCALAPPDATA%\The Sims 4\localthumbcache.package
+// This DBPF file maps package Instance IDs → DDS thumbnail images.
+// NOTE: WSL cannot access Windows %LOCALAPPDATA%. This parser logs a warning on WSL
+// and returns None — thumbnail lookup falls back to embedded THUM only.
+
+/// Full DBPF index entry with all instance ID fields (unlike the truncated
+/// `DbpfRecord` used internally for Sims 4 content analysis).
+#[derive(Debug, Clone)]
+struct DbpfIndexEntry {
+    pub group_id: u32,
+    pub instance_id_high: u32,
+    pub instance_id_low: u32,
+    pub resource_type: u32,
+    pub offset: u32,
+    pub packed_size: u32,
+    pub mem_size: u32,
+}
+
+impl DbpfIndexEntry {
+    /// Combined 64-bit Sims 4 Instance ID (as used in localthumbcache lookups).
+    fn instance_id(&self) -> u64 {
+        ((self.instance_id_high as u64) << 32) | (self.instance_id_low as u64)
+    }
+}
+
+/// A thumbnail entry extracted from localthumbcache.package.
+#[derive(Debug, Clone)]
+pub struct ThumbnailEntry {
+    /// 64-bit Sims 4 Instance ID of the package this thumbnail belongs to.
+    pub instance_id: u64,
+    /// File offset where the DDS data begins.
+    pub offset: u32,
+    /// Compressed size of the DDS data (zlib).
+    pub packed_size: u32,
+    /// Uncompressed (in-memory) size of the DDS data.
+    pub mem_size: u32,
+    /// DBPF resource type — should be DDS but we carry it for diagnostics.
+    pub resource_type: u32,
+}
+
+/// Attempt to resolve the localthumbcache.package path.
+/// Returns None if the file does not exist or is not accessible.
+/// On WSL, this logs a warning and returns None (Windows AppData is inaccessible).
+fn get_localthumbcache_path() -> Option<std::path::PathBuf> {
+    // Try standard Windows %LOCALAPPDATA% location
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        let path = std::path::PathBuf::from(local_app_data)
+            .join("The Sims 4")
+            .join("localthumbcache.package");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    // WSL fallback — try traversing the /mnt/c path (usually inaccessible)
+    if let Ok(username) = std::env::var("USERNAME") {
+        let wsl_path = std::path::PathBuf::from("/mnt/c/Users")
+            .join(&username)
+            .join("AppData")
+            .join("Local")
+            .join("The Sims 4")
+            .join("localthumbcache.package");
+        if wsl_path.exists() {
+            return Some(wsl_path);
+        }
+    }
+
+    None
+}
+
+/// Parse the localthumbcache.package DBPF file and return all thumbnail entries.
+/// Each entry maps a 64-bit Instance ID → DDS image data location.
+/// Returns an empty vec if the file cannot be read (e.g., not found, WSL).
+pub fn parse_localthumbcache() -> Vec<ThumbnailEntry> {
+    let Some(path) = get_localthumbcache_path() else {
+        return Vec::new();
+    };
+
+    let Ok(mut file) = std::fs::File::open(&path) else {
+        return Vec::new();
+    };
+
+    let Ok(header) = parse_dbpf_header_internal(&mut file) else {
+        return Vec::new();
+    };
+
+    let Ok(buffer) = read_localthumbcache_index(&mut file, header.index_offset, header.index_size) else {
+        return Vec::new();
+    };
+
+    parse_localthumbcache_entries(&buffer).unwrap_or_default()
+}
+
+fn parse_dbpf_header_internal(file: &mut std::fs::File) -> AppResult<DbpfHeader> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut header = [0_u8; DBPF_HEADER_SIZE];
+    file.seek(SeekFrom::Start(0))?;
+    file.read_exact(&mut header)?;
+
+    if &header[0..4] != b"DBPF" {
+        return Err(AppError::Message("Not a DBPF package".to_owned()));
+    }
+
+    let major = read_u32(&header[4..8])?;
+    let minor = read_u32(&header[8..12])?;
+    if major != 2 || minor != 1 {
+        return Err(AppError::Message("Unsupported DBPF version".to_owned()));
+    }
+
+    Ok(DbpfHeader {
+        record_count: read_u32(&header[36..40])?,
+        index_size: read_u32(&header[44..48])?,
+        index_offset: read_u32(&header[64..68])?,
+    })
+}
+
+fn read_localthumbcache_index(
+    file: &mut std::fs::File,
+    header_offset: u32,
+    index_size: u32,
+) -> AppResult<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let file_size = file.metadata()?.len();
+    const BASE96: u64 = 96;
+
+    if header_offset > 0 && (header_offset as u64) < file_size {
+        let remain = (file_size - header_offset as u64) as usize;
+        let to_read = (index_size as usize + 256).min(remain);
+        let mut buf = vec![0_u8; to_read];
+        file.seek(SeekFrom::Start(header_offset as u64))?;
+        file.read_exact(&mut buf)?;
+        if let Some(dec) = try_zlib_decompress(&buf) {
+            return Ok(dec);
+        }
+    }
+
+    if (BASE96 as u64) < file_size {
+        let remain = (file_size - BASE96) as usize;
+        let to_read = (index_size as usize + 256).min(remain);
+        let mut buf = vec![0_u8; to_read];
+        file.seek(SeekFrom::Start(BASE96))?;
+        let n = file.read(&mut buf)?;
+        buf.truncate(n);
+        try_zlib_decompress(&buf)
+            .ok_or_else(|| AppError::Message("localthumbcache: zlib decompression failed at byte 96".to_owned()))
+    } else {
+        Err(AppError::Message("localthumbcache: file too small for standard index at byte 96".to_owned()))
+    }
+}
+
+/// Parse full DBPF index entries from a decompressed localthumbcache index buffer.
+/// Unlike the common-mask-based parser for Sims 4 content, localthumbcache uses
+/// a fixed 7-u32 per-entry format (group_id, inst_hi, inst_lo, type, offset, psize, msize).
+fn parse_localthumbcache_entries(buffer: &[u8]) -> AppResult<Vec<ThumbnailEntry>> {
+    use std::io::{Cursor, Read};
+
+    let mut cursor = Cursor::new(buffer);
+    let record_count = {
+        let mut bytes = [0_u8; 4];
+        cursor.read_exact(&mut bytes)?;
+        u32::from_le_bytes(bytes)
+    };
+
+    // localthumbcache uses fixed-size entries (no common_mask compression)
+    const ENTRY_SIZE: usize = 28; // 7 × u32 = 28 bytes
+    let mut entries = Vec::with_capacity(record_count as usize);
+
+    for _ in 0..record_count {
+        let mut fields = [0u32; 7];
+        for field in &mut fields {
+            let mut bytes = [0u8; 4];
+            if cursor.read_exact(&mut bytes).is_err() {
+                break; // truncated — stop
+            }
+            *field = u32::from_le_bytes(bytes);
+        }
+
+        let [group_id, instance_id_high, instance_id_low, resource_type, offset, packed_size, mem_size] =
+            fields;
+
+        let instance_id = ((instance_id_high as u64) << 32) | (instance_id_low as u64);
+
+        entries.push(ThumbnailEntry {
+            instance_id,
+            offset,
+            packed_size,
+            mem_size,
+            resource_type,
+        });
+    }
+
+    Ok(entries)
+}
+
+/// Find a thumbnail entry for a given package's 64-bit Instance ID.
+pub fn find_thumbnail_for_file<'a>(
+    cache_entries: &'a [ThumbnailEntry],
+    package_instance_id: u64,
+) -> Option<&'a ThumbnailEntry> {
+    cache_entries
+        .iter()
+        .find(|e| e.instance_id == package_instance_id)
+}
+
+/// Extract a base64-encoded PNG from a localthumbcache ThumbnailEntry.
+///
+/// The DDS data at `entry.offset` is zlib-compressed. We decompress it,
+/// then use the `image` crate to decode the DDS into a PNG and return
+/// base64-encoded.
+///
+/// Returns `None` if the data cannot be read, decompressed, or decoded.
+pub fn extract_cached_thumbnail(entry: &ThumbnailEntry) -> Option<String> {
+    let cache_path = get_localthumbcache_path()?;
+    let mut file = std::fs::File::open(cache_path).ok()?;
+
+    // Read the zlib-compressed DDS data
+    let packed_size = entry.packed_size as usize;
+    let mem_size = entry.mem_size as usize;
+    if packed_size == 0 || mem_size == 0 || packed_size > 2 * 1024 * 1024 || mem_size > 4 * 1024 * 1024 {
+        return None;
+    }
+
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(entry.offset as u64)).ok()?;
+    let mut compressed = vec![0u8; packed_size];
+    file.read_exact(&mut compressed).ok()?;
+
+    // Decompress zlib
+    let decompressed = try_zlib_decompress(&compressed)?;
+    if decompressed.len() < 128 {
+        return None;
+    }
+
+    // Decode DDS to PNG using the image crate
+    decode_dds_to_base64_png(&decompressed)
+}
+
+/// Decode DDS-format bytes to a base64-encoded PNG string.
+/// Handles uncompressed BGRA DDS (the format Sims 4 thumbnails use in localthumbcache).
+/// Falls back to raw BGRA conversion when the image crate can't decode the DDS natively.
+fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
+    if dds_data.len() < 128 {
+        return None;
+    }
+
+    // DDS magic: "DDS " at byte 0
+    if &dds_data[0..4] != b"DDS " {
+        return None;
+    }
+
+    let header = &dds_data[0..128];
+    let height = u32::from_le_bytes([header[12], header[13], header[14], header[15]]);
+    let width = u32::from_le_bytes([header[16], header[17], header[18], header[19]]);
+
+    if width == 0 || height == 0 || width > 1024 || height > 1024 {
+        return None;
+    }
+
+    // Pixel format flags at header[76..80]
+    let pf_flags = u32::from_le_bytes([header[76], header[77], header[78], header[79]]);
+    // DDPF_ALPHAPIXELS = 0x1
+    let has_alpha = (pf_flags & 0x1) != 0;
+
+    // Pixel data starts at byte 128 (4-byte magic + 124-byte header)
+    let pixel_data = &dds_data[128..];
+    let px = width as usize;
+    let py = height as usize;
+
+    // Compute expected row stride (DWORD-aligned)
+    let bpp = if has_alpha { 4 } else { 3 };
+    let row_stride = ((px * bpp + 3) / 4) * 4;
+
+    // Build RGBA pixel buffer from BGRA/BGR DDS data
+    let mut rgba_pixels = vec![0u8; px * py * 4];
+
+    for y in 0..py {
+        let row_start = y * row_stride;
+        for x in 0..px {
+            let src_idx = row_start + x * bpp;
+            if src_idx + 2 < pixel_data.len() {
+                // DDS stores as BGR(A) — convert to RGBA
+                let b = pixel_data[src_idx];
+                let g = pixel_data[src_idx + 1];
+                let r = pixel_data[src_idx + 2];
+                let a = if has_alpha && src_idx + 3 < pixel_data.len() {
+                    pixel_data[src_idx + 3]
+                } else {
+                    255
+                };
+                let dst_idx = (y * px + x) * 4;
+                rgba_pixels[dst_idx] = r;
+                rgba_pixels[dst_idx + 1] = g;
+                rgba_pixels[dst_idx + 2] = b;
+                rgba_pixels[dst_idx + 3] = a;
+            }
+        }
+    }
+
+    let img_buffer =
+        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_pixels)?;
+    let dyn_img = DynamicImage::ImageRgba8(img_buffer);
+
+    // Encode to PNG in memory using image crate encoder
+    let mut png_bytes = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    encoder
+        .write_image(
+            dyn_img.as_bytes(),
+            dyn_img.width(),
+            dyn_img.height(),
+            dyn_img.color().into(),
+        )
+        .ok()?;
+
+    Some(BASE64_STANDARD.encode(&png_bytes))
+}
+
+
+
+/// Attempt to find and decode a cached thumbnail for a package from localthumbcache.package.
+///
+/// Reads just enough of the DBPF index to get the package's 64-bit Instance ID,
+/// then looks it up in the localthumbcache entries.
+fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+
+    // Read DBPF header to get index location
+    let header = parse_dbpf_header_internal(&mut file).ok()?;
+    let buffer =
+        read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
+
+    // Parse just enough to extract the first entry's instance ID
+    let mut cursor = std::io::Cursor::new(buffer.as_slice());
+    let common_mask = read_u32_from_cursor(&mut cursor).ok()?;
+
+    // Read common values (up to 8 u32s)
+    let mut common_values = [0u32; 8];
+    for (index, value) in common_values.iter_mut().enumerate() {
+        if ((common_mask >> index) & 1) == 1 {
+            *value = read_u32_from_cursor(&mut cursor).ok()?;
+        }
+    }
+
+    // Read first record's values (overwriting common_values where mask bits are 0)
+    let first_entry_values = common_values;
+    let mut first_record = [0u32; 8];
+    for (index, value) in first_record.iter_mut().enumerate() {
+        if ((common_mask >> index) & 1) == 0 {
+            *value = read_u32_from_cursor(&mut cursor).ok()?;
+        } else {
+            *value = common_values[index];
+        }
+    }
+
+    // Extract the 64-bit Sims 4 Instance ID: (instance_id_high << 32) | instance_id_low
+    let instance_id_high = first_record[2];
+    let instance_id_low = first_record[3];
+    let package_instance_id = ((instance_id_high as u64) << 32) | (instance_id_low as u64);
+
+    // Look up in localthumbcache
+    let cache_entries = parse_localthumbcache();
+    let thumb_entry = find_thumbnail_for_file(&cache_entries, package_instance_id)?;
+    extract_cached_thumbnail(thumb_entry)
 }
 
 #[cfg(test)]

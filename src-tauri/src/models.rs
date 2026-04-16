@@ -477,6 +477,10 @@ pub struct FileInsights {
     /// Present only when a THUM (0x3C1AF1F2) resource was found and successfully decoded.
     /// Empty for non-CAS files, script mods, and CAS files without a custom thumbnail.
     pub thumbnail_preview: Option<String>,
+    /// Base64-encoded DDS thumbnail extracted from localthumbcache.package.
+    /// Derived from the Windows thumbnail cache, not embedded in the package file itself.
+    /// Labeled as "cached" in the UI to distinguish from embedded/file-derived thumbnails.
+    pub cached_thumbnail_preview: Option<String>,
     pub format: Option<String>,
     pub resource_summary: Vec<String>,
     pub script_namespaces: Vec<String>,

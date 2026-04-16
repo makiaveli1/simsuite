@@ -13,6 +13,7 @@ import type {
   FileDetail,
   FileInsights,
   LibraryFileRow,
+  PreviewSource,
   UserView,
   VersionConfidence,
   WatchStatus,
@@ -107,8 +108,12 @@ export interface LibraryCardModel {
 
   // The raw row for click handling
   row: LibraryFileRow;
-  /** Base64 PNG thumbnail from THUM extraction, if available */
+  /** Base64 PNG thumbnail: cached (localthumbcache) or embedded (THUM resource) */
   thumbnailPreview: string | null;
+  /** Where the thumbnail came from */
+  previewSource: PreviewSource;
+  /** Base64 PNG thumbnail from localthumbcache.package (highest quality), if available */
+  cachedThumbnailPreview: string | null;
 }
 
 export interface LibraryRowModel {
@@ -117,8 +122,12 @@ export interface LibraryRowModel {
   title: string;
   /** Clean display title for row rendering */
   displayTitle: string;
-  /** Base64 PNG thumbnail (THUM 0x3C1AF1F2) if available */
+  /** Base64 PNG thumbnail: cached (localthumbcache) or embedded (THUM resource) */
   thumbnailPreview: string | null;
+  /** Where the thumbnail came from */
+  previewSource: PreviewSource;
+  /** Base64 PNG from localthumbcache.package, if available */
+  cachedThumbnailPreview: string | null;
   identityLabel: string | null;
   kind: string;
   typeLabel: string;
@@ -277,7 +286,12 @@ export function buildLibraryRowModel(
     title: row.filename,
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
-    thumbnailPreview: row.insights?.thumbnailPreview ?? null,
+    // Prefer localthumbcache thumbnail (higher quality) over embedded THUM
+    thumbnailPreview: row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
+    previewSource: row.insights?.cachedThumbnailPreview
+        ? 'cache'
+        : (row.insights?.previewSource ?? (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
@@ -381,6 +395,12 @@ export function buildLibraryCardModel(
     title: row.filename,
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
+    // Prefer localthumbcache thumbnail (higher quality) over embedded THUM
+    thumbnailPreview: row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
+    previewSource: row.insights?.cachedThumbnailPreview
+        ? 'cache'
+        : (row.insights?.previewSource ?? (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),
@@ -408,7 +428,6 @@ export function buildLibraryCardModel(
     subtype,
     trayIdentityLabel,
     versionLabel,
-    thumbnailPreview: row.insights?.thumbnailPreview ?? null,
     row,
   };
 }

@@ -289,7 +289,7 @@ export function LibraryDetailsPanel({
         ) : (
           <div
             className={`detail-preview-fallback detail-preview-fallback--${typeColor}`}
-            title={`${friendlyTypeLabel(selectedFile.kind)} — no thumbnail available`}
+            title={`${friendlyTypeLabel(selectedFile.kind)} — no preview available`}
           >
             <div className="fallback-icon-wrap">
               {/* CAS */}
@@ -329,7 +329,7 @@ export function LibraryDetailsPanel({
                 </svg>
               )}
             </div>
-            <span className="detail-preview-no-label">No thumbnail</span>
+            <span className="detail-preview-no-label">No preview available</span>
           </div>
         )}
       </section>

@@ -485,6 +485,9 @@ export interface WatchResult {
   evidence: string[];
 }
 
+/** Source of the thumbnail preview image */
+export type PreviewSource = 'embedded' | 'cache' | 'external' | 'fallback';
+
 export interface FileInsights {
   format: string | null;
   resourceSummary: string[];
@@ -496,6 +499,14 @@ export interface FileInsights {
   familyHints: string[];
   /** Base64 PNG of the CAS custom thumbnail (THUM 0x3C1AF1F2), if available. */
   thumbnailPreview?: string | null;
+  /**
+   * Base64 PNG from localthumbcache.package — the game's own thumbnail cache.
+   * This is typically larger/higher quality than embedded THUM.
+   * Unavailable if Sims 4 is not installed or the package has no cached thumbnail.
+   */
+  cachedThumbnailPreview?: string | null;
+  /** Where the thumbnail came from — embedded THUM, localthumbcache, external, or fallback */
+  previewSource?: PreviewSource;
 }
 
 export interface CreatorLearningInfo {

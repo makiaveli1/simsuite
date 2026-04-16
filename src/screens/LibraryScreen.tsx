@@ -108,15 +108,15 @@ export function LibraryScreen({
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  const [cardDensity, setCardDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
+  const [cardDensity, setCardDensity] = useState<"small" | "medium" | "large">("medium");
   const deferredSearch = useDeferredValue(search);
 
   // Update --card-min CSS variable when card density changes
   useEffect(() => {
     const map: Record<typeof cardDensity, string> = {
-      compact: "280px",
-      balanced: "220px",
-      comfortable: "160px",
+      small: "120px",
+      medium: "180px",
+      large: "260px",
     };
     document.documentElement.style.setProperty("--card-min", map[cardDensity]);
     return () => {

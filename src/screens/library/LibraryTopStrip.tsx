@@ -44,8 +44,8 @@ interface LibraryTopStripProps {
   viewMode: "list" | "grid";
   pageSize: number;
   onPageSizeChange: (value: number) => void;
-  cardDensity: "compact" | "balanced" | "comfortable";
-  onCardDensityChange: (v: "compact" | "balanced" | "comfortable") => void;
+  cardDensity: "small" | "medium" | "large";
+  onCardDensityChange: (v: "small" | "medium" | "large") => void;
   onSearchChange: (value: string) => void;
   onSortByChange: (value: SortField) => void;
   onWatchFilterChange: (value: WatchFilter) => void;
@@ -199,13 +199,13 @@ export function LibraryTopStrip({
           <div className="library-density-control" aria-label="Card density">
             <select
               value={cardDensity}
-              onChange={(e) => onCardDensityChange((e.target as HTMLSelectElement).value as "compact" | "balanced" | "comfortable")}
+              onChange={(e) => onCardDensityChange((e.target as HTMLSelectElement).value as "small" | "medium" | "large")}
               aria-label="Card density"
               className="library-density-select"
             >
-              <option value="compact">⬚ Compact</option>
-              <option value="balanced">▦ Balanced</option>
-              <option value="comfortable">▤ Comfortable</option>
+              <option value="small">□ Small</option>
+              <option value="medium">▦ Medium</option>
+              <option value="large">▤ Large</option>
             </select>
           </div>
 

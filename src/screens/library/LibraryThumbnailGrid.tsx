@@ -371,9 +371,11 @@ export function LibraryThumbnailGrid({
                           ⚠ misplaced
                         </span>
                       )}
-                      <span className={`library-health-pill is-${model.watchStatusTone}`}>
-                        {model.watchStatusLabel}
-                      </span>
+                      {model.watchStatusLabel !== "Not tracked" && (
+                        <span className={`library-health-pill is-${model.watchStatusTone}`}>
+                          {model.watchStatusLabel}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -420,12 +422,15 @@ export function LibraryThumbnailGrid({
                     {renderCardContent(model, userView)}
                   </div>
 
-                  {/* Card footer: creator + version */}
+                  {/* Card footer: version + tray badge only — creator moves to inspector (Phase 5g) */}
                   <div className="library-card-footer">
                     <div className="library-card-meta">
-                      <span className="library-card-creator">{model.creatorLabel}</span>
                       {model.versionLabel && (
                         <span className="library-card-version">{model.versionLabel}</span>
+                      )}
+                      {/* Tray bundle badge */}
+                      {model.kind === 'TrayItem' && model.contentSummary && (
+                        <span className="library-card-tray-badge">{model.contentSummary}</span>
                       )}
                     </div>
                     {model.isGrouped && (() => {
