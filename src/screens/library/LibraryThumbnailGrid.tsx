@@ -381,7 +381,7 @@ export function LibraryThumbnailGrid({
 
                   {/* Hero zone: thumbnail OR fallback as dominant visual, title ALWAYS overlaid */}
                   <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
-                    {/* Real THUM thumbnail */}
+                    {/* Real thumbnail (cache-derived or embedded) */}
                     {model.thumbnailPreview ? (
                       <div className="library-card-thumbnail-zone">
                         <img
@@ -389,6 +389,12 @@ export function LibraryThumbnailGrid({
                           alt={`Preview for ${model.displayTitle}`}
                           className="library-card-thumbnail-img"
                         />
+                        {/* Preview source badge — top-right corner */}
+                        {model.previewSource && model.previewSource !== 'fallback' ? (
+                          <span className={`library-thumb-source-badge library-thumb-source-badge--${model.previewSource}`}>
+                            {model.previewSource === 'cache' ? '⬡' : model.previewSource === 'embedded' ? '◈' : ''}
+                          </span>
+                        ) : null}
                       </div>
                     ) : (
                       /* Fallback: category-colored hero band */

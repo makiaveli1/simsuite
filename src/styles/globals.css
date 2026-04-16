@@ -12967,6 +12967,32 @@ select:focus-visible {
   display: block;
 }
 
+/* Preview source badge — top-right of thumbnail zone */
+.library-card-thumbnail-zone {
+  position: relative;
+}
+.library-thumb-source-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.45);
+  color: rgba(255,255,255,0.75);
+  pointer-events: none;
+  letter-spacing: 0;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.library-thumb-source-badge--cache {
+  color: rgba(100,220,180,0.95);
+}
+.library-thumb-source-badge--embedded {
+  color: rgba(180,200,255,0.95);
+}
+
 /* Fallback hero: type-colored zone with large icon — Phase 5g redesign (dominant hero) */
 .library-card-hero .library-card-thumbnail-zone--fallback {
   width: 100%;
@@ -13166,13 +13192,22 @@ select:focus-visible {
   max-height: 120px;
   object-fit: contain;
   border-radius: 6px;
-  opacity: 0.7;
+  opacity: 0.55;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
 }
 
 .library-detail-sheet-thumbnail-caption {
   font-size: 0.65rem;
   color: var(--text-dim);
   font-style: italic;
+}
+
+/* Active caption (preview present) — more legible than fallback */
+.library-detail-sheet-thumbnail-caption--active {
+  color: rgba(180, 220, 255, 0.75);
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 /* Content preview: embedded names as swatch substitute */

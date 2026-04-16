@@ -159,30 +159,36 @@ export function LibraryDetailSheet({
                     </div>
                   ) : null}
                 </div>
-                {/* Thumbnail preview (THUM 0x3C1AF1F2) — shown in inspect mode */}
-                {mode === "inspect" && (
-                  <div className="library-detail-sheet-thumbnail">
-                    {selectedFile.insights?.thumbnailPreview ? (
-                      <>
-                        <img
-                          src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
-                          alt={`Preview for ${selectedFile.filename}`}
-                          className="library-detail-sheet-thumbnail-img"
-                        />
-                        <span className="library-detail-sheet-thumbnail-caption">
-                          THUM preview
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <DetailSheetFallbackIcon kind={selectedFile.kind} />
-                        <span className="library-detail-sheet-thumbnail-caption">
-                          no THUM preview
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
+                {/* Thumbnail preview — cache-derived preferred, then embedded, then fallback */}
+                {mode === "inspect" && (() => {
+                  const cached = selectedFile.insights?.cachedThumbnailPreview ?? null;
+                  const embedded = selectedFile.insights?.thumbnailPreview ?? null;
+                  const preview = cached ?? embedded;
+                  const source = cached ? 'cached' : embedded ? 'embedded' : null;
+                  return (
+                    <div className="library-detail-sheet-thumbnail">
+                      {preview ? (
+                        <>
+                          <img
+                            src={`data:image/png;base64,${preview}`}
+                            alt={`Preview for ${selectedFile.filename}`}
+                            className="library-detail-sheet-thumbnail-img"
+                          />
+                          <span className="library-detail-sheet-thumbnail-caption library-detail-sheet-thumbnail-caption--active">
+                            {source === 'cached' ? '↗ cached thumbnail' : '↗ embedded preview'}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <DetailSheetFallbackIcon kind={selectedFile.kind} />
+                          <span className="library-detail-sheet-thumbnail-caption">
+                            no thumbnail available
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="library-detail-sheet-meta">
                   <span className="ghost-chip">
