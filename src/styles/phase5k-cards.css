@@ -695,15 +695,423 @@
 .library-row-thumb--tray        { background: linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(40,30,5,0.8) 100%); }
 .library-row-thumb--unknown     { background: linear-gradient(135deg, rgba(100,116,139,0.20) 0%, rgba(20,25,35,0.8) 100%); }
 /* ═══════════════════════════════════════════════════════════════
-   CARD SIZE SLIDER — fluid, snap to discrete sizes
+   FILTER BAR REDESIGN — cleaner clusters, better hierarchy
+   Philosophy: controls grouped by purpose, breathing room,
+   scannable chips vs compact dropdowns, no flat mess.
    ═══════════════════════════════════════════════════════════════ */
 
-/* Slider container */
-.library-slider-control {
+/* Toolbar row: tighter vertical gap between rows */
+.library-top-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-4);
+  padding-bottom: 0.35rem;
+}
+
+.library-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Metrics: compact, left-aligned, flex-shrink */
+.library-toolbar-metrics {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.library-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 0.18rem;
+  padding: 0.12rem 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+.library-metric strong {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+.library-metric-label {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.library-metric-sep {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  padding: 0 0.08rem;
+}
+
+/* Controls: search + filter dropdowns — flex, wrap */
+.library-toolbar-controls {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 0.25rem;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+/* Search: compact but breathable */
+.library-toolbar-search {
+  flex: 0 1 220px;
+  min-width: 150px;
+  max-width: 300px;
+}
+
+.library-toolbar-search .downloads-search-input {
+  min-height: 2rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem 0.25rem 2rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.library-toolbar-search .downloads-search-input:focus-within {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.18);
+}
+
+/* Filter dropdowns: compact, pill-shaped */
+.library-toolbar-select select {
+  min-height: 2rem;
+  padding: 0.25rem 1.4rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background-color: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--text-soft);
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.library-toolbar-select select:hover {
+  background-color: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+}
+
+.library-toolbar-select select:focus {
+  border-color: rgba(255, 152, 0, 0.5);
+  outline: none;
+  background-color: rgba(255,255,255,0.06);
+}
+
+/* Actions: right cluster, grouped logically */
+.library-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Reset button: appears only when filters are active */
+.library-reset-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(255, 100, 100, 0.85);
+  background: rgba(255, 80, 80, 0.06);
+  border: 1px solid rgba(255, 80, 80, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.library-reset-btn:hover {
+  background: rgba(255, 80, 80, 0.12);
+  border-color: rgba(255, 80, 80, 0.3);
+  color: rgba(255, 100, 100, 1);
+}
+
+/* View toggle: compact pill group */
+.library-view-toggle {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.library-view-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.library-view-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+}
+
+.library-view-btn.is-active {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+}
+
+/* Items-per-page + sort: keep as compact selects */
+.library-density-control select,
+.library-sort-control select {
+  min-height: 2rem;
+  padding: 0.25rem 1.4rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background-color: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--text-soft);
+  transition: border-color 0.15s;
+  cursor: pointer;
+}
+
+.library-density-control select:hover,
+.library-sort-control select:hover {
+  border-color: rgba(255,255,255,0.15);
+}
+
+.library-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* More filters button: accent when open */
+.secondary-action {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.secondary-action:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--text);
+}
+
+.secondary-action.is-active {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.35);
+  color: #f97316;
+}
+
+/* Active filter badge */
+.library-active-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.3rem;
+  background: rgba(249, 115, 22, 0.85);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+/* ─── TYPE CHIPS ROW — primary browsing affordance ─────────────── */
+
+.library-type-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+
+.library-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.library-kind-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+.library-kind-chip.is-active {
+  font-weight: 700;
+}
+
+/* Subtype chips: lighter, secondary */
+.library-subtype-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.75rem 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.library-subtype-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.library-subtype-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-soft);
+}
+
+.library-subtype-chip.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+/* ─── QUICK CHIPS — status tabs ─────────────────────────────────── */
+
+.library-quick-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.library-quick-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.library-quick-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+}
+
+.library-quick-chip.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ─── SUMMARY STRIP — health summary, subtle ────────────────────── */
+
+.library-summary-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.75rem 0.2rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  border-bottom: none;
+}
+
+.library-summary-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.library-summary-stat strong {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.library-summary-sep {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.library-summary-stat.has-updates strong  { color: rgba(249, 115, 22, 0.9); }
+.library-summary-stat.needs-review strong { color: rgba(239, 68, 68, 0.85); }
+.library-summary-stat.has-duplicates strong { color: rgba(245, 158, 11, 0.9); }
+.library-summary-stat.is-disabled strong { color: rgba(148, 163, 184, 0.6); }
+
+/* ═══════════════════════════════════════════════════════════════
+   CARD SIZE SLIDER
+
+/* ═══════════════════════════════════════════════════════════════
+   CARD SIZE SLIDER — fluid, continuous with soft snap
+   0–30 = Small, 31–70 = Medium, 71–100 = Large
+   The slider thumb carries the active size label.
+   Grid reflows automatically via --card-min CSS variable.
+   ═══════════════════════════════════════════════════════════════ */
+
+.library-slider-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.2rem;
   user-select: none;
 }
 
@@ -718,76 +1126,73 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
-/* Range input: styled as minimal slider */
+/* Continuous range input — full-width track, orange fill + orange thumb */
 .library-card-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 72px;
+  width: 88px;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  /* Dynamic fill: thumb position determines orange fill extent */
+  background: linear-gradient(
+    to right,
+    rgba(249, 115, 22, 0.85) 0%,
+    rgba(249, 115, 22, 0.85) var(--slider-fill, 50%),
+    rgba(255, 255, 255, 0.1) var(--slider-fill, 50%),
+    rgba(255, 255, 255, 0.1) 100%
+  );
   outline: none;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.08s;
 }
 
 .library-card-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #f97316;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(249, 115, 22, 0);
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.15s ease;
 }
 
 .library-card-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #f97316;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
 
 .library-card-slider:hover::-webkit-slider-thumb {
-  transform: scale(1.18);
-  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.45);
+  transform: scale(1.2);
+  box-shadow: 0 2px 10px rgba(249, 115, 22, 0.5), 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
 
 .library-card-slider:active::-webkit-slider-thumb {
-  transform: scale(0.95);
+  transform: scale(0.92);
 }
 
-/* Snap track: fill changes with value */
-.library-card-slider {
-  background: linear-gradient(
-    to right,
-    rgba(249, 115, 22, 0.7) 0%,
-    rgba(249, 115, 22, 0.7) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.12) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.12) 100%
-  );
-}
-
-/* S/M/L labels */
+/* S / M / L labels + dynamic size label */
 .library-slider-labels {
   display: flex;
   justify-content: space-between;
-  width: 72px;
+  width: 88px;
 }
 
 .library-slider-labels span {
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   color: var(--text-dim);
-  transition: color 0.15s, font-weight 0.15s;
+  transition: color 0.15s, font-weight 0.15s, transform 0.15s;
   cursor: pointer;
   padding: 0 1px;
 }
@@ -795,11 +1200,22 @@
 .library-slider-labels span.is-active {
   color: #f97316;
   font-weight: 700;
+  transform: scale(1.15);
 }
 
 .library-slider-labels span:hover {
   color: var(--text);
 }
+
+/* Update --slider-fill via JS: value % becomes orange fill % */
+:root {
+  --slider-fill: 50%;
+}
+
+/* Small: 0–30 → --slider-fill=0%, Medium: 31–70 → 50%, Large: 71–100 → 100% */
+:root[data-density="compact"]  { --slider-fill: 0%; }
+:root[data-density="balanced"]  { --slider-fill: 50%; }
+:root[data-density="roomy"]    { --slider-fill: 100%; }
 
 /* ═══════════════════════════════════════════════════════════════
    TYPE-COLORED TOP ACCENT BAR — 3px strip at card top

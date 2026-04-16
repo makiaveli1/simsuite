@@ -208,11 +208,13 @@ export function LibraryTopStrip({
             <div className="library-slider-track-wrap">
               <input
                 type="range"
-                min="0" max="2" step="1"
-                value={cardDensity === 'small' ? 0 : cardDensity === 'medium' ? 1 : 2}
+                min="0" max="100" step="1"
+                value={cardDensity === 'small' ? 0 : cardDensity === 'medium' ? 50 : 100}
                 onChange={(e) => {
-                  const vals: Array<"small" | "medium" | "large"> = ["small", "medium", "large"];
-                  onCardDensityChange(vals[Number(e.target.value)]);
+                  const v = Number(e.target.value);
+                  if (v < 30)      onCardDensityChange("small");
+                  else if (v > 70) onCardDensityChange("large");
+                  else             onCardDensityChange("medium");
                 }}
                 className="library-card-slider"
                 aria-label="Card size: small, medium, or large"

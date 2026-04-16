@@ -1941,19 +1941,21 @@ fn get_localthumbcache_path() -> Option<std::path::PathBuf> {
         }
     }
 
-    // OneDrive Documents fallback — for Sims 4 installs that redirect Documents to OneDrive
-    // This is the path that exists on Likwid's machine
-    let one_drive = std::path::PathBuf::from("/mnt/c/Users")
-        .join("likwi")  // known Windows username
-        .join("OneDrive")
-        .join("Documents")
-        .join("Electronic Arts")
-        .join("The Sims 4")
-        .join("localthumbcache.package");
-    debug!("localthumbcache: checking OneDrive path: {:?}", one_drive);
-    if one_drive.exists() {
-        debug!("localthumbcache: FOUND at OneDrive path: {:?}", one_drive);
-        return Some(one_drive);
+    // Try OneDrive path using actual Windows username from environment
+    // Covers Sims 4 installs that redirect Documents to OneDrive on other machines
+    if let Ok(username) = std::env::var("USERNAME") {
+        let one_drive = std::path::PathBuf::from("/mnt/c/Users")
+            .join(&username)
+            .join("OneDrive")
+            .join("Documents")
+            .join("Electronic Arts")
+            .join("The Sims 4")
+            .join("localthumbcache.package");
+        debug!("localthumbcache: checking OneDrive path: {:?}", one_drive);
+        if one_drive.exists() {
+            debug!("localthumbcache: FOUND at OneDrive path: {:?}", one_drive);
+            return Some(one_drive);
+        }
     }
 
     warn!("localthumbcache: file not found in any checked location");

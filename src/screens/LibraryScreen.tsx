@@ -112,15 +112,20 @@ export function LibraryScreen({
   const deferredSearch = useDeferredValue(search);
 
   // Update --card-min CSS variable when card density changes
+  // Maps discrete cardDensity state to CSS variable values.
+  // The CSS grid and reveal system handle the continuous scaling.
   useEffect(() => {
-    const map: Record<typeof cardDensity, string> = {
-      small: "120px",
-      medium: "180px",
-      large: "260px",
+    const map: Record<typeof cardDensity, { min: number; dataDensity: string }> = {
+      small:   { min: 120, dataDensity: "compact" },
+      medium:  { min: 180, dataDensity: "balanced" },
+      large:   { min: 260, dataDensity: "roomy" },
     };
-    document.documentElement.style.setProperty("--card-min", map[cardDensity]);
+    const { min, dataDensity } = map[cardDensity];
+    document.documentElement.style.setProperty("--card-min", `${min}px`);
+    document.documentElement.setAttribute("data-density", dataDensity);
     return () => {
       document.documentElement.style.removeProperty("--card-min");
+      document.documentElement.removeAttribute("data-density");
     };
   }, [cardDensity]);
 
