@@ -337,6 +337,17 @@ export function LibraryThumbnailGrid({
                     ) : null}
                   </div>
 
+                  {/* Optional thumbnail preview (THUM 0x3C1AF1F2) */}
+                  {model.thumbnailPreview && (
+                    <div className="library-card-thumbnail-zone">
+                      <img
+                        src={`data:image/png;base64,${model.thumbnailPreview}`}
+                        alt={`Preview for ${model.displayTitle}`}
+                        className="library-card-thumbnail-img"
+                      />
+                    </div>
+                  )}
+
                   {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">
                     {renderCardContent(model, userView)}

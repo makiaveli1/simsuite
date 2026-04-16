@@ -5,7 +5,9 @@ use std::{
     path::Path,
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use flate2::read::ZlibDecoder;
+use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage, ImageEncoder};
 use zip::ZipArchive;
 
 use crate::{
@@ -80,6 +82,8 @@ const RESOURCE_CATALOG: u32 = 0x319e_4f1d;
 const RESOURCE_DEFINITION: u32 = 0xc0db_5ae7;
 const RESOURCE_HOTSPOT: u32 = 0x8b18_ff6e;
 const RESOURCE_SCRIPT: u32 = 0x073f_aa07;
+const RESOURCE_THUM: u32 = 0x3C1A_F1F2;
+const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
 const BUILD_SURFACE_RESOURCE_TYPES: &[u32] = &[
     0x01d0_e75d,
     0xb4f7_62c9,
@@ -276,6 +280,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             version_hints,
             version_signals,
             family_hints,
+            thumbnail_preview: None,
         },
         creator_hint: primary_creator,
         kind_hint: Some("ScriptMods".to_owned()),
@@ -362,6 +367,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             .chain(creator_hints.iter().map(String::as_str)),
     );
     let resource_kind = infer_kind_from_package_signals(path, &type_counts);
+    let thumbnail_preview = extract_thumbnail_preview(&mut file, &records);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -373,6 +379,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             version_hints,
             version_signals,
             family_hints,
+            thumbnail_preview,
         },
         creator_hint: creator_hints.first().cloned(),
         kind_hint: resource_kind.kind_hint,
@@ -381,6 +388,114 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
         kind_confidence_floor: resource_kind.confidence_floor,
     })
 }
+// ─── Thumbnail Extraction ───────────────────────────────────────────────────────
+
+/// Returns base64-encoded PNG of the first THUM resource found, or None.
+fn extract_thumbnail_preview(file: &mut File, records: &[DbpfRecord]) -> Option<String> {
+    let thum_records: Vec<_> = records
+        .iter()
+        .filter(|r| r.resource_type == RESOURCE_THUM)
+        .collect();
+
+    for record in thum_records {
+        if let Ok(raw) = read_record_bytes(file, record) {
+            if raw.len() < 24 {
+                continue;
+            }
+            if let Some(png_b64) = decode_thum_to_png(&raw) {
+                return Some(png_b64);
+            }
+        }
+    }
+    None
+}
+
+/// Decode raw THUM bytes (raw BMP DIB data, no file header) to base64 PNG.
+fn decode_thum_to_png(raw: &[u8]) -> Option<String> {
+    if raw.len() < 24 {
+        return None;
+    }
+
+    let width  = u32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]);
+    let height = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
+
+    if width == 0 || height == 0 || width > 1024 || height > 1024 {
+        return None;
+    }
+
+    // AFLP alpha chunk: magic at byte 24 == 0x41464C41
+    let has_alpha = raw.len() >= 32
+        && u32::from_le_bytes([raw[24], raw[25], raw[26], raw[27]]) == 0x41464C41;
+
+    // BMP height field can be negative (top-down). Compute absolute value.
+    // Bottom 31 bits give the magnitude; negate as two's complement.
+    let h_abs = if height & 0x8000_0000 != 0 {
+        0u32.wrapping_sub(height)
+    } else {
+        height
+    };
+    let bpp   = if has_alpha { 32 } else { 24 };
+    let row_stride = ((width as usize * (bpp / 8) + 3) / 4) * 4;
+    let pixel_start = 24_usize;
+
+    // Build a valid BMP: 14-byte file header + 40-byte DIB header + pixel rows
+    let data_offset: u32 = 14 + 40;
+    let image_size = (row_stride * h_abs as usize) as u32;
+    let file_size  = data_offset + image_size;
+
+    let mut bmp = Vec::with_capacity(14 + 40 + (raw.len().saturating_sub(pixel_start)));
+    bmp.extend_from_slice(&[0x42, 0x4D]); // BM
+    bmp.extend_from_slice(&file_size.to_le_bytes());
+    bmp.extend_from_slice(&[0u8; 4]);
+    bmp.extend_from_slice(&data_offset.to_le_bytes());
+    // DIB header
+    bmp.extend_from_slice(&40u32.to_le_bytes());
+    bmp.extend_from_slice(&width.to_le_bytes());
+    bmp.extend_from_slice(&height.to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes());
+    bmp.extend_from_slice(&(bpp as u16).to_le_bytes());
+    bmp.extend_from_slice(&[0u8; 20]); // BI_RGB, rest zero
+    if raw.len() > pixel_start {
+        bmp.extend_from_slice(&raw[pixel_start..]);
+    }
+
+    let img = image::load(Cursor::new(&bmp), image::ImageFormat::Bmp).ok()?;
+    let mut rgba = img.to_rgba8();
+
+    if has_alpha && raw.len() >= 32 {
+        let alpha_len = u32::from_le_bytes([raw[28], raw[29], raw[30], raw[31]]) as usize;
+        if raw.len() >= 32 + alpha_len {
+            apply_bgra_alpha(&mut rgba, &raw[32..32 + alpha_len], width, h_abs);
+        }
+    }
+
+    // Encode as PNG
+    let mut png_bytes = Vec::new();
+    DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+        .ok()?;
+
+    Some(BASE64_STANDARD.encode(&png_bytes))
+}
+
+/// Apply a BGRA alpha-channel overlay to an RGBA image.
+fn apply_bgra_alpha(img: &mut RgbaImage, alpha_data: &[u8], w: u32, h: u32) {
+    let expected = (w * h * 4) as usize;
+    if alpha_data.len() < expected {
+        return;
+    }
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y as usize * w as usize + x as usize) * 4;
+            let a = alpha_data[i + 3];
+            if a < 255 {
+                img.get_pixel_mut(x, y).0[3] = a;
+            }
+        }
+    }
+}
+
+
 
 fn collect_ts4script_version_signals<'a>(
     path: &Path,

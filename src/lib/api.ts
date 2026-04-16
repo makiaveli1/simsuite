@@ -167,6 +167,7 @@ const normalizeMockInsights = (
   versionHints: insights.versionHints ?? [],
   versionSignals: insights.versionSignals ?? [],
   familyHints: insights.familyHints ?? [],
+  thumbnailPreview: insights.thumbnailPreview ?? null,
 });
 const buildMockCatalogSource = (
   officialSourceUrl: string | null,

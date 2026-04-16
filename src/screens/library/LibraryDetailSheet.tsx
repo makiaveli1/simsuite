@@ -159,6 +159,20 @@ export function LibraryDetailSheet({
                     </div>
                   ) : null}
                 </div>
+                {/* Thumbnail preview (THUM 0x3C1AF1F2) — shown in inspect mode */}
+                {selectedFile.insights?.thumbnailPreview && mode === "inspect" && (
+                  <div className="library-detail-sheet-thumbnail">
+                    <img
+                      src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
+                      alt={`Preview for ${selectedFile.filename}`}
+                      className="library-detail-sheet-thumbnail-img"
+                    />
+                    <span className="library-detail-sheet-thumbnail-caption">
+                      THUM preview
+                    </span>
+                  </div>
+                )}
+
                 <div className="library-detail-sheet-meta">
                   <span className="ghost-chip">
                     {describeCreatorForInspector(selectedFile).label}

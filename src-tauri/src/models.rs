@@ -473,6 +473,10 @@ pub struct WatchResult {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FileInsights {
+    /// Raw PNG bytes of the CAS custom thumbnail, encoded as base64.
+    /// Present only when a THUM (0x3C1AF1F2) resource was found and successfully decoded.
+    /// Empty for non-CAS files, script mods, and CAS files without a custom thumbnail.
+    pub thumbnail_preview: Option<String>,
     pub format: Option<String>,
     pub resource_summary: Vec<String>,
     pub script_namespaces: Vec<String>,

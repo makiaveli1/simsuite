@@ -107,6 +107,8 @@ export interface LibraryCardModel {
 
   // The raw row for click handling
   row: LibraryFileRow;
+  /** Base64 PNG thumbnail from THUM extraction, if available */
+  thumbnailPreview: string | null;
 }
 
 export interface LibraryRowModel {
@@ -403,6 +405,7 @@ export function buildLibraryCardModel(
     subtype,
     trayIdentityLabel,
     versionLabel,
+    thumbnailPreview: row.insights?.thumbnailPreview ?? null,
     row,
   };
 }

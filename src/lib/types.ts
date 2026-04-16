@@ -494,6 +494,8 @@ export interface FileInsights {
   versionHints: string[];
   versionSignals: VersionSignal[];
   familyHints: string[];
+  /** Base64 PNG of the CAS custom thumbnail (THUM 0x3C1AF1F2), if available. */
+  thumbnailPreview?: string | null;
 }
 
 export interface CreatorLearningInfo {
