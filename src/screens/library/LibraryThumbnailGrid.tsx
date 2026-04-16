@@ -18,6 +18,62 @@ interface LibraryThumbnailGridProps {
   totalPages: number;
 }
 
+// ─── Fallback Category Icon ─────────────────────────────────────────────────
+// Shown when no THUM preview is available. Clearly NOT a real extracted
+// thumbnail — uses category color + simple symbol to indicate "no preview".
+function FallbackCategoryIcon({ kind }: { kind: string }) {
+  const configs: Record<string, { bg: string; symbol: React.ReactNode }> = {
+    CAS: {
+      bg: "rgba(236, 72, 153, 0.2)",
+      symbol: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <path d="M16 10a4 4 0 0 1-8 0" />
+        </svg>
+      ),
+    },
+    BuildBuy: {
+      bg: "rgba(168, 85, 247, 0.2)",
+      symbol: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+      ),
+    },
+    ScriptMods: {
+      bg: "rgba(59, 130, 246, 0.2)",
+      symbol: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
+      ),
+    },
+    // Covers Tray, Household, Lot, Room and any tray variant
+    defaultKind: {
+      bg: "rgba(251, 191, 36, 0.2)",
+      symbol: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        </svg>
+      ),
+    },
+  };
+  const config =
+    kind in configs ? configs[kind] : configs["defaultKind"];
+  return (
+    <div
+      className="library-card-fallback-icon"
+      style={{ background: config.bg }}
+      title={`${kind} — no THUM preview available`}
+    >
+      {config.symbol}
+    </div>
+  );
+}
+
 /**
  * Renders the type-specific content block for a grid card.
  * One of these is always shown — no generic "no preview available" for mod types.
@@ -338,13 +394,17 @@ export function LibraryThumbnailGrid({
                   </div>
 
                   {/* Optional thumbnail preview (THUM 0x3C1AF1F2) */}
-                  {model.thumbnailPreview && (
+                  {model.thumbnailPreview ? (
                     <div className="library-card-thumbnail-zone">
                       <img
                         src={`data:image/png;base64,${model.thumbnailPreview}`}
                         alt={`Preview for ${model.displayTitle}`}
                         className="library-card-thumbnail-img"
                       />
+                    </div>
+                  ) : (
+                    <div className="library-card-thumbnail-zone library-card-thumbnail-zone--fallback">
+                      <FallbackCategoryIcon kind={model.kind} />
                     </div>
                   )}
 

@@ -160,16 +160,27 @@ export function LibraryDetailSheet({
                   ) : null}
                 </div>
                 {/* Thumbnail preview (THUM 0x3C1AF1F2) — shown in inspect mode */}
-                {selectedFile.insights?.thumbnailPreview && mode === "inspect" && (
+                {mode === "inspect" && (
                   <div className="library-detail-sheet-thumbnail">
-                    <img
-                      src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
-                      alt={`Preview for ${selectedFile.filename}`}
-                      className="library-detail-sheet-thumbnail-img"
-                    />
-                    <span className="library-detail-sheet-thumbnail-caption">
-                      THUM preview
-                    </span>
+                    {selectedFile.insights?.thumbnailPreview ? (
+                      <>
+                        <img
+                          src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
+                          alt={`Preview for ${selectedFile.filename}`}
+                          className="library-detail-sheet-thumbnail-img"
+                        />
+                        <span className="library-detail-sheet-thumbnail-caption">
+                          THUM preview
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <DetailSheetFallbackIcon kind={selectedFile.kind} />
+                        <span className="library-detail-sheet-thumbnail-caption">
+                          no THUM preview
+                        </span>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -212,6 +223,32 @@ export function LibraryDetailSheet({
         </m.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+// ─── Detail Sheet Fallback Icon ───────────────────────────────────────────────
+// Uses pre-generated category PNG icons from public/assets/fallback-icons/.
+// Displayed when no THUM preview is available — clearly a fallback, not a real preview.
+function DetailSheetFallbackIcon({ kind }: { kind: string }) {
+  const iconMap: Record<string, string> = {
+    CAS: "/assets/fallback-icons/cas-icon.png",
+    BuildBuy: "/assets/fallback-icons/buildbuy-icon.png",
+    ScriptMods: "/assets/fallback-icons/scriptmod-icon.png",
+    Household: "/assets/fallback-icons/tray-icon.png",
+    Lot: "/assets/fallback-icons/tray-icon.png",
+    Room: "/assets/fallback-icons/tray-icon.png",
+    TrayHousehold: "/assets/fallback-icons/tray-icon.png",
+    TrayLot: "/assets/fallback-icons/tray-icon.png",
+    TrayRoom: "/assets/fallback-icons/tray-icon.png",
+    TrayItem: "/assets/fallback-icons/tray-icon.png",
+  };
+  const src = iconMap[kind] ?? "/assets/fallback-icons/unknown-icon.png";
+  return (
+    <img
+      src={src}
+      alt={`${kind} category icon`}
+      className="library-detail-sheet-fallback-icon"
+    />
   );
 }
 
