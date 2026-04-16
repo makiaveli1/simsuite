@@ -195,18 +195,34 @@ export function LibraryTopStrip({
             </button>
           </div>
 
-          {/* Card density selector */}
-          <div className="library-density-control" aria-label="Card density">
-            <select
-              value={cardDensity}
-              onChange={(e) => onCardDensityChange((e.target as HTMLSelectElement).value as "small" | "medium" | "large")}
-              aria-label="Card density"
-              className="library-density-select"
-            >
-              <option value="small">□ Small</option>
-              <option value="medium">▦ Medium</option>
-              <option value="large">▤ Large</option>
-            </select>
+          {/* Card size slider — fluid, snap to small/medium/large */}
+          <div className="library-slider-control" aria-label="Card size">
+            <span className="library-slider-icon" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <rect x="0.5" y="0.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1"/>
+                <rect x="6.5" y="0.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1"/>
+                <rect x="0.5" y="6.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1"/>
+                <rect x="6.5" y="6.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1"/>
+              </svg>
+            </span>
+            <div className="library-slider-track-wrap">
+              <input
+                type="range"
+                min="0" max="2" step="1"
+                value={cardDensity === 'small' ? 0 : cardDensity === 'medium' ? 1 : 2}
+                onChange={(e) => {
+                  const vals: Array<"small" | "medium" | "large"> = ["small", "medium", "large"];
+                  onCardDensityChange(vals[Number(e.target.value)]);
+                }}
+                className="library-card-slider"
+                aria-label="Card size: small, medium, or large"
+              />
+              <div className="library-slider-labels" aria-hidden="true">
+                <span className={cardDensity === 'small' ? 'is-active' : ''}>S</span>
+                <span className={cardDensity === 'medium' ? 'is-active' : ''}>M</span>
+                <span className={cardDensity === 'large' ? 'is-active' : ''}>L</span>
+              </div>
+            </div>
           </div>
 
           {/* Items per page selector */}

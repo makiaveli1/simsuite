@@ -12976,17 +12976,13 @@ select:focus-visible {
 
 .library-card-hero .library-card-thumbnail-img {
   width: 100%;
-  aspect-ratio: 4 / 5;
-  max-height: none;
+  height: 160px;
+  max-height: 160px;
   object-fit: cover;
   object-position: center top;
   border-radius: 0;
   border: none;
   display: block;
-}
-
-.library-card-hero {
-  aspect-ratio: 4 / 5;
 }
 
 /* Preview source badge — top-right of thumbnail zone */
@@ -13018,7 +13014,7 @@ select:focus-visible {
 /* Fallback hero: type-colored zone with large icon — Phase 5g redesign (dominant hero) */
 .library-card-hero .library-card-thumbnail-zone--fallback {
   width: 100%;
-  aspect-ratio: 4 / 5;
+  height: 160px;
   padding: 0;
   display: flex;
   flex-direction: column;

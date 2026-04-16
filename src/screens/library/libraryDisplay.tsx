@@ -291,13 +291,13 @@ export function buildLibraryRowModel(
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     // Cascade: Mod Manager → game cache → embedded THUM → null
-    // Priority: MM (highest quality, 98% coverage) → cache (shared game cache) → embedded (native, no external dep)
-    thumbnailPreview: row.insights?.modmanagerThumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
-    previewSource: row.insights?.modmanagerThumbnailPreview
-        ? 'modmanager'
-        : (row.insights?.cachedThumbnailPreview
-            ? 'cache'
-            : (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    // First-party cascade: embedded THUM → game cache → fallback
+    // embedded is the foundation (no external dependency).
+    // Game cache (localthumbcache) is a shared secondary when available.
+    thumbnailPreview: row.insights?.thumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? null,
+    previewSource: row.insights?.thumbnailPreview
+        ? 'embedded'
+        : (row.insights?.cachedThumbnailPreview ? 'cache' : 'fallback'),
     cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
@@ -407,13 +407,13 @@ export function buildLibraryCardModel(
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
     // Cascade: Mod Manager → game cache → embedded THUM → null
-    // Priority: MM (highest quality, 98% coverage) → cache (shared game cache) → embedded (native, no external dep)
-    thumbnailPreview: row.insights?.modmanagerThumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
-    previewSource: row.insights?.modmanagerThumbnailPreview
-        ? 'modmanager'
-        : (row.insights?.cachedThumbnailPreview
-            ? 'cache'
-            : (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    // First-party cascade: embedded THUM → game cache → fallback
+    // embedded is the foundation (no external dependency).
+    // Game cache (localthumbcache) is a shared secondary when available.
+    thumbnailPreview: row.insights?.thumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? null,
+    previewSource: row.insights?.thumbnailPreview
+        ? 'embedded'
+        : (row.insights?.cachedThumbnailPreview ? 'cache' : 'fallback'),
     cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),

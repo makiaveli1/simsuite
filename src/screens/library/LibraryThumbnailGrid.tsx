@@ -340,163 +340,85 @@ export function LibraryThumbnailGrid({
                   whileTap={cardPress}
                   {...stagedListItem(index)}
                 >
-                  {/* Card header: tiny type dot + status badges */}
-                  <div className="library-card-header">
-                    <span className={`library-type-dot library-type-dot--${model.typeColor}`} aria-hidden="true" />
-                    <div className="library-card-header-right">
-                      {model.hasIssues && (
-                        <span
-                          className="library-issues-badge"
-                          title="Has safety notes or parser warnings"
-                        >
-                          ⚑
-                        </span>
-                      )}
-                      {model.hasDuplicate && (
-                        <span className="library-duplicate-badge">Duplicate</span>
-                      )}
-                      {model.isGrouped && model.groupedCount > 1 && (
-                        <span
-                          className="library-card-pack-badge"
-                          title={`Part of a ${model.groupedCount}-file pack`}
-                        >
-                          📦 {model.groupedCount} files
-                        </span>
-                      )}
-                      {model.isMisplaced && (
-                        <span
-                          className="library-card-misplaced-badge"
-                          title="This tray item is in the Mods folder — it needs review"
-                        >
-                          ⚠ misplaced
-                        </span>
-                      )}
-                      {model.watchStatusLabel !== "Not tracked" && (
-                        <span className={`library-health-pill is-${model.watchStatusTone}`}>
-                          {model.watchStatusLabel}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                    {/* Hero zone: full-bleed thumbnail with reveal panel */}
-                    <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
-                      {model.thumbnailPreview ? (
-                        /* Real thumbnail: image fills hero, source dot bottom-left */
-                        <div className="library-card-thumb-wrap">
-                          <img
-                            src={`data:image/png;base64,${model.thumbnailPreview}`}
-                            alt={`Preview for ${model.displayTitle}`}
-                            className="library-card-thumbnail-img"
-                          />
-                          {model.previewSource && model.previewSource !== 'fallback' ? (
-                            <div className="library-thumb-source-dot" title={`Preview: ${model.previewSource}`}>
-                              <span className={`source-dot source-dot--${model.previewSource} is-active`} />
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : (
-                        /* Fallback: type-colored hero band with centered icon + dot */
-                        <div
-                          className={`library-card-thumbnail-zone library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}
-                        >
-                          <FallbackCategoryIcon kind={model.kind} />
-                          <div className="library-thumb-source-dot" title="No preview available">
-                            <span className="source-dot" />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Color swatch strip (below thumbnail, above reveal) */}
-                      {model.colorSwatches.length > 0 && !model.thumbnailPreview && (
-                        <div className="library-card-swatch-strip" aria-label="Color hints from file metadata">
-                          {model.colorSwatches.slice(0, 6).map((hex, i) => (
-                            <div key={i} className="library-card-swatch" style={{ background: hex }} title={hex} />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Resting title: minimal type pill at hero bottom */}
-                      <div className="library-card-title-block">
-                        <div className="library-card-title" title={model.title}>
-                          {model.displayTitle}
-                        </div>
-                        <div className="library-card-title-meta">
-                          <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                            {model.typeLabel}
-                          </span>
-                        </div>
-                        {model.identityLabel ? (
-                          <div className="library-card-identity" title={model.identityLabel}>
-                            {model.identityLabel}
+                  {/* ── Resting card: thumbnail dominant, minimal chrome ─────────────────────── */}
+                  {/* Type-color accent bar at top of hero — the only always-visible type signal */}
+                  <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
+                    {/* Full-bleed thumbnail or fallback */}
+                    {model.thumbnailPreview ? (
+                      <div className="library-card-thumb-wrap">
+                        <img
+                          src={`data:image/png;base64,${model.thumbnailPreview}`}
+                          alt={`Preview for ${model.displayTitle}`}
+                          className="library-card-thumbnail-img"
+                        />
+                        {/* Source indicator: bottom-left */}
+                        {model.previewSource && model.previewSource !== 'fallback' ? (
+                          <div className="library-thumb-source-dot" title={`Preview: ${model.previewSource}`}>
+                            <span className={`source-dot source-dot--${model.previewSource} is-active`} />
                           </div>
                         ) : null}
                       </div>
-
-                      {/* Info reveal panel: slides up from bottom on hover/select */}
-                      <div className="library-card-info-reveal">
-                        <div className="library-card-reveal-title" title={model.title}>
-                          {model.displayTitle}
-                        </div>
-                        {model.identityLabel && (
-                          <div className="library-card-reveal-identity">{model.identityLabel}</div>
-                        )}
-                        <div className="library-card-reveal-meta">
-                          <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                            {model.typeLabel}
-                          </span>
+                    ) : (
+                      <div className={`library-card-thumb-zone--fallback library-card-hero--${model.typeColor}`}>
+                        <FallbackCategoryIcon kind={model.kind} />
+                        <div className="library-thumb-source-dot" title="No preview available">
+                          <span className="source-dot" />
                         </div>
                       </div>
-
-                      {/* Confidence bar at card bottom edge */}
-                    </div>
-
-                  {/* Content preview — type-specific */}
-                  <div className="library-card-content-preview">
-                    {renderCardContent(model, userView)}
-                  </div>
-
-                  {/* Card footer: version + tray badge only — creator moves to inspector (Phase 5g) */}
-                  <div className="library-card-footer">
-                    <div className="library-card-meta">
-                      {model.versionLabel && (
-                        <span className="library-card-version">{model.versionLabel}</span>
-                      )}
-                      {/* Tray bundle badge */}
-                      {model.kind === 'TrayItem' && model.contentSummary && (
-                        <span className="library-card-tray-badge">{model.contentSummary}</span>
-                      )}
-                    </div>
-                    {model.isGrouped && (() => {
-                      const safeBundleName = usefulTrayGroupingValue({
-                        bundleName: model.bundleName ?? null,
-                        insights: model.row.insights,
-                      });
-
-                      if (safeBundleName) {
-                        return (
-                          <div className="library-card-pack-label">
-                            Pack: {safeBundleName}
-                          </div>
-                        );
-                      }
-
-                      if (model.groupedCount > 1) {
-                        return (
-                          <div className="library-card-pack-label">
-                            {model.groupedCount} grouped files
-                          </div>
-                        );
-                      }
-
-                      return null;
-                    })()}
-                    {!model.isMisplaced && model.isTray && (
-                      <div className="library-card-tray-badge">tray · disabled</div>
                     )}
+
+                    {/* Color swatch strip — shown only on fallback cards */}
+                    {model.colorSwatches.length > 0 && !model.thumbnailPreview && (
+                      <div className="library-card-swatch-strip" aria-label="Color hints from file metadata">
+                        {model.colorSwatches.slice(0, 6).map((hex, i) => (
+                          <div key={i} className="library-card-swatch" style={{ background: hex }} title={hex} />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Resting state: tiny type pill at hero bottom — thumbnail leads */}
+                    <div className="library-card-title-block">
+                      <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                        {model.typeLabel}
+                      </span>
+                    </div>
+
+                    {/* ── Reveal panel: all useful info on hover/select/focus ─────────────── */}
+                    <div className="library-card-info-reveal">
+                      <div className="library-card-reveal-title" title={model.title}>
+                        {model.displayTitle}
+                      </div>
+                      {model.identityLabel && (
+                        <div className="library-card-reveal-identity">{model.identityLabel}</div>
+                      )}
+                      <div className="library-card-reveal-meta">
+                        <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                          {model.typeLabel}
+                        </span>
+                        {model.previewSource && model.previewSource !== 'fallback' && (
+                          <span className={`library-reveal-source library-reveal-source--${model.previewSource}`}>
+                            {model.previewSource === 'embedded' ? 'EM' : model.previewSource === 'cache' ? 'CH' : 'EX'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Confidence bar at card bottom edge */}
+                  {/* Status badges — only shown when selected (not cluttering resting state) */}
+                  {isSelected && (model.hasIssues || model.hasDuplicate || model.isMisplaced || model.watchStatusLabel !== 'Not tracked') && (
+                    <div className="library-card-status-badges">
+                      {model.hasIssues && <span className="library-issues-badge" title="Has safety notes">⚑</span>}
+                      {model.hasDuplicate && <span className="library-duplicate-badge">Duplicate</span>}
+                      {model.isMisplaced && <span className="library-card-misplaced-badge">⚠ misplaced</span>}
+                      {model.watchStatusLabel !== 'Not tracked' && (
+                        <span className={`library-health-pill is-${model.watchStatusTone}`}>{model.watchStatusLabel}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Confidence bar — quiet, bottom edge */}
+                  <div className={`library-card-confidence-bar confidence-bar--${model.confidenceLevel}`} aria-label={`${model.confidenceLevel} confidence`} />
+
                   <div
                     className={`library-card-confidence-bar confidence-bar--${model.confidenceLevel}`}
                     aria-label={`${model.confidenceLevel} confidence`}

@@ -148,7 +148,8 @@ const emptyInsights = {
   versionHints: [],
   versionSignals: [],
   familyHints: [],
-  modmanagerThumbnailPreview: null,
+  // MODMANAGER REMOVED — first-party only (Phase 5m)
+  // modmanagerThumbnailPreview: null,
   cachedThumbnailPreview: null,
 };
 const emptyCreatorLearning = (): CreatorLearningInfo => ({
@@ -170,7 +171,8 @@ const normalizeMockInsights = (
   versionSignals: insights.versionSignals ?? [],
   familyHints: insights.familyHints ?? [],
   thumbnailPreview: insights.thumbnailPreview ?? null,
-  modmanagerThumbnailPreview: insights.modmanagerThumbnailPreview ?? null,
+  // MODMANAGER REMOVED
+  // modmanagerThumbnailPreview: insights.modmanagerThumbnailPreview ?? null,
   cachedThumbnailPreview: insights.cachedThumbnailPreview ?? null,
   previewSource: insights.previewSource ?? 'fallback',
 });

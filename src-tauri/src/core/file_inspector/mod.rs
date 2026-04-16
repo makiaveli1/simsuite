@@ -285,7 +285,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             version_signals,
             family_hints,
             thumbnail_preview: None,
-            modmanager_thumbnail_preview: None,
+            // MODMANAGER REMOVED
             cached_thumbnail_preview: None,
         },
         creator_hint: primary_creator,
@@ -373,12 +373,11 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             .chain(creator_hints.iter().map(String::as_str)),
     );
     let resource_kind = infer_kind_from_package_signals(path, &type_counts);
-    let thumbnail_preview = extract_thumbnail_preview(&mut file, &records);
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or_default();
-    let (modmanager_thumbnail_preview, thumbnail_preview, cached_thumbnail_preview) =
+    let (embedded_thumbnail, cached_thumbnail) =
         resolve_package_thumbnails(path, filename);
 
     Ok(InspectionOutcome {
@@ -391,9 +390,8 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             version_hints,
             version_signals,
             family_hints,
-            thumbnail_preview,
-            modmanager_thumbnail_preview,
-            cached_thumbnail_preview,
+            thumbnail_preview: embedded_thumbnail,
+            cached_thumbnail_preview: cached_thumbnail,
         },
         creator_hint: creator_hints.first().cloned(),
         kind_hint: resource_kind.kind_hint,
@@ -406,28 +404,6 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
 
 /// Returns base64-encoded PNG of the first THUM resource found, or None.
 /// Checks both CAS THUM (0x3C1AF1F2) and object THUM (0x3C2A8647).
-fn extract_thumbnail_preview(file: &mut File, records: &[DbpfRecord]) -> Option<String> {
-    let thum_records: Vec<_> = records
-        .iter()
-        .filter(|r| r.resource_type == RESOURCE_THUM || r.resource_type == RESOURCE_THUM_OBJECT)
-        .collect();
-
-    for record in thum_records {
-        if let Ok(raw) = read_record_bytes(file, record) {
-            if raw.len() < 24 {
-                continue;
-            }
-            if let Some(png_b64) = decode_thum_to_png(&raw) {
-                return Some(png_b64);
-            }
-        }
-    }
-    None
-}
-
-/// Decode raw THUM bytes (raw JPEG data) to base64 PNG.
-/// Sims 4 THUM resources (type 0x3C1AF1F2) store JPEG-encoded image data directly,
-/// not BMP DIB data. We load the raw bytes as a JPEG and convert to PNG.
 fn decode_thum_to_png(raw: &[u8]) -> Option<String> {
     if raw.len() < 2 {
         return None;
@@ -2246,72 +2222,6 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
 /// with no real thumbnail data.
 ///
 /// Returns base64 PNG if found, None if DB or image is unavailable.
-fn lookup_modmanager_thumbnail(filename: &str) -> Option<String> {
-    use std::path::PathBuf;
-
-    // Discover Mod Manager data directory (OneDrive path first, then env var fallbacks)
-    let mm_base = {
-        let mut candidates = vec![
-            PathBuf::from("/mnt/c/Users/likwi/OneDrive/Documents/Sims 4 Mod Manager Data"),
-        ];
-        if let Some(home) = std::env::var_os("USERPROFILE") {
-            let p = PathBuf::from(&home)
-                .join("OneDrive")
-                .join("Documents")
-                .join("Sims 4 Mod Manager Data");
-            candidates.push(p);
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            let p = PathBuf::from(&home)
-                .join("OneDrive")
-                .join("Documents")
-                .join("Sims 4 Mod Manager Data");
-            candidates.push(p);
-        }
-        candidates.into_iter().find(|p| p.exists())?
-    };
-
-    let db_path = mm_base.join("db_cc.sqlite");
-    let images_dir = mm_base.join("images");
-    if !db_path.exists() || !images_dir.exists() {
-        return None;
-    }
-
-    // Query Mod Manager DB for the image path by filename
-    let conn = rusqlite::Connection::open(&db_path).ok()?;
-    let image_path: String = conn
-        .query_row(
-            "SELECT image FROM Files WHERE name = ? LIMIT 1",
-            [filename],
-            |row| row.get(0),
-        )
-        .ok()?;
-
-    // Normalize Windows path (C:\...) to WSL path (/mnt/c/...)
-    let image_path = if image_path.starts_with("C:\\") || image_path.starts_with("c:\\") {
-        let stripped = &image_path[2..].replace('\\', "/").replace("C/", "/mnt/c/");
-        PathBuf::from(stripped)
-    } else {
-        PathBuf::from(&image_path)
-    };
-
-    if !image_path.exists() {
-        debug!("ModManager thumbnail: image not found at {:?}", image_path);
-        return None;
-    }
-
-    let png_data = std::fs::read(&image_path).ok()?;
-    let base64_png = BASE64_STANDARD.encode(&png_data);
-    debug!(
-        "ModManager thumbnail: found for '{}' -> {:?}",
-        filename, image_path
-    );
-    Some(base64_png)
-}
-
-/// Extract embedded THUM resource from a package file.
-/// Opens the package, parses the DBPF index, finds THUM records (0x3C1AF1F2),
-/// and returns the decoded PNG base64. Returns None if no THUM is present.
 fn extract_embedded_thum(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let header = parse_dbpf_header_internal(&mut file).ok()?;
@@ -2384,28 +2294,24 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
     None
 }
 
-/// Combined thumbnail lookup: Mod Manager DB → embedded THUM → localthumbcache.
+/// First-party thumbnail lookup: embedded THUM → localthumbcache.
 ///
-/// Returns (modmanager_preview, embedded_preview, cached_preview).
+/// Returns (embedded_preview, cached_preview).
 /// Each field is the base64 PNG string from that source, or None if unavailable.
 ///
-/// Source priority for the UI cascade: modmanager → embedded → cached → None.
-fn resolve_package_thumbnails(path: &Path, filename: &str)
-    -> (Option<String>, Option<String>, Option<String>)
+/// First-party priority: embedded THUM from package file first, then shared game cache.
+/// Mod Manager is reference-only — not part of the production thumbnail pipeline.
+fn resolve_package_thumbnails(path: &Path, _filename: &str)
+    -> (Option<String>, Option<String>)
 {
-    // 1. Primary: Mod Manager cached images (11k+ PNGs, pre-extracted)
-    if let Some(thumb) = lookup_modmanager_thumbnail(filename) {
-        return (Some(thumb), None, None);
-    }
-
-    // 2. Embedded THUM resource in the package file itself
+    // 1. Primary: embedded THUM resource in the package file itself
     if let Some(thumb) = extract_embedded_thum(path) {
-        return (None, Some(thumb), None);
+        return (Some(thumb), None);
     }
 
-    // 3. Last resort: localthumbcache.package (usually a OneDrive stub on this machine)
+    // 2. Secondary: localthumbcache.package (shared game thumbnail cache)
     let cached = try_get_package_cached_thumbnail(path);
-    (None, None, cached)
+    (None, cached)
 }
 
 /// Reads the DBPF index of a package file, extracts the first resource's Instance ID,

@@ -76,10 +76,56 @@
 }
 
 /* Per-source active colors */
-.source-dot--modmanager.is-active { background: rgba(120, 220, 180, 0.95); border-color: rgba(120, 220, 180, 0.5); }
 .source-dot--embedded.is-active   { background: rgba(180, 200, 255, 0.95); border-color: rgba(180, 200, 255, 0.5); }
 .source-dot--cache.is-active      { background: rgba(100, 200, 255, 0.95); border-color: rgba(100, 200, 255, 0.5); }
 .source-dot--external.is-active   { background: rgba(255, 200, 100, 0.95); border-color: rgba(255, 200, 100, 0.5); }
+
+/* ─── STATUS BADGES — only on selected state ─────────────────────── */
+
+.library-card-status-badges {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.library-card.is-selected .library-card-status-badges {
+  opacity: 1;
+}
+
+.library-card-status-badges .library-issues-badge,
+.library-card-status-badges .library-duplicate-badge,
+.library-card-status-badges .library-card-misplaced-badge,
+.library-card-status-badges .library-health-pill {
+  font-size: 0.58rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+}
+
+.library-card-status-badges .library-issues-badge { background: rgba(239,68,68,0.88); color: #fff; }
+.library-card-status-badges .library-duplicate-badge { background: rgba(245,158,11,0.88); color: #fff; }
+.library-card-status-badges .library-card-misplaced-badge { background: rgba(239,68,68,0.78); color: #fff; }
+.library-card-status-badges .library-health-pill { background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.75); }
+
+/* Source label inside reveal panel */
+.library-reveal-source {
+  font-size: 0.58rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  opacity: 0.75;
+}
+.library-reveal-source--embedded { background: rgba(180,200,255,0.2); color: rgba(180,200,255,0.95); }
+.library-reveal-source--cache    { background: rgba(100,200,255,0.2); color: rgba(100,200,255,0.95); }
+.library-reveal-source--external  { background: rgba(255,200,100,0.2); color: rgba(255,200,100,0.95); }
 
 /* ─── HERO ZONE — cleaner scrim for text legibility ───────────── */
 
@@ -203,13 +249,26 @@
   display: none;
 }
 
-/* ─── DENSITY: COMPACT MODE ─────────────────────────────────── */
+/* ─── DENSITY — responsive via --card-min slider ─────────────────────────────
+   The grid uses auto-fill + minmax(var(--card-min, 220px), 1fr).
+   Card width scales smoothly. Aspect-ratio: 4/5 on hero keeps proportions.
+   Reveal panel text scales slightly with card size.
+   Small: 120px | Medium: 180px | Large: 260px
+   ─────────────────────────────────────────────────────────────────────────── */
 
-:root[data-density="compact"] .library-card-hero .library-card-thumbnail-img,
-:root[data-density="compact"] .library-card-hero .library-card-thumbnail-zone--fallback {
-  height: 120px !important;
+:root[data-density="compact"] {
+  --card-min: 120px;
 }
 
+:root[data-density="balanced"] {
+  --card-min: 180px;
+}
+
+:root[data-density="roomy"] {
+  --card-min: 260px;
+}
+
+/* Compact: smaller reveal text */
 :root[data-density="compact"] .library-card-info-reveal {
   padding: 0.35rem 0.5rem 0.3rem;
 }
@@ -218,13 +277,7 @@
   font-size: 0.75rem;
 }
 
-/* ─── DENSITY: ROOMY/COMFORTABLE MODE ─────────────────────── */
-
-:root[data-density="roomy"] .library-card-hero .library-card-thumbnail-img,
-:root[data-density="roomy"] .library-card-hero .library-card-thumbnail-zone--fallback {
-  height: 200px !important;
-}
-
+/* Roomy: larger reveal text */
 :root[data-density="roomy"] .library-card-info-reveal {
   padding: 0.6rem 0.75rem 0.5rem;
 }
@@ -279,7 +332,6 @@
   font-style: normal;
 }
 
-.library-inspector-thumb-caption--modmanager { color: rgba(120, 220, 180, 0.8); }
 .library-inspector-thumb-caption--embedded   { color: rgba(180, 200, 255, 0.8); }
 .library-inspector-thumb-caption--cache       { color: rgba(100, 200, 255, 0.8); }
 .library-inspector-thumb-caption--external    { color: rgba(255, 200, 100, 0.8); }
@@ -458,7 +510,6 @@
   pointer-events: none;
 }
 
-.library-row-thumb-source--modmanager { color: rgba(120, 220, 180, 0.95); }
 .library-row-thumb-source--embedded   { color: rgba(180, 200, 255, 0.95); }
 .library-row-thumb-source--cache      { color: rgba(100, 200, 255, 0.95); }
 
@@ -553,7 +604,6 @@
   flex-shrink: 0;
 }
 
-.library-row-source-dot--modmanager { background: rgba(120, 220, 180, 0.9); }
 .library-row-source-dot--embedded   { background: rgba(180, 200, 255, 0.9); }
 .library-row-source-dot--cache      { background: rgba(100, 200, 255, 0.9); }
 .library-row-source-dot--fallback   { background: rgba(255, 255, 255, 0.15); }
@@ -653,3 +703,109 @@
 .library-row-thumb--gameplay   { background: linear-gradient(135deg, rgba(59,130,246,0.20) 0%, rgba(10,20,60,0.8) 100%); }
 .library-row-thumb--tray        { background: linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(40,30,5,0.8) 100%); }
 .library-row-thumb--unknown     { background: linear-gradient(135deg, rgba(100,116,139,0.20) 0%, rgba(20,25,35,0.8) 100%); }
+/* ═══════════════════════════════════════════════════════════════
+   CARD SIZE SLIDER — fluid, snap to discrete sizes
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Slider container */
+.library-slider-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.25rem;
+  user-select: none;
+}
+
+.library-slider-icon {
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.library-slider-track-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Range input: styled as minimal slider */
+.library-card-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.library-card-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.library-card-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.library-card-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.45);
+}
+
+.library-card-slider:active::-webkit-slider-thumb {
+  transform: scale(0.95);
+}
+
+/* Snap track: fill changes with value */
+.library-card-slider {
+  background: linear-gradient(
+    to right,
+    rgba(249, 115, 22, 0.7) 0%,
+    rgba(249, 115, 22, 0.7) var(--slider-progress, 50%),
+    rgba(255, 255, 255, 0.12) var(--slider-progress, 50%),
+    rgba(255, 255, 255, 0.12) 100%
+  );
+}
+
+/* S/M/L labels */
+.library-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  width: 72px;
+}
+
+.library-slider-labels span {
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  transition: color 0.15s, font-weight 0.15s;
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+.library-slider-labels span.is-active {
+  color: #f97316;
+  font-weight: 700;
+}
+
+.library-slider-labels span:hover {
+  color: var(--text);
+}

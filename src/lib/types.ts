@@ -486,7 +486,7 @@ export interface WatchResult {
 }
 
 /** Source of the thumbnail preview image */
-export type PreviewSource = 'modmanager' | 'embedded' | 'cache' | 'external' | 'fallback';
+export type PreviewSource = 'embedded' | 'cache' | 'external' | 'fallback';
 
 export interface FileInsights {
   format: string | null;
@@ -505,7 +505,8 @@ export interface FileInsights {
    * Unavailable if Sims 4 is not installed or the package has no cached thumbnail.
    */
   /** From Sims 4 Mod Manager's pre-extracted PNG cache (optional adapter) */
-  modmanagerThumbnailPreview?: string | null;
+  // MODMANAGER REMOVED — first-party only (Phase 5m)
+  // modmanagerThumbnailPreview?: string | null;
   cachedThumbnailPreview?: string | null;
   /** Where the thumbnail came from — embedded THUM, localthumbcache, external, or fallback */
   previewSource?: PreviewSource;

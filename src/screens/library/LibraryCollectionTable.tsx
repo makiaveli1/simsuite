@@ -123,7 +123,7 @@ export function LibraryCollectionTable({
                             className={`library-row-thumb-source library-row-thumb-source--${model.previewSource}`}
                             title={`Source: ${model.previewSource}`}
                           >
-                            {model.previewSource === 'modmanager' ? 'MM' : model.previewSource === 'cache' ? 'CH' : model.previewSource === 'embedded' ? 'EM' : 'EX'}
+                            {model.previewSource === 'cache' ? 'CH' : model.previewSource === 'embedded' ? 'EM' : model.previewSource === 'external' ? 'EX' : '—'}
                           </span>
                         ) : null}
                       </>
