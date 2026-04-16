@@ -42,6 +42,10 @@ interface LibraryTopStripProps {
   moreFiltersOpen: boolean;
   librarySummary: LibrarySummary | null;
   viewMode: "list" | "grid";
+  pageSize: number;
+  onPageSizeChange: (value: number) => void;
+  cardDensity: "compact" | "balanced" | "comfortable";
+  onCardDensityChange: (v: "compact" | "balanced" | "comfortable") => void;
   onSearchChange: (value: string) => void;
   onSortByChange: (value: SortField) => void;
   onWatchFilterChange: (value: WatchFilter) => void;
@@ -71,6 +75,10 @@ export function LibraryTopStrip({
   onToggleMoreFilters,
   onResetFilters,
   onViewModeChange,
+  pageSize,
+  onPageSizeChange,
+  cardDensity,
+  onCardDensityChange,
 }: LibraryTopStripProps) {
   const flags = libraryViewFlags(userView);
   const hasActiveFilters = activeFilterCount > 0;
@@ -185,6 +193,35 @@ export function LibraryTopStrip({
             >
               <LayoutList size={14} strokeWidth={2} />
             </button>
+          </div>
+
+          {/* Card density selector */}
+          <div className="library-density-control" aria-label="Card density">
+            <select
+              value={cardDensity}
+              onChange={(e) => onCardDensityChange((e.target as HTMLSelectElement).value as "compact" | "balanced" | "comfortable")}
+              aria-label="Card density"
+              className="library-density-select"
+            >
+              <option value="compact">⬚ Compact</option>
+              <option value="balanced">▦ Balanced</option>
+              <option value="comfortable">▤ Comfortable</option>
+            </select>
+          </div>
+
+          {/* Items per page selector */}
+          <div className="library-density-control" aria-label="Items per page">
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number((e.target as HTMLSelectElement).value))}
+              aria-label="Items per page"
+              className="library-density-select"
+            >
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+              <option value={200}>200 / page</option>
+              <option value={500}>500 / page</option>
+            </select>
           </div>
 
           <div className="library-sort-control" aria-label="Sort library">

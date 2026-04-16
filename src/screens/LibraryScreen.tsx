@@ -71,7 +71,7 @@ interface LibraryScreenProps {
   userView: UserView;
 }
 
-const PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 100;
 export function LibraryScreen({
   refreshVersion,
   onNavigate,
@@ -93,6 +93,7 @@ export function LibraryScreen({
   const [librarySummary, setLibrarySummary] = useState<LibrarySummary | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [creatorDraft, setCreatorDraft] = useState("");
   const [aliasDraft, setAliasDraft] = useState("");
   const [lockPreference, setLockPreference] = useState(false);
@@ -107,7 +108,21 @@ export function LibraryScreen({
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [cardDensity, setCardDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
   const deferredSearch = useDeferredValue(search);
+
+  // Update --card-min CSS variable when card density changes
+  useEffect(() => {
+    const map: Record<typeof cardDensity, string> = {
+      compact: "280px",
+      balanced: "220px",
+      comfortable: "160px",
+    };
+    document.documentElement.style.setProperty("--card-min", map[cardDensity]);
+    return () => {
+      document.documentElement.style.removeProperty("--card-min");
+    };
+  }, [cardDensity]);
 
   // Reload facets when kind changes so subtype chips are kind-scoped.
   useEffect(() => {
@@ -195,8 +210,8 @@ export function LibraryScreen({
       minConfidence: minConfidence ? Number(minConfidence) : undefined,
       watchFilter: watchFilter || undefined,
       sortBy: sortBy || undefined,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      limit: pageSize,
+      offset: page * pageSize,
     });
 
     // Discard stale response — a newer request may have fired since this one started.
@@ -310,7 +325,7 @@ export function LibraryScreen({
   const categoryKindOptions = facets?.taxonomyKinds?.length
     ? facets.taxonomyKinds
     : ["CAS", "BuildBuy", "Gameplay", "ScriptMods", "OverridesAndDefaults", "PosesAndAnimation", "PresetsAndSliders", "TrayHousehold", "TrayLot", "TrayRoom", "TrayItem", "Unknown"];
-  const totalPages = rows ? Math.max(1, Math.ceil(rows.total / PAGE_SIZE)) : 1;
+  const totalPages = rows ? Math.max(1, Math.ceil(rows.total / pageSize)) : 1;
 
   const isPowerView = userView === "power";
   const traySelection = selected ? describeTrayIdentity(selected) : null;
@@ -976,6 +991,10 @@ export function LibraryScreen({
           librarySummary={librarySummary}
           facets={facets}
           viewMode={viewMode}
+          pageSize={pageSize}
+          onPageSizeChange={(v) => { setPageSize(v); setPage(0); }}
+          cardDensity={cardDensity}
+          onCardDensityChange={setCardDensity}
           onViewModeChange={setViewMode}
           filters={{
             kind,

@@ -1656,6 +1656,34 @@ h2,
   color: var(--text);
 }
 
+/* Density / page-size control — matches sort-control styling */
+.library-density-control {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-3);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+
+.library-density-select {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+.library-density-control:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
 /* Quick chips row */
 .library-quick-chips {
   display: flex;
@@ -2954,6 +2982,7 @@ h2,
   justify-items: center;
   gap: 0.25rem;
   min-height: 49px;
+  height: 49px; /* explicit height normalizes Scan vs Customize Home buttons */
   padding: 0.42rem 0.18rem;
   border-color: transparent;
   background: transparent;
@@ -2964,9 +2993,11 @@ h2,
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  box-sizing: border-box; /* ensures padding doesn't inflate height */
 }
 
 .rail-action-primary {
+  height: 49px; /* match .rail-nav height exactly */
   border-color: var(--accent-line);
   background:
     linear-gradient(180deg, rgba(120, 240, 161, 0.14), rgba(120, 240, 161, 0.05)),
@@ -2992,6 +3023,16 @@ h2,
   background:
     linear-gradient(90deg, var(--theme-state-fill), transparent 42%),
     var(--surface-hover);
+}
+
+/* Sidebar nav hover — accent left border + color lift */
+.rail-nav:hover {
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+}
+
+.rail-nav:hover svg {
+  opacity: 1;
 }
 
 /* Kind-colored row hover — reinforces type identity at a glance */
@@ -12689,7 +12730,7 @@ select:focus-visible {
 .library-list-header,
 .library-list-row {
   display: grid;
-  grid-template-columns: 6px 36px minmax(0, 2.25fr) 8.2rem 140px;
+  grid-template-columns: 6px 52px 36px minmax(0, 2.25fr) 8.2rem 140px;
   align-items: stretch;
 }
 
@@ -12772,6 +12813,8 @@ select:focus-visible {
 .library-list-row > .library-list-col--thumb {
   width: 52px;
   min-width: 52px;
+  height: 52px;
+  overflow: hidden;
   padding: 0.3rem 0.2rem !important;
   display: flex;
   align-items: center;
@@ -12825,7 +12868,7 @@ select:focus-visible {
 
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 220px), 1fr));
   gap: 0.65rem;
   padding: 0.75rem 1rem 0.75rem 1rem;
   min-height: 400px;
@@ -12969,6 +13012,10 @@ select:focus-visible {
   color: #f0f0f0;
   font-weight: 600;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-align: left;
+}
+.library-card-identity {
+  text-align: left;
 }
 
 .library-card-hero .library-card-title-meta {

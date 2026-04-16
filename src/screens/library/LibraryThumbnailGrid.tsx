@@ -378,7 +378,7 @@ export function LibraryThumbnailGrid({
                   </div>
 
                   {/* Hero zone: thumbnail OR fallback as dominant visual, title ALWAYS overlaid */}
-                  <div className="library-card-hero">
+                  <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
                     {/* Real THUM thumbnail */}
                     {model.thumbnailPreview ? (
                       <div className="library-card-thumbnail-zone">
