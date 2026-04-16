@@ -885,10 +885,51 @@ fn parse_dbpf_header(file: &mut File) -> AppResult<DbpfHeader> {
     })
 }
 
+/// Try to zlib-decompress a buffer; returns None on failure.
+fn try_zlib_decompress(compressed: &[u8]) -> Option<Vec<u8>> {
+    let mut decoder = ZlibDecoder::new(compressed);
+    let mut out = Vec::new();
+    decoder.read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
+/// Read and decompress the DBPF index buffer.
+/// Sims 4 packages always store the compressed index at byte 96 (the standard DBPF
+/// base offset). The header's index_offset field is often wrong (sometimes pointing
+/// into the data region or set to 0), so we always fall back to byte 96.
+fn read_index_buffer(file: &mut File, header_offset: u32, index_size: u32) -> AppResult<Vec<u8>> {
+    let file_size = file.metadata()?.len();
+    const BASE96: u64 = 96;
+
+    // Try header's index_offset first if non-zero and within bounds
+    if header_offset > 0 && (header_offset as u64) < file_size {
+        let remain = (file_size - header_offset as u64) as usize;
+        let to_read = (index_size as usize + 256).min(remain);
+        let mut buf = vec![0_u8; to_read];
+        file.seek(SeekFrom::Start(header_offset as u64))?;
+        file.read_exact(&mut buf)?;
+        if let Some(dec) = try_zlib_decompress(&buf) {
+            return Ok(dec);
+        }
+    }
+
+    // Always fall back to standard byte 96
+    if (BASE96 as u64) < file_size {
+        let remain = (file_size - BASE96) as usize;
+        let to_read = (index_size as usize + 256).min(remain);
+        let mut buf = vec![0_u8; to_read];
+        file.seek(SeekFrom::Start(BASE96))?;
+        let n = file.read(&mut buf)?;
+        buf.truncate(n);
+        try_zlib_decompress(&buf)
+            .ok_or_else(|| AppError::Message("DBPF index: zlib decompression failed at byte 96".to_owned()))
+    } else {
+        Err(AppError::Message("DBPF index: file too small for standard index at byte 96".to_owned()))
+    }
+}
+
 fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<DbpfRecord>> {
-    let mut buffer = vec![0_u8; header.index_size as usize];
-    file.seek(SeekFrom::Start(header.index_offset as u64))?;
-    file.read_exact(&mut buffer)?;
+    let buffer = read_index_buffer(file, header.index_offset, header.index_size)?;
 
     let mut cursor = Cursor::new(buffer.as_slice());
     let common_mask = read_u32_from_cursor(&mut cursor)?;
@@ -900,12 +941,25 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
         }
     }
 
-    let mut records = Vec::with_capacity(header.record_count as usize);
-    for _ in 0..header.record_count {
+    // Clamp record count to what fits in the decompressed buffer.
+    // The header record_count is often inflated (e.g., 58 declared but only 34 fit in
+    // 834 bytes at 24 bytes/record), causing reads past buffer end and garbage offsets.
+    let header_pos = cursor.position() as usize;
+    let remaining = buffer.len().saturating_sub(header_pos);
+    let max_by_size = remaining / 24; // 24 bytes = max record size (8 u32s, no common values)
+    let actual_count = header
+        .record_count
+        .min(max_by_size as u32);
+
+    let mut records = Vec::with_capacity(actual_count as usize);
+    for _ in 0..actual_count {
         let mut values = common_values;
         for (index, value) in values.iter_mut().enumerate() {
             if ((common_mask >> index) & 1) == 0 {
-                *value = read_u32_from_cursor(&mut cursor)?;
+                if read_u32_from_cursor(&mut cursor).is_err() {
+                    // Ran past end of buffer — stop silently (incomplete/truncated index)
+                    return Ok(records);
+                }
             }
         }
 
@@ -2387,4 +2441,5 @@ mod tests {
         assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
         assert!(hint.confidence_floor >= 0.58);
     }
+
 }

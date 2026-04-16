@@ -117,6 +117,8 @@ export interface LibraryRowModel {
   title: string;
   /** Clean display title for row rendering */
   displayTitle: string;
+  /** Base64 PNG thumbnail (THUM 0x3C1AF1F2) if available */
+  thumbnailPreview: string | null;
   identityLabel: string | null;
   kind: string;
   typeLabel: string;
@@ -275,6 +277,7 @@ export function buildLibraryRowModel(
     title: row.filename,
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
+    thumbnailPreview: row.insights?.thumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
     typeColor: typeColorForKind(row.kind),

@@ -12474,6 +12474,68 @@ select:focus-visible {
   font-weight: 400;
 }
 
+/* ── Inspector Preview Section — Phase 5e ───────────────────────────── */
+.detail-preview-section {
+  padding: 0.6rem 0.75rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.detail-preview-image-wrap {
+  margin-top: 0.35rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 180px;
+}
+
+.detail-preview-image-wrap img.detail-preview-image {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  object-position: center top;
+  display: block;
+}
+
+/* Fallback preview for inspector — colored band with icon */
+.detail-preview-fallback {
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border-radius: 8px;
+}
+
+.detail-preview-fallback .fallback-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.detail-preview-no-label {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Per-type inspector fallback colors */
+.detail-preview-fallback--cas         { background: linear-gradient(160deg, rgba(236,72,153,0.35) 0%, rgba(100,20,60,0.80) 100%); }
+.detail-preview-fallback--buildbuy    { background: linear-gradient(160deg, rgba(168,85,247,0.35) 0%, rgba(70,20,140,0.80) 100%); }
+.detail-preview-fallback--scriptmods,
+.detail-preview-fallback--gameplay    { background: linear-gradient(160deg, rgba(59,130,246,0.32) 0%, rgba(20,50,120,0.80) 100%); }
+.detail-preview-fallback--tray        { background: linear-gradient(160deg, rgba(251,191,36,0.30) 0%, rgba(120,90,10,0.80) 100%); }
+.detail-preview-fallback--unknown     { background: linear-gradient(160deg, rgba(100,116,139,0.32) 0%, rgba(40,50,70,0.85) 100%); }
+
 /* Detail list lines */
 .detail-list {
   display: flex;
@@ -12706,6 +12768,43 @@ select:focus-visible {
   padding-top: 0.5rem !important;
 }
 
+/* Thumbnail/preview cell in list rows — Phase 5e */
+.library-list-row > .library-list-col--thumb {
+  width: 52px;
+  min-width: 52px;
+  padding: 0.3rem 0.2rem !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.library-row-thumb-img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: block;
+}
+
+.library-row-thumb-fallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* Fallback colors per type for list row thumbnails — Phase 5e redesign */
+.library-row-thumb-fallback--cas         { background: rgba(236, 72, 153, 0.55); border: 1px solid rgba(236, 72, 153, 0.35); }
+.library-row-thumb-fallback--buildbuy    { background: rgba(168, 85, 247, 0.55); border: 1px solid rgba(168, 85, 247, 0.35); }
+.library-row-thumb-fallback--scriptmods,
+.library-row-thumb-fallback--gameplay    { background: rgba(59, 130, 246, 0.50); border: 1px solid rgba(59, 130, 246, 0.30); }
+.library-row-thumb-fallback--trayhousehold,
+.library-row-thumb-fallback--trayitem,
+.library-row-thumb-fallback--traylot,
+.library-row-thumb-fallback--trayroom    { background: rgba(251, 191, 36, 0.50); border: 1px solid rgba(251, 191, 36, 0.30); }
+.library-row-thumb-fallback--unknown     { background: rgba(100, 116, 139, 0.50); border: 1px solid rgba(100, 116, 139, 0.30); }
+
 .library-list-empty {
   display: flex;
   align-items: center;
@@ -12771,6 +12870,170 @@ select:focus-visible {
   border-bottom-color: rgba(239, 68, 68, 0.2);
 }
 
+/* ─── Hero thumbnail zone — redesigned for Phase 5e ────────────────────────── */
+/* Wraps the thumbnail + title into a dominant visual unit at card top */
+.library-card-hero {
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* The thumbnail fills the hero zone */
+.library-card-hero .library-card-thumbnail-zone {
+  width: 100%;
+  padding: 0;
+  display: block;
+  line-height: 0; /* prevents inline gap under img */
+}
+
+.library-card-hero .library-card-thumbnail-img {
+  width: 100%;
+  height: 140px;
+  max-height: 140px;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 0;
+  border: none;
+  display: block;
+}
+
+/* Fallback hero: type-colored zone with large icon — Phase 5e redesign */
+.library-card-hero .library-card-thumbnail-zone--fallback {
+  width: 100%;
+  height: 100px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Per-type fallback zone backgrounds — makes the hero feel intentional */
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--cas {
+  background: linear-gradient(160deg, rgba(236, 72, 153, 0.38) 0%, rgba(120, 20, 80, 0.75) 100%);
+}
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--buildbuy {
+  background: linear-gradient(160deg, rgba(168, 85, 247, 0.38) 0%, rgba(80, 20, 160, 0.75) 100%);
+}
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--scriptmods,
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--gameplay {
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.35) 0%, rgba(20, 60, 140, 0.75) 100%);
+}
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--tray {
+  background: linear-gradient(160deg, rgba(251, 191, 36, 0.32) 0%, rgba(140, 100, 10, 0.75) 100%);
+}
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--unknown,
+.library-card-hero .library-card-thumbnail-zone--fallback {
+  background: linear-gradient(160deg, rgba(100, 116, 139, 0.35) 0%, rgba(40, 50, 70, 0.80) 100%);
+}
+
+/* Fallback icon: slightly more visible — 0.4 opacity bg + border */
+.library-card-hero .library-card-fallback-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Fallback label below icon in hero fallback */
+.library-card-hero .library-card-fallback-label {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Hero title overlay: title-block sits at bottom of hero with gradient scrim */
+.library-card-hero .library-card-title-block {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.4rem 0.6rem 0.3rem;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(12, 12, 20, 0.65) 40%,
+    rgba(12, 12, 20, 0.94) 100%
+  );
+  z-index: 1;
+}
+
+.library-card-hero .library-card-title {
+  color: #f0f0f0;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.library-card-hero .library-card-title-meta {
+  margin-top: 2px;
+}
+
+.library-card-hero .library-card-identity {
+  color: rgba(240, 240, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* Fallback category label inside the hero zone */
+.library-card-fallback-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+/* Hero fallback backgrounds per category */
+.library-card-hero--cas      { background: linear-gradient(160deg, rgba(236,72,153,0.30) 0%, rgba(15,8,12,0.95) 100%); }
+.library-card-hero--buildbuy { background: linear-gradient(160deg, rgba(168,85,247,0.30) 0%, rgba(12,8,20,0.95) 100%); }
+.library-card-hero--scriptmods { background: linear-gradient(160deg, rgba(59,130,246,0.25) 0%, rgba(8,12,20,0.95) 100%); }
+.library-card-hero--trayhousehold,
+.library-card-hero--traylot,
+.library-card-hero--trayroom,
+.library-card-hero--household,
+.library-card-hero--lot,
+.library-card-hero--room,
+.library-card-hero--trayitem { background: linear-gradient(160deg, rgba(251,191,36,0.22) 0%, rgba(18,14,6,0.95) 100%); }
+.library-card-hero--unknown  { background: linear-gradient(160deg, rgba(100,116,139,0.22) 0%, rgba(12,14,18,0.95) 100%); }
+
+/* Standalone fallback band (no hero wrapper) — prominent category visual */
+.library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback) {
+  width: 100%;
+  height: 72px;
+  padding: 0 0.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* Category-colored standalone fallback bands */
+.library-card--cas .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback) {
+  background: linear-gradient(135deg, rgba(236,72,153,0.18) 0%, rgba(15,8,12,0.6) 100%);
+}
+.library-card--buildbuy .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback) {
+  background: linear-gradient(135deg, rgba(168,85,247,0.18) 0%, rgba(12,8,20,0.6) 100%);
+}
+.library-card--scriptmods .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback) {
+  background: linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(8,12,20,0.6) 100%);
+}
+.library-card--trayhousehold .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback),
+.library-card--traylot .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback),
+.library-card--household .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback),
+.library-card--lot .library-card-thumbnail-zone--fallback:not(.library-card-hero .library-card-thumbnail-zone--fallback) {
+  background: linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(18,14,6,0.6) 100%);
+}
+
 /* Card header: tiny type dot + status */
 .library-card-header {
   display: flex;
@@ -12789,39 +13052,13 @@ select:focus-visible {
   justify-content: flex-end;
 }
 
-.library-card-title-block {
+/* Title block — outside hero zone, normal flow */
+.library-card-title-block--standalone {
   padding: 0.58rem 0.6rem 0.14rem;
 }
 
 .library-card-title-meta {
   margin-bottom: 0.18rem;
-}
-
-/* Thumbnail zone — shows real extracted THUM PNG */
-.library-card-thumbnail-zone {
-  padding: 0.4rem 0.6rem 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Fallback zone: same layout but no border on the container */
-.library-card-thumbnail-zone--fallback {
-  padding: 0.4rem 0.6rem 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Compact inline SVG category indicator for card grid */
-.library-card-fallback-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  flex-shrink: 0;
 }
 
 .library-card-thumbnail-img {

@@ -377,36 +377,43 @@ export function LibraryThumbnailGrid({
                     </div>
                   </div>
 
-                  <div className="library-card-title-block">
-                    <div className="library-card-title" title={model.title}>
-                      {model.displayTitle}
-                    </div>
-                    <div className="library-card-title-meta">
-                      <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                        {model.typeLabel}
-                      </span>
-                    </div>
-                    {model.identityLabel ? (
-                      <div className="library-card-identity" title={model.identityLabel}>
-                        {model.identityLabel}
+                  {/* Hero zone: thumbnail OR fallback as dominant visual, title ALWAYS overlaid */}
+                  <div className="library-card-hero">
+                    {/* Real THUM thumbnail */}
+                    {model.thumbnailPreview ? (
+                      <div className="library-card-thumbnail-zone">
+                        <img
+                          src={`data:image/png;base64,${model.thumbnailPreview}`}
+                          alt={`Preview for ${model.displayTitle}`}
+                          className="library-card-thumbnail-img"
+                        />
                       </div>
-                    ) : null}
-                  </div>
+                    ) : (
+                      /* Fallback: category-colored hero band */
+                      <div
+                        className={`library-card-thumbnail-zone library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}
+                      >
+                        <FallbackCategoryIcon kind={model.kind} />
+                      </div>
+                    )}
 
-                  {/* Optional thumbnail preview (THUM 0x3C1AF1F2) */}
-                  {model.thumbnailPreview ? (
-                    <div className="library-card-thumbnail-zone">
-                      <img
-                        src={`data:image/png;base64,${model.thumbnailPreview}`}
-                        alt={`Preview for ${model.displayTitle}`}
-                        className="library-card-thumbnail-img"
-                      />
+                    {/* Title ALWAYS overlaid at bottom of hero */}
+                    <div className="library-card-title-block">
+                      <div className="library-card-title" title={model.title}>
+                        {model.displayTitle}
+                      </div>
+                      <div className="library-card-title-meta">
+                        <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                          {model.typeLabel}
+                        </span>
+                      </div>
+                      {model.identityLabel ? (
+                        <div className="library-card-identity" title={model.identityLabel}>
+                          {model.identityLabel}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : (
-                    <div className="library-card-thumbnail-zone library-card-thumbnail-zone--fallback">
-                      <FallbackCategoryIcon kind={model.kind} />
-                    </div>
-                  )}
+                  </div>
 
                   {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">

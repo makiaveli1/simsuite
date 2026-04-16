@@ -275,6 +275,65 @@ export function LibraryDetailsPanel({
         </div>
       </div>
 
+      {/* ── Preview — real thumbnail or honest category fallback ── */}
+      <section className="detail-preview-section">
+        <div className="section-label">Preview</div>
+        {selectedFile.insights?.thumbnailPreview ? (
+          <div className="detail-preview-image-wrap">
+            <img
+              src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
+              alt={`Preview for ${selectedFile.filename}`}
+              className="detail-preview-image"
+            />
+          </div>
+        ) : (
+          <div
+            className={`detail-preview-fallback detail-preview-fallback--${typeColor}`}
+            title={`${friendlyTypeLabel(selectedFile.kind)} — no thumbnail available`}
+          >
+            <div className="fallback-icon-wrap">
+              {/* CAS */}
+              {selectedFile.kind === "CAS" && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                  <line x1="3" y1="6" x2="21" y2="6"/>
+                  <path d="M16 10a4 4 0 0 1-8 0"/>
+                </svg>
+              )}
+              {/* BuildBuy */}
+              {(selectedFile.kind === "BuildBuy" || selectedFile.kind === "OverridesAndDefaults") && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+              )}
+              {/* ScriptMods */}
+              {selectedFile.kind === "ScriptMods" && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+              )}
+              {/* Tray */}
+              {(selectedFile.kind === "TrayHousehold" || selectedFile.kind === "TrayItem" || selectedFile.kind === "TrayLot" || selectedFile.kind === "TrayRoom" || selectedFile.kind === "Household" || selectedFile.kind === "Lot" || selectedFile.kind === "Room") && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+              )}
+              {/* Default */}
+              {(["Gameplay", "PosesAndAnimation", "PresetsAndSliders", "Unknown"].includes(selectedFile.kind)) && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              )}
+            </div>
+            <span className="detail-preview-no-label">No thumbnail</span>
+          </div>
+        )}
+      </section>
+
       {/* ── Snapshot — view-aware depth ── */}
       <section className="library-details-card">
         <div className="section-label">At a glance</div>

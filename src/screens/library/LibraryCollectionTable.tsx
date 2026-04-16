@@ -33,6 +33,7 @@ export function LibraryCollectionTable({
       <div className="table-scroll library-table-scroll library-list-shell">
         <div className="library-list-header" role="row">
           <div className="library-list-col library-list-col--type" aria-label="Type" />
+          <div className="library-list-col library-list-col--thumb" aria-label="Preview" />
           <div className="library-list-col library-list-col--select" aria-label="Select" />
           <div className="library-list-col library-list-col--name">
             {userView === "beginner" ? "File" : "Mod or file"}
@@ -106,6 +107,23 @@ export function LibraryCollectionTable({
                         aria-label={model.typeLabel}
                       />
                     ) : null}
+                  </div>
+
+                  {/* Thumbnail / preview cell — 5e */}
+                  <div className="library-list-col library-list-col--thumb">
+                    {model.thumbnailPreview ? (
+                      <img
+                        src={`data:image/png;base64,${model.thumbnailPreview}`}
+                        alt=""
+                        className="library-row-thumb-img"
+                      />
+                    ) : (
+                      <div
+                        className={`library-row-thumb-fallback library-row-thumb-fallback--${model.typeColor}`}
+                        title={model.typeLabel}
+                        aria-label={model.typeLabel}
+                      />
+                    )}
                   </div>
 
                   <div
