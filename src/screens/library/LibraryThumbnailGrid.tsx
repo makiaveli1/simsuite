@@ -1,5 +1,5 @@
 import { m } from "motion/react";
-import { rowHover, rowPress, stagedListItem } from "../../lib/motion";
+import { cardHoverShadow, cardPress, stagedListItem } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
 import {
   buildLibraryCardModel,
@@ -336,8 +336,8 @@ export function LibraryThumbnailGrid({
                       onSelect(row);
                     }
                   }}
-                  whileHover={rowHover}
-                  whileTap={rowPress}
+                  whileHover={cardHoverShadow}
+                  whileTap={cardPress}
                   {...stagedListItem(index)}
                 >
                   {/* Card header: tiny type dot + status badges */}
@@ -421,6 +421,20 @@ export function LibraryThumbnailGrid({
                         </div>
                       ) : null}
                     </div>
+
+                    {/* Color swatch strip — keyword-derived color hints */}
+                    {model.colorSwatches.length > 0 && !model.thumbnailPreview ? (
+                      <div className="library-card-swatch-strip" aria-label="Color hints from file metadata">
+                        {model.colorSwatches.map((hex, i) => (
+                          <div
+                            key={i}
+                            className="library-card-swatch"
+                            style={{ background: hex }}
+                            title={hex}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Content preview — type-specific */}

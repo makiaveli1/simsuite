@@ -105,6 +105,8 @@ export interface LibraryCardModel {
   trayIdentityLabel: string | null;
   /** Version signal (for ScriptMods and others) */
   versionLabel: string | null;
+  /** Color swatches extracted from embeddedNames / familyHints keywords */
+  colorSwatches: string[];
 
   // The raw row for click handling
   row: LibraryFileRow;
@@ -155,6 +157,8 @@ export interface LibraryRowModel {
   confidenceLabel: string;
   /** True if the item has any safety/parser issues */
   hasIssues: boolean;
+  /** Color swatches extracted from embeddedNames / familyHints keywords */
+  colorSwatches: string[];
 }
 
 type LibraryCareSummarySource = Pick<
@@ -314,6 +318,10 @@ export function buildLibraryRowModel(
           ? "Medium confidence"
           : "Low confidence",
     hasIssues,
+    colorSwatches: extractColorSwatches(
+      row.insights?.embeddedNames ?? [],
+      row.insights?.familyHints ?? [],
+    ),
   };
 }
 
@@ -428,8 +436,53 @@ export function buildLibraryCardModel(
     subtype,
     trayIdentityLabel,
     versionLabel,
+    colorSwatches: extractColorSwatches(allCasNames, row.insights?.familyHints ?? []),
     row,
   };
+}
+
+// ─── Color Swatch Extraction ────────────────────────────────────────────────
+
+const COLOR_KEYWORDS: [RegExp, string][] = [
+  [/\bred\b|scarlet|crimson|vermillion|ruby|sangre/i, "#DC2626"],
+  [/\borange\b|amber|rust|tangerine|peach/i, "#EA580C"],
+  [/\byellow\b|gold|lemon|mustard|cream/i, "#CA8A04"],
+  [/\bgreen\b|emerald|sage|forest|olive|mint|teal/i, "#16A34A"],
+  [/\bblue\b|navy|cobalt|royal|aqua|sky/i, "#2563EB"],
+  [/\bindigo\b|violet|lavender|purple/i, "#7C3AED"],
+  [/\bpink\b|rose|blush|magenta|fuchsia|raspberry/i, "#DB2777"],
+  [/\bbrown\b|chocolate|coffee|tan|caramel|walnut/i, "#92400E"],
+  [/\bblack\b|charcoal|obsidian|jet|onyx/i, "#18181B"],
+  [/\bwhite\b|ivory|pearl|snow|lattice/i, "#F4F4F5"],
+  [/\bgray\b|grey|slate|ash|smoke/i, "#71717A"],
+  [/\bsilver\b|chrome|platinum/i, "#A8A29E"],
+  [/\bglass\b|transparent|crystal/i, "#93C5FD"],
+  [/\bmarble\b/i, "#E5E7EB"],
+  [/\bwood\b|oak|pine|maple|walnut|wooden/i, "#A16207"],
+  [/\bmetal\b|metallic|brushed|steel/i, "#6B7280"],
+  [/\bleather\b/i, "#78350F"],
+  [/\bfloral\b|flower|rose petals|blossom/i, "#F472B6"],
+];
+
+/**
+ * Extract up to 6 hex color swatches from CAS item names and family hints.
+ * Returns a curated list — no duplicates, in priority order.
+ */
+export function extractColorSwatches(embeddedNames: string[], familyHints: string[]): string[] {
+  const seen = new Set<string>();
+  const swatches: string[] = [];
+  const sources = [...embeddedNames, ...familyHints];
+
+  for (const source of sources) {
+    for (const [keyword, hex] of COLOR_KEYWORDS) {
+      if (keyword.test(source) && !seen.has(hex)) {
+        seen.add(hex);
+        swatches.push(hex);
+        if (swatches.length >= 6) return swatches;
+      }
+    }
+  }
+  return swatches;
 }
 
 /** Maps SimSuite kind (PascalCase) to a CSS type-color key */

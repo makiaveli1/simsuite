@@ -206,6 +206,18 @@ export function LibraryCollectionTable({
                         </span>
                       ))}
                     </div>
+                    {model.colorSwatches.length > 0 && (
+                      <div className="library-row-swatches" aria-label="Color hints">
+                        {model.colorSwatches.map((hex, i) => (
+                          <div
+                            key={i}
+                            className="library-row-swatch"
+                            style={{ background: hex }}
+                            title={hex}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </m.div>
               );

@@ -5441,6 +5441,24 @@ h2,
   line-height: 1.45;
 }
 
+/* Row swatches — small color dots in the facts cell */
+.library-row-swatches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.library-row-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  cursor: default;
+}
+
 .empty-row {
   color: var(--text-soft);
   text-align: center;
@@ -13089,6 +13107,36 @@ select:focus-visible {
   text-align: center;
   line-height: 1;
   margin-bottom: 2px;
+}
+
+/* Color swatch strip — keyword-derived color hints shown below title */
+.library-card-swatch-strip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0.3rem 0.6rem 0.25rem;
+  background: linear-gradient(to top, rgba(8,8,14,0.92) 0%, transparent 100%);
+  z-index: 2;
+}
+
+.library-card-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+/* Card base hover elevation — enhanced for Phase 5i */
+.library-card {
+  will-change: transform, box-shadow;
+  transition: box-shadow 0.2s ease;
 }
 
 /* Hero fallback backgrounds per category */

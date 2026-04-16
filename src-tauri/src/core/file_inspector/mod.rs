@@ -5,6 +5,8 @@ use std::{
     path::Path,
 };
 
+use tracing::{debug, warn};
+
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use flate2::read::ZlibDecoder;
 use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage, ImageEncoder};
@@ -83,6 +85,8 @@ const RESOURCE_DEFINITION: u32 = 0xc0db_5ae7;
 const RESOURCE_HOTSPOT: u32 = 0x8b18_ff6e;
 const RESOURCE_SCRIPT: u32 = 0x073f_aa07;
 const RESOURCE_THUM: u32 = 0x3C1A_F1F2;
+/// Object/build-buy thumbnail — 4 embedded sizes (32, 64, 78, 116 px)
+const RESOURCE_THUM_OBJECT: u32 = 0x3C2A_8647;
 const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
 const BUILD_SURFACE_RESOURCE_TYPES: &[u32] = &[
     0x01d0_e75d,
@@ -394,10 +398,11 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
 // ─── Thumbnail Extraction ───────────────────────────────────────────────────────
 
 /// Returns base64-encoded PNG of the first THUM resource found, or None.
+/// Checks both CAS THUM (0x3C1AF1F2) and object THUM (0x3C2A8647).
 fn extract_thumbnail_preview(file: &mut File, records: &[DbpfRecord]) -> Option<String> {
     let thum_records: Vec<_> = records
         .iter()
-        .filter(|r| r.resource_type == RESOURCE_THUM)
+        .filter(|r| r.resource_type == RESOURCE_THUM || r.resource_type == RESOURCE_THUM_OBJECT)
         .collect();
 
     for record in thum_records {
@@ -1952,15 +1957,32 @@ pub struct ThumbnailEntry {
 fn get_localthumbcache_path() -> Option<std::path::PathBuf> {
     // Try standard Windows %LOCALAPPDATA% location
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-        let path = std::path::PathBuf::from(local_app_data)
+        let path = std::path::PathBuf::from(&local_app_data)
             .join("The Sims 4")
             .join("localthumbcache.package");
+        debug!("localthumbcache: checking LOCALAPPDATA path: {:?}", path);
         if path.exists() {
+            debug!("localthumbcache: FOUND at {:?}", path);
+            return Some(path);
+        }
+        debug!("localthumbcache: not found at LOCALAPPDATA path");
+    } else {
+        debug!("localthumbcache: LOCALAPPDATA env var not set");
+    }
+
+    // Try ProgramData location (some Sims 4 installs)
+    if let Some(program_data) = std::env::var_os("ProgramData") {
+        let path = std::path::PathBuf::from(&program_data)
+            .join("The Sims 4")
+            .join("localthumbcache.package");
+        debug!("localthumbcache: checking ProgramData path: {:?}", path);
+        if path.exists() {
+            debug!("localthumbcache: FOUND at ProgramData: {:?}", path);
             return Some(path);
         }
     }
 
-    // WSL fallback — try traversing the /mnt/c path (usually inaccessible)
+    // WSL fallback — try traversing the /mnt/c path
     if let Ok(username) = std::env::var("USERNAME") {
         let wsl_path = std::path::PathBuf::from("/mnt/c/Users")
             .join(&username)
@@ -1968,11 +1990,29 @@ fn get_localthumbcache_path() -> Option<std::path::PathBuf> {
             .join("Local")
             .join("The Sims 4")
             .join("localthumbcache.package");
+        debug!("localthumbcache: checking WSL path: {:?}", wsl_path);
         if wsl_path.exists() {
+            debug!("localthumbcache: FOUND at WSL path: {:?}", wsl_path);
             return Some(wsl_path);
         }
     }
 
+    // OneDrive Documents fallback — for Sims 4 installs that redirect Documents to OneDrive
+    // This is the path that exists on Likwid's machine
+    let one_drive = std::path::PathBuf::from("/mnt/c/Users")
+        .join("likwi")  // known Windows username
+        .join("OneDrive")
+        .join("Documents")
+        .join("Electronic Arts")
+        .join("The Sims 4")
+        .join("localthumbcache.package");
+    debug!("localthumbcache: checking OneDrive path: {:?}", one_drive);
+    if one_drive.exists() {
+        debug!("localthumbcache: FOUND at OneDrive path: {:?}", one_drive);
+        return Some(one_drive);
+    }
+
+    warn!("localthumbcache: file not found in any checked location");
     None
 }
 
@@ -2267,8 +2307,26 @@ fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
 
     // Look up in localthumbcache
     let cache_entries = parse_localthumbcache();
+    debug!(
+        "localthumbcache: {} entries loaded from cache for package instance {:016x}",
+        cache_entries.len(),
+        package_instance_id
+    );
+
+    if cache_entries.is_empty() {
+        debug!("localthumbcache: cache has 0 entries — Sims 4 may not be installed or cache not yet generated");
+        return None;
+    }
+
     let thumb_entry = find_thumbnail_for_file(&cache_entries, package_instance_id)?;
-    extract_cached_thumbnail(thumb_entry)
+    debug!("localthumbcache: found entry for {:016x}, decoding...", package_instance_id);
+    let result = extract_cached_thumbnail(thumb_entry);
+    if result.is_some() {
+        debug!("localthumbcache: successfully decoded thumbnail for {:016x}", package_instance_id);
+    } else {
+        debug!("localthumbcache: failed to decode DDS thumbnail for {:016x}", package_instance_id);
+    }
+    result
 }
 
 #[cfg(test)]

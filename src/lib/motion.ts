@@ -180,17 +180,35 @@ export const tapPress = {
 };
 
 export const rowHover = {
-  x: 2,
+  y: -2,
+  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
   transition: {
-    duration: 0.18,
+    duration: 0.2,
     ease: easeStandard,
   },
 };
 
 export const rowPress = {
-  scale: 0.995,
+  scale: 0.985,
+  y: 0,
   transition: {
-    duration: 0.12,
+    duration: 0.1,
+  },
+};
+
+export const cardHoverShadow = {
+  y: -3,
+  scale: 1.012,
+  transition: {
+    duration: 0.22,
+    ease: easeStandard,
+  },
+};
+
+export const cardPress = {
+  scale: 0.988,
+  transition: {
+    duration: 0.1,
   },
 };
 

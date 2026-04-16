@@ -103,7 +103,8 @@ const MIN_PARALLEL_HASH_ITEMS: usize = 8;
 const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
 // v18: THUM (0x3C1AF1F2) thumbnail extraction added — all cached files must be re-inspected
-const SCAN_CACHE_VERSION: &str = "scanner-v18";
+// v19: localthumbcache cached_thumbnail_preview added — all cached files must be re-inspected
+const SCAN_CACHE_VERSION: &str = "scanner-v19";
 
 pub fn library_scan_needs_refresh(
     connection: &Connection,
