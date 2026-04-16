@@ -249,41 +249,32 @@
   display: none;
 }
 
-/* ─── DENSITY — responsive via --card-min slider ─────────────────────────────
+/* ─── DENSITY — driven by --card-min CSS variable set in LibraryScreen.tsx ──
    The grid uses auto-fill + minmax(var(--card-min, 220px), 1fr).
-   Card width scales smoothly. Aspect-ratio: 4/5 on hero keeps proportions.
-   Reveal panel text scales slightly with card size.
-   Small: 120px | Medium: 180px | Large: 260px
+   Three snap sizes: S=120px, M=180px, L=260px — set by cardDensity state.
+   Card width scales smoothly. aspect-ratio: 4/5 on hero keeps proportions.
+   Reveal panel text scales with card size.
    ─────────────────────────────────────────────────────────────────────────── */
 
-:root[data-density="compact"] {
-  --card-min: 120px;
+/* Small cards (--card-min: 120px) — tighter reveal text */
+:root {
+  --reveal-title-size: 0.78rem;
+  --reveal-padding: 0.4rem 0.5rem 0.35rem;
 }
 
-:root[data-density="balanced"] {
-  --card-min: 180px;
-}
-
+/* Large cards (--card-min: 260px) — more generous reveal text */
 :root[data-density="roomy"] {
-  --card-min: 260px;
+  --reveal-title-size: 0.9rem;
+  --reveal-padding: 0.6rem 0.75rem 0.5rem;
 }
 
-/* Compact: smaller reveal text */
-:root[data-density="compact"] .library-card-info-reveal {
-  padding: 0.35rem 0.5rem 0.3rem;
+/* Density-aware reveal text size */
+.library-card-info-reveal {
+  padding: var(--reveal-padding);
 }
 
-:root[data-density="compact"] .library-card-info-reveal .library-card-reveal-title {
-  font-size: 0.75rem;
-}
-
-/* Roomy: larger reveal text */
-:root[data-density="roomy"] .library-card-info-reveal {
-  padding: 0.6rem 0.75rem 0.5rem;
-}
-
-:root[data-density="roomy"] .library-card-info-reveal .library-card-reveal-title {
-  font-size: 0.9rem;
+.library-card-info-reveal .library-card-reveal-title {
+  font-size: var(--reveal-title-size);
 }
 
 /* ─── HERO THUMBNAIL WRAP ───────────────────────────────────── */
@@ -808,4 +799,32 @@
 
 .library-slider-labels span:hover {
   color: var(--text);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TYPE-COLORED TOP ACCENT BAR — 3px strip at card top
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Hero has a colored top border matching the type color */
+.library-card-hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 6;
+  background: var(--type-color, rgba(255,255,255,0.3));
+  border-radius: 3px 3px 0 0;
+}
+
+/* Per-type accent bar colors */
+.library-card--cas::before        { background: rgba(236, 72, 153, 0.9); }
+.library-card--buildbuy::before  { background: rgba(168, 85, 247, 0.9); }
+.library-card--gameplay::before  { background: rgba(59, 130, 246, 0.9); }
+.library-card--scriptmods::before { background: rgba(59, 130, 246, 0.9); }
+.library-card--tray::before      { background: rgba(251, 191, 36, 0.9); }
+.library-card--unknown::before   { background: rgba(148, 163, 184, 0.6); }
+
+/* Keep hero scrim above the accent bar */
+.library-card-hero::after {
+  z-index: 2;
 }
