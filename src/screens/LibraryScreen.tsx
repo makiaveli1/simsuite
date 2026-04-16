@@ -162,6 +162,7 @@ export function LibraryScreen({
     watchFilter,
     sortBy,
     page,
+    pageSize,
   ]);
 
   useEffect(() => {
