@@ -9,7 +9,7 @@ use tracing::{debug, warn};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use flate2::read::ZlibDecoder;
-use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage, ImageEncoder};
+use image::{DynamicImage, ImageBuffer, Rgba, ImageEncoder};
 use zip::ZipArchive;
 
 use crate::{
@@ -418,64 +418,21 @@ fn extract_thumbnail_preview(file: &mut File, records: &[DbpfRecord]) -> Option<
     None
 }
 
-/// Decode raw THUM bytes (raw BMP DIB data, no file header) to base64 PNG.
+/// Decode raw THUM bytes (raw JPEG data) to base64 PNG.
+/// Sims 4 THUM resources (type 0x3C1AF1F2) store JPEG-encoded image data directly,
+/// not BMP DIB data. We load the raw bytes as a JPEG and convert to PNG.
 fn decode_thum_to_png(raw: &[u8]) -> Option<String> {
-    if raw.len() < 24 {
+    if raw.len() < 2 {
         return None;
     }
 
-    let width  = u32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]);
-    let height = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
-
-    if width == 0 || height == 0 || width > 1024 || height > 1024 {
+    // Verify JPEG magic bytes (SOI: 0xFF 0xD8)
+    if raw[0] != 0xFF || raw[1] != 0xD8 {
         return None;
     }
 
-    // AFLP alpha chunk: magic at byte 24 == 0x41464C41
-    let has_alpha = raw.len() >= 32
-        && u32::from_le_bytes([raw[24], raw[25], raw[26], raw[27]]) == 0x41464C41;
-
-    // BMP height field can be negative (top-down). Compute absolute value.
-    // Bottom 31 bits give the magnitude; negate as two's complement.
-    let h_abs = if height & 0x8000_0000 != 0 {
-        0u32.wrapping_sub(height)
-    } else {
-        height
-    };
-    let bpp   = if has_alpha { 32 } else { 24 };
-    let row_stride = ((width as usize * (bpp / 8) + 3) / 4) * 4;
-    let pixel_start = 24_usize;
-
-    // Build a valid BMP: 14-byte file header + 40-byte DIB header + pixel rows
-    let data_offset: u32 = 14 + 40;
-    let image_size = (row_stride * h_abs as usize) as u32;
-    let file_size  = data_offset + image_size;
-
-    let mut bmp = Vec::with_capacity(14 + 40 + (raw.len().saturating_sub(pixel_start)));
-    bmp.extend_from_slice(&[0x42, 0x4D]); // BM
-    bmp.extend_from_slice(&file_size.to_le_bytes());
-    bmp.extend_from_slice(&[0u8; 4]);
-    bmp.extend_from_slice(&data_offset.to_le_bytes());
-    // DIB header
-    bmp.extend_from_slice(&40u32.to_le_bytes());
-    bmp.extend_from_slice(&width.to_le_bytes());
-    bmp.extend_from_slice(&height.to_le_bytes());
-    bmp.extend_from_slice(&1u16.to_le_bytes());
-    bmp.extend_from_slice(&(bpp as u16).to_le_bytes());
-    bmp.extend_from_slice(&[0u8; 20]); // BI_RGB, rest zero
-    if raw.len() > pixel_start {
-        bmp.extend_from_slice(&raw[pixel_start..]);
-    }
-
-    let img = image::load(Cursor::new(&bmp), image::ImageFormat::Bmp).ok()?;
-    let mut rgba = img.to_rgba8();
-
-    if has_alpha && raw.len() >= 32 {
-        let alpha_len = u32::from_le_bytes([raw[28], raw[29], raw[30], raw[31]]) as usize;
-        if raw.len() >= 32 + alpha_len {
-            apply_bgra_alpha(&mut rgba, &raw[32..32 + alpha_len], width, h_abs);
-        }
-    }
+    let img = image::load_from_memory(raw).ok()?;
+    let rgba = img.to_rgba8();
 
     // Encode as PNG
     let mut png_bytes = Vec::new();
@@ -484,23 +441,6 @@ fn decode_thum_to_png(raw: &[u8]) -> Option<String> {
         .ok()?;
 
     Some(BASE64_STANDARD.encode(&png_bytes))
-}
-
-/// Apply a BGRA alpha-channel overlay to an RGBA image.
-fn apply_bgra_alpha(img: &mut RgbaImage, alpha_data: &[u8], w: u32, h: u32) {
-    let expected = (w * h * 4) as usize;
-    if alpha_data.len() < expected {
-        return;
-    }
-    for y in 0..h {
-        for x in 0..w {
-            let i = (y as usize * w as usize + x as usize) * 4;
-            let a = alpha_data[i + 3];
-            if a < 255 {
-                img.get_pixel_mut(x, y).0[3] = a;
-            }
-        }
-    }
 }
 
 
@@ -886,10 +826,23 @@ fn parse_dbpf_header(file: &mut File) -> AppResult<DbpfHeader> {
         return Err(AppError::Message("Unsupported DBPF version".to_owned()));
     }
 
+    // index_offset is at bytes 12-15 in standard DBPF v2.
+    // Some Sims 4 package variants store an EOF-relative offset here.
+    // We detect this and compute the absolute offset, then fall back to
+    // the standard byte 96 if it points outside the file.
+    let file_size = file.metadata()?.len() as u64;
+    let raw_index_offset = read_u32(&header[12..16])?;
+    let index_offset: u32 = if raw_index_offset as u64 >= file_size {
+        // EOF-relative: absolute = file_size - raw_value
+        (file_size as u32).wrapping_sub(raw_index_offset)
+    } else {
+        raw_index_offset
+    };
+
     Ok(DbpfHeader {
         record_count: read_u32(&header[36..40])?,
         index_size: read_u32(&header[44..48])?,
-        index_offset: read_u32(&header[64..68])?,
+        index_offset,
     })
 }
 
@@ -972,6 +925,14 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
         }
 
         let compressed_reserved = values[7];
+
+        // Skip records where resource_type is 0 — these indicate corrupt or
+        // uninitialized entries arising from incorrect common_mask field
+        // interpretation (e.g. NAME_MAP type 0x735A2F9C index parsing issues).
+        if values[0] == 0 {
+            continue;
+        }
+
         records.push(DbpfRecord {
             resource_type: values[0],
             offset: values[4],
@@ -2058,7 +2019,7 @@ fn parse_dbpf_header_internal(file: &mut std::fs::File) -> AppResult<DbpfHeader>
     Ok(DbpfHeader {
         record_count: read_u32(&header[36..40])?,
         index_size: read_u32(&header[44..48])?,
-        index_offset: read_u32(&header[64..68])?,
+        index_offset: read_u32(&header[12..16])?,
     })
 }
 
@@ -2270,6 +2231,7 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
 /// Reads just enough of the DBPF index to get the package's 64-bit Instance ID,
 /// then looks it up in the localthumbcache entries.
 fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
+    debug!("localthumbcache: trying to find cached thumbnail for {:?}", path);
     let mut file = std::fs::File::open(path).ok()?;
 
     // Read DBPF header to get index location
