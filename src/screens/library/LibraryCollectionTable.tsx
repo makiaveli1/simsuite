@@ -109,14 +109,24 @@ export function LibraryCollectionTable({
                     ) : null}
                   </div>
 
-                  {/* Thumbnail / preview cell — 5e */}
+                  {/* Thumbnail / preview cell — Phase 5e, updated 5k */}
                   <div className="library-list-col library-list-col--thumb">
                     {model.thumbnailPreview ? (
-                      <img
-                        src={`data:image/png;base64,${model.thumbnailPreview}`}
-                        alt=""
-                        className="library-row-thumb-img"
-                      />
+                      <>
+                        <img
+                          src={`data:image/png;base64,${model.thumbnailPreview}`}
+                          alt=""
+                          className="library-row-thumb-img"
+                        />
+                        {model.previewSource && model.previewSource !== 'fallback' ? (
+                          <span
+                            className={`library-row-thumb-source library-row-thumb-source--${model.previewSource}`}
+                            title={`Source: ${model.previewSource}`}
+                          >
+                            {model.previewSource === 'modmanager' ? 'MM' : model.previewSource === 'cache' ? 'CH' : model.previewSource === 'embedded' ? 'EM' : 'EX'}
+                          </span>
+                        ) : null}
+                      </>
                     ) : (
                       <div
                         className={`library-row-thumb-fallback library-row-thumb-fallback--${model.typeColor}`}

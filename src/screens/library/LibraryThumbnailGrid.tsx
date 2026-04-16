@@ -379,63 +379,77 @@ export function LibraryThumbnailGrid({
                     </div>
                   </div>
 
-                  {/* Hero zone: thumbnail OR fallback as dominant visual, title ALWAYS overlaid */}
-                  <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
-                    {/* Real thumbnail (cache-derived or embedded) */}
-                    {model.thumbnailPreview ? (
-                      <div className="library-card-thumbnail-zone">
-                        <img
-                          src={`data:image/png;base64,${model.thumbnailPreview}`}
-                          alt={`Preview for ${model.displayTitle}`}
-                          className="library-card-thumbnail-img"
-                        />
-                        {/* Preview source badge — top-right corner */}
-                        {model.previewSource && model.previewSource !== 'fallback' ? (
-                          <span className={`library-thumb-source-badge library-thumb-source-badge--${model.previewSource}`}>
-                            {model.previewSource === 'cache' ? '⬡' : model.previewSource === 'embedded' ? '◈' : ''}
+                    {/* Hero zone: full-bleed thumbnail with reveal panel */}
+                    <div className={`library-card-hero library-card-hero--${model.typeColor}`}>
+                      {model.thumbnailPreview ? (
+                        /* Real thumbnail: image fills hero, source dot bottom-left */
+                        <div className="library-card-thumb-wrap">
+                          <img
+                            src={`data:image/png;base64,${model.thumbnailPreview}`}
+                            alt={`Preview for ${model.displayTitle}`}
+                            className="library-card-thumbnail-img"
+                          />
+                          {model.previewSource && model.previewSource !== 'fallback' ? (
+                            <div className="library-thumb-source-dot" title={`Preview: ${model.previewSource}`}>
+                              <span className={`source-dot source-dot--${model.previewSource} is-active`} />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        /* Fallback: type-colored hero band with centered icon + dot */
+                        <div
+                          className={`library-card-thumbnail-zone library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}
+                        >
+                          <FallbackCategoryIcon kind={model.kind} />
+                          <div className="library-thumb-source-dot" title="No preview available">
+                            <span className="source-dot" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Color swatch strip (below thumbnail, above reveal) */}
+                      {model.colorSwatches.length > 0 && !model.thumbnailPreview && (
+                        <div className="library-card-swatch-strip" aria-label="Color hints from file metadata">
+                          {model.colorSwatches.slice(0, 6).map((hex, i) => (
+                            <div key={i} className="library-card-swatch" style={{ background: hex }} title={hex} />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Resting title: minimal type pill at hero bottom */}
+                      <div className="library-card-title-block">
+                        <div className="library-card-title" title={model.title}>
+                          {model.displayTitle}
+                        </div>
+                        <div className="library-card-title-meta">
+                          <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                            {model.typeLabel}
                           </span>
+                        </div>
+                        {model.identityLabel ? (
+                          <div className="library-card-identity" title={model.identityLabel}>
+                            {model.identityLabel}
+                          </div>
                         ) : null}
                       </div>
-                    ) : (
-                      /* Fallback: category-colored hero band */
-                      <div
-                        className={`library-card-thumbnail-zone library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}
-                      >
-                        <FallbackCategoryIcon kind={model.kind} />
-                      </div>
-                    )}
 
-                    {/* Title ALWAYS overlaid at bottom of hero */}
-                    <div className="library-card-title-block">
-                      <div className="library-card-title" title={model.title}>
-                        {model.displayTitle}
-                      </div>
-                      <div className="library-card-title-meta">
-                        <span className={`library-type-pill type-pill--${model.typeColor}`}>
-                          {model.typeLabel}
-                        </span>
-                      </div>
-                      {model.identityLabel ? (
-                        <div className="library-card-identity" title={model.identityLabel}>
-                          {model.identityLabel}
+                      {/* Info reveal panel: slides up from bottom on hover/select */}
+                      <div className="library-card-info-reveal">
+                        <div className="library-card-reveal-title" title={model.title}>
+                          {model.displayTitle}
                         </div>
-                      ) : null}
-                    </div>
-
-                    {/* Color swatch strip — keyword-derived color hints */}
-                    {model.colorSwatches.length > 0 && !model.thumbnailPreview ? (
-                      <div className="library-card-swatch-strip" aria-label="Color hints from file metadata">
-                        {model.colorSwatches.map((hex, i) => (
-                          <div
-                            key={i}
-                            className="library-card-swatch"
-                            style={{ background: hex }}
-                            title={hex}
-                          />
-                        ))}
+                        {model.identityLabel && (
+                          <div className="library-card-reveal-identity">{model.identityLabel}</div>
+                        )}
+                        <div className="library-card-reveal-meta">
+                          <span className={`library-type-pill type-pill--${model.typeColor}`}>
+                            {model.typeLabel}
+                          </span>
+                        </div>
                       </div>
-                    ) : null}
-                  </div>
+
+                      {/* Confidence bar at card bottom edge */}
+                    </div>
 
                   {/* Content preview — type-specific */}
                   <div className="library-card-content-preview">

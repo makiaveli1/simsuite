@@ -1,0 +1,12 @@
+/* LibraryThumbnailGrid.tsx component styles */
+
+.library-card-reveal-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.library-card-reveal-meta .library-type-pill {
+  font-size: 0.6rem;
+  opacity: 0.8;
+}

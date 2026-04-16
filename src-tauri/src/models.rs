@@ -477,6 +477,10 @@ pub struct FileInsights {
     /// Present only when a THUM (0x3C1AF1F2) resource was found and successfully decoded.
     /// Empty for non-CAS files, script mods, and CAS files without a custom thumbnail.
     pub thumbnail_preview: Option<String>,
+    /// Base64 PNG from Sims 4 Mod Manager's pre-extracted image cache.
+    /// Only present when Mod Manager is installed and has a thumbnail for this file.
+    /// Labeled as "modmanager" in the UI — not mislabeled as game-cache-derived.
+    pub modmanager_thumbnail_preview: Option<String>,
     /// Base64-encoded DDS thumbnail extracted from localthumbcache.package.
     /// Derived from the Windows thumbnail cache, not embedded in the package file itself.
     /// Labeled as "cached" in the UI to distinguish from embedded/file-derived thumbnails.

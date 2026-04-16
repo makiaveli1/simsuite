@@ -285,6 +285,7 @@ fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionO
             version_signals,
             family_hints,
             thumbnail_preview: None,
+            modmanager_thumbnail_preview: None,
             cached_thumbnail_preview: None,
         },
         creator_hint: primary_creator,
@@ -377,7 +378,8 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or_default();
-    let cached_thumbnail_preview = resolve_package_thumbnail(path, filename);
+    let (modmanager_thumbnail_preview, thumbnail_preview, cached_thumbnail_preview) =
+        resolve_package_thumbnails(path, filename);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -390,6 +392,7 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
             version_signals,
             family_hints,
             thumbnail_preview,
+            modmanager_thumbnail_preview,
             cached_thumbnail_preview,
         },
         creator_hint: creator_hints.first().cloned(),
@@ -2382,20 +2385,27 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
 }
 
 /// Combined thumbnail lookup: Mod Manager DB → embedded THUM → localthumbcache.
-/// Returns base64 PNG or None.
-fn resolve_package_thumbnail(path: &Path, filename: &str) -> Option<String> {
-    // 1. Primary: Mod Manager cached images (11k+ PNGs, pre-extracted, directly usable)
+///
+/// Returns (modmanager_preview, embedded_preview, cached_preview).
+/// Each field is the base64 PNG string from that source, or None if unavailable.
+///
+/// Source priority for the UI cascade: modmanager → embedded → cached → None.
+fn resolve_package_thumbnails(path: &Path, filename: &str)
+    -> (Option<String>, Option<String>, Option<String>)
+{
+    // 1. Primary: Mod Manager cached images (11k+ PNGs, pre-extracted)
     if let Some(thumb) = lookup_modmanager_thumbnail(filename) {
-        return Some(thumb);
+        return (Some(thumb), None, None);
     }
 
     // 2. Embedded THUM resource in the package file itself
     if let Some(thumb) = extract_embedded_thum(path) {
-        return Some(thumb);
+        return (None, Some(thumb), None);
     }
 
     // 3. Last resort: localthumbcache.package (usually a OneDrive stub on this machine)
-    try_get_package_cached_thumbnail(path)
+    let cached = try_get_package_cached_thumbnail(path);
+    (None, None, cached)
 }
 
 /// Reads the DBPF index of a package file, extracts the first resource's Instance ID,

@@ -148,6 +148,8 @@ const emptyInsights = {
   versionHints: [],
   versionSignals: [],
   familyHints: [],
+  modmanagerThumbnailPreview: null,
+  cachedThumbnailPreview: null,
 };
 const emptyCreatorLearning = (): CreatorLearningInfo => ({
   lockedByUser: false,
@@ -168,6 +170,8 @@ const normalizeMockInsights = (
   versionSignals: insights.versionSignals ?? [],
   familyHints: insights.familyHints ?? [],
   thumbnailPreview: insights.thumbnailPreview ?? null,
+  modmanagerThumbnailPreview: insights.modmanagerThumbnailPreview ?? null,
+  cachedThumbnailPreview: insights.cachedThumbnailPreview ?? null,
   previewSource: insights.previewSource ?? 'fallback',
 });
 const buildMockCatalogSource = (

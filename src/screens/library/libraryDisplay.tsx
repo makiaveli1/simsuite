@@ -290,11 +290,14 @@ export function buildLibraryRowModel(
     title: row.filename,
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
-    // Prefer localthumbcache thumbnail (higher quality) over embedded THUM
-    thumbnailPreview: row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
-    previewSource: row.insights?.cachedThumbnailPreview
-        ? 'cache'
-        : (row.insights?.previewSource ?? (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    // Cascade: Mod Manager → game cache → embedded THUM → null
+    // Priority: MM (highest quality, 98% coverage) → cache (shared game cache) → embedded (native, no external dep)
+    thumbnailPreview: row.insights?.modmanagerThumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
+    previewSource: row.insights?.modmanagerThumbnailPreview
+        ? 'modmanager'
+        : (row.insights?.cachedThumbnailPreview
+            ? 'cache'
+            : (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
     cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
@@ -403,11 +406,14 @@ export function buildLibraryCardModel(
     title: row.filename,
     displayTitle,
     identityLabel: libraryIdentityLabelForFilename(row.filename, primaryLabel),
-    // Prefer localthumbcache thumbnail (higher quality) over embedded THUM
-    thumbnailPreview: row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
-    previewSource: row.insights?.cachedThumbnailPreview
-        ? 'cache'
-        : (row.insights?.previewSource ?? (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
+    // Cascade: Mod Manager → game cache → embedded THUM → null
+    // Priority: MM (highest quality, 98% coverage) → cache (shared game cache) → embedded (native, no external dep)
+    thumbnailPreview: row.insights?.modmanagerThumbnailPreview ?? row.insights?.cachedThumbnailPreview ?? row.insights?.thumbnailPreview ?? null,
+    previewSource: row.insights?.modmanagerThumbnailPreview
+        ? 'modmanager'
+        : (row.insights?.cachedThumbnailPreview
+            ? 'cache'
+            : (row.insights?.thumbnailPreview ? 'embedded' : 'fallback')),
     cachedThumbnailPreview: row.insights?.cachedThumbnailPreview ?? null,
     kind: row.kind,
     typeLabel: friendlyTypeLabel(row.kind),
