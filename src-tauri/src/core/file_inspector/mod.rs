@@ -373,7 +373,11 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
     );
     let resource_kind = infer_kind_from_package_signals(path, &type_counts);
     let thumbnail_preview = extract_thumbnail_preview(&mut file, &records);
-    let cached_thumbnail_preview = try_get_package_cached_thumbnail(path);
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let cached_thumbnail_preview = resolve_package_thumbnail(path, filename);
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -2227,9 +2231,176 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
 
 
 /// Attempt to find and decode a cached thumbnail for a package from localthumbcache.package.
+
+/// Look up a thumbnail image from Sims 4 Mod Manager's cached images.
 ///
-/// Reads just enough of the DBPF index to get the package's 64-bit Instance ID,
-/// then looks it up in the localthumbcache entries.
+/// Mod Manager stores CC thumbnail PNGs in `<Documents>/Sims 4 Mod Manager Data/images/`
+/// named `[CC]<decimal_instance_id>.png`. The filename→image mapping is stored in
+/// `db_cc.sqlite` (Files table: name=filename, image=full path to PNG).
+///
+/// This is the **primary** thumbnail source on Likwid's machine. The game's own
+/// `localthumbcache.package` in OneDrive is a 200-byte OneDrive placeholder stub
+/// with no real thumbnail data.
+///
+/// Returns base64 PNG if found, None if DB or image is unavailable.
+fn lookup_modmanager_thumbnail(filename: &str) -> Option<String> {
+    use std::path::PathBuf;
+
+    // Discover Mod Manager data directory (OneDrive path first, then env var fallbacks)
+    let mm_base = {
+        let mut candidates = vec![
+            PathBuf::from("/mnt/c/Users/likwi/OneDrive/Documents/Sims 4 Mod Manager Data"),
+        ];
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            let p = PathBuf::from(&home)
+                .join("OneDrive")
+                .join("Documents")
+                .join("Sims 4 Mod Manager Data");
+            candidates.push(p);
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            let p = PathBuf::from(&home)
+                .join("OneDrive")
+                .join("Documents")
+                .join("Sims 4 Mod Manager Data");
+            candidates.push(p);
+        }
+        candidates.into_iter().find(|p| p.exists())?
+    };
+
+    let db_path = mm_base.join("db_cc.sqlite");
+    let images_dir = mm_base.join("images");
+    if !db_path.exists() || !images_dir.exists() {
+        return None;
+    }
+
+    // Query Mod Manager DB for the image path by filename
+    let conn = rusqlite::Connection::open(&db_path).ok()?;
+    let image_path: String = conn
+        .query_row(
+            "SELECT image FROM Files WHERE name = ? LIMIT 1",
+            [filename],
+            |row| row.get(0),
+        )
+        .ok()?;
+
+    // Normalize Windows path (C:\...) to WSL path (/mnt/c/...)
+    let image_path = if image_path.starts_with("C:\\") || image_path.starts_with("c:\\") {
+        let stripped = &image_path[2..].replace('\\', "/").replace("C/", "/mnt/c/");
+        PathBuf::from(stripped)
+    } else {
+        PathBuf::from(&image_path)
+    };
+
+    if !image_path.exists() {
+        debug!("ModManager thumbnail: image not found at {:?}", image_path);
+        return None;
+    }
+
+    let png_data = std::fs::read(&image_path).ok()?;
+    let base64_png = BASE64_STANDARD.encode(&png_data);
+    debug!(
+        "ModManager thumbnail: found for '{}' -> {:?}",
+        filename, image_path
+    );
+    Some(base64_png)
+}
+
+/// Extract embedded THUM resource from a package file.
+/// Opens the package, parses the DBPF index, finds THUM records (0x3C1AF1F2),
+/// and returns the decoded PNG base64. Returns None if no THUM is present.
+fn extract_embedded_thum(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let header = parse_dbpf_header_internal(&mut file).ok()?;
+    let buffer =
+        read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
+
+    // Re-parse records from the buffer (parse_dbpf_records takes File, not buffer)
+    // We inline the record parsing here to avoid duplicating the File dependency.
+    use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+    let mut cursor = Cursor::new(buffer.as_slice());
+    let common_mask = {
+        let mut bytes = [0u8; 4];
+        cursor.read_exact(&mut bytes).ok()?;
+        u32::from_le_bytes(bytes)
+    };
+    let mut common_values = [0u32; 8];
+    for (index, value) in common_values.iter_mut().enumerate() {
+        if ((common_mask >> index) & 1) == 1 {
+            let mut bytes = [0u8; 4];
+            cursor.read_exact(&mut bytes).ok()?;
+            *value = u32::from_le_bytes(bytes);
+        }
+    }
+
+    // Collect THUM records from the index entries
+    let mut thum_offsets = Vec::new();
+    let mut pos_before = cursor.position() as usize;
+    let buf_len = buffer.len();
+
+    while cursor.position() as usize + 28 <= buf_len {
+        let start_pos = cursor.position() as usize;
+        let mut record = [0u32; 8];
+        for (index, value) in record.iter_mut().enumerate() {
+            if ((common_mask >> index) & 1) == 1 {
+                *value = common_values[index];
+            } else {
+                let mut bytes = [0u8; 4];
+                cursor.read_exact(&mut bytes).ok()?;
+                *value = u32::from_le_bytes(bytes);
+            }
+        }
+        let type_val = record[0];
+        if type_val == RESOURCE_THUM || type_val == RESOURCE_THUM_OBJECT {
+            // index 5 = offset, index 6 = packed_size
+            let offset = record[5];
+            let psize = record[6];
+            thum_offsets.push((offset, psize));
+        }
+    }
+
+    // Read and decode first THUM record found
+    drop(cursor);
+    for (offset, psize) in thum_offsets {
+        let offset = offset as u64;
+        let psize = psize as usize;
+        if offset == 0 || psize == 0 || psize > 512 * 1024 {
+            continue;
+        }
+        if file.seek(SeekFrom::Start(offset)).is_err() {
+            continue;
+        }
+        let mut raw = vec![0u8; psize];
+        if file.read_exact(&mut raw).is_err() {
+            continue;
+        }
+        if let Some(png_b64) = decode_thum_to_png(&raw) {
+            return Some(png_b64);
+        }
+    }
+    None
+}
+
+/// Combined thumbnail lookup: Mod Manager DB → embedded THUM → localthumbcache.
+/// Returns base64 PNG or None.
+fn resolve_package_thumbnail(path: &Path, filename: &str) -> Option<String> {
+    // 1. Primary: Mod Manager cached images (11k+ PNGs, pre-extracted, directly usable)
+    if let Some(thumb) = lookup_modmanager_thumbnail(filename) {
+        return Some(thumb);
+    }
+
+    // 2. Embedded THUM resource in the package file itself
+    if let Some(thumb) = extract_embedded_thum(path) {
+        return Some(thumb);
+    }
+
+    // 3. Last resort: localthumbcache.package (usually a OneDrive stub on this machine)
+    try_get_package_cached_thumbnail(path)
+}
+
+/// Reads the DBPF index of a package file, extracts the first resource's Instance ID,
+/// then looks it up in the Sims 4 localthumbcache.package DBPF file. Returns decoded
+/// thumbnail as base64 PNG or None.
 fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
     debug!("localthumbcache: trying to find cached thumbnail for {:?}", path);
     let mut file = std::fs::File::open(path).ok()?;
