@@ -4667,6 +4667,43 @@ h2,
   margin-left: 0.25rem;
 }
 
+/* Proof-level pills for relationship disclosure */
+.detail-row-suffix--fact {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  background: color-mix(in srgb, var(--success-color, #4ade80) 12%, transparent);
+  color: color-mix(in srgb, var(--success-color, #4ade80) 80%, var(--text-default, #e0e0e0));
+  border: 1px solid color-mix(in srgb, var(--success-color, #4ade80) 30%, transparent);
+  vertical-align: middle;
+}
+
+.detail-row-suffix--claim {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  background: color-mix(in srgb, var(--warning-color, #e8a020) 12%, transparent);
+  color: color-mix(in srgb, var(--warning-color, #e8a020) 85%, var(--text-default, #e0e0e0));
+  border: 1px solid color-mix(in srgb, var(--warning-color, #e8a020) 30%, transparent);
+  vertical-align: middle;
+}
+
+.detail-row-suffix--heuristic {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  background: color-mix(in srgb, var(--accent-color, #4a9eff) 12%, transparent);
+  color: color-mix(in srgb, var(--accent-color, #4a9eff) 80%, var(--text-default, #e0e0e0));
+  border: 1px solid color-mix(in srgb, var(--accent-color, #4a9eff) 30%, transparent);
+  vertical-align: middle;
+}
+
 .detail-row-evidence-badge {
   display: inline-block;
   font-size: 0.6rem;

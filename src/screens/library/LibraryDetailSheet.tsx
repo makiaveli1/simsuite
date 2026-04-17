@@ -10,16 +10,19 @@ import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView } from "../../lib/types";
 import {
   buildInspectorPreviewStrip,
+  computeFileRelationship,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeLibraryPrimaryLabel,
   extractColorSwatches,
+  extractParentFolder,
   libraryIdentityLabelForFilename,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
   summarizeScriptScopeForUi,
   summarizeVersionSignalForUi,
   typeColorForKind,
+  type FileRelationship,
 } from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;
@@ -31,6 +34,10 @@ interface LibraryDetailSheetProps {
   sections: DockSectionDefinition[];
   userView: UserView;
   onClose: () => void;
+  /** Pre-computed relationship signal from the parent screen. */
+  relationship?: FileRelationship | null;
+  /** Pre-computed folder name from the parent screen. */
+  folderName?: string | null;
 }
 
 export function LibraryDetailSheet({
@@ -40,6 +47,8 @@ export function LibraryDetailSheet({
   sections,
   userView,
   onClose,
+  relationship: relationshipProp,
+  folderName,
 }: LibraryDetailSheetProps) {
   if (!selectedFile || !mode) {
     return null;
@@ -53,6 +62,10 @@ export function LibraryDetailSheet({
         summarizeLibraryScriptContent(selectedFile) ??
         summarizeLibraryResourceBadge(selectedFile)
       : null;
+
+  // Compute relationship if not passed down from parent
+  const relationship = relationshipProp ?? computeFileRelationship(selectedFile, []);
+  const parentFolder = folderName ?? extractParentFolder(selectedFile.path);
   const inspectVersionBadge =
     mode === "inspect"
       ? summarizeVersionSignalForUi(selectedFile.insights, 0.8) ??

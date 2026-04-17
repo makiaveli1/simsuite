@@ -1,6 +1,7 @@
 import {
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -37,10 +38,12 @@ import {
   buildSheetContentsSection,
   buildSheetDiagnosticsSection,
   buildSheetTraySection,
+  computeFileRelationship,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeTrayIdentity,
   describeVersionForInspector,
+  extractParentFolder,
   formatLibraryFileFormat,
   groupedFilesLabel,
   trayLocationLabel,
@@ -384,6 +387,17 @@ export function LibraryScreen({
         sortBy !== "name" ? "sort" : null,
       ].filter(Boolean).length
     : 0;
+
+  // ── Relationship + folder context (derived, memoised) ─────────────────────
+  const relationship = useMemo(
+    () => (selected && rows ? computeFileRelationship(selected, rows.items) : null),
+    [selected, rows],
+  );
+  const folderName = useMemo(
+    () => (selected ? extractParentFolder(selected.path) : null),
+    [selected],
+  );
+
   const libraryInspectorSections = selected
     ? [
         {
@@ -480,6 +494,31 @@ export function LibraryScreen({
                     }
                   />
                   <DetailRow label="Hash" value={selected.hash ?? "Not available"} mono />
+                  {relationship && relationship.type !== "none" ? (
+                    <DetailRow
+                      label="Related"
+                      value={
+                        <span>
+                          {relationship.label}
+                          <span
+                            className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
+                            title={`This relationship is ${relationship.proofLevel}`}
+                          >
+                            {" "}({relationship.proofLevel})
+                          </span>
+                        </span>
+                      }
+                    />
+                  ) : folderName ? (
+                    <DetailRow
+                      label="Folder"
+                      value={
+                        <span className="ghost-chip">
+                          {folderName}
+                        </span>
+                      }
+                    />
+                  ) : null}
                 </div>
               ) : (
                 /* ── Seasoned: middle ground ── */
@@ -537,6 +576,31 @@ export function LibraryScreen({
                       <DetailRow
                         label="Added to library"
                         value={new Date(selected.createdAt).toLocaleDateString()}
+                      />
+                    ) : null}
+                    {relationship && relationship.type !== "none" ? (
+                      <DetailRow
+                        label="Related"
+                        value={
+                          <span>
+                            {relationship.label}
+                            <span
+                              className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
+                              title={`This relationship is ${relationship.proofLevel}`}
+                            >
+                              {" "}({relationship.proofLevel})
+                            </span>
+                          </span>
+                        }
+                      />
+                    ) : folderName ? (
+                      <DetailRow
+                        label="Folder"
+                        value={
+                          <span className="ghost-chip">
+                            {folderName}
+                          </span>
+                        }
                       />
                     ) : null}
                   </div>
@@ -1218,6 +1282,8 @@ export function LibraryScreen({
         sections={librarySheetSections}
         userView={userView}
         onClose={() => setActiveLibrarySheet(null)}
+        relationship={relationship}
+        folderName={folderName}
       />
     </>
   );
