@@ -32,6 +32,36 @@ export interface LibraryViewFlags {
   cardMaxScriptNamespaces: number;
 }
 
+/**
+ * Relationship type taxonomy for Library file relationships.
+ * Proof levels — strictly honest, never overclaimed:
+ *   fact      — backend-computed, deterministic
+ *   claim     — backend-derived with documented inference rules
+ *   heuristic — client-side inference, clearly indicated as uncertain
+ */
+export type RelationshipType =
+  | "duplicate"       // backend: exact duplicate pair (same hash)
+  | "same_pack"        // backend: bundle/pack membership
+  | "same_folder"      // backend: files sharing same parent dir (Mods hierarchy)
+  | "same_creator"    // backend: confirmed-creator files from same creator
+  | "folder_heuristic" // client: same folder, non-generic name (heuristic)
+  | "tray_group"       // backend: tray/household provenance grouping
+  | "none";            // no detectable relationship
+export type ProofLevel = "fact" | "claim" | "heuristic";
+
+/**
+ * A single relationship between a file and one or more other files.
+ * Powers relationship hints on cards, rows, and the detail sheet.
+ */
+export interface FileRelationship {
+  type: RelationshipType;
+  proofLevel: ProofLevel;
+  /** Human-readable label, e.g. "3 more in this folder" */
+  label: string;
+  /** Count of related files (absent when not applicable) */
+  peerCount?: number;
+}
+
 /** CSS variable name for the type color dot/border */
 export type TypeColor =
   | "cas"
@@ -1118,6 +1148,112 @@ export function groupedFilesLabel(count?: number | null): string | null {
     return null;
   }
   return `${count} grouped files`;
+}
+
+/**
+ * Generic folder names to exclude from the folder-heuristic signal.
+ * These are too common to convey useful grouping information.
+ */
+const GENERIC_FOLDER_NAMES = new Set([
+  "",
+  ".",
+  "tmp",
+  "temp",
+  "download",
+  "downloads",
+  "desktop",
+  "documents",
+  "mods",
+  " tray",
+]);
+
+/**
+ * Compute the primary relationship for a file given the current filtered items list.
+ * Returns the single highest-confidence relationship signal, or null.
+ *
+ * Priority (highest first):
+ *   duplicate → same_pack → tray_group → same_folder → folder_heuristic → none
+ *
+ * NOTE: This function is O(n) in the items array. Callers must ensure the items
+ * list is stable (useMemo with items.length or JSON.stringify(items) as key).
+ * Do NOT call on every render without memoization — for large collections this
+ * will block the main thread.
+ */
+export function computeFileRelationship(
+  file: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation">,
+  items: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation">[],
+): FileRelationship | null {
+  // 1. Duplicate — backend fact
+  if (file.hasDuplicate) {
+    const duplicateCount = items.filter(
+      (f) => f.id !== file.id && f.hasDuplicate,
+    ).length;
+    return {
+      type: "duplicate",
+      proofLevel: "fact",
+      label: `${duplicateCount + 1} duplicate${duplicateCount !== 0 ? "s" : ""}`,
+      peerCount: duplicateCount,
+    };
+  }
+
+  // 2. Same pack — backend claim (bundle detector)
+  if (file.bundleName) {
+    const bundlePeers = items.filter(
+      (f) => f.id !== file.id && f.bundleName === file.bundleName,
+    );
+    if (bundlePeers.length > 0) {
+      return {
+        type: "same_pack",
+        proofLevel: "claim",
+        label: `Same pack: ${file.bundleName}`,
+        peerCount: bundlePeers.length,
+      };
+    }
+  }
+
+  // 3. Tray group — backend claim
+  if (file.groupedFileCount != null && file.groupedFileCount > 1) {
+    return {
+      type: "tray_group",
+      proofLevel: "claim",
+      label: `${file.groupedFileCount} tray files`,
+      peerCount: file.groupedFileCount - 1,
+    };
+  }
+
+  // 4. Same folder (mods hierarchy) — backend fact for mods, heuristic for tray
+  const parentFolder = extractParentFolder(file.path);
+  if (parentFolder && !GENERIC_FOLDER_NAMES.has(parentFolder.toLowerCase())) {
+    const isMods = file.sourceLocation === "mods";
+    const folderPeers = items.filter(
+      (f) =>
+        f.id !== file.id &&
+        extractParentFolder(f.path) === parentFolder,
+    );
+    if (folderPeers.length > 0) {
+      return {
+        type: isMods ? "same_folder" : "folder_heuristic",
+        proofLevel: isMods ? "fact" : "heuristic",
+        label: `${folderPeers.length + 1} in ${parentFolder}`,
+        peerCount: folderPeers.length,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract the parent folder name from a file path.
+ * Handles both forward slashes and backslashes.
+ * Returns the last non-empty segment of the directory portion.
+ */
+export function extractParentFolder(filePath: string): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const lastSlash = normalized.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  return normalized.slice(0, lastSlash).split("/").pop() ?? null;
 }
 
 export function describeTraySummary(

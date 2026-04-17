@@ -301,14 +301,29 @@
   margin-top: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   border-top: 1px solid rgba(255, 255, 255, 0.03);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
-  overflow: visible;
-  row-gap: 0.3rem;
-  /* Clear separation from the browse label row above */
+  overflow-x: auto;
+  overflow-y: hidden;
+  row-gap: 0;
+  /* Always-visible scrollbar — chips are discoverable only if scroll is visible */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
-/* Hide scrollbar only if overflow-x is used (legacy fallback) */
-.library-browse-row::-webkit-scrollbar { display: none; }
+/* Visible scrollbar on hover and scrollable content */
+.library-browse-row::-webkit-scrollbar {
+  height: 4px;
+}
+.library-browse-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+.library-browse-row::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+}
+.library-browse-row::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
+}
 
 /* Summary pills — right side of browse rail */
 .library-summary-pill {
@@ -1024,6 +1039,48 @@
 }
 
 /* Sort select — themed dark control with custom arrow */
+.library-page-size-control {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.library-page-size-control select {
+  min-height: 2rem;
+  padding: 0.25rem 2rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background-color: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--text-soft);
+  transition: border-color 0.15s, background-color 0.15s;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23afc0b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 10px;
+}
+
+.library-page-size-control select:hover {
+  border-color: rgba(255,255,255,0.18);
+  background-color: rgba(255,255,255,0.07);
+}
+
+.library-page-size-control select:focus {
+  outline: none;
+  border-color: rgba(249,115,22,0.45);
+  background-color: rgba(255,255,255,0.07);
+}
+
+.library-page-size-control select option {
+  background: #12121f;
+  color: var(--text-soft);
+  padding: 0.25rem;
+}
+
 .library-sort-control {
   display: flex;
   align-items: center;

@@ -174,6 +174,19 @@ export function LibraryTopStrip({
             </select>
           </div>
 
+          {/* ── Items per page — sits with layout controls, not filters ── */}
+          <div className="library-page-size-control" aria-label="Items per page">
+            <select
+              value={pageSize}
+              onChange={(event) => onPageSizeChange(Number(event.target.value))}
+              aria-label="Items per page"
+            >
+              {[50, 100, 250, 500].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="library-view-toggle" role="group" aria-label="View mode">
             <button
               type="button"
