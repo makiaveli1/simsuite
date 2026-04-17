@@ -195,7 +195,8 @@ export function LibraryTopStrip({
             </button>
           </div>
 
-          {/* ── Density widget — premium instrument ── */}
+          {/* ── Density widget — only meaningful in grid view ── */}
+          {viewMode === "grid" && (
           <div className="library-density-widget" aria-label="Card density">
             <div className="library-density-widget__label" aria-hidden="true">
               dense <span className="library-density-widget__arrow">⟷</span> spacious
@@ -221,6 +222,7 @@ export function LibraryTopStrip({
               ≈{Math.max(2, Math.round(8 - (normalizedDensity / 100) * 5))} cards/row
             </div>
           </div>
+          )}
 
           {flags.showAdvancedFilters ? (
             <button

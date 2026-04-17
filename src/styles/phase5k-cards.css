@@ -298,7 +298,8 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  margin-top: 6px; /* Real vertical gap — borders don't touch */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   overflow-x: auto;
   scrollbar-width: none;
   flex-shrink: 0;
@@ -803,8 +804,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.35rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.75rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Metrics: compact, left-aligned, flex-shrink */
@@ -967,9 +968,52 @@
   color: var(--text);
 }
 
-/* Items-per-page + sort: keep as compact selects */
-.library-density-control select,
+/* Sort select — themed dark control with custom arrow */
+.library-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
 .library-sort-control select {
+  min-height: 2rem;
+  padding: 0.25rem 2rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background-color: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--text-soft);
+  transition: border-color 0.15s, background-color 0.15s;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Custom SVG chevron — white subdued arrow */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.45)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 10px;
+}
+
+.library-sort-control select:hover {
+  border-color: rgba(255,255,255,0.18);
+  background-color: rgba(255,255,255,0.07);
+}
+
+.library-sort-control select:focus {
+  outline: none;
+  border-color: rgba(249,115,22,0.45);
+  background-color: rgba(255,255,255,0.07);
+}
+
+.library-sort-control select option {
+  background: #12121f;
+  color: var(--text-soft);
+  padding: 0.25rem;
+}
+
+/* Density control select (if used) shares the same base */
+.library-density-control select {
   min-height: 2rem;
   padding: 0.25rem 1.4rem 0.25rem 0.5rem;
   font-size: 0.75rem;
@@ -979,9 +1023,17 @@
   color: var(--text-soft);
   transition: border-color 0.15s;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.35)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 10px;
 }
 
 .library-density-control select:hover,
+.library-sort-control select:focus { outline: none; border-color: rgba(249,115,22,0.45); background-color: rgba(255,255,255,0.07); }
+
 .library-sort-control select:hover {
   border-color: rgba(255,255,255,0.15);
 }
@@ -1194,11 +1246,10 @@
 
 .library-density-widget {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  /* Bordered container — makes it feel like one instrument, not three parts */
+  gap: 0.4rem;
+  padding: 0 10px;
+  min-height: 2.25rem; /* ~36px — matches sort control select height */
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -1207,9 +1258,9 @@
 }
 
 .library-density-widget__label {
-  font-size: 0.58rem;
+  font-size: 0.68rem;
   color: var(--text-dim);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
   line-height: 1;
@@ -1217,13 +1268,14 @@
 
 .library-density-widget__arrow {
   opacity: 0.45;
-  margin: 0 2px;
+  margin: 0 3px;
+  font-size: 0.65rem;
 }
 
 .library-density-widget__control {
   position: relative;
-  width: 130px;
-  height: 14px;
+  width: 88px;
+  height: 16px;
   display: flex;
   align-items: center;
 }
@@ -1246,7 +1298,7 @@
 .library-density-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 130px;
+  width: 88px;
   height: 3px;
   border-radius: 2px;
   outline: none;
@@ -1257,7 +1309,7 @@
 }
 
 .library-density-slider::-webkit-slider-runnable-track {
-  width: 130px;
+  width: 88px;
   height: 3px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
@@ -1302,12 +1354,14 @@
 }
 
 .library-density-widget__hint {
-  font-size: 0.6rem;
+  font-size: 0.68rem;
   color: var(--text-dim);
-  text-align: center;
-  min-height: 1em;
-  transition: color 0.15s;
+  text-align: left;
+  min-width: 40px;
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 /* ── Old slider system: removed ─────────────────────────────── */
@@ -1470,12 +1524,14 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.28rem 0.6rem 0.28rem 0.5rem;
+  padding: 0.28rem 0.7rem 0.28rem 0.6rem;
+  min-height: 2.25rem; /* ~36px — matches sort control */
   font-size: 0.72rem;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-soft);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 2px solid rgba(249, 115, 22, 0.5); /* orange accent — signals "power feature" */
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
@@ -1485,7 +1541,8 @@
 
 .library-advanced-btn:hover {
   background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(249, 115, 22, 0.6);
+  border-left-color: rgba(249, 115, 22, 0.8);
   color: var(--text);
 }
 
