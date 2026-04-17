@@ -278,10 +278,11 @@ export function LibraryDetailsPanel({
       {/* ── Preview — real thumbnail or honest category fallback ── */}
       <section className="detail-preview-section">
         <div className="section-label">Preview</div>
-        {selectedFile.insights?.thumbnailPreview ? (
+        {/* Cascade: embedded THUM → game cache → fallback */}
+        {selectedFile.insights?.thumbnailPreview ?? selectedFile.insights?.cachedThumbnailPreview ? (
           <div className="detail-preview-image-wrap">
             <img
-              src={`data:image/png;base64,${selectedFile.insights.thumbnailPreview}`}
+              src={`data:image/png;base64,${selectedFile.insights?.thumbnailPreview ?? selectedFile.insights?.cachedThumbnailPreview}`}
               alt={`Preview for ${selectedFile.filename}`}
               className="detail-preview-image"
             />

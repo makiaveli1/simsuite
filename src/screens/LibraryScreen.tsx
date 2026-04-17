@@ -988,8 +988,6 @@ export function LibraryScreen({
         <LibraryTopStrip
           userView={userView}
           search={search}
-          shownCount={rows?.items.length ?? 0}
-          totalCount={rows?.total ?? 0}
           activeFilterCount={activeFilterCount}
           moreFiltersOpen={moreFiltersOpen}
           watchFilter={watchFilter}

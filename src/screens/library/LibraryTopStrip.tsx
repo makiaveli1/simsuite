@@ -31,8 +31,6 @@ export interface LibraryToolbarFilters {
 
 interface LibraryTopStripProps {
   userView: UserView;
-  shownCount: number;
-  totalCount: number;
   activeFilterCount: number;
   search: string;
   sortBy: SortField;
@@ -57,8 +55,6 @@ interface LibraryTopStripProps {
 
 export function LibraryTopStrip({
   userView,
-  shownCount,
-  totalCount,
   activeFilterCount,
   search,
   sortBy,
@@ -85,20 +81,8 @@ export function LibraryTopStrip({
 
   return (
     <div className="library-top-strip">
-      {/* Row 1: counts + search + inline filter dropdowns + sort + advanced */}
+      {/* Row 1: search + inline filter dropdowns + layout controls */}
       <div className="library-toolbar-row">
-        {/* Left: file counts */}
-        <div className="library-toolbar-metrics" aria-label="Library counts">
-          <span className="library-metric">
-            <strong>{shownCount.toLocaleString()}</strong>
-            <span className="library-metric-label">shown</span>
-          </span>
-          <span className="library-metric-sep" aria-hidden="true">/</span>
-          <span className="library-metric">
-            <strong>{totalCount.toLocaleString()}</strong>
-            <span className="library-metric-label">in library</span>
-          </span>
-        </div>
 
         {/* Center: search + inline filter dropdowns */}
         <div className="library-toolbar-controls">
