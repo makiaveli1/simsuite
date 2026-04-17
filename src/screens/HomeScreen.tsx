@@ -461,6 +461,7 @@ export function HomeScreen({
                     sourceCount={sourceCount}
                     activeThemeLabel={activeTheme.label}
                     onNavigate={onNavigate}
+                    reducedMotion={Boolean(reducedMotion)}
                   />
                 ))}
             </div>
@@ -832,12 +833,14 @@ function CasualCollapsedModuleBand({
   sourceCount,
   activeThemeLabel,
   onNavigate,
+  reducedMotion,
 }: {
   moduleId: HomeModuleId;
   overview: HomeOverview | null;
   sourceCount: number;
   activeThemeLabel: string;
   onNavigate: (screen: Screen) => void;
+  reducedMotion: boolean;
 }) {
   const MODULE_META: Record<HomeModuleId, { label: string; icon: ReactNode; tone: "good" | "warn" | "danger" | "neutral" }> = {
     snapshot: {
@@ -911,6 +914,8 @@ function CasualCollapsedModuleBand({
           onNavigate(NAVIGATE_MAP[moduleId]);
         }
       }}
+      whileHover={reducedMotion ? undefined : hoverLift}
+      whileTap={reducedMotion ? undefined : tapPress}
       {...stagedListItem(2)}
     >
       <span className="casual-collapsed-module-icon">{meta.icon}</span>

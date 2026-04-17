@@ -11729,17 +11729,20 @@ select:focus-visible {
   background: var(--surface-2);
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.18s ease;
   user-select: none;
 }
 
 .casual-collapsed-module:hover {
   background: var(--surface-3);
   border-color: var(--border-strong);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
-.casual-collapsed-module:active {
-  transform: scale(0.99);
+.casual-collapsed-module:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong) 45%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent-strong) 18%, transparent), 0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
 .casual-collapsed-module.is-tone-warn {
