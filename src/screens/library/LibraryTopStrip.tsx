@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ArrowUpDown, Grid3X3, LayoutList, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUpDown, Folder, Grid3X3, LayoutList, Search, SlidersHorizontal, X } from "lucide-react";
 import type { LibraryFacets, LibrarySortField, LibrarySummary, LibraryWatchFilter, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
@@ -47,7 +47,7 @@ interface LibraryTopStripProps {
   facets: LibraryFacets | null;
   drawerOpen: boolean;
   librarySummary: LibrarySummary | null;
-  viewMode: "list" | "grid";
+  viewMode: "list" | "grid" | "folders";
   pageSize: number;
   densityValue: number;
   onPageSizeChange: (value: number) => void;
@@ -58,7 +58,7 @@ interface LibraryTopStripProps {
   onFiltersChange: (next: Partial<LibraryToolbarFilters>) => void;
   onDrawerToggle: () => void;
   onResetFilters: () => void;
-  onViewModeChange: (mode: "list" | "grid") => void;
+  onViewModeChange: (mode: "list" | "grid" | "folders") => void;
 }
 
 function clampDensity(value: number) {
@@ -196,6 +196,7 @@ export function LibraryTopStrip({
               title="Grid view"
             >
               <Grid3X3 size={14} strokeWidth={2} />
+              <span>Grid</span>
             </button>
             <button
               type="button"
@@ -205,6 +206,17 @@ export function LibraryTopStrip({
               title="List view"
             >
               <LayoutList size={14} strokeWidth={2} />
+              <span>List</span>
+            </button>
+            <button
+              type="button"
+              className={`library-view-btn${viewMode === "folders" ? " is-active" : ""}`}
+              onClick={() => onViewModeChange("folders")}
+              aria-pressed={viewMode === "folders"}
+              title="Folders view"
+            >
+              <Folder size={14} strokeWidth={2} />
+              <span>Folders</span>
             </button>
           </div>
 

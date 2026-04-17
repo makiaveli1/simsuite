@@ -252,9 +252,28 @@ export function LibraryDetailsPanel({
   // "In folder" is universally useful — helps any player orient in a large library
   // Relationship (same set / same pack) is a deeper signal for seasoned+ users
   if (folderName) {
+    const folderSegments = folderName.split("/").filter(Boolean);
     snapshotLines.push({
       label: "In folder",
-      value: <span className="ghost-chip">{folderName}</span>,
+      value:
+        folderSegments.length > 1 ? (
+          <span className="detail-folder-path">
+            {folderSegments.map((segment, index) => (
+              <span key={`${segment}-${index}`} className="detail-folder-path__segment-wrap">
+                <span
+                  className={`detail-folder-path__segment${index === folderSegments.length - 1 ? " detail-folder-path__segment--current" : ""}`}
+                >
+                  {segment}
+                </span>
+                {index < folderSegments.length - 1 ? (
+                  <span className="detail-folder-path__sep"> / </span>
+                ) : null}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="ghost-chip">{folderName}</span>
+        ),
     });
   }
 
