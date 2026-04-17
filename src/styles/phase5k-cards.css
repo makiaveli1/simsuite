@@ -1240,6 +1240,31 @@
 .library-card--tray::before      { background: rgba(251, 191, 36, 0.9); }
 .library-card--unknown::before   { background: rgba(148, 163, 184, 0.6); }
 
+/* ─── Selection strip ─────────────────────────────────────── */
+.library-selection-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.library-selection-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.library-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 /* Keep hero scrim above the accent bar */
 .library-card-hero::after {
   z-index: 2;

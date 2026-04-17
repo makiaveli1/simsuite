@@ -952,7 +952,7 @@ export function LibraryScreen({
               return ["safety", "updatesHint"].includes(section.id);
             }
             if (isPowerView) {
-              return ["safety", "updatesHint", "inspection"].includes(section.id);
+              return ["safety", "updatesHint", "facts", "tray-context", "whats-inside", "attribution", "compatibility"].includes(section.id);
             }
             // Seasoned
             return ["safety", "updatesHint"].includes(section.id);

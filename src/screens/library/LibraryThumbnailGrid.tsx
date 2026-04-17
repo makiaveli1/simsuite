@@ -163,7 +163,7 @@ export function LibraryThumbnailGrid({
                         ) : null}
                       </div>
                     ) : (
-                      <div className={`library-card-thumb-zone--fallback library-card-hero--${model.typeColor}`}>
+                      <div className={`library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}>
                         <FallbackCategoryIcon kind={model.kind} />
                         <div className="library-thumb-source-dot" title="No preview available">
                           <span className="source-dot" />
