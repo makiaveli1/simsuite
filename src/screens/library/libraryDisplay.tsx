@@ -19,6 +19,8 @@ import type {
   WatchStatus,
 } from "../../lib/types";
 
+export type { FolderNode } from "./folderTree";
+
 export interface LibraryViewFlags {
   showCreatorInList: boolean;
   showInspectFactsInList: boolean;
