@@ -135,6 +135,7 @@ export function LibraryTopStrip({
 
   return (
     <div className="library-top-strip">
+      {/* ── Primary row: search + core controls + density widget ── */}
       <div className="library-toolbar-row">
         <label className="field library-toolbar-search">
           <span className="sr-only">Search by file or creator</span>
@@ -194,13 +195,17 @@ export function LibraryTopStrip({
             </button>
           </div>
 
-          <div className="library-slider-control" aria-label="Card density">
-            <div className="library-slider-track-wrap">
-              <div className="library-slider-header" aria-hidden="true">
-                <span>Dense</span>
-                <span>{Math.round(normalizedDensity)}%</span>
-                <span>Spacious</span>
-              </div>
+          {/* ── Density widget — premium instrument ── */}
+          <div className="library-density-widget" aria-label="Card density">
+            <div className="library-density-widget__label" aria-hidden="true">
+              dense <span className="library-density-widget__arrow">⟷</span> spacious
+            </div>
+            <div className="library-density-widget__control">
+              <div
+                className="library-density-fill-track"
+                style={{ width: `${normalizedDensity}%` }}
+                aria-hidden="true"
+              />
               <input
                 type="range"
                 min="0"
@@ -211,47 +216,35 @@ export function LibraryTopStrip({
                 className="library-density-slider"
                 aria-label={`Card density ${Math.round(normalizedDensity)} percent`}
               />
-              <div className="library-slider-labels" aria-hidden="true">
-                <span>Dense</span>
-                <span>Spacious</span>
-              </div>
             </div>
-          </div>
-
-          <div className="library-density-control" aria-label="Items per page">
-            <select
-              value={pageSize}
-              onChange={(event) => onPageSizeChange(Number((event.target as HTMLSelectElement).value))}
-              aria-label="Items per page"
-              className="library-density-select"
-            >
-              <option value={50}>50 / page</option>
-              <option value={100}>100 / page</option>
-              <option value={200}>200 / page</option>
-              <option value={500}>500 / page</option>
-            </select>
+            <div className="library-density-widget__hint">
+              ≈{Math.max(2, Math.round(8 - (normalizedDensity / 100) * 5))} cards/row
+            </div>
           </div>
 
           {flags.showAdvancedFilters ? (
             <button
               ref={filterButtonRef}
               type="button"
-              className={`secondary-action library-filter-btn${drawerOpen ? " is-active" : ""}`}
+              className={`library-advanced-btn${drawerOpen ? " is-active" : ""}`}
               onClick={onDrawerToggle}
               aria-expanded={drawerOpen}
               aria-controls="library-filter-drawer"
-              title="More filters"
             >
-              <SlidersHorizontal size={14} strokeWidth={2} />
-              Filters
+              <SlidersHorizontal size={13} strokeWidth={2} />
+              Advanced
               {drawerFilterCount > 0 ? (
                 <span className="active-badge">{drawerFilterCount}</span>
               ) : null}
+              <span className={`library-advanced-btn__caret${drawerOpen ? " is-open" : ""}`} aria-hidden="true">
+                ▾
+              </span>
             </button>
           ) : null}
         </div>
       </div>
 
+      {/* ── Quick filters row: kind chips + watch chips (secondary, visually subordinate) ── */}
       <div className="library-browse-row">
         <div className="library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
           <button
@@ -281,6 +274,8 @@ export function LibraryTopStrip({
           })}
         </div>
 
+        <div className="library-browse-sep" aria-hidden="true" />
+
         <div className="library-browse-group library-browse-group--watch" role="group" aria-label="Quick filters by status">
           {WATCH_FILTER_OPTIONS.map((opt) => (
             <button
@@ -297,38 +292,26 @@ export function LibraryTopStrip({
 
         {librarySummary ? (
           <div className="library-browse-summary" aria-label="Library health summary">
-            <span className="library-summary-pill">
-              <strong>{librarySummary.tracked.toLocaleString()}</strong>
-              tracked
-            </span>
-            {librarySummary.hasUpdates > 0 ? (
-              <span className="library-summary-pill has-updates">
-                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong>
-                updates
-              </span>
-            ) : null}
-            {librarySummary.needsReview > 0 ? (
-              <span className="library-summary-pill needs-review">
-                <strong>{librarySummary.needsReview.toLocaleString()}</strong>
-                review
-              </span>
-            ) : null}
-            {librarySummary.duplicates > 0 ? (
+            {librarySummary.tracked > 0 && (
               <span className="library-summary-pill">
-                <strong>{librarySummary.duplicates.toLocaleString()}</strong>
-                duplicates
+                <strong>{librarySummary.tracked.toLocaleString()}</strong> tracked
               </span>
-            ) : null}
-            {librarySummary.disabled > 0 ? (
-              <span className="library-summary-pill is-disabled">
-                <strong>{librarySummary.disabled.toLocaleString()}</strong>
-                disabled
+            )}
+            {librarySummary.hasUpdates > 0 && (
+              <span className="library-summary-pill has-updates">
+                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong> updates
               </span>
-            ) : null}
+            )}
+            {librarySummary.needsReview > 0 && (
+              <span className="library-summary-pill needs-review">
+                <strong>{librarySummary.needsReview.toLocaleString()}</strong> review
+              </span>
+            )}
           </div>
         ) : null}
       </div>
 
+      {/* ── Advanced drawer: creator/source/confidence/subtype + active filter pills ── */}
       {flags.showAdvancedFilters ? (
         <div
           id="library-filter-drawer"
@@ -393,16 +376,7 @@ export function LibraryTopStrip({
               </select>
             </label>
 
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={onResetFilters}
-              disabled={!hasActiveFilters}
-            >
-              Clear all
-            </button>
-
-            {activeDrawerFilters.length ? (
+            {activeDrawerFilters.length > 0 && (
               <div className="library-drawer-active-filters" aria-label="Active precision filters">
                 {activeDrawerFilters.map((filter) => (
                   <button
@@ -417,7 +391,16 @@ export function LibraryTopStrip({
                   </button>
                 ))}
               </div>
-            ) : null}
+            )}
+
+            <button
+              type="button"
+              className="secondary-action library-drawer-reset"
+              onClick={onResetFilters}
+              disabled={!hasActiveFilters}
+            >
+              Clear all
+            </button>
           </div>
         </div>
       ) : null}

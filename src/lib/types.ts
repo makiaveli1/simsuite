@@ -537,6 +537,8 @@ export interface FileDetail extends LibraryFileRow {
   duplicatesCount: number;
   /** Types of duplicates: 'exact', 'filename', 'version'. */
   duplicateTypes: string[];
+  /** Transient: card thumbnail shown immediately while detail query resolves. */
+  _cardThumbnail?: string | null;
 }
 
 export interface RulePreset {

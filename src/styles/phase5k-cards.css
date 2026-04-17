@@ -1187,124 +1187,135 @@
 .library-summary-stat.is-disabled strong { color: rgba(148, 163, 184, 0.6); }
 
 /* ═══════════════════════════════════════════════════════════════
-   CARD SIZE SLIDER
-
-/* ═══════════════════════════════════════════════════════════════
-   CARD SIZE SLIDER — fluid, continuous with soft snap
-   0–30 = Small, 31–70 = Medium, 71–100 = Large
-   The slider thumb carries the active size label.
-   Grid reflows automatically via --card-min CSS variable.
+   DENSITY WIDGET — premium instrument look
+   Self-contained: label + track + fill + hint, bordered container.
+   Width: 140px total widget. Orange fill from left. Cards/row hint below.
    ═══════════════════════════════════════════════════════════════ */
 
-.library-slider-control {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.2rem;
-  user-select: none;
-}
-
-.library-slider-icon {
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.library-slider-track-wrap {
+.library-density-widget {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  padding: 6px 10px;
+  /* Bordered container — makes it feel like one instrument, not three parts */
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  user-select: none;
+  flex-shrink: 0;
 }
 
-/* Continuous range input — full-width track, orange fill + orange thumb */
-.library-card-slider {
+.library-density-widget__label {
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.library-density-widget__arrow {
+  opacity: 0.45;
+  margin: 0 2px;
+}
+
+.library-density-widget__control {
+  position: relative;
+  width: 130px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+}
+
+/* Orange fill track — absolutely positioned behind the input */
+.library-density-fill-track {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3px;
+  background: #f97316;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+  transition: width 0.06s;
+}
+
+/* The range input — transparent, overlaid on fill track */
+.library-density-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 88px;
-  height: 4px;
+  width: 130px;
+  height: 3px;
   border-radius: 2px;
-  /* Dynamic fill: thumb position determines orange fill extent */
-  background: linear-gradient(
-    to right,
-    rgba(249, 115, 22, 0.85) 0%,
-    rgba(249, 115, 22, 0.85) var(--slider-fill, 50%),
-    rgba(255, 255, 255, 0.1) var(--slider-fill, 50%),
-    rgba(255, 255, 255, 0.1) 100%
-  );
   outline: none;
   cursor: pointer;
-  transition: background 0.08s;
+  position: relative;
+  z-index: 2;
+  background: transparent;
 }
 
-.library-card-slider::-webkit-slider-thumb {
+.library-density-slider::-webkit-slider-runnable-track {
+  width: 130px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.library-density-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #f97316;
-  border: 2.5px solid rgba(255, 255, 255, 0.95);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(249, 115, 22, 0);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
+  margin-top: -5.5px;
+  position: relative;
+  z-index: 3;
   transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1),
               box-shadow 0.15s ease;
 }
 
-.library-card-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+.library-density-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #f97316;
-  border: 2.5px solid rgba(255, 255, 255, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.95);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
+  position: relative;
+  z-index: 3;
 }
 
-.library-card-slider:hover::-webkit-slider-thumb {
-  transform: scale(1.2);
+.library-density-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.25);
   box-shadow: 0 2px 10px rgba(249, 115, 22, 0.5), 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
 
-.library-card-slider:active::-webkit-slider-thumb {
+.library-density-slider:active::-webkit-slider-thumb {
   transform: scale(0.92);
 }
 
-/* S / M / L labels + dynamic size label */
-.library-slider-labels {
-  display: flex;
-  justify-content: space-between;
-  width: 88px;
-}
-
-.library-slider-labels span {
+.library-density-widget__hint {
   font-size: 0.6rem;
   color: var(--text-dim);
-  transition: color 0.15s, font-weight 0.15s, transform 0.15s;
-  cursor: pointer;
-  padding: 0 1px;
+  text-align: center;
+  min-height: 1em;
+  transition: color 0.15s;
+  letter-spacing: 0.02em;
 }
 
-.library-slider-labels span.is-active {
-  color: #f97316;
-  font-weight: 700;
-  transform: scale(1.15);
-}
-
-.library-slider-labels span:hover {
-  color: var(--text);
-}
-
-/* Update --slider-fill via JS: value % becomes orange fill % */
-:root {
-  --slider-fill: 50%;
-}
-
-/* Small: 0–30 → --slider-fill=0%, Medium: 31–70 → 50%, Large: 71–100 → 100% */
-:root[data-density="compact"]  { --slider-fill: 0%; }
-:root[data-density="balanced"]  { --slider-fill: 50%; }
-:root[data-density="roomy"]    { --slider-fill: 100%; }
+/* ── Old slider system: removed ─────────────────────────────── */
+.library-slider-control { display: none !important; }
+.library-card-slider { display: none !important; }
+.library-slider-labels { display: none !important; }
+.library-slider-track-wrap { display: none !important; }
+.library-slider-header { display: none !important; }
 
 /* ═══════════════════════════════════════════════════════════════
    TYPE-COLORED TOP ACCENT BAR — 3px strip at card top
@@ -1402,8 +1413,209 @@
 .inspect-chip--ps     { border-color: rgba(168,85,247,0.4); color: #c084fc; font-size: 0.62rem; }
 .inspect-chip--attr   { border-color: rgba(236,72,153,0.4); color: #f472b6; }
 .inspect-chip--struct { border-color: rgba(251,191,36,0.4); color: #fbbf24; }
+/* Compatibility chips — watch status + version */
+.inspect-chip--compat {
+  border-color: rgba(34,197,94,0.4);
+  color: #4ade80;
+  font-size: 0.62rem;
+}
+.inspect-chip--compat-current             { border-color: rgba(34,197,94,0.4);  color: #4ade80; }
+.inspect-chip--compat-exact_update_available { border-color: rgba(249,115,22,0.4); color: #fb923c; }
+.inspect-chip--compat-possible_update     { border-color: rgba(251,191,36,0.4); color: #fbbf24; }
+.inspect-chip--compat-not_watched         { border-color: rgba(255,255,255,0.15); color: var(--text-dim); }
+.inspect-chip--compat-unknown             { border-color: rgba(255,255,255,0.1);  color: var(--text-dim); }
+
+/* Color swatch dots — actual extracted colors from CAS item names */
+.inspect-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  flex-shrink: 0;
+  cursor: default;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.inspect-swatch:hover {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
+}
 
 /* Keep hero scrim above the accent bar */
 .library-card-hero::after {
   z-index: 2;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOOLBAR HIERARCHY — browse separator + advanced filter button
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Vertical separator between kind chips and watch chips in browse row */
+.library-browse-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  margin: 0 0.1rem;
+  align-self: center;
+}
+
+/* Browse row — lighter treatment, clearly secondary to toolbar row */
+.library-browse-row {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+/* Advanced filter button — visually distinct from generic secondary-action */
+.library-advanced-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.6rem 0.28rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.library-advanced-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+.library-advanced-btn.is-active {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #f97316;
+}
+
+.library-advanced-btn__caret {
+  font-size: 0.55rem;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+  margin-left: 1px;
+}
+
+.library-advanced-btn__caret.is-open {
+  transform: rotate(180deg);
+  opacity: 0.9;
+}
+
+/* Drawer inner layout */
+.library-filter-drawer-inner {
+  background: rgba(18, 18, 31, 0.8);
+  backdrop-filter: blur(8px);
+}
+
+/* Inline filter pills — orange accent for active precision filters */
+.library-inline-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  color: #f97316;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.library-inline-filter-pill:hover {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.5);
+}
+
+.library-inline-filter-pill svg {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* Drawer reset — right side, subdued danger styling */
+.library-drawer-reset {
+  margin-left: auto;
+  font-size: 0.68rem;
+  padding: 0.22rem 0.55rem;
+  color: rgba(239, 68, 68, 0.8);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.library-drawer-reset:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: rgba(239, 68, 68, 1);
+}
+
+/* Drawer active filters — wrap cleanly */
+.library-drawer-active-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CARD SOURCE BADGE — top-left thumbnail corner
+   M = embedded/mod source, C = cache, E = external
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Source badge: top-left corner of thumbnail — shown at rest */
+.library-thumb-source-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  cursor: default;
+  line-height: 1;
+}
+
+.library-thumb-source-badge--embedded {
+  background: rgba(180, 200, 255, 0.25);
+  border-color: rgba(180, 200, 255, 0.5);
+  color: rgba(180, 200, 255, 0.95);
+}
+
+.library-thumb-source-badge--cache {
+  background: rgba(100, 200, 255, 0.25);
+  border-color: rgba(100, 200, 255, 0.5);
+  color: rgba(100, 200, 255, 0.95);
+}
+
+.library-thumb-source-badge--external {
+  background: rgba(255, 200, 100, 0.25);
+  border-color: rgba(255, 200, 100, 0.5);
+  color: rgba(255, 200, 100, 0.95);
+}
+
+/* Source badge in reveal panel — subdued now that badge is in thumbnail */
+.library-card-info-reveal .library-reveal-source {
+  font-size: 0.58rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  opacity: 0.8;
 }

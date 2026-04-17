@@ -13,6 +13,7 @@ import {
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeLibraryPrimaryLabel,
+  extractColorSwatches,
   libraryIdentityLabelForFilename,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
@@ -204,6 +205,52 @@ export function LibraryDetailSheet({
                         )}
                       </div>
                     )}
+
+                    {/* Compatibility — power view only: watch status + installed version */}
+                    {userView === "power" && (
+                      (selectedFile.watchResult != null) ||
+                      (selectedFile.installedVersionSummary != null)
+                    ) && (
+                      <div className="inspect-evidence-row">
+                        <span className="inspect-evidence-label">Compatibility</span>
+                        {selectedFile.watchResult && (
+                          <span className={`inspect-chip inspect-chip--compat inspect-chip--compat-${selectedFile.watchResult.status}`}>
+                            {selectedFile.watchResult.status === "current" ? "✓ Up to date" :
+                             selectedFile.watchResult.status === "exact_update_available" ? "↻ Update available" :
+                             selectedFile.watchResult.status === "possible_update" ? "↻ Possible update" :
+                             selectedFile.watchResult.status === "not_watched" ? "○ Not tracked" :
+                             selectedFile.watchResult.status === "unknown" ? "? Unknown" :
+                             selectedFile.watchResult.status}
+                          </span>
+                        )}
+                        {selectedFile.installedVersionSummary && selectedFile.installedVersionSummary.version && (
+                          <span className="inspect-chip inspect-chip--compat">
+                            v{selectedFile.installedVersionSummary.version}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Color hints — power view + CAS only: real extracted color swatches */}
+                    {userView === "power" && selectedFile.kind === "CAS" && (() => {
+                      const swatches = extractColorSwatches(
+                        selectedFile.insights?.embeddedNames ?? [],
+                        selectedFile.insights?.familyHints ?? [],
+                      );
+                      return swatches.length > 0 ? (
+                        <div className="inspect-evidence-row">
+                          <span className="inspect-evidence-label">Colors</span>
+                          {swatches.map((hex, i) => (
+                            <span
+                              key={i}
+                              className="inspect-swatch"
+                              style={{ background: hex }}
+                              title={hex}
+                            />
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 )}
 

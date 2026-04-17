@@ -231,7 +231,15 @@ export function LibraryScreen({
   }
 
   async function openFile(row: LibraryFileRow) {
-    setSelected(await api.getFileDetail(row.id));
+    const detail = await api.getFileDetail(row.id);
+    if (!detail) return;
+    // Immediately show thumbnail from the list card's already-computed cascade
+    // so sidebar preview renders without waiting for the async detail response.
+    detail._cardThumbnail =
+      row.insights?.thumbnailPreview ??
+      row.insights?.cachedThumbnailPreview ??
+      null;
+    setSelected(detail);
   }
 
   async function saveCreatorOverride() {

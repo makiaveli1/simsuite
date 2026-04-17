@@ -155,7 +155,16 @@ export function LibraryThumbnailGrid({
                           alt={`Preview for ${model.displayTitle}`}
                           className="library-card-thumbnail-img"
                         />
-                        {/* Source indicator: bottom-left */}
+                        {/* Source badge: top-left corner of thumbnail — visible at rest */}
+                        {model.previewSource && model.previewSource !== 'fallback' ? (
+                          <span
+                            className={`library-thumb-source-badge library-thumb-source-badge--${model.previewSource}`}
+                            title={`Preview: ${model.previewSource}`}
+                          >
+                            {model.previewSource === 'embedded' ? 'M' : model.previewSource === 'cache' ? 'C' : 'E'}
+                          </span>
+                        ) : null}
+                        {/* Source dot: bottom-left (quiet indicator) */}
                         {model.previewSource && model.previewSource !== 'fallback' ? (
                           <div className="library-thumb-source-dot" title={`Preview: ${model.previewSource}`}>
                             <span className={`source-dot source-dot--${model.previewSource} is-active`} />
