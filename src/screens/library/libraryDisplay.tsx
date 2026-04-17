@@ -170,7 +170,7 @@ export function libraryViewFlags(userView: UserView): LibraryViewFlags {
   return {
     showCreatorInList: userView !== "beginner",
     showInspectFactsInList: userView === "power",
-    showAdvancedFilters: userView !== "beginner",
+    showAdvancedFilters: true, // accessible to all users — content can be simplified for beginners if needed
     showRootFacts: userView !== "beginner",
     maxSupportingFacts: userView === "power" ? 3 : 2,
     // Grid card chip density per view

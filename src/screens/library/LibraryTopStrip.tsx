@@ -276,6 +276,30 @@ export function LibraryTopStrip({
           })}
         </div>
 
+        {/* Contextual subtype chips — shown only when a kind filter is active */}
+        {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+          <div className="library-browse-sep" aria-hidden="true" />
+        )}
+        {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+          <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
+            {facets.subtypes.map((s) => {
+              const isActive = filters.subtype === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`library-subtype-chip${isActive ? " is-active" : ""}`}
+                  onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
+                  aria-pressed={isActive}
+                  title={isActive ? `Showing ${s} — click to clear` : `Show ${s}`}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="library-browse-sep" aria-hidden="true" />
 
         <div className="library-browse-group library-browse-group--watch" role="group" aria-label="Quick filters by status">
