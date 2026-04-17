@@ -1260,6 +1260,8 @@ export function LibraryScreen({
               selected.id,
             );
           }}
+          relationship={relationship}
+          folderName={folderName}
           headerRight={
             <button
               type="button"

@@ -1,11 +1,13 @@
 import { type ReactNode } from "react";
 import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-react";
 import {
+  computeFileRelationship,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeTrayIdentity,
   describeTraySummary,
   describeVersionForInspector,
+  extractParentFolder,
   formatLibraryFileFormat,
   groupedFilesLabel,
   summarizeLibraryCareState,
@@ -17,6 +19,7 @@ import {
   trayLocationLabel,
   typeColorForKind,
   usefulTrayGroupingValue,
+  type FileRelationship,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import { api } from "../../lib/api";
@@ -31,6 +34,10 @@ interface LibraryDetailsPanelProps {
   onOpenUpdates: () => void;
   /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
   headerRight?: ReactNode;
+  /** Pre-computed relationship signal from LibraryScreen. */
+  relationship?: FileRelationship | null;
+  /** Pre-computed parent folder name. */
+  folderName?: string | null;
 }
 
 export function LibraryDetailsPanel({
@@ -41,6 +48,8 @@ export function LibraryDetailsPanel({
   onOpenEditDetails,
   onOpenUpdates,
   headerRight,
+  relationship: relationshipProp,
+  folderName: folderNameProp,
 }: LibraryDetailsPanelProps) {
   const isCasual = userView === "beginner";
   const isPower = userView === "power";
@@ -103,6 +112,12 @@ export function LibraryDetailsPanel({
       : selectedFile.confidence >= 0.55
         ? "medium"
         : "low";
+
+  // ── Folder + relationship context ─────────────────────────────────────
+  // relationship may be passed in from LibraryScreen (pre-computed with full items list)
+  // folderName may be passed in or computed fresh from path
+  const relationship = relationshipProp ?? computeFileRelationship(selectedFile, []);
+  const folderName = folderNameProp ?? extractParentFolder(selectedFile.path);
 
   // ─── Snapshot — view-aware ───────────────────────────────────────────────
   // Casual: only what matters for a quick read — creator, type, watch
@@ -231,6 +246,34 @@ export function LibraryDetailsPanel({
     if (format !== "Unknown") {
       snapshotLines.push({ label: "Format", value: format });
     }
+  }
+
+  // ─── Folder + relationship — all users get folder; seasoned+ get relationship ─
+  // "In folder" is universally useful — helps any player orient in a large library
+  // Relationship (same set / same pack) is a deeper signal for seasoned+ users
+  if (folderName) {
+    snapshotLines.push({
+      label: "In folder",
+      value: <span className="ghost-chip">{folderName}</span>,
+    });
+  }
+
+  // Relationship signal — shown in seasoned+ (not casual)
+  if (!isCasual && relationship && relationship.type !== "none") {
+    snapshotLines.push({
+      label: "Related",
+      value: (
+        <span>
+          {relationship.label}{" "}
+          <span
+            className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
+            title={`This relationship is ${relationship.proofLevel}`}
+          >
+            ({relationship.proofLevel})
+          </span>
+        </span>
+      ),
+    });
   }
 
   // ─── Care section — view-aware ───────────────────────────────────────────
