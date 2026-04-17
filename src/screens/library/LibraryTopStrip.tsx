@@ -276,11 +276,11 @@ export function LibraryTopStrip({
           })}
         </div>
 
-        {/* Contextual subtype chips — shown only when a kind filter is active */}
-        {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+        {/* Contextual subtype chips — only in grid view, when a kind is active */}
+        {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
           <div className="library-browse-sep" aria-hidden="true" />
         )}
-        {filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+        {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
           <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
             {facets.subtypes.map((s) => {
               const isActive = filters.subtype === s;
