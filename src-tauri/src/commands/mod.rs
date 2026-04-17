@@ -2567,6 +2567,32 @@ pub async fn list_library_files(
     .await
 }
 
+/// Returns all library files matching the given filters, WITHOUT pagination.
+/// Used by the folder-tree builder which needs the complete filtered dataset.
+#[tauri::command]
+pub async fn list_library_files_for_tree(
+    query: LibraryQuery,
+    state: State<'_, AppState>,
+) -> Result<LibraryListResponse, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_library_files_for_tree", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        // Strip pagination: the folder tree needs ALL matching files, not a slice.
+        let tree_query = LibraryQuery {
+            limit: None,
+            offset: None,
+            ..query
+        };
+        let response = library_index::list_library_files(&connection, tree_query).map_err(map_error)?;
+        log_slow_command("list_library_files_for_tree", started_at, || {
+            format!("for {} tree file row(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn list_library_watch_items(
     filter: Option<WatchListFilter>,

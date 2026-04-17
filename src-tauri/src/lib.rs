@@ -174,6 +174,7 @@ pub fn run() {
             commands::snooze_download_item,
             commands::reject_download_items,
             commands::list_library_files,
+            commands::list_library_files_for_tree,
             commands::list_library_watch_items,
             commands::list_library_watch_setup_items,
             commands::list_library_watch_review_items,

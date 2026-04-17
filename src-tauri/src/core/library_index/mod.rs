@@ -259,47 +259,100 @@ pub fn list_library_files(
         row.get(0)
     })?;
 
-    let mut row_params = params.clone();
-    row_params.push(Value::Integer(query.limit.unwrap_or(100)));
-    row_params.push(Value::Integer(query.offset.unwrap_or(0)));
+    // Pagination: only apply LIMIT/OFFSET when query.limit is explicitly set.
+    // When limit is None (tree-mode), return all filtered rows without LIMIT/OFFSET.
+    let rows_sql = if query.limit.is_some() {
+        let limit = query.limit.unwrap_or(100);
+        let offset = query.offset.unwrap_or(0);
+        let mut row_params = params.clone();
+        row_params.push(Value::Integer(limit));
+        row_params.push(Value::Integer(offset));
+        format!(
+            "SELECT\n\
+             f.id,\n\
+             f.filename,\n\
+             f.path,\n\
+             f.extension,\n\
+             f.kind,\n\
+             f.subtype,\n\
+             f.confidence,\n\
+             f.source_location,\n\
+             f.size,\n\
+             f.modified_at,\n\
+             c.canonical_name,\n\
+             b.bundle_name,\n\
+             b.bundle_type,\n\
+             b.file_count,\n\
+             f.relative_depth,\n\
+             f.safety_notes,\n\
+             f.parser_warnings,\n\
+             f.insights,\n\
+             cwr.status,\n\
+             EXISTS (\n\
+               SELECT 1 FROM duplicates d\n\
+               WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
+             ) AS has_duplicate\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}\n\
+             {order_by}\n\
+             LIMIT ? OFFSET ?",
+            filters = filters,
+            order_by = order_by
+        )
+    } else {
+        format!(
+            "SELECT\n\
+             f.id,\n\
+             f.filename,\n\
+             f.path,\n\
+             f.extension,\n\
+             f.kind,\n\
+             f.subtype,\n\
+             f.confidence,\n\
+             f.source_location,\n\
+             f.size,\n\
+             f.modified_at,\n\
+             c.canonical_name,\n\
+             b.bundle_name,\n\
+             b.bundle_type,\n\
+             b.file_count,\n\
+             f.relative_depth,\n\
+             f.safety_notes,\n\
+             f.parser_warnings,\n\
+             f.insights,\n\
+             cwr.status,\n\
+             EXISTS (\n\
+               SELECT 1 FROM duplicates d\n\
+               WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
+             ) AS has_duplicate\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}\n\
+             {order_by}",
+            filters = filters,
+            order_by = order_by
+        )
+    };
 
-    let rows_sql = format!(
-        "SELECT\n\
-         f.id,\n\
-         f.filename,\n\
-         f.path,\n\
-         f.extension,\n\
-         f.kind,\n\
-         f.subtype,\n\
-         f.confidence,\n\
-         f.source_location,\n\
-         f.size,\n\
-         f.modified_at,\n\
-         c.canonical_name,\n\
-         b.bundle_name,\n\
-         b.bundle_type,\n\
-         b.file_count,\n\
-         f.relative_depth,\n\
-         f.safety_notes,\n\
-         f.parser_warnings,\n\
-         f.insights,\n\
-         cwr.status,\n\
-         EXISTS (\n\
-           SELECT 1 FROM duplicates d\n\
-           WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
-         ) AS has_duplicate\n\
-         FROM files f\n\
-         LEFT JOIN creators c ON f.creator_id = c.id\n\
-         LEFT JOIN bundles b ON f.bundle_id = b.id\n\
-         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
-         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
-         WHERE f.source_location <> 'downloads'\n\
-        {filters}\n\
-         {order_by}\n\
-         LIMIT ? OFFSET ?",
-        filters = filters,
-        order_by = order_by
-    );
+    let mut row_params = if query.limit.is_some() {
+        let limit = query.limit.unwrap_or(100);
+        let offset = query.offset.unwrap_or(0);
+        let mut p = params.clone();
+        p.push(Value::Integer(limit));
+        p.push(Value::Integer(offset));
+        p
+    } else {
+        params.clone()
+    };
 
     let mut statement = connection.prepare(&rows_sql)?;
     let items = statement

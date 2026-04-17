@@ -3,7 +3,7 @@ import { rowHover, rowPress, stagedListItem } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
 import { buildLibraryRowModel } from "./libraryDisplay";
 
-interface LibraryCollectionTableProps {
+export interface LibraryCollectionTableProps {
   userView: UserView;
   rows: LibraryFileRow[];
   selectedId: number | null;
@@ -14,6 +14,8 @@ interface LibraryCollectionTableProps {
   onToggleSelect: (id: number) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
+  enableSelection?: boolean;
+  showPagination?: boolean;
 }
 
 export function LibraryCollectionTable({
@@ -27,6 +29,8 @@ export function LibraryCollectionTable({
   onToggleSelect,
   onPrevPage,
   onNextPage,
+  enableSelection = true,
+  showPagination = true,
 }: LibraryCollectionTableProps) {
   return (
     <>
@@ -34,7 +38,7 @@ export function LibraryCollectionTable({
         <div className="library-list-header" role="row">
           <div className="library-list-col library-list-col--type" aria-label="Type" />
           <div className="library-list-col library-list-col--thumb" aria-label="Preview" />
-          <div className="library-list-col library-list-col--select" aria-label="Select" />
+          <div className="library-list-col library-list-col--select" aria-label={enableSelection ? "Select" : undefined} />
           <div className="library-list-col library-list-col--name">
             {userView === "beginner" ? "File" : "Mod or file"}
           </div>
@@ -80,7 +84,7 @@ export function LibraryCollectionTable({
                     .filter(Boolean)
                     .join(" ")}
                   onClick={(e) => {
-                    if ((e.target as HTMLElement).closest(".library-table-checkbox-col")) {
+                    if (enableSelection && (e.target as HTMLElement).closest(".library-table-checkbox-col")) {
                       return;
                     }
                     onSelect(row);
@@ -89,7 +93,7 @@ export function LibraryCollectionTable({
                   tabIndex={0}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
-                      if ((event.target as HTMLElement).closest(".library-table-checkbox-col")) {
+                      if (enableSelection && (event.target as HTMLElement).closest(".library-table-checkbox-col")) {
                         return;
                       }
                       event.preventDefault();
@@ -137,19 +141,23 @@ export function LibraryCollectionTable({
                   </div>
 
                   <div
-                    className="library-list-col library-list-col--select library-table-checkbox-col"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleSelect(row.id);
-                    }}
+                    className={`library-list-col library-list-col--select${enableSelection ? " library-table-checkbox-col" : ""}`}
+                    onClick={enableSelection
+                      ? (e) => {
+                          e.stopPropagation();
+                          onToggleSelect(row.id);
+                        }
+                      : undefined}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => onToggleSelect(row.id)}
-                      aria-label={`Select ${model.title}`}
-                      className="library-table-checkbox"
-                    />
+                    {enableSelection ? (
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => onToggleSelect(row.id)}
+                        aria-label={`Select ${model.title}`}
+                        className="library-table-checkbox"
+                      />
+                    ) : null}
                   </div>
 
                   <div className="library-list-col library-list-col--name library-name-cell">
@@ -243,29 +251,33 @@ export function LibraryCollectionTable({
         </div>
       </div>
 
-      <div className="table-footer">
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={onPrevPage}
-          disabled={page === 0}
-        >
-          Previous
-        </button>
-        <div className="table-page-label">
-          Page {Math.min(page + 1, totalPages)} of {totalPages}
-        </div>
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={onNextPage}
-          disabled={page + 1 >= totalPages}
-        >
-          Next
-        </button>
-      </div>
+      {showPagination ? (
+        <>
+          <div className="table-footer">
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={onPrevPage}
+              disabled={page === 0}
+            >
+              Previous
+            </button>
+            <div className="table-page-label">
+              Page {Math.min(page + 1, totalPages)} of {totalPages}
+            </div>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={onNextPage}
+              disabled={page + 1 >= totalPages}
+            >
+              Next
+            </button>
+          </div>
 
-      <div className="table-pagination-bar" />
+          <div className="table-pagination-bar" />
+        </>
+      ) : null}
     </>
   );
 }

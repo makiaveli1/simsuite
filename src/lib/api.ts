@@ -7220,6 +7220,8 @@ export const api = {
     invoke<IgnoreItemsResult>("reject_download_items", { itemIds }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
+  listLibraryFilesForTree: (query: LibraryQuery) =>
+    invoke<LibraryListResponse>("list_library_files_for_tree", { query }),
   listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>
     invoke<LibraryWatchListResponse>("list_library_watch_items", {
       filter,

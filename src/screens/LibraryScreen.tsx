@@ -112,6 +112,7 @@ export function LibraryScreen({
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid" | "folders">("list");
   const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
+  const [treeRows, setTreeRows] = useState<LibraryListResponse | null>(null);
   const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
@@ -167,6 +168,19 @@ export function LibraryScreen({
     page,
     pageSize,
   ]);
+
+  // Load the full-tree dataset when entering folder mode or when filters change.
+  // The tree needs ALL files (no pagination) to show real subfolder structure.
+  useEffect(() => {
+    if (viewMode === "folders") {
+      setActiveFolderPath(null); // Reset to root on enter
+      void loadTreeRows();
+    } else {
+      // Clear tree data when leaving folder mode so it reloads fresh next time.
+      setTreeRows(null);
+      setActiveFolderPath(null);
+    }
+  }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
 
   useEffect(() => {
     if (!selected) {
@@ -234,6 +248,26 @@ export function LibraryScreen({
     } else {
       setSelected(null);
       setActiveLibrarySheet(null);
+    }
+  }
+
+  // Loads ALL filtered files (no pagination) for folder-tree construction.
+  // The tree needs the complete dataset to show real subfolder structure.
+  async function loadTreeRows() {
+    try {
+      const result = await api.listLibraryFilesForTree({
+        search: deferredSearch || undefined,
+        kind: kind || undefined,
+        subtype: subtype || undefined,
+        creator: creator || undefined,
+        source: source || undefined,
+        minConfidence: minConfidence ? Number(minConfidence) : undefined,
+        watchFilter: watchFilter || undefined,
+        // No sortBy/page/pageSize — tree doesn't need sorted or paginated data
+      });
+      setTreeRows(result);
+    } catch (err) {
+      console.error("loadTreeRows failed:", err);
     }
   }
 
@@ -402,28 +436,31 @@ export function LibraryScreen({
     [selected],
   );
 
-  // ── Folder tree (computed from current page's items) ───────────────────
+  // ── Folder tree (computed from ALL filtered files via treeRows) ──────────
+  // treeRows contains the full un-paginated dataset so the tree shows REAL subfolders.
+  // Falls back to rows.items (paginated) only while treeRows is loading.
   const folderTreeRoots = useMemo(() => {
-    if (!rows?.items.length) return null;
-    const { mods, tray } = buildFolderTree(rows.items);
-    // Return a synthetic root combining both trees
+    const items = treeRows?.items ?? rows?.items ?? [];
+    if (!items.length) return null;
+    const { mods, tray } = buildFolderTree(items);
     return { mods, tray };
-  }, [rows?.items]);
+  }, [treeRows?.items, rows?.items]);
 
   // ── Folder contents for the active path ─────────────────────────────────
+  // Uses treeRows (full dataset) when available for accurate file listing.
   const folderContents = useMemo(() => {
-    if (!rows?.items.length || !folderTreeRoots) {
+    const items = treeRows?.items ?? rows?.items ?? [];
+    if (!items.length || !folderTreeRoots) {
       return { subfolders: [], files: [] };
     }
     if (!activeFolderPath) {
-      // Root level: show immediate children of both mods and tray
       return {
         subfolders: [folderTreeRoots.mods, folderTreeRoots.tray],
         files: [],
       };
     }
-    return getFolderContents(activeFolderPath, rows.items);
-  }, [rows?.items, folderTreeRoots, activeFolderPath]);
+    return getFolderContents(activeFolderPath, items);
+  }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
   const syntheticRoot: FolderNode = useMemo(() => {
