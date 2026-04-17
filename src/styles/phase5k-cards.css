@@ -249,32 +249,121 @@
   display: none;
 }
 
-/* ─── DENSITY — driven by --card-min CSS variable set in LibraryScreen.tsx ──
-   The grid uses auto-fill + minmax(var(--card-min, 220px), 1fr).
-   Three snap sizes: S=120px, M=180px, L=260px — set by cardDensity state.
-   Card width scales smoothly. aspect-ratio: 4/5 on hero keeps proportions.
-   Reveal panel text scales with card size.
+/* ─── DENSITY — driven by --card-density CSS variable (0.0 – 1.0) ──
+   Set by LibraryScreen.tsx: document.documentElement.style.setProperty('--card-density', value)
+   Grid uses auto-fill + minmax(var(--card-min), 1fr).
+   All reveal/typography variables lerp continuously — no discrete breakpoints.
    ─────────────────────────────────────────────────────────────────────────── */
 
-/* Small cards (--card-min: 120px) — tighter reveal text */
 :root {
-  --reveal-title-size: 0.78rem;
-  --reveal-padding: 0.4rem 0.5rem 0.35rem;
+  /* densityProgress: 0.0 = dense/min cards, 1.0 = spacious/max cards */
+  --density-progress: var(--card-density, 0.5);
+
+  /* Card sizing — range 140px (dense) → 260px (spacious) */
+  --card-min: calc(140px + 120px * var(--density-progress));
+  --grid-gap: calc(0.45rem + 0.4rem * var(--density-progress)); /* 0.45 → 0.85rem */
+
+  /* Reveal typography — lerped with WCAG-readable floor */
+  --reveal-pad-x: calc(0.4rem + 0.35rem * var(--density-progress));
+  --reveal-pad-y: calc(0.3rem + 0.25rem * var(--density-progress));
+  --reveal-title-size: calc(0.72rem + 0.18rem * var(--density-progress)); /* 0.72 → 0.90rem */
+  --reveal-meta-size: calc(0.6rem + 0.12rem * var(--density-progress));   /* 0.60 → 0.72rem */
+
+  /* Supporting element scales */
+  --type-pill-size: calc(0.6rem + 0.1rem * var(--density-progress));     /* 0.60 → 0.70rem */
+  --status-badge-size: calc(0.56rem + 0.08rem * var(--density-progress));
+
+  /* Derived reveal padding for compatibility */
+  --reveal-padding: var(--reveal-pad-y) var(--reveal-pad-x);
 }
 
-/* Large cards (--card-min: 260px) — more generous reveal text */
-:root[data-density="roomy"] {
-  --reveal-title-size: 0.9rem;
-  --reveal-padding: 0.6rem 0.75rem 0.5rem;
-}
-
-/* Density-aware reveal text size */
+/* Density-aware reveal text size — driven by lerped CSS vars */
 .library-card-info-reveal {
   padding: var(--reveal-padding);
 }
 
 .library-card-info-reveal .library-card-reveal-title {
   font-size: var(--reveal-title-size);
+}
+
+/* Grid reflow driven by --card-min */
+.library-card-grid {
+  gap: var(--grid-gap);
+}
+
+/* ─── Browse rail — kind chips + summary pills ───────────────── */
+/* Lives inside the top strip, below command row */
+.library-browse-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.library-browse-row::-webkit-scrollbar { display: none; }
+
+/* Summary pills — right side of browse rail */
+.library-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.library-summary-pill strong { color: var(--text); }
+.library-summary-pill.has-updates  { border-color: rgba(234,179,8,0.5);  color: #eab308; background: rgba(234,179,8,0.08); }
+.library-summary-pill.needs-review { border-color: rgba(249,115,22,0.5); color: #f97316; background: rgba(249,115,22,0.08); }
+.library-summary-pill.has-duplicates { border-color: rgba(168,85,247,0.4); color: #c084fc; }
+.library-summary-pill.is-disabled  { border-color: rgba(239,68,68,0.4);  color: #ef4444; background: rgba(239,68,68,0.08); }
+
+/* ─── Inline filter drawer ──────────────────────────────────── */
+.library-filter-drawer {
+  overflow: hidden;
+  /* Transition controlled by aria-hidden + CSS */
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+  max-height: 0;
+  opacity: 0;
+}
+.library-filter-drawer:not([aria-hidden="true"]) {
+  max-height: 200px;
+  opacity: 1;
+}
+
+.library-filter-drawer-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+}
+
+/* Active filter badge on filter button */
+.library-filter-btn .active-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #f97316;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  margin-left: 3px;
 }
 
 /* ─── HERO THUMBNAIL WRAP ───────────────────────────────────── */
@@ -1264,6 +1353,55 @@
   gap: 0.4rem;
   flex-wrap: wrap;
 }
+
+/* ─── Inspect evidence board (More Details sheet) ───────────── */
+/* Replaces repeated thumbnail preview in inspect/detail sheet lead */
+
+.inspect-evidence-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.inspect-evidence-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.inspect-evidence-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-right: 0.1rem;
+  flex-shrink: 0;
+}
+
+/* Chips used inside the evidence board */
+.inspect-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.67rem;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+.inspect-chip--type   { border-color: var(--kind-color, rgba(255,255,255,0.2)); background: rgba(255,255,255,0.07); color: var(--text); }
+.inspect-chip--source { border-color: rgba(59,130,246,0.4); color: #60a5fa; }
+.inspect-chip--ps     { border-color: rgba(168,85,247,0.4); color: #c084fc; font-size: 0.62rem; }
+.inspect-chip--attr   { border-color: rgba(236,72,153,0.4); color: #f472b6; }
+.inspect-chip--struct { border-color: rgba(251,191,36,0.4); color: #fbbf24; }
 
 /* Keep hero scrim above the accent bar */
 .library-card-hero::after {

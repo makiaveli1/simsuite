@@ -159,36 +159,53 @@ export function LibraryDetailSheet({
                     </div>
                   ) : null}
                 </div>
-                {/* Thumbnail preview — cache-derived preferred, then embedded, then fallback */}
-                {mode === "inspect" && (() => {
-                  const cached = selectedFile.insights?.cachedThumbnailPreview ?? null;
-                  const embedded = selectedFile.insights?.thumbnailPreview ?? null;
-                  const preview = cached ?? embedded;
-                  const source = cached ? 'cached' : embedded ? 'embedded' : null;
-                  return (
-                    <div className="library-detail-sheet-thumbnail">
-                      {preview ? (
-                        <>
-                          <img
-                            src={`data:image/png;base64,${preview}`}
-                            alt={`Preview for ${selectedFile.filename}`}
-                            className="library-detail-sheet-thumbnail-img"
-                          />
-                          <span className="library-detail-sheet-thumbnail-caption library-detail-sheet-thumbnail-caption--active">
-                            {source === 'cached' ? '↗ cached thumbnail' : '↗ embedded preview'}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <DetailSheetFallbackIcon kind={selectedFile.kind} />
-                          <span className="library-detail-sheet-thumbnail-caption">
-                            no thumbnail available
-                          </span>
-                        </>
+                {/* Evidence board — replaces repeated thumbnail in More Details */}
+                {mode === "inspect" && (
+                  <div className="inspect-evidence-board">
+                    {/* Classification: kind + preview source */}
+                    <div className="inspect-evidence-row">
+                      <span className="inspect-chip inspect-chip--type">
+                        {friendlyTypeLabel(selectedFile.kind)}
+                      </span>
+                      {selectedFile.insights?.previewSource && (
+                        <span className="inspect-chip inspect-chip--ps">
+                          {selectedFile.insights.previewSource === "embedded" ? "THUM embedded" :
+                           selectedFile.insights.previewSource === "cache" ? "Game cache" :
+                           selectedFile.insights.previewSource}
+                        </span>
                       )}
                     </div>
-                  );
-                })()}
+
+                    {/* Attribution — power view only, meaningful hints only */}
+                    {userView === "power" && selectedFile.insights?.creatorHints && selectedFile.insights.creatorHints.length > 0 && (
+                      <div className="inspect-evidence-row">
+                        <span className="inspect-evidence-label">Attribution</span>
+                        {selectedFile.insights.creatorHints.slice(0, 4).map((hint, i) => (
+                          <span key={i} className="inspect-chip inspect-chip--attr">{hint}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Structure — power view only */}
+                    {userView === "power" && (
+                      (selectedFile.insights?.scriptNamespaces?.length ?? 0) > 0 || (selectedFile.insights?.embeddedNames?.length ?? 0) > 0
+                    ) && (
+                      <div className="inspect-evidence-row">
+                        <span className="inspect-evidence-label">Structure</span>
+                        {(selectedFile.insights?.scriptNamespaces?.length ?? 0) > 0 && (
+                          <span className="inspect-chip inspect-chip--struct">
+                            {selectedFile.insights!.scriptNamespaces!.length} namespace{selectedFile.insights!.scriptNamespaces!.length !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {(selectedFile.insights?.embeddedNames?.length ?? 0) > 0 && (
+                          <span className="inspect-chip inspect-chip--struct">
+                            {selectedFile.insights!.embeddedNames!.length} embedded name{selectedFile.insights!.embeddedNames!.length !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="library-detail-sheet-meta">
                   <span className="ghost-chip">
@@ -197,9 +214,7 @@ export function LibraryDetailSheet({
                       ? ` (${describeCreatorForInspector(selectedFile).suffix})`
                       : null}
                   </span>
-                  <span className="confidence-badge neutral">
-                    {Math.round(selectedFile.confidence * 100)}%
-                  </span>
+                  {/* Confidence communicated via badge — no raw % needed */}
                 </div>
               </div>
 

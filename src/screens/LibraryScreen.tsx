@@ -5,7 +5,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AnimatePresence, m } from "motion/react";
 import { SkeletonLoader } from "../components/SkeletonLoader";
 import { ExternalLink, Search, X, PanelLeftClose } from "lucide-react";
 import { DockSectionStack } from "../components/DockSectionStack";
@@ -13,7 +12,6 @@ import { Workbench } from "../components/layout/Workbench";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
 import { api } from "../lib/api";
-import { downloadsSheetTransition } from "../lib/motion";
 import {
   creatorConfidenceSuffix,
   friendlyTypeLabel,
@@ -45,7 +43,6 @@ import {
   describeVersionForInspector,
   formatLibraryFileFormat,
   groupedFilesLabel,
-  libraryViewFlags,
   trayLocationLabel,
   usefulTrayGroupingValue,
 } from "./library/libraryDisplay";
@@ -108,26 +105,20 @@ export function LibraryScreen({
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  const [cardDensity, setCardDensity] = useState<"small" | "medium" | "large">("medium");
+  const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
-  // Update --card-min CSS variable when card density changes
-  // Maps discrete cardDensity state to CSS variable values.
-  // The CSS grid and reveal system handle the continuous scaling.
   useEffect(() => {
-    const map: Record<typeof cardDensity, { min: number; dataDensity: string }> = {
-      small:   { min: 120, dataDensity: "compact" },
-      medium:  { min: 180, dataDensity: "balanced" },
-      large:   { min: 260, dataDensity: "roomy" },
-    };
-    const { min, dataDensity } = map[cardDensity];
-    document.documentElement.style.setProperty("--card-min", `${min}px`);
-    document.documentElement.setAttribute("data-density", dataDensity);
+    const clampedDensity = Math.max(0, Math.min(100, densityValue));
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty("--card-density", (clampedDensity / 100).toString());
+    rootStyle.setProperty("--slider-fill", `${clampedDensity}%`);
+
     return () => {
-      document.documentElement.style.removeProperty("--card-min");
-      document.documentElement.removeAttribute("data-density");
+      rootStyle.removeProperty("--card-density");
+      rootStyle.removeProperty("--slider-fill");
     };
-  }, [cardDensity]);
+  }, [densityValue]);
 
   // Reload facets when kind changes so subtype chips are kind-scoped.
   useEffect(() => {
@@ -385,8 +376,6 @@ export function LibraryScreen({
         sortBy !== "name" ? "sort" : null,
       ].filter(Boolean).length
     : 0;
-  const viewFlags = libraryViewFlags(userView);
-
   const libraryInspectorSections = selected
     ? [
         {
@@ -989,16 +978,16 @@ export function LibraryScreen({
           userView={userView}
           search={search}
           activeFilterCount={activeFilterCount}
-          moreFiltersOpen={moreFiltersOpen}
+          drawerOpen={moreFiltersOpen}
           watchFilter={watchFilter}
           sortBy={sortBy}
           librarySummary={librarySummary}
           facets={facets}
           viewMode={viewMode}
           pageSize={pageSize}
+          densityValue={densityValue}
           onPageSizeChange={(v) => { setPageSize(v); setPage(0); }}
-          cardDensity={cardDensity}
-          onCardDensityChange={setCardDensity}
+          onDensityChange={setDensityValue}
           onViewModeChange={setViewMode}
           filters={{
             kind,
@@ -1023,7 +1012,7 @@ export function LibraryScreen({
             setPage(0);
           }}
           onResetFilters={resetFilters}
-          onToggleMoreFilters={() => setMoreFiltersOpen((current) => !current)}
+          onDrawerToggle={() => setMoreFiltersOpen((current) => !current)}
           onWatchFilterChange={(value) => {
             setWatchFilter(value);
             setPage(0);
@@ -1033,67 +1022,6 @@ export function LibraryScreen({
             setPage(0);
           }}
         />
-
-        <AnimatePresence>
-          {viewFlags.showAdvancedFilters && moreFiltersOpen ? (
-            <m.div
-              className="library-more-filters-popover"
-              initial={{ opacity: 0, y: -8, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.985 }}
-              transition={downloadsSheetTransition}
-            >
-              <div className="library-more-filters-header">
-                <div>
-                  <p className="eyebrow">{userView === "power" ? "Inspect filters" : "More filters"}</p>
-                  <strong>
-                    {userView === "power"
-                      ? "Keep the deeper clues one click away"
-                      : "Use the extra narrowing only when you need it"}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="filter-grid library-more-filters-grid">
-                {userView === "power" ? (
-                  <label className="field">
-                    <span>Subtype</span>
-                    <select
-                      value={subtype}
-                      onChange={(event) => {
-                        setSubtype(event.target.value);
-                        setPage(0);
-                      }}
-                    >
-                      <option value="">All subtypes</option>
-                      {facets?.subtypes.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-
-                <label className="field">
-                  <span>Confidence</span>
-                  <select
-                    value={minConfidence}
-                    onChange={(event) => {
-                      setMinConfidence(event.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <option value="">Any match</option>
-                    <option value="0.35">35%+</option>
-                    <option value="0.55">55%+</option>
-                    <option value="0.75">75%+</option>
-                  </select>
-                </label>
-              </div>
-            </m.div>
-          ) : null}
-        </AnimatePresence>
 
         {selectedIds.size > 0 ? (
           <div className="library-selection-strip">
