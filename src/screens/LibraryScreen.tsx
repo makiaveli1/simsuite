@@ -54,6 +54,9 @@ import { LibraryThumbnailGrid } from "./library/LibraryThumbnailGrid";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
+import { FolderTreePane } from "./library/FolderTreePane";
+import { FolderContentPane } from "./library/FolderContentPane";
+import { buildFolderTree, getFolderContents, type FolderNode } from "./library/folderTree";
 
 interface LibraryScreenProps {
   refreshVersion: number;
@@ -107,7 +110,8 @@ export function LibraryScreen({
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [activeLibrarySheet, setActiveLibrarySheet] = useState<LibrarySheetMode>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [viewMode, setViewMode] = useState<"list" | "grid" | "folders">("list");
+  const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
   const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
@@ -397,6 +401,45 @@ export function LibraryScreen({
     () => (selected ? extractParentFolder(selected.path) : null),
     [selected],
   );
+
+  // ── Folder tree (computed from current page's items) ───────────────────
+  const folderTreeRoots = useMemo(() => {
+    if (!rows?.items.length) return null;
+    const { mods, tray } = buildFolderTree(rows.items);
+    // Return a synthetic root combining both trees
+    return { mods, tray };
+  }, [rows?.items]);
+
+  // ── Folder contents for the active path ─────────────────────────────────
+  const folderContents = useMemo(() => {
+    if (!rows?.items.length || !folderTreeRoots) {
+      return { subfolders: [], files: [] };
+    }
+    if (!activeFolderPath) {
+      // Root level: show immediate children of both mods and tray
+      return {
+        subfolders: [folderTreeRoots.mods, folderTreeRoots.tray],
+        files: [],
+      };
+    }
+    return getFolderContents(activeFolderPath, rows.items);
+  }, [rows?.items, folderTreeRoots, activeFolderPath]);
+
+  // ── Synthetic root node for FolderContentPane when at root ─────────────
+  const syntheticRoot: FolderNode = useMemo(() => {
+    if (!folderTreeRoots) {
+      return { name: "Root", fullPath: "", depth: 0, children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0 };
+    }
+    return {
+      name: "Root",
+      fullPath: "",
+      depth: -1,
+      children: [folderTreeRoots.mods, folderTreeRoots.tray],
+      directFileCount: 0,
+      totalFileCount: folderTreeRoots.mods.totalFileCount + folderTreeRoots.tray.totalFileCount,
+      childFolderCount: 2,
+    };
+  }, [folderTreeRoots]);
 
   const libraryInspectorSections = selected
     ? [
@@ -1209,6 +1252,35 @@ export function LibraryScreen({
             onPrevPage={() => setPage((current) => Math.max(current - 1, 0))}
             onNextPage={() => setPage((current) => current + 1)}
           />
+        ) : viewMode === "folders" ? (
+          <div className="library-folders-layout">
+            <div className="library-folder-tree-pane">
+              {folderTreeRoots ? (
+                <FolderTreePane
+                  tree={folderTreeRoots.mods}
+                  activePath={activeFolderPath}
+                  onNavigate={(path) => setActiveFolderPath(path)}
+                />
+              ) : null}
+              {folderTreeRoots ? (
+                <FolderTreePane
+                  tree={folderTreeRoots.tray}
+                  activePath={activeFolderPath}
+                  onNavigate={(path) => setActiveFolderPath(path)}
+                />
+              ) : null}
+            </div>
+            <FolderContentPane
+              userView={userView}
+              folderPath={activeFolderPath}
+              subfolders={folderContents.subfolders}
+              files={folderContents.files}
+              tree={syntheticRoot}
+              onNavigate={(path) => setActiveFolderPath(path)}
+              onSelectFile={(row) => void openFile(row)}
+              selectedFile={selected}
+            />
+          </div>
         ) : (
           <LibraryCollectionTable
             userView={userView}
