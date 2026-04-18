@@ -8,6 +8,8 @@ export interface FolderNode {
   directFileCount: number;
   totalFileCount: number;
   childFolderCount: number;
+  /** Root-level (depth-0) files directly in this folder, not in any subfolder. */
+  rootFiles?: LibraryFileRow[];
 }
 
 interface MutableFolderNode extends FolderNode {
@@ -141,8 +143,8 @@ export function getFolderContents(
     return folderSegments?.join("/") === folderPath;
   });
 
-  // Root files: files stored directly in the root folder with no subfolder.
-  // These are separate from the tree and shown as "Loose files" in the content pane.
+  // Root files: depth-0 files stored directly in this folder with no subfolder.
+  // E.g. the 9,777 files stored directly in "Mods" with no subfolder path.
   const rootFiles: LibraryFileRow[] =
     activeNode != null
       ? getRootFiles(activeNode.name, files)

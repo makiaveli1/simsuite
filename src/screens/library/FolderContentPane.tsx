@@ -27,8 +27,12 @@ export function FolderContentPane({
   selectedFile,
 }: FolderContentPaneProps) {
   const segments = folderPath ? folderPath.split("/").filter(Boolean) : [];
+  // Root files add to the visible file count when inside a folder.
+  // At root level, tree.totalFileCount already includes root files (updated in syntheticRoot).
   const totalShownFiles = files.length + (folderPath !== null ? rootFiles.length : 0);
-  const summary = buildFolderSummary(subfolders.length, folderPath === null ? tree.totalFileCount : totalShownFiles);
+  const summaryFileCount =
+    folderPath === null ? tree.totalFileCount : totalShownFiles;
+  const summary = buildFolderSummary(subfolders.length, summaryFileCount);
 
   return (
     <div className="library-folder-content-pane">
@@ -74,7 +78,9 @@ export function FolderContentPane({
                   <Folder size={15} strokeWidth={2} />
                 </span>
                 <span className="folder-row__name">{folder.name}</span>
-                <span className="folder-row__count">{folder.totalFileCount} files</span>
+                <span className="folder-row__count">
+                {folder.totalFileCount + (folder.rootFiles?.length ?? 0)} files
+              </span>
               </button>
             ))}
           </div>
@@ -84,27 +90,42 @@ export function FolderContentPane({
       {/* Root-level files stored directly in this folder with no subfolder (e.g. Mods\\filename.package) */}
       {rootFiles.length > 0 ? (
         <section>
-          <div className="folder-content-section folder-content-section--loose">
-            Loose files
-            <span className="folder-loose-files-badge">{rootFiles.length}</span>
-          </div>
-          <div className="folder-loose-files-hint">
-            Stored directly in {folderPath} — not yet organized into subfolders
-          </div>
-          <LibraryCollectionTable
-            userView={userView}
-            rows={rootFiles}
-            selectedId={selectedFile?.id ?? null}
-            selectedIds={EMPTY_SELECTION}
-            page={0}
-            totalPages={1}
-            onSelect={onSelectFile}
-            onToggleSelect={() => undefined}
-            onPrevPage={() => undefined}
-            onNextPage={() => undefined}
-            enableSelection={false}
-            showPagination={false}
-          />
+          {folderPath === null ? (
+            // At root: group loose files by source root (Mods / Tray)
+            <>
+              <ModsLooseFilesSection
+                userView={userView}
+                rootFiles={rootFiles}
+                selectedFile={selectedFile}
+                onSelectFile={onSelectFile}
+              />
+            </>
+          ) : (
+            // Inside a specific folder: single "Loose files" section
+            <>
+              <div className="folder-content-section folder-content-section--loose">
+                Loose files
+                <span className="folder-loose-files-badge">{rootFiles.length}</span>
+              </div>
+              <div className="folder-loose-files-hint">
+                Stored directly in {folderPath} — not yet organized into subfolders
+              </div>
+              <LibraryCollectionTable
+                userView={userView}
+                rows={rootFiles}
+                selectedId={selectedFile?.id ?? null}
+                selectedIds={EMPTY_SELECTION}
+                page={0}
+                totalPages={1}
+                onSelect={onSelectFile}
+                onToggleSelect={() => undefined}
+                onPrevPage={() => undefined}
+                onNextPage={() => undefined}
+                enableSelection={false}
+                showPagination={false}
+              />
+            </>
+          )}
         </section>
       ) : null}
 
@@ -136,6 +157,76 @@ export function FolderContentPane({
 }
 
 const EMPTY_SELECTION = new Set<number>();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const SOURCE_ROOT_NAMES = new Set(["Mods", "Tray"]);
+
+function getSourceRootFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "").replace(/^\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  const idx = segments.findIndex((s) => SOURCE_ROOT_NAMES.has(s));
+  return idx < 0 ? "" : segments[idx];
+}
+
+// ── ModsLooseFilesSection ─────────────────────────────────────────────────────
+// Shows root-level (depth-0) files grouped by source root (Mods / Tray).
+// These files are stored directly in the game folder with no subfolder.
+
+interface ModsLooseFilesSectionProps {
+  userView: UserView;
+  rootFiles: LibraryFileRow[];
+  selectedFile: FileDetail | null;
+  onSelectFile: (file: LibraryFileRow) => void;
+}
+
+function ModsLooseFilesSection({
+  userView,
+  rootFiles,
+  selectedFile,
+  onSelectFile,
+}: ModsLooseFilesSectionProps) {
+  // Group root files by source root (Mods / Tray)
+  const groups: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
+  for (const file of rootFiles) {
+    const src = getSourceRootFromPath(file.path);
+    if (src === "Mods" || src === "Tray") {
+      groups[src].push(file);
+    }
+  }
+
+  return (
+    <>
+      {Object.entries(groups).map(([sourceRoot, files]) =>
+        files.length > 0 ? (
+          <div key={sourceRoot} className="folder-loose-source-group">
+            <div className="folder-content-section folder-content-section--loose">
+              Loose files in {sourceRoot}
+              <span className="folder-loose-files-badge">{files.length}</span>
+            </div>
+            <div className="folder-loose-files-hint">
+              Stored directly in {sourceRoot} — not organized into subfolders
+            </div>
+            <LibraryCollectionTable
+              userView={userView}
+              rows={files}
+              selectedId={selectedFile?.id ?? null}
+              selectedIds={EMPTY_SELECTION}
+              page={0}
+              totalPages={1}
+              onSelect={onSelectFile}
+              onToggleSelect={() => undefined}
+              onPrevPage={() => undefined}
+              onNextPage={() => undefined}
+              enableSelection={false}
+              showPagination={false}
+            />
+          </div>
+        ) : null,
+      )}
+    </>
+  );
+}
 
 function buildFolderSummary(subfolderCount: number, fileCount: number) {
   if (subfolderCount > 0) {

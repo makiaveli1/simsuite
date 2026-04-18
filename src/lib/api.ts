@@ -6928,6 +6928,37 @@ async function mockInvoke<T>(
       mockFiles[fileIndex] = next;
       return structuredClone(next) as T;
     }
+    case "list_library_files_for_tree": {
+      // Returns all filtered files WITHOUT pagination — used for building the folder tree.
+      // Mirrors filterMockFiles but omits offset/limit.
+      const query = (payload?.query as LibraryQuery | undefined) ?? {};
+      const search = query.search?.trim().toLowerCase();
+      let items = mockFiles.filter((item) => item.sourceLocation !== "downloads");
+      if (search) {
+        items = items.filter((item) =>
+          [item.filename, item.kind, item.subtype, item.creator]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(search)),
+        );
+      }
+      if (query.kind) {
+        items = items.filter((item) => item.kind === query.kind);
+      }
+      if (query.creator) {
+        items = items.filter((item) => item.creator === query.creator);
+      }
+      if (query.source) {
+        items = items.filter((item) => item.sourceLocation === query.source);
+      }
+      const minConfidence = query.minConfidence;
+      if (typeof minConfidence === "number") {
+        items = items.filter((item) => item.confidence >= minConfidence);
+      }
+      return {
+        total: items.length,
+        items,
+      } as T;
+    }
     default:
       throw new Error(`Mock API does not implement '${command}'.`);
   }

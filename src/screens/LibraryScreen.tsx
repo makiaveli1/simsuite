@@ -74,6 +74,37 @@ interface LibraryScreenProps {
   userView: UserView;
 }
 
+// ── Folder tree helpers ────────────────────────────────────────────────────
+// Mirrors the path normalization logic from folderTree.ts so we can
+// identify depth-0 root files without importing the tree builder.
+
+const SOURCE_ROOT_NAMES = new Set(["Mods", "Tray"]);
+
+function getRelativePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "").replace(/^\/+/, "");
+}
+
+// Returns the source root name ("Mods" | "Tray") for a file path, or null.
+function getSourceRoot(path: string): string | null {
+  const segments = getRelativePath(path).split("/").filter(Boolean);
+  const idx = segments.findIndex((s) => SOURCE_ROOT_NAMES.has(s));
+  return idx < 0 ? null : segments[idx];
+}
+
+// Returns true if this file is stored directly in the root folder with no subfolder.
+// E.g. Mods\filename.package → true  (depth-0, no subfolder)
+//      Mods\SubFolder\file.package → false  (depth-1, inside a subfolder)
+function isDepthZeroFile(path: string, sourceRoot: string): boolean {
+  const rel = getRelativePath(path);
+  const withoutRoot = rel.split("/").filter(Boolean).slice(1); // remove "Mods" or "Tray"
+  // If the remaining path has NO folder segments (only a filename), it's depth-0.
+  // A depth-0 file has only the filename after the root — e.g. Mods/file.package
+  // A depth-1 file has one folder segment — e.g. Mods/SubFolder/file.package
+  const lastSegment = withoutRoot[withoutRoot.length - 1] ?? "";
+  const hasFolderBetweenRootAndFile = withoutRoot.length > 1;
+  return !hasFolderBetweenRootAndFile && lastSegment.length > 0;
+}
+
 const DEFAULT_PAGE_SIZE = 100;
 export function LibraryScreen({
   refreshVersion,
@@ -446,20 +477,51 @@ export function LibraryScreen({
     return { mods, tray };
   }, [treeRows?.items, rows?.items]);
 
-  // ── Folder contents for the active path ─────────────────────────────────
+    // ── Folder contents for the active path ─────────────────────────────────
   // Uses treeRows (full dataset) when available for accurate file listing.
+  //
+  // Root-level (depth-0) files: files stored directly in the game root folder
+  // (e.g. Mods\filename.package) with no subfolder. These are NOT in the
+  // folder tree (buildFolderTree skips them) and must be surfaced separately.
   const folderContents = useMemo(() => {
     const items = treeRows?.items ?? rows?.items ?? [];
     if (!items.length || !folderTreeRoots) {
       return { subfolders: [], files: [], rootFiles: [] };
     }
+
+    // Root-level files: items with folderSegments = ["Mods"] or ["Tray"].
+    // These are depth-0 files that buildFolderTree skips.
+    const rootItemsBySource: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
+    for (const item of items) {
+      const src = getSourceRoot(item.path);
+      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item.path, src)) {
+        rootItemsBySource[src].push(item);
+      }
+    }
+
     if (!activeFolderPath) {
+      // Attach root files to the Mods/Tray nodes so folder row badges show
+      // correct totals (tree files + depth-0 loose files) at the root level.
+      const modsWithRoots: FolderNode = {
+        ...folderTreeRoots.mods,
+        rootFiles: rootItemsBySource.Mods,
+      };
+      const trayWithRoots: FolderNode = {
+        ...folderTreeRoots.tray,
+        rootFiles: rootItemsBySource.Tray,
+      };
       return {
-        subfolders: [folderTreeRoots.mods, folderTreeRoots.tray],
+        subfolders: [modsWithRoots, trayWithRoots],
         files: [],
-        rootFiles: [],
+        // Surface ALL root-level files (depth-0) from both sources.
+        // These 9,777 files are stored directly in Mods with no subfolder
+        // and are NOT visible in the folder tree structure.
+        rootFiles: [...rootItemsBySource.Mods, ...rootItemsBySource.Tray],
       };
     }
+
+    // Inside a specific folder: use standard getFolderContents which
+    // already handles rootFiles for the active subfolder.
     return getFolderContents(activeFolderPath, items);
   }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath]);
 
@@ -468,16 +530,27 @@ export function LibraryScreen({
     if (!folderTreeRoots) {
       return { name: "Root", fullPath: "", depth: 0, children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0 };
     }
+    // Count root-level files (depth-0) for the total.
+    // These are the 9,777 files stored directly in Mods with no subfolder.
+    const items = treeRows?.items ?? rows?.items ?? [];
+    let rootFileCount = 0;
+    for (const item of items) {
+      const src = getSourceRoot(item.path);
+      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item.path, src)) {
+        rootFileCount += 1;
+      }
+    }
     return {
       name: "Root",
       fullPath: "",
       depth: -1,
       children: [folderTreeRoots.mods, folderTreeRoots.tray],
       directFileCount: 0,
-      totalFileCount: folderTreeRoots.mods.totalFileCount + folderTreeRoots.tray.totalFileCount,
+      // Tree total (2,963 files in subfolders) + root-level files (9,777)
+      totalFileCount: folderTreeRoots.mods.totalFileCount + folderTreeRoots.tray.totalFileCount + rootFileCount,
       childFolderCount: 2,
     };
-  }, [folderTreeRoots]);
+  }, [folderTreeRoots, treeRows?.items, rows?.items]);
 
   const libraryInspectorSections = selected
     ? [
