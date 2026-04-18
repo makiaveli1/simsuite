@@ -56,7 +56,7 @@ import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
-import { buildFolderTree, getFolderContents, type FolderNode } from "./library/folderTree";
+import { buildFolderTree, getFolderContents, getRootFiles, type FolderNode } from "./library/folderTree";
 
 interface LibraryScreenProps {
   refreshVersion: number;
@@ -451,12 +451,13 @@ export function LibraryScreen({
   const folderContents = useMemo(() => {
     const items = treeRows?.items ?? rows?.items ?? [];
     if (!items.length || !folderTreeRoots) {
-      return { subfolders: [], files: [] };
+      return { subfolders: [], files: [], rootFiles: [] };
     }
     if (!activeFolderPath) {
       return {
         subfolders: [folderTreeRoots.mods, folderTreeRoots.tray],
         files: [],
+        rootFiles: [],
       };
     }
     return getFolderContents(activeFolderPath, items);
@@ -1312,6 +1313,7 @@ export function LibraryScreen({
               folderPath={activeFolderPath}
               subfolders={folderContents.subfolders}
               files={folderContents.files}
+              rootFiles={folderContents.rootFiles}
               tree={syntheticRoot}
               onNavigate={(path) => setActiveFolderPath(path)}
               onSelectFile={(row) => void openFile(row)}

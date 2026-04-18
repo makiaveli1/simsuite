@@ -1992,6 +1992,38 @@
   color: var(--text-dim);
 }
 
+/* Loose files section — files stored directly in root, not in subfolders */
+.folder-content-section--loose {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--orange, #f97316);
+}
+
+.folder-loose-files-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2rem;
+  height: 1.1rem;
+  padding: 0 0.35rem;
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #f97316;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.folder-loose-files-hint {
+  padding: 0.15rem 1rem 0.4rem;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .folder-row-list {
   padding: 0 0.5rem;
 }
@@ -2082,4 +2114,10 @@
 
 .library-view-btn span {
   font-size: 0.72rem;
+}
+
+.library-view-btn.is-active {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  font-weight: 600;
 }

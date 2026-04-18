@@ -107,10 +107,29 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
   };
 }
 
+// Returns root-level (depth=0) files for a given source root.
+// Root files are those stored directly in the root folder (e.g. Mods\) with no subfolder.
+// These are NOT part of the folder tree structure and must be surfaced separately.
+export function getRootFiles(
+  rootName: string, // "Mods" | "Tray"
+  files: LibraryFileRow[],
+): LibraryFileRow[] {
+  return files.filter((file) => {
+    const folderSegments = getFolderSegments(file.path);
+    // root-level files have folderSegments.length === 1 (only the root itself, no subfolders)
+    // OR folderSegments is null/empty (file directly in root, no subfolder path)
+    return (
+      folderSegments !== null &&
+      folderSegments.length === 1 &&
+      folderSegments[0] === rootName
+    );
+  });
+}
+
 export function getFolderContents(
   folderPath: string,
   files: LibraryFileRow[],
-): { subfolders: FolderNode[]; files: LibraryFileRow[] } {
+): { subfolders: FolderNode[]; files: LibraryFileRow[]; rootFiles: LibraryFileRow[] } {
   const folderTree = buildFolderTree(files);
   const roots = [folderTree.mods, folderTree.tray];
   const activeNode = roots
@@ -122,9 +141,17 @@ export function getFolderContents(
     return folderSegments?.join("/") === folderPath;
   });
 
+  // Root files: files stored directly in the root folder with no subfolder.
+  // These are separate from the tree and shown as "Loose files" in the content pane.
+  const rootFiles: LibraryFileRow[] =
+    activeNode != null
+      ? getRootFiles(activeNode.name, files)
+      : [];
+
   return {
     subfolders: activeNode?.children ?? [],
     files: directFiles,
+    rootFiles,
   };
 }
 

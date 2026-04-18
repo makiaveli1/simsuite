@@ -8,6 +8,7 @@ interface FolderContentPaneProps {
   folderPath: string | null;
   subfolders: FolderNode[];
   files: LibraryFileRow[];
+  rootFiles: LibraryFileRow[];
   tree: FolderNode;
   onNavigate: (path: string) => void;
   onSelectFile: (file: LibraryFileRow) => void;
@@ -19,13 +20,15 @@ export function FolderContentPane({
   folderPath,
   subfolders,
   files,
+  rootFiles,
   tree,
   onNavigate,
   onSelectFile,
   selectedFile,
 }: FolderContentPaneProps) {
   const segments = folderPath ? folderPath.split("/").filter(Boolean) : [];
-  const summary = buildFolderSummary(subfolders.length, folderPath === null ? tree.totalFileCount : files.length);
+  const totalShownFiles = files.length + (folderPath !== null ? rootFiles.length : 0);
+  const summary = buildFolderSummary(subfolders.length, folderPath === null ? tree.totalFileCount : totalShownFiles);
 
   return (
     <div className="library-folder-content-pane">
@@ -78,6 +81,33 @@ export function FolderContentPane({
         </section>
       ) : null}
 
+      {/* Root-level files stored directly in this folder with no subfolder (e.g. Mods\\filename.package) */}
+      {rootFiles.length > 0 ? (
+        <section>
+          <div className="folder-content-section folder-content-section--loose">
+            Loose files
+            <span className="folder-loose-files-badge">{rootFiles.length}</span>
+          </div>
+          <div className="folder-loose-files-hint">
+            Stored directly in {folderPath} — not yet organized into subfolders
+          </div>
+          <LibraryCollectionTable
+            userView={userView}
+            rows={rootFiles}
+            selectedId={selectedFile?.id ?? null}
+            selectedIds={EMPTY_SELECTION}
+            page={0}
+            totalPages={1}
+            onSelect={onSelectFile}
+            onToggleSelect={() => undefined}
+            onPrevPage={() => undefined}
+            onNextPage={() => undefined}
+            enableSelection={false}
+            showPagination={false}
+          />
+        </section>
+      ) : null}
+
       {files.length > 0 ? (
         <section>
           <div className="folder-content-section">Files</div>
@@ -98,7 +128,7 @@ export function FolderContentPane({
         </section>
       ) : null}
 
-      {subfolders.length === 0 && files.length === 0 ? (
+      {subfolders.length === 0 && files.length === 0 && rootFiles.length === 0 ? (
         <div className="library-list-empty">This folder is empty.</div>
       ) : null}
     </div>
