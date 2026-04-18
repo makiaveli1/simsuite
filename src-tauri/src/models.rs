@@ -545,6 +545,41 @@ pub struct LibraryFileRow {
     pub installed_version: Option<String>,
 }
 
+/// Lightweight folder tree metadata — folder structure only, NO file rows.
+/// The backend computes this from a single SQL aggregation query, making tree
+/// rendering instant on the frontend (no need to transfer 13k+ full file records).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderTreeMetadata {
+    /// Total unique folder paths in the filtered dataset.
+    pub total_folders: i64,
+    /// The root folder nodes (Mods, Tray). Children are nested inline.
+    pub roots: Vec<FolderTreeNode>,
+}
+
+/// A single folder node. Does NOT represent a file — only a folder/directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderTreeNode {
+    /// Full normalized path from the root (e.g. "Mods/SubFolder/Nested").
+    pub path: String,
+    /// Just the folder name (e.g. "SubFolder").
+    pub name: String,
+    /// Depth from root: 0 = Mods/Tray root, 1 = first-level subfolder, etc.
+    pub depth: i64,
+    /// "mods" or "tray".
+    pub source_location: String,
+    /// Number of files directly inside this folder.
+    pub direct_file_count: i64,
+    /// Number of immediate child subfolders.
+    pub child_folder_count: i64,
+    /// Total files in this folder AND all descendant folders.
+    pub total_file_count: i64,
+    /// Nested child folder nodes. Empty if no subfolders.
+    #[serde(default)]
+    pub children: Vec<FolderTreeNode>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryListResponse {

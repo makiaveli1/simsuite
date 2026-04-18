@@ -513,7 +513,7 @@ pub fn get_file_detail(
     }
 }
 
-fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
+pub fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
     let mut sql = String::new();
     let mut params = Vec::new();
 

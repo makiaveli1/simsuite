@@ -46,6 +46,7 @@ import type {
   LibraryWatchBulkSaveResult,
   LibraryListResponse,
   LibraryQuery,
+  FolderTreeMetadata,
   LibrarySettings,
   LibraryWatchListResponse,
   LibraryWatchReviewItem,
@@ -6959,6 +6960,86 @@ async function mockInvoke<T>(
         items,
       } as T;
     }
+    case "get_folder_tree_metadata": {
+      // Returns precomputed folder tree structure — much lighter than list_library_files_for_tree.
+      // Builds a minimal mock tree: Mods + Tray roots, each with a few sample subfolders.
+      const roots = [
+        {
+          path: "Mods",
+          name: "Mods",
+          depth: 0,
+          sourceLocation: "mods",
+          directFileCount: 128,
+          childFolderCount: 3,
+          totalFileCount: 847,
+          children: [
+            {
+              path: "Mods/Gameplay",
+              name: "Gameplay",
+              depth: 1,
+              sourceLocation: "mods",
+              directFileCount: 24,
+              childFolderCount: 2,
+              totalFileCount: 156,
+              children: [],
+            },
+            {
+              path: "Mods/Options",
+              name: "Options",
+              depth: 1,
+              sourceLocation: "mods",
+              directFileCount: 12,
+              childFolderCount: 1,
+              totalFileCount: 89,
+              children: [
+                {
+                  path: "Mods/Options/UI",
+                  name: "UI",
+                  depth: 2,
+                  sourceLocation: "mods",
+                  directFileCount: 8,
+                  childFolderCount: 0,
+                  totalFileCount: 77,
+                  children: [],
+                },
+              ],
+            },
+            {
+              path: "Mods/Repository",
+              name: "Repository",
+              depth: 1,
+              sourceLocation: "mods",
+              directFileCount: 0,
+              childFolderCount: 1,
+              totalFileCount: 602,
+              children: [
+                {
+                  path: "Mods/Repository/cc",
+                  name: "cc",
+                  depth: 2,
+                  sourceLocation: "mods",
+                  directFileCount: 445,
+                  childFolderCount: 0,
+                  totalFileCount: 445,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          path: "Tray",
+          name: "Tray",
+          depth: 0,
+          sourceLocation: "tray",
+          directFileCount: 3,
+          childFolderCount: 0,
+          totalFileCount: 3,
+          children: [],
+        },
+      ];
+      return { totalFolders: roots.length + 3, roots } as T;
+    }
     default:
       throw new Error(`Mock API does not implement '${command}'.`);
   }
@@ -7253,6 +7334,8 @@ export const api = {
     invoke<LibraryListResponse>("list_library_files", { query }),
   listLibraryFilesForTree: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files_for_tree", { query }),
+  getFolderTreeMetadata: (query: LibraryQuery) =>
+    invoke<FolderTreeMetadata>("get_folder_tree_metadata", { query }),
   listLibraryWatchItems: (filter?: WatchListFilter, limit?: number) =>
     invoke<LibraryWatchListResponse>("list_library_watch_items", {
       filter,

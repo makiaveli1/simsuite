@@ -250,6 +250,22 @@ export interface LibraryFileRow {
   installedVersion?: string | null;
 }
 
+export interface FolderTreeNode {
+  path: string;
+  name: string;
+  depth: number;
+  source_location: string;
+  direct_file_count: number;
+  child_folder_count: number;
+  total_file_count: number;
+  children: FolderTreeNode[];
+}
+
+export interface FolderTreeMetadata {
+  total_folders: number;
+  roots: FolderTreeNode[];
+}
+
 export interface LibraryListResponse {
   total: number;
   items: LibraryFileRow[];

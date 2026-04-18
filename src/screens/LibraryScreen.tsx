@@ -57,6 +57,7 @@ import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
 import { buildFolderTree, getFolderContents, getRootFiles, clearCachedTree, type FolderNode } from "./library/folderTree";
+import type { FolderTreeMetadata, FolderTreeNode } from "../lib/types";
 
 interface LibraryScreenProps {
   refreshVersion: number;
@@ -169,6 +170,25 @@ export function LibraryScreen({
     tray: FolderNode;
   } | null>(null);
 
+  // Phase 5ac: Holds the precomputed folder tree from Rust (lightweight metadata, no file rows).
+  // Separate from treeRows (file content) — this is ONLY for tree structure rendering.
+  const treeMetaRef = useRef<FolderTreeMetadata | null>(null);
+
+  // Phase 5ac: Renderable tree structure — derived from treeMetaRef.
+  // Separated from treeRows so tree rendering does NOT depend on loading flat file rows.
+  const [folderTree, setFolderTree] = useState<{
+    mods: FolderNode;
+    tray: FolderNode;
+  } | null>(null);
+
+  // Phase 5ac: Persist expanded folder state across view switches so the tree
+  // does NOT collapse when switching list↔folders. Uses path-keyed Set for O(1) lookup.
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(["Mods"]));
+
+  // Phase 5ac: Monotonic sequence counter for the lightweight tree metadata API.
+  // Follows the same proven pattern as loadSeqRef for list queries.
+  const treeSeqRef = useRef(0);
+
   // Phase 5ac: Background preloader — warm the tree cache while in list/grid mode.
   // Runs silently (no spinner, no UI disruption) so the tree is ready before user enters folder mode.
   // Only preloads if filters differ from last loaded tree.
@@ -195,9 +215,11 @@ export function LibraryScreen({
       last.watchFilter === filters.watchFilter;
     if (filtersUnchanged) return; // Tree already loaded for these filters
 
-    // Silent background load — no spinner, no UI disruption
+    // Phase 5ac: Lightweight metadata API — returns prebuilt tree structure, NOT flat file rows.
+    // No need to also load listLibraryFilesForTree here; treeRows is for folder contents only.
+    const seq = ++treeSeqRef.current;
     api
-      .listLibraryFilesForTree({
+      .getFolderTreeMetadata({
         search: deferredSearch || undefined,
         kind: kind || undefined,
         subtype: subtype || undefined,
@@ -206,8 +228,12 @@ export function LibraryScreen({
         minConfidence: minConfidence ? Number(minConfidence) : undefined,
         watchFilter: watchFilter || undefined,
       })
-      .then((result) => {
-        setTreeRows(result);
+      .then((meta) => {
+        if (seq !== treeSeqRef.current) return; // discard stale
+        treeMetaRef.current = meta;
+        const tree = convertMetaToFolderTree(meta);
+        setFolderTree(tree);
+        prevTreeCacheRef.current = tree;
         lastTreeFiltersRef.current = filters;
       })
       .catch(() => {
@@ -298,8 +324,10 @@ export function LibraryScreen({
       last.source === filters.source &&
       last.minConfidence === filters.minConfidence &&
       last.watchFilter === filters.watchFilter;
-    if (filtersUnchanged && treeRows !== null) {
-      // Tree already loaded for these filters — no spinner, no reload.
+    // Phase 5ac: Skip if tree is already loaded for current filter set.
+    // folderTree state holds the rendered tree; treeRows holds file content.
+    // Both must be checked to ensure both are available.
+    if (filtersUnchanged && folderTree !== null) {
       return;
     }
     void loadTreeRows(filters);
@@ -382,8 +410,7 @@ export function LibraryScreen({
   }
 
   // Loads ALL filtered files (no pagination) for folder-tree construction.
-  // The tree needs the complete dataset to show real subfolder structure.
-  // Phase 5ac: accepts filters param to avoid reading from closure during async flow.
+  // Phase 5ac: Loads tree metadata (NOT flat file rows) — lightweight and fast.
   async function loadTreeRows(
     filters: {
       search: string;
@@ -397,7 +424,7 @@ export function LibraryScreen({
   ) {
     setIsTreeLoading(true);
     try {
-      const result = await api.listLibraryFilesForTree({
+      const meta = await api.getFolderTreeMetadata({
         search: deferredSearch || undefined,
         kind: kind || undefined,
         subtype: subtype || undefined,
@@ -405,16 +432,58 @@ export function LibraryScreen({
         source: source || undefined,
         minConfidence: minConfidence ? Number(minConfidence) : undefined,
         watchFilter: watchFilter || undefined,
-        // No sortBy/page/pageSize — tree doesn't need sorted or paginated data
       });
-      setTreeRows(result);
-      // Phase 5ac: record the filters this tree was loaded with
+      treeMetaRef.current = meta;
+      const tree = convertMetaToFolderTree(meta);
+      setFolderTree(tree);
+      prevTreeCacheRef.current = tree;
+      // Also warm treeRows for folder content (getFolderContents still needs flat file rows).
+      // Use listLibraryFilesForTree for this — separate, non-blocking.
+      api.listLibraryFilesForTree({
+        search: deferredSearch || undefined,
+        kind: kind || undefined,
+        subtype: subtype || undefined,
+        creator: creator || undefined,
+        source: source || undefined,
+        minConfidence: minConfidence ? Number(minConfidence) : undefined,
+        watchFilter: watchFilter || undefined,
+      }).then((result) => {
+        setTreeRows(result);
+      }).catch(() => {
+        // Non-blocking — tree structure already loaded, file content loads async
+      });
       if (filters) lastTreeFiltersRef.current = filters;
     } catch (err) {
       console.error("loadTreeRows failed:", err);
     } finally {
       setIsTreeLoading(false);
     }
+  }
+
+  // Phase 5ac: Convert Rust FolderTreeMetadata to the FolderNode[] tree format.
+  // Rust already built the tree — JS just maps the fields and injects root files.
+  function convertMetaToFolderTree(meta: FolderTreeMetadata): { mods: FolderNode; tray: FolderNode } {
+    function nodeToFolderNode(n: FolderTreeNode): FolderNode {
+      return {
+        name: n.name,
+        fullPath: n.path,
+        depth: n.depth,
+        children: n.children.map(nodeToFolderNode),
+        directFileCount: n.direct_file_count,
+        totalFileCount: n.total_file_count,
+        childFolderCount: n.child_folder_count,
+      };
+    }
+    const roots = meta.roots.map(nodeToFolderNode);
+    const mods = roots.find((r) => r.name === "Mods") ?? {
+      name: "Mods", fullPath: "Mods", depth: 0,
+      children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0,
+    };
+    const tray = roots.find((r) => r.name === "Tray") ?? {
+      name: "Tray", fullPath: "Tray", depth: 0,
+      children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0,
+    };
+    return { mods, tray };
   }
 
   async function openFile(row: LibraryFileRow) {
@@ -591,29 +660,22 @@ export function LibraryScreen({
     [selected],
   );
 
-  // ── Folder tree (computed from ALL filtered files via treeRows) ──────────
-  // treeRows contains the full un-paginated dataset so the tree shows REAL subfolders.
-  // Falls back to rows.items (paginated) only while treeRows is loading.
-  // Phase 5ab: clearCachedTree moved to dedicated effect below — only fires when
-  // treeRows actually changes (new dataset loaded), NOT on every render.
-  const folderTreeRoots = useMemo(() => {
-    const items = treeRows?.items ?? rows?.items ?? [];
-    if (!items.length) return null;
-    const { mods, tray } = buildFolderTree(items);
-    // Phase 5ac: Keep the previous tree cached for instant render during warm reloads.
-    // This lets us show the old tree while a new load is in progress, eliminating flicker.
-    prevTreeCacheRef.current = { mods, tray };
-    return { mods, tray };
-  }, [treeRows?.items, rows?.items]);
+  // ── Folder tree ──────────────────────────────────────────────────────────
+  // Phase 5ac: tree rendering now uses folderTree state (set by loadTreeRows from
+  // getFolderTreeMetadata), NOT treeRows via buildFolderTree.
+  // folderTree is a lightweight FolderNode tree — no flat file row iteration needed.
+  // Falls back to prevTreeCacheRef during warm reload to avoid flicker.
+  // Phase 5ab: clearCachedTree moved to dedicated effect below.
+  const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
 
-  // Phase 5ab: Invalidate tree cache ONLY when the underlying tree dataset changes.
-  // This fires when loadTreeRows completes (new treeRows.items set), not on every render.
-  // getFolderContents calls getCachedTree which uses this to decide whether to rebuild.
+  // Phase 5ab: Invalidate tree cache ONLY when the tree metadata changes.
+  // treeMetaRef drives tree structure; treeRows drives folder file content.
+  // clearCachedTree is kept for getFolderContents's getCachedTree call.
   useEffect(() => {
-    if (treeRows?.items) {
+    if (treeMetaRef.current || treeRows?.items) {
       clearCachedTree();
     }
-  }, [treeRows?.items]);
+  }, [treeMetaRef.current, treeRows?.items]);
 
     // ── Folder contents for the active path ─────────────────────────────────
   // Uses treeRows (full dataset) when available for accurate file listing.

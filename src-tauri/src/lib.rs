@@ -173,6 +173,7 @@ pub fn run() {
             commands::restore_rejected_item,
             commands::snooze_download_item,
             commands::reject_download_items,
+            commands::get_folder_tree_metadata,
             commands::list_library_files,
             commands::list_library_files_for_tree,
             commands::list_library_watch_items,

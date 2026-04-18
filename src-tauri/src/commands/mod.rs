@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, Connection};
 use std::{
     collections::HashSet,
     fs,
@@ -32,7 +32,7 @@ use crate::{
         CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse,
         DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
         DownloadsWatcherState, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail,
-        GuidedInstallPlan, HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibrarySummary,
+        GuidedInstallPlan, HomeOverview, FolderTreeMetadata, FolderTreeNode, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibrarySummary,
         LibraryQuery, LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
         LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
         OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
@@ -2591,6 +2591,182 @@ pub async fn list_library_files_for_tree(
         Ok(response)
     })
     .await
+}
+
+
+/// Returns lightweight folder tree metadata -- folder structure only, NO file rows.
+/// 
+/// This is the core of Phase 5ac: instead of transferring 13k+ full LibraryFileRow
+/// records to the browser for the frontend to build the tree, the backend computes
+/// the folder structure in a single SQL aggregation pass and returns only what
+/// the frontend needs to render the tree instantly.
+#[derive(Debug)]
+struct RawFolderRow {
+    folder_path: String,
+    depth: i64,
+    source_location: String,
+    direct_file_count: i64,
+    child_folder_count: i64,
+    total_file_count: i64,
+}
+
+#[tauri::command]
+pub async fn get_folder_tree_metadata(
+    query: LibraryQuery,
+    state: State<'_, AppState>,
+) -> Result<FolderTreeMetadata, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_folder_tree_metadata", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        
+        let (filters, params) = library_index::build_filters(&query);
+        
+        // Single-pass SQL: for each distinct folder path, compute counts.
+        // Uses a recursive CTE to enumerate all ancestor folders per file,
+        // then aggregates to get direct_file_count, child_folder_count, total_file_count.
+        let sql = format!(
+            r#"
+            WITH RECURSIVE
+            anchor_rows AS (
+                SELECT
+                    f.path,
+                    f.source_location,
+                    f.relative_depth,
+                    CASE
+                        WHEN f.relative_depth = 0 THEN f.source_location
+                        ELSE
+                            CASE
+                                WHEN INSTR(REVERSE(f.path), '/') > 0
+                                THEN SUBSTR(f.path, 1, LENGTH(f.path) - INSTR(REVERSE(f.path), '/'))
+                                ELSE f.source_location
+                            END
+                    END AS parent_folder,
+                    CASE WHEN f.relative_depth = 0 THEN 0 ELSE f.relative_depth - 1 END AS folder_depth
+                FROM files f
+                WHERE f.source_location <> 'downloads'
+                {filters}
+            ),
+            folder_counts AS (
+                SELECT
+                    ar.parent_folder AS folder_path,
+                    ar.folder_depth AS depth,
+                    ar.source_location,
+                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth THEN ar.path END) AS direct_file_count,
+                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth - 1 THEN ar.parent_folder END) AS child_folder_count,
+                    (SELECT COUNT(*) FROM anchor_rows ar2
+                     WHERE ar2.parent_folder = ar.parent_folder
+                        OR ar2.path LIKE (ar.parent_folder || '/%')) AS total_file_count
+                FROM anchor_rows ar
+                GROUP BY ar.parent_folder, ar.folder_depth, ar.source_location
+            )
+            SELECT
+                fc.folder_path,
+                fc.depth,
+                fc.source_location,
+                fc.direct_file_count,
+                fc.child_folder_count,
+                fc.total_file_count
+            FROM folder_counts fc
+            ORDER BY fc.source_location, fc.depth, fc.folder_path
+            "#,
+            filters = filters
+        );
+        
+        let mut stmt = connection.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params_from_iter(params.iter()), |row| {
+            Ok(RawFolderRow {
+                folder_path: row.get(0)?,
+                depth: row.get(1)?,
+                source_location: row.get(2)?,
+                direct_file_count: row.get(3)?,
+                child_folder_count: row.get(4)?,
+                total_file_count: row.get(5)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        let raw_folders: Vec<RawFolderRow> = rows.filter_map(|r| r.ok()).collect();
+        
+        log_slow_command("get_folder_tree_metadata", started_at, || {
+            format!("for {} folder node(s)", raw_folders.len())
+        });
+        
+        let tree = build_folder_tree_from_rows(raw_folders);
+        let total = tree.iter().map(|r| 1 + count_descendants(&r.children)).sum();
+        
+        Ok(FolderTreeMetadata {
+            total_folders: total,
+            roots: tree,
+        })
+    })
+    .await
+}
+
+fn count_descendants(nodes: &[FolderTreeNode]) -> i64 {
+    nodes.iter().map(|n| 1 + count_descendants(&n.children)).sum()
+}
+
+fn build_folder_tree_from_rows(rows: Vec<RawFolderRow>) -> Vec<FolderTreeNode> {
+    use std::collections::HashMap;
+    
+    let mut all_nodes: HashMap<String, FolderTreeNode> = HashMap::new();
+    for row in &rows {
+        let name = if row.depth == 0 {
+            row.folder_path.clone()
+        } else {
+            row.folder_path.rsplit('/').next().unwrap_or(&row.folder_path).to_string()
+        };
+        
+        let node = FolderTreeNode {
+            path: row.folder_path.clone(),
+            name,
+            depth: row.depth,
+            source_location: row.source_location.clone(),
+            direct_file_count: row.direct_file_count,
+            child_folder_count: row.child_folder_count,
+            total_file_count: row.total_file_count,
+            children: Vec::new(),
+        };
+        all_nodes.insert(row.folder_path.clone(), node);
+    }
+    
+    let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
+    for row in &rows {
+        if row.depth == 0 { continue; }
+        let parent_path = if let Some(idx) = row.folder_path.rfind('/') {
+            row.folder_path[..idx].to_string()
+        } else {
+            continue;
+        };
+        children_map.entry(parent_path).or_default().push(row.folder_path.clone());
+    }
+    
+    fn build_children(parent_path: &str, children_map: &HashMap<String, Vec<String>>, all_nodes: &HashMap<String, FolderTreeNode>) -> Vec<FolderTreeNode> {
+        let Some(child_paths) = children_map.get(parent_path) else { return Vec::new(); };
+        let mut children: Vec<FolderTreeNode> = child_paths.iter().filter_map(|p| all_nodes.get(p).cloned()).collect();
+        children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        for child in &mut children {
+            child.children = build_children(&child.path, children_map, all_nodes);
+        }
+        children
+    }
+    
+    let mut roots: Vec<FolderTreeNode> = rows.iter()
+        .filter(|r| r.depth == 0)
+        .filter_map(|r| all_nodes.get(&r.folder_path).cloned())
+        .collect();
+    roots.sort_by(|a, b| {
+        match (a.name.as_str(), b.name.as_str()) {
+            ("mods", _) => std::cmp::Ordering::Less,
+            ("tray", _) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
+    for root in &mut roots {
+        root.children = build_children(&root.path, &children_map, &all_nodes);
+    }
+    
+    roots
 }
 
 #[tauri::command]
