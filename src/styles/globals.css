@@ -12553,29 +12553,110 @@ select:focus-visible {
   border-top: 3px solid var(--kind-tray, #78909c);
 }
 
+/* ── Selection hero — unified filename + preview panel ─────────────── */
+.library-details-hero {
+  margin: 0.5rem 0.75rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%),
+    radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 48%);
+  overflow: hidden;
+  display: flex;
+  gap: 0;
+  animation: detailSelectionEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.library-details-hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.75rem 0.85rem 0.75rem 0.9rem;
+}
+
+.library-details-hero-preview {
+  flex: 0 0 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 0.75rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  align-self: stretch;
+}
+
+.library-details-selection-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+  margin: 0;
+}
+
+/* ── Hero preview image ── */
+.library-details-hero-preview .detail-preview-image-wrap {
+  margin-top: 0;
+  min-height: 80px;
+  max-height: 88px;
+  border-radius: 8px;
+  animation: detailPreviewEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) 30ms both;
+}
+
+.library-details-hero-preview .detail-preview-image-wrap img.detail-preview-image {
+  max-height: 88px;
+}
+
+/* Fallback in hero — slightly smaller than full-panel fallback */
+.library-details-hero-preview .detail-preview-fallback {
+  min-height: 80px;
+  border-radius: 8px;
+}
+
+.library-details-hero-preview .detail-preview-fallback .fallback-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+}
+
+/* ── Detail filename clamp — hero version ── */
+.detail-filename {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.35rem 0;
+  line-height: 1.28;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-height: 2.56em;
+  text-wrap: balance;
+}
+
+.detail-header {
+  padding: 0;
+}
+
 .detail-header-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.3rem;
-}
-
-.detail-filename {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0 0 0.35rem 0;
-  line-height: 1.3;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  min-width: 0;
+  margin-bottom: 0.35rem;
 }
 
 .detail-header-meta {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.38rem;
   flex-wrap: wrap;
 }
 
@@ -12587,25 +12668,28 @@ select:focus-visible {
 
 /* ── Inspector Preview Section — Phase 5e ───────────────────────────── */
 .detail-preview-section {
-  padding: 0.6rem 0.75rem 0.4rem;
+  padding: 0 0.85rem 0.85rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .detail-preview-image-wrap {
   margin-top: 0.35rem;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  max-height: 180px;
+  min-height: 108px;
+  max-height: 136px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  animation: detailPreviewEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) 30ms both;
 }
 
 .detail-preview-image-wrap img.detail-preview-image {
   width: 100%;
-  max-height: 180px;
+  max-height: 136px;
   object-fit: contain;
   object-position: center top;
   display: block;
@@ -12613,14 +12697,15 @@ select:focus-visible {
 
 /* Fallback preview for inspector — Phase 5g: taller, centered, subtle glow */
 .detail-preview-fallback {
-  min-height: 120px;
+  min-height: 108px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: 0 0 24px rgba(var(--type-color-rgb, 100, 116, 139), 0.3);
+  animation: detailPreviewEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) 30ms both;
 }
 
 .detail-preview-fallback .fallback-icon-wrap {
@@ -12634,10 +12719,43 @@ select:focus-visible {
 }
 
 .detail-preview-no-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+@keyframes detailSelectionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detailPreviewEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detail-selection-hero,
+  .library-details-hero,
+  .detail-preview-image-wrap,
+  .detail-preview-fallback,
+  .library-details-hero-preview .detail-preview-image-wrap,
+  .library-details-hero-preview .detail-preview-fallback {
+    animation: none;
+  }
 }
 
 /* Per-type inspector fallback colors */
@@ -12803,6 +12921,8 @@ select:focus-visible {
   display: grid;
   grid-template-columns: 6px 52px 36px minmax(0, 2.25fr) 8.2rem 140px;
   align-items: stretch;
+  /* Phase 5z: isolate row layout — prevents row changes from recalculating parent/peer layout */
+  contain: layout style;
 }
 
 .library-list-header {
@@ -12980,6 +13100,10 @@ select:focus-visible {
   overflow: hidden;
   cursor: pointer;
   min-height: 140px;
+  /* Phase 5z: isolate card layout/style — browser skips checking this card when
+     siblings change, and skips checking parents when internal layout changes.
+     Massive reduction in layout recalculation cost at high card counts. */
+  contain: layout style;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }

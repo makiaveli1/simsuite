@@ -1827,6 +1827,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  /* Phase 5z: isolate pane — prevents content changes from propagating to sidebar/header */
+  contain: layout style;
 }
 
 /* Folder tree rows */
@@ -2110,6 +2112,37 @@
   font-size: 0.68rem;
   color: var(--text-dim);
   flex-shrink: 0;
+}
+
+/* Phase 5z: "Show all N files" expander for large folder content */
+.folder-load-more {
+  display: block;
+  width: 100%;
+  padding: 0.55rem;
+  margin-top: 0.25rem;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px dashed rgba(249, 115, 22, 0.3);
+  border-radius: 6px;
+  color: #f97316;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.folder-load-more:hover {
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.5);
+}
+
+.folder-content-section-hint {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* Detail folder path (breadcrumb in sidebar) */
