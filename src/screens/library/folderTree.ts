@@ -176,9 +176,14 @@ export function getFolderContents(
       ? getRootFiles(activeNode.name, files)
       : [];
 
+  // Phase 5ab dedupe: when at a root node (Mods/Tray), directFiles and rootFiles
+  // both contain the same depth-0 files. Deduplicate so each file appears once.
+  const rootFileIds = new Set(rootFiles.map((f) => f.id));
+  const dedupedFiles = directFiles.filter((f) => !rootFileIds.has(f.id));
+
   return {
     subfolders: activeNode?.children ?? [],
-    files: directFiles,
+    files: dedupedFiles,
     rootFiles,
   };
 }

@@ -102,7 +102,8 @@ export function FolderContentPane({
                 </span>
                 <span className="folder-row__name">{folder.name}</span>
                 <span className="folder-row__count">
-                  {folder.totalFileCount + (folder.rootFiles?.length ?? 0)} files
+                  {/* Phase 5ab: rootFiles are not part of the tree structure — count only tree files */}
+                  {folder.totalFileCount} files
                 </span>
               </button>
             ))}

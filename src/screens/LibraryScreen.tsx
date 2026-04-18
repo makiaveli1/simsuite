@@ -205,16 +205,20 @@ export function LibraryScreen({
 
   // Load the full-tree dataset when entering folder mode or when filters change.
   // The tree needs ALL files (no pagination) to show real subfolder structure.
+  // Phase 5ab: viewMode removed from deps — switching list↔grid must not invalidate treeRows.
+  // The tree persists across view switches; only filter/dataset changes trigger a reload.
   useEffect(() => {
-    if (viewMode === "folders") {
-      setActiveFolderPath(null); // Reset to root on enter
-      void loadTreeRows();
-    } else {
-      // Clear tree data when leaving folder mode so it reloads fresh next time.
-      setTreeRows(null);
-      setActiveFolderPath(null);
-    }
+    if (viewMode !== "folders") return;
+    setActiveFolderPath(null); // Reset to root on enter
+    void loadTreeRows();
   }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
+
+  // Phase 5ab: separate effect — reset active path when LEAVING folder mode.
+  // Does NOT clear treeRows; the tree cache survives view switches.
+  useEffect(() => {
+    if (viewMode === "folders") return;
+    setActiveFolderPath(null);
+  }, [viewMode]);
 
   useEffect(() => {
     if (!selected) {
@@ -485,15 +489,23 @@ export function LibraryScreen({
   // ── Folder tree (computed from ALL filtered files via treeRows) ──────────
   // treeRows contains the full un-paginated dataset so the tree shows REAL subfolders.
   // Falls back to rows.items (paginated) only while treeRows is loading.
+  // Phase 5ab: clearCachedTree moved to dedicated effect below — only fires when
+  // treeRows actually changes (new dataset loaded), NOT on every render.
   const folderTreeRoots = useMemo(() => {
-    // Invalidate the getFolderContents tree cache whenever the dataset changes.
-    // This ensures getCachedTree rebuilds the tree fresh on the next folder click.
-    clearCachedTree();
     const items = treeRows?.items ?? rows?.items ?? [];
     if (!items.length) return null;
     const { mods, tray } = buildFolderTree(items);
     return { mods, tray };
   }, [treeRows?.items, rows?.items]);
+
+  // Phase 5ab: Invalidate tree cache ONLY when the underlying tree dataset changes.
+  // This fires when loadTreeRows completes (new treeRows.items set), not on every render.
+  // getFolderContents calls getCachedTree which uses this to decide whether to rebuild.
+  useEffect(() => {
+    if (treeRows?.items) {
+      clearCachedTree();
+    }
+  }, [treeRows?.items]);
 
     // ── Folder contents for the active path ─────────────────────────────────
   // Uses treeRows (full dataset) when available for accurate file listing.

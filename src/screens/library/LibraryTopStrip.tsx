@@ -192,31 +192,28 @@ export function LibraryTopStrip({
               type="button"
               className={`library-view-btn${viewMode === "grid" ? " is-active" : ""}`}
               onClick={() => onViewModeChange("grid")}
+              aria-label="Grid view"
               aria-pressed={viewMode === "grid"}
-              title="Grid view"
             >
-              <Grid3X3 size={14} strokeWidth={2} />
-              <span>Grid</span>
+              <Grid3X3 size={15} strokeWidth={2} />
             </button>
             <button
               type="button"
               className={`library-view-btn${viewMode === "list" ? " is-active" : ""}`}
               onClick={() => onViewModeChange("list")}
+              aria-label="List view"
               aria-pressed={viewMode === "list"}
-              title="List view"
             >
-              <LayoutList size={14} strokeWidth={2} />
-              <span>List</span>
+              <LayoutList size={15} strokeWidth={2} />
             </button>
             <button
               type="button"
               className={`library-view-btn${viewMode === "folders" ? " is-active" : ""}`}
               onClick={() => onViewModeChange("folders")}
+              aria-label="Folders view"
               aria-pressed={viewMode === "folders"}
-              title="Folders view"
             >
-              <Folder size={14} strokeWidth={2} />
-              <span>Folders</span>
+              <Folder size={15} strokeWidth={2} />
             </button>
           </div>
 
