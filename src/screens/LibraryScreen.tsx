@@ -162,6 +162,13 @@ export function LibraryScreen({
     watchFilter: string;
   } | null>(null);
 
+  // Phase 5ac: Instantly-accessible previous tree — used to render the tree
+  // immediately while a new load is in progress (warm reload), avoiding flicker.
+  const prevTreeCacheRef = useRef<{
+    mods: FolderNode;
+    tray: FolderNode;
+  } | null>(null);
+
   // Phase 5ac: Background preloader — warm the tree cache while in list/grid mode.
   // Runs silently (no spinner, no UI disruption) so the tree is ready before user enters folder mode.
   // Only preloads if filters differ from last loaded tree.
@@ -593,6 +600,9 @@ export function LibraryScreen({
     const items = treeRows?.items ?? rows?.items ?? [];
     if (!items.length) return null;
     const { mods, tray } = buildFolderTree(items);
+    // Phase 5ac: Keep the previous tree cached for instant render during warm reloads.
+    // This lets us show the old tree while a new load is in progress, eliminating flicker.
+    prevTreeCacheRef.current = { mods, tray };
     return { mods, tray };
   }, [treeRows?.items, rows?.items]);
 
@@ -1494,21 +1504,56 @@ export function LibraryScreen({
         ) : viewMode === "folders" ? (
           <div className="library-folders-layout">
             <div className="library-folder-tree-pane">
-              {isTreeLoading ? (
-                <div className="folder-tree-loading">
-                  <span className="folder-tree-spinner" aria-label="Loading folder tree" />
-                  <span className="folder-tree-loading-text">Building folder tree…</span>
+              {/*
+                Phase 5ac: Cold start — no tree cached AND nothing loaded yet.
+                Show skeleton rows (not spinner) so the first entry has a polished feel.
+                After first load, prevTreeCacheRef is always warm (background preloader
+                keeps treeRows populated while in list/grid mode).
+              */}
+              {!prevTreeCacheRef.current && !folderTreeRoots ? (
+                <div className="folder-tree-skeleton" aria-label="Loading folder tree">
+                  <div className="folder-tree-skeleton-row">
+                    <div className="folder-tree-skeleton-row__chevron" />
+                    <div className="folder-tree-skeleton-row__icon" />
+                    <div className="folder-tree-skeleton-row__label" style={{ width: "60px" }} />
+                  </div>
+                  <div className="folder-tree-skeleton-row folder-tree-skeleton-row--l1">
+                    <div className="folder-tree-skeleton-row__chevron" />
+                    <div className="folder-tree-skeleton-row__icon" />
+                    <div className="folder-tree-skeleton-row__label" style={{ width: "90px" }} />
+                  </div>
+                  <div className="folder-tree-skeleton-row folder-tree-skeleton-row--l1">
+                    <div className="folder-tree-skeleton-row__chevron" />
+                    <div className="folder-tree-skeleton-row__icon" />
+                    <div className="folder-tree-skeleton-row__label" style={{ width: "120px" }} />
+                  </div>
+                  <div className="folder-tree-skeleton-row folder-tree-skeleton-row--l2">
+                    <div className="folder-tree-skeleton-row__chevron" />
+                    <div className="folder-tree-skeleton-row__icon" />
+                    <div className="folder-tree-skeleton-row__label" style={{ width: "80px" }} />
+                  </div>
+                  <div className="folder-tree-skeleton-row folder-tree-skeleton-row--l2">
+                    <div className="folder-tree-skeleton-row__chevron" />
+                    <div className="folder-tree-skeleton-row__icon" />
+                    <div className="folder-tree-skeleton-row__label" style={{ width: "110px" }} />
+                  </div>
                 </div>
-              ) : folderTreeRoots ? (
+              ) : null}
+              {/*
+                Phase 5ac: Show tree immediately — either fresh (folderTreeRoots) or
+                cached (prevTreeCacheRef.current during a warm reload).
+                No spinner, no "Building folder tree…" text — the tree feels instant.
+              */}
+              {(folderTreeRoots ?? prevTreeCacheRef.current) ? (
                 <FolderTreePane
-                  tree={folderTreeRoots.mods}
+                  tree={(folderTreeRoots ?? prevTreeCacheRef.current)!.mods}
                   activePath={activeFolderPath}
                   onNavigate={(path) => setActiveFolderPath(path)}
                 />
               ) : null}
-              {folderTreeRoots ? (
+              {(folderTreeRoots ?? prevTreeCacheRef.current) ? (
                 <FolderTreePane
-                  tree={folderTreeRoots.tray}
+                  tree={(folderTreeRoots ?? prevTreeCacheRef.current)!.tray}
                   activePath={activeFolderPath}
                   onNavigate={(path) => setActiveFolderPath(path)}
                 />

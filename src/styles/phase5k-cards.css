@@ -1925,6 +1925,86 @@
   letter-spacing: 0.02em;
 }
 
+/* Phase 5ac: Tree skeleton — shimmer bars mimicking tree rows for cold-start loading */
+.folder-tree-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.folder-tree-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px;
+}
+
+.folder-tree-skeleton-row__chevron {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.folder-tree-skeleton-row__icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(249, 115, 22, 0.08) 25%,
+    rgba(249, 115, 22, 0.14) 50%,
+    rgba(249, 115, 22, 0.08) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.folder-tree-skeleton-row__label {
+  flex: 1;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.folder-tree-skeleton-row__count {
+  width: 32px;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* Indent levels for nested skeleton rows */
+.folder-tree-skeleton-row--l1 { padding-left: 24px; }
+.folder-tree-skeleton-row--l2 { padding-left: 44px; }
+
 .folder-tree-row__icon {
   display: flex;
   align-items: center;
