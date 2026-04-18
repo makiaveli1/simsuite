@@ -150,6 +150,64 @@ export function LibraryScreen({
   const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
+  // Phase 5ac: Track the filter params the current treeRows was loaded with.
+  // If filters haven't changed, we skip the reload — tree persists across folder exits.
+  const lastTreeFiltersRef = useRef<{
+    search: string;
+    kind: string;
+    subtype: string;
+    creator: string;
+    source: string;
+    minConfidence: string;
+    watchFilter: string;
+  } | null>(null);
+
+  // Phase 5ac: Background preloader — warm the tree cache while in list/grid mode.
+  // Runs silently (no spinner, no UI disruption) so the tree is ready before user enters folder mode.
+  // Only preloads if filters differ from last loaded tree.
+  useEffect(() => {
+    if (viewMode === "folders") return;
+    const filters = {
+      search: deferredSearch,
+      kind: kind ?? "",
+      subtype: subtype ?? "",
+      creator: creator ?? "",
+      source: source ?? "",
+      minConfidence: minConfidence ?? "",
+      watchFilter: watchFilter ?? "",
+    };
+    const last = lastTreeFiltersRef.current;
+    const filtersUnchanged =
+      last !== null &&
+      last.search === filters.search &&
+      last.kind === filters.kind &&
+      last.subtype === filters.subtype &&
+      last.creator === filters.creator &&
+      last.source === filters.source &&
+      last.minConfidence === filters.minConfidence &&
+      last.watchFilter === filters.watchFilter;
+    if (filtersUnchanged) return; // Tree already loaded for these filters
+
+    // Silent background load — no spinner, no UI disruption
+    api
+      .listLibraryFilesForTree({
+        search: deferredSearch || undefined,
+        kind: kind || undefined,
+        subtype: subtype || undefined,
+        creator: creator || undefined,
+        source: source || undefined,
+        minConfidence: minConfidence ? Number(minConfidence) : undefined,
+        watchFilter: watchFilter || undefined,
+      })
+      .then((result) => {
+        setTreeRows(result);
+        lastTreeFiltersRef.current = filters;
+      })
+      .catch(() => {
+        // Silently fail — the tree will load on-demand when user enters folder mode
+      });
+  }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
+
   useEffect(() => {
     const clampedDensity = Math.max(0, Math.min(100, densityValue));
     const rootStyle = document.documentElement.style;
@@ -206,11 +264,38 @@ export function LibraryScreen({
   // Load the full-tree dataset when entering folder mode or when filters change.
   // The tree needs ALL files (no pagination) to show real subfolder structure.
   // Phase 5ab: viewMode removed from deps — switching list↔grid must not invalidate treeRows.
-  // The tree persists across view switches; only filter/dataset changes trigger a reload.
+  // Phase 5ac: lastTreeFiltersRef prevents redundant reloads when entering folder mode
+  // with the same filters the tree was already loaded for.
   useEffect(() => {
     if (viewMode !== "folders") return;
     setActiveFolderPath(null); // Reset to root on enter
-    void loadTreeRows();
+
+    // Phase 5ac: Skip if tree is already loaded for the current filter set.
+    // The background preloader keeps treeRows warm, so this is usually a no-op.
+    const filters = {
+      search: deferredSearch,
+      kind: kind ?? "",
+      subtype: subtype ?? "",
+      creator: creator ?? "",
+      source: source ?? "",
+      minConfidence: minConfidence ?? "",
+      watchFilter: watchFilter ?? "",
+    };
+    const last = lastTreeFiltersRef.current;
+    const filtersUnchanged =
+      last !== null &&
+      last.search === filters.search &&
+      last.kind === filters.kind &&
+      last.subtype === filters.subtype &&
+      last.creator === filters.creator &&
+      last.source === filters.source &&
+      last.minConfidence === filters.minConfidence &&
+      last.watchFilter === filters.watchFilter;
+    if (filtersUnchanged && treeRows !== null) {
+      // Tree already loaded for these filters — no spinner, no reload.
+      return;
+    }
+    void loadTreeRows(filters);
   }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
 
   // Phase 5ab: separate effect — reset active path when LEAVING folder mode.
@@ -291,7 +376,18 @@ export function LibraryScreen({
 
   // Loads ALL filtered files (no pagination) for folder-tree construction.
   // The tree needs the complete dataset to show real subfolder structure.
-  async function loadTreeRows() {
+  // Phase 5ac: accepts filters param to avoid reading from closure during async flow.
+  async function loadTreeRows(
+    filters: {
+      search: string;
+      kind: string;
+      subtype: string;
+      creator: string;
+      source: string;
+      minConfidence: string;
+      watchFilter: string;
+    } | null,
+  ) {
     setIsTreeLoading(true);
     try {
       const result = await api.listLibraryFilesForTree({
@@ -305,6 +401,8 @@ export function LibraryScreen({
         // No sortBy/page/pageSize — tree doesn't need sorted or paginated data
       });
       setTreeRows(result);
+      // Phase 5ac: record the filters this tree was loaded with
+      if (filters) lastTreeFiltersRef.current = filters;
     } catch (err) {
       console.error("loadTreeRows failed:", err);
     } finally {
