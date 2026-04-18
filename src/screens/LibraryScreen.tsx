@@ -302,6 +302,7 @@ export function LibraryScreen({
   useEffect(() => {
     if (viewMode !== "folders") return;
     setActiveFolderPath(null); // Reset to root on enter
+    setSelected(null); // Clear stale sidebar selection from list/grid mode
 
     // Phase 5ac: Skip if tree is already loaded for the current filter set.
     // The background preloader keeps treeRows warm, so this is usually a no-op.
@@ -469,9 +470,9 @@ export function LibraryScreen({
         fullPath: n.path,
         depth: n.depth,
         children: n.children.map(nodeToFolderNode),
-        directFileCount: n.direct_file_count,
-        totalFileCount: n.total_file_count,
-        childFolderCount: n.child_folder_count,
+        directFileCount: n.directFileCount,
+        totalFileCount: n.totalFileCount,
+        childFolderCount: n.childFolderCount,
       };
     }
     const roots = meta.roots.map(nodeToFolderNode);

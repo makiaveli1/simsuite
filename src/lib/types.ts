@@ -254,10 +254,10 @@ export interface FolderTreeNode {
   path: string;
   name: string;
   depth: number;
-  source_location: string;
-  direct_file_count: number;
-  child_folder_count: number;
-  total_file_count: number;
+  sourceLocation: string;
+  directFileCount: number;
+  childFolderCount: number;
+  totalFileCount: number;
   children: FolderTreeNode[];
 }
 
