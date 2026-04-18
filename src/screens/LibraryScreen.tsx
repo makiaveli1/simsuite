@@ -56,7 +56,7 @@ import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
-import { buildFolderTree, getFolderContents, getRootFiles, type FolderNode } from "./library/folderTree";
+import { buildFolderTree, getFolderContents, getRootFiles, clearCachedTree, type FolderNode } from "./library/folderTree";
 
 interface LibraryScreenProps {
   refreshVersion: number;
@@ -309,14 +309,23 @@ export function LibraryScreen({
   }
 
   async function openFile(row: LibraryFileRow) {
-    const detail = await api.getFileDetail(row.id);
-    if (!detail) return;
-    // Immediately show thumbnail from the list card's already-computed cascade
-    // so sidebar preview renders without waiting for the async detail response.
-    detail._cardThumbnail =
+    // Phase 5y: show a minimal preview IMMEDIATELY so the sidebar does not go
+    // blank while getFileDetail round-trips. Only the thumbnail + id are needed
+    // from the row; everything else populates when the full detail arrives.
+    const previewThumbnail =
       row.insights?.thumbnailPreview ??
       row.insights?.cachedThumbnailPreview ??
       null;
+    const preview: FileDetail = {
+      ...row, // spread the row fields as a bare-minimum preview
+      _cardThumbnail: previewThumbnail,
+      insights: row.insights ?? { embeddedNames: [], creatorHints: [], familyHints: [], scriptNamespaces: [], versionHints: [], resourceSummary: [], safetyNotes: [], parserWarnings: [], thumbnailPreview: null, cachedThumbnailPreview: null },
+    } as FileDetail;
+    setSelected(preview);
+
+    const detail = await api.getFileDetail(row.id);
+    if (!detail) return;
+    detail._cardThumbnail = previewThumbnail;
     setSelected(detail);
   }
 
@@ -477,6 +486,9 @@ export function LibraryScreen({
   // treeRows contains the full un-paginated dataset so the tree shows REAL subfolders.
   // Falls back to rows.items (paginated) only while treeRows is loading.
   const folderTreeRoots = useMemo(() => {
+    // Invalidate the getFolderContents tree cache whenever the dataset changes.
+    // This ensures getCachedTree rebuilds the tree fresh on the next folder click.
+    clearCachedTree();
     const items = treeRows?.items ?? rows?.items ?? [];
     if (!items.length) return null;
     const { mods, tray } = buildFolderTree(items);

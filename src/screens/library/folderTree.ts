@@ -1,5 +1,31 @@
 import type { LibraryFileRow } from "../../lib/types";
 
+/** Cached tree — build once, reuse for all getFolderContents calls within the same dataset. */
+let _cachedFiles: LibraryFileRow[] | null = null;
+let _cachedTree: { mods: FolderNode; tray: FolderNode } | null = null;
+
+/**
+ * Returns a cached tree for the given file list.
+ * Rebuilds only when `files` reference changes.
+ * This avoids a full O(n) `buildFolderTree` traversal on every folder click.
+ */
+export function getCachedTree(
+  files: LibraryFileRow[],
+): { mods: FolderNode; tray: FolderNode } {
+  if (_cachedTree && _cachedFiles === files) {
+    return _cachedTree;
+  }
+  _cachedFiles = files;
+  _cachedTree = buildFolderTree(files);
+  return _cachedTree;
+}
+
+/** Clears the cached tree — call when filters or data change. */
+export function clearCachedTree(): void {
+  _cachedTree = null;
+  _cachedFiles = null;
+}
+
 export interface FolderNode {
   name: string;
   fullPath: string;
@@ -132,7 +158,7 @@ export function getFolderContents(
   folderPath: string,
   files: LibraryFileRow[],
 ): { subfolders: FolderNode[]; files: LibraryFileRow[]; rootFiles: LibraryFileRow[] } {
-  const folderTree = buildFolderTree(files);
+  const folderTree = getCachedTree(files);
   const roots = [folderTree.mods, folderTree.tray];
   const activeNode = roots
     .flatMap((root) => [root, ...collectDescendants(root)])

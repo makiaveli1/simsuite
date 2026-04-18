@@ -1,5 +1,6 @@
+import { useMemo, memo } from "react";
 import { m } from "motion/react";
-import { cardHoverShadow, cardPress, stagedListItem } from "../../lib/motion";
+import { cardHoverShadow, cardPress } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
 import {
   buildLibraryCardModel,
@@ -79,7 +80,9 @@ function FallbackCategoryIcon({ kind }: { kind: string }) {
  * One of these is always shown — no generic "no preview available" for mod types.
  * userView tunes the level of technical detail shown (e.g. hiding "No namespace detected").
  */
-export function LibraryThumbnailGrid({
+// Phase 5y: memoize grid so parent state changes (selected, sidebar, etc.)
+// don't trigger a full card re-render when rows/data haven't changed.
+export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
   userView,
   rows,
   selectedId,
@@ -95,24 +98,35 @@ export function LibraryThumbnailGrid({
         <div className="library-grid">
           {rows.length ? (
             (() => {
+              // Phase 5y: single-pass model cache — buildLibraryCardModel called ONCE per row,
+              // not twice (filter + map). Cache is keyed by row.id so identity is stable
+              // within a render. Memoized over [rows, userView] — only recomputes when
+              // the actual data or view changes.
+              const modelCache = useMemo(() => {
+                const cache = new Map<number, LibraryCardModel>();
+                for (const row of rows) {
+                  cache.set(row.id, buildLibraryCardModel(row, userView));
+                }
+                return cache;
+              }, [rows, userView]);
+
               // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
               // to a single pack-head card. Also drop ghost cards (Unknown kind + empty title)
               // that the backend returns as variant/metadata entries with no useful content.
               const seenBundleNames = new Set<string>();
-              const filteredRows = rows.filter((row) => {
-                const model = buildLibraryCardModel(row, userView);
-                // Drop ghost cards: Unknown kind with no displayable content
-                if (model.kind === "Unknown" && !model.displayTitle) return false;
-                // Collapse tray duplicates: only keep the first file in each bundle
+              const filteredRows: LibraryFileRow[] = [];
+              for (const row of rows) {
+                const model = modelCache.get(row.id)!;
+                if (model.kind === "Unknown" && !model.displayTitle) continue;
                 if (model.isGrouped && model.bundleName) {
-                  if (seenBundleNames.has(model.bundleName)) return false;
+                  if (seenBundleNames.has(model.bundleName)) continue;
                   seenBundleNames.add(model.bundleName);
                 }
-                return true;
-              });
+                filteredRows.push(row);
+              }
 
-              return filteredRows.map((row, index) => {
-                const model = buildLibraryCardModel(row, userView);
+              return filteredRows.map((row) => {
+                const model = modelCache.get(row.id)!;
                 const isSelected = selectedId === row.id;
 
               return (
@@ -142,7 +156,6 @@ export function LibraryThumbnailGrid({
                   }}
                   whileHover={cardHoverShadow}
                   whileTap={cardPress}
-                  {...stagedListItem(index)}
                 >
                   {/* ── Resting card: thumbnail dominant, minimal chrome ─────────────────────── */}
                   {/* Type-color accent bar at top of hero — the only always-visible type signal */}
@@ -270,4 +283,4 @@ export function LibraryThumbnailGrid({
       <div className="table-pagination-bar" />
     </>
   );
-}
+});

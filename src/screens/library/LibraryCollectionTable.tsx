@@ -1,7 +1,8 @@
+import { useMemo, memo } from "react";
 import { m } from "motion/react";
-import { rowHover, rowPress, stagedListItem } from "../../lib/motion";
+import { rowHover, rowPress } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
-import { buildLibraryRowModel } from "./libraryDisplay";
+import { buildLibraryRowModel, type LibraryRowModel } from "./libraryDisplay";
 
 export interface LibraryCollectionTableProps {
   userView: UserView;
@@ -18,7 +19,8 @@ export interface LibraryCollectionTableProps {
   showPagination?: boolean;
 }
 
-export function LibraryCollectionTable({
+// Phase 5y: memoize table so parent state changes don't trigger full row re-renders.
+export const LibraryCollectionTable = memo(function LibraryCollectionTable({
   userView,
   rows,
   selectedId,
@@ -51,24 +53,37 @@ export function LibraryCollectionTable({
         <div className="library-list-body">
           {rows.length ? (
             (() => {
+              // Phase 5y: single-pass model cache — buildLibraryRowModel called ONCE per row.
+              // Memoized over [rows, userView] — only recomputes when data or view changes.
+              const modelCache = useMemo(() => {
+                const cache = new Map<number, LibraryRowModel>();
+                for (const row of rows) {
+                  cache.set(row.id, buildLibraryRowModel(row, userView));
+                }
+                return cache;
+              }, [rows, userView]);
+
               // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
               // to a single pack-head row. Drop ghost rows (Unknown kind + empty title).
               const seenBundleNames = new Set<string>();
-              const filteredRows = rows.filter((row) => {
-                const isGhost = row.kind === "Unknown" && !row.filename;
+              const filteredRows: LibraryFileRow[] = [];
+              for (const row of rows) {
+                const model = modelCache.get(row.id)!;
+                // Ghost: Unknown kind with no filename — backend metadata entry, skip
+                const isGhost = model.kind === "Unknown" && !row.filename;
+                // Tray dup: bundle with more than one file — only show the first
                 const isTrayDup =
-                  row.groupedFileCount != null &&
-                  row.groupedFileCount > 1 &&
-                  row.bundleName &&
+                  row.bundleName != null &&
+                  (row.groupedFileCount ?? 0) > 1 &&
                   seenBundleNames.has(row.bundleName);
-                if (isGhost) return false;
-                if (isTrayDup) return false;
+                if (isGhost) continue;
+                if (isTrayDup) continue;
                 if (row.bundleName) seenBundleNames.add(row.bundleName);
-                return true;
-              });
+                filteredRows.push(row);
+              }
 
-              return filteredRows.map((row, index) => {
-                const model = buildLibraryRowModel(row, userView);
+              return filteredRows.map((row) => {
+                const model = modelCache.get(row.id)!;
                 const isChecked = selectedIds.has(row.id);
 
               return (
@@ -102,7 +117,6 @@ export function LibraryCollectionTable({
                   }}
                   whileHover={rowHover}
                   whileTap={rowPress}
-                  {...stagedListItem(index)}
                 >
                   <div className="library-list-col library-list-col--type library-type-accent-col">
                     {model.typeColor ? (
@@ -280,4 +294,4 @@ export function LibraryCollectionTable({
       ) : null}
     </>
   );
-}
+});
