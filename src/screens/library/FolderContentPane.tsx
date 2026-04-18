@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Folder } from "lucide-react";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
+import { VirtualizedLooseFiles } from "./VirtualizedLooseFiles";
 import type { FolderNode } from "./folderTree";
 
 interface FolderContentPaneProps {
@@ -294,36 +295,13 @@ function LooseFilesGroupTable({
   selectedFile,
   onSelectFile,
 }: LooseFilesGroupTableProps) {
-  const [expanded, setExpanded] = useState(false);
-  const displayFiles = expanded ? allFiles : allFiles.slice(0, FOLDER_PAGE_SIZE);
-  const hasMore = allFiles.length > FOLDER_PAGE_SIZE;
-
   return (
-    <>
-      <LibraryCollectionTable
-        userView={userView}
-        rows={displayFiles}
-        selectedId={selectedFile?.id ?? null}
-        selectedIds={EMPTY_SELECTION}
-        page={0}
-        totalPages={1}
-        onSelect={onSelectFile}
-        onToggleSelect={() => undefined}
-        onPrevPage={() => undefined}
-        onNextPage={() => undefined}
-        enableSelection={false}
-        showPagination={false}
-      />
-      {hasMore && (
-        <button
-          type="button"
-          className="folder-load-more"
-          onClick={() => setExpanded(true)}
-        >
-          Show all {allFiles.length} loose files
-        </button>
-      )}
-    </>
+    <VirtualizedLooseFiles
+      userView={userView}
+      allFiles={allFiles}
+      selectedFile={selectedFile}
+      onSelectFile={onSelectFile}
+    />
   );
 }
 

@@ -28,11 +28,9 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
-  "overrides": {
-    "@babel/helper-compilation-targets>lru-cache": "^5.1.1"
-  },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@tanstack/react-virtual": "^3.13.24",
     "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

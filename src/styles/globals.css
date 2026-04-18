@@ -14001,3 +14001,119 @@ select:focus-visible {
   gap: 0;
 }
 
+/* ── Phase 5aa: virtualized row infrastructure ────────────────────────── */
+
+/* Wrapper: positions row absolutely inside the virtualizer's scroll container */
+.virtualized-row-wrap {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  pointer-events: all;
+}
+
+/* Row: absolutely positioned inside the wrapper */
+.virtualized-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  /* inherit the library-list-row visual */
+}
+
+/* Scroll container for virtualized loose files */
+.virtualized-loose-files__scroll-container {
+  position: relative;
+  overflow: auto;
+}
+
+.virtualized-loose-files__inner {
+  position: relative;
+}
+
+.virtualized-loose-files__controls {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+}
+
+/* Scroll position counter — sticky pill at top of virtualized section */
+.folder-scroll-counter {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  margin: 0 auto 0.35rem;
+  background: var(--surface-2, #0f1e28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  font-size: 0.72rem;
+  color: var(--text-dim, #7f928a);
+  max-width: fit-content;
+}
+
+.folder-scroll-counter__range {
+  color: var(--text, #eef4ef);
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-scroll-counter__total {
+  color: var(--text, #eef4ef);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Generic load-more / expand button used in folder content */
+.folder-load-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.9rem;
+  margin: 0.5rem auto;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-soft, #afc0b8);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.folder-load-more:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text, #eef4ef);
+}
+
+/* Override: Phase 5w view-toggle old styles in phase5k-cards.css — conflict resolution.
+   Phase 5ab (icon-only) takes priority. */
+.library-view-toggle {
+  gap: 2px !important;
+  background: var(--surface-3, #172931) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  padding: 2px !important;
+}
+
+.library-view-btn {
+  min-width: unset !important;
+  padding: unset !important;
+  gap: unset !important;
+  font-size: unset !important;
+  width: 28px !important;
+  height: 26px !important;
+  color: var(--text-dim, #7f928a) !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+}
+
+.library-view-btn span {
+  display: none !important;
+}
+
+.library-view-btn.is-active {
+  background: rgba(120, 240, 161, 0.1) !important;
+  color: #78f0a1 !important;
+  box-shadow: inset 0 0 0 1px rgba(120, 240, 161, 0.32) !important;
+}
+
