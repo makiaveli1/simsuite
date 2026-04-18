@@ -85,7 +85,9 @@ function renderNode(
           {isActive ? <FolderOpen size={14} strokeWidth={2} /> : <Folder size={14} strokeWidth={2} />}
         </span>
         <span className="folder-tree-row__label">{node.name}</span>
-        <span className="folder-count-badge">{node.totalFileCount}</span>
+        <span className="folder-count-badge">
+          {node.totalFileCount + (node.rootFiles?.length ?? 0)}
+        </span>
       </button>
 
       {hasChildren && isExpanded ? (

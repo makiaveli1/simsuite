@@ -144,6 +144,9 @@ export function LibraryScreen({
   const [viewMode, setViewMode] = useState<"list" | "grid" | "folders">("list");
   const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
   const [treeRows, setTreeRows] = useState<LibraryListResponse | null>(null);
+  // Loading state for the tree fetch — separate from the paged rows loading.
+  // Shows a subtle spinner in the tree pane while treeRows is being fetched.
+  const [isTreeLoading, setIsTreeLoading] = useState(false);
   const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
@@ -285,6 +288,7 @@ export function LibraryScreen({
   // Loads ALL filtered files (no pagination) for folder-tree construction.
   // The tree needs the complete dataset to show real subfolder structure.
   async function loadTreeRows() {
+    setIsTreeLoading(true);
     try {
       const result = await api.listLibraryFilesForTree({
         search: deferredSearch || undefined,
@@ -299,6 +303,8 @@ export function LibraryScreen({
       setTreeRows(result);
     } catch (err) {
       console.error("loadTreeRows failed:", err);
+    } finally {
+      setIsTreeLoading(false);
     }
   }
 
@@ -1366,7 +1372,12 @@ export function LibraryScreen({
         ) : viewMode === "folders" ? (
           <div className="library-folders-layout">
             <div className="library-folder-tree-pane">
-              {folderTreeRoots ? (
+              {isTreeLoading ? (
+                <div className="folder-tree-loading">
+                  <span className="folder-tree-spinner" aria-label="Loading folder tree" />
+                  <span className="folder-tree-loading-text">Building folder tree…</span>
+                </div>
+              ) : folderTreeRoots ? (
                 <FolderTreePane
                   tree={folderTreeRoots.mods}
                   activePath={activeFolderPath}

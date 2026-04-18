@@ -1883,6 +1883,46 @@
   height: 14px;
 }
 
+/* Smooth chevron rotation on expand/collapse */
+.folder-tree-row__chevron svg {
+  transition: transform 0.18s ease;
+}
+
+.folder-tree-row__chevron.is-expanded svg {
+  transform: rotate(0deg); /* ChevronDown is already correct, this just confirms */
+}
+
+/* Loading state for the folder tree pane */
+.folder-tree-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--text-dim);
+}
+
+.folder-tree-spinner {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #f97316;
+  border-radius: 50%;
+  animation: folder-tree-spin 0.8s linear infinite;
+}
+
+@keyframes folder-tree-spin {
+  to { transform: rotate(360deg); }
+}
+
+.folder-tree-loading-text {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
 .folder-tree-row__icon {
   display: flex;
   align-items: center;
