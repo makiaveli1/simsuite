@@ -56,7 +56,7 @@ import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
-import { buildFolderTree, getFolderContents, getRootFiles, clearCachedTree, type FolderNode } from "./library/folderTree";
+import { buildFolderTree, getFolderContents, getRootFiles, type FolderNode } from "./library/folderTree";
 import type { FolderTreeMetadata, FolderTreeNode } from "../lib/types";
 
 interface LibraryScreenProps {
@@ -326,7 +326,7 @@ export function LibraryScreen({
     // Phase 5ac: Skip if tree is already loaded for current filter set.
     // folderTree state holds the rendered tree; treeRows holds file content.
     // Both must be checked to ensure both are available.
-    if (filtersUnchanged && folderTree !== null) {
+    if (filtersUnchanged && folderTree !== null && treeRows !== null) {
       return;
     }
     void loadTreeRows(filters);
@@ -423,7 +423,10 @@ export function LibraryScreen({
   ) {
     setIsTreeLoading(true);
     try {
-      const meta = await api.getFolderTreeMetadata({
+      // Phase 5af: Build tree from file list directly — avoids broken Rust
+      // get_folder_tree_metadata SQL (direct_file_count formula bug) and ensures
+      // tree counts always match the actual file list used for content.
+      const result = await api.listLibraryFilesForTree({
         search: deferredSearch || undefined,
         kind: kind || undefined,
         subtype: subtype || undefined,
@@ -432,25 +435,10 @@ export function LibraryScreen({
         minConfidence: minConfidence ? Number(minConfidence) : undefined,
         watchFilter: watchFilter || undefined,
       });
-      treeMetaRef.current = meta;
-      const tree = convertMetaToFolderTree(meta);
+      const tree = buildFolderTree(result.items);
+      setTreeRows(result);
       setFolderTree(tree);
       prevTreeCacheRef.current = tree;
-      // Also warm treeRows for folder content (getFolderContents still needs flat file rows).
-      // Use listLibraryFilesForTree for this — separate, non-blocking.
-      api.listLibraryFilesForTree({
-        search: deferredSearch || undefined,
-        kind: kind || undefined,
-        subtype: subtype || undefined,
-        creator: creator || undefined,
-        source: source || undefined,
-        minConfidence: minConfidence ? Number(minConfidence) : undefined,
-        watchFilter: watchFilter || undefined,
-      }).then((result) => {
-        setTreeRows(result);
-      }).catch(() => {
-        // Non-blocking — tree structure already loaded, file content loads async
-      });
       if (filters) lastTreeFiltersRef.current = filters;
     } catch (err) {
       console.error("loadTreeRows failed:", err);
@@ -661,20 +649,9 @@ export function LibraryScreen({
 
   // ── Folder tree ──────────────────────────────────────────────────────────
   // Phase 5ac: tree rendering now uses folderTree state (set by loadTreeRows from
-  // getFolderTreeMetadata), NOT treeRows via buildFolderTree.
-  // folderTree is a lightweight FolderNode tree — no flat file row iteration needed.
+  // listLibraryFilesForTree), not a per-render rebuild from flat rows.
   // Falls back to prevTreeCacheRef during warm reload to avoid flicker.
-  // Phase 5ab: clearCachedTree moved to dedicated effect below.
   const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
-
-  // Phase 5ab: Invalidate tree cache ONLY when the tree metadata changes.
-  // treeMetaRef drives tree structure; treeRows drives folder file content.
-  // clearCachedTree is kept for getFolderContents's getCachedTree call.
-  useEffect(() => {
-    if (treeMetaRef.current || treeRows?.items) {
-      clearCachedTree();
-    }
-  }, [treeMetaRef.current, treeRows?.items]);
 
     // ── Folder contents for the active path ─────────────────────────────────
   // Uses treeRows (full dataset) when available for accurate file listing.
@@ -719,9 +696,9 @@ export function LibraryScreen({
       };
     }
 
-    // Inside a specific folder: use standard getFolderContents which
-    // already handles rootFiles for the active subfolder.
-    return getFolderContents(activeFolderPath, items);
+    // Inside a specific folder: reuse the prebuilt tree from loadTreeRows so
+    // getFolderContents does not rebuild the full tree from flat rows.
+    return getFolderContents(activeFolderPath, items, folderTreeRoots);
   }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
