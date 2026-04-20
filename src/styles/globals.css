@@ -14112,12 +14112,16 @@ select:focus-visible {
   left: 0;
   width: 100%;
   /* inherit the library-list-row visual */
+  /* FIX Phase 5ah: stable transform base for motion compositing */
+  transform: translateY(0);
 }
 
 /* Scroll container for virtualized loose files */
 .virtualized-loose-files__scroll-container {
   position: relative;
   overflow: auto;
+  /* FIX Phase 5ah: isolate row hover animations from sticky counter */
+  contain: layout;
 }
 
 .virtualized-loose-files__inner {

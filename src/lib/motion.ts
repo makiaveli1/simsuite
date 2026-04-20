@@ -181,7 +181,7 @@ export const tapPress = {
 
 export const rowHover = {
   y: -2,
-  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+  boxShadow: "0 4px 12px rgba(0,0,0,0.12)",  /* reduced from 0 8px 24px — less rasterization cost */
   transition: {
     duration: 0.2,
     ease: easeStandard,

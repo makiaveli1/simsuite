@@ -61,7 +61,7 @@ export function FolderContentPane({
     .join(" · ");
 
   return (
-    <div className="folder-content-pane">
+    <div className="library-folder-content-pane">
       <div className="folder-content-header">
         <div className="folder-content-title">
           <Folder size={15} strokeWidth={2} />

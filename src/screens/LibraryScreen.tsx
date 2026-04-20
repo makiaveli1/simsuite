@@ -216,22 +216,30 @@ export function LibraryScreen({
     // Phase 5ac: Lightweight metadata API — returns prebuilt tree structure, NOT flat file rows.
     // No need to also load listLibraryFilesForTree here; treeRows is for folder contents only.
     const seq = ++treeSeqRef.current;
-    api
-      .getFolderTreeMetadata({
-        search: deferredSearch || undefined,
-        kind: kind || undefined,
-        subtype: subtype || undefined,
-        creator: creator || undefined,
-        source: source || undefined,
-        minConfidence: minConfidence ? Number(minConfidence) : undefined,
-        watchFilter: watchFilter || undefined,
-      })
-      .then((meta) => {
+    const treeFilters = {
+      search: deferredSearch || undefined,
+      kind: kind || undefined,
+      subtype: subtype || undefined,
+      creator: creator || undefined,
+      source: source || undefined,
+      minConfidence: minConfidence ? Number(minConfidence) : undefined,
+      watchFilter: watchFilter || undefined,
+    };
+    Promise.all([
+      api.getFolderTreeMetadata(treeFilters),
+      // Phase 5ah: ALSO prefetch full file list for folder contents.
+      // treeRows (all 13k files) is needed for getFolderContents — pre-warming
+      // it here makes folder mode feel INSTANT when the user first enters.
+      api.listLibraryFilesForTree(treeFilters),
+    ])
+      .then(([meta, treeResult]) => {
         if (seq !== treeSeqRef.current) return; // discard stale
         treeMetaRef.current = meta;
         const tree = convertMetaToFolderTree(meta);
         setFolderTree(tree);
         prevTreeCacheRef.current = tree;
+        // Phase 5ah: warm treeRows so folder content is ready instantly
+        setTreeRows(treeResult);
         lastTreeFiltersRef.current = filters;
       })
       .catch(() => {
@@ -477,21 +485,27 @@ export function LibraryScreen({
     // Phase 5y: show a minimal preview IMMEDIATELY so the sidebar does not go
     // blank while getFileDetail round-trips. Only the thumbnail + id are needed
     // from the row; everything else populates when the full detail arrives.
-    const previewThumbnail =
-      row.insights?.thumbnailPreview ??
-      row.insights?.cachedThumbnailPreview ??
-      null;
-    const preview: FileDetail = {
-      ...row, // spread the row fields as a bare-minimum preview
-      _cardThumbnail: previewThumbnail,
-      insights: row.insights ?? { embeddedNames: [], creatorHints: [], familyHints: [], scriptNamespaces: [], versionHints: [], resourceSummary: [], safetyNotes: [], parserWarnings: [], thumbnailPreview: null, cachedThumbnailPreview: null },
-    } as FileDetail;
-    setSelected(preview);
+    let previewThumbnail: string | null = null;
+    try {
+      previewThumbnail =
+        row.insights?.thumbnailPreview ??
+        row.insights?.cachedThumbnailPreview ??
+        null;
+      const preview: FileDetail = {
+        ...row, // spread the row fields as a bare-minimum preview
+        _cardThumbnail: previewThumbnail,
+        insights: row.insights ?? { embeddedNames: [], creatorHints: [], familyHints: [], scriptNamespaces: [], versionHints: [], resourceSummary: [], safetyNotes: [], parserWarnings: [], thumbnailPreview: null, cachedThumbnailPreview: null },
+      } as FileDetail;
+      setSelected(preview);
 
-    const detail = await api.getFileDetail(row.id);
-    if (!detail) return;
-    detail._cardThumbnail = previewThumbnail;
-    setSelected(detail);
+      const detail = await api.getFileDetail(row.id);
+      if (!detail) return;
+      detail._cardThumbnail = previewThumbnail;
+      setSelected(detail);
+    } catch (err) {
+      console.error("openFile failed:", err);
+      setSelected(null); // clean slate on failure — avoids stale/partial sidebar
+    }
   }
 
   async function saveCreatorOverride() {
