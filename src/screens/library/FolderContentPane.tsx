@@ -113,7 +113,9 @@ export function FolderContentPane({
       ) : null}
 
       {/* Root-level files stored directly in this folder with no subfolder */}
-      {rootFiles.length > 0 ? (
+      {/* At root: only show if there are Mods depth-0 files. Tray root files are in the tree. */}
+      {/* At folder level: show all root files for that folder. */}
+      {rootFiles.length > 0 && (folderPath !== null || rootFiles.some((f) => getSourceRootFromPath(f.path) === "Mods")) ? (
         <section>
           {folderPath === null ? (
             <ModsLooseFilesSection
