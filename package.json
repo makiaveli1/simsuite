@@ -24,12 +24,14 @@
     "dependencies": {
         "@rollup/rollup-linux-x64-gnu": "^4.60.2",
         "@tauri-apps/api": "^2.10.1",
+        "lru-cache": "^11.3.5",
         "lucide-react": "^0.577.0",
         "motion": "^12.35.1",
         "react": "^19.2.4",
         "react-dom": "^19.2.4"
     },
     "devDependencies": {
+        "@esbuild/linux-x64": "^0.28.0",
         "@playwright/test": "^1.58.2",
         "@tanstack/react-virtual": "^3.13.24",
         "@tauri-apps/cli": "^2.10.1",
@@ -45,5 +47,10 @@
         "typescript": "^5.9.3",
         "vite": "^7.3.1",
         "vitest": "^4.1.0"
+    },
+    "pnpm": {
+        "overrides": {
+            "lru-cache": "^11.0.0"
+        }
     }
 }
