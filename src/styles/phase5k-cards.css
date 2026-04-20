@@ -2141,7 +2141,7 @@
 }
 
 .folder-loose-files-hint {
-  padding: 0.1rem 0.85rem 0.3rem;
+  padding: 0.2rem 0.85rem 0.4rem;
   font-size: 0.65rem;
   color: var(--text-dim);
   font-style: italic;
@@ -2149,10 +2149,11 @@
 
 /* Wrapper for each loose-files source group */
 .folder-loose-source-group {
-  padding: 0.75rem 0 0.25rem;
   margin-top: 0.5rem;
-  border-left: 2px solid rgba(249, 115, 22, 0.25);
-  padding-left: 0.75rem;
+  padding: 0.75rem 0 0.5rem 0.75rem;
+  border-left: 2px solid rgba(249, 115, 22, 0.3);
+  /* subtle top separator to frame the loose-files block */
+  border-top: 1px solid rgba(249, 115, 22, 0.08);
 }
 
 .folder-row-list {
