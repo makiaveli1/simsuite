@@ -653,7 +653,23 @@ export function LibraryScreen({
   // Falls back to prevTreeCacheRef during warm reload to avoid flicker.
   const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
 
-    // ── Folder contents for the active path ─────────────────────────────────
+  // Phase 5ag: Combined single-pass computation — produces rootItemsBySource + rootFileCount.
+  // Eliminates the duplicate O(n) loop that previously existed in folderContents and syntheticRoot.
+  const { rootItemsBySource, rootFileCount } = useMemo(() => {
+    const items = treeRows?.items ?? rows?.items ?? [];
+    const rootItemsBySource: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
+    let rootFileCount = 0;
+    for (const item of items) {
+      const src = getSourceRoot(item.path);
+      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
+        rootItemsBySource[src].push(item);
+        rootFileCount += 1;
+      }
+    }
+    return { rootItemsBySource, rootFileCount };
+  }, [treeRows?.items, rows?.items]);
+
+  // ── Folder contents for the active path ─────────────────────────────────
   // Uses treeRows (full dataset) when available for accurate file listing.
   //
   // Root-level (depth-0) files: files stored directly in the game root folder
@@ -667,14 +683,6 @@ export function LibraryScreen({
 
     // Root-level files: items with folderSegments = ["Mods"] or ["Tray"].
     // These are depth-0 files that buildFolderTree skips.
-    const rootItemsBySource: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
-    for (const item of items) {
-      const src = getSourceRoot(item.path);
-      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
-        rootItemsBySource[src].push(item);
-      }
-    }
-
     if (!activeFolderPath) {
       // Attach root files to the Mods/Tray nodes so folder row badges show
       // correct totals (tree files + depth-0 loose files) at the root level.
@@ -699,22 +707,12 @@ export function LibraryScreen({
     // Inside a specific folder: reuse the prebuilt tree from loadTreeRows so
     // getFolderContents does not rebuild the full tree from flat rows.
     return getFolderContents(activeFolderPath, items, folderTreeRoots);
-  }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath]);
+  }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath, rootItemsBySource]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
   const syntheticRoot: FolderNode = useMemo(() => {
     if (!folderTreeRoots) {
       return { name: "Root", fullPath: "", depth: 0, children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0 };
-    }
-    // Count root-level files (depth-0) for the total.
-    // These are the 9,777 files stored directly in Mods with no subfolder.
-    const items = treeRows?.items ?? rows?.items ?? [];
-    let rootFileCount = 0;
-    for (const item of items) {
-      const src = getSourceRoot(item.path);
-      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
-        rootFileCount += 1;
-      }
     }
     return {
       name: "Root",
@@ -726,7 +724,7 @@ export function LibraryScreen({
       totalFileCount: folderTreeRoots.mods.totalFileCount + folderTreeRoots.tray.totalFileCount + rootFileCount,
       childFolderCount: 2,
     };
-  }, [folderTreeRoots, treeRows?.items, rows?.items]);
+  }, [folderTreeRoots, rootFileCount]);
 
   const libraryInspectorSections = selected
     ? [

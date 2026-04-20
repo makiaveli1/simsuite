@@ -1071,8 +1071,8 @@
 
 .library-page-size-control select:focus {
   outline: none;
-  border-color: rgba(249,115,22,0.45);
-  background-color: rgba(255,255,255,0.07);
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background-color: rgba(255, 255, 255, 0.07) !important;
 }
 
 .library-page-size-control select option {
@@ -2142,7 +2142,7 @@
 
 .folder-loose-files-hint {
   padding: 0.2rem 0.85rem 0.4rem;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   color: var(--text-dim);
   font-style: italic;
 }
@@ -2153,7 +2153,7 @@
   padding: 0.75rem 0 0.5rem 0.75rem;
   border-left: 2px solid rgba(249, 115, 22, 0.3);
   /* subtle top separator to frame the loose-files block */
-  border-top: 1px solid rgba(249, 115, 22, 0.08);
+  border-top: 1px solid rgba(249, 115, 22, 0.15);
 }
 
 .folder-row-list {
@@ -2206,19 +2206,19 @@
 
 /* Phase 5z: "Show all N files" expander for large folder content */
 .folder-load-more {
-  display: block;
-  width: 100%;
-  padding: 0.55rem;
-  margin-top: 0.25rem;
-  background: rgba(249, 115, 22, 0.08);
-  border: 1px dashed rgba(249, 115, 22, 0.3);
-  border-radius: 6px;
-  color: #f97316;
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.15s, border-color 0.15s;
+  display: block !important;
+  width: 100% !important;
+  padding: 0.55rem !important;
+  margin-top: 0.25rem !important;
+  background: rgba(249, 115, 22, 0.08) !important;
+  border: 1px dashed rgba(249, 115, 22, 0.3) !important;
+  border-radius: 6px !important;
+  color: #f97316 !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  text-align: center !important;
+  transition: background 0.15s, border-color 0.15s !important;
 }
 
 .folder-load-more:hover {

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
+import React from "react";
 import { Folder } from "lucide-react";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
@@ -38,51 +39,33 @@ export function FolderContentPane({
 
   // Reset expanded state when navigating to a different folder.
   // useState initial values are only used on mount — this effect keeps them in sync.
-  const [prevFolderPath, setPrevFolderPath] = useState<string | null>(null);
-  if (folderPath !== prevFolderPath) {
-    setPrevFolderPath(folderPath);
+  useEffect(() => {
     setFilesExpanded(false);
     setRootFilesExpanded(false);
-  }
+  }, [folderPath]);
 
-  const segments = folderPath ? folderPath.split("/").filter(Boolean) : [];
-  const totalShownFiles = files.length + (folderPath !== null ? rootFiles.length : 0);
-  const summaryFileCount =
-    folderPath === null ? tree.totalFileCount : totalShownFiles;
-  const summary = buildFolderSummary(subfolders.length, summaryFileCount);
+  const pageSize = FOLDER_PAGE_SIZE;
 
-  const displayFiles = filesExpanded ? files : files.slice(0, FOLDER_PAGE_SIZE);
-  const displayRootFiles = rootFilesExpanded
-    ? rootFiles
-    : rootFiles.slice(0, FOLDER_PAGE_SIZE);
-  const filesHasMore = files.length > FOLDER_PAGE_SIZE;
-  const rootFilesHasMore = rootFiles.length > FOLDER_PAGE_SIZE;
+  const filesHasMore = files.length > pageSize;
+  const displayFiles = filesExpanded ? files : files.slice(0, pageSize);
+
+  const rootFilesHasMore = rootFiles.length > pageSize;
+  const displayRootFiles = rootFilesExpanded ? rootFiles : rootFiles.slice(0, pageSize);
+
+  const summary = [
+    subfolders.length > 0 ? `${subfolders.length} subfolders` : null,
+    files.length > 0 ? `${files.length} files` : null,
+    rootFiles.length > 0 ? `${rootFiles.length} loose` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="library-folder-content-pane">
+    <div className="folder-content-pane">
       <div className="folder-content-header">
-        <div className="folder-breadcrumb" aria-label="Folder path">
-          {segments.length > 0 ? (
-            segments.map((segment, index) => {
-              const path = segments.slice(0, index + 1).join("/");
-              const isCurrent = index === segments.length - 1;
-              return (
-                <span key={path} className="folder-breadcrumb-item">
-                  <button
-                    type="button"
-                    className={`folder-breadcrumb-link${isCurrent ? " is-current" : ""}`}
-                    onClick={() => onNavigate(path)}
-                    aria-current={isCurrent ? "page" : undefined}
-                  >
-                    {segment}
-                  </button>
-                  {!isCurrent ? <span className="folder-breadcrumb-sep">/</span> : null}
-                </span>
-              );
-            })
-          ) : (
-            <span className="folder-breadcrumb-root">All folders</span>
-          )}
+        <div className="folder-content-title">
+          <Folder size={15} strokeWidth={2} />
+          <span>{folderPath ?? "Library"}</span>
         </div>
         <div className="folder-content-summary">{summary}</div>
       </div>
@@ -127,7 +110,7 @@ export function FolderContentPane({
           ) : (
             <>
               <div className="folder-content-section folder-content-section--loose">
-                Loose files
+                Loose files{rootFiles.length > 0 ? ` in ${getSourceRootFromPath(rootFiles[0].path)}` : ''}
                 <span className="folder-loose-files-badge">{rootFiles.length}</span>
               </div>
               <div className="folder-loose-files-hint">
@@ -167,7 +150,7 @@ export function FolderContentPane({
             Files
             {filesHasMore && !filesExpanded && (
               <span className="folder-content-section-hint">
-                showing {FOLDER_PAGE_SIZE} of {files.length}
+                showing {pageSize} of {files.length}
               </span>
             )}
           </div>
@@ -185,7 +168,7 @@ export function FolderContentPane({
             enableSelection={false}
             showPagination={false}
           />
-          {filesHasMore && (
+          {filesHasMore && !filesExpanded && (
             <button
               type="button"
               className="folder-load-more"
@@ -229,14 +212,17 @@ interface ModsLooseFilesSectionProps {
 // Phase 5ag: Only Mods root-level files are surfaced as a loose-files section.
 // Tray root files are NOT surfaced separately — Tray is represented in the folder tree
 // and Tray root files are accessible there. This avoids redundant duplication at root level.
-function ModsLooseFilesSection({
+const ModsLooseFilesSection = React.memo(function ModsLooseFilesSection({
   userView,
   rootFiles,
   selectedFile,
   onSelectFile,
 }: ModsLooseFilesSectionProps) {
   // Filter to Mods only — Tray root files are shown via the folder tree, not here
-  const modsFiles = rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Mods");
+  const modsFiles = useMemo(
+    () => rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Mods"),
+    [rootFiles]
+  );
   if (!modsFiles.length) return null;
 
   return (
@@ -256,7 +242,7 @@ function ModsLooseFilesSection({
       />
     </div>
   );
-}
+});
 
 // ── LooseFilesGroupTable ──────────────────────────────────────────────────────
 
@@ -281,11 +267,4 @@ function LooseFilesGroupTable({
       onSelectFile={onSelectFile}
     />
   );
-}
-
-function buildFolderSummary(subfolderCount: number, fileCount: number) {
-  if (subfolderCount > 0) {
-    return `${subfolderCount} ${subfolderCount === 1 ? "subfolder" : "subfolders"}, ${fileCount} ${fileCount === 1 ? "file" : "files"}`;
-  }
-  return `${fileCount} ${fileCount === 1 ? "file" : "files"}`;
 }
