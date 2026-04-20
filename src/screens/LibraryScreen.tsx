@@ -94,16 +94,14 @@ function getSourceRoot(path: string): string | null {
 
 // Returns true if this file is stored directly in the root folder with no subfolder.
 // E.g. Mods\filename.package → true  (depth-0, no subfolder)
-//      Mods\SubFolder\file.package → false  (depth-1, inside a subfolder)
-function isDepthZeroFile(path: string, sourceRoot: string): boolean {
-  const rel = getRelativePath(path);
-  const withoutRoot = rel.split("/").filter(Boolean).slice(1); // remove "Mods" or "Tray"
-  // If the remaining path has NO folder segments (only a filename), it's depth-0.
-  // A depth-0 file has only the filename after the root — e.g. Mods/file.package
-  // A depth-1 file has one folder segment — e.g. Mods/SubFolder/file.package
-  const lastSegment = withoutRoot[withoutRoot.length - 1] ?? "";
-  const hasFolderBetweenRootAndFile = withoutRoot.length > 1;
-  return !hasFolderBetweenRootAndFile && lastSegment.length > 0;
+// DEPTH-0 vs DEPTH-1 determination using relativeDepth from the database.
+// relativeDepth=0: file is directly inside the source root (Mods or Tray) with no subfolder.
+// relativeDepth=1+: file is inside a subfolder of the source root.
+// The path-based approach (findRootSegments) fails on Windows because the stored path
+// includes the full user folder path (e.g. C:/Users/likwi/.../Mods/File.package)
+// which causes slice(1) to remove the WRONG segment (the username, not the game root).
+function isDepthZeroFile(file: { path: string; relativeDepth: number }, sourceRoot: string): boolean {
+  return file.relativeDepth === 0;
 }
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -695,7 +693,7 @@ export function LibraryScreen({
     const rootItemsBySource: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
     for (const item of items) {
       const src = getSourceRoot(item.path);
-      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item.path, src)) {
+      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
         rootItemsBySource[src].push(item);
       }
     }
@@ -737,7 +735,7 @@ export function LibraryScreen({
     let rootFileCount = 0;
     for (const item of items) {
       const src = getSourceRoot(item.path);
-      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item.path, src)) {
+      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
         rootFileCount += 1;
       }
     }
@@ -1399,7 +1397,7 @@ export function LibraryScreen({
 
   return (
     <>
-    <Workbench fullHeight>
+    <Workbench fullHeight className="library-workbench">
       <WorkbenchStage className="library-stage-shell">
         <LibraryTopStrip
           userView={userView}
@@ -1659,6 +1657,15 @@ export function LibraryScreen({
           />
         )}
       </WorkbenchStage>
+
+      {!inspectorCollapsed ? (
+        <button
+          type="button"
+          className="library-inspector-backdrop"
+          aria-label="Close inspector overlay"
+          onClick={() => setInspectorCollapsed(true)}
+        />
+      ) : null}
 
       {/* Right inspector panel */}
       <WorkbenchInspector

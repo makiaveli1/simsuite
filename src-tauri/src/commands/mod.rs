@@ -2652,8 +2652,13 @@ pub async fn get_folder_tree_metadata(
                     ar.parent_folder AS folder_path,
                     ar.folder_depth AS depth,
                     ar.source_location,
-                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth THEN ar.path END) AS direct_file_count,
-                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth - 1 THEN ar.parent_folder END) AS child_folder_count,
+                    -- direct_file_count: files whose parent folder is this folder.
+                    -- folder_depth = relative_depth - 1 (parent folder depth), so file belongs when folder_depth + 1 = relative_depth.
+                    -- Root files (relative_depth=0, folder_depth=-1) are NOT direct children of any named subfolder.
+                    COUNT(DISTINCT CASE WHEN ar.folder_depth + 1 = ar.relative_depth THEN ar.path END) AS direct_file_count,
+                    -- child_folder_count: distinct immediate child folders.
+                    -- A folder at folder_depth=k has children at folder_depth=k (i.e., folder_depth = relative_depth).
+                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth THEN ar.parent_folder END) AS child_folder_count,
                     (SELECT COUNT(*) FROM anchor_rows ar2
                      WHERE ar2.parent_folder = ar.parent_folder
                         OR ar2.path LIKE (ar.parent_folder || '/%')) AS total_file_count
