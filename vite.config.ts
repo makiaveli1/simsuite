@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  cacheDir: false, // disable transform cache to avoid stale gensync/babel state
   plugins: [react()],
   clearScreen: false,
   server: {
