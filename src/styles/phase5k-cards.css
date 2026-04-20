@@ -2120,6 +2120,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--orange, #f97316);
+  margin-bottom: 0.3rem;
 }
 
 .folder-loose-files-badge {
@@ -2140,10 +2141,18 @@
 }
 
 .folder-loose-files-hint {
-  padding: 0.15rem 1rem 0.4rem;
+  padding: 0.1rem 0.85rem 0.3rem;
   font-size: 0.65rem;
   color: var(--text-dim);
   font-style: italic;
+}
+
+/* Wrapper for each loose-files source group */
+.folder-loose-source-group {
+  padding: 0.75rem 0 0.25rem;
+  margin-top: 0.5rem;
+  border-left: 2px solid rgba(249, 115, 22, 0.25);
+  padding-left: 0.75rem;
 }
 
 .folder-row-list {

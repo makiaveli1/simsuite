@@ -157,8 +157,9 @@ export function getRootFiles(
 export function getFolderContents(
   folderPath: string,
   files: LibraryFileRow[],
+  cachedTree?: { mods: FolderNode; tray: FolderNode },
 ): { subfolders: FolderNode[]; files: LibraryFileRow[]; rootFiles: LibraryFileRow[] } {
-  const folderTree = getCachedTree(files);
+  const folderTree = cachedTree ?? getCachedTree(files);
   const roots = [folderTree.mods, folderTree.tray];
   const activeNode = roots
     .flatMap((root) => [root, ...collectDescendants(root)])
