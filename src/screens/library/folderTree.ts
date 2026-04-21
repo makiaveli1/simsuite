@@ -155,10 +155,13 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
       const fullSegs = normalized.split("/").filter(Boolean);
       const rootIdx = fullSegs.findIndex((s) => ROOT_NAMES.has(s));
       if (rootIdx < 0) continue;
-      // Patch folderSegments so the rest of the loop works normally
+      // Patch __folderSegments so the rest of the loop works normally.
+      // slice(rootIdx + 1) strips the root segment itself, leaving only
+      // the path UNDER the root (depth-0 files → remaining path is just the
+      // filename, depth-1 files → "subfolder/filename").
       // eslint-disable-next-line no-param-reassign
       (file as { __folderSegments?: string[] }).__folderSegments =
-        fullSegs.slice(rootIdx); // strip root itself → remaining path
+        fullSegs.slice(rootIdx + 1);
     }
 
     const workingSegments = (file as { __folderSegments?: string[] }).__folderSegments ?? folderSegments;
