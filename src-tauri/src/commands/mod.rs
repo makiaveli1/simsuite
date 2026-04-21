@@ -1,6 +1,10 @@
 use chrono::Utc;
 use reqwest::Url;
+<<<<<<< Updated upstream
 use rusqlite::{params, params_from_iter, Connection};
+=======
+use rusqlite::{params, Connection, OptionalExtension};
+>>>>>>> Stashed changes
 use std::{
     collections::HashSet,
     fs,

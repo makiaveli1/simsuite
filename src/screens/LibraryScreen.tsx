@@ -240,6 +240,8 @@ export function LibraryScreen({
         prevTreeCacheRef.current = tree;
         // Phase 5ah: warm treeRows so folder content is ready instantly
         setTreeRows(treeResult);
+        // Phase 5ah: also persist filter state so the loadTreeRows effect
+        // sees filtersUnchanged=true and skips the redundant cold fetch.
         lastTreeFiltersRef.current = filters;
       })
       .catch(() => {
@@ -305,10 +307,12 @@ export function LibraryScreen({
   // Phase 5ab: viewMode removed from deps — switching list↔grid must not invalidate treeRows.
   // Phase 5ac: lastTreeFiltersRef prevents redundant reloads when entering folder mode
   // with the same filters the tree was already loaded for.
+  // Phase 5ah FIX: setActiveFolderPath(null) and setSelected(null) moved to a separate
+  // "enter folder mode" effect below — they must NOT run on every search/filter change
+  // (which was causing blank-screen: every keystroke fired setSelected(null), wiping
+  // the sidebar preview mid-fetch whenever the user typed with a file selected).
   useEffect(() => {
     if (viewMode !== "folders") return;
-    setActiveFolderPath(null); // Reset to root on enter
-    setSelected(null); // Clear stale sidebar selection from list/grid mode
 
     // Phase 5ac: Skip if tree is already loaded for the current filter set.
     // The background preloader keeps treeRows warm, so this is usually a no-op.
@@ -338,7 +342,18 @@ export function LibraryScreen({
       return;
     }
     void loadTreeRows(filters);
-  }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
+    // NOTE: deferredSearch intentionally OMITTED from deps — adding it would cause
+    // setSelected(null) to fire on every debounced-search change, blanking the sidebar.
+    // The background preloader (above) handles search warm-up independently.
+  }, [viewMode, kind, subtype, creator, source, minConfidence, watchFilter]);
+
+  // Phase 5ah: Enter folder mode — runs ONCE when switching from list/grid to folders.
+  // NOT on every filter/search change (that belongs to the effect above).
+  useEffect(() => {
+    if (viewMode !== "folders") return;
+    setActiveFolderPath(null); // Reset to root when entering folder mode
+    setSelected(null); // Clear stale sidebar from list/grid mode
+  }, [viewMode]);
 
   // Phase 5ab: separate effect — reset active path when LEAVING folder mode.
   // Does NOT clear treeRows; the tree cache survives view switches.

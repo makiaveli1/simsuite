@@ -67,18 +67,6 @@ interface MutableFolderNode extends FolderNode {
 
 const ROOT_NAMES = new Set(["Mods", "Tray"]);
 
-/**
- * Fallback: extract the first segment from paths that have no Mods/Tray root.
- * Handles absolute Windows paths that include the full user profile path
- * (e.g. "C:\\Users\\Player\\Documents\\...\\filename.package") — the first
- * segment after drive-letter normalisation is treated as the effective root.
- */
-function extractFallbackRoot(path: string): string | null {
-  const normalized = path.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "").replace(/^\/+/, "");
-  const first = normalized.split("/").filter(Boolean)[0];
-  return first && ROOT_NAMES.has(first) ? first : null;
-}
-
 export function getRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "").replace(/^\/+/, "");
 }
@@ -140,29 +128,7 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
 
   for (const file of files) {
     const folderSegments = getFolderSegments(file.path);
-
-    // Phase 5ah-fix: If getFolderSegments returns null or [] the path has no
-    // Mods/Tray root segment.  This happens with mock data that uses absolute
-    // Windows paths ("C:\\Users\\...\\Mods\\sub\\file.package") where the
-    // path before the root folder is included.  Fall back to the first segment
-    // that matches ROOT_NAMES so these files still get placed in the tree.
-    if (!folderSegments?.length) {
-      const fallbackRoot = extractFallbackRoot(file.path);
-      if (!fallbackRoot) continue; // truly unrecognised path — skip it
-      const normalized = file.path.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "").replace(/^\/+/, "");
-      // Re-run getFolderSegments using the normalised path so the tree walk
-      // starts from the recognised root segment
-      const fullSegs = normalized.split("/").filter(Boolean);
-      const rootIdx = fullSegs.findIndex((s) => ROOT_NAMES.has(s));
-      if (rootIdx < 0) continue;
-      // Patch folderSegments so the rest of the loop works normally
-      // eslint-disable-next-line no-param-reassign
-      (file as { __folderSegments?: string[] }).__folderSegments =
-        fullSegs.slice(rootIdx + 1); // strip root itself → remaining path
-    }
-
-    const workingSegments = (file as { __folderSegments?: string[] }).__folderSegments ?? folderSegments;
-    if (!workingSegments?.length) continue;
+    if (!folderSegments?.length) continue;
 
     // Walk the path and assign the file to the DEEPEST (innermost) node only.
     // Depth-0 files (e.g. "Mods/foo.package" → segments=["Mods"])
@@ -170,12 +136,12 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
     // Files in subfolders (e.g. "Mods/sub/foo.package" → segments=["Mods","sub"])
     // go ONLY to "Mods/sub", not to Mods.
     // This ensures getFolderContents correctly separates direct vs subfolder files.
-    let current = roots[workingSegments[0]];
+    let current = roots[folderSegments[0]];
     if (!current) continue;
 
-    for (let index = 1; index < workingSegments.length; index += 1) {
-      const segment = workingSegments[index];
-      const fullPath = workingSegments.slice(0, index + 1).join("/");
+    for (let index = 1; index < folderSegments.length; index += 1) {
+      const segment = folderSegments[index];
+      const fullPath = folderSegments.slice(0, index + 1).join("/");
       let next = current.children.find((child) => child.fullPath === fullPath);
       if (!next) {
         next = createNode(segment, fullPath, index);
@@ -183,7 +149,6 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
       }
       current = next;
     }
-
 
     // Assign to the deepest node only (not ancestors)
     if (!current.files) current.files = [];
@@ -236,25 +201,16 @@ export function getFolderContents(
   const folderTree = cachedTree ?? getCachedTree(files);
   const roots: FolderNode[] = [folderTree.mods, folderTree.tray];
 
-  console.log('[folderTree] getFolderContents path=', folderPath, 'files=', files.length);
-  console.log('[folderTree] mods total=', folderTree.mods.totalFileCount, 'tray total=', folderTree.tray.totalFileCount);
-  console.log('[folderTree] mods children=', folderTree.mods.children.length, 'mods.files=', folderTree.mods.files?.length ?? 0);
-
   // Root level: Mods and Tray as subfolders
   if (folderPath === null) {
     const rootFiles = getAllFilesForNode(folderTree.mods).concat(getAllFilesForNode(folderTree.tray));
-    console.log('[folderTree] root level: rootFiles.length=', rootFiles.length);
     const subfolders = roots.filter((r) => r.totalFileCount > 0);
-    console.log('[folderTree] root level: subfolders=', subfolders.length);
-    console.log('[folderTree] root level: subfolder names=', subfolders.map(s => s.name).join(', '));
     return { subfolders, files: [], rootFiles };
   }
 
   // Find the clicked folder node
-  console.log('[folderTree] non-root: looking for path=', folderPath);
   let activeNode: FolderNode | undefined;
   outer: for (const root of roots) {
-    console.log('[folderTree]   checking root fullPath=', root.fullPath, 'children=', root.children.map(c => c.fullPath).join(', '));
     if (root.fullPath === folderPath) {
       activeNode = root;
       break;
@@ -266,16 +222,13 @@ export function getFolderContents(
       }
     }
   }
-  console.log('[folderTree] activeNode found:', activeNode?.fullPath, activeNode?.name);
 
   if (!activeNode) {
     return { subfolders: [], files: [], rootFiles: [] };
   }
 
   // Phase 5ah: Use pre-computed file ids on the node — O(depth) not O(n)
-  console.log('[folderTree] activeNode.files=', activeNode?.files?.length ?? 0, 'directFileCount=', activeNode?.directFileCount, 'totalFileCount=', activeNode?.totalFileCount);
-  const allFiles = getAllFilesForNode(activeNode!);
-  console.log('[folderTree] allFiles from getAllFilesForNode:', allFiles.length);
+  const allFiles = getAllFilesForNode(activeNode);
 
   // Phase 5ab dedupe: if at a root node (Mods/Tray), separate direct from subfolder files
   const rootFiles = allFiles.filter((f) => {
