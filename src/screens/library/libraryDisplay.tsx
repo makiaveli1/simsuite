@@ -1182,8 +1182,8 @@ const GENERIC_FOLDER_NAMES = new Set([
  * will block the main thread.
  */
 export function computeFileRelationship(
-  file: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation">,
-  items: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation">[],
+  file: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation" | "sameFolderPeerCount" | "samePackPeerCount">,
+  items: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation" | "sameFolderPeerCount" | "samePackPeerCount">[],
 ): FileRelationship | null {
   // 1. Duplicate — backend fact
   if (file.hasDuplicate) {
@@ -1198,8 +1198,18 @@ export function computeFileRelationship(
     };
   }
 
-  // 2. Same pack — backend claim (bundle detector)
+  // 2. Same pack — backend window count if available, else client scan fallback
   if (file.bundleName) {
+    const peerCount = file.samePackPeerCount ?? null;
+    if (peerCount !== null && peerCount > 0) {
+      return {
+        type: "same_pack",
+        proofLevel: "claim",
+        label: `${peerCount} more in same pack`,
+        peerCount,
+      };
+    }
+    // Fallback: client scan (for data from pre-window-scan re-scans)
     const bundlePeers = items.filter(
       (f) => f.id !== file.id && f.bundleName === file.bundleName,
     );
@@ -1207,7 +1217,7 @@ export function computeFileRelationship(
       return {
         type: "same_pack",
         proofLevel: "claim",
-        label: `Same pack: ${file.bundleName}`,
+        label: `${bundlePeers.length} more in same pack`,
         peerCount: bundlePeers.length,
       };
     }
@@ -1223,7 +1233,18 @@ export function computeFileRelationship(
     };
   }
 
-  // 4. Same folder (mods hierarchy) — backend fact for mods, heuristic for tray
+  // 4. Same folder (mods hierarchy) — backend window count if available, else heuristic fallback
+  const peerCount = file.sameFolderPeerCount ?? null;
+  if (peerCount !== null && peerCount > 0) {
+    const isMods = file.sourceLocation === "mods";
+    return {
+      type: isMods ? "same_folder" : "folder_heuristic",
+      proofLevel: isMods ? "fact" : "heuristic",
+      label: `${peerCount + 1} in this folder`,
+      peerCount,
+    };
+  }
+  // Fallback: client scan for existing data that predates the window scan
   const parentFolder = extractParentFolder(file.path);
   if (parentFolder && !GENERIC_FOLDER_NAMES.has(parentFolder.toLowerCase())) {
     const isMods = file.sourceLocation === "mods";

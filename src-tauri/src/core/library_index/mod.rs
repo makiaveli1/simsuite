@@ -291,7 +291,12 @@ pub fn list_library_files(
              EXISTS (\n\
                SELECT 1 FROM duplicates d\n\
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
-             ) AS has_duplicate\n\
+             ) AS has_duplicate,
+\
+             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+\
+             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+\
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
              LEFT JOIN bundles b ON f.bundle_id = b.id\n\
@@ -329,7 +334,12 @@ pub fn list_library_files(
              EXISTS (\n\
                SELECT 1 FROM duplicates d\n\
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
-             ) AS has_duplicate\n\
+             ) AS has_duplicate,
+\
+             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+\
+             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+\
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
              LEFT JOIN bundles b ON f.bundle_id = b.id\n\
@@ -389,6 +399,8 @@ pub fn list_library_files(
                 watch_status,
                 has_duplicate: row.get::<_, i64>(19)? != 0,
                 installed_version: None,
+                same_folder_peer_count: row.get::<_, i64>(20)?,
+                same_pack_peer_count: row.get::<_, i64>(21)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

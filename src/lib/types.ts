@@ -248,6 +248,10 @@ export interface LibraryFileRow {
   hasDuplicate?: boolean;
   /** Installed version string, if this file has a watch source with version data. */
   installedVersion?: string | null;
+  /** Same-folder peer count — files at same depth in same source area (from SQL window COUNT). */
+  sameFolderPeerCount?: number;
+  /** Same-pack peer count — files in same bundle (from SQL window COUNT). */
+  samePackPeerCount?: number;
 }
 
 export interface FolderTreeNode {
