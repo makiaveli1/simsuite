@@ -246,6 +246,12 @@ export function LibraryScreen({
       })
       .catch(() => {
         // Silently fail — the tree will load on-demand when user enters folder mode
+      })
+      .finally(() => {
+        // Phase 5ah: mark filters as loaded so loadTreeRows effect skips redundant rebuild.
+        // We must set this here (not in .then) so it also runs if the Promise resolves
+        // after the load effect has already checked lastTreeFiltersRef.current.
+        lastTreeFiltersRef.current = filters;
       });
   }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
 

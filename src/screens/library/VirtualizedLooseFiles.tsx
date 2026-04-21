@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { m } from "motion/react";
-import { rowHover, rowPress } from "../../lib/motion";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
 import { buildLibraryRowModel, type LibraryRowModel } from "./libraryDisplay";
@@ -177,7 +175,7 @@ interface VirtualRowProps {
 
 function VirtualRow({ file, model, isSelected, onSelect, style }: VirtualRowProps) {
   return (
-    <m.div
+    <div
       className={[
         "library-list-row",
         "virtualized-row",
@@ -196,8 +194,6 @@ function VirtualRow({ file, model, isSelected, onSelect, style }: VirtualRowProp
           onSelect(file);
         }
       }}
-      whileHover={rowHover}
-      whileTap={rowPress}
     >
       <div className="library-list-col library-list-col--type library-type-accent-col">
         {model.typeColor ? (
@@ -287,6 +283,6 @@ function VirtualRow({ file, model, isSelected, onSelect, style }: VirtualRowProp
           </div>
         )}
       </div>
-    </m.div>
+    </div>
   );
 }
