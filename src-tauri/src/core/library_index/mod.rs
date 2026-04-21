@@ -295,7 +295,7 @@ pub fn list_library_files(
 \
              (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -338,7 +338,7 @@ pub fn list_library_files(
 \
              (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
