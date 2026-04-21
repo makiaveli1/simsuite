@@ -53,6 +53,7 @@ import { LibraryCollectionTable } from "./library/LibraryCollectionTable";
 import { LibraryThumbnailGrid } from "./library/LibraryThumbnailGrid";
 import { LibraryDetailSheet, type LibrarySheetMode } from "./library/LibraryDetailSheet";
 import { LibraryDetailsPanel } from "./library/LibraryDetailsPanel";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
@@ -381,13 +382,18 @@ export function LibraryScreen({
       return;
     }
 
+    // Phase 5ai: creatorLearning/categoryOverride may be undefined in the preview
+    // object (LibraryFileRow spread doesn't include them). Guard to avoid crashes
+    // when the effect fires immediately after setSelected(preview) in openFile.
+    const cl = selected.creatorLearning;
+    const co = selected.categoryOverride;
     setCreatorDraft(selected.creator ?? selected.insights.creatorHints[0] ?? "");
     setAliasDraft("");
-    setLockPreference(selected.creatorLearning.lockedByUser);
-    setPreferredPathDraft(selected.creatorLearning.preferredPath ?? "");
+    setLockPreference(cl?.lockedByUser ?? false);
+    setPreferredPathDraft(cl?.preferredPath ?? "");
     setCreatorMessage(null);
-    setCategoryKindDraft(selected.categoryOverride.kind ?? selected.kind);
-    setCategorySubtypeDraft(selected.categoryOverride.subtype ?? selected.subtype ?? "");
+    setCategoryKindDraft(co?.kind ?? selected.kind);
+    setCategorySubtypeDraft(co?.subtype ?? selected.subtype ?? "");
     setCategoryMessage(null);
   }, [selected]);
 
@@ -506,6 +512,14 @@ export function LibraryScreen({
     // Phase 5y: show a minimal preview IMMEDIATELY so the sidebar does not go
     // blank while getFileDetail round-trips. Only the thumbnail + id are needed
     // from the row; everything else populates when the full detail arrives.
+    //
+    // Phase 5ai — two crash guards:
+    // 1. creatorLearning / categoryOverride are required by creator-learning and
+    //    category-override blocks in LibraryDetailsPanel, but LibraryFileRow does
+    //    not carry them (they come only from get_file_detail). Supply safe empty
+    //    defaults here so the preview is always safe to render.
+    // 2. If getFileDetail throws in Tauri, do NOT blank the sidebar — keep the
+    //    preview showing rather than wiping it.
     let previewThumbnail: string | null = null;
     try {
       previewThumbnail =
@@ -513,19 +527,40 @@ export function LibraryScreen({
         row.insights?.cachedThumbnailPreview ??
         null;
       const preview: FileDetail = {
-        ...row, // spread the row fields as a bare-minimum preview
+        ...row,
         _cardThumbnail: previewThumbnail,
-        insights: row.insights ?? { embeddedNames: [], creatorHints: [], familyHints: [], scriptNamespaces: [], versionHints: [], resourceSummary: [], safetyNotes: [], parserWarnings: [], thumbnailPreview: null, cachedThumbnailPreview: null },
-      } as FileDetail;
+        insights: row.insights ?? {
+          embeddedNames: [],
+          creatorHints: [],
+          familyHints: [],
+          scriptNamespaces: [],
+          versionHints: [],
+          resourceSummary: [],
+          safetyNotes: [],
+          parserWarnings: [],
+          thumbnailPreview: null,
+          cachedThumbnailPreview: null,
+        },
+        // Phase 5ai — required by creator-learning and category-override blocks
+        creatorLearning: {
+          lockedByUser: false,
+          preferredPath: null,
+          learnedAliases: [],
+        },
+        categoryOverride: {
+          savedByUser: false,
+          kind: null,
+          subtype: null,
+        },
+      } as unknown as FileDetail;
       setSelected(preview);
 
       const detail = await api.getFileDetail(row.id);
       if (!detail) return;
-      detail._cardThumbnail = previewThumbnail;
       setSelected(detail);
     } catch (err) {
-      console.error("openFile failed:", err);
-      setSelected(null); // clean slate on failure — avoids stale/partial sidebar
+      // Phase 5ai: keep the preview — don't blank the sidebar on detail fetch failure
+      console.error("openFile detail fetch failed:", err);
     }
   }
 
@@ -1684,38 +1719,46 @@ export function LibraryScreen({
         collapsed={inspectorCollapsed}
         onCollapse={setInspectorCollapsed}
       >
-        <LibraryDetailsPanel
-          userView={userView}
-          selectedFile={selected}
-          onOpenInspectDetails={() => setActiveLibrarySheet("inspect")}
-          onOpenHealthDetails={() => setActiveLibrarySheet("health")}
-          onOpenEditDetails={() => setActiveLibrarySheet("edit")}
-          onOpenUpdates={() => {
-            if (!selected || !onNavigateWithParams || !updatesTarget) {
-              return;
-            }
-
-            onNavigateWithParams(
-              "updates",
-              updatesTarget.mode,
-              updatesTarget.filter,
-              selected.id,
-            );
-          }}
-          relationship={relationship}
-          folderName={folderName}
-          headerRight={
-            <button
-              type="button"
-              className="inspector-collapse-btn"
-              onClick={() => setInspectorCollapsed(true)}
-              aria-label="Collapse inspector"
-              title="Collapse inspector"
-            >
-              <PanelLeftClose size={16} strokeWidth={2} />
-            </button>
+        <ErrorBoundary
+          fallback={
+            <div style={{ padding: "1rem", color: "var(--text-dim, #7f928a)", fontSize: "0.82rem" }}>
+              Details unavailable.
+            </div>
           }
-        />
+        >
+          <LibraryDetailsPanel
+            userView={userView}
+            selectedFile={selected}
+            onOpenInspectDetails={() => setActiveLibrarySheet("inspect")}
+            onOpenHealthDetails={() => setActiveLibrarySheet("health")}
+            onOpenEditDetails={() => setActiveLibrarySheet("edit")}
+            onOpenUpdates={() => {
+              if (!selected || !onNavigateWithParams || !updatesTarget) {
+                return;
+              }
+
+              onNavigateWithParams(
+                "updates",
+                updatesTarget.mode,
+                updatesTarget.filter,
+                selected.id,
+              );
+            }}
+            relationship={relationship}
+            folderName={folderName}
+            headerRight={
+              <button
+                type="button"
+                className="inspector-collapse-btn"
+                onClick={() => setInspectorCollapsed(true)}
+                aria-label="Collapse inspector"
+                title="Collapse inspector"
+              >
+                <PanelLeftClose size={16} strokeWidth={2} />
+              </button>
+            }
+          />
+        </ErrorBoundary>
       </WorkbenchInspector>
     </Workbench>
 
