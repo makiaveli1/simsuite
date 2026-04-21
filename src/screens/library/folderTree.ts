@@ -158,7 +158,7 @@ export function buildFolderTree(files: LibraryFileRow[]): { mods: FolderNode; tr
       // Patch folderSegments so the rest of the loop works normally
       // eslint-disable-next-line no-param-reassign
       (file as { __folderSegments?: string[] }).__folderSegments =
-        fullSegs.slice(rootIdx + 1); // strip root itself → remaining path
+        fullSegs.slice(rootIdx); // strip root itself → remaining path
     }
 
     const workingSegments = (file as { __folderSegments?: string[] }).__folderSegments ?? folderSegments;
