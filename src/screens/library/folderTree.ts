@@ -121,6 +121,7 @@ function finalizeNode(node: MutableFolderNode): FolderNode {
     children,
     totalFileCount,
     childFolderCount: children.length,
+    files: node.files ?? [],
   };
 }
 
@@ -236,7 +237,8 @@ export function getFolderContents(
   files: LibraryFileRow[],
   cachedTree?: { mods: FolderNode; tray: FolderNode },
 ): { subfolders: FolderNode[]; files: LibraryFileRow[]; rootFiles: LibraryFileRow[] } {
-  const folderTree = cachedTree ?? getCachedTree(files);
+  // Reject stale Rust preloader tree (no files) — loadTreeRows builds a proper tree with files
+  const folderTree = (cachedTree && cachedTree.mods.files !== undefined) ? cachedTree : getCachedTree(files);
   const roots: FolderNode[] = [folderTree.mods, folderTree.tray];
 
   console.log('[folderTree] getFolderContents path=', folderPath, 'files=', files.length);
