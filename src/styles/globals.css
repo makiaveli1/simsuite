@@ -4653,11 +4653,25 @@ h2,
 .ledger-row,
 .detail-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.6rem;
   padding: 0.48rem 0;
   border-top: 1px solid var(--line);
+  min-width: 0; /* prevent overflow — rows shrink to fit parent */
+}
+
+.detail-row > span:first-child {
+  flex-shrink: 0; /* label column doesn't shrink */
+  padding-right: 0.5rem;
+}
+
+.detail-row > strong {
+  flex: 1; /* value column takes remaining space */
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  text-align: right; /* keep labels left-aligned, values right-aligned */
 }
 
 .detail-row--block {

@@ -3350,6 +3350,29 @@ pub fn apply_category_audit(
 }
 
 #[tauri::command]
+pub async fn reveal_file_in_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(&parent)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn save_category_override(
     app: AppHandle,
     file_id: i64,

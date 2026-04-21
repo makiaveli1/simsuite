@@ -267,13 +267,20 @@ where
              VALUES (?1, ?2, ?3)",
         )?;
 
+        // Phase 5an fix: batch progress events — emit every 50 files, not every file.
+        // With 13k files, one event per file creates ~13k rapid-fire Tauri events
+        // that can saturate the event loop and cause UI lag during scan.
+        // Batch to every 50 files for responsive progress without event flood.
+        const CLASSIFY_BATCH: usize = 50;
         for (index, file) in discovered.iter().enumerate() {
-            emit(ScanProgress {
-                total_files: discovered.len(),
-                processed_files: index + 1,
-                current_item: file.filename.clone(),
-                phase: ScanPhase::Classifying,
-            })?;
+            if index % CLASSIFY_BATCH == 0 || index == discovered.len() - 1 {
+                emit(ScanProgress {
+                    total_files: discovered.len(),
+                    processed_files: index + 1,
+                    current_item: file.filename.clone(),
+                    phase: ScanPhase::Classifying,
+                })?;
+            }
 
             let path_key = file.path.to_string_lossy().to_string();
             let cached = cached_files
