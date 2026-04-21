@@ -254,7 +254,7 @@ export function LibraryDetailsPanel({
   if (folderName) {
     const folderSegments = folderName.split("/").filter(Boolean);
     snapshotLines.push({
-      label: "In folder",
+      label: "Location",
       value:
         folderSegments.length > 1 ? (
           <span className="detail-folder-path">

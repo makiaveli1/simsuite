@@ -429,17 +429,17 @@ export function LibraryScreen({
 
     setRows(result);
 
-    // If the previously selected file is no longer in the filtered results,
-    // clear selection so the inspector doesn't show a phantom file.
+    // Phase 5am fix: Only auto-fetch detail if a file was actually selected.
+    // Page navigation should NOT auto-select the first item — that causes a
+    // distracting detail pane flash on every page change.
     const currentSelectedId = preferredSelectedId ?? selected?.id;
-    const stillInResults = currentSelectedId != null && result.items.some((r) => r.id === currentSelectedId);
-    const detailId = stillInResults ? currentSelectedId : result.items[0]?.id;
+    const wasSelectedAndStillInResults = currentSelectedId != null && result.items.some((r) => r.id === currentSelectedId);
 
-    if (detailId) {
-      setSelected(await api.getFileDetail(detailId));
+    if (wasSelectedAndStillInResults && currentSelectedId != null) {
+      setSelected(await api.getFileDetail(currentSelectedId));
     } else {
-      setSelected(null);
-      setActiveLibrarySheet(null);
+      // Keep whatever was selected — don't wipe it on page change.
+      // If nothing was selected, keep nothing selected.
     }
   }
 

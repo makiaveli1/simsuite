@@ -2294,13 +2294,15 @@
 /* Detail folder path (breadcrumb in sidebar) */
 .detail-folder-path {
   display: inline-flex;
-  align-items: baseline;
+  align-items: flex-start; /* override baseline so wrapped lines stack visually */
   flex-wrap: wrap;
-  gap: 0.1rem 0.2rem;
+  gap: 0.1rem 0.3rem;
   font-size: 0.72rem;
-  line-height: 1.4;
-  min-width: 0; /* allow shrinking when parent is constrained */
+  line-height: 1.5; /* taller line-height for better wrapped line spacing */
+  min-width: 0;
   max-width: 100%;
+  width: 100%; /* force full width so wrapping has room */
+  box-sizing: border-box;
 }
 
 .detail-folder-path__segment-wrap {
@@ -2311,6 +2313,9 @@
 
 .detail-folder-path__segment {
   color: var(--text-soft);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .detail-folder-path__segment--current {

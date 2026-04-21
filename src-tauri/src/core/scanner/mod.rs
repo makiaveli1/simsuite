@@ -896,7 +896,13 @@ pub(crate) fn insert_parsed_file(
     hash: Option<String>,
 ) -> AppResult<usize> {
     let mut classification = parse_filename(&file.filename, seed_pack);
-    let inspection = inspect_file(&file.path, &file.extension, seed_pack).unwrap_or_default();
+    let inspection = match inspect_file(&file.path, &file.extension, seed_pack) {
+        Ok(insp) => insp,
+        Err(err) => {
+            tracing::warn!("inspect_file failed for {}: {err}", file.path.display());
+            Default::default()
+        }
+    };
     apply_folder_creator_hint(&mut classification, file, seed_pack);
     apply_inspection_hints(&mut classification, &inspection, seed_pack);
     apply_creator_profile_hints(&mut classification, seed_pack);

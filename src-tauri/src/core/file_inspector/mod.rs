@@ -3,6 +3,7 @@ use std::{
     fs::File,
     io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
+    sync::OnceLock,
 };
 
 use tracing::{debug, warn};
@@ -28,6 +29,11 @@ const MAX_SCRIPT_HINT_BYTES: u64 = 128 * 1024;
 const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 const MAX_VERSION_SIGNALS: usize = 16;
+
+/// Parsed localthumbcache entries — parsed once on first access, then cached.
+/// Re-parsing the ~300MB localthumbcache.package for every .package file is
+/// the primary scan freeze cause (Phase 5am fix).
+static LOCALTHUMBCACHE_ENTRIES: OnceLock<Vec<ThumbnailEntry>> = OnceLock::new();
 const MIN_FALLBACK_CREATOR_HINT_LEN: usize = 3;
 const STRING_SUPPORT_HINT_TOKENS: &[&str] = &[
     "string",
@@ -1965,24 +1971,24 @@ fn get_localthumbcache_path() -> Option<std::path::PathBuf> {
 /// Parse the localthumbcache.package DBPF file and return all thumbnail entries.
 /// Each entry maps a 64-bit Instance ID → DDS image data location.
 /// Returns an empty vec if the file cannot be read (e.g., not found, WSL).
-pub fn parse_localthumbcache() -> Vec<ThumbnailEntry> {
-    let Some(path) = get_localthumbcache_path() else {
-        return Vec::new();
-    };
-
-    let Ok(mut file) = std::fs::File::open(&path) else {
-        return Vec::new();
-    };
-
-    let Ok(header) = parse_dbpf_header_internal(&mut file) else {
-        return Vec::new();
-    };
-
-    let Ok(buffer) = read_localthumbcache_index(&mut file, header.index_offset, header.index_size) else {
-        return Vec::new();
-    };
-
-    parse_localthumbcache_entries(&buffer).unwrap_or_default()
+/// Returns cached localthumbcache entries. Parsed exactly once on first call,
+/// then stored in a static. Subsequent calls return the cached Vec reference.
+pub fn parse_localthumbcache() -> &'static Vec<ThumbnailEntry> {
+    LOCALTHUMBCACHE_ENTRIES.get_or_init(|| {
+        let Some(path) = get_localthumbcache_path() else {
+            return Vec::new();
+        };
+        let Ok(mut file) = std::fs::File::open(&path) else {
+            return Vec::new();
+        };
+        let Ok(header) = parse_dbpf_header_internal(&mut file) else {
+            return Vec::new();
+        };
+        let Ok(buffer) = read_localthumbcache_index(&mut file, header.index_offset, header.index_size) else {
+            return Vec::new();
+        };
+        parse_localthumbcache_entries(&buffer).unwrap_or_default()
+    })
 }
 
 fn parse_dbpf_header_internal(file: &mut std::fs::File) -> AppResult<DbpfHeader> {
