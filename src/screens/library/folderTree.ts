@@ -241,25 +241,18 @@ export function getFolderContents(
   const folderTree = (cachedTree && cachedTree.mods.files !== undefined) ? cachedTree : getCachedTree(files);
   const roots: FolderNode[] = [folderTree.mods, folderTree.tray];
 
-  console.log('[folderTree] getFolderContents path=', folderPath, 'files=', files.length);
-  console.log('[folderTree] mods total=', folderTree.mods.totalFileCount, 'tray total=', folderTree.tray.totalFileCount);
-  console.log('[folderTree] mods children=', folderTree.mods.children.length, 'mods.files=', folderTree.mods.files?.length ?? 0);
-
+  // Phase 5aj: removed debug console.log spam — these fired on every navigation,
+  // adding string allocation and DevTools overhead to the hot path.
   // Root level: Mods and Tray as subfolders
   if (folderPath === null) {
     const rootFiles = getAllFilesForNode(folderTree.mods).concat(getAllFilesForNode(folderTree.tray));
-    console.log('[folderTree] root level: rootFiles.length=', rootFiles.length);
     const subfolders = roots.filter((r) => r.totalFileCount > 0);
-    console.log('[folderTree] root level: subfolders=', subfolders.length);
-    console.log('[folderTree] root level: subfolder names=', subfolders.map(s => s.name).join(', '));
     return { subfolders, files: [], rootFiles };
   }
 
   // Find the clicked folder node
-  console.log('[folderTree] non-root: looking for path=', folderPath);
   let activeNode: FolderNode | undefined;
   outer: for (const root of roots) {
-    console.log('[folderTree]   checking root fullPath=', root.fullPath, 'children=', root.children.map(c => c.fullPath).join(', '));
     if (root.fullPath === folderPath) {
       activeNode = root;
       break;
@@ -271,16 +264,13 @@ export function getFolderContents(
       }
     }
   }
-  console.log('[folderTree] activeNode found:', activeNode?.fullPath, activeNode?.name);
 
   if (!activeNode) {
     return { subfolders: [], files: [], rootFiles: [] };
   }
 
   // Phase 5ah: Use pre-computed file ids on the node — O(depth) not O(n)
-  console.log('[folderTree] activeNode.files=', activeNode?.files?.length ?? 0, 'directFileCount=', activeNode?.directFileCount, 'totalFileCount=', activeNode?.totalFileCount);
   const allFiles = getAllFilesForNode(activeNode!);
-  console.log('[folderTree] allFiles from getAllFilesForNode:', allFiles.length);
 
   // Phase 5ab dedupe: if at a root node (Mods/Tray), separate direct from subfolder files
   const rootFiles = allFiles.filter((f) => {

@@ -476,7 +476,8 @@ export function LibraryScreen({
       prevTreeCacheRef.current = tree;
       if (filters) lastTreeFiltersRef.current = filters;
     } catch (err) {
-      console.error("loadTreeRows failed:", err);
+      // Silently fail — the app continues with whatever data it already had cached.
+      void err;
     } finally {
       setIsTreeLoading(false);
     }

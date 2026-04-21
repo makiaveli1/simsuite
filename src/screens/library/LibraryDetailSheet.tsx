@@ -120,24 +120,13 @@ export function LibraryDetailSheet({
 
             <div className="workbench-sheet-body library-detail-sheet-body">
               <div className="library-detail-sheet-lead">
+                {/* Phase 5aj: lead = filename anchor + actionable badges only.
+                    Kind, subtype, family context, creator — all already in the sidebar.
+                    Evidence board carries what is genuinely new to the detail view. */}
                 <div>
                   <span className="section-label">Selected</span>
                   <strong title={selectedFile.filename}>{selectedFile.filename}</strong>
-                  <p className="workspace-toolbar-copy">
-                    {friendlyTypeLabel(selectedFile.kind)}
-                  </p>
-                  {inspectIdentityLabel ? (
-                    <p className="library-detail-sheet-identity" title={inspectIdentityLabel}>
-                      {inspectIdentityLabel}
-                    </p>
-                  ) : selectedFile.subtype?.trim() ? (
-                    <p className="library-detail-sheet-identity" title={selectedFile.subtype}>
-                      {selectedFile.subtype}
-                    </p>
-                  ) : null}
-                  {inspectFamilyContext ? (
-                    <p className="workspace-toolbar-copy">{inspectFamilyContext}</p>
-                  ) : null}
+                  {/* Actionable badges: version + content type — genuinely useful at a glance */}
                   {mode === "inspect" && (inspectVersionBadge || inspectContentBadge) ? (
                     <div className="tag-list" style={{ marginTop: "0.6rem" }}>
                       {inspectVersionBadge ? (
@@ -148,6 +137,7 @@ export function LibraryDetailSheet({
                       ) : null}
                     </div>
                   ) : null}
+                  {/* Preview strip: type-aware clues pulled from inside the file */}
                   {mode === "inspect" && inspectPreviewStrip?.summaryLabel ? (
                     <div className="library-inspector-preview-strip">
                       {userView === "beginner" ? (
@@ -267,16 +257,7 @@ export function LibraryDetailSheet({
                   </div>
                 )}
 
-                <div className="library-detail-sheet-meta">
-                  <span className="ghost-chip">
-                    {describeCreatorForInspector(selectedFile).label}
-                    {describeCreatorForInspector(selectedFile).suffix
-                      ? ` (${describeCreatorForInspector(selectedFile).suffix})`
-                      : null}
-                  </span>
-                  {/* Confidence communicated via badge — no raw % needed */}
-                </div>
-              </div>
+</div>
 
               <DockSectionStack
                 key={`librarySheetStack:${selectedFile.id}:${mode}:${userView}`}

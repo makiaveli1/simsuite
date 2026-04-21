@@ -1487,6 +1487,62 @@
   line-height: 1;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   PHASE 5AJ — DENSITY RAIL: icon-only compact pill
+   ═══════════════════════════════════════════════════════════════ */
+.library-density-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 6px 0 5px;
+  height: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.density-rail-icon {
+  color: rgba(175, 192, 184, 0.45);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.density-rail-icon--dense { opacity: 0.7; }
+.density-rail-icon--spacious { opacity: 0.5; }
+
+.density-rail-track {
+  position: relative;
+  width: 48px;
+  height: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.density-rail-fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3px;
+  background: #f97316;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+  transition: width 0.06s;
+}
+
+.density-rail-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+}
+
 /* ── Old slider system: removed ─────────────────────────────── */
 .library-slider-control { display: none !important; }
 .library-card-slider { display: none !important; }

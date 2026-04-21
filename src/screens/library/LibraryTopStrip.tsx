@@ -217,33 +217,36 @@ export function LibraryTopStrip({
             </button>
           </div>
 
-          {/* ── Density widget — only meaningful in grid view ── */}
+          {/* ── Density rail — Phase 5aj: compact icon-only pill ── */}
           {viewMode === "grid" && (
-          <div className="library-density-widget" aria-label="Card density">
-            <div className="library-density-widget__label" aria-hidden="true">
-              dense <span className="library-density-widget__arrow">⟷</span> spacious
-            </div>
-            <div className="library-density-widget__control">
-              <div
-                className="library-density-fill-track"
-                style={{ width: `${normalizedDensity}%` }}
-                aria-hidden="true"
+            <div className="library-density-rail" aria-label="Card density">
+              <Grid3X3
+                size={11}
+                strokeWidth={1.8}
+                className="density-rail-icon density-rail-icon--dense"
               />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={normalizedDensity}
-                onChange={(event) => onDensityChange(clampDensity(Number(event.target.value)))}
-                className="library-density-slider"
-                aria-label={`Card density ${Math.round(normalizedDensity)} percent`}
+              <div className="density-rail-track">
+                <div
+                  className="density-rail-fill"
+                  style={{ width: `${normalizedDensity}%` }}
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={normalizedDensity}
+                  onChange={(event) => onDensityChange(clampDensity(Number(event.target.value)))}
+                  className="density-rail-slider"
+                  aria-label={`Card density ${Math.round(normalizedDensity)} percent`}
+                />
+              </div>
+              <LayoutList
+                size={13}
+                strokeWidth={1.8}
+                className="density-rail-icon density-rail-icon--spacious"
               />
             </div>
-            <div className="library-density-widget__hint">
-              ≈{Math.max(2, Math.round(8 - (normalizedDensity / 100) * 5))} cards/row
-            </div>
-          </div>
           )}
 
           {flags.showAdvancedFilters ? (
