@@ -12869,7 +12869,7 @@ select:focus-visible {
 
 .detail-row {
   display: flex;
-  align-items: center;     /* was flex-start — row now stretches to tallest child (pill) */
+  align-items: flex-start; /* was center — allows breadcrumb paths to wrap naturally */
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.8rem;

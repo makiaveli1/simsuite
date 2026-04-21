@@ -2294,15 +2294,19 @@
 /* Detail folder path (breadcrumb in sidebar) */
 .detail-folder-path {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.05rem;
+  gap: 0.1rem 0.2rem;
   font-size: 0.72rem;
+  line-height: 1.4;
+  min-width: 0; /* allow shrinking when parent is constrained */
+  max-width: 100%;
 }
 
 .detail-folder-path__segment-wrap {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .detail-folder-path__segment {
@@ -2317,6 +2321,7 @@
 .detail-folder-path__sep {
   color: var(--text-dim);
   margin: 0 0.05rem;
+  white-space: nowrap; /* separators never wrap alone */
 }
 
 /* View toggle — Phase 5w now has 3 buttons with labels */
