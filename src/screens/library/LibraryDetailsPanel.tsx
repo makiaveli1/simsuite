@@ -248,36 +248,9 @@ export function LibraryDetailsPanel({
     }
   }
 
-  // ─── Folder + relationship — all users get folder; seasoned+ get relationship ─
-  // "In folder" is universally useful — helps any player orient in a large library
-  // Relationship (same set / same pack) is a deeper signal for seasoned+ users
-  if (folderName) {
-    const folderSegments = folderName.split("/").filter(Boolean);
-    snapshotLines.push({
-      label: "Location",
-      value:
-        folderSegments.length > 1 ? (
-          <span className="detail-folder-path">
-            {folderSegments.map((segment, index) => (
-              <span key={`${segment}-${index}`} className="detail-folder-path__segment-wrap">
-                <span
-                  className={`detail-folder-path__segment${index === folderSegments.length - 1 ? " detail-folder-path__segment--current" : ""}`}
-                >
-                  {segment}
-                </span>
-                {index < folderSegments.length - 1 ? (
-                  <span className="detail-folder-path__sep"> / </span>
-                ) : null}
-              </span>
-            ))}
-          </span>
-        ) : (
-          <span className="ghost-chip">{folderName}</span>
-        ),
-    });
-  }
-
-  // Relationship signal — shown in seasoned+ (not casual)
+  // ─── Relationship signal — shown in seasoned+ (not casual) ──────────────
+  // Location row removed (Ariadne Phase 5an): redundant with More Details full path.
+  // "Open folder" button is the actionable alternative.
   if (!isCasual && relationship && relationship.type !== "none") {
     snapshotLines.push({
       label: "Related",
