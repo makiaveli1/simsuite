@@ -1,3 +1,4 @@
+use std::path::Path;
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
 
 use crate::{
@@ -518,6 +519,17 @@ pub fn get_file_detail(
                 .collect::<Result<Vec<String>, _>>()?;
             detail.duplicates_count = duplicate_types.len();
             detail.duplicate_types = duplicate_types;
+
+            // Phase 5an: resolve thumbnails on-demand if they were deferred during scan.
+            // During scan, thumbnails are skipped (THUMBNAIL_DEFERRED=true) to avoid
+            // 3× DBPF re-parse per file. Here we do the deferred thumbnail work.
+            use crate::core::file_inspector::resolve_package_thumbnails_deferred;
+            let (embedded_thumb, cached_thumb) =
+                resolve_package_thumbnails_deferred(Path::new(&detail.path));
+            detail.insights.thumbnail_preview =
+                detail.insights.thumbnail_preview.or(embedded_thumb);
+            detail.insights.cached_thumbnail_preview =
+                detail.insights.cached_thumbnail_preview.or(cached_thumb);
 
             Ok(Some(detail))
         }

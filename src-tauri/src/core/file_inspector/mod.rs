@@ -31,7 +31,11 @@ const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 const MAX_VERSION_SIGNALS: usize = 16;
 
-/// Set a timeout on a file handle so that read operations on corrupt files
+/// Flag to defer thumbnail resolution out of the scan hot path.
+/// When true, inspect_package returns without resolving thumbnails.
+/// Thumbnails are resolved on-demand via resolve_package_thumbnails_deferred().
+/// This prevents 3× DBPF re-parse per package file during scan (Phase 5an critical fix).
+pub const THUMBNAIL_DEFERRED: bool = true;
 /// do not hang indefinitely. Used by extract_embedded_thum to prevent scan hangs
 /// on packages with invalid offsets (Phase 5an fix).
 #[cfg(target_os = "windows")]
@@ -199,10 +203,11 @@ pub fn inspect_file(
     path: &Path,
     extension: &str,
     seed_pack: &SeedPack,
+    defer_thumbnails: bool,
 ) -> AppResult<InspectionOutcome> {
     match extension {
         ".ts4script" => inspect_ts4script(path, seed_pack),
-        ".package" => inspect_package(path, seed_pack),
+        ".package" => inspect_package(path, seed_pack, defer_thumbnails),
         _ => Ok(InspectionOutcome::default()),
     }
 }
@@ -365,7 +370,7 @@ fn clean_ts4script_identity_stem(value: &str) -> Option<String> {
     Some(stem.to_owned())
 }
 
-fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOutcome> {
+fn inspect_package(path: &Path, seed_pack: &SeedPack, defer_thumbnails: bool) -> AppResult<InspectionOutcome> {
     let mut file = File::open(path)?;
     let header = match parse_dbpf_header(&mut file) {
         Ok(header) => header,
@@ -408,8 +413,19 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or_default();
-    let (embedded_thumbnail, cached_thumbnail) =
-        resolve_package_thumbnails(path, filename);
+
+    // Phase 5an critical fix: defer thumbnail resolution out of scan hot path.
+    // Without deferral, every package file causes 3× DBPF re-parse:
+    //   - inspect_package (1×)
+    //   - extract_embedded_thum re-parses DBPF index (2×)
+    //   - try_get_package_cached_thumbnail re-parses DBPF index again (3×)
+    // defer_thumbnails=true skips all 3 thumbnail resolutions during scan.
+    // Thumbnails are resolved on-demand when get_file_detail is called.
+    let (embedded_thumbnail, cached_thumbnail) = if !defer_thumbnails {
+        resolve_package_thumbnails(path, filename)
+    } else {
+        (None, None)
+    };
 
     Ok(InspectionOutcome {
         insights: FileInsights {
@@ -431,6 +447,14 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOut
         kind_confidence_floor: resource_kind.confidence_floor,
     })
 }
+/// Resolve thumbnails on-demand for a file already in the DB.
+/// Called from get_file_detail when deferred thumbnails were skipped during scan.
+/// Performs the 2nd and 3rd DBPF parses that were deferred during scan.
+/// Returns (embedded_thumbnail, cached_thumbnail) base64 PNG strings.
+pub fn resolve_package_thumbnails_deferred(path: &Path) -> (Option<String>, Option<String>) {
+    resolve_package_thumbnails(path, "")
+}
+
 // ─── Thumbnail Extraction ───────────────────────────────────────────────────────
 
 /// Returns base64-encoded PNG of the first THUM resource found, or None.

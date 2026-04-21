@@ -235,7 +235,7 @@ fn refresh_profile_file_insights_if_needed(
         return;
     }
 
-    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack) else {
+    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
         return;
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);
@@ -275,7 +275,7 @@ fn refresh_existing_install_file_insights_if_needed(
         return;
     }
 
-    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack) else {
+    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
         return;
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);

@@ -1077,7 +1077,7 @@ fn restore_deleted_file_record(
         })
         .unwrap_or_default();
     let parsed = parse_filename(&filename, seed_pack);
-    let inspection = inspect_file(restored_path, &extension, seed_pack)?;
+    let inspection = inspect_file(restored_path, &extension, seed_pack, false)?;
     let creator_name = inspection
         .creator_hint
         .clone()

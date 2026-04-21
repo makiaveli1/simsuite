@@ -19,7 +19,7 @@ use crate::{
     commands::emit_scan_progress,
     core::{
         bundle_detector, duplicate_detector,
-        file_inspector::{inspect_file, InspectionOutcome},
+        file_inspector::{inspect_file, THUMBNAIL_DEFERRED, InspectionOutcome},
         filename_parser::{detect_creator_hint, parse_filename, FilenameClassification},
     },
     database,
@@ -903,7 +903,7 @@ pub(crate) fn insert_parsed_file(
     hash: Option<String>,
 ) -> AppResult<usize> {
     let mut classification = parse_filename(&file.filename, seed_pack);
-    let inspection = match inspect_file(&file.path, &file.extension, seed_pack) {
+    let inspection = match inspect_file(&file.path, &file.extension, seed_pack, THUMBNAIL_DEFERRED) {
         Ok(insp) => insp,
         Err(err) => {
             tracing::warn!("inspect_file failed for {}: {err}", file.path.display());
