@@ -3374,9 +3374,9 @@ pub async fn reveal_file_in_folder(path: String) -> Result<(), String> {
 
         if target_exists && resolved.is_file() {
             let normalized = resolved.to_string_lossy().replace('/', "\\");
-            let select_arg = format!("/select,{}", normalized);
             std::process::Command::new("explorer.exe")
-                .arg(select_arg)
+                .arg("/select,")
+                .arg(&normalized)
                 .spawn()
                 .map_err(|e| format!("Explorer launch failed for '{}': {}", normalized, e))?;
             return Ok(());
