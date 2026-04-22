@@ -14674,3 +14674,153 @@ select:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(120, 240, 161, 0.32) !important;
 }
 
+
+/* ─── Phase 5ao: Relationship cue in grid card reveal ────────────────────── */
+
+.library-card-reveal-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.library-reveal-relationship {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  margin-top: 0.2rem;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.library-reveal-relationship--confirmed {
+  color: #4caf82;
+  background: rgba(76, 175, 130, 0.1);
+  border: 1px solid rgba(76, 175, 130, 0.25);
+}
+
+.library-reveal-relationship--likely {
+  color: #ffb300;
+  background: rgba(255, 179, 0, 0.1);
+  border: 1px solid rgba(255, 179, 0, 0.25);
+}
+
+.library-reveal-relationship--possible {
+  color: #90a4ae;
+  background: rgba(144, 164, 174, 0.08);
+  border: 1px solid rgba(144, 164, 174, 0.2);
+}
+
+.library-reveal-relationship-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.library-reveal-relationship-dot--confirmed { background: #4caf82; }
+.library-reveal-relationship-dot--likely   { background: #ffb300; }
+.library-reveal-relationship-dot--possible { background: #90a4ae; }
+
+
+/* ─── Phase 5ao: Row relationship cue ───────────────────────────────────── */
+
+/* Inline in the name cell, below identityLabel */
+.library-row-rel-cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  opacity: 0.8;
+  letter-spacing: 0.03em;
+}
+
+.library-row-rel-cue-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Confirmed / green */
+.library-row-rel-cue--confirmed,
+.library-row-rel-cue-dot--confirmed { color: #4caf82; background: rgba(76,175,130,0.15); }
+.library-row-rel-cue--confirmed { background: rgba(76,175,130,0.08); border: 1px solid rgba(76,175,130,0.2); }
+
+/* Likely / amber */
+.library-row-rel-cue--likely,
+.library-row-rel-cue-dot--likely { color: #ffb300; }
+.library-row-rel-cue--likely { background: rgba(255,179,0,0.08); border: 1px solid rgba(255,179,0,0.2); }
+
+/* Possible / slate */
+.library-row-rel-cue--possible,
+.library-row-rel-cue-dot--possible { color: #90a4ae; }
+.library-row-rel-cue--possible { background: rgba(144,164,174,0.06); border: 1px solid rgba(144,164,174,0.15); }
+
+/* ─── Phase 5ao: Tree node clue indicators ──────────────────────────────── */
+
+/* Dominant-kind badge on tree nodes */
+.tree-node-dominant-kind {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.05rem 0.28rem;
+  border-radius: 3px;
+  opacity: 0.75;
+  margin-left: 0.25rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Issue dot next to count badge — attached to the count badge element */
+.tree-node-issue-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: 0.2rem;
+  vertical-align: middle;
+}
+
+.tree-node-issue-dot--warning  { background: #ffb300; }
+.tree-node-issue-dot--duplicate { background: #ef5350; }
+.tree-node-issue-dot--mixed   {
+  background: conic-gradient(#ef5350 50%, #ffb300 50%);
+}
+/* ─── Phase 5ao: Tree node clue CSS (continued) ─────────────────────────── */
+
+/* Folder tree clue container */
+.folder-tree-node-clue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.2rem;
+  flex-shrink: 0;
+}
+
+/* Dominant-kind badges on tree nodes — use same color as type pills */
+.tree-node-dominant-kind {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.05rem 0.28rem;
+  border-radius: 3px;
+  opacity: 0.8;
+  margin-left: 0.15rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ─── Phase 5aa: Library Redesign CSS (unchanged) ──────────────────────────
+   The code below is preserved — do not edit it for Phase 5ao work.
+*/

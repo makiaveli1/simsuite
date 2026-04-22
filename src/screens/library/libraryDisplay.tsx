@@ -140,6 +140,9 @@ export interface LibraryCardModel {
   /** Color swatches extracted from embeddedNames / familyHints keywords */
   colorSwatches: string[];
 
+  // Relationship cue — derived from backend window fields (Phase 5ao)
+  relationshipCue?: RelationshipCue;
+
   // The raw row for click handling
   row: LibraryFileRow;
   /** Base64 PNG thumbnail: cached (localthumbcache) or embedded (THUM resource) */
@@ -476,6 +479,8 @@ export function buildLibraryCardModel(
     versionLabel,
     colorSwatches: extractColorSwatches(allCasNames, row.insights?.familyHints ?? []),
     row,
+    // Relationship cue — derived from backend window fields (Phase 5ao)
+    relationshipCue: deriveRelationshipCue(computeFileRelationship(row, [])) ?? undefined,
   };
 }
 

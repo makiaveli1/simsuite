@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import type { FolderNode } from "./folderTree";
+import type { LibraryFileRow } from "../../lib/types";
+import { computeTreeClue, type FolderTreeClue } from "./libraryDisplay";
 
 interface FolderTreePaneProps {
   tree: FolderNode;
@@ -34,7 +36,7 @@ export function FolderTreePane({ tree, activePath, onNavigate }: FolderTreePaneP
     });
   }, [activePath, tree.fullPath]);
 
-  return renderNode(tree, activePath, expandedPaths, setExpandedPaths, onNavigate);
+  return renderNode(tree, activePath, expandedPaths, setExpandedPaths, onNavigate, tree.rootFiles ?? [], tree);
 }
 
 function renderNode(
@@ -43,6 +45,8 @@ function renderNode(
   expandedPaths: Set<string>,
   setExpandedPaths: Dispatch<SetStateAction<Set<string>>>,
   onNavigate: (path: string) => void,
+  allFiles: LibraryFileRow[],
+  treeRoots: FolderNode,
 ) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedPaths.has(node.fullPath);
@@ -88,12 +92,41 @@ function renderNode(
         <span className="folder-count-badge">
           {node.totalFileCount + (node.rootFiles?.length ?? 0)}
         </span>
+        {/* Phase 5ao: tree node clue — dominant kind + issue dot */}
+        {(() => {
+          const clue = computeTreeClue(allFiles, { fullPath: node.fullPath, sourceLocation: node.fullPath.startsWith("Mods") ? "mods" : node.fullPath.startsWith("Tray") ? "tray" : "mods" });
+          if (clue.issueState === "none" && !clue.dominantKind) return null;
+          return (
+            <span className="folder-tree-node-clue">
+              {clue.dominantKind ? (
+                <span
+                  className={`tree-node-dominant-kind type-pill--${clue.dominantKind.replace(/([A-Z])/g, "-$1").toLowerCase().replace(/^-/, "")}`}
+                  title={`Mostly ${clue.dominantKind} (${Math.round(clue.dominantKindShare ?? 0)}%)`}
+                >
+                  {clue.dominantKind.replace(/([A-Z])/g, " $1").trim()}
+                </span>
+              ) : null}
+              {clue.issueState !== "none" && (
+                <span
+                  className={`tree-node-issue-dot tree-node-issue-dot--${clue.issueState === "mixed" ? "mixed" : clue.issueState === "warning" ? "warning" : "duplicate"}`}
+                  title={
+                    clue.issueState === "mixed"
+                      ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""} · ${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
+                      : clue.issueState === "warning"
+                        ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""}`
+                        : `${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
+                  }
+                />
+              )}
+            </span>
+          );
+        })()}
       </button>
 
       {hasChildren && isExpanded ? (
         <div className="folder-tree-children">
           {node.children.map((child) =>
-            renderNode(child, activePath, expandedPaths, setExpandedPaths, onNavigate),
+            renderNode(child, activePath, expandedPaths, setExpandedPaths, onNavigate, allFiles, treeRoots),
           )}
         </div>
       ) : null}

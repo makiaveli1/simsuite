@@ -228,6 +228,16 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
                             {model.previewSource === 'embedded' ? 'EM' : model.previewSource === 'cache' ? 'CH' : 'EX'}
                           </span>
                         )}
+                        {/* Phase 5ao: relationship cue in reveal layer */}
+                        {model.relationshipCue && (
+                          <span
+                            className={`library-reveal-relationship library-reveal-relationship--${model.relationshipCue.confidenceLabel.toLowerCase()}`}
+                            title={model.relationshipCue.description}
+                          >
+                            <span className={`library-reveal-relationship-dot library-reveal-relationship-dot--${model.relationshipCue.confidenceLabel.toLowerCase()}`} />
+                            {model.relationshipCue.compactLabel}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
