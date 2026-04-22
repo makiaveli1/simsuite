@@ -235,6 +235,8 @@ pub fn list_library_files(
     connection: &Connection,
     query: LibraryQuery,
 ) -> AppResult<LibraryListResponse> {
+    let include_previews = query.include_previews.unwrap_or(true);
+    let compact_paged_rows = query.limit.is_some();
     let (filters, params) = build_filters(&query);
     let order_by = build_order_by(query.sort_by);
 
@@ -396,7 +398,11 @@ pub fn list_library_files(
                 relative_depth: row.get(14)?,
                 safety_notes: parse_string_array(row.get::<_, String>(15)?),
                 parser_warnings: parse_string_array(row.get::<_, String>(16)?),
-                insights: parse_insights(row.get::<_, Option<String>>(17)?),
+                insights: compact_library_row_insights(
+                    parse_insights(row.get::<_, Option<String>>(17)?),
+                    include_previews,
+                    compact_paged_rows,
+                ),
                 watch_status,
                 has_duplicate: row.get::<_, i64>(19)? != 0,
                 installed_version: None,
@@ -666,6 +672,29 @@ fn parse_insights(value: Option<String>) -> FileInsights {
         Some(v) => serde_json::from_str(&v).unwrap_or_default(),
         None => FileInsights::default(),
     }
+}
+
+fn compact_library_row_insights(
+    mut insights: FileInsights,
+    include_previews: bool,
+    compact: bool,
+) -> FileInsights {
+    if !include_previews {
+        insights.thumbnail_preview = None;
+        insights.cached_thumbnail_preview = None;
+    }
+
+    if compact {
+        insights.resource_summary.truncate(1);
+        insights.script_namespaces.truncate(3);
+        insights.embedded_names.truncate(4);
+        insights.creator_hints.truncate(2);
+        insights.version_hints.truncate(1);
+        insights.version_signals.truncate(1);
+        insights.family_hints.truncate(4);
+    }
+
+    insights
 }
 
 fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppResult<Vec<String>> {

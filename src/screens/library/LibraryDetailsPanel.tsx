@@ -22,7 +22,6 @@ import {
   type FileRelationship,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
-import { api } from "../../lib/api";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
 
 interface LibraryDetailsPanelProps {
@@ -32,6 +31,7 @@ interface LibraryDetailsPanelProps {
   onOpenHealthDetails: () => void;
   onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
+  onOpenFolder?: (path: string) => void;
   /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
   headerRight?: ReactNode;
   /** Pre-computed relationship signal from LibraryScreen. */
@@ -47,6 +47,7 @@ export function LibraryDetailsPanel({
   onOpenHealthDetails,
   onOpenEditDetails,
   onOpenUpdates,
+  onOpenFolder = () => {},
   headerRight,
   relationship: relationshipProp,
   folderName: folderNameProp,
@@ -530,7 +531,7 @@ export function LibraryDetailsPanel({
                 type="button"
                 className="secondary-action"
                 onClick={() => {
-                  void api.revealFileInFolder(selectedFile.path);
+                  onOpenFolder(selectedFile.path);
                 }}
                 title={selectedFile.path}
               >

@@ -167,6 +167,8 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
                           src={`data:image/png;base64,${model.thumbnailPreview}`}
                           alt={`Preview for ${model.displayTitle}`}
                           className="library-card-thumbnail-img"
+                          loading="lazy"
+                          decoding="async"
                         />
                         {/* Source badge: top-left corner of thumbnail — visible at rest */}
                         {model.previewSource && model.previewSource !== 'fallback' ? (

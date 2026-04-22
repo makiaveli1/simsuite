@@ -192,7 +192,8 @@ pub fn run() {
             commands::save_creator_learning,
             commands::apply_creator_audit,
             commands::apply_category_audit,
-            commands::save_category_override
+            commands::save_category_override,
+            commands::reveal_file_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimSuite");

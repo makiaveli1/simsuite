@@ -292,6 +292,8 @@ pub struct LibraryQuery {
     pub sort_by: Option<LibrarySortField>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    #[serde(default)]
+    pub include_previews: Option<bool>,
 }
 
 /// Quick-filter for watch/state-based Library filtering.

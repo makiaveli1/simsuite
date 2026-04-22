@@ -135,6 +135,8 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                           src={`data:image/png;base64,${model.thumbnailPreview}`}
                           alt=""
                           className="library-row-thumb-img"
+                          loading="lazy"
+                          decoding="async"
                         />
                         {model.previewSource && model.previewSource !== 'fallback' ? (
                           <span

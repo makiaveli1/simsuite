@@ -216,6 +216,7 @@ export interface LibraryQuery {
   sortBy?: LibrarySortField;
   limit?: number;
   offset?: number;
+  includePreviews?: boolean;
 }
 
 export type LibraryWatchFilter = "all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates";

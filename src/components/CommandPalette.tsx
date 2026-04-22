@@ -113,7 +113,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
 
       const [dlRaw, libRaw, updRaw] = await Promise.all([
         api.getDownloadsInbox({ search: q, limit: 5 }).catch(() => null),
-        api.listLibraryFiles({ search: q, limit: 5 }).catch(() => null),
+        api.listLibraryFiles({ search: q, limit: 5, includePreviews: false }).catch(() => null),
         api.listLibraryWatchItems("all", 30).catch(() => null),
       ]);
 

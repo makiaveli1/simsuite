@@ -305,6 +305,7 @@ export function LibraryScreen({
     minConfidence,
     watchFilter,
     sortBy,
+    viewMode,
     page,
     pageSize,
   ]);
@@ -422,6 +423,7 @@ export function LibraryScreen({
       sortBy: sortBy || undefined,
       limit: pageSize,
       offset: page * pageSize,
+      includePreviews: viewMode === "grid",
     });
 
     // Discard stale response — a newer request may have fired since this one started.
@@ -560,6 +562,16 @@ export function LibraryScreen({
     } catch (err) {
       // Phase 5ai: keep the preview — don't blank the sidebar on detail fetch failure
       console.error("openFile detail fetch failed:", err);
+    }
+  }
+
+  async function openContainingFolder(path: string) {
+    try {
+      await api.revealFileInFolder(path);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Open folder failed", { path, error });
+      window.alert(`Couldn't open that folder. ${message}`);
     }
   }
 
@@ -1529,7 +1541,7 @@ export function LibraryScreen({
                   onClick={() => {
                     const selected = rows?.items.find((r) => selectedIds.has(r.id));
                     if (selected) {
-                      void api.revealFileInFolder(selected.path);
+                      void openContainingFolder(selected.path);
                     }
                   }}
                   title="Open containing folder"
@@ -1742,6 +1754,9 @@ export function LibraryScreen({
                 updatesTarget.filter,
                 selected.id,
               );
+            }}
+            onOpenFolder={(path) => {
+              void openContainingFolder(path);
             }}
             relationship={relationship}
             folderName={folderName}
