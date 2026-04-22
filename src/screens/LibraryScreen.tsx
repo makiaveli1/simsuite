@@ -2061,8 +2061,10 @@ function DetailRow({
 }) {
   return (
     <div className="detail-row">
-      <span>{label}</span>
-      <strong className={mono ? "mono-text" : ""}>{value}</strong>
+      <span className="detail-row-label">{label}</span>
+      <strong className={`detail-row-value${mono ? " mono-text" : ""}`}>
+        <span className="detail-row-value-content">{value}</span>
+      </strong>
     </div>
   );
 }

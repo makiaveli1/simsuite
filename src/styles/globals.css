@@ -14095,15 +14095,103 @@ select:focus-visible {
   font-style: italic;
 }
 
-/* Inspector sidebar detail rows: pill container must be flex, overrides
-   .library-detail-sheet-lead strong above which forces block for filename. */
-.library-inspector-shell .detail-row > strong {
-  display: flex !important;
-  align-items: center;
-  justify-content: flex-end;
-  flex-shrink: 0;
+/* Inspector sidebar wrapping pass (Phase 5ap): treat the whole sidebar as a
+   shrinkable layout and let real-world values wrap instead of clipping. */
+.library-inspector-shell .library-details-panel,
+.library-inspector-shell .library-details-card,
+.library-inspector-shell .detail-header,
+.library-inspector-shell .detail-header-top,
+.library-inspector-shell .detail-header-meta,
+.library-inspector-shell .detail-preview-section,
+.library-inspector-shell .detail-list,
+.library-inspector-shell .detail-row,
+.library-inspector-shell .detail-block,
+.library-inspector-shell .tag-list,
+.library-inspector-shell .library-details-actions,
+.library-inspector-shell .library-details-actions-grid {
   min-width: 0;
-  gap: 0;
+}
+
+.library-inspector-shell .detail-filename {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: none;
+  overflow: visible;
+  text-wrap: pretty;
+}
+
+.library-inspector-shell .detail-header-top {
+  flex-wrap: wrap;
+}
+
+.library-inspector-shell .detail-header-meta {
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.library-inspector-shell .detail-row {
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.library-inspector-shell .detail-row > .detail-row-label {
+  flex: 0 1 6.2rem;
+  max-width: 38%;
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+
+.library-inspector-shell .detail-row > .detail-row-value {
+  display: block !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-shrink: 1;
+  text-align: right;
+}
+
+.library-inspector-shell .detail-row > .detail-row-value > .detail-row-value-content {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 0.28rem 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.library-inspector-shell .detail-row > .detail-row-value > .detail-row-value-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.library-inspector-shell .detail-row > .detail-row-value .ghost-chip,
+.library-inspector-shell .detail-row > .detail-row-value .warning-tag,
+.library-inspector-shell .detail-row > .detail-row-value .library-health-pill,
+.library-inspector-shell .tag-list .ghost-chip,
+.library-inspector-shell .tag-list .warning-tag,
+.library-inspector-shell .ghost-chip-inline-button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.library-inspector-shell .detail-row > .detail-row-value .library-health-pill {
+  flex-shrink: 1;
+}
+
+.library-inspector-shell .library-details-actions .primary-action,
+.library-inspector-shell .library-details-actions .secondary-action {
+  min-width: 0;
+  white-space: normal;
 }
 
 /* ── Phase 5aa: virtualized row infrastructure ────────────────────────── */

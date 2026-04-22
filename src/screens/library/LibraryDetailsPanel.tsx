@@ -549,8 +549,10 @@ export function LibraryDetailsPanel({
 function DetailLine({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="detail-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="detail-row-label">{label}</span>
+      <strong className="detail-row-value">
+        <span className="detail-row-value-content">{value}</span>
+      </strong>
     </div>
   );
 }
