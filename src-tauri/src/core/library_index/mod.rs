@@ -294,9 +294,9 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+             0 AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count
+             0 AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -337,9 +337,9 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+             0 AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count
+             0 AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\

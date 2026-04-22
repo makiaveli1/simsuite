@@ -429,17 +429,15 @@ export function LibraryScreen({
 
     setRows(result);
 
-    // Phase 5am fix: Only auto-fetch detail if a file was actually selected.
-    // Page navigation should NOT auto-select the first item — that causes a
-    // distracting detail pane flash on every page change.
-    const currentSelectedId = preferredSelectedId ?? selected?.id;
-    const wasSelectedAndStillInResults = currentSelectedId != null && result.items.some((r) => r.id === currentSelectedId);
-
-    if (wasSelectedAndStillInResults && currentSelectedId != null) {
-      setSelected(await api.getFileDetail(currentSelectedId));
-    } else {
-      // Keep whatever was selected — don't wipe it on page change.
-      // If nothing was selected, keep nothing selected.
+    // Real page-speed fix: only refresh detail when a caller explicitly asks for it
+    // (for example after an edit action that returned an updated file id).
+    // Plain pagination should update the rows immediately and avoid a second
+    // backend round-trip for detail/thumbnails.
+    if (preferredSelectedId != null) {
+      const stillInResults = result.items.some((r) => r.id === preferredSelectedId);
+      if (stillInResults) {
+        setSelected(await api.getFileDetail(preferredSelectedId));
+      }
     }
   }
 

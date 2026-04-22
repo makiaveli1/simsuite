@@ -383,10 +383,10 @@ fn inspect_package(path: &Path, seed_pack: &SeedPack, defer_thumbnails: bool) ->
         *type_counts.entry(record.resource_type).or_insert(0_usize) += 1;
     }
 
-    let stbl_map = collect_string_table_entries(&mut file, &records)?;
-    let catalog_names = collect_catalog_names(&mut file, &records, &stbl_map)?;
-    let cas_names = collect_cas_part_names(&mut file, &records)?;
-    let name_map_values = collect_name_map_values(&mut file, &records)?;
+    let stbl_map = collect_string_table_entries(path, &mut file, &records)?;
+    let catalog_names = collect_catalog_names(path, &mut file, &records, &stbl_map)?;
+    let cas_names = collect_cas_part_names(path, &mut file, &records)?;
+    let name_map_values = collect_name_map_values(path, &mut file, &records)?;
 
     let mut embedded_names = Vec::new();
     embedded_names.extend(catalog_names);
@@ -984,6 +984,7 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
 }
 
 fn collect_string_table_entries(
+    path: &Path,
     file: &mut File,
     records: &[DbpfRecord],
 ) -> AppResult<BTreeMap<u32, String>> {
@@ -994,7 +995,7 @@ fn collect_string_table_entries(
         .filter(|record| record.resource_type == RESOURCE_STRING_TABLE)
         .take(6)
     {
-        let bytes = read_record_bytes(file, record)?;
+        let bytes = read_record_bytes(path, file, record)?;
         for (key, value) in parse_stbl_entries(&bytes)? {
             stbl_map.entry(key).or_insert(value);
         }
@@ -1004,6 +1005,7 @@ fn collect_string_table_entries(
 }
 
 fn collect_catalog_names(
+    path: &Path,
     file: &mut File,
     records: &[DbpfRecord],
     stbl_map: &BTreeMap<u32, String>,
@@ -1015,7 +1017,7 @@ fn collect_catalog_names(
         .filter(|record| record.resource_type == RESOURCE_CATALOG)
         .take(8)
     {
-        let bytes = read_record_bytes(file, record)?;
+        let bytes = read_record_bytes(path, file, record)?;
         if bytes.len() < 12 {
             continue;
         }
@@ -1029,7 +1031,7 @@ fn collect_catalog_names(
     Ok(unique_display_values(names))
 }
 
-fn collect_cas_part_names(file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
+fn collect_cas_part_names(path: &Path, file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
     let mut names = Vec::new();
 
     for record in records
@@ -1037,7 +1039,7 @@ fn collect_cas_part_names(file: &mut File, records: &[DbpfRecord]) -> AppResult<
         .filter(|record| record.resource_type == RESOURCE_CAS_PART)
         .take(8)
     {
-        let bytes = read_record_bytes(file, record)?;
+        let bytes = read_record_bytes(path, file, record)?;
         if bytes.len() <= 12 {
             continue;
         }
@@ -1052,7 +1054,7 @@ fn collect_cas_part_names(file: &mut File, records: &[DbpfRecord]) -> AppResult<
     Ok(unique_display_values(names))
 }
 
-fn collect_name_map_values(file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
+fn collect_name_map_values(path: &Path, file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
     let mut values = Vec::new();
 
     for record in records
@@ -1060,20 +1062,41 @@ fn collect_name_map_values(file: &mut File, records: &[DbpfRecord]) -> AppResult
         .filter(|record| record.resource_type == RESOURCE_NAME_MAP)
         .take(4)
     {
-        let bytes = read_record_bytes(file, record)?;
+        let bytes = read_record_bytes(path, file, record)?;
         values.extend(parse_name_map_entries(&bytes)?);
     }
 
     Ok(unique_display_values(values))
 }
 
-fn read_record_bytes(file: &mut File, record: &DbpfRecord) -> AppResult<Vec<u8>> {
+/// Read record bytes safely.
+/// Phase 5an real fix: validate every DBPF record offset against the actual file
+/// length before seeking/reading. A corrupt record that points past EOF is skipped
+/// instead of letting one bad package stall the entire classify loop.
+fn read_record_bytes(path: &Path, file: &mut File, record: &DbpfRecord) -> AppResult<Vec<u8>> {
     if record.packed_size == 0 || record.packed_size as usize > MAX_RESOURCE_BYTES {
         return Ok(Vec::new());
     }
 
-    let mut bytes = vec![0_u8; record.packed_size as usize];
-    file.seek(SeekFrom::Start(record.offset as u64))?;
+    let file_size = file.metadata()?.len();
+    let offset = record.offset as u64;
+    let packed = record.packed_size as u64;
+
+    // Hard bounds check before any seek/read.
+    if offset >= file_size || offset.saturating_add(packed) > file_size {
+        tracing::warn!(
+            "Skipping out-of-bounds DBPF record in {}: type=0x{:08X} offset={} packed={} file_size={}",
+            path.display(),
+            record.resource_type,
+            offset,
+            packed,
+            file_size
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut bytes = vec![0_u8; packed as usize];
+    file.seek(SeekFrom::Start(offset))?;
     file.read_exact(&mut bytes)?;
 
     if !record.is_compressed() {
