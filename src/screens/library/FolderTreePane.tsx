@@ -92,34 +92,36 @@ function renderNode(
         <span className="folder-count-badge">
           {node.totalFileCount + (node.rootFiles?.length ?? 0)}
         </span>
-        {/* Phase 5ao: tree node clue — dominant kind + issue dot */}
+        {/* Phase 5ao: tree node clue — dominant kind + issue dot (Phase 5ao Sentinel fix: try/catch) */}
         {(() => {
-          const clue = computeTreeClue(allFiles, { fullPath: node.fullPath, sourceLocation: node.fullPath.startsWith("Mods") ? "mods" : node.fullPath.startsWith("Tray") ? "tray" : "mods" });
-          if (clue.issueState === "none" && !clue.dominantKind) return null;
-          return (
-            <span className="folder-tree-node-clue">
-              {clue.dominantKind ? (
-                <span
-                  className={`tree-node-dominant-kind type-pill--${clue.dominantKind.replace(/([A-Z])/g, "-$1").toLowerCase().replace(/^-/, "")}`}
-                  title={`Mostly ${clue.dominantKind} (${Math.round(clue.dominantKindShare ?? 0)}%)`}
-                >
-                  {clue.dominantKind.replace(/([A-Z])/g, " $1").trim()}
-                </span>
-              ) : null}
-              {clue.issueState !== "none" && (
-                <span
-                  className={`tree-node-issue-dot tree-node-issue-dot--${clue.issueState === "mixed" ? "mixed" : clue.issueState === "warning" ? "warning" : "duplicate"}`}
-                  title={
-                    clue.issueState === "mixed"
-                      ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""} · ${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
-                      : clue.issueState === "warning"
-                        ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""}`
-                        : `${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
-                  }
-                />
-              )}
-            </span>
-          );
+          try {
+            const clue = computeTreeClue(allFiles, { fullPath: node.fullPath, sourceLocation: node.fullPath.startsWith("Mods") ? "mods" : node.fullPath.startsWith("Tray") ? "tray" : "mods" });
+            if (clue.issueState === "none" && !clue.dominantKind) return null;
+            return (
+              <span className="folder-tree-node-clue">
+                {clue.dominantKind ? (
+                  <span
+                    className={`tree-node-dominant-kind type-pill--${clue.dominantKind.replace(/([A-Z])/g, "-$1").toLowerCase().replace(/^-/, "")}`}
+                    title={`Mostly ${clue.dominantKind} (${Math.round(clue.dominantKindShare ?? 0)}%)`}
+                  >
+                    {clue.dominantKind.replace(/([A-Z])/g, " $1").trim()}
+                  </span>
+                ) : null}
+                {clue.issueState !== "none" && (
+                  <span
+                    className={`tree-node-issue-dot tree-node-issue-dot--${clue.issueState === "mixed" ? "mixed" : clue.issueState === "warning" ? "warning" : "duplicate"}`}
+                    title={
+                      clue.issueState === "mixed"
+                        ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""} · ${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
+                        : clue.issueState === "warning"
+                          ? `${clue.warningCount} warning${clue.warningCount !== 1 ? "s" : ""}`
+                          : `${clue.duplicateCount} duplicate${clue.duplicateCount !== 1 ? "s" : ""}`
+                    }
+                  />
+                )}
+              </span>
+            );
+          } catch { return null; }
         })()}
       </button>
 

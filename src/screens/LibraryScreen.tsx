@@ -809,6 +809,23 @@ export function LibraryScreen({
     };
   }, [folderTreeRoots, rootFileCount]);
 
+  // ── Folder full path for "Open folder" (Phase 5ap) ───────────────────────────────
+  // activeFolderPath is relative (e.g. "Mods/CAS/hairs") but Explorer needs the real
+  // Windows path (e.g. "C:\\Users\\...\\Mods\\CAS\\hairs").
+  // Derive it from the first available file's path: strip the filename, normalise slashes.
+  // Only relevant when a subfolder is selected (not at root).
+  const folderFullPath = useMemo<string | undefined>(() => {
+    if (!activeFolderPath) return undefined;
+    const first = folderContents?.files[0] ?? folderContents?.rootFiles[0];
+    if (!first?.path) return undefined;
+    // Remove the filename segment from the end — the backend stores full file paths.
+    // Handles both C:\\...\\path and /mnt/c/.../path formats.
+    const normalised = first.path.replace(/\\/g, "/");
+    const lastSlash = normalised.lastIndexOf("/");
+    if (lastSlash < 0) return undefined;
+    return normalised.substring(0, lastSlash).replace(/\//g, "\\");
+  }, [activeFolderPath, folderContents]);
+
   // ── Folder summary (Phase 5ao) ───────────────────────────────────────────────
   // Computed when: in folder view (activeFolderPath set) and no file selected.
   // O(n) in folderContents.files — acceptable because folderContents is already filtered.
@@ -1783,6 +1800,7 @@ export function LibraryScreen({
             folderName={folderName}
             folderSummary={folderSummary}
             folderPath={activeFolderPath}
+            folderFullPath={folderFullPath}
             headerRight={
               <button
                 type="button"

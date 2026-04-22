@@ -2278,6 +2278,17 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         relatedCount: count,
       };
     case "same_folder":
+      // Phase 5ak Sentinel challenge: same_folder IS a fact for mods source.
+      // Folder structure = semantic packaging for mods. Only a heuristic for downloads/tray.
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel === "fact" ? "fact" : rel.proofLevel,
+        confidenceLabel: rel.proofLevel === "fact" ? "Confirmed" : label,
+        shortLabel: `${rel.proofLevel === "fact" ? "Confirmed" : label} · Folder set (${count + 1} peers)`,
+        compactLabel: count > 0 ? `Set ${count + 1}` : "Set",
+        description: rel.label,
+        relatedCount: count,
+      };
     case "folder_heuristic":
       return {
         type: rel.type,

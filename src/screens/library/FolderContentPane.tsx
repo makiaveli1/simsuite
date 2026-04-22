@@ -110,7 +110,7 @@ export function FolderContentPane({
           ) : (
             <>
               <div className="folder-content-section folder-content-section--loose">
-                Loose files{rootFiles.length > 0 ? ` in ${getSourceRootFromPath(rootFiles[0].path)}` : ''}
+                Loose files in {folderPath ?? "Mods"}
                 <span className="folder-loose-files-badge">{rootFiles.length}</span>
               </div>
               <div className="folder-loose-files-hint">
@@ -147,7 +147,7 @@ export function FolderContentPane({
       {files.length > 0 ? (
         <section>
           <div className="folder-content-section">
-            Files
+            Files in subfolders
             {filesHasMore && !filesExpanded && (
               <span className="folder-content-section-hint">
                 showing {pageSize} of {files.length}

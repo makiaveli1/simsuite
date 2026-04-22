@@ -44,6 +44,8 @@ interface LibraryDetailsPanelProps {
   folderSummary?: FolderSummaryData | null;
   /** The selected folder path (when in folder view, null otherwise). */
   folderPath?: string | null;
+  /** Full Windows absolute path for the selected folder (for "Open folder"). */
+  folderFullPath?: string | null;
 }
 
 export function LibraryDetailsPanel({
@@ -59,6 +61,7 @@ export function LibraryDetailsPanel({
   folderName: folderNameProp,
   folderSummary: folderSummaryProp,
   folderPath: folderPathProp,
+  folderFullPath: folderFullPathProp,
 }: LibraryDetailsPanelProps) {
   const isCasual = userView === "beginner";
   const isPower = userView === "power";
@@ -71,6 +74,7 @@ export function LibraryDetailsPanel({
         userView={userView}
         data={folderSummaryProp}
         folderPath={folderPathProp}
+        folderFullPath={folderFullPathProp}
         onOpenFolder={onOpenFolder}
         headerRight={headerRight}
       />
@@ -617,6 +621,8 @@ interface FolderSummaryPanelProps {
   userView: UserView;
   data: FolderSummaryData;
   folderPath: string;
+  /** Full Windows absolute path — used for "Open folder" so Explorer opens the right place. */
+  folderFullPath?: string | null;
   onOpenFolder?: (path: string) => void;
   headerRight?: ReactNode;
 }
@@ -625,6 +631,7 @@ function FolderSummaryPanel({
   userView,
   data,
   folderPath,
+  folderFullPath,
   onOpenFolder,
   headerRight,
 }: FolderSummaryPanelProps) {
@@ -766,7 +773,7 @@ function FolderSummaryPanel({
           <button
             type="button"
             className="folder-open-btn"
-            onClick={() => onOpenFolder(data.folderPath)}
+            onClick={() => onOpenFolder(folderFullPath ?? data.folderPath)}
             title="Open this folder in Windows Explorer"
           >
             <FolderOpen size={13} strokeWidth={2} />
