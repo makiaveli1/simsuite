@@ -2152,3 +2152,359 @@ function watchStatusToneFor(
       return "muted";
   }
 }
+
+
+// ─── Folder Summary & Tree Clue Types (Phase 5ao) ────────────────────────
+
+/**
+ * Folder summary computation.
+ * Used by FolderSummaryPanel to display intelligence when a folder is selected.
+ */
+
+/** Folder summary computation mode. */
+export type FolderSummaryMode = "casual" | "power";
+
+/** Maps ProofLevel to user-facing confidence label. */
+export function proofLevelToLabel(level: ProofLevel): "Confirmed" | "Likely" | "Possible" {
+  switch (level) {
+    case "fact":      return "Confirmed";
+    case "claim":     return "Likely";
+    case "heuristic": return "Possible";
+  }
+}
+
+/** Counts for a single folder. */
+export interface FolderCountSummary {
+  totalFiles: number;
+  directFiles: number;
+  nestedFiles: number;
+  subfolderCount: number;
+  warningCount: number;
+  duplicateCount: number;
+}
+
+/** A single distribution entry (kind, source, or creator). */
+export interface FolderDistributionItem {
+  key: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+/** A relationship cluster within a folder. */
+export interface FolderRelationshipCluster {
+  /** Stable id for rendering keys. */
+  id: string;
+  type: "duplicate" | "same_pack" | "same_folder";
+  proofLevel: ProofLevel;
+  confidenceLabel: "Confirmed" | "Likely" | "Possible";
+  /** How many files in this folder belong to this cluster. */
+  affectedFileCount: number;
+  /** Peak peer count for same_folder / same_pack clusters. */
+  peakPeerCount: number;
+  title: string;
+  description: string;
+}
+
+/** Full folder summary payload. */
+export interface FolderSummaryData {
+  folderId: string;
+  folderName: string;
+  folderPath: string;
+  counts: FolderCountSummary;
+  kindDistribution: FolderDistributionItem[];
+  sourceDistribution: FolderDistributionItem[];
+  creatorDistribution: FolderDistributionItem[];
+  dominantKind?: string;
+  dominantKindShare?: number;
+  relationshipClusters: FolderRelationshipCluster[];
+  notes: string[];
+}
+
+/** Per-tree-node clue data. */
+export interface FolderTreeClue {
+  dominantKind?: string;
+  dominantKindShare?: number;
+  warningCount: number;
+  duplicateCount: number;
+  issueState: "none" | "warning" | "duplicate" | "mixed";
+}
+
+/** Primary relationship cue for a single file. Used in grid reveal and row clues. */
+export interface RelationshipCue {
+  type: "duplicate" | RelationshipType;
+  proofLevel: ProofLevel;
+  confidenceLabel: "Confirmed" | "Likely" | "Possible";
+  /** Full label for detail contexts: "Confirmed · Duplicate" */
+  shortLabel: string;
+  /** Compact label for table rows: "Dup", "Pack 7", "Set 4" */
+  compactLabel: string;
+  description: string;
+  relatedCount?: number;
+}
+
+/**
+ * Derives the primary RelationshipCue from a FileRelationship.
+ * Returns null when no significant relationship exists.
+ */
+export function deriveRelationshipCue(rel: FileRelationship | null): RelationshipCue | null {
+  if (!rel || rel.type === "none") return null;
+  const label = proofLevelToLabel(rel.proofLevel);
+  const count = rel.peerCount ?? 0;
+  switch (rel.type) {
+    case "duplicate":
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel,
+        confidenceLabel: label,
+        shortLabel: `${label} · Duplicate`,
+        compactLabel: "Dup",
+        description: rel.label,
+        relatedCount: count,
+      };
+    case "same_pack":
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel,
+        confidenceLabel: label,
+        shortLabel: `${label} · Pack with ${count + 1} files`,
+        compactLabel: count > 0 ? `Pack ${count + 1}` : "Pack",
+        description: rel.label,
+        relatedCount: count,
+      };
+    case "same_folder":
+    case "folder_heuristic":
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel,
+        confidenceLabel: label,
+        shortLabel: `${label} · Folder set (${count + 1} peers)`,
+        compactLabel: count > 0 ? `Set ${count + 1}` : "Set",
+        description: rel.label,
+        relatedCount: count,
+      };
+    case "tray_group":
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel,
+        confidenceLabel: label,
+        shortLabel: `${label} · Tray group`,
+        compactLabel: "Tray",
+        description: rel.label,
+        relatedCount: count,
+      };
+    case "same_creator":
+      return {
+        type: rel.type,
+        proofLevel: rel.proofLevel,
+        confidenceLabel: label,
+        shortLabel: `${label} · Same creator`,
+        compactLabel: "Creator",
+        description: rel.label,
+        relatedCount: count,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Compute a FolderSummaryData from the files in a folder.
+ * O(n) in folderFiles — caller must wrap in useMemo.
+ *
+ * @param folderFiles  All files in the folder (from folderContents.files).
+ * @param folderNode   The FolderNode for this folder.
+ */
+export function computeFolderSummary(
+  folderFiles: LibraryFileRow[],
+  folderNode: { name: string; fullPath: string; childFolderCount: number; files?: number[] },
+): FolderSummaryData {
+  const totalFiles = folderFiles.length;
+  const directFiles = folderNode.files ? Math.min(folderNode.files.length, totalFiles) : totalFiles;
+  const nestedFiles = Math.max(0, totalFiles - directFiles);
+
+  // ── Kind distribution ──────────────────────────────────────────────────
+  const kindMap = new Map<string, number>();
+  for (const f of folderFiles) {
+    kindMap.set(f.kind, (kindMap.get(f.kind) ?? 0) + 1);
+  }
+  const kindDistribution: FolderDistributionItem[] = Array.from(kindMap.entries())
+    .map(([key, count]) => ({
+      key,
+      label: friendlyTypeLabel(key as LibraryFileRow["kind"]),
+      count,
+      percentage: totalFiles > 0 ? (count / totalFiles) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const dominantKind = kindDistribution[0];
+  const dominantKindShare = dominantKind ? dominantKind.percentage : undefined;
+
+  // ── Source distribution ────────────────────────────────────────────────
+  const sourceMap = new Map<string, number>();
+  for (const f of folderFiles) {
+    sourceMap.set(f.sourceLocation, (sourceMap.get(f.sourceLocation) ?? 0) + 1);
+  }
+  const sourceDistribution: FolderDistributionItem[] = Array.from(sourceMap.entries())
+    .map(([key, count]) => ({
+      key,
+      label: key === "mods" ? "Mods" : key === "tray" ? "Tray" : key,
+      count,
+      percentage: totalFiles > 0 ? (count / totalFiles) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── Creator distribution (top 8) ───────────────────────────────────────
+  const creatorMap = new Map<string, number>();
+  let missingCreator = 0;
+  for (const f of folderFiles) {
+    if (f.creator && f.creator.trim()) {
+      creatorMap.set(f.creator, (creatorMap.get(f.creator) ?? 0) + 1);
+    } else {
+      missingCreator++;
+    }
+  }
+  const creatorDistribution: FolderDistributionItem[] = Array.from(creatorMap.entries())
+    .map(([key, count]) => ({ key, label: key, count, percentage: totalFiles > 0 ? (count / totalFiles) * 100 : 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const notes: string[] = [];
+  if (missingCreator > totalFiles * 0.5 && totalFiles > 5) {
+    notes.push("Creator info missing on most files");
+  }
+
+  // ── Counts ─────────────────────────────────────────────────────────────
+  // Note: safetyNotes / parserWarnings are #[serde(skip)] on LibraryFileRow —
+  // only available in FileDetail, not in tree/list rows. warningCount is 0 here.
+  const duplicateCount = folderFiles.filter((f) => f.hasDuplicate).length;
+  const warningCount = 0;
+
+  // ── Relationship clusters ──────────────────────────────────────────────
+  // Aggregate from per-row sameFolderPeerCount / samePackPeerCount / hasDuplicate.
+  // These are backend window-query fields — O(1) per row, no extra computation needed.
+  const duplicateFiles = folderFiles.filter((f) => f.hasDuplicate);
+  const packClusterFiles = folderFiles.filter((f) => {
+    const cnt = (f as LibraryFileRow & { samePackPeerCount?: number }).samePackPeerCount;
+    return cnt != null && cnt > 0;
+  });
+  const folderPeerFiles = folderFiles.filter((f) => {
+    const cnt = (f as LibraryFileRow & { sameFolderPeerCount?: number }).sameFolderPeerCount;
+    return cnt != null && cnt > 0;
+  });
+
+  const relationshipClusters: FolderRelationshipCluster[] = [];
+
+  if (duplicateFiles.length > 0) {
+    relationshipClusters.push({
+      id: "dup",
+      type: "duplicate",
+      proofLevel: "fact",
+      confidenceLabel: "Confirmed",
+      affectedFileCount: duplicateFiles.length,
+      peakPeerCount: 0,
+      title: "Duplicate files",
+      description: `${duplicateFiles.length} file${duplicateFiles.length !== 1 ? "s" : ""} marked as exact duplicates`,
+    });
+  }
+
+  if (packClusterFiles.length > 0) {
+    const peakPack = Math.max(...packClusterFiles.map((f) => (f as LibraryFileRow & { samePackPeerCount?: number }).samePackPeerCount ?? 0));
+    relationshipClusters.push({
+      id: "pack",
+      type: "same_pack",
+      proofLevel: "claim",
+      confidenceLabel: "Likely",
+      affectedFileCount: packClusterFiles.length,
+      peakPeerCount: peakPack,
+      title: "Pack groupings",
+      description: `${packClusterFiles.length} files share pack membership — likely from the same mod pack`,
+    });
+  }
+
+  if (folderPeerFiles.length > 0) {
+    const peakFolder = Math.max(...folderPeerFiles.map((f) => (f as LibraryFileRow & { sameFolderPeerCount?: number }).sameFolderPeerCount ?? 0));
+    relationshipClusters.push({
+      id: "folder",
+      type: "same_folder",
+      proofLevel: "fact",
+      confidenceLabel: "Confirmed",
+      affectedFileCount: folderPeerFiles.length,
+      peakPeerCount: peakFolder,
+      title: "Folder sets",
+      description: `${folderPeerFiles.length} files share the same folder — often downloaded together`,
+    });
+  }
+
+  return {
+    folderId: folderNode.fullPath,
+    folderName: folderNode.name,
+    folderPath: folderNode.fullPath,
+    counts: {
+      totalFiles,
+      directFiles,
+      nestedFiles,
+      subfolderCount: folderNode.childFolderCount,
+      warningCount,
+      duplicateCount,
+    },
+    kindDistribution,
+    sourceDistribution,
+    creatorDistribution,
+    dominantKind: dominantKind?.key,
+    dominantKindShare,
+    relationshipClusters,
+    notes,
+  };
+}
+
+/**
+ * Compute FolderTreeClue for a single tree node.
+ * O(n) in allFiles — caller should memoize at the tree level.
+ *
+ * @param allFiles   All files in the current tree dataset (treeRows.items).
+ * @param folderNode The tree node to compute the clue for.
+ */
+export function computeTreeClue(
+  allFiles: LibraryFileRow[],
+  folderNode: { fullPath: string; sourceLocation: string },
+): FolderTreeClue {
+  // Files in this folder's subtree
+  const subtreeFiles = allFiles.filter((f) =>
+    f.sourceLocation === folderNode.sourceLocation &&
+    f.path.replace(/\\/g, "/").includes(folderNode.fullPath),
+  );
+
+  if (subtreeFiles.length === 0) {
+    return { warningCount: 0, duplicateCount: 0, issueState: "none" };
+  }
+
+  const kindMap = new Map<string, number>();
+  let duplicateCount = 0;
+  let warningCount = 0;
+
+  for (const f of subtreeFiles) {
+    if (f.hasDuplicate) duplicateCount++;
+    // Note: safetyNotes/parserWarnings not available on LibraryFileRow in tree context
+    kindMap.set(f.kind, (kindMap.get(f.kind) ?? 0) + 1);
+  }
+
+  const total = subtreeFiles.length;
+  let dominantKind: string | undefined;
+  let dominantKindShare: number | undefined;
+  for (const [kind, count] of kindMap.entries()) {
+    const share = (count / total) * 100;
+    if (share >= 60 && count >= 4) {
+      dominantKind = kind;
+      dominantKindShare = share;
+      break;
+    }
+  }
+
+  let issueState: FolderTreeClue["issueState"] = "none";
+  if (warningCount > 0 && duplicateCount > 0) issueState = "mixed";
+  else if (warningCount > 0) issueState = "warning";
+  else if (duplicateCount > 0) issueState = "duplicate";
+
+  return { dominantKind, dominantKindShare, warningCount, duplicateCount, issueState };
+}
+

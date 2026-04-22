@@ -39,6 +39,8 @@ import {
   buildSheetDiagnosticsSection,
   buildSheetTraySection,
   computeFileRelationship,
+  computeFolderSummary,
+  type FolderSummaryData,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeTrayIdentity,
@@ -806,6 +808,25 @@ export function LibraryScreen({
       childFolderCount: 2,
     };
   }, [folderTreeRoots, rootFileCount]);
+
+  // ── Folder summary (Phase 5ao) ───────────────────────────────────────────────
+  // Computed when: in folder view (activeFolderPath set) and no file selected.
+  // O(n) in folderContents.files — acceptable because folderContents is already filtered.
+  // Returns undefined when not in folder view or when a file IS selected.
+  const folderSummary = useMemo<FolderSummaryData | undefined>(() => {
+    if (!activeFolderPath || selected !== null || !folderContents) return undefined;
+    const { files, subfolders } = folderContents;
+    if (files.length === 0 && subfolders.length === 0) return undefined;
+    // Synthesise a minimal folderNode from available data.
+    // childFolderCount = subfolders.length (direct children).
+    // files array: we pass undefined since folderContents.files already IS the file list.
+    return computeFolderSummary(files, {
+      name: activeFolderPath.split("/").pop() ?? activeFolderPath,
+      fullPath: activeFolderPath,
+      childFolderCount: subfolders.length,
+      files: undefined,
+    });
+  }, [activeFolderPath, selected, folderContents]);
 
   const libraryInspectorSections = selected
     ? [
@@ -1760,6 +1781,8 @@ export function LibraryScreen({
             }}
             relationship={relationship}
             folderName={folderName}
+            folderSummary={folderSummary}
+            folderPath={activeFolderPath}
             headerRight={
               <button
                 type="button"

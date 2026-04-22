@@ -20,6 +20,8 @@ import {
   typeColorForKind,
   usefulTrayGroupingValue,
   type FileRelationship,
+  type FolderSummaryData,
+  type FolderSummaryMode,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
@@ -38,6 +40,10 @@ interface LibraryDetailsPanelProps {
   relationship?: FileRelationship | null;
   /** Pre-computed parent folder name. */
   folderName?: string | null;
+  /** Pre-computed folder summary (when a folder is selected instead of a file). */
+  folderSummary?: FolderSummaryData | null;
+  /** The selected folder path (when in folder view, null otherwise). */
+  folderPath?: string | null;
 }
 
 export function LibraryDetailsPanel({
@@ -51,10 +57,27 @@ export function LibraryDetailsPanel({
   headerRight,
   relationship: relationshipProp,
   folderName: folderNameProp,
+  folderSummary: folderSummaryProp,
+  folderPath: folderPathProp,
 }: LibraryDetailsPanelProps) {
   const isCasual = userView === "beginner";
   const isPower = userView === "power";
 
+  // ── Folder summary view ─────────────────────────────────────────────────
+  // Shown when: folder view is active (folderPath is set), no file selected.
+  if (!selectedFile && folderSummaryProp && folderPathProp) {
+    return (
+      <FolderSummaryPanel
+        userView={userView}
+        data={folderSummaryProp}
+        folderPath={folderPathProp}
+        onOpenFolder={onOpenFolder}
+        headerRight={headerRight}
+      />
+    );
+  }
+
+  // ── Empty state ────────────────────────────────────────────────────────
   if (!selectedFile) {
     return (
       <div className="detail-empty library-details-empty">
@@ -585,5 +608,173 @@ function watchStatusToTone(status: WatchStatus | null): "calm" | "attention" | "
     default:
       return "muted";
   }
+}
+
+
+// ─── FolderSummaryPanel (Phase 5ao) ─────────────────────────────────────
+
+interface FolderSummaryPanelProps {
+  userView: UserView;
+  data: FolderSummaryData;
+  folderPath: string;
+  onOpenFolder?: (path: string) => void;
+  headerRight?: ReactNode;
+}
+
+function FolderSummaryPanel({
+  userView,
+  data,
+  folderPath,
+  onOpenFolder,
+  headerRight,
+}: FolderSummaryPanelProps) {
+  const isPower = userView === "power";
+
+  // Build summary sentence
+  const totalLabel = `${data.counts.totalFiles} file${data.counts.totalFiles !== 1 ? "s" : ""}`;
+  const subfolderLabel = data.counts.subfolderCount > 0
+    ? ` in ${data.counts.subfolderCount} subfolder${data.counts.subfolderCount !== 1 ? "s" : ""}`
+    : "";
+  const dominantLabel = data.dominantKind
+    ? `. Mostly ${data.dominantKind.replace(/([A-Z])/g, " $1").trim()}`
+    : "";
+  const topCreatorLabel = data.creatorDistribution[0]
+    ? ` · ${data.creatorDistribution[0].count} from ${data.creatorDistribution[0].label}`
+    : "";
+  const summarySentence = `${totalLabel}${subfolderLabel}${dominantLabel}${topCreatorLabel}.`;
+
+  return (
+    <div className="library-folder-summary">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="library-details-hero folder-summary-hero">
+        <div className="folder-summary-hero-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div className="folder-summary-hero-text">
+          <div className="folder-summary-folder-name">{data.folderName}</div>
+          <div className="folder-summary-path">{data.folderPath}</div>
+        </div>
+        {headerRight && (
+          <div className="folder-summary-header-right">{headerRight}</div>
+        )}
+      </div>
+
+      {/* ── Summary sentence ────────────────────────────────────────────── */}
+      <div className="folder-summary-sentence">{summarySentence}</div>
+
+      {/* ── Stat tiles ─────────────────────────────────────────────────── */}
+      <div className="folder-summary-stats">
+        <div className="folder-stat-tile">
+          <span className="folder-stat-tile__value">{data.counts.totalFiles.toLocaleString()}</span>
+          <span className="folder-stat-tile__label">Files</span>
+        </div>
+        <div className="folder-stat-tile">
+          <span className="folder-stat-tile__value">{data.counts.subfolderCount.toLocaleString()}</span>
+          <span className="folder-stat-tile__label">Subfolders</span>
+        </div>
+        {data.counts.duplicateCount > 0 && (
+          <div className="folder-stat-tile folder-stat-tile--alert">
+            <span className="folder-stat-tile__value">{data.counts.duplicateCount}</span>
+            <span className="folder-stat-tile__label">Duplicates</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Type distribution ──────────────────────────────────────────── */}
+      {data.kindDistribution.length > 0 && (
+        <div className="folder-summary-section">
+          <div className="section-label">What&apos;s in here</div>
+          <div className="folder-type-list">
+            {data.kindDistribution.slice(0, isPower ? undefined : 3).map((item) => (
+              <div key={item.key} className="folder-type-row">
+                <span className="folder-type-row__label">{item.label}</span>
+                <div className="folder-type-row__bar-wrap">
+                  <div
+                    className="folder-type-row__bar"
+                    style={{ width: `${Math.round(item.percentage)}%` }}
+                  />
+                </div>
+                <span className="folder-type-row__count">
+                  {item.count}{!isPower && data.kindDistribution.length > 3 ? ` (${Math.round(item.percentage)}%)` : ""}
+                </span>
+              </div>
+            ))}
+            {!isPower && data.kindDistribution.length > 3 && (
+              <div className="folder-type-more">+{data.kindDistribution.length - 3} more types</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Top creators ───────────────────────────────────────────────── */}
+      {data.creatorDistribution.length > 0 && (
+        <div className="folder-summary-section">
+          <div className="section-label">Top creators</div>
+          <div className="folder-creator-list">
+            {data.creatorDistribution.slice(0, isPower ? 8 : 3).map((item) => (
+              <div key={item.key} className="folder-creator-row">
+                <span className="folder-creator-row__label">{item.label}</span>
+                <span className="folder-creator-row__count">{item.count}</span>
+              </div>
+            ))}
+          </div>
+          {!isPower && data.creatorDistribution.length === 0 && data.counts.totalFiles > 5 && (
+            <div className="folder-summary-note">Creator info missing on most files</div>
+          )}
+        </div>
+      )}
+
+      {/* ── Relationship clusters ──────────────────────────────────────── */}
+      {data.relationshipClusters.length > 0 && (
+        <div className="folder-summary-section">
+          <div className="section-label">Connections in this folder</div>
+          <div className="folder-cluster-list">
+            {data.relationshipClusters.map((cluster) => (
+              <div key={cluster.id} className="folder-cluster-row">
+                <div className="folder-cluster-row__header">
+                  <span className={`folder-cluster-badge folder-cluster-badge--${cluster.confidenceLabel.toLowerCase()}`}>
+                    {cluster.confidenceLabel}
+                  </span>
+                  <span className="folder-cluster-row__title">{cluster.title}</span>
+                </div>
+                <div className="folder-cluster-row__desc">{cluster.description}</div>
+                {isPower && (
+                  <div className="folder-cluster-row__meta">
+                    {cluster.affectedFileCount} affected · proof: {cluster.proofLevel}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Notes / caveats ────────────────────────────────────────────── */}
+      {data.notes.length > 0 && (
+        <div className="folder-summary-section">
+          {data.notes.map((note, i) => (
+            <div key={i} className="folder-summary-note">{note}</div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Open folder action ─────────────────────────────────────────── */}
+      {onOpenFolder && (
+        <div className="folder-summary-actions">
+          <button
+            type="button"
+            className="folder-open-btn"
+            onClick={() => onOpenFolder(data.folderPath)}
+            title="Open this folder in Windows Explorer"
+          >
+            <FolderOpen size={13} strokeWidth={2} />
+            Open folder
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
