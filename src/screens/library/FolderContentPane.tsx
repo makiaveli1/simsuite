@@ -72,7 +72,11 @@ export function FolderContentPane({
 
       {subfolders.length > 0 ? (
         <section>
-          <div className="folder-content-section">Folders</div>
+          <div className="folder-content-section">
+            {folderPath === null
+              ? "Game folders"
+              : `Subfolders in ${folderPath.split("/").pop()}`}
+          </div>
           <div className="folder-row-list">
             {subfolders.map((folder) => (
               <button
@@ -95,22 +99,60 @@ export function FolderContentPane({
         </section>
       ) : null}
 
-      {/* Root-level files stored directly in this folder with no subfolder */}
-      {/* At root: only show if there are Mods depth-0 files. Tray root files are in the tree. */}
-      {/* At folder level: show all root files for that folder. */}
-      {rootFiles.length > 0 && (folderPath !== null || rootFiles.some((f) => getSourceRootFromPath(f.path) === "Mods")) ? (
+      {/* Loose files — Phase 5ap Ariadne design:
+           Root (folderPath === null): split by source, show both Mods + Tray sections.
+           Subfolder: single "Loose files in {name}" section. */}
+      {rootFiles.length > 0 ? (
         <section>
+          {/* ── Root level: source-split loose files sections ── */}
           {folderPath === null ? (
-            <ModsLooseFilesSection
-              userView={userView}
-              rootFiles={rootFiles}
-              selectedFile={selectedFile}
-              onSelectFile={onSelectFile}
-            />
+            (() => {
+              const modsRootFiles = rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Mods");
+              const trayRootFiles = rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Tray");
+              return (
+                <>
+                  {modsRootFiles.length > 0 && (
+                    <div className="folder-loose-source-group">
+                      <div className="folder-content-section folder-content-section--loose">
+                        Loose files in Mods
+                        <span className="folder-loose-files-badge">{modsRootFiles.length}</span>
+                      </div>
+                      <div className="folder-loose-files-hint">
+                        Stored directly in Mods — not organized into subfolders
+                      </div>
+                      <LooseFilesGroupTable
+                        userView={userView}
+                        allFiles={modsRootFiles}
+                        selectedFile={selectedFile}
+                        onSelectFile={onSelectFile}
+                      />
+                    </div>
+                  )}
+                  {trayRootFiles.length > 0 && (
+                    <div className="folder-loose-source-group">
+                      <div className="folder-content-section folder-content-section--loose">
+                        Loose files in Tray
+                        <span className="folder-loose-files-badge">{trayRootFiles.length}</span>
+                      </div>
+                      <div className="folder-loose-files-hint">
+                        Stored directly in Tray — not organized into subfolders
+                      </div>
+                      <LooseFilesGroupTable
+                        userView={userView}
+                        allFiles={trayRootFiles}
+                        selectedFile={selectedFile}
+                        onSelectFile={onSelectFile}
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()
           ) : (
+            /* ── Subfolder level: single "Loose files in {name}" section ── */
             <>
               <div className="folder-content-section folder-content-section--loose">
-                Loose files in {folderPath ?? "Mods"}
+                Loose files in {folderPath}
                 <span className="folder-loose-files-badge">{rootFiles.length}</span>
               </div>
               <div className="folder-loose-files-hint">
@@ -144,7 +186,9 @@ export function FolderContentPane({
         </section>
       ) : null}
 
-      {files.length > 0 ? (
+      {/* Phase 5ap: "Files in subfolders" suppressed at root — descendant files are
+           navigated via the tree, not dumped at root level. */}
+      {files.length > 0 && folderPath !== null ? (
         <section>
           <div className="folder-content-section">
             Files in subfolders
@@ -199,50 +243,6 @@ function getSourceRootFromPath(path: string): string {
   const idx = segments.findIndex((s) => SOURCE_ROOT_NAMES.has(s));
   return idx < 0 ? "" : segments[idx];
 }
-
-// ── ModsLooseFilesSection ─────────────────────────────────────────────────────
-
-interface ModsLooseFilesSectionProps {
-  userView: UserView;
-  rootFiles: LibraryFileRow[];
-  selectedFile: FileDetail | null;
-  onSelectFile: (file: LibraryFileRow) => void;
-}
-
-// Phase 5ag: Only Mods root-level files are surfaced as a loose-files section.
-// Tray root files are NOT surfaced separately — Tray is represented in the folder tree
-// and Tray root files are accessible there. This avoids redundant duplication at root level.
-const ModsLooseFilesSection = React.memo(function ModsLooseFilesSection({
-  userView,
-  rootFiles,
-  selectedFile,
-  onSelectFile,
-}: ModsLooseFilesSectionProps) {
-  // Filter to Mods only — Tray root files are shown via the folder tree, not here
-  const modsFiles = useMemo(
-    () => rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Mods"),
-    [rootFiles]
-  );
-  if (!modsFiles.length) return null;
-
-  return (
-    <div className="folder-loose-source-group">
-      <div className="folder-content-section folder-content-section--loose">
-        Loose files in Mods
-        <span className="folder-loose-files-badge">{modsFiles.length}</span>
-      </div>
-      <div className="folder-loose-files-hint">
-        Stored directly in Mods — not organized into subfolders
-      </div>
-      <LooseFilesGroupTable
-        userView={userView}
-        allFiles={modsFiles}
-        selectedFile={selectedFile}
-        onSelectFile={onSelectFile}
-      />
-    </div>
-  );
-});
 
 // ── LooseFilesGroupTable ──────────────────────────────────────────────────────
 

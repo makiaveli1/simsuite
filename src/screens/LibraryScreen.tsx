@@ -837,12 +837,16 @@ export function LibraryScreen({
     // Synthesise a minimal folderNode from available data.
     // childFolderCount = subfolders.length (direct children).
     // files array: we pass undefined since folderContents.files already IS the file list.
-    return computeFolderSummary(files, {
-      name: activeFolderPath.split("/").pop() ?? activeFolderPath,
-      fullPath: activeFolderPath,
-      childFolderCount: subfolders.length,
-      files: undefined,
-    });
+    return computeFolderSummary(
+      files,
+      {
+        name: activeFolderPath.split("/").pop() ?? activeFolderPath,
+        fullPath: activeFolderPath,
+        childFolderCount: subfolders.length,
+        files: undefined,
+      },
+      folderContents.rootFiles.length, // depth-0 loose files stored directly in this folder
+    );
   }, [activeFolderPath, selected, folderContents]);
 
   const libraryInspectorSections = selected

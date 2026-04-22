@@ -2186,6 +2186,8 @@ export interface FolderCountSummary {
   subfolderCount: number;
   warningCount: number;
   duplicateCount: number;
+  /** Files stored directly at depth-0 in the folder (not in subfolders). */
+  rootFilesCount: number;
 }
 
 /** A single distribution entry (kind, source, or creator). */
@@ -2334,9 +2336,14 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
 export function computeFolderSummary(
   folderFiles: LibraryFileRow[],
   folderNode: { name: string; fullPath: string; childFolderCount: number; files?: number[] },
+  /** Number of depth-0 files (stored directly in this folder, not in subfolders). */
+  rootFilesCount: number = 0,
 ): FolderSummaryData {
-  const totalFiles = folderFiles.length;
-  const directFiles = folderNode.files ? Math.min(folderNode.files.length, totalFiles) : totalFiles;
+  const totalFiles = folderFiles.length + rootFilesCount;
+  // directFiles: files stored at this folder node (node.files IDs) + rootFilesCount for root folders.
+  // For root folders (where node.files is undefined), rootFilesCount IS the direct file count.
+  const nodeDirectCount = folderNode.files ? Math.min(folderNode.files.length, folderFiles.length) : 0;
+  const directFiles = nodeDirectCount + rootFilesCount;
   const nestedFiles = Math.max(0, totalFiles - directFiles);
 
   // ── Kind distribution ──────────────────────────────────────────────────
@@ -2462,6 +2469,7 @@ export function computeFolderSummary(
       subfolderCount: folderNode.childFolderCount,
       warningCount,
       duplicateCount,
+      rootFilesCount,
     },
     kindDistribution,
     sourceDistribution,

@@ -14824,3 +14824,92 @@ select:focus-visible {
 /* ─── Phase 5aa: Library Redesign CSS (unchanged) ──────────────────────────
    The code below is preserved — do not edit it for Phase 5ao work.
 */
+
+/* Phase 5ap: Folder content pane — section labels, loose files groups, hints */
+.library-folder-content-pane {
+  padding: 0 0 2rem;
+}
+
+.folder-content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 0.5rem;
+}
+
+.folder-content-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text, #eef4ef);
+}
+
+.folder-content-title svg {
+  color: var(--accent-orange, #ff8c42);
+}
+
+.folder-content-summary {
+  font-size: 0.7rem;
+  color: var(--text-muted, #7a8c7d);
+}
+
+.folder-content-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #7a8c7d);
+}
+
+.folder-content-section--loose {
+  color: var(--accent-orange, #ff8c42);
+}
+
+.folder-loose-files-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  height: 1.1rem;
+  background: rgba(255, 140, 66, 0.15);
+  border: 1px solid rgba(255, 140, 66, 0.3);
+  border-radius: 100px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--accent-orange, #ff8c42);
+}
+
+.folder-loose-files-hint {
+  padding: 0 1rem 0.35rem;
+  font-size: 0.68rem;
+  color: var(--text-faint, #506050);
+  font-style: italic;
+}
+
+.folder-loose-source-group {
+  margin-bottom: 0.5rem;
+}
+
+.folder-loose-source-group + .folder-loose-source-group {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Section hint (e.g. "showing N of M") */
+.folder-content-section-hint {
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint, #506050);
+}
