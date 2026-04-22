@@ -14194,6 +14194,68 @@ select:focus-visible {
   white-space: normal;
 }
 
+/* Phase 5ap gap-fill: inspector text wrapping ────────────────────────────────
+   (1) .detail-row > span  — global has ellipsis/nowrap/max-width:7rem
+   (2) .detail-row > strong — global has display:flex!important
+   (3) .detail-row > .detail-value — global has overflow:hidden/ellipsis/nowrap
+   (4) .detail-header — no min-width:0, can overflow in flex context
+   Phase 5ap block (~line 14098) comes AFTER global rules (~12886),
+   so class selectors (0,2,0) beat element selectors (0,1,0) here.
+─────────────────────────────────────────────────────────────────────────── */
+
+/* Header: allow shrinking below content size */
+.library-inspector-shell .detail-header {
+  min-width: 0;
+}
+
+/* Filename: no clamping — let long names wrap cleanly */
+.library-inspector-shell .detail-filename {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* Label span: undo global ellipsis + nowrap */
+.library-inspector-shell .detail-row > span {
+  flex: 0 1 6.2rem;
+  min-width: 0;
+  max-width: 38%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* strong element: undo global display:flex!important */
+.library-inspector-shell .detail-row > strong {
+  display: block !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* .detail-value (legacy): undo ellipsis + nowrap */
+.library-inspector-shell .detail-row > .detail-value {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* Long strings (unspaced filenames): break within word */
+.library-inspector-shell .detail-row > strong,
+.library-inspector-shell .detail-row > .detail-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+
+
 /* ── Phase 5aa: virtualized row infrastructure ────────────────────────── */
 
 /* Wrapper: positions row absolutely inside the virtualizer's scroll container */
