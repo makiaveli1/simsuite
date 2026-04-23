@@ -223,6 +223,34 @@ export type LibraryWatchFilter = "all" | "has_updates" | "needs_attention" | "no
 
 export type LibrarySortField = "name" | "creator" | "recently_modified" | "has_updates_first";
 
+export type RelationshipType =
+  | "duplicate"
+  | "same_pack"
+  | "same_folder"
+  | "same_creator"
+  | "folder_heuristic"
+  | "tray_group"
+  | "none";
+
+export type ProofLevel = "fact" | "claim" | "heuristic";
+
+export interface FileRelationship {
+  type: RelationshipType;
+  proofLevel: ProofLevel;
+  label: string;
+  peerCount?: number;
+}
+
+export interface RelationshipCue {
+  type: "duplicate" | RelationshipType;
+  proofLevel: ProofLevel;
+  confidenceLabel: "Confirmed" | "Likely" | "Possible";
+  shortLabel: string;
+  compactLabel: string;
+  description: string;
+  relatedCount?: number;
+}
+
 export interface LibraryFileRow {
   id: number;
   filename: string;

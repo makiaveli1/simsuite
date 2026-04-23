@@ -7,7 +7,7 @@ import {
   panelSpring,
 } from "../../lib/motion";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
-import type { FileDetail, UserView } from "../../lib/types";
+import type { FileDetail, FileRelationship, UserView } from "../../lib/types";
 import {
   buildInspectorPreviewStrip,
   computeFileRelationship,
@@ -22,7 +22,6 @@ import {
   summarizeScriptScopeForUi,
   summarizeVersionSignalForUi,
   typeColorForKind,
-  type FileRelationship,
 } from "./libraryDisplay";
 
 export type LibrarySheetMode = "health" | "inspect" | "edit" | null;

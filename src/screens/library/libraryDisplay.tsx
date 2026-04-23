@@ -12,8 +12,12 @@ import type { ReactNode } from "react";
 import type {
   FileDetail,
   FileInsights,
+  FileRelationship,
   LibraryFileRow,
   PreviewSource,
+  ProofLevel,
+  RelationshipCue,
+  RelationshipType,
   UserView,
   VersionConfidence,
   WatchStatus,
@@ -32,36 +36,6 @@ export interface LibraryViewFlags {
   maxScriptNamespaces: number;
   // Card content: ScriptMods namespace limit per mode
   cardMaxScriptNamespaces: number;
-}
-
-/**
- * Relationship type taxonomy for Library file relationships.
- * Proof levels — strictly honest, never overclaimed:
- *   fact      — backend-computed, deterministic
- *   claim     — backend-derived with documented inference rules
- *   heuristic — client-side inference, clearly indicated as uncertain
- */
-export type RelationshipType =
-  | "duplicate"       // backend: exact duplicate pair (same hash)
-  | "same_pack"        // backend: bundle/pack membership
-  | "same_folder"      // backend: files sharing same parent dir (Mods hierarchy)
-  | "same_creator"    // backend: confirmed-creator files from same creator
-  | "folder_heuristic" // client: same folder, non-generic name (heuristic)
-  | "tray_group"       // backend: tray/household provenance grouping
-  | "none";            // no detectable relationship
-export type ProofLevel = "fact" | "claim" | "heuristic";
-
-/**
- * A single relationship between a file and one or more other files.
- * Powers relationship hints on cards, rows, and the detail sheet.
- */
-export interface FileRelationship {
-  type: RelationshipType;
-  proofLevel: ProofLevel;
-  /** Human-readable label, e.g. "3 more in this folder" */
-  label: string;
-  /** Count of related files (absent when not applicable) */
-  peerCount?: number;
 }
 
 /** CSS variable name for the type color dot/border */
@@ -194,6 +168,7 @@ export interface LibraryRowModel {
   hasIssues: boolean;
   /** Color swatches extracted from embeddedNames / familyHints keywords */
   colorSwatches: string[];
+  relationshipCue?: RelationshipCue;
 }
 
 type LibraryCareSummarySource = Pick<
@@ -360,6 +335,7 @@ export function buildLibraryRowModel(
       row.insights?.embeddedNames ?? [],
       row.insights?.familyHints ?? [],
     ),
+    relationshipCue: deriveRelationshipCue(computeFileRelationship(row, [])) ?? undefined,
   };
 }
 
@@ -1190,21 +1166,17 @@ export function computeFileRelationship(
   file: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation" | "sameFolderPeerCount" | "samePackPeerCount">,
   items: Pick<LibraryFileRow, "id" | "path" | "bundleName" | "hasDuplicate" | "groupedFileCount" | "creator" | "sourceLocation" | "sameFolderPeerCount" | "samePackPeerCount">[],
 ): FileRelationship | null {
-  // 1. Duplicate — backend fact
   if (file.hasDuplicate) {
-    const duplicateCount = items.filter(
-      (f) => f.id !== file.id && f.hasDuplicate,
-    ).length;
+    const duplicateCount = items.filter((f) => f.id !== file.id && f.hasDuplicate).length;
     return {
       type: "duplicate",
       proofLevel: "fact",
-      label: `${duplicateCount + 1} duplicate${duplicateCount !== 0 ? "s" : ""}`,
+      label: `${Math.max(duplicateCount + 1, 2)} duplicate${duplicateCount + 1 !== 1 ? "s" : ""}`,
       peerCount: duplicateCount,
     };
   }
 
-  // 2. Same pack — backend window count if available, else client scan fallback
-  if (file.bundleName) {
+  if (file.sourceLocation === "tray" && file.bundleName) {
     const peerCount = file.samePackPeerCount ?? null;
     if (peerCount !== null && peerCount > 0) {
       return {
@@ -1214,10 +1186,8 @@ export function computeFileRelationship(
         peerCount,
       };
     }
-    // Fallback: client scan (for data from pre-window-scan re-scans)
-    const bundlePeers = items.filter(
-      (f) => f.id !== file.id && f.bundleName === file.bundleName,
-    );
+
+    const bundlePeers = items.filter((f) => f.id !== file.id && f.bundleName === file.bundleName);
     if (bundlePeers.length > 0) {
       return {
         type: "same_pack",
@@ -1228,7 +1198,6 @@ export function computeFileRelationship(
     }
   }
 
-  // 3. Tray group — backend claim
   if (file.groupedFileCount != null && file.groupedFileCount > 1) {
     return {
       type: "tray_group",
@@ -1238,7 +1207,20 @@ export function computeFileRelationship(
     };
   }
 
-  // 4. Same folder (mods hierarchy) — backend window count if available, else heuristic fallback
+  if (file.creator?.trim()) {
+    const creatorPeers = items.filter(
+      (f) => f.id !== file.id && f.creator?.trim() && f.creator === file.creator,
+    );
+    if (creatorPeers.length > 0) {
+      return {
+        type: "same_creator",
+        proofLevel: "claim",
+        label: `${creatorPeers.length} more by ${file.creator}`,
+        peerCount: creatorPeers.length,
+      };
+    }
+  }
+
   const peerCount = file.sameFolderPeerCount ?? null;
   if (peerCount !== null && peerCount > 0) {
     const isMods = file.sourceLocation === "mods";
@@ -1249,14 +1231,13 @@ export function computeFileRelationship(
       peerCount,
     };
   }
-  // Fallback: client scan for existing data that predates the window scan
+
+  const parentPath = extractParentPath(file.path);
   const parentFolder = extractParentFolder(file.path);
-  if (parentFolder && !GENERIC_FOLDER_NAMES.has(parentFolder.toLowerCase())) {
+  if (parentPath && parentFolder && !GENERIC_FOLDER_NAMES.has(parentFolder.toLowerCase())) {
     const isMods = file.sourceLocation === "mods";
     const folderPeers = items.filter(
-      (f) =>
-        f.id !== file.id &&
-        extractParentFolder(f.path) === parentFolder,
+      (f) => f.id !== file.id && extractParentPath(f.path) === parentPath,
     );
     if (folderPeers.length > 0) {
       return {
@@ -1269,6 +1250,14 @@ export function computeFileRelationship(
   }
 
   return null;
+}
+
+export function extractParentPath(filePath: string): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const lastSlash = normalized.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  return normalized.slice(0, lastSlash) || null;
 }
 
 /**
@@ -2169,6 +2158,214 @@ function watchStatusToneFor(
 /** Folder summary computation mode. */
 export type FolderSummaryMode = "casual" | "power";
 
+type SheetRelationshipTier = "confirmed" | "likely" | "possible";
+
+type SheetRelationshipCard = {
+  key: string;
+  tier: SheetRelationshipTier;
+  label: string;
+  reason: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
+export function buildSheetRelationshipsSection(
+  file: FileDetail,
+  allFiles: LibraryFileRow[],
+  _userView: UserView,
+  actions?: {
+    onNavigateDuplicates?: (fileIds: number[]) => void;
+    onNavigateNeedsReview?: (fileId: number) => void;
+  },
+): ReactNode {
+  const cards: SheetRelationshipCard[] = [];
+  const isScriptMod = file.kind.includes("Script") || /\.ts4script$/i.test(file.filename);
+  const sameCreatorPeers = file.creator?.trim()
+    ? allFiles.filter((candidate) => candidate.id !== file.id && candidate.creator === file.creator)
+    : [];
+  const parentPath = extractParentPath(file.path);
+  const parentFolder = extractParentFolder(file.path);
+  const folderPeers = parentPath
+    ? allFiles.filter((candidate) => candidate.id !== file.id && extractParentPath(candidate.path) === parentPath)
+    : [];
+  const exactDuplicate = file.duplicateTypes.includes("exact");
+  const versionDuplicate = file.duplicateTypes.includes("version");
+  const trayBundle = file.sourceLocation === "tray" && (file.groupedFileCount ?? 0) > 1;
+
+  if (exactDuplicate) {
+    cards.push({
+      key: "exact-duplicate",
+      tier: "confirmed",
+      label: "Exact duplicates detected",
+      reason:
+        file.duplicatesCount > 0
+          ? `Duplicate detector found ${file.duplicatesCount} matching pair${file.duplicatesCount !== 1 ? "s" : ""} for this file.`
+          : "Duplicate detector marked this file as an exact duplicate.",
+      actionLabel: actions?.onNavigateDuplicates ? "View duplicates →" : undefined,
+      onAction: actions?.onNavigateDuplicates ? () => actions.onNavigateDuplicates?.([file.id]) : undefined,
+    });
+  }
+
+  if (file.sourceLocation === "mods" && (file.sameFolderPeerCount ?? 0) > 0) {
+    cards.push({
+      key: "same-folder-mods",
+      tier: "confirmed",
+      label: "Same folder set",
+      reason: `${(file.sameFolderPeerCount ?? 0) + 1} files live in ${parentFolder ?? "this folder"}. For installed mods, shared folder placement is treated as a confirmed relationship signal.`,
+    });
+  }
+
+  if (trayBundle) {
+    cards.push({
+      key: "tray-bundle",
+      tier: "confirmed",
+      label: "Tray bundle",
+      reason: `${file.groupedFileCount} tray files were grouped together from the same household / lot bundle.`,
+    });
+  }
+
+  if (file.sourceLocation === "tray" && file.bundleName && (file.samePackPeerCount ?? 0) > 0) {
+    cards.push({
+      key: "same-pack",
+      tier: "likely",
+      label: "Same pack membership",
+      reason: `${(file.samePackPeerCount ?? 0) + 1} files share the ${file.bundleName} pack grouping.`,
+    });
+  }
+
+  if (sameCreatorPeers.length > 0) {
+    cards.push({
+      key: "same-creator",
+      tier: "likely",
+      label: "Same creator",
+      reason: `${sameCreatorPeers.length} other file${sameCreatorPeers.length !== 1 ? "s" : ""} in this view are attributed to ${file.creator}.`,
+    });
+  }
+
+  if (versionDuplicate) {
+    cards.push({
+      key: "version-related",
+      tier: "likely",
+      label: "Version-related duplicate",
+      reason: "Duplicate detection flagged a version-related match. This usually means another copy or revision of the same mod is present.",
+      actionLabel: actions?.onNavigateDuplicates ? "View duplicates →" : undefined,
+      onAction: actions?.onNavigateDuplicates ? () => actions.onNavigateDuplicates?.([file.id]) : undefined,
+    });
+  }
+
+  if (file.sourceLocation !== "mods" && folderPeers.length > 0) {
+    cards.push({
+      key: "same-folder-possible",
+      tier: "possible",
+      label: "Shared folder placement",
+      reason: `${folderPeers.length + 1} files sit in ${parentFolder ?? "the same folder"}. Outside Mods, this is only a possible relationship signal.`,
+    });
+  }
+
+  const filenameStem = cleanTechnicalLabel(file.filename).split(" ").find((token) => token.length >= 4) ?? null;
+  if (filenameStem) {
+    const sameStemPeers = allFiles.filter((candidate) => {
+      if (candidate.id === file.id) return false;
+      const candidateStem = cleanTechnicalLabel(candidate.filename).split(" ").find((token) => token.length >= 4) ?? null;
+      return candidateStem != null && candidateStem.toLowerCase() === filenameStem.toLowerCase();
+    });
+    if (sameStemPeers.length > 0 && !sameCreatorPeers.length) {
+      cards.push({
+        key: "filename-creator-heuristic",
+        tier: "possible",
+        label: "Filename-based creator hint",
+        reason: `${sameStemPeers.length} nearby file${sameStemPeers.length !== 1 ? "s" : ""} share the filename stem “${filenameStem}”. This may indicate a creator or set, but it is not confirmed metadata.`,
+      });
+    }
+  }
+
+  const safeDeleteWarnings: string[] = [];
+  if (exactDuplicate) {
+    safeDeleteWarnings.push("This file has exact duplicates — disabling or deleting it may break saves that reference the other copy.");
+  }
+  if (isScriptMod) {
+    safeDeleteWarnings.push("This appears to be a script mod — disabling it may break mods that depend on its scripts or namespace.");
+  }
+
+  if (cards.length === 0 && safeDeleteWarnings.length === 0) {
+    return null;
+  }
+
+  const renderTier = (tier: SheetRelationshipTier, title: string) => {
+    const tierCards = cards.filter((card) => card.tier === tier);
+    if (tierCards.length === 0) return null;
+    return (
+      <div className="detail-block">
+        <div className="section-label">{title}</div>
+        <div className="detail-list">
+          {tierCards.map((card) => (
+            <div key={card.key} className="detail-row detail-row--block">
+              <span>{card.label}</span>
+              <div>
+                <strong>{card.reason}</strong>
+                {card.actionLabel && card.onAction ? (
+                  <div style={{ marginTop: "0.45rem" }}>
+                    <button type="button" className="secondary-action" onClick={card.onAction}>
+                      {card.actionLabel}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {renderTier("confirmed", "Confirmed relationships")}
+      {renderTier("likely", "Likely relationships")}
+      {cards.some((card) => card.tier === "possible") ? (
+        <div className="detail-block">
+          <div className="section-label">Possible relationships</div>
+          <p className="text-muted" style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+            Same-folder connections are based on file location. Many files in the same folder are unrelated — this is a possible signal, not a confirmed relationship.
+          </p>
+          <div className="detail-list">
+            {cards.filter((card) => card.tier === "possible").map((card) => (
+              <div key={card.key} className="detail-row detail-row--block">
+                <span>{card.label}</span>
+                <strong>{card.reason}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {safeDeleteWarnings.length > 0 ? (
+        <div className="detail-block library-safedelete-warning">
+          <div className="section-label">⚠ Delete carefully</div>
+          <div className="detail-list">
+            {safeDeleteWarnings.map((warning) => (
+              <div key={warning} className="detail-row detail-row--block">
+                <span>Check first</span>
+                <strong>{warning}</strong>
+              </div>
+            ))}
+            {actions?.onNavigateNeedsReview && (file.safetyNotes.length > 0 || file.parserWarnings.length > 0) ? (
+              <div style={{ marginTop: "0.45rem" }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => actions.onNavigateNeedsReview?.(file.id)}
+                >
+                  Open needs review →
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** Maps ProofLevel to user-facing confidence label. */
 export function proofLevelToLabel(level: ProofLevel): "Confirmed" | "Likely" | "Possible" {
   switch (level) {
@@ -2235,19 +2432,6 @@ export interface FolderTreeClue {
   warningCount: number;
   duplicateCount: number;
   issueState: "none" | "warning" | "duplicate" | "mixed";
-}
-
-/** Primary relationship cue for a single file. Used in grid reveal and row clues. */
-export interface RelationshipCue {
-  type: "duplicate" | RelationshipType;
-  proofLevel: ProofLevel;
-  confidenceLabel: "Confirmed" | "Likely" | "Possible";
-  /** Full label for detail contexts: "Confirmed · Duplicate" */
-  shortLabel: string;
-  /** Compact label for table rows: "Dup", "Pack 7", "Set 4" */
-  compactLabel: string;
-  description: string;
-  relatedCount?: number;
 }
 
 /**

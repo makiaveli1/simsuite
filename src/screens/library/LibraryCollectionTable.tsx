@@ -2,7 +2,7 @@ import { useMemo, memo } from "react";
 import { m } from "motion/react";
 import { rowHover, rowPress } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
-import { buildLibraryRowModel, computeFileRelationship, deriveRelationshipCue, type LibraryRowModel } from "./libraryDisplay";
+import { buildLibraryRowModel, type LibraryRowModel } from "./libraryDisplay";
 
 export interface LibraryCollectionTableProps {
   userView: UserView;
@@ -213,16 +213,15 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                       <div className="library-row-identity" title={model.identityLabel}>{model.identityLabel}</div>
                     ) : null}
                     {/* Phase 5ao: relationship cue at bottom of name cell */}
-                    {(() => {
-                      const cue = deriveRelationshipCue(computeFileRelationship(row, []));
-                      if (!cue) return null;
-                      return (
-                        <div className={`library-row-rel-cue library-row-rel-cue--${cue.confidenceLabel.toLowerCase()}`} title={cue.description}>
-                          <span className={`library-row-rel-cue-dot library-row-rel-cue-dot--${cue.confidenceLabel.toLowerCase()}`} />
-                          {cue.compactLabel}
-                        </div>
-                      );
-                    })()}
+                    {model.relationshipCue ? (
+                      <div
+                        className={`library-row-rel-cue library-row-rel-cue--${model.relationshipCue.confidenceLabel.toLowerCase()}`}
+                        title={model.relationshipCue.description}
+                      >
+                        <span className={`library-row-rel-cue-dot library-row-rel-cue-dot--${model.relationshipCue.confidenceLabel.toLowerCase()}`} />
+                        {model.relationshipCue.compactLabel}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="library-list-col library-list-col--status library-status-cell">

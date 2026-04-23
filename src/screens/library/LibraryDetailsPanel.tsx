@@ -19,12 +19,11 @@ import {
   trayLocationLabel,
   typeColorForKind,
   usefulTrayGroupingValue,
-  type FileRelationship,
   type FolderSummaryData,
   type FolderSummaryMode,
 } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
-import type { FileDetail, UserView, WatchStatus } from "../../lib/types";
+import type { FileDetail, FileRelationship, UserView, WatchStatus } from "../../lib/types";
 
 interface LibraryDetailsPanelProps {
   userView: UserView;
@@ -34,6 +33,8 @@ interface LibraryDetailsPanelProps {
   onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
   onOpenFolder?: (path: string) => void;
+  onNavigateDuplicates?: (fileIds: number[]) => void;
+  onNavigateNeedsReview?: (fileId: number) => void;
   /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
   headerRight?: ReactNode;
   /** Pre-computed relationship signal from LibraryScreen. */
@@ -56,6 +57,8 @@ export function LibraryDetailsPanel({
   onOpenEditDetails,
   onOpenUpdates,
   onOpenFolder = () => {},
+  onNavigateDuplicates,
+  onNavigateNeedsReview,
   headerRight,
   relationship: relationshipProp,
   folderName: folderNameProp,
