@@ -37,6 +37,7 @@ import {
   buildSheetCompatibilitySection,
   buildSheetContentsSection,
   buildSheetDiagnosticsSection,
+  buildSheetRelationshipsSection,
   buildSheetTraySection,
   computeFileRelationship,
   computeFolderSummary,
@@ -1357,6 +1358,19 @@ export function LibraryScreen({
                 defaultCollapsed: true,
                 children: buildSheetCompatibilitySection(selected, "inspect", userView),
               },
+              {
+                id: "relationships",
+                label: "Relationships",
+                hint:
+                  "Confirmed, likely, and possible connections to other files — same folder, pack, creator, or duplicates.",
+                defaultCollapsed: false,
+                children: buildSheetRelationshipsSection(selected, rows?.items ?? [], userView, {
+                  onNavigateDuplicates,
+                  onNavigateNeedsReview: onNavigateWithParams
+                    ? (fileId: number) => onNavigateWithParams("updates", "review", undefined, fileId)
+                    : undefined,
+                }),
+              },
             ]
           : []),
         ...(!isCasualView
@@ -1482,10 +1496,18 @@ export function LibraryScreen({
                 "whats-inside",
                 "attribution",
                 "compatibility",
+                "relationships",
                 "path",
               ].includes(section.id);
             }
-            return ["facts", "tray-context", "whats-inside", "attribution", "compatibility"].includes(section.id);
+            return [
+              "facts",
+              "tray-context",
+              "whats-inside",
+              "attribution",
+              "compatibility",
+              "relationships",
+            ].includes(section.id);
           }
 
           // edit: always creator + category
