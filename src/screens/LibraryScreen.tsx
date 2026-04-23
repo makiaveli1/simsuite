@@ -1800,6 +1800,12 @@ export function LibraryScreen({
             onOpenFolder={(path) => {
               void openContainingFolder(path);
             }}
+            onNavigateDuplicates={onNavigateDuplicates}
+            onNavigateNeedsReview={
+              onNavigateWithParams
+                ? (fileId: number) => onNavigateWithParams("updates", "review", undefined, fileId)
+                : undefined
+            }
             relationship={relationship}
             folderName={folderName}
             folderSummary={folderSummary}

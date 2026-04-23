@@ -504,6 +504,46 @@ export function LibraryDetailsPanel({
         </section>
       ) : null}
 
+      {/* ── Safe-delete pre-checks — shown when file has duplicates or is a script mod ── */}
+      {(() => {
+        const isScriptMod =
+          selectedFile.kind.includes("Script") || /\.ts4script$/i.test(selectedFile.filename);
+        if (!isScriptMod && !(selectedFile.duplicateTypes ?? []).includes("exact")) return null;
+        const warnings: Array<{ text: string; actionLabel?: string; onAction?: () => void }> = [];
+        if ((selectedFile.duplicateTypes ?? []).includes("exact")) {
+          warnings.push({
+            text: "This file has exact duplicates — disabling or deleting it may break saves that reference the other copy.",
+            actionLabel: onNavigateDuplicates ? "View duplicates →" : undefined,
+            onAction: onNavigateDuplicates ? () => onNavigateDuplicates([selectedFile.id]) : undefined,
+          });
+        }
+        if (isScriptMod) {
+          warnings.push({
+            text: "This appears to be a script mod — disabling it may break mods that depend on its scripts or namespace.",
+          });
+        }
+        return (
+          <section className="library-details-card library-safedelete-warning">
+            <div className="section-label">⚠ Delete carefully</div>
+            <div className="detail-list">
+              {warnings.map((w) => (
+                <div key={w.text} className="detail-row detail-row--block">
+                  <span>Check first</span>
+                  <strong>{w.text}</strong>
+                  {w.actionLabel && w.onAction ? (
+                    <div style={{ marginTop: "0.45rem" }}>
+                      <button type="button" className="secondary-action" onClick={w.onAction}>
+                        {w.actionLabel}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
+
       {/* ── More actions — view-aware ── */}
       <section className="library-details-card">
         <div className="section-label">Open</div>
