@@ -1,5 +1,60 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Library correctness sprint start)
+
+- **Mode**: code
+- **Focus**: first Trust & Safety correctness pass after the Library audit
+
+### Progress Made
+
+1. **Fixed the critical Library list SQL crash**:
+   - removed the extra comma before `FROM files f` in both paged and unpaged `list_library_files` queries
+   - added a paged-query regression test so both query paths are covered
+
+2. **Restored the Rust test suite**:
+   - updated old `inspect_file` tests to pass the new `defer_thumbnails` argument
+   - fixed one real Downloads overview bug exposed after the suite could run:
+     - same-version special downloads now keep the `Done` lane count when queue hydration proves they are already installed
+     - empty search results no longer wipe the global overview counts
+
+3. **Fixed backend folder metadata**:
+   - moved folder tree metadata building into `library_index`
+   - stopped using SQLite `REVERSE()`
+   - folder metadata now builds `Mods` / `Tray` roots and nested counts from lightweight path rows
+
+4. **Fixed nested folder content lookup**:
+   - `getFolderContents` now searches folder nodes recursively
+   - added a Vitest regression for folders below the first child level
+
+5. **Made relationship counts more truthful**:
+   - same-folder counts now use the real parent folder path, not just same source and depth
+   - same-pack counts now only count real `bundle_id` groups, so files with no bundle no longer look related
+
+### Verification
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed: `215` tests.
+- `npm run test:unit` passed: `10` files, `36` tests.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+- `cargo check --manifest-path src-tauri/Cargo.toml` passed with existing warnings.
+- `cargo build --manifest-path src-tauri/Cargo.toml --release` passed with existing warnings.
+
+### Known Problems / Gaps
+
+- Staging is still exposed but its Tauri commands are still not registered.
+- Folder view still fetches full file rows for useful contents; backend-native folder contents are still future work.
+- Relationship labels are more honest now, but real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Existing Rust warnings remain, mostly unused/dead-code warnings around older staging and inspector code.
+- Existing uncommitted frontend changes were already present before this session and were left in place.
+
+### Next Best Step
+
+Continue Sprint 1:
+
+1. Decide whether to register, hide, or merge Staging.
+2. Keep softening relationship/dependency wording anywhere the UI still implies proof the backend does not have.
+3. Start Sprint 2 folder work: backend-native folder children, paged folder contents, folder summary, and open-folder support for empty folders.
+
 ## Current Session (April 24, 2026 - Library system audit)
 
 - **Mode**: audit/planning only

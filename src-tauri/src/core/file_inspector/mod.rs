@@ -2533,7 +2533,7 @@ mod tests {
         writer.write_all(b"pyc").expect("write");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert_eq!(outcome.creator_hint.as_deref(), Some("TwistedMexi"));
         assert_eq!(outcome.kind_hint.as_deref(), Some("ScriptMods"));
         assert!(outcome
@@ -2562,7 +2562,7 @@ mod tests {
         writer.write_all(b"pyc").expect("write");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert!(outcome
             .insights
             .version_hints
@@ -2594,7 +2594,7 @@ mod tests {
             .expect("write");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert!(outcome
             .insights
             .version_hints
@@ -2627,7 +2627,7 @@ mod tests {
             .expect("write manifest");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert!(outcome
             .insights
             .version_hints
@@ -2659,7 +2659,7 @@ mod tests {
             .expect("write manifest");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert!(outcome
             .insights
             .embedded_names
@@ -2693,7 +2693,7 @@ mod tests {
             .expect("write manifest");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert_eq!(outcome.creator_hint.as_deref(), Some("TwistedMexi"));
         assert!(outcome
             .insights
@@ -2721,7 +2721,7 @@ mod tests {
             .expect("write manifest");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert_eq!(outcome.creator_hint.as_deref(), Some("TwistedMexi"));
         assert!(outcome
             .insights
@@ -2755,7 +2755,7 @@ mod tests {
         writer.write_all(b"pyc").expect("write version");
         writer.finish().expect("finish");
 
-        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack).expect("inspect");
+        let outcome = inspect_file(&filepath, ".ts4script", &seed_pack, false).expect("inspect");
         assert!(outcome
             .insights
             .script_namespaces
@@ -3002,5 +3002,4 @@ mod tests {
     }
 
 }
-
 

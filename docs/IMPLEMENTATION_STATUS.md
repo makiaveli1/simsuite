@@ -1,5 +1,39 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Library correctness sprint start)
+
+This session began the recommended Library correctness sprint.
+
+Important changes and findings:
+
+- `list_library_files` no longer builds invalid SQL in either paged or unpaged mode
+- Rust tests now compile again after the old `inspect_file` test calls were updated for the newer thumbnail flag
+- `cargo test` now runs and passes again
+- `get_folder_tree_metadata` no longer depends on unsupported SQLite `REVERSE()`
+- folder metadata is now built in `library_index` from lightweight path rows, with nested folder counts covered by test
+- nested folder selection in the frontend folder helper now works below the first child level
+- Library relationship peer counts are less misleading:
+  - same-folder counts use real parent folder paths
+  - same-pack counts ignore files with no `bundle_id`
+- a Downloads queue overview bug was also fixed after the full Rust suite exposed it:
+  - hydrated same-version special downloads now keep the `Done` lane count
+  - empty searches keep global overview counts instead of replacing them with zeroed visible rows
+
+Checks passed:
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cargo test --manifest-path src-tauri/Cargo.toml` (`215` tests)
+- `npm run test:unit` (`10` files, `36` tests)
+- `npm run build` with the existing Vite chunk-size warning
+- `cargo check --manifest-path src-tauri/Cargo.toml` with existing warnings
+- `cargo build --manifest-path src-tauri/Cargo.toml --release` with existing warnings
+
+Important remaining gap:
+
+- Staging is still exposed but not wired through registered Tauri commands.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Relationship/dependency language still needs careful product cleanup because true dependency proof and safe-delete preflight do not exist yet.
+
 ## Current session note (April 24, 2026 - Library system audit)
 
 This session was audit-only. No app behavior was intentionally changed.

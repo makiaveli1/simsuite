@@ -65,6 +65,21 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (April 24, 2026)
+
+The Library correctness sprint moved more Library truth into the backend owner instead of leaving it in command-only SQL or frontend fallback code.
+
+Important current behavior:
+
+- `list_library_files` supports both paged and unpaged queries again.
+- `get_folder_tree_metadata` delegates to `library_index` and no longer uses SQLite-only string tricks.
+- folder metadata is built from lightweight file path rows and returns nested `Mods` / `Tray` folder nodes with direct and total file counts.
+- Library row relationship counts now use real parent-folder grouping and real bundle IDs:
+  - same-folder no longer means only same source and depth
+  - files with no `bundle_id` no longer count as sharing a pack
+- frontend folder content lookup now recurses through nested folder nodes, so deep folders can show their files.
+- Downloads queue lane counts can use fully hydrated visible rows when the default queue result is complete, while searched/filtered empty results keep the global overview counts.
+
 ## Current engineering note (March 18, 2026)
 
 `Downloads` now follows the shared workbench shell instead of keeping its own stacked dashboard-style layout.

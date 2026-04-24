@@ -1,13 +1,17 @@
-use std::path::Path;
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    path::Path,
+};
 
 use crate::{
     core::{content_versions, scanner},
     error::AppResult,
     models::{
-        CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, HomeOverview,
-        LibraryFacets, LibraryFileRow, LibraryListResponse, LibraryQuery, LibrarySettings,
-        LibrarySortField, LibrarySummary, LibraryWatchFilter, WatchStatus,
+        CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, FolderTreeMetadata,
+        FolderTreeNode, HomeOverview, LibraryFacets, LibraryFileRow, LibraryListResponse,
+        LibraryQuery, LibrarySettings, LibrarySortField, LibrarySummary, LibraryWatchFilter,
+        WatchStatus,
     },
     seed::{SeedPack, TaxonomySeed},
 };
@@ -240,12 +244,6 @@ pub fn list_library_files(
     let (filters, params) = build_filters(&query);
     let order_by = build_order_by(query.sort_by);
 
-    // Common JOIN fragment for watch tables.
-    // NOTE: content_versions table not yet created — joined columns held as None for now.
-    let watch_join =
-        " LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\
-         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key";
-
     let total_sql = format!(
         "SELECT COUNT(*)\n\
          FROM files f\n\
@@ -261,6 +259,7 @@ pub fn list_library_files(
     let total = connection.query_row(&total_sql, params_from_iter(params.iter()), |row| {
         row.get(0)
     })?;
+    let peer_counts = load_relationship_peer_counts(connection, &filters, &params)?;
 
     // Pagination: only apply LIMIT/OFFSET when query.limit is explicitly set.
     // When limit is None (tree-mode), return all filtered rows without LIMIT/OFFSET.
@@ -296,9 +295,9 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+             0 AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+             0 AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -339,9 +338,9 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             (COUNT(*) OVER (PARTITION BY f.source_location, f.relative_depth) - 1) AS same_folder_peer_count,
+             0 AS same_folder_peer_count,
 \
-             (COUNT(*) OVER (PARTITION BY f.bundle_id) - 1) AS same_pack_peer_count,
+             0 AS same_pack_peer_count
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -356,7 +355,7 @@ pub fn list_library_files(
         )
     };
 
-    let mut row_params = if query.limit.is_some() {
+    let row_params = if query.limit.is_some() {
         let limit = query.limit.unwrap_or(100);
         let offset = query.offset.unwrap_or(0);
         let mut p = params.clone();
@@ -370,6 +369,9 @@ pub fn list_library_files(
     let mut statement = connection.prepare(&rows_sql)?;
     let items = statement
         .query_map(params_from_iter(row_params.iter()), |row| {
+            let id = row.get::<_, i64>(0)?;
+            let (same_folder_peer_count, same_pack_peer_count) =
+                peer_counts.get(&id).copied().unwrap_or_default();
             let watch_status_str: Option<String> = row.get(18)?;
             let watch_status = watch_status_str
                 .map(|s| match s.as_str() {
@@ -381,7 +383,7 @@ pub fn list_library_files(
                 })
                 .unwrap_or_default();
             Ok(LibraryFileRow {
-                id: row.get(0)?,
+                id,
                 filename: row.get(1)?,
                 path: row.get(2)?,
                 extension: row.get(3)?,
@@ -406,13 +408,298 @@ pub fn list_library_files(
                 watch_status,
                 has_duplicate: row.get::<_, i64>(19)? != 0,
                 installed_version: None,
-                same_folder_peer_count: row.get::<_, i64>(20)?,
-                same_pack_peer_count: row.get::<_, i64>(21)?,
+                same_folder_peer_count,
+                same_pack_peer_count,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(LibraryListResponse { total, items })
+}
+
+#[derive(Debug)]
+struct RelationshipPeerRow {
+    id: i64,
+    path: String,
+    source_location: String,
+    relative_depth: i64,
+    bundle_id: Option<i64>,
+}
+
+fn load_relationship_peer_counts(
+    connection: &Connection,
+    filters: &str,
+    params: &[Value],
+) -> AppResult<HashMap<i64, (i64, i64)>> {
+    let sql = format!(
+        "SELECT DISTINCT f.id, f.path, f.source_location, f.relative_depth, f.bundle_id\n\
+         FROM files f\n\
+         LEFT JOIN creators c ON f.creator_id = c.id\n\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+         WHERE f.source_location <> 'downloads'\n\
+        {filters}",
+        filters = filters
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let rows = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            Ok(RelationshipPeerRow {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                source_location: row.get(2)?,
+                relative_depth: row.get(3)?,
+                bundle_id: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut folder_groups: HashMap<(String, String), Vec<i64>> = HashMap::new();
+    let mut bundle_groups: HashMap<i64, Vec<i64>> = HashMap::new();
+
+    for row in rows {
+        if let Some(folder_segments) =
+            folder_segments_for_file(&row.path, &row.source_location, row.relative_depth)
+        {
+            folder_groups
+                .entry((
+                    row.source_location.to_ascii_lowercase(),
+                    folder_segments.join("/"),
+                ))
+                .or_default()
+                .push(row.id);
+        }
+
+        if let Some(bundle_id) = row.bundle_id {
+            bundle_groups.entry(bundle_id).or_default().push(row.id);
+        }
+    }
+
+    let mut counts = HashMap::new();
+    for ids in folder_groups.values() {
+        let peer_count = ids.len().saturating_sub(1) as i64;
+        for id in ids {
+            counts.entry(*id).or_insert((0, 0)).0 = peer_count;
+        }
+    }
+    for ids in bundle_groups.values() {
+        let peer_count = ids.len().saturating_sub(1) as i64;
+        for id in ids {
+            counts.entry(*id).or_insert((0, 0)).1 = peer_count;
+        }
+    }
+
+    Ok(counts)
+}
+
+#[derive(Debug)]
+struct FolderFileRow {
+    path: String,
+    source_location: String,
+    relative_depth: i64,
+}
+
+#[derive(Debug, Clone)]
+struct FolderNodeAccumulator {
+    path: String,
+    name: String,
+    depth: i64,
+    source_location: String,
+    direct_file_count: i64,
+    total_file_count: i64,
+    children: BTreeSet<String>,
+}
+
+pub fn get_folder_tree_metadata(
+    connection: &Connection,
+    query: &LibraryQuery,
+) -> AppResult<FolderTreeMetadata> {
+    let (filters, params) = build_filters(query);
+    let sql = format!(
+        "SELECT f.path, f.source_location, f.relative_depth\n\
+         FROM files f\n\
+         LEFT JOIN creators c ON f.creator_id = c.id\n\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+         WHERE f.source_location <> 'downloads'\n\
+        {filters}\n\
+         ORDER BY f.source_location COLLATE NOCASE, f.path COLLATE NOCASE",
+        filters = filters
+    );
+
+    let mut statement = connection.prepare(&sql)?;
+    let rows = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            Ok(FolderFileRow {
+                path: row.get(0)?,
+                source_location: row.get(1)?,
+                relative_depth: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(build_folder_metadata_from_rows(rows))
+}
+
+fn build_folder_metadata_from_rows(rows: Vec<FolderFileRow>) -> FolderTreeMetadata {
+    let mut nodes: BTreeMap<String, FolderNodeAccumulator> = BTreeMap::new();
+
+    for row in rows {
+        let Some(segments) =
+            folder_segments_for_file(&row.path, &row.source_location, row.relative_depth)
+        else {
+            continue;
+        };
+
+        for index in 0..segments.len() {
+            let path = segments[..=index].join("/");
+            let source_location = row.source_location.to_ascii_lowercase();
+            let entry = nodes
+                .entry(path.clone())
+                .or_insert_with(|| FolderNodeAccumulator {
+                    path: path.clone(),
+                    name: segments[index].clone(),
+                    depth: index as i64,
+                    source_location,
+                    direct_file_count: 0,
+                    total_file_count: 0,
+                    children: BTreeSet::new(),
+                });
+            entry.total_file_count += 1;
+            if index == segments.len() - 1 {
+                entry.direct_file_count += 1;
+            }
+
+            if index > 0 {
+                let parent_path = segments[..index].join("/");
+                if let Some(parent) = nodes.get_mut(&parent_path) {
+                    parent.children.insert(path.clone());
+                }
+            }
+        }
+    }
+
+    let mut roots = nodes
+        .values()
+        .filter(|node| node.depth == 0)
+        .map(|node| build_folder_node(&node.path, &nodes))
+        .collect::<Vec<_>>();
+    roots.sort_by(compare_folder_nodes);
+
+    let total_folders = roots
+        .iter()
+        .map(|root| 1 + count_folder_descendants(&root.children))
+        .sum();
+
+    FolderTreeMetadata {
+        total_folders,
+        roots,
+    }
+}
+
+fn build_folder_node(
+    path: &str,
+    nodes: &BTreeMap<String, FolderNodeAccumulator>,
+) -> FolderTreeNode {
+    let node = nodes.get(path).expect("folder node exists");
+    let mut children = node
+        .children
+        .iter()
+        .map(|child_path| build_folder_node(child_path, nodes))
+        .collect::<Vec<_>>();
+    children.sort_by(compare_folder_nodes);
+
+    FolderTreeNode {
+        path: node.path.clone(),
+        name: node.name.clone(),
+        depth: node.depth,
+        source_location: node.source_location.clone(),
+        direct_file_count: node.direct_file_count,
+        child_folder_count: children.len() as i64,
+        total_file_count: node.total_file_count,
+        children,
+    }
+}
+
+fn count_folder_descendants(nodes: &[FolderTreeNode]) -> i64 {
+    nodes
+        .iter()
+        .map(|node| 1 + count_folder_descendants(&node.children))
+        .sum()
+}
+
+fn compare_folder_nodes(left: &FolderTreeNode, right: &FolderTreeNode) -> std::cmp::Ordering {
+    folder_sort_rank(&left.name)
+        .cmp(&folder_sort_rank(&right.name))
+        .then_with(|| {
+            left.name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase())
+        })
+}
+
+fn folder_sort_rank(name: &str) -> u8 {
+    match name {
+        "Mods" => 0,
+        "Tray" => 1,
+        _ => 2,
+    }
+}
+
+fn folder_segments_for_file(
+    path: &str,
+    source_location: &str,
+    relative_depth: i64,
+) -> Option<Vec<String>> {
+    let root = folder_root_name(source_location)?;
+    let normalized = path.replace('\\', "/");
+    let components = normalized
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(|part| part.trim().to_owned())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let parent_components = components
+        .len()
+        .checked_sub(1)
+        .map(|last| components[..last].to_vec())
+        .unwrap_or_default();
+    let folder_depth = relative_depth.max(0) as usize;
+
+    let child_segments = if folder_depth > 0 && parent_components.len() >= folder_depth {
+        parent_components[parent_components.len() - folder_depth..].to_vec()
+    } else {
+        Vec::new()
+    };
+
+    let mut segments = Vec::with_capacity(child_segments.len() + 1);
+    segments.push(root);
+    segments.extend(child_segments);
+    Some(segments)
+}
+
+fn folder_root_name(source_location: &str) -> Option<String> {
+    let trimmed = source_location.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("downloads") {
+        return None;
+    }
+
+    if trimmed.eq_ignore_ascii_case("mods") {
+        return Some("Mods".to_owned());
+    }
+    if trimmed.eq_ignore_ascii_case("tray") {
+        return Some("Tray".to_owned());
+    }
+
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return None;
+    };
+    Some(format!(
+        "{}{}",
+        first.to_ascii_uppercase(),
+        chars.as_str().to_ascii_lowercase()
+    ))
 }
 
 pub fn get_file_detail(
@@ -594,9 +881,7 @@ pub fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
         LibraryWatchFilter::NeedsAttention => {
             // Includes both safety notes (genuine concerns) and parser warnings
             // (uncertain metadata) — items the user should manually review.
-            sql.push_str(
-                " AND (f.safety_notes <> '[]' OR f.parser_warnings <> '[]')",
-            );
+            sql.push_str(" AND (f.safety_notes <> '[]' OR f.parser_warnings <> '[]')");
         }
         LibraryWatchFilter::NotTracked => {
             sql.push_str(" AND cws.subject_key IS NULL");
@@ -616,20 +901,16 @@ pub fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
 
 fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
     match sort_by.unwrap_or_default() {
-        LibrarySortField::Name => {
-            String::from("ORDER BY f.filename COLLATE NOCASE")
-        }
-        LibrarySortField::Creator => {
-            String::from("ORDER BY c.canonical_name COLLATE NOCASE ASC, f.filename COLLATE NOCASE ASC")
-        }
-        LibrarySortField::RecentlyModified => {
-            String::from(
-                "ORDER BY\
+        LibrarySortField::Name => String::from("ORDER BY f.filename COLLATE NOCASE"),
+        LibrarySortField::Creator => String::from(
+            "ORDER BY c.canonical_name COLLATE NOCASE ASC, f.filename COLLATE NOCASE ASC",
+        ),
+        LibrarySortField::RecentlyModified => String::from(
+            "ORDER BY\
                  CASE WHEN f.modified_at IS NULL THEN 1 ELSE 0 END ASC,\
                  f.modified_at DESC,\
                  f.filename COLLATE NOCASE ASC",
-            )
-        }
+        ),
         LibrarySortField::HasUpdatesFirst => {
             // Sort by update priority: exact_update_available first, then possible_update,
             // then unknown, then current, then not_watched. Tie-break by filename.
@@ -724,7 +1005,9 @@ mod tests {
         seed::load_seed_pack,
     };
 
-    use super::{get_file_detail, get_library_facets, list_library_files};
+    use super::{
+        get_file_detail, get_folder_tree_metadata, get_library_facets, list_library_files,
+    };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
         let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -828,6 +1111,242 @@ mod tests {
         let download_detail =
             get_file_detail(&connection, &settings, &seed_pack, 2).expect("download detail lookup");
         assert!(download_detail.is_none());
+    }
+
+    #[test]
+    fn library_listing_supports_paged_queries() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+
+        let listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                limit: Some(1),
+                offset: Some(0),
+                ..Default::default()
+            },
+        )
+        .expect("paged library listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items.len(), 1);
+        assert_eq!(listing.items[0].filename, "installed.package");
+    }
+
+    #[test]
+    fn folder_tree_metadata_builds_nested_counts() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "UPDATE files SET relative_depth = 1 WHERE filename = 'installed.package'",
+                [],
+            )
+            .expect("align fixture depth");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/root.package",
+                    "root.package",
+                    ".package",
+                    "Gameplay",
+                    0.8_f64,
+                    "mods",
+                    0_i64,
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("root file");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/TestCreator/Nested/deep.package",
+                    "deep.package",
+                    ".package",
+                    "Gameplay",
+                    0.8_f64,
+                    "mods",
+                    2_i64,
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("nested file");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Tray/household.trayitem",
+                    "household.trayitem",
+                    ".trayitem",
+                    "TrayHousehold",
+                    0.9_f64,
+                    "tray",
+                    0_i64,
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("tray file");
+
+        let metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
+            .expect("folder metadata");
+
+        let mods = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        assert_eq!(mods.direct_file_count, 1);
+        assert_eq!(mods.total_file_count, 3);
+        assert_eq!(mods.child_folder_count, 1);
+
+        let test_creator = mods
+            .children
+            .iter()
+            .find(|node| node.name == "TestCreator")
+            .expect("creator folder");
+        assert_eq!(test_creator.path, "Mods/TestCreator");
+        assert_eq!(test_creator.direct_file_count, 1);
+        assert_eq!(test_creator.total_file_count, 2);
+        assert_eq!(test_creator.child_folder_count, 1);
+
+        let nested = test_creator
+            .children
+            .iter()
+            .find(|node| node.name == "Nested")
+            .expect("nested folder");
+        assert_eq!(nested.direct_file_count, 1);
+        assert_eq!(nested.total_file_count, 1);
+
+        let tray = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Tray")
+            .expect("tray root");
+        assert_eq!(tray.direct_file_count, 1);
+        assert_eq!(tray.total_file_count, 1);
+    }
+
+    #[test]
+    fn relationship_peer_counts_use_real_parent_folder_and_real_bundle() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "UPDATE files SET relative_depth = 1 WHERE filename = 'installed.package'",
+                [],
+            )
+            .expect("align fixture depth");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/TestCreator/sibling.package",
+                    "sibling.package",
+                    ".package",
+                    "Gameplay",
+                    0.8_f64,
+                    "mods",
+                    1_i64,
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("same folder file");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/Other/other.package",
+                    "other.package",
+                    ".package",
+                    "Gameplay",
+                    0.8_f64,
+                    "mods",
+                    1_i64,
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("different folder file");
+
+        let listing =
+            list_library_files(&connection, LibraryQuery::default()).expect("library listing");
+        let installed = listing
+            .items
+            .iter()
+            .find(|item| item.filename == "installed.package")
+            .expect("installed row");
+        let other = listing
+            .items
+            .iter()
+            .find(|item| item.filename == "other.package")
+            .expect("other row");
+
+        assert_eq!(installed.same_folder_peer_count, 1);
+        assert_eq!(other.same_folder_peer_count, 0);
+        assert_eq!(installed.same_pack_peer_count, 0);
+        assert_eq!(other.same_pack_peer_count, 0);
     }
 
     #[test]

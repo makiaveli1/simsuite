@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reqwest::Url;
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use std::{
     collections::HashSet,
     fs,
@@ -26,20 +26,21 @@ use crate::{
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPreviewResult,
-        ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult, CategoryAuditFile,
-        CategoryAuditQuery, CategoryAuditResponse, CreatorAuditFile, CreatorAuditQuery,
-        CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse,
-        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
-        DownloadsWatcherState, DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail,
-        GuidedInstallPlan, HomeOverview, FolderTreeMetadata, FolderTreeNode, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibrarySummary,
-        LibraryQuery, LibrarySettings, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
-        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
-        OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
-        ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
-        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        StagingAreasSummary, CleanupResult, StagingCommitResult, WatchListFilter,
-        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        ApplyGuidedDownloadResult, ApplyPreviewResult, ApplyReviewPlanActionResult,
+        ApplySpecialReviewFixResult, BatchApplyResult, CategoryAuditFile, CategoryAuditQuery,
+        CategoryAuditResponse, CleanupResult, CreatorAuditFile, CreatorAuditQuery,
+        CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail,
+        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
+        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
+        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata, GuidedInstallPlan,
+        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibraryQuery,
+        LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
+        LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
+        LibraryWatchSetupResponse, OrganizationPreview, RejectResult, RejectedItem,
+        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
+        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult,
+        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -397,15 +398,14 @@ pub fn get_app_behavior_settings(
     state: State<'_, AppState>,
 ) -> Result<AppBehaviorSettings, String> {
     let connection = state.connection().map_err(map_error)?;
-    let patterns_raw = database::get_app_setting(&connection, "download_ignore_patterns")
-        .map_err(map_error)?;
+    let patterns_raw =
+        database::get_app_setting(&connection, "download_ignore_patterns").map_err(map_error)?;
     let download_ignore_patterns = patterns_raw
         .as_ref()
         .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
         .unwrap_or_default();
     let silent_special_mod_updates_raw =
-        database::get_app_setting(&connection, "silent_special_mod_updates")
-            .map_err(map_error)?;
+        database::get_app_setting(&connection, "silent_special_mod_updates").map_err(map_error)?;
     let silent_special_mod_updates = silent_special_mod_updates_raw.as_deref().and_then(|raw| {
         if raw == "true" {
             Some(true)
@@ -600,22 +600,17 @@ pub async fn get_library_summary(state: State<'_, AppState>) -> Result<LibrarySu
     run_blocking_command("get_library_summary", move || {
         let started_at = Instant::now();
         let connection = state.connection().map_err(map_error)?;
-        let summary = library_index::get_library_summary(&connection)
-            .map_err(map_error)?;
+        let summary = library_index::get_library_summary(&connection).map_err(map_error)?;
         log_slow_command("get_library_summary", started_at, || {
             format!(
                 "for {} total, {} tracked, {} not tracked, {} has updates",
-                summary.total,
-                summary.tracked,
-                summary.not_tracked,
-                summary.has_updates
+                summary.total, summary.tracked, summary.not_tracked, summary.has_updates
             )
         });
         Ok(summary)
     })
     .await
 }
-
 
 #[tauri::command]
 pub fn scan_library(app: AppHandle, state: State<'_, AppState>) -> Result<ScanSummary, String> {
@@ -752,14 +747,11 @@ pub fn get_downloads_watcher_status(
 }
 
 #[tauri::command]
-pub async fn get_staging_areas(
-    state: State<'_, AppState>,
-) -> Result<StagingAreasSummary, String> {
+pub async fn get_staging_areas(state: State<'_, AppState>) -> Result<StagingAreasSummary, String> {
     let state = state.inner().clone();
     run_blocking_command("get_staging_areas", move || {
         let app_data_dir = state.app_data_dir;
-        downloads_watcher::list_staging_areas(&app_data_dir)
-            .map_err(map_error)
+        downloads_watcher::list_staging_areas(&app_data_dir).map_err(map_error)
     })
     .await
 }
@@ -772,8 +764,7 @@ pub async fn cleanup_staging_areas(
     let state = state.inner().clone();
     run_blocking_command("cleanup_staging_areas", move || {
         let app_data_dir = state.app_data_dir;
-        downloads_watcher::cleanup_staging_areas(&app_data_dir, paths_to_delete)
-            .map_err(map_error)
+        downloads_watcher::cleanup_staging_areas(&app_data_dir, paths_to_delete).map_err(map_error)
     })
     .await
 }
@@ -855,8 +846,8 @@ pub async fn commit_staging_area(
             });
         }
 
-        let file_ids = downloads_watcher::load_active_file_ids(&connection, numeric_id)
-            .map_err(map_error)?;
+        let file_ids =
+            downloads_watcher::load_active_file_ids(&connection, numeric_id).map_err(map_error)?;
 
         match move_engine::apply_preview_moves_for_files(
             &mut connection,
@@ -906,8 +897,7 @@ pub async fn commit_all_staging_areas(
     let state = state.inner().clone();
     run_blocking_command("commit_all_staging_areas", move || {
         let app_data_dir = state.app_data_dir.clone();
-        let summary = downloads_watcher::list_staging_areas(&app_data_dir)
-            .map_err(map_error)?;
+        let summary = downloads_watcher::list_staging_areas(&app_data_dir).map_err(map_error)?;
 
         let mut committed_count = 0;
         let mut skipped_count = 0;
@@ -984,7 +974,10 @@ fn commit_staging_area_sync(
                 committed_count: 0,
                 skipped_count: 1,
                 failed_count: 0,
-                errors: vec![format!("Item '{}' is not a committed download item.", item_id)],
+                errors: vec![format!(
+                    "Item '{}' is not a committed download item.",
+                    item_id
+                )],
             });
         }
     };
@@ -1029,8 +1022,8 @@ fn commit_staging_area_sync(
         });
     }
 
-    let file_ids = downloads_watcher::load_active_file_ids(&connection, numeric_id)
-        .map_err(map_error)?;
+    let file_ids =
+        downloads_watcher::load_active_file_ids(&connection, numeric_id).map_err(map_error)?;
 
     match move_engine::apply_preview_moves_for_files(
         &mut connection,
@@ -1263,8 +1256,9 @@ pub async fn get_library_facets(
         let connection = state.connection().map_err(map_error)?;
         let seed_pack = state.seed_pack();
         let kind_filter = kind.as_deref().filter(|k| !k.is_empty());
-        let facets = library_index::get_library_facets(&connection, &seed_pack.taxonomy, kind_filter)
-            .map_err(map_error)?;
+        let facets =
+            library_index::get_library_facets(&connection, &seed_pack.taxonomy, kind_filter)
+                .map_err(map_error)?;
         log_slow_command("get_library_facets", started_at, || {
             format!(
                 "for {} creator facet(s), {} kind facet(s), {} source facet(s)",
@@ -1573,13 +1567,8 @@ pub async fn undo_applied_item(
             move_engine::move_single_file(&current, &original).map_err(map_error)?;
 
             // Update file record using the restore helper
-            move_engine::update_file_record_on_restore(
-                &connection,
-                &settings,
-                *file_id,
-                &original,
-            )
-            .map_err(map_error)?;
+            move_engine::update_file_record_on_restore(&connection, &settings, *file_id, &original)
+                .map_err(map_error)?;
         }
 
         // Update download_item status and clear last_applied_at
@@ -1813,28 +1802,29 @@ pub async fn apply_review_plan_action(
 
         match action.kind {
             ReviewPlanActionKind::RepairSpecial => {
-                let result: ApplySpecialReviewFixResult = match move_engine::apply_special_review_fix(
-                    &mut connection,
-                    &settings,
-                    &seed_pack,
-                    &state.app_data_dir,
-                    item_id,
-                    approved,
-                ) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        let error: AppError = error;
-                        let detail = error.to_string();
-                        let _ = database::record_download_item_event(
-                            &connection,
-                            item_id,
-                            "apply_failed",
-                            "Special repair failed",
-                            Some(&detail),
-                        );
-                        return Err(map_error(error));
-                    }
-                };
+                let result: ApplySpecialReviewFixResult =
+                    match move_engine::apply_special_review_fix(
+                        &mut connection,
+                        &settings,
+                        &seed_pack,
+                        &state.app_data_dir,
+                        item_id,
+                        approved,
+                    ) {
+                        Ok(result) => result,
+                        Err(error) => {
+                            let error: AppError = error;
+                            let detail = error.to_string();
+                            let _ = database::record_download_item_event(
+                                &connection,
+                                item_id,
+                                "apply_failed",
+                                "Special repair failed",
+                                Some(&detail),
+                            );
+                            return Err(map_error(error));
+                        }
+                    };
                 downloads_watcher::refresh_download_item_status(&connection, item_id)
                     .map_err(map_error)?;
                 emit_workspace_domains(
@@ -1890,28 +1880,29 @@ pub async fn apply_review_plan_action(
                 else {
                     return Err("This dependency no longer has a guided setup plan.".to_owned());
                 };
-                let result: ApplyGuidedDownloadResult = match move_engine::apply_guided_download_plan(
-                    &mut connection,
-                    &settings,
-                    &seed_pack,
-                    &state.app_data_dir,
-                    &plan,
-                    approved,
-                ) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        let error: AppError = error;
-                        let detail = error.to_string();
-                        let _ = database::record_download_item_event(
-                            &connection,
-                            dependency_item_id,
-                            "apply_failed",
-                            "Dependency install failed",
-                            Some(&detail),
-                        );
-                        return Err(map_error(error));
-                    }
-                };
+                let result: ApplyGuidedDownloadResult =
+                    match move_engine::apply_guided_download_plan(
+                        &mut connection,
+                        &settings,
+                        &seed_pack,
+                        &state.app_data_dir,
+                        &plan,
+                        approved,
+                    ) {
+                        Ok(result) => result,
+                        Err(error) => {
+                            let error: AppError = error;
+                            let detail = error.to_string();
+                            let _ = database::record_download_item_event(
+                                &connection,
+                                dependency_item_id,
+                                "apply_failed",
+                                "Dependency install failed",
+                                Some(&detail),
+                            );
+                            return Err(map_error(error));
+                        }
+                    };
                 downloads_watcher::refresh_download_item_status(&connection, dependency_item_id)
                     .map_err(map_error)?;
                 downloads_watcher::refresh_download_item_status(&connection, item_id)
@@ -2319,8 +2310,7 @@ pub async fn apply_download_items(
                 }
             }
 
-            if let Err(err) =
-                downloads_watcher::refresh_download_item_status(&connection, item_id)
+            if let Err(err) = downloads_watcher::refresh_download_item_status(&connection, item_id)
             {
                 eprintln!("[apply_download_items] failed to refresh status for {item_id}: {err}");
             }
@@ -2421,12 +2411,9 @@ pub async fn reject_download_item(
     let app_data_dir = state.app_data_dir.clone();
     run_blocking_command("reject_download_item", move || {
         let mut connection = state.connection().map_err(map_error)?;
-        let result = downloads_watcher::reject_download_item(
-            &mut connection,
-            &app_data_dir,
-            item_id,
-        )
-        .map_err(map_error)?;
+        let result =
+            downloads_watcher::reject_download_item(&mut connection, &app_data_dir, item_id)
+                .map_err(map_error)?;
         emit_workspace_domains(
             &app,
             vec![
@@ -2474,9 +2461,7 @@ pub async fn snooze_download_item(
 }
 
 #[tauri::command]
-pub async fn list_rejected_items(
-    state: State<'_, AppState>,
-) -> Result<Vec<RejectedItem>, String> {
+pub async fn list_rejected_items(state: State<'_, AppState>) -> Result<Vec<RejectedItem>, String> {
     let state = state.inner().clone();
     run_blocking_command("list_rejected_items", move || {
         let connection = state.connection().map_err(map_error)?;
@@ -2524,12 +2509,9 @@ pub async fn reject_download_items(
     let app_data_dir = state.app_data_dir.clone();
     run_blocking_command("reject_download_items", move || {
         let mut connection = state.connection().map_err(map_error)?;
-        let result = downloads_watcher::reject_download_items(
-            &mut connection,
-            &app_data_dir,
-            &item_ids,
-        )
-        .map_err(map_error)?;
+        let result =
+            downloads_watcher::reject_download_items(&mut connection, &app_data_dir, &item_ids)
+                .map_err(map_error)?;
         if !item_ids.is_empty() {
             emit_workspace_domains(
                 &app,
@@ -2584,30 +2566,14 @@ pub async fn list_library_files_for_tree(
             offset: None,
             ..query
         };
-        let response = library_index::list_library_files(&connection, tree_query).map_err(map_error)?;
+        let response =
+            library_index::list_library_files(&connection, tree_query).map_err(map_error)?;
         log_slow_command("list_library_files_for_tree", started_at, || {
             format!("for {} tree file row(s)", response.items.len())
         });
         Ok(response)
     })
     .await
-}
-
-
-/// Returns lightweight folder tree metadata -- folder structure only, NO file rows.
-/// 
-/// This is the core of Phase 5ac: instead of transferring 13k+ full LibraryFileRow
-/// records to the browser for the frontend to build the tree, the backend computes
-/// the folder structure in a single SQL aggregation pass and returns only what
-/// the frontend needs to render the tree instantly.
-#[derive(Debug)]
-struct RawFolderRow {
-    folder_path: String,
-    depth: i64,
-    source_location: String,
-    direct_file_count: i64,
-    child_folder_count: i64,
-    total_file_count: i64,
 }
 
 #[tauri::command]
@@ -2619,159 +2585,14 @@ pub async fn get_folder_tree_metadata(
     run_blocking_command("get_folder_tree_metadata", move || {
         let started_at = Instant::now();
         let connection = state.connection().map_err(map_error)?;
-        
-        let (filters, params) = library_index::build_filters(&query);
-        
-        // Single-pass SQL: for each distinct folder path, compute counts.
-        // Uses a recursive CTE to enumerate all ancestor folders per file,
-        // then aggregates to get direct_file_count, child_folder_count, total_file_count.
-        let sql = format!(
-            r#"
-            WITH RECURSIVE
-            anchor_rows AS (
-                SELECT
-                    f.path,
-                    f.source_location,
-                    f.relative_depth,
-                    CASE
-                        WHEN f.relative_depth = 0 THEN f.source_location
-                        ELSE
-                            CASE
-                                WHEN INSTR(REVERSE(f.path), '/') > 0
-                                THEN SUBSTR(f.path, 1, LENGTH(f.path) - INSTR(REVERSE(f.path), '/'))
-                                ELSE f.source_location
-                            END
-                    END AS parent_folder,
-                    CASE WHEN f.relative_depth = 0 THEN 0 ELSE f.relative_depth - 1 END AS folder_depth
-                FROM files f
-                WHERE f.source_location <> 'downloads'
-                {filters}
-            ),
-            folder_counts AS (
-                SELECT
-                    ar.parent_folder AS folder_path,
-                    ar.folder_depth AS depth,
-                    ar.source_location,
-                    -- direct_file_count: files whose parent folder is this folder.
-                    -- folder_depth = relative_depth - 1 (parent folder depth), so file belongs when folder_depth + 1 = relative_depth.
-                    -- Root files (relative_depth=0, folder_depth=-1) are NOT direct children of any named subfolder.
-                    COUNT(DISTINCT CASE WHEN ar.folder_depth + 1 = ar.relative_depth THEN ar.path END) AS direct_file_count,
-                    -- child_folder_count: distinct immediate child folders.
-                    -- A folder at folder_depth=k has children at folder_depth=k (i.e., folder_depth = relative_depth).
-                    COUNT(DISTINCT CASE WHEN ar.folder_depth = ar.relative_depth THEN ar.parent_folder END) AS child_folder_count,
-                    (SELECT COUNT(*) FROM anchor_rows ar2
-                     WHERE ar2.parent_folder = ar.parent_folder
-                        OR ar2.path LIKE (ar.parent_folder || '/%')) AS total_file_count
-                FROM anchor_rows ar
-                GROUP BY ar.parent_folder, ar.folder_depth, ar.source_location
-            )
-            SELECT
-                fc.folder_path,
-                fc.depth,
-                fc.source_location,
-                fc.direct_file_count,
-                fc.child_folder_count,
-                fc.total_file_count
-            FROM folder_counts fc
-            ORDER BY fc.source_location, fc.depth, fc.folder_path
-            "#,
-            filters = filters
-        );
-        
-        let mut stmt = connection.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params_from_iter(params.iter()), |row| {
-            Ok(RawFolderRow {
-                folder_path: row.get(0)?,
-                depth: row.get(1)?,
-                source_location: row.get(2)?,
-                direct_file_count: row.get(3)?,
-                child_folder_count: row.get(4)?,
-                total_file_count: row.get(5)?,
-            })
-        }).map_err(|e| e.to_string())?;
-
-        let raw_folders: Vec<RawFolderRow> = rows.filter_map(|r| r.ok()).collect();
-        
+        let tree =
+            library_index::get_folder_tree_metadata(&connection, &query).map_err(map_error)?;
         log_slow_command("get_folder_tree_metadata", started_at, || {
-            format!("for {} folder node(s)", raw_folders.len())
+            format!("for {} folder node(s)", tree.total_folders)
         });
-        
-        let tree = build_folder_tree_from_rows(raw_folders);
-        let total = tree.iter().map(|r| 1 + count_descendants(&r.children)).sum();
-        
-        Ok(FolderTreeMetadata {
-            total_folders: total,
-            roots: tree,
-        })
+        Ok(tree)
     })
     .await
-}
-
-fn count_descendants(nodes: &[FolderTreeNode]) -> i64 {
-    nodes.iter().map(|n| 1 + count_descendants(&n.children)).sum()
-}
-
-fn build_folder_tree_from_rows(rows: Vec<RawFolderRow>) -> Vec<FolderTreeNode> {
-    use std::collections::HashMap;
-    
-    let mut all_nodes: HashMap<String, FolderTreeNode> = HashMap::new();
-    for row in &rows {
-        let name = if row.depth == 0 {
-            row.folder_path.clone()
-        } else {
-            row.folder_path.rsplit('/').next().unwrap_or(&row.folder_path).to_string()
-        };
-        
-        let node = FolderTreeNode {
-            path: row.folder_path.clone(),
-            name,
-            depth: row.depth,
-            source_location: row.source_location.clone(),
-            direct_file_count: row.direct_file_count,
-            child_folder_count: row.child_folder_count,
-            total_file_count: row.total_file_count,
-            children: Vec::new(),
-        };
-        all_nodes.insert(row.folder_path.clone(), node);
-    }
-    
-    let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
-    for row in &rows {
-        if row.depth == 0 { continue; }
-        let parent_path = if let Some(idx) = row.folder_path.rfind('/') {
-            row.folder_path[..idx].to_string()
-        } else {
-            continue;
-        };
-        children_map.entry(parent_path).or_default().push(row.folder_path.clone());
-    }
-    
-    fn build_children(parent_path: &str, children_map: &HashMap<String, Vec<String>>, all_nodes: &HashMap<String, FolderTreeNode>) -> Vec<FolderTreeNode> {
-        let Some(child_paths) = children_map.get(parent_path) else { return Vec::new(); };
-        let mut children: Vec<FolderTreeNode> = child_paths.iter().filter_map(|p| all_nodes.get(p).cloned()).collect();
-        children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        for child in &mut children {
-            child.children = build_children(&child.path, children_map, all_nodes);
-        }
-        children
-    }
-    
-    let mut roots: Vec<FolderTreeNode> = rows.iter()
-        .filter(|r| r.depth == 0)
-        .filter_map(|r| all_nodes.get(&r.folder_path).cloned())
-        .collect();
-    roots.sort_by(|a, b| {
-        match (a.name.as_str(), b.name.as_str()) {
-            ("mods", _) => std::cmp::Ordering::Less,
-            ("tray", _) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
-    });
-    for root in &mut roots {
-        root.children = build_children(&root.path, &children_map, &all_nodes);
-    }
-    
-    roots
 }
 
 #[tauri::command]
@@ -3066,9 +2887,8 @@ pub async fn save_watch_sources_for_files(
                     results.push(LibraryWatchBulkSaveItemResult {
                         file_id,
                         saved: false,
-                        message:
-                            "Watch sources can only be saved for installed Library items."
-                                .to_owned(),
+                        message: "Watch sources can only be saved for installed Library items."
+                            .to_owned(),
                     });
                 }
                 Err(error) => {
@@ -3387,7 +3207,12 @@ pub async fn reveal_file_in_folder(path: String) -> Result<(), String> {
             std::process::Command::new("explorer.exe")
                 .arg(&normalized_parent)
                 .spawn()
-                .map_err(|e| format!("Explorer fallback failed for '{}': {}", normalized_parent, e))?;
+                .map_err(|e| {
+                    format!(
+                        "Explorer fallback failed for '{}': {}",
+                        normalized_parent, e
+                    )
+                })?;
             return Ok(());
         }
 
@@ -3517,7 +3342,6 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
         }
     })
 }
-
 
 #[cfg(test)]
 mod tests {

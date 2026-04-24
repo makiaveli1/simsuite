@@ -28,12 +28,13 @@ use crate::{
     database,
     error::{AppError, AppResult},
     models::{
-        CatalogSourceInfo, DownloadInboxDetail, DownloadInboxFile, DownloadIntakeMode,
-        DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem, DownloadsInboxOverview,
-        DownloadsInboxQuery, DownloadsInboxResponse, DownloadsSelectionResponse,
-        DownloadsTimelineEntry, DownloadsWatcherState, DownloadsWatcherStatus, GuidedInstallPlan,
-        LibrarySettings, OrganizationPreview, CleanupResult, IgnoreItemsResult, RejectResult, RejectedItem, SpecialReviewPlan,
-        StagingArea, StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
+        CatalogSourceInfo, CleanupResult, DownloadInboxDetail, DownloadInboxFile,
+        DownloadIntakeMode, DownloadQueueLane, DownloadRiskLevel, DownloadsInboxItem,
+        DownloadsInboxOverview, DownloadsInboxQuery, DownloadsInboxResponse,
+        DownloadsSelectionResponse, DownloadsTimelineEntry, DownloadsWatcherState,
+        DownloadsWatcherStatus, GuidedInstallPlan, IgnoreItemsResult, LibrarySettings,
+        OrganizationPreview, RejectResult, RejectedItem, SpecialReviewPlan, StagingArea,
+        StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
     },
 };
 
@@ -109,7 +110,7 @@ fn checking_downloads_status(
         ready_items: 0,
         needs_review_items: 0,
         active_items: 0,
-    
+
         ..Default::default()
     }
 }
@@ -177,8 +178,8 @@ pub fn restart_watcher(app: &AppHandle, state: &AppState) -> AppResult<()> {
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         )?;
         return Ok(());
     }
@@ -240,8 +241,8 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
         ready_items: current_status.ready_items,
         needs_review_items: current_status.needs_review_items,
         active_items: current_status.active_items,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
 
     store_status(state, app, starting_status.clone())?;
 
@@ -268,8 +269,8 @@ pub fn refresh_inbox(app: &AppHandle, state: &AppState) -> AppResult<DownloadsWa
                     ready_items: status.ready_items,
                     needs_review_items: status.needs_review_items,
                     active_items: status.active_items,
-            ..Default::default()
-        })
+                    ..Default::default()
+                })
                 .unwrap_or_default();
             let _ = store_status(&thread_state, &thread_app, fallback);
         }
@@ -384,7 +385,9 @@ fn list_download_items_internal(
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
     {
-        sql.push_str(" AND (di.display_name LIKE ?1 OR di.source_path LIKE ?1 OR creator_name LIKE ?1)");
+        sql.push_str(
+            " AND (di.display_name LIKE ?1 OR di.source_path LIKE ?1 OR creator_name LIKE ?1)",
+        );
         params.push(format!("%{search}%"));
     }
 
@@ -500,10 +503,9 @@ fn list_download_items_internal(
     log_slow_downloads_step("downloads_queue::enrich", enrich_started_at, || {
         format!("for {} visible item(s)", items.len())
     });
-    // Keep the SQL-accurate overview counts from load_overview.
-    // The per-item lane recalculation was overwriting correct counts
-    // when the items query returned 0 rows (e.g. search/filter parameter issues).
-    // lane information is still correctly reflected per-item via queue_lane.
+    if should_refresh_overview_lane_counts_from_items(&query, &overview, items.len()) {
+        refresh_overview_lane_counts_from_items(&mut overview, &items);
+    }
     log_slow_downloads_operation("downloads_queue", started_at, items.len());
 
     Ok(DownloadsInboxResponse { overview, items })
@@ -756,6 +758,48 @@ fn build_queue_summary(item: &DownloadsInboxItem) -> String {
         }
         DownloadQueueLane::Rejected => {
             "This batch was moved to the Reject folder for review.".to_owned()
+        }
+    }
+}
+
+fn should_refresh_overview_lane_counts_from_items(
+    query: &DownloadsInboxQuery,
+    overview: &DownloadsInboxOverview,
+    item_count: usize,
+) -> bool {
+    let has_search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+    let has_status_filter = query
+        .status
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+
+    !has_search && !has_status_filter && item_count as i64 == overview.total_items
+}
+
+fn refresh_overview_lane_counts_from_items(
+    overview: &mut DownloadsInboxOverview,
+    items: &[DownloadsInboxItem],
+) {
+    overview.ready_now_items = 0;
+    overview.special_setup_items = 0;
+    overview.waiting_on_you_items = 0;
+    overview.blocked_items = 0;
+    overview.done_items = 0;
+    overview.rejected_items = 0;
+
+    for item in items {
+        match item.queue_lane {
+            DownloadQueueLane::ReadyNow => overview.ready_now_items += 1,
+            DownloadQueueLane::SpecialSetup => overview.special_setup_items += 1,
+            DownloadQueueLane::WaitingOnYou => overview.waiting_on_you_items += 1,
+            DownloadQueueLane::Blocked => overview.blocked_items += 1,
+            DownloadQueueLane::Done => overview.done_items += 1,
+            DownloadQueueLane::Rejected => overview.rejected_items += 1,
         }
     }
 }
@@ -1223,7 +1267,8 @@ pub fn reject_download_item(
                 for entry in fs::read_dir(&staging)
                     .map_err(|e| AppError::Message(format!("Failed to read staging folder: {e}")))?
                 {
-                    let entry = entry.map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
+                    let entry = entry
+                        .map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
                     let dest = reject_item_path.join(entry.file_name());
                     fs::rename(entry.path(), &dest)
                         .map_err(|e| AppError::Message(format!("Failed to move file: {e}")))?;
@@ -1233,9 +1278,12 @@ pub fn reject_download_item(
                 let _ = fs::remove_dir(&staging);
             } else {
                 // Single file staging
-                let dest = reject_item_path.join(staging.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| item_id.to_string()));
+                let dest = reject_item_path.join(
+                    staging
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| item_id.to_string()),
+                );
                 fs::rename(&staging, &dest)
                     .map_err(|e| AppError::Message(format!("Failed to move staging file: {e}")))?;
                 moved_count += 1;
@@ -1248,7 +1296,7 @@ pub fn reject_download_item(
     if moved_count == 0 && file_count > 0 {
         // Files are tracked in DB but staging may be elsewhere — try to move by file path
         let mut stmt = connection.prepare(
-            "SELECT path FROM files WHERE download_item_id = ?1 AND source_location = 'downloads'"
+            "SELECT path FROM files WHERE download_item_id = ?1 AND source_location = 'downloads'",
         )?;
         let paths: Vec<PathBuf> = stmt
             .query_map(params![item_id], |row| {
@@ -1262,7 +1310,7 @@ pub fn reject_download_item(
                 let dest = reject_item_path.join(
                     path.file_name()
                         .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| format!("file_{}", moved_count))
+                        .unwrap_or_else(|| format!("file_{}", moved_count)),
                 );
                 match fs::rename(&path, &dest) {
                     Ok(()) => moved_count += 1,
@@ -1312,7 +1360,7 @@ pub fn list_rejected_items(connection: &Connection) -> AppResult<Vec<RejectedIte
         "SELECT id, display_name, rejected_at
          FROM download_items
          WHERE status = 'rejected'
-         ORDER BY rejected_at DESC"
+         ORDER BY rejected_at DESC",
     )?;
 
     let rows = stmt.query_map([], |row| {
@@ -1367,11 +1415,14 @@ pub fn restore_rejected_item(
 
     if current_status != "rejected" {
         return Err(AppError::Message(format!(
-            "Item {} is not rejected (status: {})", item_id, current_status
+            "Item {} is not rejected (status: {})",
+            item_id, current_status
         )));
     }
 
-    let reject_item_path = app_data_dir.join("SimSuite_Rejected").join(item_id.to_string());
+    let reject_item_path = app_data_dir
+        .join("SimSuite_Rejected")
+        .join(item_id.to_string());
 
     // Create a new staging area under downloads_inbox/<item_id>/
     let now = Utc::now();
@@ -1388,7 +1439,8 @@ pub fn restore_rejected_item(
         for entry in fs::read_dir(&reject_item_path)
             .map_err(|e| AppError::Message(format!("Failed to read reject folder: {e}")))?
         {
-            let entry = entry.map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
+            let entry =
+                entry.map_err(|e| AppError::Message(format!("Failed to read entry: {e}")))?;
             let dest = staging_path.join(entry.file_name());
             fs::rename(entry.path(), &dest)
                 .map_err(|e| AppError::Message(format!("Failed to restore file: {e}")))?;
@@ -1421,17 +1473,18 @@ pub fn restore_rejected_item(
             .filter(|e| e.file_type().is_file())
         {
             let file_path = entry.path();
-            let filename = file_path.file_name()
+            let filename = file_path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let extension = file_path.extension()
+            let extension = file_path
+                .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let size = fs::metadata(file_path)
-                .map(|m| m.len() as i64)
-                .unwrap_or(0);
+            let size = fs::metadata(file_path).map(|m| m.len() as i64).unwrap_or(0);
 
-            let relative_depth = file_path.strip_prefix(&staging_path)
+            let relative_depth = file_path
+                .strip_prefix(&staging_path)
                 .map(|p| p.components().count() as i64)
                 .unwrap_or(0);
 
@@ -1702,8 +1755,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                     ready_items: 0,
                     needs_review_items: 0,
                     active_items: 0,
-            ..Default::default()
-        },
+                    ..Default::default()
+                },
             );
             return;
         }
@@ -1724,8 +1777,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         );
         return;
     }
@@ -1750,8 +1803,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: status.ready_items,
                 needs_review_items: status.needs_review_items,
                 active_items: status.active_items,
-            ..Default::default()
-        })
+                ..Default::default()
+            })
             .unwrap_or(DownloadsWatcherStatus {
                 state: DownloadsWatcherState::Error,
                 watched_path: Some(watched_root.to_string_lossy().to_string()),
@@ -1763,8 +1816,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                 ready_items: 0,
                 needs_review_items: 0,
                 active_items: 0,
-            ..Default::default()
-        });
+                ..Default::default()
+            });
         let _ = store_status(&state, &app, fallback);
     }
 
@@ -1817,8 +1870,8 @@ fn watch_loop(app: AppHandle, state: AppState, watched_root: PathBuf, stop: mpsc
                         ready_items: status.ready_items,
                         needs_review_items: status.needs_review_items,
                         active_items: status.active_items,
-            ..Default::default()
-        })
+                        ..Default::default()
+                    })
                     .unwrap_or_default();
                 let _ = store_status(&state, &app, snapshot);
             }
@@ -1857,10 +1910,7 @@ fn process_downloads_once_for_paths(
     // Unsnooze any items whose snooze period has expired
     let unsnoozed_count = unsnooze_stale_items(&connection)?;
     if unsnoozed_count > 0 {
-        eprintln!(
-            "[downloads] unsnoozed {} stale item(s)",
-            unsnoozed_count
-        );
+        eprintln!("[downloads] unsnoozed {} stale item(s)", unsnoozed_count);
     }
 
     log_slow_downloads_step("downloads_sync::connection", connection_started_at, || {
@@ -2901,13 +2951,16 @@ fn extract_archive(
 
     // ZIP uses single-pass — extract and return discovered in one step, no WalkDir needed
     if source.archive_format.as_deref() == Some("zip") {
-        return extract_zip_archive_single_pass(&source.path, destination_root, notes)
-            .map(|(mut files, ignored_count)| {
+        return extract_zip_archive_single_pass(&source.path, destination_root, notes).map(
+            |(mut files, ignored_count)| {
                 if ignored_count > 0 {
-                    notes.push(format!("Ignored {ignored_count} unsupported archive entries."));
+                    notes.push(format!(
+                        "Ignored {ignored_count} unsupported archive entries."
+                    ));
                 }
                 files
-            });
+            },
+        );
     }
 
     match source.archive_format.as_deref() {
@@ -3002,7 +3055,9 @@ fn extract_zip_archive_single_pass(
     }
 
     if ignored_entries > 0 {
-        notes.push(format!("Ignored {ignored_entries} unsupported archive entries."));
+        notes.push(format!(
+            "Ignored {ignored_entries} unsupported archive entries."
+        ));
     }
 
     // Walk the destination to build discovered files
@@ -3023,7 +3078,9 @@ fn extract_zip_archive_single_pass(
     }
 
     if discovered.is_empty() {
-        notes.push("Skipped ZIP extraction because no supported Sims files were found inside.".to_owned());
+        notes.push(
+            "Skipped ZIP extraction because no supported Sims files were found inside.".to_owned(),
+        );
     }
 
     Ok((discovered, ignored_entries))
@@ -3227,8 +3284,8 @@ fn summarize_status(
         ready_items,
         needs_review_items,
         active_items,
-            ..Default::default()
-        })
+        ..Default::default()
+    })
 }
 
 fn store_status(
@@ -3714,7 +3771,6 @@ fn system_time_to_rfc3339(time: std::time::SystemTime) -> String {
     date_time.to_rfc3339()
 }
 
-
 /// Lists all staging areas under the downloads inbox.
 /// Returns file counts, sizes, and ages for each subdirectory.
 pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary> {
@@ -3738,7 +3794,8 @@ pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary>
             continue;
         }
 
-        let item_id = path.file_name()
+        let item_id = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("?")
             .to_owned();
@@ -3762,7 +3819,8 @@ pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary>
 
             subdirectories.push(StagingSubDirectory {
                 path: sub_path.to_string_lossy().into_owned(),
-                name: sub_path.file_name()
+                name: sub_path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("?")
                     .to_owned(),
@@ -3857,14 +3915,13 @@ pub fn cleanup_staging_areas(
 mod tests {
     use super::{
         build_archive_staging_root, can_skip_observed_source, checking_downloads_status,
-        derive_item_status, extract_zip_archive_single_pass,
-        get_download_item_guided_plan, get_download_item_selection,
-        has_auto_recheck_note, ingest_held_archive_source, ingest_ignored_non_sims_source,
-        list_download_queue, load_existing_items, mark_item_rechecked_with_new_rules,
-        mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
-        reassess_existing_item, refresh_download_item_status,
-        should_use_full_downloads_scan, staging_segment_for_source, summarize_status,
-        ExistingDownloadItem, ObservedSource,
+        derive_item_status, extract_zip_archive_single_pass, get_download_item_guided_plan,
+        get_download_item_selection, has_auto_recheck_note, ingest_held_archive_source,
+        ingest_ignored_non_sims_source, list_download_queue, load_existing_items,
+        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
+        parse_string_array, preview_download_item, reassess_existing_item,
+        refresh_download_item_status, should_use_full_downloads_scan, staging_segment_for_source,
+        summarize_status, ExistingDownloadItem, ObservedSource,
     };
     use crate::core::install_profile_engine::SpecialDecisionContext;
     use crate::database::initialize;
@@ -4466,6 +4523,36 @@ mod tests {
         assert!(item
             .queue_summary
             .contains("matches the version that is already installed"));
+        assert_eq!(queue.overview.done_items, 1);
+    }
+
+    #[test]
+    fn empty_queue_search_keeps_global_overview_counts() {
+        let connection = setup_connection();
+        let settings = LibrarySettings {
+            mods_path: None,
+            tray_path: None,
+            downloads_path: Some("C:/Downloads".to_owned()),
+            ..Default::default()
+        };
+        let seed_pack = seed::load_seed_pack().expect("seed pack");
+        insert_download_item(&connection, 71, "ready");
+        insert_download_item(&connection, 72, "applied");
+
+        let queue = list_download_queue(
+            &connection,
+            &settings,
+            &seed_pack,
+            DownloadsInboxQuery {
+                search: Some("no matching download".to_owned()),
+                status: None,
+                limit: None,
+            },
+        )
+        .expect("searched queue");
+
+        assert!(queue.items.is_empty());
+        assert_eq!(queue.overview.total_items, 2);
         assert_eq!(queue.overview.done_items, 1);
     }
 

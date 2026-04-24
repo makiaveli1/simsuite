@@ -232,6 +232,19 @@ function getAllFilesForNode(node: FolderNode): LibraryFileRow[] {
     .filter((f): f is LibraryFileRow => f != null);
 }
 
+function findFolderNodeByPath(nodes: FolderNode[], folderPath: string): FolderNode | undefined {
+  for (const node of nodes) {
+    if (node.fullPath === folderPath) {
+      return node;
+    }
+    const match = findFolderNodeByPath(node.children, folderPath);
+    if (match) {
+      return match;
+    }
+  }
+  return undefined;
+}
+
 export function getFolderContents(
   folderPath: string | null,
   files: LibraryFileRow[],
@@ -250,20 +263,7 @@ export function getFolderContents(
     return { subfolders, files: [], rootFiles };
   }
 
-  // Find the clicked folder node
-  let activeNode: FolderNode | undefined;
-  outer: for (const root of roots) {
-    if (root.fullPath === folderPath) {
-      activeNode = root;
-      break;
-    }
-    for (const child of root.children) {
-      if (child.fullPath === folderPath) {
-        activeNode = child;
-        break outer;
-      }
-    }
-  }
+  const activeNode = findFolderNodeByPath(roots, folderPath);
 
   if (!activeNode) {
     return { subfolders: [], files: [], rootFiles: [] };
