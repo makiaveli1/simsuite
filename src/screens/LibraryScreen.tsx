@@ -49,6 +49,7 @@ import {
   extractParentFolder,
   formatLibraryFileFormat,
   groupedFilesLabel,
+  proofLevelToLabel,
   trayLocationLabel,
   usefulTrayGroupingValue,
 } from "./library/libraryDisplay";
@@ -954,9 +955,9 @@ export function LibraryScreen({
                           {relationship.label}
                           <span
                             className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
-                            title={`This relationship is ${relationship.proofLevel}`}
+                            title={`This related-file clue is ${proofLevelToLabel(relationship.proofLevel).toLowerCase()}`}
                           >
-                            {" "}({relationship.proofLevel})
+                            {" "}({proofLevelToLabel(relationship.proofLevel)})
                           </span>
                         </span>
                       }
@@ -1038,9 +1039,9 @@ export function LibraryScreen({
                             {relationship.label}
                             <span
                               className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
-                              title={`This relationship is ${relationship.proofLevel}`}
+                              title={`This related-file clue is ${proofLevelToLabel(relationship.proofLevel).toLowerCase()}`}
                             >
-                              {" "}({relationship.proofLevel})
+                              {" "}({proofLevelToLabel(relationship.proofLevel)})
                             </span>
                           </span>
                         }
@@ -1360,16 +1361,11 @@ export function LibraryScreen({
               },
               {
                 id: "relationships",
-                label: "Relationships",
+                label: "Related File Clues",
                 hint:
-                  "Confirmed, likely, and possible connections to other files — same folder, pack, creator, or duplicates.",
+                  "Duplicate, pack, creator, and folder clues SimSuite can support today. This does not prove hidden dependencies, missing meshes, or safe deletion yet.",
                 defaultCollapsed: false,
-                children: buildSheetRelationshipsSection(selected, rows?.items ?? [], userView, {
-                  onNavigateDuplicates,
-                  onNavigateNeedsReview: onNavigateWithParams
-                    ? (fileId: number) => onNavigateWithParams("updates", "review", undefined, fileId)
-                    : undefined,
-                }),
+                children: buildSheetRelationshipsSection(selected, rows?.items ?? [], userView),
               },
             ]
           : []),
@@ -1822,12 +1818,6 @@ export function LibraryScreen({
             onOpenFolder={(path) => {
               void openContainingFolder(path);
             }}
-            onNavigateDuplicates={onNavigateDuplicates}
-            onNavigateNeedsReview={
-              onNavigateWithParams
-                ? (fileId: number) => onNavigateWithParams("updates", "review", undefined, fileId)
-                : undefined
-            }
             relationship={relationship}
             folderName={folderName}
             folderSummary={folderSummary}

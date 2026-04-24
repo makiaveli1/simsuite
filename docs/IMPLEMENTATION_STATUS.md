@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Library relationship wording pass)
+
+This session continued the Library correctness sprint by making the relationship and removal language more honest.
+
+Important changes and findings:
+
+- Library detail warnings now say `Check before removing` instead of implying safe-delete support.
+- duplicate warnings now ask the user to compare matching files before removing either copy.
+- script-mod warnings now say other mods can sometimes rely on script files, without claiming SimSuite proved a dependency.
+- the Library detail sheet now presents relationship data as clues:
+  - `Known file facts`
+  - `Likely related clues`
+  - `Possible placement clues`
+- same-folder text now says it confirms shared placement, not a dependency.
+- the detail sheet section is now `Related File Clues`, with a hint that hidden dependencies, missing meshes, and safe deletion are not proved yet.
+- relationship badge suffixes now use plain labels like `Confirmed`, `Likely`, and `Possible` instead of raw internal words.
+- new tests cover the wording so older proof-heavy copy does not slip back in.
+
+Checks passed:
+
+- `npm run test:unit -- src/screens/library/LibraryDetailsPanel.test.tsx src/screens/library/libraryRelationships.test.tsx`
+- `npm run test:unit -- src/screens/library` (`6` files, `28` tests)
+- `npm run test:unit` (`11` files, `38` tests)
+- `npm run build` with the existing Vite chunk-size warning
+
+Important remaining gap:
+
+- Staging is still exposed but not wired through registered Tauri commands.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Library correctness sprint start)
 
 This session began the recommended Library correctness sprint.

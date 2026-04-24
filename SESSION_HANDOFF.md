@@ -1,5 +1,58 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Library relationship wording pass)
+
+- **Mode**: code
+- **Focus**: soften Library relationship and removal language so it matches what the backend can actually prove today
+
+### Progress Made
+
+1. **Added regression coverage for honest relationship wording**:
+   - added `src/screens/library/libraryRelationships.test.tsx`
+   - extended `src/screens/library/LibraryDetailsPanel.test.tsx`
+   - tests now guard against old wording like `break saves`, `mods that depend on it`, and `Confirmed relationships`
+
+2. **Softened Library inspector removal warnings**:
+   - changed `Delete carefully` to `Check before removing`
+   - duplicate warnings now tell the user to compare matching files first
+   - script-mod warnings now say other mods can sometimes rely on script files, without claiming SimSuite proved a dependency
+
+3. **Softened detail-sheet relationship language**:
+   - changed relationship tiers to:
+     - `Known file facts`
+     - `Likely related clues`
+     - `Possible placement clues`
+   - same-folder copy now says it confirms shared placement, not a dependency
+   - the detail sheet heading is now `Related File Clues`
+   - the hint now clearly says hidden dependencies, missing meshes, and safe deletion are not proved yet
+
+4. **Made relationship badges more user-facing**:
+   - badge suffixes now show `Confirmed`, `Likely`, or `Possible` instead of raw `fact`, `claim`, or `heuristic`
+   - tooltip copy now says `related-file clue`
+
+### Verification
+
+- First ran the new focused tests and confirmed they failed on the old wording.
+- `npm run test:unit -- src/screens/library/LibraryDetailsPanel.test.tsx src/screens/library/libraryRelationships.test.tsx` passed.
+- `npm run test:unit -- src/screens/library` passed: `6` files, `28` tests.
+- `npm run test:unit` passed: `11` files, `38` tests.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+
+### Known Problems / Gaps
+
+- Staging is still exposed but its Tauri commands are still not registered.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Other uncommitted local changes remain in the worktree outside this wording slice.
+
+### Next Best Step
+
+Continue Sprint 1:
+
+1. Decide whether to register, hide, or merge Staging.
+2. Search the rest of the app for any remaining Library wording that still implies dependency proof or safe deletion.
+3. Start Sprint 2 folder work: backend-native folder children, paged folder contents, folder summary, and open-folder support for empty folders.
+
 ## Current Session (April 24, 2026 - Library correctness sprint start)
 
 - **Mode**: code

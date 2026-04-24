@@ -10,6 +10,7 @@ import {
   extractParentFolder,
   formatLibraryFileFormat,
   groupedFilesLabel,
+  proofLevelToLabel,
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
@@ -33,8 +34,6 @@ interface LibraryDetailsPanelProps {
   onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
   onOpenFolder?: (path: string) => void;
-  onNavigateDuplicates?: (fileIds: number[]) => void;
-  onNavigateNeedsReview?: (fileId: number) => void;
   /** Optional content rendered at the top-right of the detail header (e.g. collapse button) */
   headerRight?: ReactNode;
   /** Pre-computed relationship signal from LibraryScreen. */
@@ -57,8 +56,6 @@ export function LibraryDetailsPanel({
   onOpenEditDetails,
   onOpenUpdates,
   onOpenFolder = () => {},
-  onNavigateDuplicates,
-  onNavigateNeedsReview,
   headerRight,
   relationship: relationshipProp,
   folderName: folderNameProp,
@@ -283,6 +280,7 @@ export function LibraryDetailsPanel({
   // Location row removed (Ariadne Phase 5an): redundant with More Details full path.
   // "Open folder" button is the actionable alternative.
   if (!isCasual && relationship && relationship.type !== "none") {
+    const clueLabel = proofLevelToLabel(relationship.proofLevel);
     snapshotLines.push({
       label: "Related",
       value: (
@@ -290,9 +288,9 @@ export function LibraryDetailsPanel({
           {relationship.label}{" "}
           <span
             className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
-            title={`This relationship is ${relationship.proofLevel}`}
+            title={`This related-file clue is ${clueLabel.toLowerCase()}`}
           >
-            ({relationship.proofLevel})
+            ({clueLabel})
           </span>
         </span>
       ),
@@ -504,39 +502,26 @@ export function LibraryDetailsPanel({
         </section>
       ) : null}
 
-      {/* ── Safe-delete pre-checks — shown when file has duplicates or is a script mod ── */}
+      {/* ── Removal caution — shown when file has duplicates or is a script mod ── */}
       {(() => {
         const isScriptMod =
           selectedFile.kind.includes("Script") || /\.ts4script$/i.test(selectedFile.filename);
         if (!isScriptMod && !(selectedFile.duplicateTypes ?? []).includes("exact")) return null;
-        const warnings: Array<{ text: string; actionLabel?: string; onAction?: () => void }> = [];
+        const warnings: string[] = [];
         if ((selectedFile.duplicateTypes ?? []).includes("exact")) {
-          warnings.push({
-            text: "This file has exact duplicates — disabling or deleting it may break saves that reference the other copy.",
-            actionLabel: onNavigateDuplicates ? "View duplicates →" : undefined,
-            onAction: onNavigateDuplicates ? () => onNavigateDuplicates([selectedFile.id]) : undefined,
-          });
+          warnings.push("This file has a duplicate clue. Compare the matching files before removing either copy.");
         }
         if (isScriptMod) {
-          warnings.push({
-            text: "This appears to be a script mod — disabling it may break mods that depend on its scripts or namespace.",
-          });
+          warnings.push("This looks like a script mod. Some mods can rely on script files, so check the mod notes before disabling it.");
         }
         return (
           <section className="library-details-card library-safedelete-warning">
-            <div className="section-label">⚠ Delete carefully</div>
+            <div className="section-label">Check before removing</div>
             <div className="detail-list">
-              {warnings.map((w) => (
-                <div key={w.text} className="detail-row detail-row--block">
+              {warnings.map((warning) => (
+                <div key={warning} className="detail-row detail-row--block">
                   <span>Check first</span>
-                  <strong>{w.text}</strong>
-                  {w.actionLabel && w.onAction ? (
-                    <div style={{ marginTop: "0.45rem" }}>
-                      <button type="button" className="secondary-action" onClick={w.onAction}>
-                        {w.actionLabel}
-                      </button>
-                    </div>
-                  ) : null}
+                  <strong>{warning}</strong>
                 </div>
               ))}
             </div>
@@ -827,4 +812,3 @@ function FolderSummaryPanel({
     </div>
   );
 }
-

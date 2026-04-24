@@ -199,3 +199,39 @@ it("hides raw path-like tray grouping values from inspector summary", () => {
   expect(screen.queryByText(/grouped as/i)).toBeNull();
   expect(screen.queryByText(/C:\\Users\\Player/i)).toBeNull();
 });
+
+it("uses cautious removal wording without claiming dependency proof", () => {
+  render(
+    <LibraryDetailsPanel
+      userView="standard"
+      selectedFile={
+        {
+          id: 6,
+          filename: "CoreHelper.ts4script",
+          path: "Mods\\CoreHelper\\CoreHelper.ts4script",
+          creator: "Helper Studio",
+          kind: "ScriptMods",
+          subtype: "Core",
+          confidence: 0.92,
+          safetyNotes: [],
+          parserWarnings: [],
+          duplicateTypes: ["exact"],
+          duplicatesCount: 1,
+          installedVersionSummary: null,
+          watchResult: null,
+          insights: emptyInsights,
+        } as never
+      }
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+    />,
+  );
+
+  expect(screen.getByText(/check before removing/i)).toBeVisible();
+  expect(screen.getByText(/compare the matching files/i)).toBeVisible();
+  expect(screen.getByText(/some mods can rely on script files/i)).toBeVisible();
+  expect(screen.queryByText(/break saves/i)).toBeNull();
+  expect(screen.queryByText(/mods that depend on it/i)).toBeNull();
+});
