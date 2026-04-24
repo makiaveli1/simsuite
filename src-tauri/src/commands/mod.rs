@@ -33,14 +33,15 @@ use crate::{
         DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
         DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
         DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata, GuidedInstallPlan,
-        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryListResponse, LibraryQuery,
-        LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
-        LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
-        LibraryWatchSetupResponse, OrganizationPreview, RejectResult, RejectedItem,
-        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult,
-        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
+        LibraryListResponse, LibraryQuery, LibrarySettings, LibrarySummary,
+        LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult, LibraryWatchListResponse,
+        LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview, RejectResult,
+        RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
+        ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState,
+        ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan, StagingAreasSummary,
+        StagingCommitResult, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
+        WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -2543,6 +2544,25 @@ pub async fn list_library_files(
         let response = library_index::list_library_files(&connection, query).map_err(map_error)?;
         log_slow_command("list_library_files", started_at, || {
             format!("for {} visible file row(s)", response.items.len())
+        });
+        Ok(response)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_library_folder_files(
+    query: LibraryFolderFilesQuery,
+    state: State<'_, AppState>,
+) -> Result<LibraryListResponse, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_library_folder_files", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let response =
+            library_index::list_library_folder_files(&connection, query).map_err(map_error)?;
+        log_slow_command("list_library_folder_files", started_at, || {
+            format!("for {} visible folder file row(s)", response.items.len())
         });
         Ok(response)
     })

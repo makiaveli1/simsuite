@@ -43,6 +43,7 @@ import type {
   OrganizationPreview,
   LibraryFacets,
   LibrarySummary,
+  LibraryFolderFilesQuery,
   LibraryWatchBulkSaveResult,
   LibraryListResponse,
   LibraryQuery,
@@ -5621,6 +5622,84 @@ function filterMockFiles(query: LibraryQuery) {
   };
 }
 
+function normalizeMockVirtualFolderPath(path: string) {
+  return path
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function mockFolderSegmentsForFile(file: { path: string; sourceLocation: string; relativeDepth: number }) {
+  const root =
+    file.sourceLocation === "mods"
+      ? "Mods"
+      : file.sourceLocation === "tray"
+        ? "Tray"
+        : null;
+  if (!root) {
+    return null;
+  }
+
+  const parts = normalizeMockVirtualFolderPath(file.path);
+  const parentParts = parts.slice(0, -1);
+  const folderDepth = Math.max(0, file.relativeDepth);
+  const childSegments =
+    folderDepth > 0 && parentParts.length >= folderDepth
+      ? parentParts.slice(parentParts.length - folderDepth)
+      : [];
+  return [root, ...childSegments];
+}
+
+function mockVirtualFolderMatches(
+  fileSegments: string[],
+  targetSegments: string[],
+  recursive: boolean,
+) {
+  if (targetSegments.length === 0) {
+    return false;
+  }
+  if (!recursive && fileSegments.length !== targetSegments.length) {
+    return false;
+  }
+  if (recursive && fileSegments.length < targetSegments.length) {
+    return false;
+  }
+
+  return targetSegments.every(
+    (segment, index) => segment.toLowerCase() === fileSegments[index]?.toLowerCase(),
+  );
+}
+
+function filterMockFolderFiles(query: LibraryFolderFilesQuery) {
+  const targetSegments = normalizeMockVirtualFolderPath(query.folderPath);
+  const root = targetSegments[0]?.toLowerCase();
+  const source = root === "mods" ? "mods" : root === "tray" ? "tray" : null;
+  if (!source) {
+    return { total: 0, items: [] };
+  }
+
+  const base = filterMockFiles({
+    ...(query.filters ?? {}),
+    source,
+    includePreviews: query.includePreviews,
+  });
+  const items = base.items.filter((item) => {
+    const fileSegments = mockFolderSegmentsForFile(item);
+    return fileSegments
+      ? mockVirtualFolderMatches(fileSegments, targetSegments, Boolean(query.recursive))
+      : false;
+  });
+  const total = items.length;
+  const offset = Math.max(0, Math.trunc(query.offset ?? 0));
+  const limit = Math.max(0, Math.trunc(query.limit ?? total));
+
+  return {
+    total,
+    items: items.slice(offset, offset + limit),
+  };
+}
+
 function mockLibraryFiles() {
   return mockFiles.filter((item) => item.sourceLocation !== "downloads");
 }
@@ -6454,6 +6533,12 @@ async function mockInvoke<T>(
     case "list_library_files": {
       const query = (payload?.query as LibraryQuery | undefined) ?? {};
       return filterMockFiles(query) as T;
+    }
+    case "list_library_folder_files": {
+      const query = (payload?.query as LibraryFolderFilesQuery | undefined) ?? {
+        folderPath: "",
+      };
+      return filterMockFolderFiles(query) as T;
     }
     case "list_library_watch_items": {
       const filter = (payload?.filter as WatchListFilter | undefined) ?? "attention";
@@ -7332,6 +7417,8 @@ export const api = {
     invoke<IgnoreItemsResult>("reject_download_items", { itemIds }),
   listLibraryFiles: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files", { query }),
+  listLibraryFolderFiles: (query: LibraryFolderFilesQuery) =>
+    invoke<LibraryListResponse>("list_library_folder_files", { query }),
   listLibraryFilesForTree: (query: LibraryQuery) =>
     invoke<LibraryListResponse>("list_library_files_for_tree", { query }),
   getFolderTreeMetadata: (query: LibraryQuery) =>

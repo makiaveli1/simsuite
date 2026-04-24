@@ -1,5 +1,61 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Folder contents backend slice)
+
+- **Mode**: code
+- **Focus**: start Sprint 2 folder work by giving the backend a callable, paged folder-content path
+
+### Progress Made
+
+1. **Added backend folder file listing**:
+   - added `LibraryFolderFilesQuery`
+   - added `library_index::list_library_folder_files`
+   - the query accepts:
+     - `folderPath`
+     - `recursive`
+     - active Library filters
+     - `limit` / `offset`
+     - preview inclusion control
+
+2. **Kept folder results aligned with Library filters**:
+   - folder root decides installed source (`Mods` or `Tray`)
+   - active Library filters still apply inside that source
+   - pagination happens after folder matching, so the `total` reflects the folder result, not the whole Library
+
+3. **Wired the command path**:
+   - added the Tauri command `list_library_folder_files`
+   - registered it in `tauri::generate_handler!`
+   - added a regression test so the command cannot silently disappear from registration
+   - added the TypeScript API type/wrapper and mock implementation
+
+### Verification
+
+- First ran the folder-content Rust test red and saw the missing type/function failure.
+- `cargo test --manifest-path src-tauri/Cargo.toml folder_file_listing_returns_paged_direct_folder_contents` passed after implementation.
+- First ran the command-registration test red and saw the missing registration failure.
+- `cargo test --manifest-path src-tauri/Cargo.toml library_folder_file_command_is_registered_with_tauri` passed after wiring.
+- First ran the filter-aware folder test red and saw the query had no `filters` field yet.
+- `cargo test --manifest-path src-tauri/Cargo.toml folder_file_listing_respects_library_filters` passed after adding filters.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` ran.
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed: `219` tests.
+- `npm run test:unit` passed: `12` files, `39` tests.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+
+### Known Problems / Gaps
+
+- The Library folder UI still needs to switch from full `list_library_files_for_tree` prefetching to the new `list_library_folder_files` command.
+- This first backend slice filters folder rows in backend code after loading the installed source rows; a later pass can make it more SQL-direct if needed for very large libraries.
+- Folder summaries and explicit empty-folder/open-folder support are still pending.
+- Staging still needs a real desktop click-through with fixture data.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Other uncommitted local changes remain in the worktree outside this folder slice.
+
+### Next Best Step
+
+1. Wire `LibraryScreen` / folder content loading to call `api.listLibraryFolderFiles` with the selected folder and active filters.
+2. Remove the eager full-row folder-content prefetch once the new command owns selected-folder contents.
+3. Add folder summaries and empty-folder/open-folder support.
+
 ## Current Session (April 24, 2026 - Staging confirmation polish)
 
 - **Mode**: code

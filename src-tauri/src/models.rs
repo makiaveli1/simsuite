@@ -279,7 +279,7 @@ pub struct WorkspaceChange {
     pub family_keys: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryQuery {
     pub search: Option<String>,
@@ -293,6 +293,17 @@ pub struct LibraryQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     #[serde(default)]
+    pub include_previews: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LibraryFolderFilesQuery {
+    pub folder_path: String,
+    pub recursive: bool,
+    pub filters: LibraryQuery,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
     pub include_previews: Option<bool>,
 }
 

@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Folder contents backend slice)
+
+This session started Sprint 2 folder work by adding a backend command for paged folder contents.
+
+Important changes and findings:
+
+- added `LibraryFolderFilesQuery` for folder-content requests.
+- added `list_library_folder_files` in the Library backend.
+- folder content requests can now include:
+  - the selected folder path
+  - direct-only or recursive matching
+  - active Library filters
+  - page size and offset
+  - preview inclusion control
+- registered the new Tauri command as `list_library_folder_files`.
+- added a TypeScript API wrapper and mock implementation.
+- added tests for:
+  - paged direct folder contents
+  - respecting Library filters inside folder contents
+  - keeping the Tauri command registered
+
+Checks passed:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml folder_file_listing_returns_paged_direct_folder_contents`
+- `cargo test --manifest-path src-tauri/Cargo.toml library_folder_file_command_is_registered_with_tauri`
+- `cargo test --manifest-path src-tauri/Cargo.toml folder_file_listing_respects_library_filters`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cargo test --manifest-path src-tauri/Cargo.toml` (`219` tests)
+- `npm run test:unit` (`12` files, `39` tests)
+- `npm run build` with the existing Vite chunk-size warning
+
+Important remaining gap:
+
+- the Library folder UI still needs to call the new backend command instead of preloading all file rows for folder contents.
+- this first backend slice is backend-owned but not yet SQL-direct for the folder path; a later pass can optimize the query if large-library testing needs it.
+- folder summaries and empty-folder/open-folder support are still pending.
+- real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Staging confirmation polish)
 
 This session continued the Staging sprint by replacing browser confirmation prompts with an in-app confirmation panel.

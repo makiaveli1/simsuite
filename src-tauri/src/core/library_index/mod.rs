@@ -9,9 +9,9 @@ use crate::{
     error::AppResult,
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, FolderTreeMetadata,
-        FolderTreeNode, HomeOverview, LibraryFacets, LibraryFileRow, LibraryListResponse,
-        LibraryQuery, LibrarySettings, LibrarySortField, LibrarySummary, LibraryWatchFilter,
-        WatchStatus,
+        FolderTreeNode, HomeOverview, LibraryFacets, LibraryFileRow, LibraryFolderFilesQuery,
+        LibraryListResponse, LibraryQuery, LibrarySettings, LibrarySortField, LibrarySummary,
+        LibraryWatchFilter, WatchStatus,
     },
     seed::{SeedPack, TaxonomySeed},
 };
@@ -417,6 +417,58 @@ pub fn list_library_files(
     Ok(LibraryListResponse { total, items })
 }
 
+pub fn list_library_folder_files(
+    connection: &Connection,
+    query: LibraryFolderFilesQuery,
+) -> AppResult<LibraryListResponse> {
+    let target_segments = normalize_virtual_folder_path(&query.folder_path);
+    let Some(root) = target_segments.first() else {
+        return Ok(LibraryListResponse {
+            total: 0,
+            items: Vec::new(),
+        });
+    };
+    let Some(source) = source_location_for_folder_root(root) else {
+        return Ok(LibraryListResponse {
+            total: 0,
+            items: Vec::new(),
+        });
+    };
+
+    let mut filters = query.filters;
+    filters.source = Some(source);
+    filters.limit = None;
+    filters.offset = None;
+    filters.include_previews = query.include_previews.or(filters.include_previews);
+
+    let listing = list_library_files(connection, filters)?;
+
+    let filtered_items = listing
+        .items
+        .into_iter()
+        .filter(|item| {
+            folder_segments_for_file(&item.path, &item.source_location, item.relative_depth)
+                .map(|segments| {
+                    virtual_folder_matches(&segments, &target_segments, query.recursive)
+                })
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let total = filtered_items.len() as i64;
+    let offset = query.offset.unwrap_or(0).max(0) as usize;
+    let limit = query
+        .limit
+        .map(|value| value.max(0) as usize)
+        .unwrap_or(filtered_items.len());
+    let items = filtered_items
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+
+    Ok(LibraryListResponse { total, items })
+}
+
 #[derive(Debug)]
 struct RelationshipPeerRow {
     id: i64,
@@ -644,6 +696,48 @@ fn folder_sort_rank(name: &str) -> u8 {
         "Tray" => 1,
         _ => 2,
     }
+}
+
+fn normalize_virtual_folder_path(path: &str) -> Vec<String> {
+    path.replace('\\', "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn source_location_for_folder_root(root: &str) -> Option<String> {
+    if root.eq_ignore_ascii_case("mods") {
+        return Some("mods".to_owned());
+    }
+    if root.eq_ignore_ascii_case("tray") {
+        return Some("tray".to_owned());
+    }
+    None
+}
+
+fn virtual_folder_matches(
+    file_segments: &[String],
+    target_segments: &[String],
+    recursive: bool,
+) -> bool {
+    if target_segments.is_empty() {
+        return false;
+    }
+    if recursive {
+        return file_segments.len() >= target_segments.len()
+            && target_segments
+                .iter()
+                .zip(file_segments.iter())
+                .all(|(target, actual)| target.eq_ignore_ascii_case(actual));
+    }
+
+    file_segments.len() == target_segments.len()
+        && target_segments
+            .iter()
+            .zip(file_segments.iter())
+            .all(|(target, actual)| target.eq_ignore_ascii_case(actual))
 }
 
 fn folder_segments_for_file(
@@ -1001,12 +1095,13 @@ mod tests {
 
     use crate::{
         database,
-        models::{LibraryQuery, LibrarySettings},
+        models::{LibraryFolderFilesQuery, LibraryQuery, LibrarySettings},
         seed::load_seed_pack,
     };
 
     use super::{
         get_file_detail, get_folder_tree_metadata, get_library_facets, list_library_files,
+        list_library_folder_files,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -1130,6 +1225,127 @@ mod tests {
         assert_eq!(listing.total, 1);
         assert_eq!(listing.items.len(), 1);
         assert_eq!(listing.items[0].filename, "installed.package");
+    }
+
+    #[test]
+    fn folder_file_listing_returns_paged_direct_folder_contents() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        connection
+            .execute(
+                "UPDATE files SET relative_depth = 1 WHERE filename = 'installed.package'",
+                [],
+            )
+            .expect("align fixture depth");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/TestCreator/second.package",
+                    "second.package",
+                    ".package",
+                    "Gameplay",
+                    0.82_f64,
+                    "mods",
+                    1_i64,
+                    "[]",
+                    insights_json,
+                ],
+            )
+            .expect("second direct file");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "C:/Mods/TestCreator/Nested/deep.package",
+                    "deep.package",
+                    ".package",
+                    "Gameplay",
+                    0.8_f64,
+                    "mods",
+                    2_i64,
+                    "[]",
+                    serde_json::to_string(&crate::models::FileInsights::default())
+                        .expect("insights json"),
+                ],
+            )
+            .expect("nested file");
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/TestCreator".to_owned(),
+                recursive: false,
+                limit: Some(1),
+                offset: Some(1),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("folder listing");
+
+        assert_eq!(listing.total, 2);
+        assert_eq!(listing.items.len(), 1);
+        assert_eq!(listing.items[0].filename, "second.package");
+        assert!(listing
+            .items
+            .iter()
+            .all(|item| item.filename != "deep.package"));
+        assert!(listing
+            .items
+            .iter()
+            .all(|item| item.insights.thumbnail_preview.is_none()));
+    }
+
+    #[test]
+    fn folder_file_listing_respects_library_filters() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+
+        connection
+            .execute(
+                "UPDATE files SET relative_depth = 1 WHERE filename = 'installed.package'",
+                [],
+            )
+            .expect("align fixture depth");
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/TestCreator".to_owned(),
+                recursive: false,
+                filters: LibraryQuery {
+                    kind: Some("BuildBuy".to_owned()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .expect("folder listing");
+
+        assert_eq!(listing.total, 0);
+        assert!(listing.items.is_empty());
     }
 
     #[test]

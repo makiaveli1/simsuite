@@ -219,6 +219,15 @@ export interface LibraryQuery {
   includePreviews?: boolean;
 }
 
+export interface LibraryFolderFilesQuery {
+  folderPath: string;
+  recursive?: boolean;
+  filters?: LibraryQuery;
+  limit?: number;
+  offset?: number;
+  includePreviews?: boolean;
+}
+
 export type LibraryWatchFilter = "all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates";
 
 export type LibrarySortField = "name" | "creator" | "recently_modified" | "has_updates_first";

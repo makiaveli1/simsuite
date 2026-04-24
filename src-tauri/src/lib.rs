@@ -179,6 +179,7 @@ pub fn run() {
             commands::reject_download_items,
             commands::get_folder_tree_metadata,
             commands::list_library_files,
+            commands::list_library_folder_files,
             commands::list_library_files_for_tree,
             commands::list_library_watch_items,
             commands::list_library_watch_setup_items,
@@ -228,5 +229,23 @@ mod tests {
                 "missing Tauri command registration for {command}"
             );
         }
+    }
+
+    #[test]
+    fn library_folder_file_command_is_registered_with_tauri() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        assert!(
+            handler_source.contains("commands::list_library_folder_files"),
+            "missing Tauri command registration for list_library_folder_files"
+        );
     }
 }

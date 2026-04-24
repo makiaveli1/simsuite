@@ -67,6 +67,20 @@ Not yet implemented:
 
 ## Current engineering note (April 24, 2026)
 
+The Library backend now has a first folder-content command, so selected-folder rows no longer need to be designed around a frontend-only full-list helper.
+
+Important current behavior:
+
+- `list_library_folder_files` accepts a virtual folder path such as `Mods/TestCreator` or `Tray`.
+- folder requests can be direct-only or recursive.
+- active Library filters travel with the folder request, while the folder root still decides the installed source (`mods` or `tray`).
+- the command returns the same `LibraryListResponse` shape as the main Library list, but paged for that folder result.
+- `src/lib/api.ts` exposes `api.listLibraryFolderFiles` and has matching mock behavior.
+- `src-tauri/src/lib.rs` registers the command, and a regression test checks that registration.
+- the React folder UI has not switched over yet; it still needs a follow-up pass to replace the current full-row folder-content prefetch.
+
+## Current engineering note (April 24, 2026)
+
 Staging is now wired as an exposed Tauri route instead of a frontend-only screen.
 
 Important current behavior:
