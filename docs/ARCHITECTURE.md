@@ -79,6 +79,7 @@ Important current behavior:
   - commit all staging areas
 - `src-tauri/src/lib.rs` registers those commands in the app invoke handler.
 - a backend regression test checks that the staging command names remain present in `tauri::generate_handler!`.
+- reject actions now use an in-app confirmation dialog instead of browser prompts.
 
 ## Current engineering note (April 24, 2026)
 

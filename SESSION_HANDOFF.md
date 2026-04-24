@@ -1,5 +1,43 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Staging confirmation polish)
+
+- **Mode**: code
+- **Focus**: replace Staging browser confirmation prompts with an in-app confirmation panel
+
+### Progress Made
+
+1. **Added a focused frontend regression test**:
+   - new file: `src/screens/StagingScreen.test.tsx`
+   - first ran it red and confirmed the old code called `globalThis.confirm`
+   - the test now proves Reject opens an accessible in-app dialog and delays cleanup until the user confirms in that dialog
+
+2. **Replaced Staging browser prompts**:
+   - `Reject` now opens a compact Staging confirmation dialog
+   - `Reject all` uses the same dialog pattern with a bulk message
+   - the dialog shows the affected staging paths, capped with a `+N more` row when needed
+   - cleanup now runs only from the dialog's confirm button
+   - `globalThis.confirm` is no longer used in `StagingScreen.tsx`
+
+### Verification
+
+- `npm run test:unit -- src/screens/StagingScreen.test.tsx` failed before the fix on the old browser prompt.
+- `npm run test:unit -- src/screens/StagingScreen.test.tsx` passed after the fix.
+- `npm run test:unit` passed: `12` files, `39` tests.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+
+### Known Problems / Gaps
+
+- Staging still needs a real desktop click-through with fixture data.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Other uncommitted local changes remain in the worktree outside this staging slice.
+
+### Next Best Step
+
+1. Run a real app Staging smoke if fixture data is available.
+2. Start Sprint 2 folder work: backend-native folder children, paged folder contents, folder summary, and open-folder support for empty folders.
+
 ## Current Session (April 24, 2026 - Staging command wiring)
 
 - **Mode**: code

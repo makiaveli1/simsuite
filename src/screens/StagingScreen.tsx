@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import {
+  AlertTriangle,
   Archive,
   Check,
   CheckCheck,
@@ -24,6 +25,15 @@ interface StagingAreaCardProps {
   onReject: (itemId: string, paths: string[]) => void;
   committing: boolean;
   rejecting: boolean;
+}
+
+interface RejectRequest {
+  scope: "single" | "all";
+  itemId: string | null;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  paths: string[];
 }
 
 function formatBytes(bytes: number): string {
@@ -140,6 +150,7 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
   const [committingId, setCommittingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [result, setResult] = useState<StagingCommitResult | null>(null);
+  const [rejectRequest, setRejectRequest] = useState<RejectRequest | null>(null);
 
   const loadStagingAreas = useCallback(async () => {
     try {
@@ -172,21 +183,17 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
   };
 
   const handleReject = async (itemId: string, paths: string[]) => {
-    const confirmed = globalThis.confirm(
-      userView === "beginner"
-        ? "Remove this staged content? The files will stay in your Downloads folder."
-        : `Reject this staging area and remove its extracted files?`,
-    );
-    if (!confirmed) return;
-    setRejectingId(itemId);
-    try {
-      await api.cleanupStagingAreas(paths);
-      await loadStagingAreas();
-    } catch (err) {
-      console.error("[StagingScreen] reject failed:", err);
-    } finally {
-      setRejectingId(null);
-    }
+    setRejectRequest({
+      scope: "single",
+      itemId,
+      title: "Reject staged files",
+      description:
+        userView === "beginner"
+          ? "Remove this staged content from SimSuite's staging area. Your original download stays where it is."
+          : "Remove this staging area and its extracted files from SimSuite's local staging area.",
+      confirmLabel: "Remove staged files",
+      paths,
+    });
   };
 
   const handleCommitAll = async () => {
@@ -206,24 +213,114 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
 
   const handleRejectAll = async () => {
     if (!summary || summary.areas.length === 0) return;
-    const confirmed = globalThis.confirm(
-      userView === "beginner"
-        ? `Remove all ${summary.areas.length} staged areas? Files will stay in your Downloads folder.`
-        : `Reject all ${summary.areas.length} staging areas and remove extracted files?`,
+    const allPaths = summary.areas.flatMap((a) =>
+      a.subdirectories.map((s) => s.path),
     );
-    if (!confirmed) return;
-    setRejectingAll(true);
+    setRejectRequest({
+      scope: "all",
+      itemId: null,
+      title: "Reject all staged files",
+      description:
+        userView === "beginner"
+          ? `Remove all ${summary.areas.length} staged areas from SimSuite's staging area. Your original downloads stay where they are.`
+          : `Remove all ${summary.areas.length} staging areas and their extracted files from SimSuite's local staging area.`,
+      confirmLabel: "Remove all staged files",
+      paths: allPaths,
+    });
+  };
+
+  const rejectInProgress =
+    rejectingAll || (rejectRequest?.itemId != null && rejectingId === rejectRequest.itemId);
+
+  const closeRejectDialog = () => {
+    if (!rejectInProgress) {
+      setRejectRequest(null);
+    }
+  };
+
+  const confirmRejectRequest = async () => {
+    if (!rejectRequest) return;
+    if (rejectRequest.scope === "all") {
+      setRejectingAll(true);
+    } else {
+      setRejectingId(rejectRequest.itemId);
+    }
     try {
-      const allPaths = summary.areas.flatMap((a) =>
-        a.subdirectories.map((s) => s.path),
-      );
-      await api.cleanupStagingAreas(allPaths);
+      await api.cleanupStagingAreas(rejectRequest.paths);
       await loadStagingAreas();
     } catch (err) {
-      console.error("[StagingScreen] reject all failed:", err);
+      console.error("[StagingScreen] reject failed:", err);
     } finally {
       setRejectingAll(false);
+      setRejectingId(null);
+      setRejectRequest(null);
     }
+  };
+
+  const renderRejectDialog = () => {
+    if (!rejectRequest) return null;
+
+    const visiblePaths = rejectRequest.paths.slice(0, 4);
+    const extraPathCount = rejectRequest.paths.length - visiblePaths.length;
+
+    return (
+      <m.div
+        className="staging-confirm-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.12 }}
+        onClick={closeRejectDialog}
+      >
+        <m.div
+          className="staging-confirm-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="staging-confirm-title"
+          initial={{ opacity: 0, y: 18, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 14, scale: 0.99 }}
+          transition={{ duration: 0.14 }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="staging-confirm-header">
+            <AlertTriangle size={18} strokeWidth={2} />
+            <h3 id="staging-confirm-title">{rejectRequest.title}</h3>
+          </div>
+          <p>{rejectRequest.description}</p>
+          <ul className="staging-confirm-paths">
+            {visiblePaths.map((path) => (
+              <li key={path}>
+                <code>{path}</code>
+              </li>
+            ))}
+            {extraPathCount > 0 ? (
+              <li>
+                <code>+{extraPathCount} more</code>
+              </li>
+            ) : null}
+          </ul>
+          <div className="staging-confirm-actions">
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={closeRejectDialog}
+              disabled={rejectInProgress}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="danger-action"
+              onClick={() => void confirmRejectRequest()}
+              disabled={rejectInProgress}
+            >
+              {rejectInProgress ? "Removing..." : rejectRequest.confirmLabel}
+            </button>
+          </div>
+        </m.div>
+      </m.div>
+    );
   };
 
   if (loading) {
@@ -241,6 +338,8 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
 
   return (
     <div className="staging-screen">
+      <AnimatePresence>{renderRejectDialog()}</AnimatePresence>
+
       <div className="staging-header">
         <div className="staging-header-left">
           <h2 className="staging-title">

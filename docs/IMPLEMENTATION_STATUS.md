@@ -1,5 +1,30 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Staging confirmation polish)
+
+This session continued the Staging sprint by replacing browser confirmation prompts with an in-app confirmation panel.
+
+Important changes and findings:
+
+- `StagingScreen` no longer uses `globalThis.confirm`.
+- rejecting one staging area now opens an accessible in-app dialog.
+- rejecting all staged areas uses the same dialog pattern with bulk-specific copy.
+- cleanup only runs after the user presses the dialog's confirm button.
+- the dialog lists affected staging paths and caps long lists with a `+N more` row.
+- a new frontend test covers the no-browser-confirm behavior and the delayed cleanup call.
+
+Checks passed:
+
+- `npm run test:unit -- src/screens/StagingScreen.test.tsx`
+- `npm run test:unit` (`12` files, `39` tests)
+- `npm run build` with the existing Vite chunk-size warning
+
+Important remaining gap:
+
+- Staging still needs a real desktop click-through with fixture data.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Staging command wiring)
 
 This session continued the correctness sprint by wiring the already-exposed Staging screen to its existing backend commands.
