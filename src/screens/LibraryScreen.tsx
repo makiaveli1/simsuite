@@ -31,6 +31,7 @@ import type {
   WatchListFilter,
   LibrarySummary,
   LibrarySortField,
+  LibraryQuery,
 } from "../lib/types";
 import {
   buildSheetAttributionSection,
@@ -61,7 +62,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
-import { buildFolderTree, getFolderContents, getRootFiles, type FolderNode } from "./library/folderTree";
+import type { FolderNode } from "./library/folderTree";
 import type { FolderTreeMetadata, FolderTreeNode } from "../lib/types";
 
 interface LibraryScreenProps {
@@ -97,16 +98,37 @@ function getSourceRoot(path: string): string | null {
   return idx < 0 ? null : segments[idx];
 }
 
-// Returns true if this file is stored directly in the root folder with no subfolder.
-// E.g. Mods\filename.package → true  (depth-0, no subfolder)
-// DEPTH-0 vs DEPTH-1 determination using relativeDepth from the database.
-// relativeDepth=0: file is directly inside the source root (Mods or Tray) with no subfolder.
-// relativeDepth=1+: file is inside a subfolder of the source root.
-// The path-based approach (findRootSegments) fails on Windows because the stored path
-// includes the full user folder path (e.g. C:/Users/likwi/.../Mods/File.package)
-// which causes slice(1) to remove the WRONG segment (the username, not the game root).
-function isDepthZeroFile(file: { path: string; relativeDepth: number }, sourceRoot: string): boolean {
-  return file.relativeDepth === 0;
+function getSourceRootForFile(file: LibraryFileRow): string | null {
+  if (file.sourceLocation === "mods") return "Mods";
+  if (file.sourceLocation === "tray") return "Tray";
+  return getSourceRoot(file.path);
+}
+
+function getVirtualFolderPathForFile(file: LibraryFileRow): string | null {
+  const rootName = getSourceRootForFile(file);
+  if (!rootName) return null;
+
+  const relativeParts = getRelativePath(file.path).split("/").filter(Boolean);
+  const parentParts = relativeParts.slice(0, -1);
+  const nestedFolderParts =
+    file.relativeDepth > 0 && parentParts.length >= file.relativeDepth
+      ? parentParts.slice(parentParts.length - file.relativeDepth)
+      : [];
+
+  return [rootName, ...nestedFolderParts].join("/");
+}
+
+function findFolderNodeByPath(nodes: FolderNode[], folderPath: string): FolderNode | undefined {
+  for (const node of nodes) {
+    if (node.fullPath === folderPath) {
+      return node;
+    }
+    const match = findFolderNodeByPath(node.children, folderPath);
+    if (match) {
+      return match;
+    }
+  }
+  return undefined;
 }
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -147,14 +169,13 @@ export function LibraryScreen({
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid" | "folders">("list");
   const [activeFolderPath, setActiveFolderPath] = useState<string | null>(null);
-  const [treeRows, setTreeRows] = useState<LibraryListResponse | null>(null);
+  const [folderRows, setFolderRows] = useState<LibraryListResponse | null>(null);
   // Loading state for the tree fetch — separate from the paged rows loading.
-  // Shows a subtle spinner in the tree pane while treeRows is being fetched.
   const [isTreeLoading, setIsTreeLoading] = useState(false);
   const [densityValue, setDensityValue] = useState(50);
   const deferredSearch = useDeferredValue(search);
 
-  // Phase 5ac: Track the filter params the current treeRows was loaded with.
+  // Track the filter params the current tree metadata was loaded with.
   // If filters haven't changed, we skip the reload — tree persists across folder exits.
   const lastTreeFiltersRef = useRef<{
     search: string;
@@ -173,31 +194,21 @@ export function LibraryScreen({
     tray: FolderNode;
   } | null>(null);
 
-  // Phase 5ac: Holds the precomputed folder tree from Rust (lightweight metadata, no file rows).
-  // Separate from treeRows (file content) — this is ONLY for tree structure rendering.
+  // Holds the precomputed folder tree from Rust (lightweight metadata, no file rows).
   const treeMetaRef = useRef<FolderTreeMetadata | null>(null);
 
-  // Phase 5ac: Renderable tree structure — derived from treeMetaRef.
-  // Separated from treeRows so tree rendering does NOT depend on loading flat file rows.
+  // Renderable tree structure — derived from treeMetaRef.
   const [folderTree, setFolderTree] = useState<{
     mods: FolderNode;
     tray: FolderNode;
   } | null>(null);
 
-  // Phase 5ac: Persist expanded folder state across view switches so the tree
-  // does NOT collapse when switching list↔folders. Uses path-keyed Set for O(1) lookup.
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(["Mods"]));
-
-  // Phase 5ac: Monotonic sequence counter for the lightweight tree metadata API.
-  // Follows the same proven pattern as loadSeqRef for list queries.
+  // Monotonic sequence counters discard stale async responses.
   const treeSeqRef = useRef(0);
+  const folderContentSeqRef = useRef(0);
 
-  // Phase 5ac: Background preloader — warm the tree cache while in list/grid mode.
-  // Runs silently (no spinner, no UI disruption) so the tree is ready before user enters folder mode.
-  // Only preloads if filters differ from last loaded tree.
-  useEffect(() => {
-    if (viewMode === "folders") return;
-    const filters = {
+  function currentTreeFilterKey() {
+    return {
       search: deferredSearch,
       kind: kind ?? "",
       subtype: subtype ?? "",
@@ -206,6 +217,27 @@ export function LibraryScreen({
       minConfidence: minConfidence ?? "",
       watchFilter: watchFilter ?? "",
     };
+  }
+
+  function currentLibraryQuery(): LibraryQuery {
+    return {
+      search: deferredSearch || undefined,
+      kind: kind || undefined,
+      subtype: subtype || undefined,
+      creator: creator || undefined,
+      source: source || undefined,
+      minConfidence: minConfidence ? Number(minConfidence) : undefined,
+      watchFilter: watchFilter || undefined,
+      sortBy: sortBy || undefined,
+    };
+  }
+
+  // Phase 5ac: Background preloader — warm the tree cache while in list/grid mode.
+  // Runs silently (no spinner, no UI disruption) so the tree is ready before user enters folder mode.
+  // Only preloads if filters differ from last loaded tree.
+  useEffect(() => {
+    if (viewMode === "folders") return;
+    const filters = currentTreeFilterKey();
     const last = lastTreeFiltersRef.current;
     const filtersUnchanged =
       last !== null &&
@@ -218,45 +250,20 @@ export function LibraryScreen({
       last.watchFilter === filters.watchFilter;
     if (filtersUnchanged) return; // Tree already loaded for these filters
 
-    // Phase 5ac: Lightweight metadata API — returns prebuilt tree structure, NOT flat file rows.
-    // No need to also load listLibraryFilesForTree here; treeRows is for folder contents only.
+    // Lightweight metadata API — returns prebuilt tree structure, not flat file rows.
     const seq = ++treeSeqRef.current;
-    const treeFilters = {
-      search: deferredSearch || undefined,
-      kind: kind || undefined,
-      subtype: subtype || undefined,
-      creator: creator || undefined,
-      source: source || undefined,
-      minConfidence: minConfidence ? Number(minConfidence) : undefined,
-      watchFilter: watchFilter || undefined,
-    };
-    Promise.all([
-      api.getFolderTreeMetadata(treeFilters),
-      // Phase 5ah: ALSO prefetch full file list for folder contents.
-      // treeRows (all 13k files) is needed for getFolderContents — pre-warming
-      // it here makes folder mode feel INSTANT when the user first enters.
-      api.listLibraryFilesForTree(treeFilters),
-    ])
-      .then(([meta, treeResult]) => {
+    api
+      .getFolderTreeMetadata(currentLibraryQuery())
+      .then((meta) => {
         if (seq !== treeSeqRef.current) return; // discard stale
         treeMetaRef.current = meta;
         const tree = convertMetaToFolderTree(meta);
         setFolderTree(tree);
         prevTreeCacheRef.current = tree;
-        // Phase 5ah: warm treeRows so folder content is ready instantly
-        setTreeRows(treeResult);
-        // Phase 5ah: also persist filter state so the loadTreeRows effect
-        // sees filtersUnchanged=true and skips the redundant cold fetch.
         lastTreeFiltersRef.current = filters;
       })
       .catch(() => {
         // Silently fail — the tree will load on-demand when user enters folder mode
-      })
-      .finally(() => {
-        // Phase 5ah: mark filters as loaded so loadTreeRows effect skips redundant rebuild.
-        // We must set this here (not in .then) so it also runs if the Promise resolves
-        // after the load effect has already checked lastTreeFiltersRef.current.
-        lastTreeFiltersRef.current = filters;
       });
   }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
 
@@ -314,11 +321,8 @@ export function LibraryScreen({
     pageSize,
   ]);
 
-  // Load the full-tree dataset when entering folder mode or when filters change.
-  // The tree needs ALL files (no pagination) to show real subfolder structure.
-  // Phase 5ab: viewMode removed from deps — switching list↔grid must not invalidate treeRows.
-  // Phase 5ac: lastTreeFiltersRef prevents redundant reloads when entering folder mode
-  // with the same filters the tree was already loaded for.
+  // Load lightweight tree metadata when entering folder mode or when filters change.
+  // File rows are loaded separately for only the active folder.
   // Phase 5ah FIX: setActiveFolderPath(null) and setSelected(null) moved to a separate
   // "enter folder mode" effect below — they must NOT run on every search/filter change
   // (which was causing blank-screen: every keystroke fired setSelected(null), wiping
@@ -326,17 +330,7 @@ export function LibraryScreen({
   useEffect(() => {
     if (viewMode !== "folders") return;
 
-    // Phase 5ac: Skip if tree is already loaded for the current filter set.
-    // The background preloader keeps treeRows warm, so this is usually a no-op.
-    const filters = {
-      search: deferredSearch,
-      kind: kind ?? "",
-      subtype: subtype ?? "",
-      creator: creator ?? "",
-      source: source ?? "",
-      minConfidence: minConfidence ?? "",
-      watchFilter: watchFilter ?? "",
-    };
+    const filters = currentTreeFilterKey();
     const last = lastTreeFiltersRef.current;
     const filtersUnchanged =
       last !== null &&
@@ -347,17 +341,11 @@ export function LibraryScreen({
       last.source === filters.source &&
       last.minConfidence === filters.minConfidence &&
       last.watchFilter === filters.watchFilter;
-    // Phase 5ac: Skip if tree is already loaded for current filter set.
-    // folderTree state holds the rendered tree; treeRows holds file content.
-    // Both must be checked to ensure both are available.
-    if (filtersUnchanged && folderTree !== null && treeRows !== null) {
+    if (filtersUnchanged && folderTree !== null) {
       return;
     }
-    void loadTreeRows(filters);
-    // NOTE: deferredSearch intentionally OMITTED from deps — adding it would cause
-    // setSelected(null) to fire on every debounced-search change, blanking the sidebar.
-    // The background preloader (above) handles search warm-up independently.
-  }, [viewMode, kind, subtype, creator, source, minConfidence, watchFilter]);
+    void loadFolderTree(filters);
+  }, [viewMode, deferredSearch, kind, subtype, creator, source, minConfidence, watchFilter]);
 
   // Phase 5ah: Enter folder mode — runs ONCE when switching from list/grid to folders.
   // NOT on every filter/search change (that belongs to the effect above).
@@ -368,11 +356,75 @@ export function LibraryScreen({
   }, [viewMode]);
 
   // Phase 5ab: separate effect — reset active path when LEAVING folder mode.
-  // Does NOT clear treeRows; the tree cache survives view switches.
+  // Does NOT clear the tree cache; the tree survives view switches.
   useEffect(() => {
     if (viewMode === "folders") return;
     setActiveFolderPath(null);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "folders") return;
+
+    const seq = ++folderContentSeqRef.current;
+    const filters = currentLibraryQuery();
+    setFolderRows(null);
+
+    async function loadFolderContents() {
+      try {
+        if (!activeFolderPath) {
+          const rootFolders =
+            source === "mods"
+              ? ["Mods"]
+              : source === "tray"
+                ? ["Tray"]
+                : ["Mods", "Tray"];
+          const responses = await Promise.all(
+            rootFolders.map((folderPath) =>
+              api.listLibraryFolderFiles({
+                folderPath,
+                recursive: false,
+                filters,
+                includePreviews: false,
+              }),
+            ),
+          );
+          if (seq !== folderContentSeqRef.current) return;
+          setFolderRows({
+            total: responses.reduce((sum, response) => sum + response.total, 0),
+            items: responses.flatMap((response) => response.items),
+          });
+          return;
+        }
+
+        const response = await api.listLibraryFolderFiles({
+          folderPath: activeFolderPath,
+          recursive: true,
+          filters,
+          includePreviews: false,
+        });
+        if (seq !== folderContentSeqRef.current) return;
+        setFolderRows(response);
+      } catch (err) {
+        if (seq === folderContentSeqRef.current) {
+          setFolderRows({ total: 0, items: [] });
+        }
+        void err;
+      }
+    }
+
+    void loadFolderContents();
+  }, [
+    viewMode,
+    activeFolderPath,
+    deferredSearch,
+    kind,
+    subtype,
+    creator,
+    source,
+    minConfidence,
+    watchFilter,
+    sortBy,
+  ]);
 
   useEffect(() => {
     if (!selected) {
@@ -447,9 +499,8 @@ export function LibraryScreen({
     }
   }
 
-  // Loads ALL filtered files (no pagination) for folder-tree construction.
-  // Phase 5ac: Loads tree metadata (NOT flat file rows) — lightweight and fast.
-  async function loadTreeRows(
+  // Loads lightweight tree metadata only. Folder file rows are fetched separately.
+  async function loadFolderTree(
     filters: {
       search: string;
       kind: string;
@@ -460,22 +511,13 @@ export function LibraryScreen({
       watchFilter: string;
     } | null,
   ) {
+    const seq = ++treeSeqRef.current;
     setIsTreeLoading(true);
     try {
-      // Phase 5af: Build tree from file list directly — avoids broken Rust
-      // get_folder_tree_metadata SQL (direct_file_count formula bug) and ensures
-      // tree counts always match the actual file list used for content.
-      const result = await api.listLibraryFilesForTree({
-        search: deferredSearch || undefined,
-        kind: kind || undefined,
-        subtype: subtype || undefined,
-        creator: creator || undefined,
-        source: source || undefined,
-        minConfidence: minConfidence ? Number(minConfidence) : undefined,
-        watchFilter: watchFilter || undefined,
-      });
-      const tree = buildFolderTree(result.items);
-      setTreeRows(result);
+      const meta = await api.getFolderTreeMetadata(currentLibraryQuery());
+      if (seq !== treeSeqRef.current) return;
+      treeMetaRef.current = meta;
+      const tree = convertMetaToFolderTree(meta);
       setFolderTree(tree);
       prevTreeCacheRef.current = tree;
       if (filters) lastTreeFiltersRef.current = filters;
@@ -733,44 +775,33 @@ export function LibraryScreen({
   );
 
   // ── Folder tree ──────────────────────────────────────────────────────────
-  // Phase 5ac: tree rendering now uses folderTree state (set by loadTreeRows from
-  // listLibraryFilesForTree), not a per-render rebuild from flat rows.
-  // Falls back to prevTreeCacheRef during warm reload to avoid flicker.
+  // Tree rendering uses lightweight metadata and keeps the previous tree during warm reload.
   const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
 
-  // Phase 5ag: Combined single-pass computation — produces rootItemsBySource + rootFileCount.
-  // Eliminates the duplicate O(n) loop that previously existed in folderContents and syntheticRoot.
+  // Root loose files come from the paged folder-content endpoint, not the whole library.
   const { rootItemsBySource, rootFileCount } = useMemo(() => {
-    const items = treeRows?.items ?? rows?.items ?? [];
+    const items = folderRows?.items ?? [];
     const rootItemsBySource: Record<string, LibraryFileRow[]> = { Mods: [], Tray: [] };
     let rootFileCount = 0;
     for (const item of items) {
-      const src = getSourceRoot(item.path);
-      if ((src === "Mods" || src === "Tray") && isDepthZeroFile(item, src)) {
-        rootItemsBySource[src].push(item);
+      const folderPath = getVirtualFolderPathForFile(item);
+      if (folderPath === "Mods" || folderPath === "Tray") {
+        rootItemsBySource[folderPath].push(item);
         rootFileCount += 1;
       }
     }
     return { rootItemsBySource, rootFileCount };
-  }, [treeRows?.items, rows?.items]);
+  }, [folderRows?.items]);
 
   // ── Folder contents for the active path ─────────────────────────────────
-  // Uses treeRows (full dataset) when available for accurate file listing.
-  //
-  // Root-level (depth-0) files: files stored directly in the game root folder
-  // (e.g. Mods\filename.package) with no subfolder. These are NOT in the
-  // folder tree (buildFolderTree skips them) and must be surfaced separately.
+  // Uses only the active folder's backend-owned file rows.
   const folderContents = useMemo(() => {
-    const items = treeRows?.items ?? rows?.items ?? [];
-    if (!items.length || !folderTreeRoots) {
+    const items = folderRows?.items ?? [];
+    if (!folderTreeRoots) {
       return { subfolders: [], files: [], rootFiles: [] };
     }
 
-    // Root-level files: items with folderSegments = ["Mods"] or ["Tray"].
-    // These are depth-0 files that buildFolderTree skips.
     if (!activeFolderPath) {
-      // Attach root files to the Mods/Tray nodes so folder row badges show
-      // correct totals (tree files + depth-0 loose files) at the root level.
       const modsWithRoots: FolderNode = {
         ...folderTreeRoots.mods,
         rootFiles: rootItemsBySource.Mods,
@@ -782,17 +813,27 @@ export function LibraryScreen({
       return {
         subfolders: [modsWithRoots, trayWithRoots],
         files: [],
-        // Surface ALL root-level files (depth-0) from both sources.
-        // These 9,777 files are stored directly in Mods with no subfolder
-        // and are NOT visible in the folder tree structure.
         rootFiles: [...rootItemsBySource.Mods, ...rootItemsBySource.Tray],
       };
     }
 
-    // Inside a specific folder: reuse the prebuilt tree from loadTreeRows so
-    // getFolderContents does not rebuild the full tree from flat rows.
-    return getFolderContents(activeFolderPath, items, folderTreeRoots);
-  }, [treeRows?.items, rows?.items, folderTreeRoots, activeFolderPath, rootItemsBySource]);
+    const activeNode = findFolderNodeByPath(
+      [folderTreeRoots.mods, folderTreeRoots.tray],
+      activeFolderPath,
+    );
+    if (!activeNode) {
+      return { subfolders: [], files: [], rootFiles: [] };
+    }
+
+    const rootFiles = items.filter((item) => getVirtualFolderPathForFile(item) === activeFolderPath);
+    const rootFileIds = new Set(rootFiles.map((item) => item.id));
+    const files = items.filter((item) => !rootFileIds.has(item.id));
+    return {
+      subfolders: activeNode.children,
+      files,
+      rootFiles,
+    };
+  }, [folderRows?.items, folderTreeRoots, activeFolderPath, rootItemsBySource]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
   const syntheticRoot: FolderNode = useMemo(() => {
@@ -1685,7 +1726,7 @@ export function LibraryScreen({
                 Phase 5ac: Cold start — no tree cached AND nothing loaded yet.
                 Show skeleton rows (not spinner) so the first entry has a polished feel.
                 After first load, prevTreeCacheRef is always warm (background preloader
-                keeps treeRows populated while in list/grid mode).
+                keeps folder metadata populated while in list/grid mode).
               */}
               {!prevTreeCacheRef.current && !folderTreeRoots ? (
                 <div className="folder-tree-skeleton" aria-label="Loading folder tree">

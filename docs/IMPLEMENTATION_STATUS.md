@@ -1,5 +1,33 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Folder UI backend wiring)
+
+This session connected the Library folder UI to the new backend folder-content command.
+
+Important changes and findings:
+
+- added a frontend test for the folder view handoff.
+- `LibraryScreen` no longer calls `listLibraryFilesForTree` just to prepare folder contents.
+- folder tree loading now stays lightweight through `getFolderTreeMetadata`.
+- folder file rows now come from `listLibraryFolderFiles`.
+- root folder view asks for direct files in `Mods` and `Tray`.
+- selected folder view asks for that folder recursively, so files inside the selected folder and its child folders can be shown without loading the whole Library.
+- active Library filters and sorting are passed into the folder-file request.
+
+Checks passed:
+
+- `npm run test:unit -- src/screens/LibraryScreen.test.tsx`
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run test:unit` (`13` files, `40` tests)
+- `npm run test:rust` (`219` tests, with existing Rust warnings)
+
+Important remaining gap:
+
+- folder view still needs a real desktop click-through with fixture or live data.
+- folder summaries and empty-folder/open-folder support are still pending.
+- folder path matching can be optimized later if large-library testing shows the current backend slice is too slow.
+- real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Folder contents backend slice)
 
 This session started Sprint 2 folder work by adding a backend command for paged folder contents.

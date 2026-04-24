@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Folder UI backend wiring)
+
+- **Mode**: code
+- **Focus**: connect the Library folder view to the new backend folder-content command
+
+### Progress Made
+
+1. **Added a frontend regression test**:
+   - new file: `src/screens/LibraryScreen.test.tsx`
+   - first ran it red and confirmed the old UI still called `listLibraryFilesForTree`
+   - the test now proves folder view does not prefetch every Library row and does call `listLibraryFolderFiles` when a folder is selected
+
+2. **Switched folder content loading to the backend command**:
+   - `LibraryScreen` now keeps folder tree loading and folder file loading separate
+   - tree loading uses `getFolderTreeMetadata`
+   - root folder files use direct folder requests for `Mods` and `Tray`
+   - selected folder files use `listLibraryFolderFiles` with `recursive: true`
+   - active Library filters and sorting travel with the folder request
+
+3. **Removed the eager full-row folder prefetch from the UI**:
+   - the background folder preloader now warms only lightweight folder metadata
+   - folder content no longer depends on the old frontend-only full-library row list
+   - folder rows are grouped from the selected folder response instead of rebuilding contents from all files
+
+### Verification
+
+- `npm run test:unit -- src/screens/LibraryScreen.test.tsx` failed first on the old full-row prefetch, then passed after the UI wiring.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+- `npm run test:unit` passed: `13` files, `40` tests.
+- `npm run test:rust` passed: `219` tests, with existing Rust warnings.
+
+### Known Problems / Gaps
+
+- No real desktop click-through was run for folder view in this session.
+- Folder summaries and explicit empty-folder/open-folder support still need follow-up work.
+- The backend folder-content query is still not fully SQL-direct for folder path matching; optimize only if large-library checks show it matters.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Other uncommitted local changes remain in the worktree outside this folder UI slice.
+
+### Next Best Step
+
+1. Run a real desktop folder-view check with fixture or live Library data.
+2. Add folder summaries and empty-folder/open-folder behavior.
+3. If folder browsing is still slow on a huge library, optimize folder path matching closer to SQL.
+
 ## Current Session (April 24, 2026 - Folder contents backend slice)
 
 - **Mode**: code
