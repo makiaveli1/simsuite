@@ -1,5 +1,42 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Library system audit)
+
+This session was audit-only. No app behavior was intentionally changed.
+
+New report:
+
+- `simsuite-reports/LIBRARY_SYSTEM_AUDIT_CURRENT_STATE.md`
+
+What the audit found:
+
+- the Library has real backend and frontend systems, including scanner indexing, SQLite storage, list/grid/folder views, detail surfaces, duplicate detection, update-watch plumbing, review routing, and first-party thumbnail work
+- the Library is not production-ready yet
+- the most urgent issue is `list_library_files` SQL in `src-tauri/src/core/library_index/mod.rs`; it currently has an extra comma before `FROM files f`, which can break list/grid/folder loading in the real Tauri app
+- `get_folder_tree_metadata` likely fails because it uses SQLite `REVERSE()` without a registered custom function
+- folder view still depends on full row loading for useful contents, and deep nested folder selection can return empty contents
+- relationship/dependency UI exists, but real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are not implemented
+- duplicate detection is real, but cleanup actions are not implemented
+- update-watch support is real but limited; CurseForge is provider-required/future work, not full automatic updating
+- Staging is exposed in navigation and frontend API, but its Tauri commands are not registered
+- AI infrastructure is not implemented beyond a planned-status placeholder
+
+Checks run:
+
+- `npm run build` passed, with a Vite chunk-size warning
+- `npx tsc --noEmit` passed
+- `npm run test:unit` passed: 9 files, 35 tests
+- `cargo check` passed with warnings
+- `cargo build --release` passed with warnings
+- `cargo test` failed before tests ran because old `inspect_file` test calls are missing the new `defer_thumbnails` argument
+
+Recommended next sprint:
+
+1. Fix Library runtime SQL and add tests.
+2. Fix `cargo test`.
+3. Fix folder metadata/folder content truth.
+4. Correct relationship counts before building deeper dependency or safe-delete features.
+
 ## Current session note (March 19, 2026 - late night library implementation)
 
 This session turned the approved `Library` spec into the first real code pass for the calmer `Quiet Catalog` design.

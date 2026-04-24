@@ -1,5 +1,70 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Library system audit)
+
+- **Mode**: audit/planning only
+- **Focus**: current-state evidence pass for the SimSuite Library system
+- **Report created**:
+  - `simsuite-reports/LIBRARY_SYSTEM_AUDIT_CURRENT_STATE.md`
+
+### What Was Checked
+
+1. Read repo memory first:
+   - `SESSION_HANDOFF.md`
+   - `docs/IMPLEMENTATION_STATUS.md`
+   - `docs/ARCHITECTURE.md`
+   - `AGENTS.md`
+
+2. Inspected current code, not previous reports:
+   - Rust/Tauri commands and registration
+   - scanner and DBPF/package inspection
+   - thumbnails and `localthumbcache` handling
+   - SQLite migration/schema
+   - Library list/grid/folder frontend
+   - inspector sidebar and detail sheet
+   - relationships, duplicates, updates, review, organize, staging
+
+3. Ran verification:
+   - `npm run build` passed, with Vite chunk-size warning
+   - `npx tsc --noEmit` passed
+   - `npm run test:unit` passed: 9 files, 35 tests
+   - `cargo check` passed with warnings
+   - `cargo build --release` passed with warnings
+   - `cargo test` failed before tests ran because several file inspector tests still call `inspect_file` with the old 3-argument signature
+
+### Important Findings
+
+1. **Critical Library runtime risk**:
+   - `src-tauri/src/core/library_index/mod.rs` builds invalid SQL for `list_library_files`.
+   - Both paged and unpaged row queries have an extra comma before `FROM files f`.
+   - This can break list, grid, and folder file loading in the real Tauri app.
+
+2. **Folder metadata path is likely broken**:
+   - `get_folder_tree_metadata` uses SQLite `REVERSE()`, but no custom SQLite function registration was found.
+   - Folder view still depends on full row loading for useful folder contents.
+
+3. **Folder view has a deep-folder bug**:
+   - `getFolderContents` only searches roots and direct children.
+   - Selecting nested folders below one level can return empty contents.
+
+4. **Relationship/dependency labels are ahead of the proof system**:
+   - Duplicate, tray bundle, same pack, same creator, and same folder clues exist.
+   - Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are not implemented.
+   - Backend same-folder counts are currently not true same-folder counts.
+
+5. **Staging is exposed but not wired**:
+   - Staging screen/API wrapper functions exist.
+   - The Tauri commands are not registered in `src-tauri/src/lib.rs`, and Rust warns they are unused.
+
+### Next Best Step
+
+Do a correctness sprint before adding new Library features:
+
+1. Fix Library SQL and add regression tests.
+2. Fix Rust tests so `cargo test` can run.
+3. Fix folder metadata/folder contents truth.
+4. Correct relationship counts and soften UI language until dependency proof exists.
+
 ## Current Session (March 19, 2026 - Late Night Library Implementation)
 
 - **Mode**: code
