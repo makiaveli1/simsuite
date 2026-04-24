@@ -212,7 +212,10 @@ fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileIns
         version_hints: merge_insight_values(&existing.version_hints, &fresh.version_hints),
         version_signals: merge_version_signals(&existing.version_signals, &fresh.version_signals),
         family_hints: merge_insight_values(&existing.family_hints, &fresh.family_hints),
-        thumbnail_preview: fresh.thumbnail_preview.clone().or_else(|| existing.thumbnail_preview.clone()),
+        thumbnail_preview: fresh
+            .thumbnail_preview
+            .clone()
+            .or_else(|| existing.thumbnail_preview.clone()),
         // MODMANAGER REMOVED — first-party only (Phase 5m)
         cached_thumbnail_preview: fresh
             .cached_thumbnail_preview

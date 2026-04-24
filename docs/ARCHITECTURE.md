@@ -67,6 +67,21 @@ Not yet implemented:
 
 ## Current engineering note (April 24, 2026)
 
+Staging is now wired as an exposed Tauri route instead of a frontend-only screen.
+
+Important current behavior:
+
+- `StagingScreen` calls real Tauri commands through `src/lib/api.ts`.
+- `src-tauri/src/commands/mod.rs` owns the staging command behavior:
+  - list staging areas
+  - clean up staging areas
+  - commit one staging area
+  - commit all staging areas
+- `src-tauri/src/lib.rs` registers those commands in the app invoke handler.
+- a backend regression test checks that the staging command names remain present in `tauri::generate_handler!`.
+
+## Current engineering note (April 24, 2026)
+
 The Library correctness sprint moved more Library truth into the backend owner instead of leaving it in command-only SQL or frontend fallback code.
 
 Important current behavior:

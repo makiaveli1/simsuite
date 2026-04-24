@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (April 24, 2026 - Staging command wiring)
+
+This session continued the correctness sprint by wiring the already-exposed Staging screen to its existing backend commands.
+
+Important changes and findings:
+
+- the frontend already called four Staging commands:
+  - `get_staging_areas`
+  - `cleanup_staging_areas`
+  - `commit_staging_area`
+  - `commit_all_staging_areas`
+- the Rust command functions already existed, but they were missing from the Tauri invoke handler.
+- all four commands are now registered in `src-tauri/src/lib.rs`.
+- a new regression test checks the actual `generate_handler!` block so Staging commands cannot quietly become unregistered again.
+- running the focused test before the fix failed on the missing command, then passed after wiring.
+- `cargo fmt` also normalized existing Rust formatting in several backend files.
+
+Checks passed:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml staging_commands_are_registered_with_tauri`
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cargo test --manifest-path src-tauri/Cargo.toml` (`216` tests)
+
+Important remaining gap:
+
+- Staging is registered now, but it still needs a real desktop click-through with fixture data.
+- Staging still uses browser confirmation dialogs for reject actions.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Library relationship wording pass)
 
 This session continued the Library correctness sprint by making the relationship and removal language more honest.

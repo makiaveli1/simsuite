@@ -60,10 +60,7 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
             .optional()?
             .unwrap_or(false);
         if !column_exists {
-            connection.execute(
-                "ALTER TABLE download_items ADD COLUMN rejected_at TEXT",
-                [],
-            )?;
+            connection.execute("ALTER TABLE download_items ADD COLUMN rejected_at TEXT", [])?;
         }
         connection.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
@@ -910,12 +907,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "guided_install_available",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
-    ensure_column(
-        connection,
-        "download_items",
-        "last_applied_at",
-        "INTEGER",
-    )?;
+    ensure_column(connection, "download_items", "last_applied_at", "INTEGER")?;
     ensure_column(
         connection,
         "content_watch_sources",

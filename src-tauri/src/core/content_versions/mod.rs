@@ -464,7 +464,10 @@ pub fn refresh_watch_source_for_library_file(
     resolve_watch_result(connection, seed_pack, &subject)
 }
 
-pub fn load_watch_counts(connection: &Connection, silent_special_mod_updates: bool) -> AppResult<(i64, i64, i64)> {
+pub fn load_watch_counts(
+    connection: &Connection,
+    silent_special_mod_updates: bool,
+) -> AppResult<(i64, i64, i64)> {
     let exact_generic = scalar(
         connection,
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'exact_update_available'",

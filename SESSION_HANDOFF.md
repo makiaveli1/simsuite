@@ -1,5 +1,54 @@
 # Session Handoff
 
+## Current Session (April 24, 2026 - Staging command wiring)
+
+- **Mode**: code
+- **Focus**: wire the exposed Staging screen to its existing backend commands instead of leaving it as a broken route
+
+### Progress Made
+
+1. **Confirmed the root cause**:
+   - frontend API calls existed for:
+     - `get_staging_areas`
+     - `cleanup_staging_areas`
+     - `commit_staging_area`
+     - `commit_all_staging_areas`
+   - Rust command functions existed in `src-tauri/src/commands/mod.rs`
+   - `src-tauri/src/lib.rs` did not register those commands in `tauri::generate_handler!`
+
+2. **Added a regression test for command registration**:
+   - added `staging_commands_are_registered_with_tauri` in `src-tauri/src/lib.rs`
+   - first ran it red and confirmed it failed on missing `commands::get_staging_areas`
+   - the test checks the actual `generate_handler!` block so the route cannot quietly drift out of registration again
+
+3. **Registered the Staging commands**:
+   - wired all four staging commands into the Tauri invoke handler
+   - the earlier unused-command warnings for those staging functions disappeared after wiring
+
+4. **Ran Rust formatting**:
+   - `cargo fmt` normalized existing Rust formatting in several backend modules while formatting this change
+
+### Verification
+
+- `cargo test --manifest-path src-tauri/Cargo.toml staging_commands_are_registered_with_tauri` failed before the fix for the expected missing command.
+- `cargo test --manifest-path src-tauri/Cargo.toml staging_commands_are_registered_with_tauri` passed after the fix.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` ran.
+- `cargo test --manifest-path src-tauri/Cargo.toml` passed: `216` tests.
+
+### Known Problems / Gaps
+
+- Staging is now registered, but it still needs a real desktop click-through before calling the whole Staging workflow polished.
+- Staging still uses browser confirmation dialogs for reject actions.
+- Folder view still needs backend-native contents and summaries before it is ready for huge libraries.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+- Other uncommitted local changes remain in the worktree outside this staging slice.
+
+### Next Best Step
+
+1. Run a real app Staging smoke if fixture data is available.
+2. Replace Staging browser confirms with the app's in-panel dialog pattern.
+3. Then start Sprint 2 folder work: backend-native folder children, paged folder contents, folder summary, and open-folder support for empty folders.
+
 ## Current Session (April 24, 2026 - Library relationship wording pass)
 
 - **Mode**: code

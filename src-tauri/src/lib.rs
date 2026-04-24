@@ -141,6 +141,10 @@ pub fn run() {
             commands::start_scan,
             commands::get_scan_status,
             commands::get_downloads_watcher_status,
+            commands::get_staging_areas,
+            commands::cleanup_staging_areas,
+            commands::commit_staging_area,
+            commands::commit_all_staging_areas,
             commands::refresh_downloads_inbox,
             commands::get_downloads_bootstrap,
             commands::get_downloads_inbox,
@@ -197,4 +201,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running SimSuite");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn staging_commands_are_registered_with_tauri() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        for command in [
+            "commands::get_staging_areas",
+            "commands::cleanup_staging_areas",
+            "commands::commit_staging_area",
+            "commands::commit_all_staging_areas",
+        ] {
+            assert!(
+                handler_source.contains(command),
+                "missing Tauri command registration for {command}"
+            );
+        }
+    }
 }

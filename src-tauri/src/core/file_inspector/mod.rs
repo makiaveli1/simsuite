@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use flate2::read::ZlibDecoder;
-use image::{DynamicImage, ImageBuffer, Rgba, ImageEncoder};
+use image::{DynamicImage, ImageBuffer, ImageEncoder, Rgba};
 use zip::ZipArchive;
 
 use crate::{
@@ -40,11 +40,16 @@ pub const THUMBNAIL_DEFERRED: bool = true;
 /// on packages with invalid offsets (Phase 5an fix).
 #[cfg(target_os = "windows")]
 fn set_file_read_timeout(file: &mut std::fs::File) {
-    use std::os::windows::io::{AsRawHandle, FromRawHandle};
     use std::mem::MaybeUninit;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
 
     extern "system" {
-        fn SetFileTime(hFile: *mut std::ffi::c_void, lpCreationTime: *const std::ffi::c_void, lpLastAccessTime: *const std::ffi::c_void, lpLastWriteTime: *const std::ffi::c_void) -> i32;
+        fn SetFileTime(
+            hFile: *mut std::ffi::c_void,
+            lpCreationTime: *const std::ffi::c_void,
+            lpLastAccessTime: *const std::ffi::c_void,
+            lpLastWriteTime: *const std::ffi::c_void,
+        ) -> i32;
     }
     // On Windows, we use a named pipe trick for timeouts — but that requires async I/O.
     // Instead, we just accept that Windows fs is non-blocking by default and rely on
@@ -370,7 +375,11 @@ fn clean_ts4script_identity_stem(value: &str) -> Option<String> {
     Some(stem.to_owned())
 }
 
-fn inspect_package(path: &Path, seed_pack: &SeedPack, defer_thumbnails: bool) -> AppResult<InspectionOutcome> {
+fn inspect_package(
+    path: &Path,
+    seed_pack: &SeedPack,
+    defer_thumbnails: bool,
+) -> AppResult<InspectionOutcome> {
     let mut file = File::open(path)?;
     let header = match parse_dbpf_header(&mut file) {
         Ok(header) => header,
@@ -480,8 +489,6 @@ fn decode_thum_to_png(raw: &[u8]) -> Option<String> {
 
     Some(BASE64_STANDARD.encode(&png_bytes))
 }
-
-
 
 fn collect_ts4script_version_signals<'a>(
     path: &Path,
@@ -920,10 +927,13 @@ fn read_index_buffer(file: &mut File, header_offset: u32, index_size: u32) -> Ap
         file.seek(SeekFrom::Start(BASE96))?;
         let n = file.read(&mut buf)?;
         buf.truncate(n);
-        try_zlib_decompress(&buf)
-            .ok_or_else(|| AppError::Message("DBPF index: zlib decompression failed at byte 96".to_owned()))
+        try_zlib_decompress(&buf).ok_or_else(|| {
+            AppError::Message("DBPF index: zlib decompression failed at byte 96".to_owned())
+        })
     } else {
-        Err(AppError::Message("DBPF index: file too small for standard index at byte 96".to_owned()))
+        Err(AppError::Message(
+            "DBPF index: file too small for standard index at byte 96".to_owned(),
+        ))
     }
 }
 
@@ -946,9 +956,7 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
     let header_pos = cursor.position() as usize;
     let remaining = buffer.len().saturating_sub(header_pos);
     let max_by_size = remaining / 24; // 24 bytes = max record size (8 u32s, no common values)
-    let actual_count = header
-        .record_count
-        .min(max_by_size as u32);
+    let actual_count = header.record_count.min(max_by_size as u32);
 
     let mut records = Vec::with_capacity(actual_count as usize);
     for _ in 0..actual_count {
@@ -1031,7 +1039,11 @@ fn collect_catalog_names(
     Ok(unique_display_values(names))
 }
 
-fn collect_cas_part_names(path: &Path, file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
+fn collect_cas_part_names(
+    path: &Path,
+    file: &mut File,
+    records: &[DbpfRecord],
+) -> AppResult<Vec<String>> {
     let mut names = Vec::new();
 
     for record in records
@@ -1054,7 +1066,11 @@ fn collect_cas_part_names(path: &Path, file: &mut File, records: &[DbpfRecord]) 
     Ok(unique_display_values(names))
 }
 
-fn collect_name_map_values(path: &Path, file: &mut File, records: &[DbpfRecord]) -> AppResult<Vec<String>> {
+fn collect_name_map_values(
+    path: &Path,
+    file: &mut File,
+    records: &[DbpfRecord],
+) -> AppResult<Vec<String>> {
     let mut values = Vec::new();
 
     for record in records
@@ -1335,13 +1351,19 @@ fn build_ts4script_resource_summary(
     summary.push("Script mod".to_owned());
 
     // Detect content types from file extensions in archive paths
-    let has_python = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".py"));
-    let has_yaml = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".yml") || p.to_ascii_lowercase().ends_with(".yaml"));
+    let has_python = archive_paths
+        .iter()
+        .any(|p| p.to_ascii_lowercase().ends_with(".py"));
+    let has_yaml = archive_paths.iter().any(|p| {
+        p.to_ascii_lowercase().ends_with(".yml") || p.to_ascii_lowercase().ends_with(".yaml")
+    });
     let has_mod_manifest = archive_paths.iter().any(|p| {
         let lower = p.to_ascii_lowercase();
         lower.contains("modfilemanifest")
     });
-    let has_json = archive_paths.iter().any(|p| p.to_ascii_lowercase().ends_with(".json"));
+    let has_json = archive_paths
+        .iter()
+        .any(|p| p.to_ascii_lowercase().ends_with(".json"));
 
     if has_python {
         summary.push("Python modules".to_owned());
@@ -2056,7 +2078,9 @@ pub fn parse_localthumbcache() -> &'static Vec<ThumbnailEntry> {
         let Ok(header) = parse_dbpf_header_internal(&mut file) else {
             return Vec::new();
         };
-        let Ok(buffer) = read_localthumbcache_index(&mut file, header.index_offset, header.index_size) else {
+        let Ok(buffer) =
+            read_localthumbcache_index(&mut file, header.index_offset, header.index_size)
+        else {
             return Vec::new();
         };
         parse_localthumbcache_entries(&buffer).unwrap_or_default()
@@ -2113,10 +2137,13 @@ fn read_localthumbcache_index(
         file.seek(SeekFrom::Start(BASE96))?;
         let n = file.read(&mut buf)?;
         buf.truncate(n);
-        try_zlib_decompress(&buf)
-            .ok_or_else(|| AppError::Message("localthumbcache: zlib decompression failed at byte 96".to_owned()))
+        try_zlib_decompress(&buf).ok_or_else(|| {
+            AppError::Message("localthumbcache: zlib decompression failed at byte 96".to_owned())
+        })
     } else {
-        Err(AppError::Message("localthumbcache: file too small for standard index at byte 96".to_owned()))
+        Err(AppError::Message(
+            "localthumbcache: file too small for standard index at byte 96".to_owned(),
+        ))
     }
 }
 
@@ -2188,7 +2215,11 @@ pub fn extract_cached_thumbnail(entry: &ThumbnailEntry) -> Option<String> {
     // Read the zlib-compressed DDS data
     let packed_size = entry.packed_size as usize;
     let mem_size = entry.mem_size as usize;
-    if packed_size == 0 || mem_size == 0 || packed_size > 2 * 1024 * 1024 || mem_size > 4 * 1024 * 1024 {
+    if packed_size == 0
+        || mem_size == 0
+        || packed_size > 2 * 1024 * 1024
+        || mem_size > 4 * 1024 * 1024
+    {
         return None;
     }
 
@@ -2268,8 +2299,7 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
         }
     }
 
-    let img_buffer =
-        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_pixels)?;
+    let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_pixels)?;
     let dyn_img = DynamicImage::ImageRgba8(img_buffer);
 
     // Encode to PNG in memory using image crate encoder
@@ -2287,8 +2317,6 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
     Some(BASE64_STANDARD.encode(&png_bytes))
 }
 
-
-
 /// Attempt to find and decode a cached thumbnail for a package from localthumbcache.package.
 
 /// Look up a thumbnail image from Sims 4 Mod Manager's cached images.
@@ -2305,8 +2333,7 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
 fn extract_embedded_thum(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let header = parse_dbpf_header_internal(&mut file).ok()?;
-    let buffer =
-        read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
+    let buffer = read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
 
     // Re-parse records from the buffer (parse_dbpf_records takes File, not buffer)
     // We inline the record parsing here to avoid duplicating the File dependency.
@@ -2384,9 +2411,7 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
 ///
 /// First-party priority: embedded THUM from package file first, then shared game cache.
 /// Mod Manager is reference-only — not part of the production thumbnail pipeline.
-fn resolve_package_thumbnails(path: &Path, _filename: &str)
-    -> (Option<String>, Option<String>)
-{
+fn resolve_package_thumbnails(path: &Path, _filename: &str) -> (Option<String>, Option<String>) {
     // 1. Primary: embedded THUM resource in the package file itself
     if let Some(thumb) = extract_embedded_thum(path) {
         return (Some(thumb), None);
@@ -2401,13 +2426,15 @@ fn resolve_package_thumbnails(path: &Path, _filename: &str)
 /// then looks it up in the Sims 4 localthumbcache.package DBPF file. Returns decoded
 /// thumbnail as base64 PNG or None.
 fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
-    debug!("localthumbcache: trying to find cached thumbnail for {:?}", path);
+    debug!(
+        "localthumbcache: trying to find cached thumbnail for {:?}",
+        path
+    );
     let mut file = std::fs::File::open(path).ok()?;
 
     // Read DBPF header to get index location
     let header = parse_dbpf_header_internal(&mut file).ok()?;
-    let buffer =
-        read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
+    let buffer = read_index_buffer(&mut file, header.index_offset, header.index_size).ok()?;
 
     // Parse just enough to extract the first entry's instance ID
     let mut cursor = std::io::Cursor::new(buffer.as_slice());
@@ -2451,12 +2478,21 @@ fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
     }
 
     let thumb_entry = find_thumbnail_for_file(&cache_entries, package_instance_id)?;
-    debug!("localthumbcache: found entry for {:016x}, decoding...", package_instance_id);
+    debug!(
+        "localthumbcache: found entry for {:016x}, decoding...",
+        package_instance_id
+    );
     let result = extract_cached_thumbnail(thumb_entry);
     if result.is_some() {
-        debug!("localthumbcache: successfully decoded thumbnail for {:016x}", package_instance_id);
+        debug!(
+            "localthumbcache: successfully decoded thumbnail for {:016x}",
+            package_instance_id
+        );
     } else {
-        debug!("localthumbcache: failed to decode DDS thumbnail for {:016x}", package_instance_id);
+        debug!(
+            "localthumbcache: failed to decode DDS thumbnail for {:016x}",
+            package_instance_id
+        );
     }
     result
 }
@@ -2812,7 +2848,10 @@ mod tests {
 
         let summary = build_resource_summary(&type_counts, &[]);
 
-        assert_eq!(summary.first().map(String::as_str), Some("6 build/buy items"));
+        assert_eq!(
+            summary.first().map(String::as_str),
+            Some("6 build/buy items")
+        );
         assert!(summary.iter().any(|item| item == "3 CAS parts"));
     }
 
@@ -3000,6 +3039,4 @@ mod tests {
         assert_eq!(hint.subtype_hint.as_deref(), Some("Gameplay"));
         assert!(hint.confidence_floor >= 0.58);
     }
-
 }
-
