@@ -1,5 +1,6 @@
 param(
     [int]$Port = 4444,
+    [int]$NativePort = 0,
     [switch]$UseSmokeFixtures,
     [switch]$CleanSmokeProcesses,
     [string]$SessionFile = (Join-Path $PSScriptRoot '..\..\output\desktop\tauri-driver-session.json')
@@ -210,6 +211,125 @@ function Stop-SmokeProcesses {
     }
 }
 
+function Get-FileProductVersion {
+    param(
+        [string]$Path
+    )
+
+    if (-not $Path -or -not (Test-Path $Path)) {
+        return $null
+    }
+
+    try {
+        return (Get-Item $Path).VersionInfo.ProductVersion
+    } catch {
+        return $null
+    }
+}
+
+function Get-EdgeExecutablePath {
+    $candidates = @(
+        'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+        'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Get-FreeTcpPort {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    } finally {
+        $listener.Stop()
+    }
+}
+
+function Get-MatchingEdgeDriverDownloadUrl {
+    param(
+        [string]$BrowserVersion
+    )
+
+    if (-not $BrowserVersion) {
+        return $null
+    }
+
+    $versionMatch = [regex]::Match($BrowserVersion, '\d+\.\d+\.\d+\.\d+')
+    if (-not $versionMatch.Success) {
+        return $null
+    }
+
+    $exactVersion = $versionMatch.Value
+    $exactUrl = "https://msedgedriver.microsoft.com/$exactVersion/edgedriver_win64.zip"
+
+    try {
+        $request = [System.Net.HttpWebRequest]::Create($exactUrl)
+        $request.Method = 'HEAD'
+        $request.Timeout = 10000
+        $response = $request.GetResponse()
+        $response.Close()
+        return $exactUrl
+    } catch {
+    }
+
+    try {
+        $page = Invoke-WebRequest -UseBasicParsing -Uri 'https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/?form=MA13LH' -TimeoutSec 20
+        $prefix = ($exactVersion -split '\.')[0..2] -join '.'
+        $matches = [regex]::Matches($page.Content, 'https://msedgedriver\.microsoft\.com/(?<version>\d+\.\d+\.\d+\.\d+)/edgedriver_win64\.zip')
+        $versions = @($matches | ForEach-Object { $_.Groups['version'].Value } | Where-Object { $_ -like "$prefix.*" } | Sort-Object {[version]$_} -Descending | Select-Object -Unique)
+        if ($versions.Count -gt 0) {
+            return "https://msedgedriver.microsoft.com/$($versions[0])/edgedriver_win64.zip"
+        }
+    } catch {
+    }
+
+    return $null
+}
+
+function Install-MatchingEdgeDriver {
+    param(
+        [string]$TargetPath,
+        [string]$BrowserVersion
+    )
+
+    $downloadUrl = Get-MatchingEdgeDriverDownloadUrl -BrowserVersion $BrowserVersion
+    if (-not $downloadUrl) {
+        throw "No matching Microsoft Edge WebDriver download found for browser version $BrowserVersion."
+    }
+
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("msedgedriver-" + [Guid]::NewGuid().ToString('N'))
+    $zipPath = Join-Path $tempRoot 'edgedriver.zip'
+    $extractPath = Join-Path $tempRoot 'extract'
+
+    try {
+        New-Item -ItemType Directory -Force -Path $tempRoot, $extractPath | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri $downloadUrl -OutFile $zipPath -TimeoutSec 60
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+        $downloadedDriver = Get-ChildItem -Path $extractPath -Recurse -Filter 'msedgedriver.exe' | Select-Object -First 1
+        if (-not $downloadedDriver) {
+            throw "Downloaded archive from $downloadUrl did not contain msedgedriver.exe."
+        }
+
+        $targetDirectory = Split-Path -Parent $TargetPath
+        if ($targetDirectory) {
+            New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
+        }
+        Copy-Item -Path $downloadedDriver.FullName -Destination $TargetPath -Force
+        return $TargetPath
+    } finally {
+        if (Test-Path $tempRoot) {
+            Remove-Item -Recurse -Force $tempRoot -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $userHome = $env:USERPROFILE
 $tauriDriverPath = Resolve-ToolPath `
     -EnvName 'SIMSUITE_TAURI_DRIVER_PATH' `
@@ -217,12 +337,16 @@ $tauriDriverPath = Resolve-ToolPath `
         (Join-Path $userHome '.cargo\bin\tauri-driver.exe'),
         (Join-Path $userHome '.cargo\bin\tauri-driver')
     )
+$defaultEdgeDriverPath = Join-Path $userHome '.codex\tools\msedgedriver\msedgedriver.exe'
 $edgeDriverPath = Resolve-ToolPath `
     -EnvName 'SIMSUITE_MSEDGEDRIVER_PATH' `
     -Candidates @(
-        (Join-Path $userHome '.codex\tools\msedgedriver\msedgedriver.exe'),
+        $defaultEdgeDriverPath,
         (Join-Path $userHome '.codex\tools\edgedriver\msedgedriver.exe')
     )
+$edgeExecutablePath = Get-EdgeExecutablePath
+$edgeBrowserVersion = Get-FileProductVersion -Path $edgeExecutablePath
+$edgeDriverVersion = Get-FileProductVersion -Path $edgeDriverPath
 
 $fixture = $null
 if ($UseSmokeFixtures -or $env:SIMSUITE_USE_SMOKE_FIXTURES -eq '1') {
@@ -241,12 +365,31 @@ if (-not $tauriDriverPath) {
     exit 1
 }
 
+if ($edgeBrowserVersion -and ($edgeDriverVersion -ne $edgeBrowserVersion)) {
+    try {
+        $edgeDriverPath = Install-MatchingEdgeDriver -TargetPath $defaultEdgeDriverPath -BrowserVersion $edgeBrowserVersion
+        $edgeDriverVersion = Get-FileProductVersion -Path $edgeDriverPath
+        Write-Output "TAURI_DRIVER_UPDATED browser=$edgeBrowserVersion driver=$edgeDriverVersion path=$edgeDriverPath"
+    } catch {
+        Write-Warning "Failed to update msedgedriver automatically: $($_.Exception.Message)"
+    }
+}
+
 if (-not $edgeDriverPath) {
     Write-Error 'SimSuite could not find msedgedriver.exe. Set SIMSUITE_MSEDGEDRIVER_PATH to the matching Edge driver.'
     exit 1
 }
 
-$arguments = @('--native-driver', $edgeDriverPath)
+if ($edgeBrowserVersion -and $edgeDriverVersion -and $edgeDriverVersion -ne $edgeBrowserVersion) {
+    Write-Error "SimSuite found msedgedriver.exe at '$edgeDriverPath', but driver version $edgeDriverVersion does not match Edge version $edgeBrowserVersion."
+    exit 1
+}
+
+if ($NativePort -le 0) {
+    $NativePort = Get-FreeTcpPort
+}
+
+$arguments = @('--native-driver', $edgeDriverPath, '--native-port', $NativePort)
 if ($Port -ne 4444) {
     $arguments += @('--port', $Port)
 }
@@ -294,6 +437,7 @@ if ($sessionDirectory) {
 
 $session = @{
     port = $Port
+    nativePort = $NativePort
     statusUrl = $statusUrl
     tauriDriverPid = if ($process.HasExited) { $null } else { $process.Id }
     tauriDriverExitCode = $launcherExitCode
@@ -327,4 +471,4 @@ if ($fixture) {
     Write-Output "TAURI_DRIVER_FIXTURES root=$($fixture.Root) downloads=$($fixture.Downloads) mods=$($fixture.Mods)"
 }
 Write-Output "TAURI_DRIVER_SESSION file=$SessionFile"
-Write-Output "TAURI_DRIVER_READY pid=$($process.Id) url=$statusUrl"
+Write-Output "TAURI_DRIVER_READY pid=$($process.Id) url=$statusUrl nativePort=$NativePort"

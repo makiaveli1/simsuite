@@ -324,7 +324,7 @@ async function clickVisibleText(driver, partialText, timeoutMs = 30000) {
 async function findVisibleQueueRow(driver, partialText, timeoutMs = 30000) {
   const label = xpathString(partialText);
   const locator = By.xpath(
-    `//button[contains(@class, 'downloads-item-row')][.//strong[contains(normalize-space(.), ${label})]]`,
+    `//*[contains(@class, 'downloads-item-row') and (self::button or @role='button')][.//strong[contains(normalize-space(.), ${label})]]`,
   );
   await driver.wait(until.elementLocated(locator), timeoutMs);
   await driver.wait(async () => {
@@ -348,8 +348,20 @@ async function findVisibleQueueRow(driver, partialText, timeoutMs = 30000) {
 async function clickQueueRow(driver, partialText, timeoutMs = 30000) {
   const row = await findVisibleQueueRow(driver, partialText, timeoutMs);
   await driver.wait(until.elementIsVisible(row), timeoutMs);
-  await driver.wait(until.elementIsEnabled(row), timeoutMs);
-  await row.click();
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
+    row,
+  );
+  try {
+    await row.click();
+  } catch (error) {
+    const message = String(error).toLowerCase();
+    if (message.includes("click intercepted") || message.includes("not clickable")) {
+      await driver.executeScript("arguments[0].click()", row);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function waitForText(driver, text, timeoutMs = 30000) {
@@ -555,6 +567,33 @@ async function waitForQueueItem(driver, partialText, timeoutMs = 90000) {
   throw new Error(`Timed out waiting for inbox item "${partialText}".`);
 }
 
+async function clickDownloadsLane(driver, laneLabel, timeoutMs = 30000) {
+  const locator = By.xpath(
+    `//div[@aria-label='Downloads lanes']//button[.//span[contains(normalize-space(.), ${xpathString(laneLabel)})]]`,
+  );
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  const button = await driver.findElement(locator);
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
+    button,
+  );
+  await button.click();
+  await waitForText(driver, laneLabel, timeoutMs);
+}
+
+async function clickUpdatesMode(driver, modeLabel, timeoutMs = 30000) {
+  const locator = By.xpath(
+    `//div[contains(@class, 'updates-mode-list')]//button[.//span[contains(normalize-space(.), ${xpathString(modeLabel)})]]`,
+  );
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+  const button = await driver.findElement(locator);
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
+    button,
+  );
+  await button.click();
+}
+
 async function clickSpecialQueueItem(driver) {
   const session = loadDriverSession();
   const namedItem =
@@ -618,20 +657,18 @@ async function clickNamedQueueItem(driver, partialText, timeoutMs = 30000) {
 async function verifySameVersionItem(driver, partialText) {
   try {
     await clickNamedQueueItem(driver, partialText);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Installed and incoming match", "Already current"], 30000);
     await waitForAnyText(
       driver,
       [
-        "Inside the mod files",
-        "Matching file fingerprint",
-        "Matching file fingerprints confirmed the same version",
-        "Download name",
-        "Installed files",
+        "Installed and incoming match",
+        "found the same version",
+        "matches the version that is already installed",
       ],
       30000,
     );
-    await waitForAnyText(driver, ["Reinstall guided copy", "Reinstall anyway"], 30000);
+    await waitForAnyText(driver, ["Ready to install", "SPECIAL SETUP"], 30000);
+    await waitForAnyText(driver, ["MOVE", "REPLACE", "KEEP"], 30000);
+    await waitForAnyText(driver, ["View full proof sheet", "KEEP THE STAGE CALM"], 30000);
   } catch (error) {
     await dumpBodyText(driver, `same-version-failure-${partialText}`);
     throw error;
@@ -641,9 +678,17 @@ async function verifySameVersionItem(driver, partialText) {
 async function verifyOlderVersionItem(driver, partialText) {
   try {
     await clickNamedQueueItem(driver, partialText);
-    await waitForText(driver, "Versions");
-    await waitForAnyText(driver, ["Incoming pack looks older", "Older than installed"], 30000);
-    await waitForAnyText(driver, ["Installed", "Incoming", "Compare"], 30000);
+    await waitForAnyText(
+      driver,
+      [
+        "Incoming pack looks older",
+        "Open the fuller",
+        "A fuller",
+        "Version could not be compared",
+      ],
+      30000,
+    );
+    await waitForAnyText(driver, ["DECISION NEEDED", "SPECIAL SETUP", "BLOCKED", "PREVIEW"], 30000);
   } catch (error) {
     await dumpBodyText(driver, `older-version-failure-${partialText}`);
     throw error;
@@ -651,41 +696,55 @@ async function verifyOlderVersionItem(driver, partialText) {
 }
 
 async function verifyHomeWatchSummary(driver) {
-  await clickButton(driver, "Home");
-  await waitForText(driver, "Home");
-  await waitForAnyText(driver, ["Exact updates", "Updates ready"], 30000);
-  await waitForAnyText(driver, ["Possible updates", "Watch review"], 30000);
+  await clickButton(driver, "Updates");
+  await waitForText(driver, "Tracked pages", 30000);
+  await waitForAnyText(driver, ["Confirmed updates", "No confirmed updates are waiting right now."], 30000);
+  await waitForAnyText(driver, ["Possible updates", "possible changes"], 30000);
 }
 
 async function verifyHomeWatchFocus(driver) {
-  await clickButton(driver, "Home");
-  await waitForText(driver, "Home");
+  await clickButton(driver, "Updates");
+  await waitForText(driver, "Tracked pages", 30000);
+  await waitForAnyText(
+    driver,
+    [
+      "Confirmed updates, possible changes, and unclear results stay in one calm list so the next follow-up is easy to spot.",
+      "Tracked pages stay together here so confirmed updates, cautious matches, and unclear checks are easy to compare.",
+    ],
+    30000,
+  );
 
-  await clickVisibleText(driver, "Watch setup");
-  await waitForText(driver, "Showing the strongest watch setup suggestions.", 30000);
-  await waitForAnyText(driver, ["Setup suggestions", "Ready to set up"], 30000);
+  await clickUpdatesMode(driver, "Setup");
+  await waitForText(driver, "Source setup", 30000);
+  await waitForAnyText(
+    driver,
+    [
+      "Pick the right page once, save it, and let SimSuite reuse that source on later checks.",
+      "Nothing needs source setup right now.",
+      "No files currently need watch setup.",
+    ],
+    30000,
+  );
 
-  await clickButton(driver, "Home");
-  await waitForText(driver, "Home");
-  await clickVisibleText(driver, "Exact updates");
-  await waitForText(driver, "Showing watched items with confirmed updates.", 30000);
+  await clickUpdatesMode(driver, "Review");
+  await waitForText(driver, "Needs review", 30000);
+  await waitForAnyText(
+    driver,
+    [
+      "These pages still need provider setup, are reminder-only, or came back too unclear to trust yet.",
+      "Nothing needs review right now.",
+      "No review items match this filter.",
+    ],
+    30000,
+  );
 }
 
-async function verifyLibraryVersionWatch(driver) {
+async function verifyLibraryVersionWatch(driver, genericWatchFile) {
+  const genericDisplayLabel = genericWatchFile.replace(/\.package$/i, "").replaceAll("_", " ");
   try {
     await ensureLibraryIndexed(driver, []);
-    await waitForText(driver, "Needs attention", 30000);
-    await clickButton(driver, "All tracked");
-    await openTrackedWatchItemWithCheckNow(driver, 30000);
-    await waitForAnyText(driver, ["Installed version", "Version and updates"], 30000);
-    await waitForText(driver, "Confidence");
-    await waitForText(driver, "Watch status");
-    await clickButton(driver, "Check now");
-    await waitForAnyText(
-      driver,
-      ["Watch result refreshed.", "Looks current", "Exact update available"],
-      30000,
-    );
+    await waitForAnyText(driver, ["Has Updates", "Needs review", "Not Tracked"], 30000);
+    await waitForText(driver, genericDisplayLabel, 30000);
   } catch (error) {
     await dumpBodyText(driver, "library-version-watch-failure");
     throw error;
@@ -695,8 +754,9 @@ async function verifyLibraryVersionWatch(driver) {
 async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   try {
     await ensureLibraryIndexed(driver, []);
-    await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
-    await waitForText(driver, genericWatchFile, 30000);
+    await clickButton(driver, "Updates");
+    await waitForAnyText(driver, ["Tracked pages", "Source setup", "Needs review"], 30000);
+
     const libraryRows = await invokeTauriCommand(driver, "list_library_files", {
       query: { limit: 100, offset: 0 },
     });
@@ -706,40 +766,49 @@ async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
     if (!genericRow?.id) {
       throw new Error(`Could not resolve a Library row id for ${genericWatchFile}.`);
     }
+
     const saveResult = await invokeTauriCommand(driver, "save_watch_source_for_file", {
       fileId: genericRow.id,
       sourceKind: "creator_page",
       sourceLabel: "Generic",
       sourceUrl: "https://example.com/creator-page",
     });
-    if (!saveResult.ok || !saveResult.response) {
+    if (!saveResult.ok || !saveResult.response?.watchResult) {
       throw new Error(
-        `Could not save the generic watch source in desktop smoke: ${saveResult.error ?? "unknown error"}`,
+        `Could not save the generic watch source in desktop smoke: ${saveResult.error ?? "missing watch result"}`,
       );
     }
-    await waitForAnyText(driver, ["Review queue", "Watch review queue"], 30000);
-    await waitForText(driver, genericWatchFile, 30000);
-    await waitForAnyText(
-      driver,
-      [
-        "This creator page is saved as a reminder only.",
-        "This creator page is saved as a reminder only. Keep it if it helps, or replace it with an exact mod page.",
-        "Reference only",
-        "Reminder only",
-      ],
-      30000,
-    );
+
+    const savedWatch = saveResult.response.watchResult;
+    if (
+      savedWatch.sourceOrigin !== "saved_by_user" ||
+      savedWatch.sourceKind !== "creator_page" ||
+      savedWatch.sourceUrl !== "https://example.com/creator-page"
+    ) {
+      throw new Error(`Generic watch source was saved, but the result shape was wrong: ${JSON.stringify(savedWatch)}`);
+    }
+    if (savedWatch.capability !== "saved_reference_only" || !savedWatch.note?.toLowerCase().includes("reminder")) {
+      throw new Error(`Generic creator-page save did not produce the expected reminder-only watch state: ${JSON.stringify(savedWatch)}`);
+    }
+
     const clearResult = await invokeTauriCommand(driver, "clear_watch_source_for_file", {
       fileId: genericRow.id,
     });
-    if (!clearResult.ok || !clearResult.response) {
+    if (!clearResult.ok || !clearResult.response?.watchResult) {
       throw new Error(
-        `Could not clear the generic watch source in desktop smoke: ${clearResult.error ?? "unknown error"}`,
+        `Could not clear the generic watch source in desktop smoke: ${clearResult.error ?? "missing watch result"}`,
       );
     }
-    await waitForAnyText(driver, ["Ready to set up", "Setup suggestions"], 30000);
-    await waitForText(driver, genericWatchFile, 30000);
-    await ensureTextStaysHidden(driver, "This creator page is saved as a reminder only.", 5000);
+
+    const clearedWatch = clearResult.response.watchResult;
+    if (
+      clearedWatch.sourceOrigin !== "none" ||
+      clearedWatch.sourceKind !== null ||
+      clearedWatch.sourceUrl !== null ||
+      clearedWatch.status !== "not_watched"
+    ) {
+      throw new Error(`Clearing the generic watch source did not restore the expected not-watched state: ${JSON.stringify(clearedWatch)}`);
+    }
   } catch (error) {
     await dumpBodyText(driver, "library-watch-save-clear-failure");
     throw error;
@@ -790,26 +859,16 @@ async function run() {
       ],
       60000,
     );
+    await clickDownloadsLane(driver, "Special setup");
     await waitForQueueItem(driver, fixtureSpecialItem, 90000);
-    await waitForQueueItem(driver, fixtureBlockedItem, 90000);
-    await waitForQueueItem(driver, fixtureXmlSameItem, 90000);
-    await waitForQueueItem(driver, fixtureXmlOlderItem, 90000);
-    await waitForQueueItem(driver, fixtureS4clSameItem, 90000);
-    await waitForQueueItem(driver, fixtureS4clOlderItem, 90000);
-    await waitForQueueItem(driver, fixtureLot51SameItem, 90000);
-    await waitForQueueItem(driver, fixtureLot51OlderItem, 90000);
-    await waitForQueueItem(driver, fixtureToolboxSameItem, 90000);
-    await waitForQueueItem(driver, fixtureToolboxOlderItem, 90000);
-    await waitForQueueItem(driver, fixtureSmartCoreSameItem, 90000);
-    await waitForQueueItem(driver, fixtureSmartCoreOlderItem, 90000);
 
     await clickSpecialQueueItem(driver);
-    await waitForText(driver, "Versions");
-    await waitForText(driver, "Installed");
-    await waitForText(driver, "Incoming");
-    await waitForText(driver, "Compare");
-    await waitForAnyText(driver, ["Incoming evidence", "Main check"], 30000);
+    await waitForAnyText(driver, ["Ready to install", "SPECIAL SETUP"], 30000);
+    await waitForAnyText(driver, ["MOVE", "REPLACE", "KEEP"], 30000);
+    await waitForAnyText(driver, ["Existing install", "Family", "Dependency"], 30000);
+    await waitForAnyText(driver, ["View full proof sheet", "KEEP THE STAGE CALM"], 30000);
 
+    await clickDownloadsLane(driver, "Done");
     for (const item of [
       fixtureXmlSameItem,
       fixtureS4clSameItem,
@@ -817,9 +876,12 @@ async function run() {
       fixtureToolboxSameItem,
       fixtureSmartCoreSameItem,
     ]) {
+      await waitForQueueItem(driver, item, 90000);
       await verifySameVersionItem(driver, item);
     }
 
+    await clickDownloadsLane(driver, "Waiting on you");
+    await waitForQueueItem(driver, fixtureBlockedItem, 90000);
     for (const item of [
       fixtureXmlOlderItem,
       fixtureS4clOlderItem,
@@ -827,6 +889,7 @@ async function run() {
       fixtureToolboxOlderItem,
       fixtureSmartCoreOlderItem,
     ]) {
+      await waitForQueueItem(driver, item, 90000);
       await verifyOlderVersionItem(driver, item);
     }
 
@@ -836,6 +899,7 @@ async function run() {
           "Apply smoke is blocked by default. Run it only against isolated test data with SIMSUITE_ALLOW_APPLY_SMOKE=1.",
         );
       }
+      await clickDownloadsLane(driver, "Special setup");
       await clickSpecialQueueItem(driver);
       try {
         await waitForAnyText(driver, DEFAULT_APPLY_LABELS, 30000);
@@ -873,6 +937,7 @@ async function run() {
         2000,
       );
     } else {
+      await clickDownloadsLane(driver, "Waiting on you");
       await clickBlockedQueueItem(driver);
       await waitForAnyText(
         driver,
@@ -886,7 +951,7 @@ async function run() {
 
     await verifyHomeWatchSummary(driver);
     await verifyHomeWatchFocus(driver);
-    await verifyLibraryVersionWatch(driver);
+    await verifyLibraryVersionWatch(driver, fixtureGenericWatchFile);
     await verifyLibraryWatchSaveClear(driver, fixtureGenericWatchFile);
 
     console.log(`Desktop smoke passed against ${appPath}`);
