@@ -1,5 +1,51 @@
 # Session Handoff
 
+## Current Session (April 25, 2026 - Folder empty-state support)
+
+- **Mode**: code
+- **Focus**: finish the next folder-view slice by making empty selected folders readable and safe to open
+
+### Progress Made
+
+1. **Added a focused frontend regression test**:
+   - extended `src/screens/LibraryScreen.test.tsx`
+   - first ran it red and confirmed the current UI did not show a `0 files.` folder summary
+   - the test now proves an empty folder can show a summary and can call `revealFileInFolder` with the configured real Mods path
+
+2. **Loaded Library settings into the folder view**:
+   - `LibraryScreen` now reads `getLibrarySettings`
+   - selected virtual folder paths like `Mods/Empty` can be mapped back to the configured disk folder, such as `C:\Mods\Empty`
+   - this means folders no longer need at least one file before the app can know where they live on disk
+
+3. **Kept empty folder summaries visible**:
+   - folder summaries now use the selected folder tree node even when there are no files and no child folders
+   - the inspector can now show `0 files.` for a selected empty folder instead of falling back to the generic `Select a file` panel
+
+4. **Made the open-folder action safer**:
+   - `LibraryDetailsPanel` only shows `Open folder` when it receives a real disk path
+   - it no longer falls back to a virtual path like `Mods/Empty`
+
+### Verification
+
+- `npm run test:unit -- src/screens/LibraryScreen.test.tsx` failed first on the missing `0 files.` summary, then passed after the fix.
+- `npm run build` passed, with the existing Vite chunk-size warning.
+- `npm run test:unit` passed: `13` files, `41` tests.
+- `npm run test:rust` passed: `219` tests, with existing Rust warnings.
+
+### Known Problems / Gaps
+
+- A real desktop folder-view click-through still needs to be run with fixture or live Library data.
+- Custom GPT Image asset replacement is still pending because `OPENAI_API_KEY` was not available in this shell, so no commit-ready generated app assets could be produced.
+- The backend folder tree still comes from indexed file rows, so truly empty folders on disk may still need backend scanner support before they appear in real folder metadata.
+- Folder path matching can still be optimized later if huge-library checks show the current backend matching is too slow.
+- Real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
+### Next Best Step
+
+1. Run a real desktop folder-view smoke with fixture or live Library data.
+2. Decide whether the backend scanner should include truly empty filesystem folders in folder metadata.
+3. When an API key is available, replace the current app image assets with custom GPT Image generated assets.
+
 ## Current Session (April 24, 2026 - Folder UI backend wiring)
 
 - **Mode**: code

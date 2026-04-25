@@ -32,6 +32,7 @@ import type {
   LibrarySummary,
   LibrarySortField,
   LibraryQuery,
+  LibrarySettings,
 } from "../lib/types";
 import {
   buildSheetAttributionSection,
@@ -131,6 +132,23 @@ function findFolderNodeByPath(nodes: FolderNode[], folderPath: string): FolderNo
   return undefined;
 }
 
+function configuredFolderPath(
+  folderPath: string | null,
+  settings: LibrarySettings | null,
+): string | undefined {
+  if (!folderPath || !settings) return undefined;
+  const [rootName, ...childParts] = folderPath.split(/[\\/]+/).filter(Boolean);
+  const basePath =
+    rootName === "Mods" ? settings.modsPath : rootName === "Tray" ? settings.trayPath : null;
+  if (!basePath?.trim()) return undefined;
+
+  const normalizedBase = basePath.trim().replace(/\//g, "\\");
+  const baseWithoutTrailingSlash = /^[a-zA-Z]:\\$/.test(normalizedBase)
+    ? normalizedBase
+    : normalizedBase.replace(/\\+$/, "");
+  return [baseWithoutTrailingSlash, ...childParts].join("\\");
+}
+
 const DEFAULT_PAGE_SIZE = 100;
 export function LibraryScreen({
   refreshVersion,
@@ -151,6 +169,7 @@ export function LibraryScreen({
   const [watchFilter, setWatchFilter] = useState<"all" | "has_updates" | "needs_attention" | "not_tracked" | "duplicates">("all");
   const [sortBy, setSortBy] = useState<LibrarySortField>("name");
   const [librarySummary, setLibrarySummary] = useState<LibrarySummary | null>(null);
+  const [librarySettings, setLibrarySettings] = useState<LibrarySettings | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -291,6 +310,9 @@ export function LibraryScreen({
     void api.getLibraryFacets(kind || undefined).then(setFacets);
     void api.getLibrarySummary().then(setLibrarySummary).catch(() => {
       // If getLibrarySummary fails (e.g. not yet implemented), fall through silently.
+    });
+    void api.getLibrarySettings().then(setLibrarySettings).catch(() => {
+      setLibrarySettings(null);
     });
   }, [refreshVersion]);
 
@@ -778,6 +800,14 @@ export function LibraryScreen({
   // Tree rendering uses lightweight metadata and keeps the previous tree during warm reload.
   const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
 
+  const activeFolderNode = useMemo(() => {
+    if (!activeFolderPath || !folderTreeRoots) return undefined;
+    return findFolderNodeByPath(
+      [folderTreeRoots.mods, folderTreeRoots.tray],
+      activeFolderPath,
+    );
+  }, [activeFolderPath, folderTreeRoots]);
+
   // Root loose files come from the paged folder-content endpoint, not the whole library.
   const { rootItemsBySource, rootFileCount } = useMemo(() => {
     const items = folderRows?.items ?? [];
@@ -817,11 +847,7 @@ export function LibraryScreen({
       };
     }
 
-    const activeNode = findFolderNodeByPath(
-      [folderTreeRoots.mods, folderTreeRoots.tray],
-      activeFolderPath,
-    );
-    if (!activeNode) {
+    if (!activeFolderNode) {
       return { subfolders: [], files: [], rootFiles: [] };
     }
 
@@ -829,11 +855,11 @@ export function LibraryScreen({
     const rootFileIds = new Set(rootFiles.map((item) => item.id));
     const files = items.filter((item) => !rootFileIds.has(item.id));
     return {
-      subfolders: activeNode.children,
+      subfolders: activeFolderNode.children,
       files,
       rootFiles,
     };
-  }, [folderRows?.items, folderTreeRoots, activeFolderPath, rootItemsBySource]);
+  }, [folderRows?.items, folderTreeRoots, activeFolderPath, activeFolderNode, rootItemsBySource]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
   const syntheticRoot: FolderNode = useMemo(() => {
@@ -855,10 +881,12 @@ export function LibraryScreen({
   // ── Folder full path for "Open folder" (Phase 5ap) ───────────────────────────────
   // activeFolderPath is relative (e.g. "Mods/CAS/hairs") but Explorer needs the real
   // Windows path (e.g. "C:\\Users\\...\\Mods\\CAS\\hairs").
-  // Derive it from the first available file's path: strip the filename, normalise slashes.
-  // Only relevant when a subfolder is selected (not at root).
+  // Prefer the configured Mods/Tray roots so empty folders can still resolve.
+  // Fall back to the first available file path when settings are unavailable.
   const folderFullPath = useMemo<string | undefined>(() => {
     if (!activeFolderPath) return undefined;
+    const configuredPath = configuredFolderPath(activeFolderPath, librarySettings);
+    if (configuredPath) return configuredPath;
     const first = folderContents?.files[0] ?? folderContents?.rootFiles[0];
     if (!first?.path) return undefined;
     // Remove the filename segment from the end — the backend stores full file paths.
@@ -867,30 +895,28 @@ export function LibraryScreen({
     const lastSlash = normalised.lastIndexOf("/");
     if (lastSlash < 0) return undefined;
     return normalised.substring(0, lastSlash).replace(/\//g, "\\");
-  }, [activeFolderPath, folderContents]);
+  }, [activeFolderPath, folderContents, librarySettings]);
 
   // ── Folder summary (Phase 5ao) ───────────────────────────────────────────────
   // Computed when: in folder view (activeFolderPath set) and no file selected.
   // O(n) in folderContents.files — acceptable because folderContents is already filtered.
   // Returns undefined when not in folder view or when a file IS selected.
   const folderSummary = useMemo<FolderSummaryData | undefined>(() => {
-    if (!activeFolderPath || selected !== null || !folderContents) return undefined;
-    const { files, subfolders } = folderContents;
-    if (files.length === 0 && subfolders.length === 0) return undefined;
-    // Synthesise a minimal folderNode from available data.
-    // childFolderCount = subfolders.length (direct children).
-    // files array: we pass undefined since folderContents.files already IS the file list.
+    if (!activeFolderPath || selected !== null || !activeFolderNode) return undefined;
+    const { files, rootFiles } = folderContents;
+    // Pass a minimal folder node shape; folderContents.files already holds the
+    // loaded recursive file rows for the selected folder.
     return computeFolderSummary(
       files,
       {
-        name: activeFolderPath.split("/").pop() ?? activeFolderPath,
-        fullPath: activeFolderPath,
-        childFolderCount: subfolders.length,
+        name: activeFolderNode.name,
+        fullPath: activeFolderNode.fullPath,
+        childFolderCount: activeFolderNode.childFolderCount,
         files: undefined,
       },
-      folderContents.rootFiles.length, // depth-0 loose files stored directly in this folder
+      rootFiles.length, // depth-0 loose files stored directly in this folder
     );
-  }, [activeFolderPath, selected, folderContents]);
+  }, [activeFolderPath, selected, folderContents, activeFolderNode]);
 
   const libraryInspectorSections = selected
     ? [

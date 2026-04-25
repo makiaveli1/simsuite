@@ -65,6 +65,18 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (April 25, 2026)
+
+The Library folder inspector now treats selected folders as first-class items, even when the selected folder is empty.
+
+Important current behavior:
+
+- `LibraryScreen` loads `getLibrarySettings` alongside the Library summary.
+- selected virtual folder paths such as `Mods/Empty` are mapped to the configured real Mods or Tray folder before `Open folder` is shown.
+- folder summary data now comes from the active folder tree node, so a selected folder can show `0 files.` instead of disappearing from the inspector.
+- `LibraryDetailsPanel` only renders the folder open action when it receives a real disk path.
+- truly empty folders on disk still depend on the backend folder metadata layer exposing them before the frontend can show them.
+
 ## Current engineering note (April 24, 2026)
 
 The Library folder view now splits folder structure from folder file rows.

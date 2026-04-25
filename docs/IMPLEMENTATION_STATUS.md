@@ -1,5 +1,33 @@
 # SimSuite Implementation Status
 
+## Current session note (April 25, 2026 - Folder empty-state support)
+
+This session made selected Library folders useful even when they contain no files.
+
+Important changes and findings:
+
+- added a frontend test for an empty selected folder.
+- `LibraryScreen` now loads Library settings so it can turn virtual folder paths like `Mods/Empty` into real disk paths like `C:\Mods\Empty`.
+- folder summaries now stay visible for selected empty folders.
+- the inspector can show `0 files.` instead of falling back to `Select a file`.
+- `Open folder` is now shown only when the app has a real disk path, so it does not send fake virtual paths to Windows Explorer.
+- GPT Image asset replacement is still pending because `OPENAI_API_KEY` was not available in this shell.
+
+Checks passed:
+
+- `npm run test:unit -- src/screens/LibraryScreen.test.tsx`
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run test:unit` (`13` files, `41` tests)
+- `npm run test:rust` (`219` tests, with existing Rust warnings)
+
+Important remaining gap:
+
+- folder view still needs a real desktop click-through with fixture or live data.
+- truly empty folders on disk may still need backend scanner support before they appear in real folder metadata.
+- GPT Image generated app assets still need to be created and wired once an API key is available.
+- folder path matching can be optimized later if large-library testing shows the current backend slice is too slow.
+- real dependency detection, missing mesh detection, recolor-to-mesh linking, and safe-delete preflight are still not implemented.
+
 ## Current session note (April 24, 2026 - Folder UI backend wiring)
 
 This session connected the Library folder UI to the new backend folder-content command.

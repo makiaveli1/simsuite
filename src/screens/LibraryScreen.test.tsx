@@ -8,12 +8,14 @@ import type {
   LibraryFacets,
   LibraryFileRow,
   LibraryListResponse,
+  LibrarySettings,
   LibrarySummary,
 } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
     getLibraryFacets: vi.fn(),
+    getLibrarySettings: vi.fn(),
     getLibrarySummary: vi.fn(),
     listLibraryFiles: vi.fn(),
     listLibraryFilesForTree: vi.fn(),
@@ -42,6 +44,13 @@ const emptySummary: LibrarySummary = {
   needsReview: 0,
   duplicates: 0,
   disabled: 0,
+};
+
+const librarySettings: LibrarySettings = {
+  modsPath: "C:/Mods",
+  trayPath: "C:/Tray",
+  downloadsPath: "C:/Downloads",
+  downloadRejectFolder: null,
 };
 
 const gameplayFile: LibraryFileRow = {
@@ -115,6 +124,33 @@ const folderMetadata: FolderTreeMetadata = {
   ],
 };
 
+const emptyFolderMetadata: FolderTreeMetadata = {
+  total_folders: 2,
+  roots: [
+    {
+      path: "Mods",
+      name: "Mods",
+      depth: 0,
+      sourceLocation: "mods",
+      directFileCount: 0,
+      childFolderCount: 1,
+      totalFileCount: 0,
+      children: [
+        {
+          path: "Mods/Empty",
+          name: "Empty",
+          depth: 1,
+          sourceLocation: "mods",
+          directFileCount: 0,
+          childFolderCount: 0,
+          totalFileCount: 0,
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -122,6 +158,7 @@ afterEach(() => {
 
 it("loads selected folder contents from the folder-file command without prefetching every library row", async () => {
   vi.mocked(api.getLibraryFacets).mockResolvedValue(emptyFacets);
+  vi.mocked(api.getLibrarySettings).mockResolvedValue(librarySettings);
   vi.mocked(api.getLibrarySummary).mockResolvedValue(emptySummary);
   vi.mocked(api.listLibraryFiles).mockResolvedValue(emptyRows);
   vi.mocked(api.getFolderTreeMetadata).mockResolvedValue(folderMetadata);
@@ -154,4 +191,36 @@ it("loads selected folder contents from the folder-file command without prefetch
     );
   });
   expect(await screen.findByTitle("folder-item.package")).toBeInTheDocument();
+});
+
+it("shows an empty folder summary and opens the configured folder path", async () => {
+  vi.mocked(api.getLibraryFacets).mockResolvedValue(emptyFacets);
+  vi.mocked(api.getLibrarySettings).mockResolvedValue(librarySettings);
+  vi.mocked(api.getLibrarySummary).mockResolvedValue(emptySummary);
+  vi.mocked(api.listLibraryFiles).mockResolvedValue(emptyRows);
+  vi.mocked(api.getFolderTreeMetadata).mockResolvedValue(emptyFolderMetadata);
+  vi.mocked(api.listLibraryFilesForTree).mockResolvedValue(emptyRows);
+  vi.mocked(api.listLibraryFolderFiles).mockResolvedValue(emptyRows);
+  vi.mocked(api.revealFileInFolder).mockResolvedValue();
+
+  render(
+    <UiPreferencesProvider mode="seasoned">
+      <LibraryScreen refreshVersion={0} onNavigate={() => {}} userView="standard" />
+    </UiPreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(api.getFolderTreeMetadata).toHaveBeenCalled();
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: /folders view/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /empty/i }));
+
+  expect(await screen.findByText("0 files.")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+
+  await waitFor(() => {
+    expect(api.revealFileInFolder).toHaveBeenCalledWith("C:\\Mods\\Empty");
+  });
 });

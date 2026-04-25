@@ -796,19 +796,19 @@ function FolderSummaryPanel({
       )}
 
       {/* ── Open folder action ─────────────────────────────────────────── */}
-      {onOpenFolder && (
+      {onOpenFolder && folderFullPath ? (
         <div className="folder-summary-actions">
           <button
             type="button"
             className="folder-open-btn"
-            onClick={() => onOpenFolder(folderFullPath ?? data.folderPath)}
-            title="Open this folder in Windows Explorer"
+            onClick={() => onOpenFolder(folderFullPath)}
+            title={folderFullPath}
           >
             <FolderOpen size={13} strokeWidth={2} />
             Open folder
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
