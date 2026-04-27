@@ -269,18 +269,116 @@ What it does **not** fully prove by itself:
 - manual coverage of every folder-view path
 - explicit Staging navigation coverage
 
-## 10. Remaining gaps
+## 10. Sprint 1b — real-app runtime walkthrough
+
+A second pass was run in the real Tauri desktop app with a live WebDriver session on Windows.
+
+Runtime evidence written to:
+- `output/desktop/runtime-walkthrough-2026-04-27/runtime-walkthrough-report.json`
+- screenshots in `output/desktop/runtime-walkthrough-2026-04-27/`
+
+Fixture notes for this pass:
+- smoke fixture library paths were used
+- extra fixture data was added to force pagination and Tray coverage
+- final library size during the walk: **147 items**
+- Tray rows were present during runtime (`.blueprint`, `.householdbinary`, `.trayitem`)
+
+### Routes walked
+- Library — list
+- Library — grid
+- Library — folders
+- Inspector / detail sheet path from Library selection
+- Duplicates
+- Updates
+- Review
+- Inbox
+- Staging
+
+### What clearly passed
+- **Library list loaded in the real app**
+- **Page-size selector worked in runtime**
+  - visible rows changed from ~49 at page size 50 to ~99 at page size 100
+- **List wording cleanup is present**
+  - `No update source` shown
+  - old `Not tracked` / `Loose files` / `Disabled (in tray)` wording not seen in the walked list/grid/folder states
+- **Grid loaded in the real app**
+- **Grid density rail worked**
+  - slider responded at `15`, `50`, `85`
+- **Grid fallback states stayed honest**
+  - no fake preview claims appeared for the generic watch fixture
+- **Folder tree loaded with real subfolders**
+  - Mods-side folders rendered
+  - Tray rendered as its own root entry
+- **Folder wording cleanup is present**
+  - `Direct files in Tray` rendered
+  - row status showed `Stored in Tray`
+- **Folder open-folder command path is alive**
+  - backend `reveal_file_in_folder` invocation succeeded for folder selection
+- **File open-folder command path is alive**
+  - backend `reveal_file_in_folder` invocation succeeded for file selection
+- **Duplicates route loaded with real duplicate rows**
+- **Updates route loaded without crashing**
+- **Needs Review route loaded without crashing**
+- **Inbox route loaded without crashing**
+- **Staging route loaded and showed real staged content**
+- **No console errors / warnings / window errors / unhandled rejections were captured during the automated walk**
+
+### What was only partially proven
+- **Pagination movement**
+  - page-size changes were proven
+  - the automation helper did not get a clean first-row change signal after clicking `Next`, so pagination is better described as **partially verified** rather than perfectly proven
+- **Inspector open-folder UI affordance**
+  - backend command wiring is good
+  - but the captured list-view inspector state did not expose a visible `Open folder` button in the inspected generic-file case
+  - that means command wiring is verified, while the exact user-facing affordance needs a closer visual follow-up if this button is expected in the sidebar
+- **More Details / Inspect File coverage**
+  - the detail sheet opened successfully
+  - but the automated sheet text capture was thinner than ideal, so this is runtime-safe, not exhaustively audited
+- **Updates route truth coverage**
+  - the route itself is safe
+  - this fixture run did not surface a populated tracked-page row, so watch-state wording was not fully exercised there
+- **Long-path clipping**
+  - no horizontal overflow was detected in the walked inspector state
+  - but a dedicated long-path sidebar proof was not completed cleanly in this automation pass
+
+### Runtime wording / visual issues still noticed
+1. **Folder text compaction looks a little rough in raw DOM capture**
+   - runtime screenshot is acceptable
+   - raw text capture showed compressed strings like `Direct files in Tray3` / `Mod 144`
+   - this appears to be text-content concatenation from labels + badges, not necessarily a visible UI defect, but it is worth keeping an eye on
+2. **Updates route did not surface `No update source` wording in this particular fixture state**
+   - not a crash
+   - just not fully exercised there
+
+### Route-safety verdict from the real-app pass
+- **Library list** — safe enough to continue building on, with pagination marked partial rather than perfect
+- **Library grid** — safe enough to continue building on
+- **Library folders** — safe enough to continue building on
+- **Duplicates** — route-safe
+- **Updates** — route-safe, but data-state coverage was lighter than ideal
+- **Needs Review** — route-safe
+- **Inbox** — route-safe
+- **Staging** — route-safe and not a fake page
+
+## 11. Remaining gaps
 
 1. **One unrelated Rust test still fails**
    - install-profile engine, not Library query syntax
-2. **Folder/list/grid/staging manual route-by-route desktop verification is still thinner than ideal**
-   - desktop smoke passed, which is strong evidence
-   - but Sprint 1 final sign-off would still benefit from explicit folder-view/manual-path checks if we want maximum certainty
+   - exact failure:
+     - `core::install_profile_engine::tests::stale_indexed_special_files_do_not_block_fresh_guided_install`
+     - `assertion failed: plan.apply_ready`
+2. **Pagination and inspector affordance could use one tighter follow-up pass**
+   - not because the app crashed
+   - because the current runtime evidence is strong but not mathematically perfect on those two points
 
-## 11. Recommendation
+## 12. Recommendation
 
-Sprint 1 is materially healthier now.
+Sprint 1 is materially healthier now, and the real-app walk did **not** surface a blocker that says "stop all next work."
 
-If continuing immediately, the next best step is:
-1. do a focused real-app route verification for Library list/grid/folders/Staging
-2. decide whether to pull the unrelated install-profile test failure into this sprint or leave it as a separate stabilization ticket
+My honest recommendation:
+1. treat **Library list/grid/folders as safe enough to build on**
+2. treat **Duplicates / Updates / Review / Inbox / Staging as route-safe**
+3. keep the one failing Rust test as a **separate focused stabilization pass** unless a future task naturally touches install-profile logic
+4. if you want absolute certainty before a wider sprint, do one tiny follow-up only for:
+   - explicit next-page pagination proof
+   - whether file-level `Open folder` should be visible in the sidebar for seasoned mode
