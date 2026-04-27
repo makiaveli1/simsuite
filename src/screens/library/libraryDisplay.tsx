@@ -1814,7 +1814,7 @@ export function buildSheetCompatibilitySection(
                   ? "May have update"
                   : watch.status === "unknown"
                     ? "Check updates"
-                    : "Not tracked"}
+                    : "No update source"}
           </strong>
         </div>
       ) : null}
@@ -1956,7 +1956,7 @@ export function buildSheetDiagnosticsSection(
       {file.sourceLocation === "tray" ? (
         <div className="detail-row">
           <span>Status</span>
-          <span className="library-health-pill is-muted">Disabled (in tray)</span>
+          <span className="library-health-pill is-muted">Stored in Tray</span>
         </div>
       ) : null}
     </div>
@@ -2108,7 +2108,7 @@ function computeLibraryHealthIssue(
     return { label: "Needs review", tone: "attention" };
   }
   if (row.sourceLocation === "tray") {
-    return { label: "Disabled", tone: "muted" };
+    return { label: "Stored in Tray", tone: "muted" };
   }
   if (row.parserWarnings.length > 0) {
     return { label: "Warning", tone: "muted" };
@@ -2128,7 +2128,7 @@ function describeWatchStatus(watchStatus?: WatchStatus): string {
       return "Check updates";
     case "not_watched":
     default:
-      return "Not tracked";
+      return "No update source";
   }
 }
 
@@ -2206,8 +2206,8 @@ export function buildSheetRelationshipsSection(
     cards.push({
       key: "same-folder-mods",
       tier: "confirmed",
-      label: "Same folder set",
-      reason: `${(file.sameFolderPeerCount ?? 0) + 1} files live in ${parentFolder ?? "this folder"}. This confirms shared placement, not a dependency.`,
+      label: "Same folder",
+      reason: `${(file.sameFolderPeerCount ?? 0) + 1} files are stored in ${parentFolder ?? "this folder"}. This confirms shared placement, not a dependency.`,
     });
   }
 
@@ -2252,7 +2252,7 @@ export function buildSheetRelationshipsSection(
       key: "same-folder-possible",
       tier: "possible",
       label: "Shared folder placement",
-      reason: `${folderPeers.length + 1} files sit in ${parentFolder ?? "the same folder"}. Outside Mods, this is only a possible relationship signal.`,
+      reason: `${folderPeers.length + 1} files are stored in ${parentFolder ?? "the same folder"}. Outside Mods, this is only a possible relationship signal.`,
     });
   }
 
@@ -2436,8 +2436,8 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         type: rel.type,
         proofLevel: rel.proofLevel === "fact" ? "fact" : rel.proofLevel,
         confidenceLabel: rel.proofLevel === "fact" ? "Confirmed" : label,
-        shortLabel: `${rel.proofLevel === "fact" ? "Confirmed" : label} · Folder set (${count + 1} peers)`,
-        compactLabel: count > 0 ? `Set ${count + 1}` : "Set",
+        shortLabel: `${rel.proofLevel === "fact" ? "Confirmed" : label} · Same folder (${count + 1} files)`,
+        compactLabel: count > 0 ? `Folder ${count + 1}` : "Folder",
         description: rel.label,
         relatedCount: count,
       };
@@ -2446,8 +2446,8 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         type: rel.type,
         proofLevel: rel.proofLevel,
         confidenceLabel: label,
-        shortLabel: `${label} · Folder set (${count + 1} peers)`,
-        compactLabel: count > 0 ? `Set ${count + 1}` : "Set",
+        shortLabel: `${label} · Same folder (${count + 1} files)`,
+        compactLabel: count > 0 ? `Folder ${count + 1}` : "Folder",
         description: rel.label,
         relatedCount: count,
       };
@@ -2603,8 +2603,8 @@ export function computeFolderSummary(
       confidenceLabel: "Confirmed",
       affectedFileCount: folderPeerFiles.length,
       peakPeerCount: peakFolder,
-      title: "Folder sets",
-      description: `${folderPeerFiles.length} files share the same folder — often downloaded together`,
+      title: "Same folder",
+      description: `${folderPeerFiles.length} files are stored in the same folder`,
     });
   }
 

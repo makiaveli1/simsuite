@@ -107,7 +107,7 @@ function watchStatusLabel(status: WatchResult["status"], userView: UserView) {
     possible_update: { beginner: "Possible update", advanced: "Possible update" },
     unknown: { beginner: "Still unclear", advanced: "Unknown result" },
     current: { beginner: "Looks up to date", advanced: "Current" },
-    not_watched: { beginner: "Not tracked yet", advanced: "Not watched" },
+    not_watched: { beginner: "No update source yet", advanced: "No update source" },
   };
 
   return userView === "beginner" ? labels[status].beginner : labels[status].advanced;

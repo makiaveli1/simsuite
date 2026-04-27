@@ -2267,7 +2267,7 @@ function watchStatusLabel(status: NonNullable<FileDetail["watchResult"]>["status
       return "Unknown";
     case "not_watched":
     default:
-      return "Not tracked";
+      return "No update source";
   }
 }
 

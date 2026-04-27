@@ -55,7 +55,7 @@ export function FolderContentPane({
   const summary = [
     subfolders.length > 0 ? `${subfolders.length} subfolders` : null,
     files.length > 0 ? `${files.length} files` : null,
-    rootFiles.length > 0 ? `${rootFiles.length} loose` : null,
+    rootFiles.length > 0 ? `${rootFiles.length} direct` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -99,12 +99,12 @@ export function FolderContentPane({
         </section>
       ) : null}
 
-      {/* Loose files — Phase 5ap Ariadne design:
+      {/* Direct files — stored in the selected folder itself, not in child folders.
            Root (folderPath === null): split by source, show both Mods + Tray sections.
-           Subfolder: single "Loose files in {name}" section. */}
+           Subfolder: single "Direct files in {name}" section. */}
       {rootFiles.length > 0 ? (
         <section>
-          {/* ── Root level: source-split loose files sections ── */}
+          {/* ── Root level: source-split direct-file sections ── */}
           {folderPath === null ? (
             (() => {
               const modsRootFiles = rootFiles.filter((f) => getSourceRootFromPath(f.path) === "Mods");
@@ -114,11 +114,11 @@ export function FolderContentPane({
                   {modsRootFiles.length > 0 && (
                     <div className="folder-loose-source-group">
                       <div className="folder-content-section folder-content-section--loose">
-                        Loose files in Mods
+                        Direct files in Mods
                         <span className="folder-loose-files-badge">{modsRootFiles.length}</span>
                       </div>
                       <div className="folder-loose-files-hint">
-                        Stored directly in Mods — not organized into subfolders
+                        Stored directly in Mods — not inside a subfolder
                       </div>
                       <LooseFilesGroupTable
                         userView={userView}
@@ -131,11 +131,11 @@ export function FolderContentPane({
                   {trayRootFiles.length > 0 && (
                     <div className="folder-loose-source-group">
                       <div className="folder-content-section folder-content-section--loose">
-                        Loose files in Tray
+                        Direct files in Tray
                         <span className="folder-loose-files-badge">{trayRootFiles.length}</span>
                       </div>
                       <div className="folder-loose-files-hint">
-                        Stored directly in Tray — not organized into subfolders
+                        Stored directly in Tray — not inside a subfolder
                       </div>
                       <LooseFilesGroupTable
                         userView={userView}
@@ -149,14 +149,14 @@ export function FolderContentPane({
               );
             })()
           ) : (
-            /* ── Subfolder level: single "Loose files in {name}" section ── */
+            /* ── Subfolder level: single "Direct files in {name}" section ── */
             <>
               <div className="folder-content-section folder-content-section--loose">
-                Loose files in {folderPath}
+                Direct files in {folderPath}
                 <span className="folder-loose-files-badge">{rootFiles.length}</span>
               </div>
               <div className="folder-loose-files-hint">
-                Stored directly in {folderPath} — not yet organized into subfolders
+                Stored directly in {folderPath} — not inside a subfolder
               </div>
               <LibraryCollectionTable
                 userView={userView}
@@ -178,7 +178,7 @@ export function FolderContentPane({
                   className="folder-load-more"
                   onClick={() => setRootFilesExpanded(true)}
                 >
-                  Show all {rootFiles.length} loose files
+                  Show all {rootFiles.length} direct files
                 </button>
               )}
             </>

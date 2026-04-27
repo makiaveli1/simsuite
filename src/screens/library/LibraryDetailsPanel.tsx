@@ -624,7 +624,7 @@ function watchStatusToLabel(status: WatchStatus | null): string {
       return "Check updates";
     case "not_watched":
     default:
-      return "Not tracked";
+      return "No update source";
   }
 }
 

@@ -11,7 +11,7 @@ const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "has_updates", label: "Has Updates" },
   { value: "needs_attention", label: "Needs review" },
-  { value: "not_tracked", label: "Not Tracked" },
+  { value: "not_tracked", label: "No update source" },
   { value: "duplicates", label: "Duplicates" },
 ];
 
