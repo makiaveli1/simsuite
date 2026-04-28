@@ -10,7 +10,7 @@ import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, FileRelationship, UserView } from "../../lib/types";
 import {
   buildInspectorPreviewStrip,
-  computeFileRelationship,
+  computeDetailLibraryRelationship,
   describeCreatorForInspector,
   describeLibraryFamilyContext,
   describeLibraryPrimaryLabel,
@@ -63,7 +63,7 @@ export function LibraryDetailSheet({
       : null;
 
   // Compute relationship if not passed down from parent
-  const relationship = relationshipProp ?? computeFileRelationship(selectedFile, []);
+  const relationship = relationshipProp ?? computeDetailLibraryRelationship(selectedFile, []);
   const parentFolder = folderName ?? extractParentFolder(selectedFile.path);
   const inspectVersionBadge =
     mode === "inspect"

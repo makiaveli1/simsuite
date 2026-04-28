@@ -41,7 +41,7 @@ import {
   buildSheetDiagnosticsSection,
   buildSheetRelationshipsSection,
   buildSheetTraySection,
-  computeFileRelationship,
+  computeDetailLibraryRelationship,
   computeFolderSummary,
   type FolderSummaryData,
   describeCreatorForInspector,
@@ -788,7 +788,7 @@ export function LibraryScreen({
 
   // ── Relationship + folder context (derived, memoised) ─────────────────────
   const relationship = useMemo(
-    () => (selected && rows ? computeFileRelationship(selected, rows.items) : null),
+    () => (selected && rows ? computeDetailLibraryRelationship(selected, rows.items) : null),
     [selected, rows],
   );
   const folderName = useMemo(
@@ -1430,9 +1430,9 @@ export function LibraryScreen({
                 id: "relationships",
                 label: "Related File Clues",
                 hint:
-                  "Duplicate, pack, creator, and folder clues SimSuite can support today. This does not prove hidden dependencies, missing meshes, or safe deletion yet.",
+                  "Relationship hints only: duplicate, pack, folder, and tray grouping clues SimSuite can support honestly today.",
                 defaultCollapsed: false,
-                children: buildSheetRelationshipsSection(selected, rows?.items ?? [], userView),
+                children: buildSheetRelationshipsSection(selected, relationship, userView),
               },
             ]
           : []),

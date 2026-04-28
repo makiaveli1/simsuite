@@ -1,8 +1,9 @@
 import { type ReactNode } from "react";
 import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-react";
 import {
-  computeFileRelationship,
+  computeDetailLibraryRelationship,
   describeCreatorForInspector,
+  describeRelationshipSnapshot,
   describeLibraryFamilyContext,
   describeTrayIdentity,
   describeTraySummary,
@@ -144,7 +145,7 @@ export function LibraryDetailsPanel({
   // ── Folder + relationship context ─────────────────────────────────────
   // relationship may be passed in from LibraryScreen (pre-computed with full items list)
   // folderName may be passed in or computed fresh from path
-  const relationship = relationshipProp ?? computeFileRelationship(selectedFile, []);
+  const relationship = relationshipProp ?? computeDetailLibraryRelationship(selectedFile, []);
   const folderName = folderNameProp ?? extractParentFolder(selectedFile.path);
 
   // ─── Snapshot — view-aware ───────────────────────────────────────────────
@@ -285,7 +286,7 @@ export function LibraryDetailsPanel({
       label: "Related",
       value: (
         <span>
-          {relationship.label}{" "}
+          {describeRelationshipSnapshot(relationship)}{" "}
           <span
             className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
             title={`This related-file clue is ${clueLabel.toLowerCase()}`}

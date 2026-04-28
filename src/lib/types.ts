@@ -248,6 +248,14 @@ export interface FileRelationship {
   proofLevel: ProofLevel;
   label: string;
   peerCount?: number;
+  countScope?: "full_library" | "visible_only";
+  evidenceSource?:
+    | "duplicate_detector"
+    | "bundle_window"
+    | "filtered_bundle"
+    | "folder_window"
+    | "filtered_folder"
+    | "tray_bundle";
 }
 
 export interface RelationshipCue {

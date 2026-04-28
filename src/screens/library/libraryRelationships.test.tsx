@@ -1,12 +1,15 @@
 import { afterEach, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { buildSheetRelationshipsSection } from "./libraryDisplay";
+import {
+  buildSheetRelationshipsSection,
+  computeDetailLibraryRelationship,
+} from "./libraryDisplay";
 
 afterEach(() => {
   cleanup();
 });
 
-it("keeps relationship sheet copy honest about clues versus dependency proof", () => {
+it("keeps relationship sheet copy narrow, honest, and scope-labeled", () => {
   const selected = {
     id: 10,
     filename: "CoreHelper.ts4script",
@@ -14,10 +17,10 @@ it("keeps relationship sheet copy honest about clues versus dependency proof", (
     kind: "ScriptMods",
     sourceLocation: "mods",
     creator: "Helper Studio",
-    sameFolderPeerCount: 2,
+    sameFolderPeerCount: undefined,
     samePackPeerCount: 0,
-    duplicateTypes: ["exact"],
-    duplicatesCount: 1,
+    duplicateTypes: [],
+    duplicatesCount: 0,
     groupedFileCount: null,
     bundleName: null,
   };
@@ -28,18 +31,18 @@ it("keeps relationship sheet copy honest about clues versus dependency proof", (
       id: 11,
       filename: "CoreHelper.package",
       path: "Mods\\CoreHelper\\CoreHelper.package",
-      duplicateTypes: [],
-      duplicatesCount: 0,
     },
   ];
+  const relationship = computeDetailLibraryRelationship(selected as never, peers as never);
 
-  render(<>{buildSheetRelationshipsSection(selected as never, peers as never, "standard")}</>);
+  render(<>{buildSheetRelationshipsSection(selected as never, relationship, "standard")}</>);
 
-  expect(screen.getByText(/known file facts/i)).toBeVisible();
-  expect(screen.getByText(/this confirms shared placement, not a dependency/i)).toBeVisible();
-  expect(screen.getByText(/check before removing/i)).toBeVisible();
-  expect(screen.queryByText(/confirmed relationships/i)).toBeNull();
-  expect(screen.queryByText(/safe-delete/i)).toBeNull();
-  expect(screen.queryByText(/break saves/i)).toBeNull();
-  expect(screen.queryByText(/depend on it/i)).toBeNull();
+  expect(screen.getByText(/^Relationship hint$/i)).toBeVisible();
+  expect(screen.getByText(/same folder/i)).toBeVisible();
+  expect(screen.getByText(/^Visible-only$/i)).toBeVisible();
+  expect(screen.getByText(/relationship hint only/i)).toBeVisible();
+  expect(screen.queryByText(/dependency/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
+  expect(screen.queryByText(/mesh/i)).toBeNull();
+  expect(screen.queryByText(/recolor/i)).toBeNull();
 });
