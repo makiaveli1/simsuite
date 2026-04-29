@@ -2460,7 +2460,9 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         confidenceLabel: label,
         shortLabel: "Possible duplicate",
         compactLabel: "Possible duplicate",
-        description: "Duplicate detector flagged this file.",
+        description: count > 0
+          ? `SimSuite found ${count === 1 ? "another indexed file" : `${count} indexed files`} that look like duplicates.`
+          : "SimSuite found another indexed file that looks like a duplicate.",
         relatedCount: count,
       };
     case "same_pack":
@@ -2470,7 +2472,9 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         confidenceLabel: label,
         shortLabel: count > 0 ? `Same pack · ${count + 1} files` : "Same pack",
         compactLabel: "Same pack",
-        description: count > 0 ? `Pack grouping covers ${count + 1} files.` : "Pack grouping clue.",
+        description: count > 0
+          ? `Based on pack signal, SimSuite grouped ${count + 1} files together.`
+          : "Based on pack signal, SimSuite grouped this with other files.",
         relatedCount: count,
       };
     case "same_folder":
@@ -2480,7 +2484,9 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         confidenceLabel: label,
         shortLabel: count > 0 ? `Same folder · ${count + 1} files` : "Same folder",
         compactLabel: "Same folder",
-        description: count > 0 ? `Folder grouping covers ${count + 1} files.` : "Folder placement clue.",
+        description: count > 0
+          ? `SimSuite found ${count + 1} files in the same folder.`
+          : "SimSuite found other files in the same folder.",
         relatedCount: count,
       };
     case "tray_group":
@@ -2490,7 +2496,9 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
         confidenceLabel: label,
         shortLabel: count > 0 ? `Tray group · ${count + 1} files` : "Tray group",
         compactLabel: "Tray group",
-        description: count > 0 ? `Tray grouping covers ${count + 1} files.` : "Tray grouping clue.",
+        description: count > 0
+          ? `SimSuite grouped ${count + 1} tray files together.`
+          : "SimSuite grouped this with other tray files.",
         relatedCount: count,
       };
     default:

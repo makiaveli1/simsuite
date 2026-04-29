@@ -5583,9 +5583,66 @@ function queueMockScan() {
   }, 860);
 }
 
+function buildMockLibraryRelationshipState() {
+  const libraryFiles = mockFiles.filter((item) => item.sourceLocation !== "downloads");
+  const libraryIds = new Set(libraryFiles.map((item) => item.id));
+
+  const duplicateCounts = new Map<number, number>();
+  for (const pair of mockDuplicatePairs) {
+    if (libraryIds.has(pair.primaryFileId)) {
+      duplicateCounts.set(pair.primaryFileId, (duplicateCounts.get(pair.primaryFileId) ?? 0) + 1);
+    }
+    if (libraryIds.has(pair.secondaryFileId)) {
+      duplicateCounts.set(pair.secondaryFileId, (duplicateCounts.get(pair.secondaryFileId) ?? 0) + 1);
+    }
+  }
+
+  const bundleCounts = new Map<string, number>();
+  const folderCounts = new Map<string, number>();
+
+  for (const item of libraryFiles) {
+    const bundleKey = item.bundleName?.trim().toLowerCase();
+    if (bundleKey) {
+      bundleCounts.set(bundleKey, (bundleCounts.get(bundleKey) ?? 0) + 1);
+    }
+
+    if (item.sourceLocation === "mods") {
+      const parentKey = deriveMockRelativeParent(item.path, item.sourceLocation)?.toLowerCase();
+      if (parentKey) {
+        folderCounts.set(parentKey, (folderCounts.get(parentKey) ?? 0) + 1);
+      }
+    }
+  }
+
+  return libraryFiles.map((item) => {
+    const bundleKey = item.bundleName?.trim().toLowerCase();
+    const parentKey = item.sourceLocation === "mods"
+      ? deriveMockRelativeParent(item.path, item.sourceLocation)?.toLowerCase()
+      : null;
+
+    return {
+      ...item,
+      hasDuplicate: (duplicateCounts.get(item.id) ?? 0) > 0,
+      duplicatesCount: duplicateCounts.get(item.id) ?? 0,
+      samePackPeerCount: bundleKey
+        ? Math.max(
+            0,
+            Math.max(
+              (bundleCounts.get(bundleKey) ?? 1) - 1,
+              (item.groupedFileCount ?? 1) - 1,
+            ),
+          )
+        : 0,
+      sameFolderPeerCount: parentKey
+        ? Math.max(0, (folderCounts.get(parentKey) ?? 1) - 1)
+        : 0,
+    };
+  });
+}
+
 function filterMockFiles(query: LibraryQuery) {
   const search = query.search?.trim().toLowerCase();
-  let items = mockFiles.filter((item) => item.sourceLocation !== "downloads");
+  let items = buildMockLibraryRelationshipState();
 
   if (search) {
     items = items.filter((item) =>
@@ -5701,7 +5758,7 @@ function filterMockFolderFiles(query: LibraryFolderFilesQuery) {
 }
 
 function mockLibraryFiles() {
-  return mockFiles.filter((item) => item.sourceLocation !== "downloads");
+  return buildMockLibraryRelationshipState();
 }
 
 function normalizeMockAlias(value: string) {
