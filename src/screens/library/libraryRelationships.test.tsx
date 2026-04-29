@@ -3,6 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import {
   buildSheetRelationshipsSection,
   computeDetailLibraryRelationship,
+  computePrimaryLibraryRelationship,
 } from "./libraryDisplay";
 
 afterEach(() => {
@@ -45,4 +46,22 @@ it("keeps relationship sheet copy narrow, honest, and scope-labeled", () => {
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
   expect(screen.queryByText(/mesh/i)).toBeNull();
   expect(screen.queryByText(/recolor/i)).toBeNull();
+});
+
+it("keeps secondary signals out of primary list and grid cues", () => {
+  const row = {
+    id: 20,
+    filename: "OakHousehold_0x00ABCDEF.trayitem",
+    path: "Tray\\OakHousehold_0x00ABCDEF.trayitem",
+    kind: "TrayHousehold",
+    sourceLocation: "tray",
+    sameFolderPeerCount: 3,
+    samePackPeerCount: 0,
+    groupedFileCount: 4,
+    duplicatesCount: 0,
+    bundleName: null,
+    hasDuplicate: false,
+  };
+
+  expect(computePrimaryLibraryRelationship(row as never)).toBeNull();
 });

@@ -200,6 +200,51 @@ it("hides raw path-like tray grouping values from inspector summary", () => {
   expect(screen.queryByText(/C:\\Users\\Player/i)).toBeNull();
 });
 
+it("shows a narrow relationship explanation in the inspector", () => {
+  render(
+    <LibraryDetailsPanel
+      userView="standard"
+      selectedFile={
+        {
+          id: 6,
+          filename: "CoreHelper.ts4script",
+          path: "Mods\\CoreHelper\\CoreHelper.ts4script",
+          creator: "Helper Studio",
+          kind: "ScriptMods",
+          subtype: "Core",
+          confidence: 0.92,
+          sourceLocation: "mods",
+          safetyNotes: [],
+          parserWarnings: [],
+          installedVersionSummary: null,
+          watchResult: null,
+          insights: emptyInsights,
+        } as never
+      }
+      relationship={{
+        type: "same_folder",
+        proofLevel: "fact",
+        label: "Same folder",
+        peerCount: 1,
+        countScope: "visible_only",
+        evidenceSource: "filtered_folder",
+      }}
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+    />,
+  );
+
+  expect(screen.getByText(/related/i)).toBeVisible();
+  expect(screen.getByText(/same folder/i)).toBeVisible();
+  expect(screen.getByText(/same mods folder/i)).toBeVisible();
+  expect(screen.getByText(/confirmed/i)).toBeVisible();
+  expect(screen.getByText(/visible-only/i)).toBeVisible();
+  expect(screen.queryByText(/dependency/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
+});
+
 it("uses cautious removal wording without claiming dependency proof", () => {
   render(
     <LibraryDetailsPanel

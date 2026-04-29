@@ -3,7 +3,7 @@ import { ExternalLink, Eye, FolderOpen, PencilLine, ShieldAlert } from "lucide-r
 import {
   computeDetailLibraryRelationship,
   describeCreatorForInspector,
-  describeRelationshipSnapshot,
+  describeRelationshipInspectorSummary,
   describeLibraryFamilyContext,
   describeTrayIdentity,
   describeTraySummary,
@@ -11,7 +11,6 @@ import {
   extractParentFolder,
   formatLibraryFileFormat,
   groupedFilesLabel,
-  proofLevelToLabel,
   summarizeLibraryCareState,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
@@ -281,20 +280,9 @@ export function LibraryDetailsPanel({
   // Location row removed (Ariadne Phase 5an): redundant with More Details full path.
   // "Open folder" button is the actionable alternative.
   if (!isCasual && relationship && relationship.type !== "none") {
-    const clueLabel = proofLevelToLabel(relationship.proofLevel);
     snapshotLines.push({
       label: "Related",
-      value: (
-        <span>
-          {describeRelationshipSnapshot(relationship)}{" "}
-          <span
-            className={`detail-row-suffix detail-row-suffix--${relationship.proofLevel}`}
-            title={`This related-file clue is ${clueLabel.toLowerCase()}`}
-          >
-            ({clueLabel})
-          </span>
-        </span>
-      ),
+      value: describeRelationshipInspectorSummary(relationship, selectedFile),
     });
   }
 

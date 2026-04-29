@@ -1400,6 +1400,22 @@ export function describeRelationshipSnapshot(relationship: FileRelationship): st
   return parts.join(" · ");
 }
 
+export function describeRelationshipInspectorSummary(
+  relationship: FileRelationship,
+  file: Pick<RelationshipSubject, "bundleName" | "sourceLocation">,
+): string {
+  const parts = [
+    relationshipTypeLabel(relationship.type),
+    describeRelationshipMeaning(relationship, file),
+    proofLevelToLabel(relationship.proofLevel),
+  ];
+  const countLabel = relationshipCountLabel(relationship);
+  if (countLabel) {
+    parts.push(countLabel);
+  }
+  return parts.join(" · ");
+}
+
 export function extractParentPath(filePath: string): string | null {
   if (!filePath) return null;
   const normalized = filePath.replace(/\\/g, "/");
@@ -2353,7 +2369,7 @@ export function buildSheetRelationshipsSection(
         </div>
         <div className="detail-row detail-row--block">
           <span>Note</span>
-          <strong>This is a relationship hint only. It does not prove a stronger file-to-file link.</strong>
+          <strong>This is a relationship hint only. It does not prove anything beyond the signal listed above.</strong>
         </div>
       </div>
     </div>
