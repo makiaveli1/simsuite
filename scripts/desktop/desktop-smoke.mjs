@@ -17,10 +17,10 @@ const DEFAULT_SMART_CORE_SAME_ITEM = "Smart_Core_Same_Test";
 const DEFAULT_SMART_CORE_OLDER_ITEM = "Smart_Core_Older_Test";
 const DEFAULT_GENERIC_WATCH_FILE = "Generic_Watch_Mod_v1.0.package";
 const DEFAULT_APP_PATHS = [
-  path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
-  path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
   path.resolve("src-tauri", "target", "release", "simsuite.exe"),
   path.resolve("src-tauri", "target", "release", "SimSuite.exe"),
+  path.resolve("src-tauri", "target", "debug", "simsuite.exe"),
+  path.resolve("src-tauri", "target", "debug", "SimSuite.exe"),
 ];
 const INCLUDE_APPLY = process.argv.includes("--include-apply");
 const DEFAULT_SESSION_FILE = path.resolve("output", "desktop", "tauri-driver-session.json");

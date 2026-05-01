@@ -1,15 +1,16 @@
 param(
     [int]$Port = 4444,
-    [switch]$IncludeApply,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$OutputDir
 )
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $sessionFile = Join-Path $repoRoot 'output\desktop\tauri-driver-session.json'
+$outputRoot = if ($OutputDir) { $OutputDir } else { Join-Path $repoRoot 'output\desktop\library-proof' }
 
 try {
     if (-not $SkipBuild) {
-        Write-Output "TAURI_SMOKE_BUILD start=1"
+        Write-Output "DESKTOP_LIBRARY_PROOF_BUILD start=1"
         Push-Location $repoRoot
         & npm run tauri:build
         $buildResult = $LASTEXITCODE
@@ -31,22 +32,16 @@ try {
 
     $env:SIMSUITE_WEBDRIVER_URL = "http://127.0.0.1:$Port"
     $env:SIMSUITE_TAURI_DRIVER_SESSION_FILE = $sessionFile
+    $env:SIMSUITE_DESKTOP_PROOF_OUTPUT = $outputRoot
 
     Push-Location $repoRoot
-    if ($IncludeApply) {
-        $env:SIMSUITE_ALLOW_APPLY_SMOKE = '1'
-        Write-Output "TAURI_SMOKE_START mode=apply url=$($env:SIMSUITE_WEBDRIVER_URL)"
-        & node (Join-Path $PSScriptRoot 'desktop-smoke.mjs') --include-apply
-    } else {
-        Write-Output "TAURI_SMOKE_START mode=base url=$($env:SIMSUITE_WEBDRIVER_URL)"
-        & node (Join-Path $PSScriptRoot 'desktop-smoke.mjs')
-    }
-    $smokeResult = $LASTEXITCODE
+    Write-Output "DESKTOP_LIBRARY_PROOF_START url=$($env:SIMSUITE_WEBDRIVER_URL) output=$outputRoot"
+    & node (Join-Path $PSScriptRoot 'desktop-library-proof.mjs')
+    $proofResult = $LASTEXITCODE
     Pop-Location
 
-    Write-Output "TAURI_SMOKE_DONE exit=$smokeResult"
-
-    exit $smokeResult
+    Write-Output "DESKTOP_LIBRARY_PROOF_DONE exit=$proofResult output=$outputRoot"
+    exit $proofResult
 } finally {
     foreach ($name in @('tauri-driver', 'msedgedriver', 'simsuite', 'SimSuite')) {
         try {

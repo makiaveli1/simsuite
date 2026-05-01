@@ -19,6 +19,7 @@
         "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply",
         "desktop:smoke:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-smoke.ps1",
         "desktop:smoke:apply:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
+        "desktop:proof:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-desktop-library-proof.ps1",
         "test:unit": "vitest run"
     },
     "dependencies": {
