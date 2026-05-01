@@ -31,6 +31,7 @@ interface LibraryDetailsPanelProps {
   selectedFile: FileDetail | null;
   onOpenInspectDetails: () => void;
   onOpenHealthDetails: () => void;
+  onOpenNeedsReview?: () => void;
   onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
   onOpenFolder?: (path: string) => void;
@@ -53,6 +54,7 @@ export function LibraryDetailsPanel({
   selectedFile,
   onOpenInspectDetails,
   onOpenHealthDetails,
+  onOpenNeedsReview,
   onOpenEditDetails,
   onOpenUpdates,
   onOpenFolder = () => {},
@@ -112,6 +114,11 @@ export function LibraryDetailsPanel({
 
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
+  const allProblemSignals = selectedFile.problemSignals ?? [];
+  const problemSignals = allProblemSignals.filter((signal) => signal.showInInspector);
+  const problemSignalsForCare = problemSignals.filter(
+    (signal) => signal.destination !== "duplicates" && signal.destination !== "updates",
+  );
   const scriptContentSummary = summarizeLibraryScriptContent(selectedFile);
   const scriptNamespace = summarizeScriptScopeForUi(selectedFile.insights);
   const scriptVersionClue = summarizeVersionSignalForUi(selectedFile.insights, 0.8);
@@ -129,7 +136,8 @@ export function LibraryDetailsPanel({
       selectedFile.installedVersionSummary ||
       hasSafetyNotes ||
       hasParserWarnings ||
-      isTrayKind,
+      isTrayKind ||
+      problemSignals.length,
   );
 
   const isTray = selectedFile.sourceLocation === "tray";
@@ -291,7 +299,13 @@ export function LibraryDetailsPanel({
   // Seasoned: shows warnings inline so they don't have to open More details
   // Creator: shows everything; expects the user to manage it
   // ────────────────────────────────────────────────────────────────────────
-  const showCareTags = !isCasual && (hasSafetyNotes || hasParserWarnings);
+  const showCareTags = !isCasual && (hasSafetyNotes || hasParserWarnings || problemSignalsForCare.length > 0);
+  const canOpenNeedsReview = Boolean(
+    onOpenNeedsReview &&
+      (allProblemSignals.some((signal) => signal.showInNeedsReview) ||
+        hasSafetyNotes ||
+        hasParserWarnings),
+  );
 
   // ─── More actions — view-aware ───────────────────────────────────────────
   // Casual: one button, nothing else
@@ -409,6 +423,45 @@ export function LibraryDetailsPanel({
         {/* Warnings shown inline for seasoned+ so they don't need to open More details */}
         {showCareTags ? (
           <>
+            {problemSignalsForCare.length ? (
+              <div className="detail-block">
+                <div
+                  className="section-label"
+                  style={{ fontSize: "0.65rem", marginBottom: "0.2rem" }}
+                >
+                  Problem signals
+                </div>
+                <div className="detail-list">
+                  {problemSignalsForCare.slice(0, isPower ? undefined : 3).map((signal) => (
+                    <div key={`${signal.signalType}-${signal.shortLabel}`} className="detail-row detail-row--block">
+                      <span>{signal.shortLabel}</span>
+                      <strong>{signal.explanation}</strong>
+                      {signal.evidence.length ? (
+                        <div className="tag-list">
+                          {signal.evidence.slice(0, isPower ? undefined : 3).map((item) => (
+                            <span
+                              key={`${signal.signalType}-${item}`}
+                              className={signal.severity === "warning" || signal.severity === "severe" ? "warning-tag" : "ghost-chip"}
+                            >
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                  {problemSignalsForCare.length > 3 && !isPower ? (
+                    <button
+                      type="button"
+                      className="ghost-chip-inline-button"
+                      onClick={onOpenHealthDetails}
+                    >
+                      +{problemSignalsForCare.length - 3} more
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {hasSafetyNotes ? (
               <div className="detail-block">
                 <div
@@ -462,6 +515,18 @@ export function LibraryDetailsPanel({
           <p className="text-muted">
             Open More details to inspect file clues and warnings.
           </p>
+        ) : null}
+
+        {canOpenNeedsReview ? (
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={onOpenNeedsReview}
+            style={{ marginTop: "0.75rem" }}
+          >
+            <ExternalLink size={14} strokeWidth={2} />
+            {isCasual ? "Open Needs Review" : "Review this file"}
+          </button>
         ) : null}
       </section>
 

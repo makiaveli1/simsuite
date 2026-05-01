@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { m } from "motion/react";
 import {
   Fingerprint,
@@ -32,6 +32,7 @@ interface ReviewScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
   userView: UserView;
+  initialFileId?: number;
 }
 
 const REVIEW_LAYOUT_PRESETS: Array<{
@@ -60,6 +61,7 @@ export function ReviewScreen({
   refreshVersion,
   onNavigate,
   userView,
+  initialFileId,
 }: ReviewScreenProps) {
   const {
     reviewDetailWidth,
@@ -70,6 +72,7 @@ export function ReviewScreen({
   const [items, setItems] = useState<ReviewQueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const lastAppliedInitialFileId = useRef<number | null>(null);
 
   useEffect(() => {
     void loadReviewQueue();
@@ -81,10 +84,32 @@ export function ReviewScreen({
       return;
     }
 
-    if (!items.some((item) => item.id === selectedId)) {
-      setSelectedId(items[0].id);
+    if (
+      initialFileId !== undefined &&
+      lastAppliedInitialFileId.current !== initialFileId
+    ) {
+      const focusedItem = items.find((item) => item.fileId === initialFileId);
+      if (focusedItem) {
+        setSelectedId(focusedItem.id);
+        lastAppliedInitialFileId.current = initialFileId;
+        return;
+      }
     }
-  }, [items, selectedId]);
+
+    if (!items.some((item) => item.id === selectedId)) {
+      const focusedItem =
+        initialFileId !== undefined
+          ? items.find((item) => item.fileId === initialFileId)
+          : undefined;
+      setSelectedId(focusedItem?.id ?? items[0].id);
+    }
+  }, [initialFileId, items, selectedId]);
+
+  useEffect(() => {
+    if (initialFileId === undefined) {
+      lastAppliedInitialFileId.current = null;
+    }
+  }, [initialFileId]);
 
   async function loadReviewQueue() {
     setIsLoading(true);
@@ -96,6 +121,10 @@ export function ReviewScreen({
   }
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
+  const focusedQueueItem =
+    initialFileId !== undefined
+      ? items.find((item) => item.fileId === initialFileId) ?? null
+      : null;
   const reasonCounts = items.reduce<Record<string, number>>((counts, item) => {
     counts[item.reason] = (counts[item.reason] ?? 0) + 1;
     return counts;
@@ -271,6 +300,29 @@ export function ReviewScreen({
                 </div>
                 <span className="ghost-chip">{items.length} items</span>
               </div>
+
+              {initialFileId !== undefined ? (
+                <div className="review-rail-note">
+                  <strong>
+                    {focusedQueueItem
+                      ? userView === "beginner"
+                        ? "SimSuite opened the matching review item for you."
+                        : "The matching queue item is selected for you."
+                      : userView === "beginner"
+                        ? "Review opened, but this file is not in the queue right now."
+                        : "Review opened, but that file is not currently present in the live queue."}
+                  </strong>
+                  <p>
+                    {focusedQueueItem
+                      ? userView === "beginner"
+                        ? "You can inspect why it stopped, then head to the right fix lane."
+                        : "Use this to inspect the stop reason first, then jump to the right fix lane."
+                      : userView === "beginner"
+                        ? "That usually means the queue changed since Library loaded."
+                        : "That usually means the queue changed after Library loaded or the review-worthy signal cleared."}
+                  </p>
+                </div>
+              ) : null}
 
               <div className="summary-matrix review-summary-grid">
                 <SummaryStat

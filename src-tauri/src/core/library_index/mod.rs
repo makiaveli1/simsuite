@@ -11,10 +11,295 @@ use crate::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, FolderTreeMetadata,
         FolderTreeNode, HomeOverview, LibraryFacets, LibraryFileRow, LibraryFolderFilesQuery,
         LibraryListResponse, LibraryQuery, LibrarySettings, LibrarySortField, LibrarySummary,
-        LibraryWatchFilter, WatchStatus,
+        LibraryWatchFilter, ProblemSignal, ProblemSignalDestination, ProblemSignalProofLevel,
+        ProblemSignalSeverity, WatchStatus,
     },
     seed::{SeedPack, TaxonomySeed},
 };
+
+struct ProblemSignalInput<'a> {
+    kind: &'a str,
+    confidence: f64,
+    source_location: &'a str,
+    creator: Option<&'a str>,
+    creator_hints: &'a [String],
+    safety_notes: &'a [String],
+    parser_warnings: &'a [String],
+    review_reasons: &'a [String],
+    has_review_queue: bool,
+    has_duplicate: bool,
+    watch_status: Option<WatchStatus>,
+}
+
+fn humanize_problem_code(code: &str) -> String {
+    match code {
+        "low_confidence_parse" => "Low classification confidence".to_owned(),
+        "inspection_failed" => "Inspection failed during scan".to_owned(),
+        "unsafe_script_depth" => "Script file is nested deeper than the safe script depth".to_owned(),
+        "tray_file_in_mods_root" => "Tray content is sitting in Mods".to_owned(),
+        "no_category_detected" => "Category could not be confirmed".to_owned(),
+        "conflicting_category_signals" => "Category clues conflict".to_owned(),
+        "conflicting_creator_signals" => "Creator clues conflict".to_owned(),
+        other => other.replace('_', " "),
+    }
+}
+
+fn unique_problem_evidence(values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    values
+        .into_iter()
+        .filter(|value| seen.insert(value.clone()))
+        .collect()
+}
+
+fn review_reason_evidence(input: &ProblemSignalInput<'_>) -> Vec<String> {
+    if !input.review_reasons.is_empty() {
+        return unique_problem_evidence(
+            input
+                .review_reasons
+                .iter()
+                .map(|reason| humanize_problem_code(reason)),
+        );
+    }
+
+    let mut reasons = Vec::new();
+    if input.confidence < 0.55 {
+        reasons.push(humanize_problem_code("low_confidence_parse"));
+    }
+    reasons.extend(
+        input
+            .safety_notes
+            .iter()
+            .map(|reason| humanize_problem_code(reason)),
+    );
+    reasons.extend(
+        input
+            .parser_warnings
+            .iter()
+            .map(|reason| humanize_problem_code(reason)),
+    );
+    unique_problem_evidence(reasons)
+}
+
+fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
+    let mut signals = Vec::new();
+    let review_evidence = review_reason_evidence(input);
+    let has_inspection_failure = input
+        .review_reasons
+        .iter()
+        .any(|reason| reason == "inspection_failed")
+        || input
+            .parser_warnings
+            .iter()
+            .any(|reason| reason == "inspection_failed");
+
+    if input.has_review_queue {
+        signals.push(ProblemSignal {
+            signal_type: if has_inspection_failure {
+                "inspection_failed".to_owned()
+            } else {
+                "review_suggested".to_owned()
+            },
+            severity: ProblemSignalSeverity::Warning,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: if has_inspection_failure {
+                "Could not inspect fully".to_owned()
+            } else {
+                "Review suggested".to_owned()
+            },
+            explanation: if has_inspection_failure {
+                "SimSuite could not inspect this file cleanly during scan, so a manual review is suggested.".to_owned()
+            } else if !input.safety_notes.is_empty() {
+                "This file tripped scan rules that deserve a closer look.".to_owned()
+            } else {
+                "SimSuite found warning signals that are worth a closer look.".to_owned()
+            },
+            source: "review_queue".to_owned(),
+            evidence: review_evidence.clone(),
+            destination: Some(ProblemSignalDestination::Review),
+            show_in_library: true,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: true,
+        });
+    }
+
+    if !input.safety_notes.is_empty() {
+        signals.push(ProblemSignal {
+            signal_type: "safety_note".to_owned(),
+            severity: ProblemSignalSeverity::Warning,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "Inspection warning".to_owned(),
+            explanation: "This file matched a scan safety rule that deserves attention.".to_owned(),
+            source: "safety_notes".to_owned(),
+            evidence: unique_problem_evidence(
+                input
+                    .safety_notes
+                    .iter()
+                    .map(|note| humanize_problem_code(note)),
+            ),
+            destination: Some(ProblemSignalDestination::Review),
+            show_in_library: !input.has_review_queue,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: true,
+        });
+    }
+
+    if !input.parser_warnings.is_empty() {
+        signals.push(ProblemSignal {
+            signal_type: if has_inspection_failure {
+                "inspection_failed".to_owned()
+            } else {
+                "parser_warning".to_owned()
+            },
+            severity: ProblemSignalSeverity::Caution,
+            proof_level: ProblemSignalProofLevel::Detected,
+            short_label: if has_inspection_failure {
+                "Could not inspect fully".to_owned()
+            } else {
+                "Metadata warning".to_owned()
+            },
+            explanation: if has_inspection_failure {
+                "SimSuite could not finish inspecting this file cleanly during scan.".to_owned()
+            } else {
+                "SimSuite found metadata or classification clues that conflict or stayed incomplete.".to_owned()
+            },
+            source: "parser_warnings".to_owned(),
+            evidence: unique_problem_evidence(
+                input
+                    .parser_warnings
+                    .iter()
+                    .map(|warning| humanize_problem_code(warning)),
+            ),
+            destination: Some(ProblemSignalDestination::Review),
+            show_in_library: !input.has_review_queue && input.safety_notes.is_empty(),
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: true,
+        });
+    }
+
+    if input.has_duplicate {
+        signals.push(ProblemSignal {
+            signal_type: "duplicate_candidate".to_owned(),
+            severity: ProblemSignalSeverity::Caution,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "Duplicate candidate".to_owned(),
+            explanation: "SimSuite found another file that matches this one by duplicate rules, so compare before removing anything.".to_owned(),
+            source: "duplicates".to_owned(),
+            evidence: vec!["Matched by duplicate detector".to_owned()],
+            destination: Some(ProblemSignalDestination::Duplicates),
+            show_in_library: false,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    if input.source_location == "tray" {
+        signals.push(ProblemSignal {
+            signal_type: "stored_in_tray".to_owned(),
+            severity: ProblemSignalSeverity::Info,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "Stored in Tray".to_owned(),
+            explanation: "This file is stored in Tray as library content, not as an active mod.".to_owned(),
+            source: "source_location".to_owned(),
+            evidence: vec!["source_location = tray".to_owned()],
+            destination: None,
+            show_in_library: true,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    if input.source_location != "tray"
+        && matches!(input.watch_status.clone().unwrap_or(WatchStatus::NotWatched), WatchStatus::NotWatched)
+    {
+        signals.push(ProblemSignal {
+            signal_type: "no_update_source".to_owned(),
+            severity: ProblemSignalSeverity::Info,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "No update source".to_owned(),
+            explanation: "SimSuite is not tracking an update source for this file yet.".to_owned(),
+            source: "watch_status".to_owned(),
+            evidence: vec!["watch_status = not_watched".to_owned()],
+            destination: Some(ProblemSignalDestination::Updates),
+            show_in_library: false,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    if input.confidence < 0.55 {
+        signals.push(ProblemSignal {
+            signal_type: "weak_metadata".to_owned(),
+            severity: ProblemSignalSeverity::Caution,
+            proof_level: ProblemSignalProofLevel::Detected,
+            short_label: "Weak metadata".to_owned(),
+            explanation: "SimSuite classified this file with low confidence, so the current metadata may need a manual check.".to_owned(),
+            source: "confidence".to_owned(),
+            evidence: vec![format!("confidence = {:.2}", input.confidence)],
+            destination: Some(ProblemSignalDestination::Review),
+            show_in_library: false,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    if input.creator.is_none() {
+        signals.push(ProblemSignal {
+            signal_type: "missing_creator_metadata".to_owned(),
+            severity: ProblemSignalSeverity::Caution,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "Creator unclear".to_owned(),
+            explanation: "SimSuite did not confirm a creator name for this file yet.".to_owned(),
+            source: "creator_metadata".to_owned(),
+            evidence: if input.creator_hints.is_empty() {
+                vec!["No creator was confirmed".to_owned()]
+            } else {
+                vec![format!(
+                    "{} unconfirmed creator hint{} found",
+                    input.creator_hints.len(),
+                    if input.creator_hints.len() == 1 { "" } else { "s" }
+                )]
+            },
+            destination: None,
+            show_in_library: false,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    if input.kind == "ScriptMods" {
+        signals.push(ProblemSignal {
+            signal_type: "script_mod_caution".to_owned(),
+            severity: ProblemSignalSeverity::Info,
+            proof_level: ProblemSignalProofLevel::Confirmed,
+            short_label: "Script mod caution".to_owned(),
+            explanation: "This is a script mod, so check the mod notes before disabling, moving, or deleting it.".to_owned(),
+            source: "file_kind".to_owned(),
+            evidence: vec!["kind = ScriptMods".to_owned()],
+            destination: None,
+            show_in_library: false,
+            show_in_inspector: true,
+            show_in_more_details: true,
+            show_in_needs_review: false,
+        });
+    }
+
+    signals
+}
+
+fn primary_problem_signal(input: &ProblemSignalInput<'_>) -> Option<ProblemSignal> {
+    build_problem_signals(input)
+        .into_iter()
+        .find(|signal| signal.show_in_library)
+}
 
 pub fn get_home_overview(
     connection: &Connection,
@@ -295,7 +580,10 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             0 AS same_folder_peer_count,
+             EXISTS (\n\
+               SELECT 1 FROM review_queue rq\n\
+               WHERE rq.file_id = f.id\n\
+             ) AS has_review_queue,
 \
              0 AS same_pack_peer_count
 \
@@ -338,7 +626,10 @@ pub fn list_library_files(
                WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
              ) AS has_duplicate,
 \
-             0 AS same_folder_peer_count,
+             EXISTS (\n\
+               SELECT 1 FROM review_queue rq\n\
+               WHERE rq.file_id = f.id\n\
+             ) AS has_review_queue,
 \
              0 AS same_pack_peer_count
 \
@@ -382,34 +673,57 @@ pub fn list_library_files(
                     _ => WatchStatus::NotWatched,
                 })
                 .unwrap_or_default();
+            let kind: String = row.get(4)?;
+            let confidence: f64 = row.get(6)?;
+            let source_location: String = row.get(7)?;
+            let creator: Option<String> = row.get(10)?;
+            let safety_notes = parse_string_array(row.get::<_, String>(15)?);
+            let parser_warnings = parse_string_array(row.get::<_, String>(16)?);
+            let insights = compact_library_row_insights(
+                parse_insights(row.get::<_, Option<String>>(17)?),
+                include_previews,
+                compact_paged_rows,
+            );
+            let has_duplicate = row.get::<_, i64>(19)? != 0;
+            let has_review_queue = row.get::<_, i64>(20)? != 0;
+            let primary_problem_signal = primary_problem_signal(&ProblemSignalInput {
+                kind: &kind,
+                confidence,
+                source_location: &source_location,
+                creator: creator.as_deref(),
+                creator_hints: &insights.creator_hints,
+                safety_notes: &safety_notes,
+                parser_warnings: &parser_warnings,
+                review_reasons: &[],
+                has_review_queue,
+                has_duplicate,
+                watch_status: Some(watch_status.clone()),
+            });
             Ok(LibraryFileRow {
                 id,
                 filename: row.get(1)?,
                 path: row.get(2)?,
                 extension: row.get(3)?,
-                kind: row.get(4)?,
+                kind,
                 subtype: row.get(5)?,
-                confidence: row.get(6)?,
-                source_location: row.get(7)?,
+                confidence,
+                source_location,
                 size: row.get(8)?,
                 modified_at: row.get(9)?,
-                creator: row.get(10)?,
+                creator,
                 bundle_name: row.get(11)?,
                 bundle_type: row.get(12)?,
                 grouped_file_count: row.get(13)?,
                 relative_depth: row.get(14)?,
-                safety_notes: parse_string_array(row.get::<_, String>(15)?),
-                parser_warnings: parse_string_array(row.get::<_, String>(16)?),
-                insights: compact_library_row_insights(
-                    parse_insights(row.get::<_, Option<String>>(17)?),
-                    include_previews,
-                    compact_paged_rows,
-                ),
+                safety_notes,
+                parser_warnings,
+                insights,
                 watch_status,
-                has_duplicate: row.get::<_, i64>(19)? != 0,
+                has_duplicate,
                 installed_version: None,
                 same_folder_peer_count,
                 same_pack_peer_count,
+                primary_problem_signal,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -877,6 +1191,7 @@ pub fn get_file_detail(
                     duplicates_count: 0,
                     duplicate_types: Vec::new(),
                     installed_version: None,
+                    problem_signals: Vec::new(),
                 })
             },
         )
@@ -906,6 +1221,28 @@ pub fn get_file_detail(
                 .collect::<Result<Vec<String>, _>>()?;
             detail.duplicates_count = duplicate_types.len();
             detail.duplicate_types = duplicate_types;
+
+            let review_reasons: Vec<String> = connection
+                .prepare(
+                    "SELECT DISTINCT reason FROM review_queue
+                     WHERE file_id = ?1
+                     ORDER BY reason",
+                )?
+                .query_map(params![file_id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            detail.problem_signals = build_problem_signals(&ProblemSignalInput {
+                kind: &detail.kind,
+                confidence: detail.confidence,
+                source_location: &detail.source_location,
+                creator: detail.creator.as_deref(),
+                creator_hints: &detail.insights.creator_hints,
+                safety_notes: &detail.safety_notes,
+                parser_warnings: &detail.parser_warnings,
+                review_reasons: &review_reasons,
+                has_review_queue: !review_reasons.is_empty(),
+                has_duplicate: detail.duplicates_count > 0,
+                watch_status: detail.watch_result.as_ref().map(|result| result.status.clone()),
+            });
 
             // Phase 5an: resolve thumbnails on-demand if they were deferred during scan.
             // During scan, thumbnails are skipped (THUMBNAIL_DEFERRED=true) to avoid

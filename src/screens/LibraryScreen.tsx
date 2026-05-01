@@ -762,6 +762,13 @@ export function LibraryScreen({
   
   const hasVersionWatchInfo = Boolean(selected?.installedVersionSummary);
   const updatesTarget = selected ? getUpdatesWorkspaceTarget(selected) : null;
+  const needsReviewSignals = selected ? getNeedsReviewSignals(selected) : [];
+  const canOpenNeedsReview = Boolean(
+    selected &&
+      (needsReviewSignals.length > 0 ||
+        selected.safetyNotes.length > 0 ||
+        selected.parserWarnings.length > 0),
+  );
   const isCasualView = userView === "beginner";
   // Tracks every active narrowing dimension so the reset button and badge are honest.
   const hasActiveFilters =
@@ -1285,13 +1292,67 @@ export function LibraryScreen({
                   ? "Bundle grouping, warnings, and parser notes."
                   : "Shows grouped files and any warning notes that matter for normal play.",
                 badge:
-                  selected.safetyNotes.length > 0
-                    ? `${selected.safetyNotes.length} warning${selected.safetyNotes.length === 1 ? "" : "s"}`
-                    : selected.bundleName
-                      ? "bundled"
-                      : null,
+                  (selected.problemSignals?.filter((signal) => signal.destination !== "duplicates" && signal.destination !== "updates").length ?? 0) > 0
+                    ? `${selected.problemSignals?.filter((signal) => signal.destination !== "duplicates" && signal.destination !== "updates").length} signal${(selected.problemSignals?.filter((signal) => signal.destination !== "duplicates" && signal.destination !== "updates").length ?? 0) === 1 ? "" : "s"}`
+                    : selected.safetyNotes.length > 0
+                      ? `${selected.safetyNotes.length} warning${selected.safetyNotes.length === 1 ? "" : "s"}`
+                      : selected.bundleName
+                        ? "bundled"
+                        : null,
                 children: (
                   <>
+                    {(selected.problemSignals?.filter((signal) => signal.destination !== "duplicates" && signal.destination !== "updates").length ?? 0) > 0 ? (
+                      <div className="detail-block">
+                        <div className="section-label">
+                          {userView === "beginner" ? "Signals" : "Problem signals"}
+                        </div>
+                        <div className="detail-list">
+                          {selected.problemSignals
+                            ?.filter((signal) => signal.destination !== "duplicates" && signal.destination !== "updates")
+                            .map((signal) => (
+                              <div key={`${signal.signalType}-${signal.shortLabel}`} className="detail-row detail-row--block">
+                                <span>{signal.shortLabel}</span>
+                                <strong>{signal.explanation}</strong>
+                                {signal.evidence.length ? (
+                                  <div className="tag-list">
+                                    {signal.evidence.map((item) => (
+                                      <span
+                                        key={`${signal.signalType}-${item}`}
+                                        className={signal.severity === "warning" || signal.severity === "severe" ? "warning-tag" : "ghost-chip"}
+                                      >
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))}
+                        </div>
+                        {canOpenNeedsReview ? (
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => {
+                              if (!selected) {
+                                return;
+                              }
+
+                              if (onNavigateWithParams) {
+                                onNavigateWithParams("review", undefined, undefined, selected.id);
+                                return;
+                              }
+
+                              onNavigate("review");
+                            }}
+                            style={{ marginTop: "0.5rem" }}
+                          >
+                            <ExternalLink size={12} strokeWidth={2} />
+                            Open Needs Review
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     {selected.bundleName ? (
                       <div className="detail-block">
                         <div className="section-label">
@@ -1869,6 +1930,22 @@ export function LibraryScreen({
             selectedFile={selected}
             onOpenInspectDetails={() => setActiveLibrarySheet("inspect")}
             onOpenHealthDetails={() => setActiveLibrarySheet("health")}
+            onOpenNeedsReview={
+              canOpenNeedsReview
+                ? () => {
+                    if (!selected) {
+                      return;
+                    }
+
+                    if (onNavigateWithParams) {
+                      onNavigateWithParams("review", undefined, undefined, selected.id);
+                      return;
+                    }
+
+                    onNavigate("review");
+                  }
+                : undefined
+            }
             onOpenEditDetails={() => setActiveLibrarySheet("edit")}
             onOpenUpdates={() => {
               if (!selected || !onNavigateWithParams || !updatesTarget) {
@@ -2284,6 +2361,12 @@ function versionConfidenceLabel(confidence: VersionConfidence) {
     default:
       return "Unknown";
   }
+}
+
+function getNeedsReviewSignals(file: FileDetail): NonNullable<FileDetail["problemSignals"]> {
+  return (file.problemSignals ?? []).filter(
+    (signal) => signal.destination === "review" && signal.showInNeedsReview,
+  );
 }
 
 function getUpdatesWorkspaceTarget(file: FileDetail): {

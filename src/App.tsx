@@ -159,6 +159,10 @@ interface UpdatesNavigationParams {
   fileId?: number;
 }
 
+interface ReviewNavigationParams {
+  fileId?: number;
+}
+
 function resolveUpdatesParams(): UpdatesNavigationParams {
   const params = new URLSearchParams(globalThis.location?.search ?? "");
   const mode = params.get("mode") as "tracked" | "setup" | "review" | null;
@@ -178,6 +182,14 @@ function resolveUpdatesParams(): UpdatesNavigationParams {
       filter === "all"
         ? filter
         : undefined,
+    fileId: Number.isFinite(fileId) ? fileId : undefined,
+  };
+}
+
+function resolveReviewParams(): ReviewNavigationParams {
+  const fileIdValue = new URLSearchParams(globalThis.location?.search ?? "").get("fileId");
+  const fileId = fileIdValue ? Number(fileIdValue) : Number.NaN;
+  return {
     fileId: Number.isFinite(fileId) ? fileId : undefined,
   };
 }
@@ -219,6 +231,7 @@ function AppShell({
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
+  const [reviewParams, setReviewParams] = useState(resolveReviewParams());
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
   const screenFrameRef = useRef<HTMLDivElement | null>(null);
@@ -284,6 +297,12 @@ function AppShell({
     document.documentElement.dataset.userView = experienceMode;
   }, [experienceMode]);
 
+  useEffect(() => {
+    if (screen !== "review" && reviewParams.fileId !== undefined) {
+      setReviewParams({});
+    }
+  }, [screen, reviewParams.fileId]);
+
   const handleScanEvent = useEffectEvent((progress: ScanProgress) => {
     setScanProgress(progress);
   });
@@ -309,6 +328,9 @@ function AppShell({
     ) => {
       if (targetScreen === "updates") {
         setUpdatesParams({ mode, filter, fileId });
+      }
+      if (targetScreen === "review") {
+        setReviewParams({ fileId });
       }
       setScreen(targetScreen);
     },
@@ -647,6 +669,7 @@ function AppShell({
         refreshVersion={workspaceVersions.review}
         onNavigate={setScreen}
         userView={userView}
+        initialFileId={reviewParams.fileId}
       />
     );
 
