@@ -524,6 +524,49 @@ pub struct CategoryOverrideInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ProblemSignalSeverity {
+    Info,
+    Caution,
+    Warning,
+    Severe,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProblemSignalProofLevel {
+    Confirmed,
+    Detected,
+    Inferred,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemSignalDestination {
+    Review,
+    Duplicates,
+    Updates,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProblemSignal {
+    pub signal_type: String,
+    pub severity: ProblemSignalSeverity,
+    pub proof_level: ProblemSignalProofLevel,
+    pub short_label: String,
+    pub explanation: String,
+    pub source: String,
+    pub evidence: Vec<String>,
+    pub destination: Option<ProblemSignalDestination>,
+    pub show_in_library: bool,
+    pub show_in_inspector: bool,
+    pub show_in_more_details: bool,
+    pub show_in_needs_review: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LibraryFileRow {
     pub id: i64,
     pub filename: String,
@@ -564,6 +607,8 @@ pub struct LibraryFileRow {
     /// Window COUNT over bundle_id partition — zero-cost per row.
     #[serde(default)]
     pub same_pack_peer_count: i64,
+    #[serde(default)]
+    pub primary_problem_signal: Option<ProblemSignal>,
 }
 
 /// Lightweight folder tree metadata — folder structure only, NO file rows.
@@ -808,6 +853,8 @@ pub struct FileDetail {
     /// Installed version string, if this file has a watch source with version data.
     #[serde(default)]
     pub installed_version: Option<String>,
+    #[serde(default)]
+    pub problem_signals: Vec<ProblemSignal>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -63,6 +63,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { LibraryTopStrip } from "./library/LibraryTopStrip";
 import { FolderTreePane } from "./library/FolderTreePane";
 import { FolderContentPane } from "./library/FolderContentPane";
+import { ActionPreflightDetail, buildFileActionPreflight } from "./library/actionPreflight";
 import type { FolderNode } from "./library/folderTree";
 import type { FolderTreeMetadata, FolderTreeNode } from "../lib/types";
 
@@ -798,6 +799,10 @@ export function LibraryScreen({
     () => (selected && rows ? computeDetailLibraryRelationship(selected, rows.items) : null),
     [selected, rows],
   );
+  const selectedPreflight = useMemo(
+    () => (selected ? buildFileActionPreflight(selected, relationship, "change") : null),
+    [selected, relationship],
+  );
   const folderName = useMemo(
     () => (selected ? extractParentFolder(selected.path) : null),
     [selected],
@@ -1168,6 +1173,54 @@ export function LibraryScreen({
             </>
           ),
         },
+        ...(selectedPreflight && selectedPreflight.signals.length > 0
+          ? [
+              {
+                id: "preflight",
+                label: "Before you change this file",
+                hint:
+                  "Preflight notes before removing, moving, disabling, or replacing this file. Calm guidance only — not dependency proof.",
+                defaultCollapsed: false,
+                children: (
+                  <ActionPreflightDetail
+                    preflight={selectedPreflight}
+                    onOpenNeedsReview={
+                      canOpenNeedsReview
+                        ? () => {
+                            if (!selected) {
+                              return;
+                            }
+
+                            if (onNavigateWithParams) {
+                              onNavigateWithParams("review", undefined, undefined, selected.id);
+                              return;
+                            }
+
+                            onNavigate("review");
+                          }
+                        : undefined
+                    }
+                    onOpenDuplicates={
+                      onNavigateDuplicates && selected
+                        ? () => onNavigateDuplicates([selected.id])
+                        : undefined
+                    }
+                    onOpenUpdates={
+                      selected && onNavigateWithParams && updatesTarget
+                        ? () =>
+                            onNavigateWithParams(
+                              "updates",
+                              updatesTarget.mode,
+                              updatesTarget.filter,
+                              selected.id,
+                            )
+                        : undefined
+                    }
+                  />
+                ),
+              },
+            ]
+          : []),
         ...(hasVersionWatchInfo || selected
           ? [
               {
@@ -1599,13 +1652,13 @@ export function LibraryScreen({
             // Seasoned: + bundle info + watch signals (versionSignals)
             // Creator: + watch capability + last-checked-at
             if (isCasualView) {
-              return ["safety", "updatesHint"].includes(section.id);
+              return ["preflight", "safety", "updatesHint"].includes(section.id);
             }
             if (isPowerView) {
-              return ["safety", "updatesHint", "facts", "tray-context", "whats-inside", "attribution", "compatibility"].includes(section.id);
+              return ["preflight", "safety", "updatesHint", "facts", "tray-context", "whats-inside", "attribution", "compatibility"].includes(section.id);
             }
             // Seasoned
-            return ["safety", "updatesHint"].includes(section.id);
+            return ["preflight", "safety", "updatesHint"].includes(section.id);
           }
 
           if (activeLibrarySheet === "inspect") {
@@ -1944,6 +1997,11 @@ export function LibraryScreen({
 
                     onNavigate("review");
                   }
+                : undefined
+            }
+            onOpenDuplicates={
+              onNavigateDuplicates && selected
+                ? () => onNavigateDuplicates([selected.id])
                 : undefined
             }
             onOpenEditDetails={() => setActiveLibrarySheet("edit")}

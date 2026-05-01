@@ -268,6 +268,69 @@ export interface RelationshipCue {
   relatedCount?: number;
 }
 
+export type ProblemSignalSeverity = "info" | "caution" | "warning" | "severe";
+export type ProblemSignalProofLevel = "confirmed" | "detected" | "inferred" | "unknown";
+export type ProblemSignalDestination = "review" | "duplicates" | "updates";
+
+export interface ProblemSignal {
+  signalType: string;
+  severity: ProblemSignalSeverity;
+  proofLevel: ProblemSignalProofLevel;
+  shortLabel: string;
+  explanation: string;
+  source: string;
+  evidence: string[];
+  destination: ProblemSignalDestination | null;
+  showInLibrary: boolean;
+  showInInspector: boolean;
+  showInMoreDetails: boolean;
+  showInNeedsReview: boolean;
+}
+
+export type ActionPreflightActionType =
+  | "change"
+  | "delete"
+  | "disable"
+  | "move"
+  | "organize"
+  | "update"
+  | "replace"
+  | "duplicate_cleanup"
+  | "review"
+  | "open_folder";
+
+export type ActionPreflightSeverity = "info" | "caution" | "warning" | "blocked";
+export type ActionPreflightProofLevel = "confirmed" | "detected" | "inferred" | "unavailable";
+export type ActionPreflightDecision = "allow" | "caution" | "blocked";
+export type ActionPreflightRoute = "review" | "duplicates" | "updates" | "organize";
+
+export interface ActionPreflightSignal {
+  id: string;
+  signalType: string;
+  severity: ActionPreflightSeverity;
+  proofLevel: ActionPreflightProofLevel;
+  label: string;
+  explanation: string;
+  evidence: string[];
+  route: ActionPreflightRoute | null;
+  source: string;
+}
+
+export interface ActionPreflightSummary {
+  actionType: ActionPreflightActionType;
+  fileId: number;
+  filename: string;
+  fileCount: number;
+  decision: ActionPreflightDecision;
+  severity: ActionPreflightSeverity;
+  proofLevel: ActionPreflightProofLevel;
+  recommendedRoute: ActionPreflightRoute | null;
+  title: string;
+  summary: string;
+  disclaimer: string;
+  signals: ActionPreflightSignal[];
+}
+
 export interface LibraryFileRow {
   id: number;
   filename: string;
@@ -298,6 +361,7 @@ export interface LibraryFileRow {
   sameFolderPeerCount?: number;
   /** Same-pack peer count — files in same bundle (from SQL window COUNT). */
   samePackPeerCount?: number;
+  primaryProblemSignal?: ProblemSignal | null;
 }
 
 export interface FolderTreeNode {
@@ -603,6 +667,7 @@ export interface FileDetail extends LibraryFileRow {
   duplicatesCount: number;
   /** Types of duplicates: 'exact', 'filename', 'version'. */
   duplicateTypes: string[];
+  problemSignals?: ProblemSignal[];
   /** Transient: card thumbnail shown immediately while detail query resolves. */
   _cardThumbnail?: string | null;
 }

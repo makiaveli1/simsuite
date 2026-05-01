@@ -23,6 +23,7 @@ import {
   type FolderSummaryData,
   type FolderSummaryMode,
 } from "./libraryDisplay";
+import { ActionPreflightCompact, buildFileActionPreflight } from "./actionPreflight";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, FileRelationship, UserView, WatchStatus } from "../../lib/types";
 
@@ -32,6 +33,7 @@ interface LibraryDetailsPanelProps {
   onOpenInspectDetails: () => void;
   onOpenHealthDetails: () => void;
   onOpenNeedsReview?: () => void;
+  onOpenDuplicates?: () => void;
   onOpenEditDetails: () => void;
   onOpenUpdates: () => void;
   onOpenFolder?: (path: string) => void;
@@ -55,6 +57,7 @@ export function LibraryDetailsPanel({
   onOpenInspectDetails,
   onOpenHealthDetails,
   onOpenNeedsReview,
+  onOpenDuplicates,
   onOpenEditDetails,
   onOpenUpdates,
   onOpenFolder = () => {},
@@ -154,6 +157,7 @@ export function LibraryDetailsPanel({
   // folderName may be passed in or computed fresh from path
   const relationship = relationshipProp ?? computeDetailLibraryRelationship(selectedFile, []);
   const folderName = folderNameProp ?? extractParentFolder(selectedFile.path);
+  const actionPreflight = buildFileActionPreflight(selectedFile, relationship, "change");
 
   // ─── Snapshot — view-aware ───────────────────────────────────────────────
   // Casual: only what matters for a quick read — creator, type, watch
@@ -530,6 +534,14 @@ export function LibraryDetailsPanel({
         ) : null}
       </section>
 
+      <ActionPreflightCompact
+        preflight={actionPreflight}
+        onOpenHealthDetails={onOpenHealthDetails}
+        onOpenNeedsReview={onOpenNeedsReview}
+        onOpenDuplicates={onOpenDuplicates}
+        onOpenUpdates={onOpenUpdates}
+      />
+
       {/* ── Duplicates — shown in seasoned+ ── */}
       {hasDuplicates && !isCasual ? (
         <section className="library-details-card">
@@ -555,33 +567,6 @@ export function LibraryDetailsPanel({
           </div>
         </section>
       ) : null}
-
-      {/* ── Removal caution — shown when file has duplicates or is a script mod ── */}
-      {(() => {
-        const isScriptMod =
-          selectedFile.kind.includes("Script") || /\.ts4script$/i.test(selectedFile.filename);
-        if (!isScriptMod && !(selectedFile.duplicateTypes ?? []).includes("exact")) return null;
-        const warnings: string[] = [];
-        if ((selectedFile.duplicateTypes ?? []).includes("exact")) {
-          warnings.push("This file has a duplicate clue. Compare the matching files before removing either copy.");
-        }
-        if (isScriptMod) {
-          warnings.push("This looks like a script mod. Some mods can rely on script files, so check the mod notes before disabling it.");
-        }
-        return (
-          <section className="library-details-card library-safedelete-warning">
-            <div className="section-label">Check before removing</div>
-            <div className="detail-list">
-              {warnings.map((warning) => (
-                <div key={warning} className="detail-row detail-row--block">
-                  <span>Check first</span>
-                  <strong>{warning}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })()}
 
       {/* ── More actions — view-aware ── */}
       <section className="library-details-card">

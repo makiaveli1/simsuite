@@ -15,6 +15,7 @@ import type {
   FileRelationship,
   LibraryFileRow,
   PreviewSource,
+  ProblemSignalSeverity,
   ProofLevel,
   RelationshipCue,
   RelationshipType,
@@ -173,7 +174,7 @@ export interface LibraryRowModel {
 
 type LibraryCareSummarySource = Pick<
   FileDetail,
-  "installedVersionSummary" | "safetyNotes" | "parserWarnings" | "kind" | "sourceLocation"
+  "installedVersionSummary" | "safetyNotes" | "parserWarnings" | "kind" | "sourceLocation" | "problemSignals"
 >;
 
 export function libraryViewFlags(userView: UserView): LibraryViewFlags {
@@ -272,7 +273,11 @@ export function buildLibraryRowModel(
   const confidence = row.confidence ?? 0;
   const confidenceLevel: LibraryRowModel["confidenceLevel"] =
     confidence >= 0.8 ? "high" : confidence >= 0.55 ? "medium" : "low";
-  const hasIssues = row.safetyNotes.length > 0 || row.parserWarnings.length > 0;
+  const hasIssues = Boolean(
+    (row.primaryProblemSignal && row.primaryProblemSignal.severity !== "info") ||
+      row.safetyNotes.length > 0 ||
+      row.parserWarnings.length > 0,
+  );
 
   const supportingFacts = buildSupportingFacts(row, {
     flags,
@@ -358,7 +363,11 @@ export function buildLibraryCardModel(
   const confidence = row.confidence ?? 0;
   const confidenceLevel: LibraryCardModel["confidenceLevel"] =
     confidence >= 0.8 ? "high" : confidence >= 0.55 ? "medium" : "low";
-  const hasIssues = row.safetyNotes.length > 0 || row.parserWarnings.length > 0;
+  const hasIssues = Boolean(
+    (row.primaryProblemSignal && row.primaryProblemSignal.severity !== "info") ||
+      row.safetyNotes.length > 0 ||
+      row.parserWarnings.length > 0,
+  );
 
   const watchStatusLabel = describeWatchStatus(row.watchStatus);
   const watchStatusTone = watchStatusToneFor(row.watchStatus);
@@ -549,6 +558,12 @@ export function summarizeLibraryCareState(
   }
   if (detail.parserWarnings.length) {
     return "This file has parser warnings worth reviewing.";
+  }
+  const reviewSignal = detail.problemSignals?.find(
+    (signal) => signal.destination !== "duplicates" && signal.destination !== "updates",
+  );
+  if (reviewSignal) {
+    return reviewSignal.explanation;
   }
   if (detail.installedVersionSummary) {
     return "This file has update tracking ready if you want to check it.";
@@ -2263,9 +2278,21 @@ function buildSupportingFacts(
  * Returns the most significant issue for a library item, or null if the item is fine.
  * Priority: safety note > tray > parser warning.
  */
+function problemSignalTone(
+  severity?: ProblemSignalSeverity,
+): "attention" | "muted" {
+  return severity === "warning" || severity === "severe" ? "attention" : "muted";
+}
+
 function computeLibraryHealthIssue(
-  row: Pick<LibraryFileRow, "safetyNotes" | "parserWarnings" | "sourceLocation">,
+  row: Pick<LibraryFileRow, "safetyNotes" | "parserWarnings" | "sourceLocation" | "primaryProblemSignal">,
 ): { label: string; tone: "attention" | "muted" } | null {
+  if (row.primaryProblemSignal?.showInLibrary) {
+    return {
+      label: row.primaryProblemSignal.shortLabel,
+      tone: problemSignalTone(row.primaryProblemSignal.severity),
+    };
+  }
   if (row.safetyNotes.length > 0) {
     return { label: "Needs review", tone: "attention" };
   }

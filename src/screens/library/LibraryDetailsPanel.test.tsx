@@ -237,7 +237,7 @@ it("shows a narrow relationship explanation in the inspector", () => {
   );
 
   expect(screen.getByText(/related/i)).toBeVisible();
-  expect(screen.getByText(/same folder/i)).toBeVisible();
+  expect(screen.getAllByText(/same folder/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/same mods folder/i)).toBeVisible();
   expect(screen.getByText(/confirmed/i)).toBeVisible();
   expect(screen.getByText(/visible-only/i)).toBeVisible();
@@ -245,7 +245,7 @@ it("shows a narrow relationship explanation in the inspector", () => {
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });
 
-it("uses cautious removal wording without claiming dependency proof", () => {
+it("shows action preflight wording without claiming dependency proof", () => {
   render(
     <LibraryDetailsPanel
       userView="standard"
@@ -264,19 +264,51 @@ it("uses cautious removal wording without claiming dependency proof", () => {
           duplicatesCount: 1,
           installedVersionSummary: null,
           watchResult: null,
+          problemSignals: [
+            {
+              signalType: "duplicate_candidate",
+              severity: "caution",
+              proofLevel: "confirmed",
+              shortLabel: "Duplicate candidate",
+              explanation: "SimSuite found another file that matches this one by duplicate rules, so compare before removing anything.",
+              source: "duplicates",
+              evidence: ["Matched by duplicate detector"],
+              destination: "duplicates",
+              showInLibrary: false,
+              showInInspector: true,
+              showInMoreDetails: true,
+              showInNeedsReview: false,
+            },
+            {
+              signalType: "script_mod_caution",
+              severity: "info",
+              proofLevel: "confirmed",
+              shortLabel: "Script mod caution",
+              explanation: "This is a script mod, so check the mod notes before disabling, moving, or deleting it.",
+              source: "file_kind",
+              evidence: ["kind = ScriptMods"],
+              destination: null,
+              showInLibrary: false,
+              showInInspector: true,
+              showInMoreDetails: true,
+              showInNeedsReview: false,
+            },
+          ],
           insights: emptyInsights,
         } as never
       }
       onOpenInspectDetails={() => {}}
       onOpenHealthDetails={() => {}}
+      onOpenNeedsReview={() => {}}
+      onOpenDuplicates={() => {}}
       onOpenEditDetails={() => {}}
       onOpenUpdates={() => {}}
     />,
   );
 
-  expect(screen.getByText(/check before removing/i)).toBeVisible();
-  expect(screen.getByText(/compare the matching files/i)).toBeVisible();
-  expect(screen.getByText(/some mods can rely on script files/i)).toBeVisible();
+  expect(screen.getByText(/before changing/i)).toBeVisible();
+  expect(screen.getByRole("button", { name: /review cautions/i })).toBeVisible();
   expect(screen.queryByText(/break saves/i)).toBeNull();
   expect(screen.queryByText(/mods that depend on it/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });
