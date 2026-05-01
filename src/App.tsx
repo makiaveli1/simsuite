@@ -154,7 +154,7 @@ function resolveInitialScreen(): Screen {
 }
 
 interface UpdatesNavigationParams {
-  mode?: "tracked" | "setup" | "review";
+  mode?: "watching" | "setup" | "attention" | "reminders" | "tracked" | "review";
   filter?: WatchListFilter;
   fileId?: number;
 }
@@ -165,13 +165,25 @@ interface ReviewNavigationParams {
 
 function resolveUpdatesParams(): UpdatesNavigationParams {
   const params = new URLSearchParams(globalThis.location?.search ?? "");
-  const mode = params.get("mode") as "tracked" | "setup" | "review" | null;
+  const mode = params.get("mode") as
+    | "watching"
+    | "setup"
+    | "attention"
+    | "reminders"
+    | "tracked"
+    | "review"
+    | null;
   const filter = params.get("filter") as WatchListFilter | null;
   const fileIdValue = params.get("fileId");
   const fileId = fileIdValue ? Number(fileIdValue) : Number.NaN;
   return {
     mode:
-      mode === "tracked" || mode === "setup" || mode === "review"
+      mode === "watching" ||
+      mode === "setup" ||
+      mode === "attention" ||
+      mode === "reminders" ||
+      mode === "tracked" ||
+      mode === "review"
         ? mode
         : undefined,
     filter:
@@ -322,12 +334,14 @@ function AppShell({
   const navigateWithParams = useEffectEvent(
     (
       targetScreen: Screen,
-      mode?: "tracked" | "setup" | "review",
+      mode?: "watching" | "setup" | "attention" | "reminders" | "tracked" | "review",
       filter?: WatchListFilter,
       fileId?: number,
+      fileIds?: number[],
     ) => {
       if (targetScreen === "updates") {
-        setUpdatesParams({ mode, filter, fileId });
+        const focusedFileId = fileId ?? (fileIds?.length === 1 ? fileIds[0] : undefined);
+        setUpdatesParams({ mode, filter, fileId: focusedFileId });
       }
       if (targetScreen === "review") {
         setReviewParams({ fileId });

@@ -73,7 +73,7 @@ interface LibraryScreenProps {
   /** Navigate to Updates with optional context. */
   onNavigateWithParams?: (
     screen: Screen,
-    mode?: "tracked" | "setup" | "review",
+    mode?: "watching" | "setup" | "attention" | "reminders" | "tracked" | "review",
     filter?: WatchListFilter,
     fileId?: number,
     fileIds?: number[],
@@ -1211,7 +1211,7 @@ export function LibraryScreen({
                             onNavigateWithParams(
                               "updates",
                               updatesTarget.mode,
-                              updatesTarget.filter,
+                              undefined,
                               selected.id,
                             )
                         : undefined
@@ -1316,7 +1316,7 @@ export function LibraryScreen({
                           onNavigateWithParams(
                             "updates",
                             updatesTarget.mode,
-                            updatesTarget.filter,
+                            undefined,
                             selected.id,
                           )
                         }
@@ -2013,7 +2013,7 @@ export function LibraryScreen({
               onNavigateWithParams(
                 "updates",
                 updatesTarget.mode,
-                updatesTarget.filter,
+                undefined,
                 selected.id,
               );
             }}
@@ -2393,13 +2393,13 @@ function formatInstalledVersionValue(value: string | null) {
 function watchStatusLabel(status: NonNullable<FileDetail["watchResult"]>["status"]) {
   switch (status) {
     case "current":
-      return "Up to date";
+      return "No new update found";
     case "exact_update_available":
-      return "Update available";
+      return "Update found";
     case "possible_update":
       return "Possible update";
     case "unknown":
-      return "Unknown";
+      return "Couldn't confirm";
     case "not_watched":
     default:
       return "No update source";
@@ -2428,28 +2428,32 @@ function getNeedsReviewSignals(file: FileDetail): NonNullable<FileDetail["proble
 }
 
 function getUpdatesWorkspaceTarget(file: FileDetail): {
-  mode: "tracked" | "setup" | "review";
-  filter?: WatchListFilter;
+  mode: "watching" | "setup" | "attention" | "reminders";
 } {
   const watchResult = file.watchResult;
 
   if (!watchResult?.sourceKind) {
-    return { mode: "setup", filter: "all" };
+    return { mode: "setup" };
+  }
+
+  if (watchResult.capability === "saved_reference_only") {
+    return { mode: "reminders" };
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return { mode: "attention" };
   }
 
   switch (watchResult.status) {
     case "exact_update_available":
-      return { mode: "tracked", filter: "exact_updates" };
     case "possible_update":
-      return { mode: "tracked", filter: "possible_updates" };
+    case "unknown":
+      return { mode: "attention" };
     case "current":
     case "not_watched":
-      if (watchResult.capability === "provider_required" || !watchResult.canRefreshNow) {
-        return { mode: "review" };
-      }
-      return { mode: "tracked", filter: "all" };
+      return { mode: "watching" };
     default:
-      return { mode: "review" };
+      return { mode: "attention" };
   }
 }
 

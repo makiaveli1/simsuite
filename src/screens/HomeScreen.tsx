@@ -53,7 +53,7 @@ interface HomeScreenProps {
   onNavigate: (screen: Screen) => void;
   onNavigateWithParams: (
     screen: Screen,
-    mode?: "tracked" | "setup" | "review",
+    mode?: "watching" | "setup" | "attention" | "reminders" | "tracked" | "review",
     filter?: WatchListFilter,
   ) => void;
   onScan: () => Promise<void>;
@@ -206,8 +206,10 @@ export function HomeScreen({
     (moduleId) => displayPrefs.visibleModules[moduleId],
   ).filter((moduleId) => allowedModules.includes(moduleId));
   const moduleBands = buildModuleBands(userView, visibleModules);
-  const watchSetupLabel = userView === "beginner" ? "Pages to save" : "Need source setup";
-  const watchFollowupLabel = userView === "beginner" ? "Needs follow-up" : "Watch review";
+  const emphasizedModuleId: HomeModuleId =
+    displayPrefs.focus === "setup" ? "folders" : displayPrefs.focus;
+  const watchSetupLabel = userView === "beginner" ? "Needs source" : "Needs source";
+  const watchFollowupLabel = userView === "beginner" ? "Reminder only" : "Reminder only";
 
   const snapshotRows = [
     ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
@@ -233,9 +235,9 @@ export function HomeScreen({
   const watchRows = [
     ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages that already look like real new versions."],
     ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
-    [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need a saved page first."],
+    [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need one saved update page first."],
     ...(!calmDetails
-      ? [[watchFollowupLabel, (overview?.watchReviewItems ?? 0).toLocaleString(), "Reminder-only or provider-backed pages that stay cautious."]]
+      ? [[watchFollowupLabel, (overview?.watchReviewItems ?? 0).toLocaleString(), "Saved reminder pages and provider-limited sources that still need a human follow-up."]]
       : []),
     ...(!denseDetails
       ? []
@@ -459,9 +461,9 @@ export function HomeScreen({
                     moduleId={moduleId}
                     overview={overview}
                     sourceCount={sourceCount}
-                    activeThemeLabel={activeTheme.label}
                     onNavigate={onNavigate}
                     reducedMotion={Boolean(reducedMotion)}
+                    emphasized={moduleId === emphasizedModuleId}
                   />
                 ))}
             </div>
@@ -503,6 +505,7 @@ export function HomeScreen({
                         label="System health"
                         title="Current system truth"
                         icon={<ShieldCheck size={14} strokeWidth={2} />}
+                        priority={moduleId === emphasizedModuleId}
                       >
                         <div className="health-chip-group">
                           <span
@@ -540,8 +543,9 @@ export function HomeScreen({
                         index={4}
                         moduleId={moduleId}
                         label="Update watch"
-                        title="Watched page summary"
+                        title="Updates workflow summary"
                         icon={<RefreshCw size={14} strokeWidth={2} />}
+                        priority={moduleId === emphasizedModuleId}
                       >
                         {watchRows.map(([label, value, note]) => (
                           <HomeGlanceRow
@@ -570,6 +574,7 @@ export function HomeScreen({
                         icon={<FolderOpen size={14} strokeWidth={2} />}
                         badge={`${sourceCount}/3 ready`}
                         extraClass="home-folders-module"
+                        priority={moduleId === emphasizedModuleId}
                       >
                         <div className="home-folder-list">
                           <HomeFolderRow
@@ -738,6 +743,7 @@ function HomeModuleCard({
   icon,
   badge,
   extraClass,
+  priority = false,
 }: {
   children: ReactNode;
   index: number;
@@ -747,12 +753,13 @@ function HomeModuleCard({
   icon: ReactNode;
   badge?: string;
   extraClass?: string;
+  priority?: boolean;
 }) {
   return (
     <m.section
       className={`panel-card home-module-card home-module-card-${moduleId}${
         extraClass ? ` ${extraClass}` : ""
-      }`}
+      }${priority ? " is-priority" : ""}`}
       {...stagedListItem(index)}
     >
       <div className="panel-heading home-module-heading">
@@ -760,7 +767,10 @@ function HomeModuleCard({
           <span className="section-label">{icon}{label}</span>
           <h2>{title}</h2>
         </div>
-        {badge ? <span className="ghost-chip">{badge}</span> : null}
+        <div className="home-module-heading-meta">
+          {priority ? <span className="home-priority-chip">Focus</span> : null}
+          {badge ? <span className="ghost-chip">{badge}</span> : null}
+        </div>
       </div>
       {children}
     </m.section>
@@ -831,16 +841,16 @@ function CasualCollapsedModuleBand({
   moduleId,
   overview,
   sourceCount,
-  activeThemeLabel,
   onNavigate,
   reducedMotion,
+  emphasized = false,
 }: {
   moduleId: HomeModuleId;
   overview: HomeOverview | null;
   sourceCount: number;
-  activeThemeLabel: string;
   onNavigate: (screen: Screen) => void;
   reducedMotion: boolean;
+  emphasized?: boolean;
 }) {
   const MODULE_META: Record<HomeModuleId, { label: string; icon: ReactNode; tone: "good" | "warn" | "danger" | "neutral" }> = {
     snapshot: {
@@ -905,7 +915,7 @@ function CasualCollapsedModuleBand({
 
   return (
     <m.div
-      className={`casual-collapsed-module ${meta.tone !== "good" ? `is-tone-${meta.tone}` : ""}`}
+      className={`casual-collapsed-module ${meta.tone !== "good" ? `is-tone-${meta.tone}` : ""}${emphasized ? " is-emphasis" : ""}`}
       role="button"
       tabIndex={0}
       onClick={() => onNavigate(NAVIGATE_MAP[moduleId])}

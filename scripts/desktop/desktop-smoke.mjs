@@ -697,43 +697,60 @@ async function verifyOlderVersionItem(driver, partialText) {
 
 async function verifyHomeWatchSummary(driver) {
   await clickButton(driver, "Updates");
+  await waitForAnyText(driver, ["Watched", "Watching"], 30000);
+  await clickUpdatesMode(driver, "Watched");
   await waitForText(driver, "Watched", 30000);
-  await waitForAnyText(driver, ["Update found", "No watched files match this filter."], 30000);
-  await waitForAnyText(driver, ["Possible update", "possible changes"], 30000);
+  await waitForAnyText(driver, ["Update found", "No watched files match this filter.", "No watched files yet."], 30000);
+  await clickUpdatesMode(driver, "Attention needed");
+  await waitForText(driver, "Attention needed", 30000);
+  await waitForAnyText(driver, ["Possible update", "Could not check", "Nothing needs attention right now."], 30000);
 }
 
 async function verifyHomeWatchFocus(driver) {
   await clickButton(driver, "Updates");
+  await waitForAnyText(driver, ["Watched", "Watching"], 30000);
+  await clickUpdatesMode(driver, "Watched");
   await waitForText(driver, "Watched", 30000);
   await waitForAnyText(
     driver,
     [
-      "Watched sources stay together here so updates, cautious results, and recent checks are easy to compare.",
-      "Watched sources stay together here so updates, cautious matches, and unclear checks are easy to compare.",
+      "These files already have a checkable source. Keep the calm stuff here, and push real follow-up into Attention needed.",
+      "No watched files yet.",
     ],
     30000,
   );
 
-  await clickUpdatesMode(driver, "Needs a source");
-  await waitForText(driver, "Needs a source", 30000);
+  await clickUpdatesMode(driver, "Needs source");
+  await waitForText(driver, "Needs source", 30000);
   await waitForAnyText(
     driver,
     [
-      "These files are not being watched yet. Save a source once, or make a manual reminder when SimSuite cannot suggest one safely.",
+      "These files are not being watched yet. Save one source, or leave a reminder if SimSuite cannot check the page safely.",
       "No files currently need a source.",
       "No files currently need source setup.",
     ],
     30000,
   );
 
-  await clickUpdatesMode(driver, "Needs review");
-  await waitForText(driver, "Needs review", 30000);
+  await clickUpdatesMode(driver, "Attention needed");
+  await waitForText(driver, "Attention needed", 30000);
   await waitForAnyText(
     driver,
     [
-      "These saved pages still need manual follow-up because they are reminder-only, provider-limited, or still too unclear to trust.",
-      "Nothing needs review right now.",
-      "No review items match this filter.",
+      "This lane holds update leads, unclear checks, and provider-blocked pages so they do not get buried inside normal watched items.",
+      "Nothing needs attention right now.",
+      "No attention items match this filter.",
+    ],
+    30000,
+  );
+
+  await clickUpdatesMode(driver, "Reminder only");
+  await waitForText(driver, "Reminder only", 30000);
+  await waitForAnyText(
+    driver,
+    [
+      "These pages are saved for manual follow-up. SimSuite keeps them separate so bookmarks do not pretend to be live update checks.",
+      "No reminder-only items match this filter.",
     ],
     30000,
   );
@@ -743,7 +760,7 @@ async function verifyLibraryVersionWatch(driver, genericWatchFile) {
   const genericDisplayLabel = genericWatchFile.replace(/\.package$/i, "").replaceAll("_", " ");
   try {
     await ensureLibraryIndexed(driver, []);
-    await waitForAnyText(driver, ["Has Updates", "Needs review", "Not Tracked"], 30000);
+    await waitForAnyText(driver, ["Update found", "Possible update", "No update source", "Couldn't confirm"], 30000);
     await waitForText(driver, genericDisplayLabel, 30000);
   } catch (error) {
     await dumpBodyText(driver, "library-version-watch-failure");
@@ -755,7 +772,7 @@ async function verifyLibraryWatchSaveClear(driver, genericWatchFile) {
   try {
     await ensureLibraryIndexed(driver, []);
     await clickButton(driver, "Updates");
-    await waitForAnyText(driver, ["Watched", "Needs a source", "Needs review"], 30000);
+    await waitForAnyText(driver, ["Watched", "Needs source", "Attention needed", "Reminder only"], 30000);
 
     const libraryRows = await invokeTauriCommand(driver, "list_library_files", {
       query: { limit: 100, offset: 0 },

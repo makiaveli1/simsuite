@@ -298,9 +298,9 @@ export function screenHelperLine(
       power: "Use the full file desk for paths, clues, confidence, and learned overrides.",
     },
     updates: {
-      beginner: "Check your tracked mods for updates and set up new ones.",
-      standard: "Review tracked mods, set up new watch sources, and check for updates.",
-      power: "Manage watch sources, review uncertain sources, and refresh all tracked mods.",
+      beginner: "See which files need a source, which ones are watched, and which ones need a closer update check.",
+      standard: "Manage watch sources, review cautious update states, and check watched pages without pretending everything is automatic.",
+      power: "Run the full trust-first updates desk: source setup, cautious review, watched checks, and manual follow-up lanes.",
     },
     creatorAudit: {
       beginner: "Fix creator names in groups so you do not have to sort one file at a time.",
