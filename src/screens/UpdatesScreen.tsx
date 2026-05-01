@@ -36,6 +36,7 @@ import {
 } from "../lib/uiLanguage";
 import type {
   FileDetail,
+  LibraryFileRow,
   LibraryWatchListItem,
   LibraryWatchListResponse,
   LibraryWatchReviewItem,
@@ -49,6 +50,8 @@ import type {
   WatchSourceKind,
 } from "../lib/types";
 
+const SOURCE_NEEDED_LIMIT = 200;
+
 interface UpdatesScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
@@ -61,6 +64,17 @@ interface UpdatesScreenProps {
 
 type UpdateMode = "tracked" | "setup" | "review";
 type ReviewFilter = "all" | "provider_needed" | "reference_only" | "unknown_result";
+
+type SourceNeededRow = {
+  fileId: number;
+  filename: string;
+  creator: string | null;
+  installedVersion: string | null;
+  subjectLabel: string;
+  suggestedSourceKind: WatchSourceKind | null;
+  setupHint: string;
+  suggestionState: "possible_source" | "no_match";
+};
 
 const WATCH_LIST_FILTERS: Array<{
   id: WatchListFilter;
@@ -101,13 +115,13 @@ function watchStatusIcon(status: WatchResult["status"]) {
 function watchStatusLabel(status: WatchResult["status"], userView: UserView) {
   const labels: Record<WatchResult["status"], { beginner: string; advanced: string }> = {
     exact_update_available: {
-      beginner: "Confirmed update available",
-      advanced: "Exact update available",
+      beginner: "Update found",
+      advanced: "Update found",
     },
     possible_update: { beginner: "Possible update", advanced: "Possible update" },
-    unknown: { beginner: "Still unclear", advanced: "Unknown result" },
-    current: { beginner: "Looks up to date", advanced: "Current" },
-    not_watched: { beginner: "No update source yet", advanced: "No update source" },
+    unknown: { beginner: "Couldn't confirm", advanced: "Couldn't confirm" },
+    current: { beginner: "No new update found", advanced: "Checked recently" },
+    not_watched: { beginner: "No source", advanced: "No source" },
   };
 
   return userView === "beginner" ? labels[status].beginner : labels[status].advanced;
@@ -136,29 +150,31 @@ function watchSourceOriginLabel(origin: WatchResult["sourceOrigin"]) {
 
 function watchCapabilityLabel(watchResult: WatchResult | null, userView: UserView) {
   if (!watchResult?.sourceKind) {
-    return userView === "beginner" ? "No source saved yet" : "No saved source";
+    return userView === "beginner" ? "No source saved yet" : "No source saved";
   }
 
   switch (watchResult.capability) {
     case "can_refresh_now":
-      return userView === "beginner" ? "Can check right now" : "Check now supported";
+      return userView === "beginner"
+        ? "Checks for updates automatically"
+        : "Automatic checks supported";
     case "provider_required":
       return watchResult.providerName
-        ? `${watchResult.providerName} setup needed`
-        : "Provider setup needed";
+        ? `${watchResult.providerName} required`
+        : "Provider required";
     default:
-      return userView === "beginner" ? "Saved as a reminder" : "Reference only";
+      return userView === "beginner" ? "Saved for reminders" : "Reminder only";
   }
 }
 
 function reviewReasonLabel(reason: ReviewFilter, userView: UserView) {
   switch (reason) {
     case "provider_needed":
-      return userView === "beginner" ? "Provider needed" : "Provider needed";
+      return userView === "beginner" ? "Provider required" : "Provider required";
     case "reference_only":
-      return userView === "beginner" ? "Reminder only" : "Reference only";
+      return userView === "beginner" ? "Saved for reminders" : "Reminder only";
     case "unknown_result":
-      return userView === "beginner" ? "Still unclear" : "Unknown result";
+      return userView === "beginner" ? "Couldn't confirm" : "Couldn't confirm";
     default:
       return userView === "beginner" ? "Needs review" : "Review";
   }
@@ -176,26 +192,86 @@ function trackedEmptyMessage(filter: WatchListFilter, userView: UserView) {
   switch (filter) {
     case "exact_updates":
       return userView === "beginner"
-        ? "No confirmed updates are waiting right now."
-        : "No tracked exact updates are waiting.";
+        ? "No watched files have a clear update right now."
+        : "No watched files currently show an update.";
     case "possible_updates":
       return userView === "beginner"
         ? "No possible updates are waiting right now."
-        : "No tracked possible updates are waiting.";
+        : "No watched possible updates are waiting.";
     case "unclear":
       return userView === "beginner"
-        ? "No tracked items are unclear right now."
-        : "No tracked unclear results right now.";
+        ? "No watched files are unclear right now."
+        : "No watched unclear results right now.";
     case "all":
       return userView === "beginner"
-        ? "No items are tracked yet."
-        : "No tracked items yet.";
+        ? "No files are being watched yet."
+        : "No watched files yet.";
     default:
       return userView === "beginner"
-        ? "Nothing tracked needs attention right now."
-        : "No tracked items need attention right now.";
+        ? "Nothing being watched needs attention right now."
+        : "No watched files need attention right now.";
   }
 }
+
+function sourceBehaviorSummary(watchResult: WatchResult | null, userView: UserView) {
+  if (!watchResult?.sourceKind) {
+    return userView === "beginner" ? "No source is saved yet." : "No source is saved yet.";
+  }
+
+  if (watchResult.capability === "can_refresh_now") {
+    return userView === "beginner"
+      ? "SimSuite can check this source automatically when you ask."
+      : "This source supports explicit checks.";
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return userView === "beginner"
+      ? "This source is saved, but SimSuite cannot check it automatically yet."
+      : "This source is saved, but provider support is still required.";
+  }
+
+  return userView === "beginner"
+    ? "This source is saved for manual checks and reminders."
+    : "This source is reminder-only today.";
+}
+
+function deriveSourceClues(detail: FileDetail | null) {
+  if (!detail) {
+    return [] as string[];
+  }
+
+  const clues: string[] = [];
+  if (detail.creator?.trim()) clues.push("Creator clue");
+  if (detail.installedVersionSummary?.version?.trim()) clues.push("Version clue");
+  if (detail.insights.scriptNamespaces.length) clues.push("Script clue");
+  if (detail.insights.familyHints.length) clues.push("Family clue");
+  if (detail.insights.embeddedNames.length) clues.push("Name clue");
+  return clues.slice(0, 4);
+}
+
+function sourceSuggestionStrength(detail: FileDetail | null, row: SourceNeededRow | null) {
+  if (!row || row.suggestionState === "no_match") {
+    return "No strong match yet";
+  }
+
+  const clueCount = deriveSourceClues(detail).length;
+  if (row.suggestedSourceKind === "exact_page" && clueCount >= 2) {
+    return "Strong match";
+  }
+
+  return "Possible match";
+}
+
+function sourceNeededStatusLabel(row: SourceNeededRow) {
+  return row.suggestionState === "possible_source" ? "Possible source found" : "No match yet";
+}
+
+function sourceNeededEmptyMessage(userView: UserView) {
+  return userView === "beginner"
+    ? "No files currently need a source."
+    : "No files currently need source setup.";
+}
+
 
 export function UpdatesScreen({
   refreshVersion,
@@ -216,10 +292,12 @@ export function UpdatesScreen({
   const [trackedList, setTrackedList] = useState<LibraryWatchListResponse | null>(null);
   const [setupList, setSetupList] = useState<LibraryWatchSetupResponse | null>(null);
   const [reviewList, setReviewList] = useState<LibraryWatchReviewResponse | null>(null);
+  const [sourceNeededRows, setSourceNeededRows] = useState<SourceNeededRow[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileDetail | null>(null);
   const [loadingTracked, setLoadingTracked] = useState(false);
   const [loadingSetup, setLoadingSetup] = useState(false);
   const [loadingReview, setLoadingReview] = useState(false);
+  const [focusedFileId, setFocusedFileId] = useState<number | null>(initialFileId ?? null);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [watchEditing, setWatchEditing] = useState(false);
   const [watchSourceKind, setWatchSourceKind] = useState<WatchSourceKind>("exact_page");
@@ -242,6 +320,10 @@ export function UpdatesScreen({
       setFilter(initialFilter);
     }
   }, [initialFilter]);
+
+  useEffect(() => {
+    setFocusedFileId(initialFileId ?? null);
+  }, [initialFileId]);
 
   useEffect(() => {
     if (mode === "tracked") {
@@ -288,8 +370,39 @@ export function UpdatesScreen({
     }
 
     try {
-      const result = await api.listLibraryWatchSetupItems();
+      const [result, libraryResult] = await Promise.all([
+        api.listLibraryWatchSetupItems(),
+        api.listLibraryFiles({
+          watchFilter: "not_tracked",
+          limit: SOURCE_NEEDED_LIMIT,
+          includePreviews: false,
+        }),
+      ]);
       setSetupList(result);
+
+      const suggestionMap = new Map(result.items.map((item) => [item.fileId, item]));
+      const merged = libraryResult.items
+        .filter(
+          (row) =>
+            row.sourceLocation !== "tray" &&
+            ["package", "ts4script"].includes(row.extension.replace(/^\./, "").toLowerCase()),
+        )
+        .map((row) => {
+          const suggestion = suggestionMap.get(row.id);
+          return {
+            fileId: row.id,
+            filename: row.filename,
+            creator: row.creator,
+            installedVersion: row.installedVersion ?? null,
+            subjectLabel: suggestion?.subjectLabel ?? row.filename.replace(/\.[^.]+$/, ""),
+            suggestedSourceKind: suggestion?.suggestedSourceKind ?? null,
+            setupHint:
+              suggestion?.setupHint ??
+              "SimSuite does not have a strong source suggestion yet. Add a manual page or keep this as a reminder.",
+            suggestionState: suggestion ? "possible_source" : "no_match",
+          } satisfies SourceNeededRow;
+        });
+      setSourceNeededRows(merged);
     } catch (error) {
       console.error("Could not load setup items.", error);
     } finally {
@@ -353,22 +466,27 @@ export function UpdatesScreen({
   }
 
   async function handleSelectTrackedItem(item: LibraryWatchListItem) {
+    setFocusedFileId(null);
     await loadSelectedFile(item.fileId);
   }
 
-  async function handleSelectSetupItem(item: LibraryWatchSetupItem) {
+  async function handleSelectSetupItem(item: SourceNeededRow) {
+    setFocusedFileId(null);
     await loadSelectedFile(item.fileId, {
       edit: true,
-      sourceKind: item.suggestedSourceKind,
+      sourceKind: item.suggestedSourceKind ?? "exact_page",
       sourceLabel:
         item.suggestedSourceKind === "creator_page"
           ? item.creator ?? item.subjectLabel
-          : item.subjectLabel,
+          : item.suggestedSourceKind
+            ? item.subjectLabel
+            : item.creator ?? item.subjectLabel,
       sourceUrl: "",
     });
   }
 
   async function handleSelectReviewItem(item: LibraryWatchReviewItem) {
+    setFocusedFileId(null);
     await loadSelectedFile(item.fileId);
   }
 
@@ -480,12 +598,12 @@ export function UpdatesScreen({
       onDataChanged?.();
       const checkedLabel =
         summary.checkedSubjects === 1
-          ? "Checked 1 tracked page."
-          : `Checked ${summary.checkedSubjects} tracked pages.`;
+          ? "Checked 1 watched source."
+          : `Checked ${summary.checkedSubjects} watched sources.`;
       const updateLabel =
         summary.exactUpdateItems === 1
-          ? "1 confirmed update found."
-          : `${summary.exactUpdateItems} confirmed updates found.`;
+          ? "1 update found."
+          : `${summary.exactUpdateItems} updates found.`;
       setMessage(`${checkedLabel} ${updateLabel}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not refresh tracked pages.");
@@ -499,7 +617,7 @@ export function UpdatesScreen({
       (item) => reviewFilter === "all" || item.reviewReason === reviewFilter,
     ) ?? [];
   const trackedTotal = trackedList?.total ?? 0;
-  const setupTotal = setupList?.total ?? 0;
+  const setupTotal = sourceNeededRows.length;
   const reviewTotal = reviewList?.total ?? 0;
   const currentModeCount =
     mode === "tracked"
@@ -511,7 +629,7 @@ export function UpdatesScreen({
     mode === "tracked"
       ? trackedList?.items ?? []
       : mode === "setup"
-        ? setupList?.items ?? []
+        ? sourceNeededRows
         : filteredReviewItems;
   const canEditSelectedSource =
     selectedItem?.watchResult?.sourceOrigin !== "built_in_special";
@@ -523,25 +641,27 @@ export function UpdatesScreen({
   const currentFilterLabel =
     mode === "review"
       ? REVIEW_FILTERS.find((item) => item.id === reviewFilter)?.label ?? "Review"
-      : WATCH_LIST_FILTERS.find((item) => item.id === filter)?.label ?? "Tracked";
+      : mode === "setup"
+        ? "Needs a source"
+        : WATCH_LIST_FILTERS.find((item) => item.id === filter)?.label ?? "Watched";
   const modeCopy: Record<
     UpdateMode,
     { title: string; body: string }
   > = {
     tracked: {
-      title: "Tracked pages",
+      title: "Watched",
       body:
-        "Confirmed updates, possible changes, and unclear results stay in one calm list so the next follow-up is easy to spot.",
+        "Watched sources stay together here so updates, cautious results, and recent checks are easy to compare.",
     },
     setup: {
-      title: "Source setup",
+      title: "Needs a source",
       body:
-        "Pick the right page once, save it, and let SimSuite reuse that source on later checks.",
+        "These files are not being watched yet. Save a source once, or make a manual reminder when SimSuite cannot suggest one safely.",
     },
     review: {
       title: "Needs review",
       body:
-        "These pages still need provider setup, are reminder-only, or came back too unclear to trust yet.",
+        "These saved pages still need manual follow-up because they are reminder-only, provider-limited, or still too unclear to trust.",
     },
   };
   const trackedExactCount =
@@ -552,22 +672,28 @@ export function UpdatesScreen({
     0;
   const trackedUnclearCount =
     trackedList?.items.filter((item) => item.watchResult.status === "unknown").length ?? 0;
-  const setupExactPageCount = setupList?.exactPageTotal ?? 0;
-  const setupCreatorPageCount = Math.max(0, setupTotal - setupExactPageCount);
+  const setupPossibleSourceCount = sourceNeededRows.filter(
+    (item) => item.suggestionState === "possible_source",
+  ).length;
+  const setupNoMatchCount = Math.max(0, setupTotal - setupPossibleSourceCount);
+  const selectedSetupRow =
+    mode === "setup" && selectedItem
+      ? sourceNeededRows.find((item) => item.fileId === selectedItem.id) ?? null
+      : null;
   const stageSummaryCards =
     mode === "tracked"
       ? [
           {
-            label: "Confirmed",
+            label: "Update found",
             value: trackedExactCount,
             tone: "good" as const,
             note:
               userView === "beginner"
-                ? "These have a clear update waiting."
-                : "Exact pages with a confirmed newer version.",
+                ? "These watched files have a clear update waiting."
+                : "These watched files have a clear newer version.",
           },
           {
-            label: "Possible",
+            label: "Possible update",
             value: trackedPossibleCount,
             tone: "warn" as const,
             note:
@@ -576,7 +702,7 @@ export function UpdatesScreen({
                 : "The page changed, but the version clue is still cautious.",
           },
           {
-            label: "Unclear",
+            label: "Couldn't confirm",
             value: trackedUnclearCount,
             tone: "muted" as const,
             note:
@@ -588,36 +714,36 @@ export function UpdatesScreen({
       : mode === "setup"
         ? [
             {
-              label: "Exact pages",
-              value: setupExactPageCount,
+              label: "Possible source found",
+              value: setupPossibleSourceCount,
               tone: "good" as const,
               note:
                 userView === "beginner"
-                  ? "Best when one file clearly belongs to one page."
-                  : "Best fit when one installed file maps to one exact release page.",
+                  ? "SimSuite has enough clues to suggest a next source."
+                  : "These items have a clue-backed source suggestion.",
             },
             {
-              label: "Creator pages",
-              value: setupCreatorPageCount,
+              label: "No match yet",
+              value: setupNoMatchCount,
               tone: "muted" as const,
               note:
                 userView === "beginner"
-                  ? "Useful when a creator has many related files."
-                  : "Safer when one source covers a whole creator family.",
+                  ? "These still need a manual page or later follow-up."
+                  : "These items still need a manual source decision.",
             },
             {
-              label: "Still waiting",
+              label: "Needs a source",
               value: setupTotal,
               tone: "warn" as const,
               note:
                 userView === "beginner"
-                  ? "Everything here still needs a saved source."
-                  : "These items stay untracked until a source is saved.",
+                  ? "Everything here still needs one saved source."
+                  : "These items stay unwatched until a source is saved.",
             },
           ]
         : [
             {
-              label: "Provider needed",
+              label: "Provider required",
               value: reviewList?.providerNeededCount ?? 0,
               tone: "warn" as const,
               note:
@@ -626,7 +752,7 @@ export function UpdatesScreen({
                   : "Saved pages that need a provider or login-backed helper path.",
             },
             {
-              label: "Reminder only",
+              label: "Saved for reminders",
               value: reviewList?.referenceOnlyCount ?? 0,
               tone: "muted" as const,
               note:
@@ -635,7 +761,7 @@ export function UpdatesScreen({
                   : "Reference pages that stay as bookmarks instead of refreshable sources.",
             },
             {
-              label: "Unknown result",
+              label: "Couldn't confirm",
               value: reviewList?.unknownResultCount ?? 0,
               tone: "low" as const,
               note:
@@ -656,7 +782,9 @@ export function UpdatesScreen({
           label: mode === "setup" ? "Suggested source" : "Watching",
           value:
             mode === "setup"
-              ? watchSourceKindLabel(watchSourceKind)
+              ? selectedSetupRow?.suggestedSourceKind
+                ? watchSourceKindLabel(selectedSetupRow.suggestedSourceKind)
+                : "No strong match yet"
               : selectedItem.watchResult?.sourceLabel ?? "No source saved",
         },
         {
@@ -686,12 +814,18 @@ export function UpdatesScreen({
 
   useEffect(() => {
     if (!visibleRows.length) {
-      setSelectedItem(null);
-      setWatchEditing(false);
+      if (!focusedFileId) {
+        setSelectedItem(null);
+        setWatchEditing(false);
+      }
       return;
     }
 
-    if (selectedItem && visibleRows.some((item) => item.fileId === selectedItem.id)) {
+    if (
+      selectedItem &&
+      (focusedFileId === selectedItem.id ||
+        visibleRows.some((item) => item.fileId === selectedItem.id))
+    ) {
       return;
     }
 
@@ -701,12 +835,16 @@ export function UpdatesScreen({
     }
 
     if (mode === "setup") {
-      void handleSelectSetupItem(visibleRows[0] as LibraryWatchSetupItem);
+      void handleSelectSetupItem(visibleRows[0] as SourceNeededRow);
       return;
     }
 
     void handleSelectReviewItem(visibleRows[0] as LibraryWatchReviewItem);
-  }, [mode, selectedItem, visibleRows]);
+  }, [focusedFileId, mode, selectedItem, visibleRows]);
+
+  const selectionOutsideCurrentList = Boolean(
+    selectedItem && !visibleRows.some((item) => item.fileId === selectedItem.id),
+  );
 
   return (
     <Workbench threePanel fullHeight className="updates-workbench">
@@ -746,7 +884,7 @@ export function UpdatesScreen({
                   onClick={() => setMode("tracked")}
                 >
                   <Eye size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Tracked</span>
+                  <span className="action-item-label">Watched</span>
                   <span className="action-item-badge">{trackedList?.total ?? 0}</span>
                 </button>
                 <button
@@ -755,8 +893,8 @@ export function UpdatesScreen({
                   onClick={() => setMode("setup")}
                 >
                   <ScanSearch size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Setup</span>
-                  <span className="action-item-badge">{setupList?.total ?? 0}</span>
+                  <span className="action-item-label">Needs a source</span>
+                  <span className="action-item-badge">{setupTotal}</span>
                 </button>
                 <button
                   type="button"
@@ -764,7 +902,7 @@ export function UpdatesScreen({
                   onClick={() => setMode("review")}
                 >
                   <ListChecks size={14} strokeWidth={2} className="action-item-icon" />
-                  <span className="action-item-label">Review</span>
+                  <span className="action-item-label">Needs review</span>
                   <span className="action-item-badge">{reviewList?.total ?? 0}</span>
                 </button>
               </div>
@@ -772,10 +910,16 @@ export function UpdatesScreen({
 
             <div className="updates-rail-section">
               <div className="section-label">
-                {mode === "review" ? "Review filter" : "List filter"}
+                {mode === "review"
+                  ? "Review filter"
+                  : mode === "setup"
+                    ? "Source queue"
+                    : "List filter"}
               </div>
               <div className="updates-filter-list">
-                {(mode === "review" ? REVIEW_FILTERS : WATCH_LIST_FILTERS).map((item) => (
+                {mode === "setup" ? (
+                  <span className="workspace-toggle is-active">All files needing a source</span>
+                ) : (mode === "review" ? REVIEW_FILTERS : WATCH_LIST_FILTERS).map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -812,7 +956,7 @@ export function UpdatesScreen({
                     strokeWidth={2}
                     className={refreshingAll ? "spin" : undefined}
                   />
-                  {refreshingAll ? "Checking..." : "Check tracked now"}
+                  {refreshingAll ? "Checking..." : "Check watched now"}
                 </button>
                 <button
                   type="button"
@@ -838,10 +982,10 @@ export function UpdatesScreen({
             </div>
             <div className="health-chip-group updates-stage-metrics">
               <span className={`health-chip ${mode === "tracked" ? "is-good" : ""}`}>
-                {trackedTotal} tracked
+                {trackedTotal} watched
               </span>
               <span className={`health-chip ${mode === "setup" ? "is-good" : ""}`}>
-                {setupTotal} setup
+                {setupTotal} need source
               </span>
               <span className={`health-chip ${mode === "review" ? "is-warn" : ""}`}>
                 {reviewTotal} review
@@ -874,6 +1018,12 @@ export function UpdatesScreen({
 
         {message ? <div className="updates-inline-message">{message}</div> : null}
 
+        {selectionOutsideCurrentList && selectedItem ? (
+          <div className="updates-inline-message">
+            Focused on <strong>{selectedItem.filename}</strong>. It is not in the current list, but you can still review or save a source below.
+          </div>
+        ) : null}
+
         <div className="updates-stage-body">
           <div className="workbench-panel updates-stage-focus-band">
             <div className="updates-stage-focus">
@@ -896,7 +1046,7 @@ export function UpdatesScreen({
                     ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
                     : mode === "review"
                       ? "This lane keeps the cautious pages separate so reminder links and unclear checks do not get mixed in with confirmed updates."
-                      : "Tracked pages stay together here so confirmed updates, cautious matches, and unclear checks are easy to compare."}
+                      : "Watched sources stay together here so updates, cautious matches, and unclear checks are easy to compare."}
               </p>
             </div>
 
@@ -923,7 +1073,7 @@ export function UpdatesScreen({
 
             {mode === "setup" ? (
               <UpdatesSetupTable
-                items={setupList?.items ?? []}
+                items={sourceNeededRows}
                 loading={loadingSetup}
                 selectedId={selectedItem?.id ?? null}
                 onSelect={handleSelectSetupItem}
@@ -1027,6 +1177,10 @@ export function UpdatesScreen({
                       value={watchSourceOriginLabel(selectedItem.watchResult.sourceOrigin)}
                     />
                     <DetailRow
+                      label="What this source does"
+                      value={sourceBehaviorSummary(selectedItem.watchResult, userView)}
+                    />
+                    <DetailRow
                       label="Last checked"
                       value={formatCheckedAt(selectedItem.watchResult.checkedAt)}
                     />
@@ -1062,6 +1216,40 @@ export function UpdatesScreen({
                 </div>
               </div>
             ) : null}
+
+            <div className="detail-block">
+              <div className="section-label">Source review</div>
+              <div className="detail-list">
+                <DetailRow
+                  label="Match strength"
+                  value={sourceSuggestionStrength(selectedItem, selectedSetupRow)}
+                />
+                <DetailRow
+                  label="Next step"
+                  value={
+                    mode === "setup"
+                      ? selectedSetupRow?.suggestionState === "possible_source"
+                        ? "Review the suggested page, then save it if it looks right."
+                        : "Add a manual page or keep this as a reminder for later."
+                      : mode === "review"
+                        ? "Keep this source only if the limitation is acceptable, or replace it with a better page."
+                        : "Check the result, then decide whether this source still looks trustworthy."
+                  }
+                />
+              </div>
+              {deriveSourceClues(selectedItem).length ? (
+                <div className="tag-list">
+                  {deriveSourceClues(selectedItem).map((entry) => (
+                    <span key={entry} className="ghost-chip">
+                      {entry}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {mode === "setup" && selectedSetupRow ? (
+                <p className="text-muted">{selectedSetupRow.setupHint}</p>
+              ) : null}
+            </div>
 
             <div className="detail-block">
               <div className="section-label">Actions</div>
@@ -1336,7 +1524,7 @@ function updatesGuidanceTitle(mode: UpdateMode, userView: UserView) {
     return userView === "beginner" ? "Why it stays here" : "Why this lane exists";
   }
 
-  return userView === "beginner" ? "How tracked checks work" : "Reading tracked results";
+  return userView === "beginner" ? "How watched checks work" : "Reading watched results";
 }
 
 function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
@@ -1354,7 +1542,7 @@ function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
 
   return userView === "beginner"
     ? "Built-in exact pages can often be checked directly. Creator pages stay more careful because one source may cover several files or versions."
-    : "Tracked results stay together here so exact updates, possible changes, and low-trust checks can be compared side by side without burying the queue.";
+    : "Watched results stay together here so clear updates, possible changes, and low-trust checks can be compared side by side without burying the queue.";
 }
 
 function UpdatesTrackedTable({
@@ -1459,10 +1647,10 @@ function UpdatesSetupTable({
   onSelect,
   userView,
 }: {
-  items: LibraryWatchSetupItem[];
+  items: SourceNeededRow[];
   loading: boolean;
   selectedId: number | null;
-  onSelect: (item: LibraryWatchSetupItem) => Promise<void>;
+  onSelect: (item: SourceNeededRow) => Promise<void>;
   userView: UserView;
 }) {
   return (
@@ -1470,15 +1658,16 @@ function UpdatesSetupTable({
       <thead>
         <tr>
           <th>File</th>
+          <th>Status</th>
           <th>Suggested source</th>
-          <th>Hint</th>
+          <th>Next step</th>
         </tr>
       </thead>
       <tbody>
         {loading ? (
           <tr>
-            <td colSpan={3} className="empty-row">
-              Loading setup items...
+            <td colSpan={4} className="empty-row">
+              Loading source items...
             </td>
           </tr>
         ) : items.length ? (
@@ -1506,27 +1695,30 @@ function UpdatesSetupTable({
                 </div>
               </td>
               <td>
-                <div className="file-title">
-                  <span className="ghost-chip">
-                    {watchSourceKindLabel(item.suggestedSourceKind)}
-                  </span>
-                </div>
+                <span className="warning-tag">{sourceNeededStatusLabel(item)}</span>
                 <div className="updates-table-meta">
                   Installed {formatVersion(item.installedVersion)}
                 </div>
               </td>
               <td>
-                <div className="updates-table-note">{item.setupHint}</div>
+                <div className="file-title">
+                  <span className="ghost-chip">
+                    {item.suggestedSourceKind
+                      ? watchSourceKindLabel(item.suggestedSourceKind)
+                      : "Manual source needed"}
+                  </span>
+                </div>
                 <div className="updates-table-meta">{item.subjectLabel}</div>
+              </td>
+              <td>
+                <div className="updates-table-note">{item.setupHint}</div>
               </td>
             </m.tr>
           ))
         ) : (
           <tr>
-            <td colSpan={3} className="empty-row">
-              {userView === "beginner"
-                ? "Nothing needs source setup right now."
-                : "No files currently need watch setup."}
+            <td colSpan={4} className="empty-row">
+              {sourceNeededEmptyMessage(userView)}
             </td>
           </tr>
         )}
