@@ -214,7 +214,7 @@ export function HomeScreen({
   const snapshotRows = [
     ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
     [userView === "beginner" ? "Needs review" : "Review", (overview?.reviewCount ?? 0).toLocaleString(), "Files that still need a human check."],
-    ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Tracked pages with a clear newer version waiting."],
+    ["Update found", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Tracked pages with clear version evidence for a newer release."],
     ...(!denseDetails
       ? []
       : [[
@@ -233,7 +233,7 @@ export function HomeScreen({
   ] as const;
 
   const watchRows = [
-    ["Confirmed updates", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages that already look like real new versions."],
+    ["Update found", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages with clear evidence for a newer release."],
     ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
     [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need one saved update page first."],
     ...(!calmDetails
@@ -892,10 +892,16 @@ function CasualCollapsedModuleBand({
           : "All clear",
     watch:
       (overview?.exactUpdateItems ?? 0) > 0
-        ? `${overview?.exactUpdateItems} confirmed updates`
+        ? `${overview?.exactUpdateItems} update${(overview?.exactUpdateItems ?? 0) === 1 ? "" : "s"} found`
         : (overview?.possibleUpdateItems ?? 0) > 0
           ? `${overview?.possibleUpdateItems} possible updates`
-          : "No updates",
+          : (overview?.unknownWatchItems ?? 0) > 0
+            ? `${overview?.unknownWatchItems} unclear results`
+            : (overview?.watchReviewItems ?? 0) > 0
+              ? `${overview?.watchReviewItems} reminder-only`
+              : (overview?.watchSetupItems ?? 0) > 0
+                ? `${overview?.watchSetupItems} need a source`
+                : "Nothing flagged",
     folders: `${sourceCount}/3 folders ready`,
     library: overview
       ? `${overview.totalFiles?.toLocaleString() ?? 0} files indexed`
