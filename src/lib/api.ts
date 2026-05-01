@@ -36,6 +36,7 @@ import type {
   FileDetail,
   GuidedInstallPlan,
   HomeOverview,
+  ProblemSignal,
   IgnoreItemsResult,
   InstalledVersionSummary,
   RejectResult,
@@ -5583,6 +5584,175 @@ function queueMockScan() {
   }, 860);
 }
 
+function buildMockReviewProblemSignal(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): ProblemSignal | null {
+  const reviewItem = mockReviewQueue.find((item) => item.fileId === file.id);
+  if (!reviewItem) {
+    return null;
+  }
+
+  const reasonLabel = reviewItem.reason === "unsafe_script_depth"
+    ? "Script file is nested deeper than the safe script depth."
+    : reviewItem.reason === "tray_content_in_mods"
+      ? "Tray content is stored in the Mods folder."
+      : "SimSuite found warning signals that are worth a closer look.";
+
+  return {
+    signalType: "review_suggested",
+    severity: "warning",
+    proofLevel: "confirmed",
+    shortLabel: "Review suggested",
+    explanation: "SimSuite found warning signals that are worth a closer look.",
+    source: "review_queue",
+    evidence: uniqueStrings([
+      reasonLabel,
+      reviewItem.suggestedPath ? `Suggested path: ${reviewItem.suggestedPath}` : "",
+      ...(reviewItem.safetyNotes ?? []),
+    ]),
+    destination: "review",
+    showInLibrary: true,
+    showInInspector: true,
+    showInMoreDetails: true,
+    showInNeedsReview: true,
+  };
+}
+
+function buildMockDuplicateProblemSignal(
+  duplicateCount: number,
+): ProblemSignal | null {
+  if (duplicateCount <= 0) {
+    return null;
+  }
+
+  return {
+    signalType: "duplicate_candidate",
+    severity: "caution",
+    proofLevel: "confirmed",
+    shortLabel: "Duplicate candidate",
+    explanation: "Compare before removing anything.",
+    source: "duplicates",
+    evidence: [
+      duplicateCount === 1
+        ? "Matched by duplicate detector"
+        : `Matched by duplicate detector (${duplicateCount} pairs)`,
+    ],
+    destination: "duplicates",
+    showInLibrary: false,
+    showInInspector: true,
+    showInMoreDetails: true,
+    showInNeedsReview: false,
+  };
+}
+
+function buildMockWatchProblemSignal(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): ProblemSignal | null {
+  const watchResult = buildMockWatchResult(file);
+  if (!watchResult || watchResult.sourceOrigin !== "none") {
+    return null;
+  }
+
+  return {
+    signalType: "no_update_source",
+    severity: "info",
+    proofLevel: "confirmed",
+    shortLabel: "No update source",
+    explanation: "SimSuite is not tracking an update source for this file yet.",
+    source: "watch_status",
+    evidence: ["watch_status = not_watched"],
+    destination: "updates",
+    showInLibrary: false,
+    showInInspector: true,
+    showInMoreDetails: true,
+    showInNeedsReview: false,
+  };
+}
+
+function buildMockStoredInTrayProblemSignal(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): ProblemSignal | null {
+  const storedInTray = file.sourceLocation === "tray" || file.kind.startsWith("Tray") || file.bundleType === "lot" || file.bundleType === "household" || file.bundleType === "room";
+  if (!storedInTray) {
+    return null;
+  }
+
+  return {
+    signalType: "stored_in_tray",
+    severity: "info",
+    proofLevel: "confirmed",
+    shortLabel: "Stored in Tray",
+    explanation: "This file belongs to Tray content, so keep it with the rest of that set.",
+    source: "library_path",
+    evidence: [file.sourceLocation === "tray" ? "Source location = Tray" : "Tray-type content detected"],
+    destination: null,
+    showInLibrary: true,
+    showInInspector: true,
+    showInMoreDetails: true,
+    showInNeedsReview: false,
+  };
+}
+
+function buildMockScriptCautionProblemSignal(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+): ProblemSignal | null {
+  if (file.kind !== "ScriptMods") {
+    return null;
+  }
+
+  const evidence = uniqueStrings([
+    ...file.safetyNotes,
+    ...file.parserWarnings,
+  ]).slice(0, 3);
+
+  if (!evidence.length) {
+    return null;
+  }
+
+  return {
+    signalType: "script_mod_caution",
+    severity: "info",
+    proofLevel: "confirmed",
+    shortLabel: "Script mod caution",
+    explanation: "Script mods can be sensitive to placement, so double-check the notes before changing them.",
+    source: "parser",
+    evidence,
+    destination: null,
+    showInLibrary: false,
+    showInInspector: true,
+    showInMoreDetails: true,
+    showInNeedsReview: false,
+  };
+}
+
+function buildMockProblemSignals(
+  file: Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  >,
+  duplicateCount: number,
+): ProblemSignal[] {
+  return [
+    buildMockReviewProblemSignal(file),
+    buildMockDuplicateProblemSignal(duplicateCount),
+    buildMockWatchProblemSignal(file),
+    buildMockStoredInTrayProblemSignal(file),
+    buildMockScriptCautionProblemSignal(file),
+  ].filter((signal): signal is ProblemSignal => Boolean(signal));
+}
+
 function buildMockLibraryRelationshipState() {
   const libraryFiles = mockFiles.filter((item) => item.sourceLocation !== "downloads");
   const libraryIds = new Set(libraryFiles.map((item) => item.id));
@@ -5619,11 +5789,13 @@ function buildMockLibraryRelationshipState() {
     const parentKey = item.sourceLocation === "mods"
       ? deriveMockRelativeParent(item.path, item.sourceLocation)?.toLowerCase()
       : null;
+    const duplicateCount = duplicateCounts.get(item.id) ?? 0;
 
     return {
       ...item,
-      hasDuplicate: (duplicateCounts.get(item.id) ?? 0) > 0,
-      duplicatesCount: duplicateCounts.get(item.id) ?? 0,
+      problemSignals: buildMockProblemSignals(item, duplicateCount),
+      hasDuplicate: duplicateCount > 0,
+      duplicatesCount: duplicateCount,
       samePackPeerCount: bundleKey
         ? Math.max(
             0,
