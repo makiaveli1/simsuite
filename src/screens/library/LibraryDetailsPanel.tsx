@@ -654,13 +654,13 @@ function DetailLine({ label, value }: { label: string; value: ReactNode }) {
 function watchStatusToLabel(status: WatchStatus | null): string {
   switch (status) {
     case "current":
-      return "Up to date";
+      return "No new update found";
     case "exact_update_available":
-      return "Update available";
+      return "Update found";
     case "possible_update":
-      return "May have update";
+      return "Possible update";
     case "unknown":
-      return "Check updates";
+      return "Couldn't confirm";
     case "not_watched":
     default:
       return "No update source";
