@@ -142,4 +142,5 @@ Verified by the smoke lane:
 
 ## Commit
 
-Pending before commit.
+- Implementation commit: `ff04f8c` (`Improve Library production readiness and runtime proof`).
+- Final docs hash-recording commit is reported in the final response.

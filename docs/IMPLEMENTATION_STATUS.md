@@ -23,6 +23,7 @@ Checks passed:
 - `npm run test:unit` (`19` files, `59` tests)
 - `npm run desktop:proof:fixtures`
 - `npm run desktop:smoke:fixtures`
+- implementation commit: `ff04f8c`
 
 Important remaining gap:
 

@@ -33,6 +33,7 @@
 - `npm run test:unit` passed: 19 files, 59 tests.
 - `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
 - `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed`.
+- Implementation commit: `ff04f8c`.
 
 ### Known Problems / Gaps
 
