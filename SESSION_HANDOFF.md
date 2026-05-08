@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 8, 2026 - Desktop wrapper portability v1)
+
+- **Mode**: code
+- **Focus**: make desktop fixture npm proof wrappers work from native Windows PowerShell and WSL-style paths
+
+### Progress Made
+
+1. **Audited the wrapper failure**:
+   - `git status --short` showed only the pre-existing `src/styles/globals.css` change before sprint edits
+   - the CSS diff is a Home hero metric styling tweak and is unrelated
+   - durable audit/report created in `simsuite-reports/DESKTOP_PROOF_WRAPPER_PORTABILITY_V1_REPORT.md`
+   - reproduced the native PowerShell failure for `npm run desktop:proof:fixtures`
+
+2. **Added a portable launcher**:
+   - new `scripts/desktop/run-powershell-script.mjs`
+   - detects native Windows vs WSL
+   - converts WSL-style repo paths to Windows paths before passing `-File` to Windows PowerShell
+   - validates repo root and script existence
+   - keeps the existing PowerShell proof runners unchanged
+
+3. **Updated desktop fixture npm wrappers**:
+   - `desktop:proof:fixtures`
+   - `desktop:smoke:fixtures`
+   - `desktop:smoke:apply:fixtures`
+   - `desktop:driver:fixtures`
+
+4. **Added focused wrapper tests**:
+   - new `src/lib/runPowershellScript.test.ts`
+   - covers WSL path conversion, native Windows path handling, and rejection of non-WSL Unix paths
+
+### Verification
+
+- `npx vitest run src/lib/runPowershellScript.test.ts` failed first because the wrapper module was missing, then passed after implementation.
+- `npx tsc --noEmit` initially failed on the plain `.mjs` test import, then passed after a narrow import suppression.
+- `npm run test:unit` passed: `16` files, `52` tests.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed against ...\src-tauri\target\release\simsuite.exe`.
+
+### Known Problems / Gaps
+
+- WSL runtime execution was not run in this session; WSL behavior is covered by unit tests only.
+- Git Bash runtime execution was not run.
+- Existing Rust warnings and Vite chunk-size warning remain unchanged.
+- The pre-existing `src/styles/globals.css` change remains unstaged and outside this sprint.
+
+### Next Best Step
+
+1. Run the same two npm wrapper commands from WSL at `/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort` when a WSL shell is available.
+
 ## Current Session (May 8, 2026 - Updates Workflow v1)
 
 - **Mode**: code

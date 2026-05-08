@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (May 8, 2026 - Desktop wrapper portability v1)
+
+This session fixed the desktop fixture npm wrappers so the standard proof commands run from native Windows PowerShell.
+
+Important changes and findings:
+
+- created `simsuite-reports/DESKTOP_PROOF_WRAPPER_PORTABILITY_V1_REPORT.md` with the wrapper audit.
+- reproduced the native Windows failure: npm tried to run `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`, which is not a native Windows path.
+- added `scripts/desktop/run-powershell-script.mjs` as a small launcher for PowerShell proof scripts.
+- the launcher keeps the existing PowerShell proof runners as the actual runners and only fixes the wrapper/path layer.
+- the launcher detects native Windows vs WSL-style shells and converts WSL repo paths such as `/mnt/c/...` to `C:\...` before passing script paths to Windows PowerShell.
+- updated the desktop fixture npm wrappers for proof, smoke, smoke apply, and webdriver fixtures.
+- added `src/lib/runPowershellScript.test.ts` for path conversion and wrapper invocation behavior.
+- left the pre-existing `src/styles/globals.css` Home hero metric styling change unstaged and unrelated.
+
+Checks passed:
+
+- `npx vitest run src/lib/runPowershellScript.test.ts`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`16` files, `52` tests)
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- native Windows PowerShell was runtime-verified.
+- WSL and Git Bash runtime execution were not run in this session.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 8, 2026 - Updates Workflow v1)
 
 This session made the Updates workflow more honest and useful for source setup and review.

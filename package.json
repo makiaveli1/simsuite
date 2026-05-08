@@ -14,12 +14,12 @@
         "tauri:build": "tauri build",
         "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
         "desktop:driver": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-webdriver.ps1",
-        "desktop:driver:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
+        "desktop:driver:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
         "desktop:smoke": "node scripts/desktop/desktop-smoke.mjs",
         "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply",
-        "desktop:smoke:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-smoke.ps1",
-        "desktop:smoke:apply:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
-        "desktop:proof:fixtures": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-desktop-library-proof.ps1",
+        "desktop:smoke:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1",
+        "desktop:smoke:apply:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
+        "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
         "test:unit": "vitest run"
     },
     "dependencies": {
