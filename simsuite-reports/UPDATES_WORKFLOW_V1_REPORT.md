@@ -233,4 +233,4 @@ Branch: `codex/updates-workflow-v1`
 
 ## Commit
 
-- Implementation commit: pending until this report is committed.
+- Implementation commit: `dbd27a4` (`Updates workflow v1 trust states and focused routing`).
