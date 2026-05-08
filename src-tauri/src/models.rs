@@ -32,6 +32,7 @@ pub struct WatchRefreshSummary {
     pub checked_subjects: i64,
     pub exact_update_items: i64,
     pub possible_update_items: i64,
+    pub check_failed_watch_items: i64,
     pub unknown_watch_items: i64,
     pub checked_at: String,
 }
@@ -59,6 +60,7 @@ pub struct HomeOverview {
     pub unsafe_count: i64,
     pub exact_update_items: i64,
     pub possible_update_items: i64,
+    pub check_failed_watch_items: i64,
     pub unknown_watch_items: i64,
     pub watch_review_items: i64,
     pub watch_setup_items: i64,
@@ -426,6 +428,8 @@ pub enum WatchStatus {
     Current,
     ExactUpdateAvailable,
     PossibleUpdate,
+    CheckFailed,
+    ReminderOnly,
     Unknown,
 }
 
@@ -725,6 +729,7 @@ pub struct LibraryWatchSetupResponse {
 pub enum LibraryWatchReviewReason {
     ProviderNeeded,
     ReferenceOnly,
+    CheckFailed,
     UnknownResult,
 }
 
@@ -747,6 +752,7 @@ pub struct LibraryWatchReviewResponse {
     pub total: i64,
     pub provider_needed_count: i64,
     pub reference_only_count: i64,
+    pub check_failed_count: i64,
     pub unknown_result_count: i64,
     pub items: Vec<LibraryWatchReviewItem>,
 }

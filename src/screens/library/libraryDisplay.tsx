@@ -1989,8 +1989,12 @@ export function buildSheetCompatibilitySection(
                 ? "Update may be available"
                 : watch.status === "possible_update"
                   ? "Possible update"
-                  : watch.status === "unknown"
+                  : watch.status === "check_failed"
                     ? "Could not check"
+                    : watch.status === "reminder_only"
+                      ? "Reminder only"
+                      : watch.status === "unknown"
+                        ? "Manual review needed"
                     : "No update source"}
           </strong>
         </div>
@@ -2313,8 +2317,12 @@ function describeWatchStatus(watchStatus?: WatchStatus): string {
       return "Update may be available";
     case "possible_update":
       return "Possible update";
-    case "unknown":
+    case "check_failed":
       return "Could not check";
+    case "reminder_only":
+      return "Reminder only";
+    case "unknown":
+      return "Manual review needed";
     case "not_watched":
     default:
       return "No update source";
@@ -2330,7 +2338,9 @@ function watchStatusToneFor(
     case "exact_update_available":
       return "attention";
     case "possible_update":
+    case "check_failed":
       return "muted";
+    case "reminder_only":
     case "unknown":
     case "not_watched":
     default:

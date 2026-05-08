@@ -1,5 +1,54 @@
 # Session Handoff
 
+## Current Session (May 8, 2026 - Updates State Persistence v1)
+
+- **Mode**: code
+- **Focus**: persist `check_failed` and `reminder_only` update states honestly
+
+### Progress Made
+
+1. **Audited the current implementation**:
+   - created `simsuite-reports/UPDATES_STATE_PERSISTENCE_V1_REPORT.md`
+   - confirmed watch tables already use flexible text statuses, so no migration was needed
+   - confirmed `database/schema/simsuite-v1.sql` is stale and migrations are the source of truth
+   - inspected the pre-existing `src/styles/globals.css` change and left it untouched
+
+2. **Added backend-backed states**:
+   - added `check_failed` and `reminder_only` to `WatchStatus`
+   - saved `reminder_only` for creator/reference-only sources without setting `checked_at`
+   - saved `check_failed` when a supported generic check is attempted and fails
+   - saved special-mod latest check failures as `latest_status = 'check_failed'`
+   - kept provider-required and unsupported sources separate from failed checks
+
+3. **Updated UI and mocks**:
+   - Updates now separates `Could not check` from `Manual review needed`
+   - reminder-only rows render as manual follow-up, not checked results
+   - Library, Home, Settings, Downloads special-mod copy, Field Guide, and mock API data understand the new states
+   - added frontend tests for `check_failed` and `reminder_only` wording
+
+### Verification
+
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npx tsc --noEmit` passed.
+- `npm run test:unit` passed: 16 files, 54 tests.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
+- `cd src-tauri; cargo check` passed with existing Rust warnings.
+- `cd src-tauri; cargo build --release` passed with existing Rust warnings.
+- `npm run test:rust` passed: 221 tests, with existing Rust warnings.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed`.
+
+### Known Problems / Gaps
+
+- Desktop proof/smoke fixture data did not naturally expose a persisted `check_failed` or `reminder_only` state; state-specific runtime behavior is covered by unit tests and mock data.
+- WSL runtime was not run in this sprint.
+- Existing Rust warnings and Vite chunk-size warning remain unchanged.
+- The pre-existing `src/styles/globals.css` change remains unstaged and outside this sprint.
+
+### Next Best Step
+
+1. Add desktop fixture coverage that naturally produces `check_failed` and `reminder_only` update rows.
+
 ## Current Session (May 8, 2026 - Desktop wrapper portability v1)
 
 - **Mode**: code

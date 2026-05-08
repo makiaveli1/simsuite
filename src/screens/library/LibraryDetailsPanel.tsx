@@ -659,8 +659,12 @@ function watchStatusToLabel(status: WatchStatus | null): string {
       return "Update may be available";
     case "possible_update":
       return "Possible update";
-    case "unknown":
+    case "check_failed":
       return "Could not check";
+    case "reminder_only":
+      return "Reminder only";
+    case "unknown":
+      return "Manual review needed";
     case "not_watched":
     default:
       return "No update source";
@@ -674,6 +678,8 @@ function watchStatusToTone(status: WatchStatus | null): "calm" | "attention" | "
     case "exact_update_available":
       return "attention";
     case "possible_update":
+    case "check_failed":
+    case "reminder_only":
     case "unknown":
     case "not_watched":
     default:

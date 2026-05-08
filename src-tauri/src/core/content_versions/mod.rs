@@ -329,6 +329,10 @@ pub fn list_library_watch_review_items(
         .iter()
         .filter(|item| item.review_reason == LibraryWatchReviewReason::ReferenceOnly)
         .count() as i64;
+    let check_failed_count = items
+        .iter()
+        .filter(|item| item.review_reason == LibraryWatchReviewReason::CheckFailed)
+        .count() as i64;
     let unknown_result_count = items
         .iter()
         .filter(|item| item.review_reason == LibraryWatchReviewReason::UnknownResult)
@@ -339,6 +343,7 @@ pub fn list_library_watch_review_items(
         total,
         provider_needed_count,
         reference_only_count,
+        check_failed_count,
         unknown_result_count,
         items,
     })
@@ -382,6 +387,8 @@ pub fn save_watch_source_for_library_file(
         source_url,
     )?;
 
+    persist_initial_watch_source_result(connection, seed_pack, &subject)?;
+
     resolve_watch_result(connection, seed_pack, &subject)
 }
 
@@ -415,6 +422,27 @@ pub fn refresh_watch_source_for_library_file(
     seed_pack: &SeedPack,
     file_id: i64,
 ) -> AppResult<Option<WatchResult>> {
+    refresh_watch_source_for_library_file_with_fetcher(
+        connection,
+        settings,
+        seed_pack,
+        file_id,
+        |source_url, source_label| {
+            special_mod_versions::fetch_supported_watch_latest_from_url(source_url, source_label)
+        },
+    )
+}
+
+fn refresh_watch_source_for_library_file_with_fetcher<FetchLatest>(
+    connection: &Connection,
+    settings: &LibrarySettings,
+    seed_pack: &SeedPack,
+    file_id: i64,
+    fetch_latest: FetchLatest,
+) -> AppResult<Option<WatchResult>>
+where
+    FetchLatest: Fn(&str, Option<&str>) -> AppResult<crate::models::SpecialOfficialLatestInfo>,
+{
     let Some(file_row) = load_library_subject_row(connection, file_id)? else {
         return Ok(None);
     };
@@ -443,21 +471,18 @@ pub fn refresh_watch_source_for_library_file(
     let capability = watch_source_capability(seed_pack, Some(&subject), &source);
     let result = match capability.kind {
         WatchSourceCapabilityKind::CanRefreshNow => {
-            let latest = special_mod_versions::fetch_supported_watch_latest_from_url(
-                &source.source_url,
-                source.source_label.as_deref(),
-            )?;
-            build_generic_watch_result_row(&subject, latest, capability.note)
+            match fetch_latest(&source.source_url, source.source_label.as_deref()) {
+                Ok(latest) => build_generic_watch_result_row(&subject, latest, capability.note),
+                Err(error) => build_check_failed_watch_result_row(&error.to_string()),
+            }
         }
-        WatchSourceCapabilityKind::SavedReferenceOnly
-        | WatchSourceCapabilityKind::ProviderRequired => WatchResultRow {
-            status: WatchStatus::Unknown,
-            latest_version: None,
-            checked_at: Some(chrono::Utc::now().to_rfc3339()),
-            confidence: VersionConfidence::Unknown,
-            note: Some(capability.note),
-            evidence: Vec::new(),
-        },
+        WatchSourceCapabilityKind::SavedReferenceOnly => {
+            build_reminder_only_watch_result_row(capability.note)
+        }
+        WatchSourceCapabilityKind::ProviderRequired => {
+            clear_watch_result_for_subject(connection, &subject.key)?;
+            return resolve_watch_result(connection, seed_pack, &subject);
+        }
     };
     save_watch_result_for_subject(connection, &subject.key, &result)?;
 
@@ -467,7 +492,7 @@ pub fn refresh_watch_source_for_library_file(
 pub fn load_watch_counts(
     connection: &Connection,
     silent_special_mod_updates: bool,
-) -> AppResult<(i64, i64, i64)> {
+) -> AppResult<(i64, i64, i64, i64)> {
     let exact_generic = scalar(
         connection,
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'exact_update_available'",
@@ -476,13 +501,17 @@ pub fn load_watch_counts(
         connection,
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'possible_update'",
     )?;
+    let check_failed_generic = scalar(
+        connection,
+        "SELECT COUNT(*) FROM content_watch_results WHERE status = 'check_failed'",
+    )?;
     let unknown_generic = scalar(
         connection,
         "SELECT COUNT(*) FROM content_watch_results WHERE status = 'unknown'",
     )?;
 
-    let (exact_special, unknown_special) = if silent_special_mod_updates {
-        (0, 0)
+    let (exact_special, check_failed_special, unknown_special) = if silent_special_mod_updates {
+        (0, 0, 0)
     } else {
         let exact_special = scalar(
             connection,
@@ -493,6 +522,13 @@ pub fn load_watch_counts(
                AND latest_status = 'known'
                AND latest_version <> installed_version",
         )?;
+        let check_failed_special = scalar(
+            connection,
+            "SELECT COUNT(*)
+             FROM special_mod_family_state
+             WHERE installed_version IS NOT NULL
+               AND latest_status = 'check_failed'",
+        )?;
         let unknown_special = scalar(
             connection,
             "SELECT COUNT(*)
@@ -500,12 +536,13 @@ pub fn load_watch_counts(
              WHERE installed_version IS NOT NULL
                AND (latest_status = 'unknown' OR latest_status = '')",
         )?;
-        (exact_special, unknown_special)
+        (exact_special, check_failed_special, unknown_special)
     };
 
     Ok((
         exact_generic + exact_special,
         possible_generic,
+        check_failed_generic + check_failed_special,
         unknown_generic + unknown_special,
     ))
 }
@@ -1033,6 +1070,14 @@ fn watch_review_reason_and_hint(
         return Some((LibraryWatchReviewReason::ReferenceOnly, hint));
     }
 
+    if watch_result.status == WatchStatus::CheckFailed {
+        return Some((
+            LibraryWatchReviewReason::CheckFailed,
+            "SimSuite tried to check this source but could not finish. Try again later or review the page manually."
+                .to_owned(),
+        ));
+    }
+
     if watch_result.status == WatchStatus::Unknown {
         return Some((
             LibraryWatchReviewReason::UnknownResult,
@@ -1048,11 +1093,17 @@ fn watch_result_matches_filter(watch_result: &WatchResult, filter: WatchListFilt
     match filter {
         WatchListFilter::Attention => matches!(
             watch_result.status,
-            WatchStatus::ExactUpdateAvailable | WatchStatus::PossibleUpdate | WatchStatus::Unknown
+            WatchStatus::ExactUpdateAvailable
+                | WatchStatus::PossibleUpdate
+                | WatchStatus::CheckFailed
+                | WatchStatus::Unknown
         ),
         WatchListFilter::ExactUpdates => watch_result.status == WatchStatus::ExactUpdateAvailable,
         WatchListFilter::PossibleUpdates => watch_result.status == WatchStatus::PossibleUpdate,
-        WatchListFilter::Unclear => watch_result.status == WatchStatus::Unknown,
+        WatchListFilter::Unclear => matches!(
+            watch_result.status,
+            WatchStatus::CheckFailed | WatchStatus::Unknown
+        ),
         WatchListFilter::All => true,
     }
 }
@@ -1139,7 +1190,8 @@ fn watch_review_priority(reason: &LibraryWatchReviewReason) -> i32 {
     match reason {
         LibraryWatchReviewReason::ProviderNeeded => 0,
         LibraryWatchReviewReason::ReferenceOnly => 1,
-        LibraryWatchReviewReason::UnknownResult => 2,
+        LibraryWatchReviewReason::CheckFailed => 2,
+        LibraryWatchReviewReason::UnknownResult => 3,
     }
 }
 
@@ -1147,9 +1199,11 @@ fn watch_status_priority(status: &WatchStatus) -> usize {
     match status {
         WatchStatus::ExactUpdateAvailable => 0,
         WatchStatus::PossibleUpdate => 1,
-        WatchStatus::Unknown => 2,
-        WatchStatus::NotWatched => 3,
-        WatchStatus::Current => 4,
+        WatchStatus::CheckFailed => 2,
+        WatchStatus::Unknown => 3,
+        WatchStatus::ReminderOnly => 4,
+        WatchStatus::NotWatched => 5,
+        WatchStatus::Current => 6,
     }
 }
 
@@ -1236,6 +1290,14 @@ pub fn save_watch_source_for_subject(
 pub fn clear_watch_source_for_subject(connection: &Connection, subject_key: &str) -> AppResult<()> {
     connection.execute(
         "DELETE FROM content_watch_sources WHERE subject_key = ?1",
+        params![subject_key],
+    )?;
+    Ok(())
+}
+
+fn clear_watch_result_for_subject(connection: &Connection, subject_key: &str) -> AppResult<()> {
+    connection.execute(
+        "DELETE FROM content_watch_results WHERE subject_key = ?1",
         params![subject_key],
     )?;
     Ok(())
@@ -2403,14 +2465,14 @@ fn resolve_watch_result(
         )) = special
         {
             let installed_version = subject.version.value.clone();
-            let status = if latest_status.as_deref() == Some("known") {
-                match (installed_version.as_deref(), latest_version.as_deref()) {
+            let status = match latest_status.as_deref() {
+                Some("known") => match (installed_version.as_deref(), latest_version.as_deref()) {
                     (Some(installed), Some(latest)) if installed == latest => WatchStatus::Current,
                     (Some(_), Some(_)) => WatchStatus::ExactUpdateAvailable,
                     _ => WatchStatus::Unknown,
-                }
-            } else {
-                WatchStatus::Unknown
+                },
+                Some("check_failed") => WatchStatus::CheckFailed,
+                _ => WatchStatus::Unknown,
             };
 
             let mut evidence = Vec::new();
@@ -2597,9 +2659,8 @@ fn special_profile_watch_capability(profile: &GuidedInstallProfileSeed) -> Watch
             } else {
                 WatchSourceCapability {
                     kind: WatchSourceCapabilityKind::SavedReferenceOnly,
-                    note:
-                        "This page is saved, but this site blocks safe automatic checks right now."
-                            .to_owned(),
+                    note: "This page is saved, but this site blocks safe checking right now."
+                        .to_owned(),
                     provider_name: None,
                 }
             }
@@ -2630,7 +2691,7 @@ fn watch_source_capability(
     match source.source_kind {
         WatchSourceKind::CreatorPage => WatchSourceCapability {
             kind: WatchSourceCapabilityKind::SavedReferenceOnly,
-            note: "Creator pages are saved as reminders for now. Automatic creator-page checks are not built yet."
+            note: "Creator pages are saved as reminders for now. SimSuite cannot check creator pages automatically yet."
                 .to_owned(),
             provider_name: None,
         },
@@ -2656,7 +2717,7 @@ fn watch_source_capability(
             if url_host_matches(Some(source.source_url.as_str()), "lot51.cc") {
                 return WatchSourceCapability {
                     kind: WatchSourceCapabilityKind::SavedReferenceOnly,
-                    note: "This page is saved, but this site blocks safe automatic checks right now."
+                    note: "This page is saved, but this site blocks safe checking right now."
                         .to_owned(),
                     provider_name: None,
                 };
@@ -2680,6 +2741,30 @@ fn map_watch_capability_kind(kind: WatchSourceCapabilityKind) -> WatchCapability
     }
 }
 
+fn persist_initial_watch_source_result(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    subject: &VersionSubject,
+) -> AppResult<()> {
+    let Some(source) = load_watch_source_row(connection, &subject.key)? else {
+        clear_watch_result_for_subject(connection, &subject.key)?;
+        return Ok(());
+    };
+
+    let capability = watch_source_capability(seed_pack, Some(subject), &source);
+    match capability.kind {
+        WatchSourceCapabilityKind::SavedReferenceOnly => {
+            let result = build_reminder_only_watch_result_row(capability.note);
+            save_watch_result_for_subject(connection, &subject.key, &result)?;
+        }
+        WatchSourceCapabilityKind::CanRefreshNow | WatchSourceCapabilityKind::ProviderRequired => {
+            clear_watch_result_for_subject(connection, &subject.key)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn build_generic_watch_result_row(
     subject: &VersionSubject,
     latest: crate::models::SpecialOfficialLatestInfo,
@@ -2694,27 +2779,29 @@ fn build_generic_watch_result_row(
     }
 
     let mut note = latest.note.clone().or(Some(fallback_note));
-    let status = if latest.status == "known" {
-        match compare_versions(
-            subject.version.value.is_some(),
-            subject.version.value.as_deref(),
-            None,
-            latest.latest_version.as_deref(),
-            None,
-        ) {
-            SpecialVersionStatus::SameVersion => WatchStatus::Current,
-            SpecialVersionStatus::IncomingNewer => WatchStatus::ExactUpdateAvailable,
-            SpecialVersionStatus::IncomingOlder => {
-                note = Some(
-                    "The saved page looks older than what is installed, so SimSuite is staying cautious."
-                        .to_owned(),
-                );
-                WatchStatus::Unknown
+    let status = match latest.status.as_str() {
+        "known" => {
+            match compare_versions(
+                subject.version.value.is_some(),
+                subject.version.value.as_deref(),
+                None,
+                latest.latest_version.as_deref(),
+                None,
+            ) {
+                SpecialVersionStatus::SameVersion => WatchStatus::Current,
+                SpecialVersionStatus::IncomingNewer => WatchStatus::ExactUpdateAvailable,
+                SpecialVersionStatus::IncomingOlder => {
+                    note = Some(
+                        "The saved page looks older than what is installed, so SimSuite is staying cautious."
+                            .to_owned(),
+                    );
+                    WatchStatus::Unknown
+                }
+                _ => WatchStatus::Unknown,
             }
-            _ => WatchStatus::Unknown,
         }
-    } else {
-        WatchStatus::Unknown
+        "check_failed" => WatchStatus::CheckFailed,
+        _ => WatchStatus::Unknown,
     };
 
     WatchResultRow {
@@ -2726,6 +2813,62 @@ fn build_generic_watch_result_row(
         confidence: confidence_from_signal(latest.confidence),
         note,
         evidence,
+    }
+}
+
+fn build_reminder_only_watch_result_row(note: String) -> WatchResultRow {
+    WatchResultRow {
+        status: WatchStatus::ReminderOnly,
+        latest_version: None,
+        checked_at: None,
+        confidence: VersionConfidence::Unknown,
+        note: Some(note),
+        evidence: vec![
+            "Source saved for reference only. SimSuite cannot check this source automatically yet."
+                .to_owned(),
+        ],
+    }
+}
+
+fn build_check_failed_watch_result_row(error_summary: &str) -> WatchResultRow {
+    let summary = summarize_watch_check_error(error_summary);
+    WatchResultRow {
+        status: WatchStatus::CheckFailed,
+        latest_version: None,
+        checked_at: Some(chrono::Utc::now().to_rfc3339()),
+        confidence: VersionConfidence::Unknown,
+        note: Some(
+            "SimSuite tried to check this source but could not finish. Try again later.".to_owned(),
+        ),
+        evidence: vec![
+            "The saved source check did not finish.".to_owned(),
+            format!("Failure summary: {summary}."),
+        ],
+    }
+}
+
+fn summarize_watch_check_error(error: &str) -> String {
+    let first_line = error
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("network, provider, or response issue");
+    let compact = first_line
+        .replace('\r', " ")
+        .replace('\n', " ")
+        .replace('\t', " ");
+    let mut summary = compact
+        .split_whitespace()
+        .take(24)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if summary.len() > 180 {
+        summary.truncate(180);
+    }
+    if summary.is_empty() {
+        "network, provider, or response issue".to_owned()
+    } else {
+        summary
     }
 }
 
@@ -2870,6 +3013,8 @@ fn parse_watch_status(value: &str) -> WatchStatus {
         "current" => WatchStatus::Current,
         "exact_update_available" => WatchStatus::ExactUpdateAvailable,
         "possible_update" => WatchStatus::PossibleUpdate,
+        "check_failed" => WatchStatus::CheckFailed,
+        "reminder_only" => WatchStatus::ReminderOnly,
         "unknown" => WatchStatus::Unknown,
         _ => WatchStatus::NotWatched,
     }
@@ -2881,6 +3026,8 @@ fn watch_status_label(value: &WatchStatus) -> &'static str {
         WatchStatus::Current => "current",
         WatchStatus::ExactUpdateAvailable => "exact_update_available",
         WatchStatus::PossibleUpdate => "possible_update",
+        WatchStatus::CheckFailed => "check_failed",
+        WatchStatus::ReminderOnly => "reminder_only",
         WatchStatus::Unknown => "unknown",
     }
 }
@@ -2969,8 +3116,8 @@ mod tests {
     use super::{
         clear_watch_source_for_library_file, list_auto_refreshable_watch_file_ids,
         list_library_watch_items, list_library_watch_review_items, list_library_watch_setup_items,
-        refresh_watch_source_for_library_file, resolve_download_item_version,
-        save_watch_source_for_library_file, CompareDetailLevel,
+        refresh_watch_source_for_library_file, refresh_watch_source_for_library_file_with_fetcher,
+        resolve_download_item_version, save_watch_source_for_library_file, CompareDetailLevel,
     };
     use crate::{
         database,
@@ -3254,7 +3401,7 @@ mod tests {
         .expect("save watch")
         .expect("watch result");
 
-        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.status, WatchStatus::ReminderOnly);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
         assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
@@ -3269,6 +3416,18 @@ mod tests {
             .note
             .as_deref()
             .is_some_and(|note| note.contains("saved as a reference")));
+
+        let stored_status: String = connection
+            .query_row(
+                "SELECT r.status
+                 FROM content_watch_results r
+                 INNER JOIN content_watch_sources s ON s.subject_key = r.subject_key
+                 WHERE s.anchor_file_id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored reminder-only result");
+        assert_eq!(stored_status, "reminder_only");
     }
 
     #[test]
@@ -3783,7 +3942,7 @@ mod tests {
     }
 
     #[test]
-    fn saving_creator_page_marks_reminder_only_state() {
+    fn saving_creator_page_persists_reminder_only_state() {
         let (connection, seed_pack, settings, file_id) = setup_watch_env();
 
         let watch = save_watch_source_for_library_file(
@@ -3798,15 +3957,28 @@ mod tests {
         .expect("save watch")
         .expect("watch result");
 
-        assert_eq!(watch.status, WatchStatus::NotWatched);
+        assert_eq!(watch.status, WatchStatus::ReminderOnly);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
         assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
+        assert!(watch.checked_at.is_none());
         assert!(watch
             .note
             .as_deref()
             .is_some_and(|note| note.contains("reminders")));
+
+        let stored_status: String = connection
+            .query_row(
+                "SELECT r.status
+                 FROM content_watch_results r
+                 INNER JOIN content_watch_sources s ON s.subject_key = r.subject_key
+                 WHERE s.anchor_file_id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored reminder-only result");
+        assert_eq!(stored_status, "reminder_only");
 
         let refreshable =
             list_auto_refreshable_watch_file_ids(&connection, &seed_pack).expect("targets");
@@ -3861,7 +4033,7 @@ mod tests {
     }
 
     #[test]
-    fn refreshing_creator_page_watch_stays_cautious_without_network_guessing() {
+    fn refreshing_creator_page_watch_keeps_reminder_only_state_without_checking() {
         let (connection, seed_pack, settings, file_id) = setup_watch_env();
 
         save_watch_source_for_library_file(
@@ -3880,20 +4052,20 @@ mod tests {
                 .expect("refresh watch")
                 .expect("watch result");
 
-        assert_eq!(watch.status, WatchStatus::Unknown);
+        assert_eq!(watch.status, WatchStatus::ReminderOnly);
         assert_eq!(watch.source_kind, Some(WatchSourceKind::CreatorPage));
         assert_eq!(watch.source_origin, WatchSourceOrigin::SavedByUser);
         assert_eq!(watch.capability, WatchCapability::SavedReferenceOnly);
         assert!(!watch.can_refresh_now);
-        assert!(watch.checked_at.is_some());
+        assert!(watch.checked_at.is_none());
         assert!(watch
             .note
             .as_deref()
-            .is_some_and(|note| note.contains("creator-page checks are not built yet")));
+            .is_some_and(|note| note.contains("cannot check creator pages automatically yet")));
     }
 
     #[test]
-    fn attention_watch_list_keeps_unknown_watch_rows() {
+    fn attention_watch_list_keeps_check_failed_rows() {
         let (connection, seed_pack, settings, file_id) = setup_watch_env();
 
         save_watch_source_for_library_file(
@@ -3901,14 +4073,24 @@ mod tests {
             &settings,
             &seed_pack,
             file_id,
-            WatchSourceKind::CreatorPage,
-            Some("Creator".to_owned()),
-            "https://example.com/creator-page",
+            WatchSourceKind::ExactPage,
+            Some("GitHub release".to_owned()),
+            "https://github.com/example/mod/releases",
         )
         .expect("save watch");
 
-        refresh_watch_source_for_library_file(&connection, &settings, &seed_pack, file_id)
-            .expect("refresh watch");
+        refresh_watch_source_for_library_file_with_fetcher(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            |_url, _label| {
+                Err(crate::error::AppError::Message(
+                    "network timeout".to_owned(),
+                ))
+            },
+        )
+        .expect("refresh watch");
 
         let response = list_library_watch_items(
             &connection,
@@ -3921,7 +4103,125 @@ mod tests {
 
         assert_eq!(response.total, 1);
         assert_eq!(response.items[0].file_id, file_id);
-        assert_eq!(response.items[0].watch_result.status, WatchStatus::Unknown);
+        assert_eq!(
+            response.items[0].watch_result.status,
+            WatchStatus::CheckFailed
+        );
+    }
+
+    #[test]
+    fn supported_watch_failure_persists_check_failed_state() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("GitHub release".to_owned()),
+            "https://github.com/example/mod/releases",
+        )
+        .expect("save watch");
+
+        let watch = refresh_watch_source_for_library_file_with_fetcher(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            |_url, _label| {
+                Err(crate::error::AppError::Message(
+                    "network timeout".to_owned(),
+                ))
+            },
+        )
+        .expect("refresh watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::CheckFailed);
+        assert_eq!(watch.source_kind, Some(WatchSourceKind::ExactPage));
+        assert_eq!(watch.capability, WatchCapability::CanRefreshNow);
+        assert!(watch.checked_at.is_some());
+        assert!(watch
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("could not finish")));
+        assert!(watch
+            .evidence
+            .iter()
+            .any(|item| item.contains("check did not finish")));
+
+        let stored_status: String = connection
+            .query_row(
+                "SELECT r.status
+                 FROM content_watch_results r
+                 INNER JOIN content_watch_sources s ON s.subject_key = r.subject_key
+                 WHERE s.anchor_file_id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored check-failed result");
+        assert_eq!(stored_status, "check_failed");
+
+        let review = list_library_watch_review_items(&connection, &settings, &seed_pack, 8)
+            .expect("watch review list");
+        assert_eq!(review.total, 1);
+        assert_eq!(review.check_failed_count, 1);
+        assert_eq!(
+            review.items[0].review_reason,
+            LibraryWatchReviewReason::CheckFailed
+        );
+    }
+
+    #[test]
+    fn unknown_status_remains_unclear_successful_check_not_failure() {
+        let (connection, seed_pack, settings, file_id) = setup_watch_env();
+
+        save_watch_source_for_library_file(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            WatchSourceKind::ExactPage,
+            Some("GitHub release".to_owned()),
+            "https://github.com/example/mod/releases",
+        )
+        .expect("save watch");
+
+        let watch = refresh_watch_source_for_library_file_with_fetcher(
+            &connection,
+            &settings,
+            &seed_pack,
+            file_id,
+            |_url, _label| {
+                Ok(crate::models::SpecialOfficialLatestInfo {
+                    source_url: Some("https://github.com/example/mod/releases".to_owned()),
+                    download_url: None,
+                    latest_version: None,
+                    checked_at: Some("2026-05-08T00:00:00Z".to_owned()),
+                    confidence: 0.0,
+                    status: "known".to_owned(),
+                    note: Some("No comparable version was found.".to_owned()),
+                })
+            },
+        )
+        .expect("refresh watch")
+        .expect("watch result");
+
+        assert_eq!(watch.status, WatchStatus::Unknown);
+        assert_ne!(watch.status, WatchStatus::CheckFailed);
+
+        let stored_status: String = connection
+            .query_row(
+                "SELECT r.status
+                 FROM content_watch_results r
+                 INNER JOIN content_watch_sources s ON s.subject_key = r.subject_key
+                 WHERE s.anchor_file_id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored unknown result");
+        assert_eq!(stored_status, "unknown");
     }
 
     #[test]

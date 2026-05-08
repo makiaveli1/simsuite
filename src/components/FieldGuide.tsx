@@ -311,7 +311,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "Set up trusted watch sources, separate manual reminders from real checks, and review possible updates without overclaiming.",
       viewCopy(userView, {
         beginner: "See which files need a source, which ones are watched, and which ones need a closer look.",
-        standard: "Manage update sources, watch the checkable pages, and keep manual follow-up separate from live checks.",
+        standard: "Manage update sources, watch the checkable pages, and keep manual follow-up separate from checked results.",
         power: "Full trust-first watch workflow with source setup, attention lanes, reminder pages, and explicit refresh actions.",
       }),
       "Updates desk",
@@ -319,14 +319,14 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       [
         section("What you can do", [
           "See which files still need a source before SimSuite can watch them.",
-          "Save or confirm exact pages and creator pages without pretending they are all auto-checkable.",
+          "Save or confirm exact pages and creator pages without pretending they can all be checked.",
           "Review possible updates, provider-limited pages, and unclear checks in one place.",
         ]),
         section("Modes", [
           "Needs source: Files with no saved update page yet.",
           "Watched: Files with a checkable source and a calmer current state.",
           "Attention needed: Possible updates, provider blocks, and checks that stayed unclear.",
-          "Reminder only: Saved pages that SimSuite keeps as manual follow-up instead of live checks.",
+          "Reminder only: Saved pages that SimSuite keeps as manual follow-up instead of checked results.",
         ]),
       ],
       [

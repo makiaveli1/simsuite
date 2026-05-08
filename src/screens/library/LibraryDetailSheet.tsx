@@ -220,8 +220,10 @@ export function LibraryDetailSheet({
                             {selectedFile.watchResult.status === "current" ? "Checked recently" :
                              selectedFile.watchResult.status === "exact_update_available" ? "Update may be available" :
                              selectedFile.watchResult.status === "possible_update" ? "Possible update" :
+                             selectedFile.watchResult.status === "check_failed" ? "Could not check" :
+                             selectedFile.watchResult.status === "reminder_only" ? "Reminder only" :
                              selectedFile.watchResult.status === "not_watched" ? "No update source" :
-                             selectedFile.watchResult.status === "unknown" ? "Could not check" :
+                             selectedFile.watchResult.status === "unknown" ? "Manual review needed" :
                              selectedFile.watchResult.status}
                           </span>
                         )}

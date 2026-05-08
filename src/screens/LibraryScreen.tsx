@@ -2398,8 +2398,12 @@ function watchStatusLabel(status: NonNullable<FileDetail["watchResult"]>["status
       return "Update may be available";
     case "possible_update":
       return "Possible update";
-    case "unknown":
+    case "check_failed":
       return "Could not check";
+    case "reminder_only":
+      return "Reminder only";
+    case "unknown":
+      return "Manual review needed";
     case "not_watched":
     default:
       return "No update source";
@@ -2447,8 +2451,11 @@ function getUpdatesWorkspaceTarget(file: FileDetail): {
   switch (watchResult.status) {
     case "exact_update_available":
     case "possible_update":
+    case "check_failed":
     case "unknown":
       return { mode: "attention" };
+    case "reminder_only":
+      return { mode: "reminders" };
     case "current":
     case "not_watched":
       return { mode: "watching" };

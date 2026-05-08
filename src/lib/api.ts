@@ -499,6 +499,12 @@ function mockWatchCapability(
   return "saved_reference_only";
 }
 
+function mockInitialWatchStatus(
+  capability: WatchResult["capability"],
+): WatchResult["status"] {
+  return capability === "saved_reference_only" ? "reminder_only" : "not_watched";
+}
+
 function mockWatchProviderName(
   sourceKind: WatchSourceKind,
   sourceUrl: string | null,
@@ -517,7 +523,7 @@ function mockSavedWatchNote(
   const lowerUrl = sourceUrl?.toLowerCase() ?? "";
 
   if (sourceKind === "creator_page") {
-    return "Creator pages are saved as reminders for now. Creator-page live checks are not built yet.";
+    return "Creator pages are saved as reminders for now. SimSuite cannot check creator pages automatically yet.";
   }
 
   if (lowerUrl.includes("curseforge.com/")) {
@@ -525,7 +531,7 @@ function mockSavedWatchNote(
   }
 
   if (lowerUrl.includes("lot51.cc/")) {
-    return "This page is saved, but this site blocks live checks right now.";
+    return "This page is saved, but this site blocks safe checking right now.";
   }
 
   if (mockCanRefreshWatchSource(sourceKind, sourceUrl)) {
@@ -536,7 +542,7 @@ function mockSavedWatchNote(
     return "SimSuite can check this saved page now when you press Check now.";
   }
 
-  return "This page is saved as a reference, but SimSuite cannot check it live yet.";
+  return "This page is saved as a reference, but SimSuite cannot check it automatically yet.";
 }
 
 function buildMockRefreshedWatchResult(
@@ -554,14 +560,19 @@ function buildMockRefreshedWatchResult(
     null;
 
   if (!currentWatch.canRefreshNow) {
+    const reminderOnly = currentWatch.capability === "saved_reference_only";
     return {
       ...currentWatch,
-      status: "unknown",
+      status: reminderOnly ? "reminder_only" : "not_watched",
       latestVersion: null,
-      checkedAt,
+      checkedAt: null,
       confidence: "unknown",
       note: mockSavedWatchNote(currentWatch.sourceKind ?? "exact_page", currentWatch.sourceUrl),
-      evidence: [],
+      evidence: reminderOnly
+        ? [
+            "Source saved for reference only. SimSuite cannot check this source automatically yet.",
+          ]
+        : [],
     };
   }
 
@@ -629,6 +640,7 @@ function mockWatchMatchesFilter(
       return (
         watchResult.status === "exact_update_available" ||
         watchResult.status === "possible_update" ||
+        watchResult.status === "check_failed" ||
         watchResult.status === "unknown"
       );
     case "exact_updates":
@@ -636,7 +648,7 @@ function mockWatchMatchesFilter(
     case "possible_updates":
       return watchResult.status === "possible_update";
     case "unclear":
-      return watchResult.status === "unknown";
+      return watchResult.status === "check_failed" || watchResult.status === "unknown";
     case "all":
       return true;
   }
@@ -648,19 +660,25 @@ function mockWatchStatusPriority(status: WatchResult["status"]) {
       return 0;
     case "possible_update":
       return 1;
-    case "unknown":
+    case "check_failed":
       return 2;
-    case "not_watched":
+    case "unknown":
       return 3;
-    case "current":
+    case "reminder_only":
       return 4;
+    case "not_watched":
+      return 5;
+    case "current":
+      return 6;
   }
 }
 
 function mockWatchNeedsReview(watchResult: WatchResult) {
   return (
     watchResult.sourceOrigin === "saved_by_user" &&
-    (watchResult.capability !== "can_refresh_now" || watchResult.status === "unknown")
+    (watchResult.capability !== "can_refresh_now" ||
+      watchResult.status === "check_failed" ||
+      watchResult.status === "unknown")
   );
 }
 
@@ -677,6 +695,10 @@ function mockWatchReviewReason(
 
   if (watchResult.capability === "saved_reference_only") {
     return "reference_only";
+  }
+
+  if (watchResult.status === "check_failed") {
+    return "check_failed";
   }
 
   if (watchResult.status === "unknown") {
@@ -700,6 +722,10 @@ function mockWatchReviewHint(watchResult: WatchResult) {
       : "This saved page is still reference-only. Review whether it should stay a reminder or be replaced with a safer exact page.";
   }
 
+  if (reviewReason === "check_failed") {
+    return "SimSuite tried to check this source but could not finish. Try again later or review the page manually.";
+  }
+
   if (reviewReason === "unknown_result") {
     return "SimSuite checked this source, but the result is still unclear. Review the page or replace the link.";
   }
@@ -713,8 +739,10 @@ function mockWatchReviewPriority(reason: LibraryWatchReviewReason) {
       return 0;
     case "reference_only":
       return 1;
-    case "unknown_result":
+    case "check_failed":
       return 2;
+    case "unknown_result":
+      return 3;
   }
 }
 
@@ -827,6 +855,8 @@ function buildMockLibraryWatchReviewList(limit = 8): LibraryWatchReviewResponse 
     providerNeededCount: items.filter((item) => item.reviewReason === "provider_needed")
       .length,
     referenceOnlyCount: items.filter((item) => item.reviewReason === "reference_only")
+      .length,
+    checkFailedCount: items.filter((item) => item.reviewReason === "check_failed")
       .length,
     unknownResultCount: items.filter((item) => item.reviewReason === "unknown_result")
       .length,
@@ -1350,6 +1380,23 @@ const mockFiles = ([
       embeddedNames: ["Cozy Kitchen Counter", "Cozy Kitchen Shelf"],
       creatorHints: ["Aharris00britney"],
     },
+    watchResult: {
+      status: "reminder_only",
+      sourceKind: "creator_page",
+      sourceOrigin: "saved_by_user",
+      sourceLabel: "Creator page",
+      sourceUrl: "https://example.com/aharris00",
+      capability: "saved_reference_only",
+      canRefreshNow: false,
+      providerName: null,
+      latestVersion: null,
+      checkedAt: null,
+      confidence: "unknown",
+      note: "Creator pages are saved as reminders for now. SimSuite cannot check creator pages automatically yet.",
+      evidence: [
+        "Source saved for reference only. SimSuite cannot check this source automatically yet.",
+      ],
+    },
   },
   {
     id: 2,
@@ -1376,6 +1423,21 @@ const mockFiles = ([
       scriptNamespaces: ["twistedmexi", "better_exceptions"],
       embeddedNames: ["__init__", "scanner", "ui"],
       creatorHints: ["TwistedMexi"],
+    },
+    watchResult: {
+      status: "check_failed",
+      sourceKind: "exact_page",
+      sourceOrigin: "saved_by_user",
+      sourceLabel: "GitHub releases",
+      sourceUrl: "https://github.com/TwistedMexi/BetterExceptions/releases",
+      capability: "can_refresh_now",
+      canRefreshNow: true,
+      providerName: null,
+      latestVersion: null,
+      checkedAt: "2026-03-11T10:00:00.000Z",
+      confidence: "unknown",
+      note: "SimSuite tried to check this source but could not finish. Try again later.",
+      evidence: ["The saved source check did not finish."],
     },
   },
   {
@@ -3173,17 +3235,22 @@ const mockFiles = ([
       creatorHints: [],
     },
   },
-] as Omit<
-  FileDetail,
-  "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
->[]).map((file) => ({
-  ...file,
-  insights: normalizeMockInsights(file.insights),
-  installedVersionSummary: buildMockInstalledVersionSummary(file),
-  watchResult: buildMockWatchResult(file),
-  creatorLearning: emptyCreatorLearning(),
-  categoryOverride: emptyCategoryOverride(),
-}));
+] as Array<
+  Omit<
+    FileDetail,
+    "creatorLearning" | "categoryOverride" | "installedVersionSummary" | "watchResult"
+  > & { watchResult?: WatchResult | null }
+>).map((file) => {
+  const { watchResult, ...baseFile } = file;
+  return {
+    ...baseFile,
+    insights: normalizeMockInsights(baseFile.insights),
+    installedVersionSummary: buildMockInstalledVersionSummary(baseFile),
+    watchResult: watchResult ?? buildMockWatchResult(baseFile),
+    creatorLearning: emptyCreatorLearning(),
+    categoryOverride: emptyCategoryOverride(),
+  };
+});
 
 const mockReviewQueue: ReviewQueueItem[] = [
   {
@@ -4258,6 +4325,9 @@ function createMockOverview(): HomeOverview {
   const possibleUpdateItems = mockFiles.filter(
     (file) => file.watchResult?.status === "possible_update",
   ).length;
+  const checkFailedWatchItems = mockFiles.filter(
+    (file) => file.watchResult?.status === "check_failed",
+  ).length;
   const unknownWatchItems = mockFiles.filter(
     (file) => file.watchResult?.status === "unknown",
   ).length;
@@ -4280,6 +4350,7 @@ function createMockOverview(): HomeOverview {
     unsafeCount: mockFiles.filter((file) => file.safetyNotes.length > 0).length,
     exactUpdateItems,
     possibleUpdateItems,
+    checkFailedWatchItems,
     unknownWatchItems,
     watchReviewItems,
     watchSetupItems,
@@ -6823,13 +6894,14 @@ async function mockInvoke<T>(
         );
       }
       const canRefreshNow = mockCanRefreshWatchSource(sourceKind, sourceUrl);
+      const capability = mockWatchCapability(sourceKind, sourceUrl);
       next.watchResult = {
-        status: "not_watched",
+        status: mockInitialWatchStatus(capability),
         sourceKind,
         sourceOrigin: "saved_by_user",
         sourceLabel: sourceLabel || null,
         sourceUrl,
-        capability: mockWatchCapability(sourceKind, sourceUrl),
+        capability,
         canRefreshNow,
         providerName: mockWatchProviderName(sourceKind, sourceUrl),
         latestVersion: null,
@@ -6886,13 +6958,14 @@ async function mockInvoke<T>(
           continue;
         }
 
+        const capability = mockWatchCapability(sourceKind, sourceUrl);
         next.watchResult = {
-          status: "not_watched",
+          status: mockInitialWatchStatus(capability),
           sourceKind,
           sourceOrigin: "saved_by_user",
           sourceLabel: sourceLabel || null,
           sourceUrl,
-          capability: mockWatchCapability(sourceKind, sourceUrl),
+          capability,
           canRefreshNow: mockCanRefreshWatchSource(sourceKind, sourceUrl),
           providerName: mockWatchProviderName(sourceKind, sourceUrl),
           latestVersion: null,
@@ -6974,6 +7047,9 @@ async function mockInvoke<T>(
       const possibleUpdateItems = mockFiles.filter(
         (file) => file.watchResult?.status === "possible_update",
       ).length;
+      const checkFailedWatchItems = mockFiles.filter(
+        (file) => file.watchResult?.status === "check_failed",
+      ).length;
       const unknownWatchItems = mockFiles.filter(
         (file) => file.watchResult?.status === "unknown",
       ).length;
@@ -6995,6 +7071,7 @@ async function mockInvoke<T>(
         checkedSubjects,
         exactUpdateItems,
         possibleUpdateItems,
+        checkFailedWatchItems,
         unknownWatchItems,
         checkedAt,
       } as T;

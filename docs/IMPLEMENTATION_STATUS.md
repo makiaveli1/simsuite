@@ -1,5 +1,41 @@
 # SimSuite Implementation Status
 
+## Current session note (May 8, 2026 - Updates State Persistence v1)
+
+This session made the Updates backend state model match the trust-first UI more closely.
+
+Important changes and findings:
+
+- created `simsuite-reports/UPDATES_STATE_PERSISTENCE_V1_REPORT.md` with the audit and implementation notes.
+- confirmed `content_watch_results.status` is flexible text, so no database migration was needed.
+- added persisted `check_failed` for supported checks that SimSuite actually attempted but could not finish.
+- added persisted `reminder_only` for saved reference-only sources.
+- kept `unknown` for unclear/unsupported results rather than true failed checks.
+- kept provider-required sources separate from failed checks.
+- kept CurseForge, generic creator-page checking, scraping, automatic downloads, and automatic replacement out of scope.
+- updated Updates, Library cues, Home counts, Settings watch refresh summaries, Downloads special-mod latest copy, Field Guide wording, TypeScript types, and mock API data.
+- added tests for backend persistence and frontend wording for `check_failed` and `reminder_only`.
+- left the pre-existing `src/styles/globals.css` Home hero metric styling change unstaged and unrelated.
+
+Checks passed:
+
+- `npm run build` with the existing Vite chunk-size warning
+- `npx tsc --noEmit`
+- `npm run test:unit` (`16` files, `54` tests)
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cd src-tauri; cargo check` with existing Rust warnings
+- `cd src-tauri; cargo build --release` with existing Rust warnings
+- `npm run test:rust` (`221` tests, with existing Rust warnings)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- desktop proof/smoke fixture data did not naturally expose a persisted `check_failed` or `reminder_only` state.
+- state-specific UI behavior is covered by unit tests and mock data.
+- WSL runtime execution was not run in this sprint.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 8, 2026 - Desktop wrapper portability v1)
 
 This session fixed the desktop fixture npm wrappers so the standard proof commands run from native Windows PowerShell.

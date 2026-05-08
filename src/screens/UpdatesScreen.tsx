@@ -70,6 +70,7 @@ type AttentionFilter =
   | "update_found"
   | "possible_update"
   | "could_not_check"
+  | "manual_review"
   | "provider_required";
 type ReminderFilter = "all" | "creator_page" | "exact_page";
 type SetupFilter = "all" | "possible_source" | "no_match";
@@ -116,6 +117,7 @@ const ATTENTION_FILTERS: Array<{
   { id: "update_found", label: "Update may be available", beginnerLabel: "Possible update" },
   { id: "possible_update", label: "Possible update", beginnerLabel: "Possible update" },
   { id: "could_not_check", label: "Could not check", beginnerLabel: "Could not check" },
+  { id: "manual_review", label: "Manual review needed", beginnerLabel: "Manual review" },
   { id: "provider_required", label: "Provider required", beginnerLabel: "Provider required" },
 ];
 
@@ -151,6 +153,8 @@ function watchStatusIcon(status: WatchResult["status"]) {
       return <CheckCircle2 className="updates-status-icon updates-status-icon-current" />;
     case "possible_update":
       return <AlertTriangle className="updates-status-icon updates-status-icon-warning" />;
+    case "check_failed":
+      return <AlertTriangle className="updates-status-icon updates-status-icon-warning" />;
     default:
       return <HelpCircle className="updates-status-icon updates-status-icon-muted" />;
   }
@@ -163,7 +167,9 @@ function watchStatusLabel(status: WatchResult["status"], userView: UserView) {
       advanced: "Update may be available",
     },
     possible_update: { beginner: "Possible update", advanced: "Possible update" },
-    unknown: { beginner: "Could not check", advanced: "Could not check" },
+    check_failed: { beginner: "Could not check", advanced: "Could not check" },
+    reminder_only: { beginner: "Reminder only", advanced: "Reminder only" },
+    unknown: { beginner: "Manual review needed", advanced: "Manual review needed" },
     current: { beginner: "No update found", advanced: "Checked recently" },
     not_watched: { beginner: "Check available", advanced: "Check available" },
   };
@@ -232,8 +238,10 @@ function reviewReasonLabel(
       return userView === "beginner" ? "Provider required" : "Provider required";
     case "reference_only":
       return userView === "beginner" ? "Saved for reminders" : "Reminder only";
-    case "unknown_result":
+    case "check_failed":
       return userView === "beginner" ? "Could not check" : "Could not check";
+    case "unknown_result":
+      return userView === "beginner" ? "Manual review" : "Manual review needed";
     default:
       return userView === "beginner" ? "Needs review" : "Review";
   }
@@ -285,6 +293,18 @@ function reminderOnlyEmptyMessage(filter: ReminderFilter, userView: UserView) {
 function sourceBehaviorSummary(watchResult: WatchResult | null, userView: UserView) {
   if (!watchResult?.sourceKind) {
     return userView === "beginner" ? "No update source is saved yet." : "No update source is saved yet.";
+  }
+
+  if (watchResult.status === "check_failed") {
+    return userView === "beginner"
+      ? "SimSuite tried to check this source but could not finish."
+      : "Last check failed. Try again later or review manually.";
+  }
+
+  if (watchResult.status === "reminder_only") {
+    return userView === "beginner"
+      ? "This source is saved for manual follow-up."
+      : "This source is saved for reference only.";
   }
 
   if (watchResult.capability === "can_refresh_now") {
@@ -346,7 +366,7 @@ function sourceConfidenceLabel(detail: FileDetail | null, row: SourceNeededRow |
   }
 
   if (watchResult.capability === "can_refresh_now") {
-    return "Saved page with live checks";
+    return "Saved page with explicit checks";
   }
 
   if (watchResult.capability === "provider_required") {
@@ -363,6 +383,10 @@ function sourceCanCheckCopy(detail: FileDetail | null) {
   }
 
   if (watchResult.capability === "can_refresh_now") {
+    if (watchResult.status === "check_failed") {
+      return "SimSuite can try this saved source again when you run Check selected or Check watched now.";
+    }
+
     return "This saved source can be checked when you run Check selected or Check watched now.";
   }
 
@@ -380,6 +404,10 @@ function sourceCannotCheckCopy(detail: FileDetail | null) {
   }
 
   if (watchResult.capability === "can_refresh_now") {
+    if (watchResult.status === "check_failed") {
+      return "A failed check does not say anything about the file itself. SimSuite will not download or replace files here.";
+    }
+
     return "A check result is only a lead. SimSuite will not download or replace files here.";
   }
 
@@ -387,7 +415,7 @@ function sourceCannotCheckCopy(detail: FileDetail | null) {
     return "SimSuite cannot check this provider until an approved provider path exists.";
   }
 
-  return "Reminder-only pages are not live update checks and do not prove latest versions.";
+  return "Reminder-only pages are not checked update results and do not prove latest versions.";
 }
 
 function updatesRouteForDetail(detail: FileDetail): {
@@ -410,8 +438,11 @@ function updatesRouteForDetail(detail: FileDetail): {
   switch (watchResult.status) {
     case "exact_update_available":
     case "possible_update":
+    case "check_failed":
     case "unknown":
       return { mode: "attention" };
+    case "reminder_only":
+      return { mode: "reminders" };
     case "current":
     case "not_watched":
       return { mode: "watching" };
@@ -436,6 +467,7 @@ function isAttentionTrackedItem(item: LibraryWatchListItem) {
     isRefreshableWatch(item) &&
     (item.watchResult.status === "exact_update_available" ||
       item.watchResult.status === "possible_update" ||
+      item.watchResult.status === "check_failed" ||
       item.watchResult.status === "unknown")
   );
 }
@@ -458,7 +490,16 @@ function matchesAttentionFilter(row: AttentionRow, filter: AttentionFilter) {
   }
 
   if (row.kind === "review") {
-    return filter === "provider_required" && row.item.reviewReason === "provider_needed";
+    if (filter === "provider_required") {
+      return row.item.reviewReason === "provider_needed";
+    }
+    if (filter === "could_not_check") {
+      return row.item.reviewReason === "check_failed";
+    }
+    if (filter === "manual_review") {
+      return row.item.reviewReason === "unknown_result";
+    }
+    return false;
   }
 
   if (filter === "update_found") {
@@ -470,6 +511,10 @@ function matchesAttentionFilter(row: AttentionRow, filter: AttentionFilter) {
   }
 
   if (filter === "could_not_check") {
+    return row.item.watchResult.status === "check_failed";
+  }
+
+  if (filter === "manual_review") {
     return row.item.watchResult.status === "unknown";
   }
 
@@ -579,7 +624,7 @@ export function UpdatesScreen({
 
     if (initialFilter === "unclear") {
       setMode("attention");
-      setAttentionFilter("could_not_check");
+      setAttentionFilter("manual_review");
       return;
     }
 
@@ -878,7 +923,13 @@ export function UpdatesScreen({
         summary.exactUpdateItems === 1
           ? "1 possible update lead to review."
           : `${summary.exactUpdateItems} possible update leads to review.`;
-      setMessage(`${checkedLabel} ${updateLabel}`);
+      const failedLabel =
+        summary.checkFailedWatchItems > 0
+          ? summary.checkFailedWatchItems === 1
+            ? "1 check could not finish."
+            : `${summary.checkFailedWatchItems} checks could not finish.`
+          : "";
+      setMessage([checkedLabel, updateLabel, failedLabel].filter(Boolean).join(" "));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not refresh tracked pages.");
     } finally {
@@ -968,7 +1019,7 @@ export function UpdatesScreen({
     reminders: {
       title: "Reminder only",
       body:
-        "These pages are saved for manual follow-up. SimSuite keeps them separate so bookmarks do not pretend to be live update checks.",
+        "These pages are saved for manual follow-up. SimSuite keeps them separate so bookmarks do not pretend to be checked results.",
     },
   };
   const watchingCheckedCount = watchingItems.filter((item) => item.watchResult.status === "current").length;
@@ -980,6 +1031,9 @@ export function UpdatesScreen({
     (item) => item.watchResult.status === "possible_update",
   ).length;
   const attentionCouldNotCheckCount = attentionTrackedItems.filter(
+    (item) => item.watchResult.status === "check_failed",
+  ).length;
+  const attentionManualReviewCount = attentionTrackedItems.filter(
     (item) => item.watchResult.status === "unknown",
   ).length;
   const setupPossibleSourceCount = sourceNeededRows.filter(
@@ -1083,8 +1137,17 @@ export function UpdatesScreen({
                 tone: "muted" as const,
                 note:
                   userView === "beginner"
-                    ? "These checks came back too unclear to trust yet."
-                    : "These refreshable checks still need a safer result.",
+                    ? "SimSuite tried these checks, but they could not finish."
+                    : "These refreshable checks failed without saying anything about the file itself.",
+              },
+              {
+                label: "Manual review needed",
+                value: attentionManualReviewCount,
+                tone: "muted" as const,
+                note:
+                  userView === "beginner"
+                    ? "SimSuite has limited information here."
+                    : "These checks finished without a clear result.",
               },
               {
                 label: "Provider required",
@@ -1113,7 +1176,7 @@ export function UpdatesScreen({
                 note:
                   userView === "beginner"
                     ? "These exact links are still bookmark-only today."
-                    : "These exact pages are saved, but still not safe to treat as live checks.",
+                    : "These exact pages are saved, but SimSuite cannot check them automatically yet.",
               },
               {
                 label: "Reminder-only total",
@@ -1121,7 +1184,7 @@ export function UpdatesScreen({
                 tone: "warn" as const,
                 note:
                   userView === "beginner"
-                    ? "These are reminders, not live update checks."
+                    ? "These are reminders, not checked update results."
                     : "Reminder-only pages stay separate on purpose.",
               },
             ];
@@ -1444,9 +1507,9 @@ export function UpdatesScreen({
                   : mode === "setup"
                     ? "Save one good page here, and SimSuite will reuse it the next time this file is checked."
                     : mode === "attention"
-                      ? "Keep live update leads, provider blocks, and unclear checks here so watched results stay honest."
+                      ? "Keep update leads, provider blocks, and unclear checks here so watched results stay honest."
                       : mode === "reminders"
-                        ? "Reminder-only pages stay visible here without pretending SimSuite can check them live."
+                        ? "Reminder-only pages stay visible here without pretending SimSuite can check them automatically."
                         : "Watched sources stay together here so calm checks and ready-to-check items are easy to compare."}
               </p>
             </div>
@@ -1945,7 +2008,7 @@ function describeUpdatesStageFocus(
     return item.watchResult?.note?.trim()
       ? item.watchResult.note
       : userView === "beginner"
-        ? "This saved page is acting like a bookmark, not a live update check."
+        ? "This saved page is acting like a bookmark, not a checked update result."
         : "This source is saved for manual follow-up only, so it stays out of the watched lane.";
   }
 
@@ -1987,8 +2050,8 @@ function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
 
   if (mode === "reminders") {
     return userView === "beginner"
-      ? "Reminder-only pages are saved so you can come back later, but SimSuite is not checking them live."
-      : "Bookmarks and manual reference pages stay isolated here so they do not impersonate live watch sources.";
+      ? "Reminder-only pages are saved so you can come back later, but SimSuite has not checked them."
+      : "Bookmarks and manual reference pages stay isolated here so they do not impersonate checkable watch sources.";
   }
 
   return userView === "beginner"

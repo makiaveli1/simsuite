@@ -142,7 +142,7 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
     let silent_special_mod_updates =
         database::get_app_setting(&connection, "silent_special_mod_updates")?.as_deref()
             == Some("true");
-    let (exact_update_items, possible_update_items, unknown_watch_items) =
+    let (exact_update_items, possible_update_items, check_failed_watch_items, unknown_watch_items) =
         content_versions::load_watch_counts(&connection, silent_special_mod_updates)?;
     let checked_at = Utc::now().to_rfc3339();
 
@@ -158,6 +158,7 @@ fn run_refresh_cycle(app: &AppHandle, state: &AppState) -> AppResult<WatchRefres
         checked_subjects,
         exact_update_items,
         possible_update_items,
+        check_failed_watch_items,
         unknown_watch_items,
         checked_at,
     };
@@ -179,13 +180,14 @@ fn refresh_tray_tooltip(app: &AppHandle, state: &AppState) -> AppResult<()> {
     let silent_special_mod_updates =
         database::get_app_setting(&connection, "silent_special_mod_updates")?.as_deref()
             == Some("true");
-    let (exact_update_items, possible_update_items, unknown_watch_items) =
+    let (exact_update_items, possible_update_items, check_failed_watch_items, unknown_watch_items) =
         content_versions::load_watch_counts(&connection, silent_special_mod_updates)?;
 
     if let Some(tray) = app.tray_by_id(MAIN_TRAY_ID) {
         tray.set_tooltip(Some(build_tray_tooltip(
             exact_update_items,
             possible_update_items,
+            check_failed_watch_items,
             unknown_watch_items,
         )))
         .map_err(|error| AppError::Message(error.to_string()))?;
@@ -194,7 +196,12 @@ fn refresh_tray_tooltip(app: &AppHandle, state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
-fn build_tray_tooltip(exact_updates: i64, possible_updates: i64, unknown_updates: i64) -> String {
+fn build_tray_tooltip(
+    exact_updates: i64,
+    possible_updates: i64,
+    check_failed_updates: i64,
+    unknown_updates: i64,
+) -> String {
     if exact_updates > 0 {
         return format!(
             "SimSuite - {exact_updates} possible update{} to review",
@@ -206,6 +213,13 @@ fn build_tray_tooltip(exact_updates: i64, possible_updates: i64, unknown_updates
         return format!(
             "SimSuite - {possible_updates} possible mod update{} to check",
             if possible_updates == 1 { "" } else { "s" }
+        );
+    }
+
+    if check_failed_updates > 0 {
+        return format!(
+            "SimSuite - {check_failed_updates} watched check{} could not finish",
+            if check_failed_updates == 1 { "" } else { "s" }
         );
     }
 
@@ -269,15 +283,19 @@ mod tests {
     #[test]
     fn tray_tooltip_prefers_exact_updates() {
         assert_eq!(
-            build_tray_tooltip(2, 1, 1),
+            build_tray_tooltip(2, 1, 1, 1),
             "SimSuite - 2 possible updates to review"
         );
         assert_eq!(
-            build_tray_tooltip(0, 1, 0),
+            build_tray_tooltip(0, 1, 1, 0),
             "SimSuite - 1 possible mod update to check"
         );
         assert_eq!(
-            build_tray_tooltip(0, 0, 0),
+            build_tray_tooltip(0, 0, 1, 0),
+            "SimSuite - 1 watched check could not finish"
+        );
+        assert_eq!(
+            build_tray_tooltip(0, 0, 0, 0),
             "SimSuite - no watched update leads right now"
         );
     }

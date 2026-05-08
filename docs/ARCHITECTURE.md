@@ -65,6 +65,20 @@ Not yet implemented:
 - Patch Recovery
 - Tools
 
+## Current engineering note (May 8, 2026)
+
+Updates state persistence now distinguishes failed checks from unclear or manual-only update states.
+
+Important current watch-state behavior:
+
+- `content_watch_results.status` remains a flexible text field; no migration was needed for the new statuses.
+- `check_failed` means SimSuite attempted a supported check and could not finish.
+- `reminder_only` means a source is saved for reference, but SimSuite cannot check it automatically today.
+- `unknown` means the result is unclear or unsupported, not necessarily a failed check.
+- `current` still renders as `Checked recently` / `No update found`, not `Up to date`.
+- Provider-required sources, including CurseForge, stay as future provider work and are not treated as failed checks.
+- Library shows compact cues only; Updates owns the full source review and follow-up workflow.
+
 ## Current engineering note (April 25, 2026)
 
 The Library folder inspector now treats selected folders as first-class items, even when the selected folder is empty.

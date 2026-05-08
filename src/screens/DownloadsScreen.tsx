@@ -3853,6 +3853,8 @@ function buildSpecialVersionSection(
   const officialVersion =
     officialLatest?.status === "known"
       ? officialLatest.latestVersion ?? "Known, but not labeled"
+      : officialLatest?.status === "check_failed"
+        ? "Could not check latest source"
       : officialLatest?.status === "unknown"
         ? "Latest online version unknown"
         : "Not checked yet";

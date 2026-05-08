@@ -1369,5 +1369,13 @@ function formatWatchRefreshMessage(summary: WatchRefreshSummary) {
     );
   }
 
+  if (summary.checkFailedWatchItems > 0) {
+    parts.push(
+      `${summary.checkFailedWatchItems} check${
+        summary.checkFailedWatchItems === 1 ? "" : "s"
+      } could not finish`,
+    );
+  }
+
   return `${parts.join(", ")}.`;
 }

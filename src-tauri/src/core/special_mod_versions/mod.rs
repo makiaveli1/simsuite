@@ -372,8 +372,11 @@ pub fn load_or_refresh_latest_info(
             latest_version: None,
             checked_at: Some(Utc::now().to_rfc3339()),
             confidence: 0.0,
-            status: "unknown".to_owned(),
-            note: Some(error.to_string()),
+            status: "check_failed".to_owned(),
+            note: Some(format!(
+                "SimSuite tried to check this source but could not finish. Failure summary: {}.",
+                summarize_latest_check_error(&error.to_string())
+            )),
         })
     })?;
 
@@ -415,6 +418,31 @@ pub fn load_or_refresh_latest_info(
     )?;
 
     Ok(Some(latest))
+}
+
+fn summarize_latest_check_error(error: &str) -> String {
+    let first_line = error
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("network, provider, or response issue");
+    let compact = first_line
+        .replace('\r', " ")
+        .replace('\n', " ")
+        .replace('\t', " ");
+    let mut summary = compact
+        .split_whitespace()
+        .take(24)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if summary.len() > 180 {
+        summary.truncate(180);
+    }
+    if summary.is_empty() {
+        "network, provider, or response issue".to_owned()
+    } else {
+        summary
+    }
 }
 
 pub fn fetch_supported_watch_latest_from_url(

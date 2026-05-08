@@ -51,6 +51,7 @@ export interface WatchRefreshSummary {
   checkedSubjects: number;
   exactUpdateItems: number;
   possibleUpdateItems: number;
+  checkFailedWatchItems: number;
   unknownWatchItems: number;
   checkedAt: string;
 }
@@ -74,6 +75,7 @@ export interface HomeOverview {
   unsafeCount: number;
   exactUpdateItems: number;
   possibleUpdateItems: number;
+  checkFailedWatchItems: number;
   unknownWatchItems: number;
   watchReviewItems: number;
   watchSetupItems: number;
@@ -452,6 +454,7 @@ export interface LibraryWatchSetupResponse {
 export type LibraryWatchReviewReason =
   | "provider_needed"
   | "reference_only"
+  | "check_failed"
   | "unknown_result";
 
 export interface LibraryWatchReviewItem {
@@ -469,6 +472,7 @@ export interface LibraryWatchReviewResponse {
   total: number;
   providerNeededCount: number;
   referenceOnlyCount: number;
+  checkFailedCount: number;
   unknownResultCount: number;
   items: LibraryWatchReviewItem[];
 }
@@ -593,6 +597,8 @@ export type WatchStatus =
   | "current"
   | "exact_update_available"
   | "possible_update"
+  | "check_failed"
+  | "reminder_only"
   | "unknown";
 
 export type UpdateSource = "curseforge" | "modrinth" | "patreon" | "website" | "unknown";

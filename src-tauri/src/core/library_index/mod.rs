@@ -35,7 +35,9 @@ fn humanize_problem_code(code: &str) -> String {
     match code {
         "low_confidence_parse" => "Low classification confidence".to_owned(),
         "inspection_failed" => "Inspection failed during scan".to_owned(),
-        "unsafe_script_depth" => "Script file is nested deeper than the safe script depth".to_owned(),
+        "unsafe_script_depth" => {
+            "Script file is nested deeper than the safe script depth".to_owned()
+        }
         "tray_file_in_mods_root" => "Tray content is sitting in Mods".to_owned(),
         "no_category_detected" => "Category could not be confirmed".to_owned(),
         "conflicting_category_signals" => "Category clues conflict".to_owned(),
@@ -203,7 +205,8 @@ fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
             severity: ProblemSignalSeverity::Info,
             proof_level: ProblemSignalProofLevel::Confirmed,
             short_label: "Stored in Tray".to_owned(),
-            explanation: "This file is stored in Tray as library content, not as an active mod.".to_owned(),
+            explanation: "This file is stored in Tray as library content, not as an active mod."
+                .to_owned(),
             source: "source_location".to_owned(),
             evidence: vec!["source_location = tray".to_owned()],
             destination: None,
@@ -215,7 +218,13 @@ fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
     }
 
     if input.source_location != "tray"
-        && matches!(input.watch_status.clone().unwrap_or(WatchStatus::NotWatched), WatchStatus::NotWatched)
+        && matches!(
+            input
+                .watch_status
+                .clone()
+                .unwrap_or(WatchStatus::NotWatched),
+            WatchStatus::NotWatched
+        )
     {
         signals.push(ProblemSignal {
             signal_type: "no_update_source".to_owned(),
@@ -264,7 +273,11 @@ fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
                 vec![format!(
                     "{} unconfirmed creator hint{} found",
                     input.creator_hints.len(),
-                    if input.creator_hints.len() == 1 { "" } else { "s" }
+                    if input.creator_hints.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
                 )]
             },
             destination: None,
@@ -344,7 +357,7 @@ pub fn get_home_overview(
             .ok();
         val.as_deref() == Some("true")
     };
-    let (exact_update_items, possible_update_items, unknown_watch_items) =
+    let (exact_update_items, possible_update_items, check_failed_watch_items, unknown_watch_items) =
         content_versions::load_watch_counts(connection, silent_special_mod_updates)?;
     let watch_review_items =
         content_versions::list_library_watch_review_items(connection, settings, seed_pack, 1)?
@@ -377,6 +390,7 @@ pub fn get_home_overview(
         unsafe_count,
         exact_update_items,
         possible_update_items,
+        check_failed_watch_items,
         unknown_watch_items,
         watch_review_items,
         watch_setup_items,
@@ -669,6 +683,8 @@ pub fn list_library_files(
                     "current" => WatchStatus::Current,
                     "exact_update_available" => WatchStatus::ExactUpdateAvailable,
                     "possible_update" => WatchStatus::PossibleUpdate,
+                    "check_failed" => WatchStatus::CheckFailed,
+                    "reminder_only" => WatchStatus::ReminderOnly,
                     "unknown" => WatchStatus::Unknown,
                     _ => WatchStatus::NotWatched,
                 })
@@ -1241,7 +1257,10 @@ pub fn get_file_detail(
                 review_reasons: &review_reasons,
                 has_review_queue: !review_reasons.is_empty(),
                 has_duplicate: detail.duplicates_count > 0,
-                watch_status: detail.watch_result.as_ref().map(|result| result.status.clone()),
+                watch_status: detail
+                    .watch_result
+                    .as_ref()
+                    .map(|result| result.status.clone()),
             });
 
             // Phase 5an: resolve thumbnails on-demand if they were deferred during scan.
@@ -1343,16 +1362,18 @@ fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
                  f.filename COLLATE NOCASE ASC",
         ),
         LibrarySortField::HasUpdatesFirst => {
-            // Sort by update priority: exact_update_available first, then possible_update,
-            // then unknown, then current, then not_watched. Tie-break by filename.
+            // Sort by update priority: update leads first, then failed or unclear
+            // checks, then quieter reminder/current/not-watched states.
             String::from(
                 "ORDER BY\
                  CASE cwr.status\
                  WHEN 'exact_update_available' THEN 1\
                  WHEN 'possible_update' THEN 2\
-                 WHEN 'unknown' THEN 3\
-                 WHEN 'current' THEN 4\
-                 ELSE 5\
+                 WHEN 'check_failed' THEN 3\
+                 WHEN 'unknown' THEN 4\
+                 WHEN 'reminder_only' THEN 5\
+                 WHEN 'current' THEN 6\
+                 ELSE 7\
                  END ASC,\
                  f.filename COLLATE NOCASE ASC",
             )

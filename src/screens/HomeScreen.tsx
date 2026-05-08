@@ -184,10 +184,12 @@ export function HomeScreen({
     (overview?.downloadsCount ?? 0) +
     (overview?.reviewCount ?? 0) +
     (overview?.exactUpdateItems ?? 0) +
+    (overview?.checkFailedWatchItems ?? 0) +
     (overview?.watchSetupItems ?? 0);
   const totalWatchCount =
     (overview?.exactUpdateItems ?? 0) +
     (overview?.possibleUpdateItems ?? 0) +
+    (overview?.checkFailedWatchItems ?? 0) +
     (overview?.unknownWatchItems ?? 0) +
     (overview?.watchReviewItems ?? 0) +
     (overview?.watchSetupItems ?? 0);
@@ -235,6 +237,7 @@ export function HomeScreen({
   const watchRows = [
     ["Update may be available", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages with stronger evidence that a newer release may exist."],
     ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
+    ["Could not check", (overview?.checkFailedWatchItems ?? 0).toLocaleString(), "Watched checks that could not finish."],
     [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need one saved update page first."],
     ...(!calmDetails
       ? [[watchFollowupLabel, (overview?.watchReviewItems ?? 0).toLocaleString(), "Saved reminder pages and provider-limited sources that still need a human follow-up."]]
@@ -892,9 +895,11 @@ function CasualCollapsedModuleBand({
           : "All clear",
     watch:
       (overview?.exactUpdateItems ?? 0) > 0
-        ? `${overview?.exactUpdateItems} update${(overview?.exactUpdateItems ?? 0) === 1 ? "" : "s"} found`
+        ? `${overview?.exactUpdateItems} update lead${(overview?.exactUpdateItems ?? 0) === 1 ? "" : "s"}`
         : (overview?.possibleUpdateItems ?? 0) > 0
           ? `${overview?.possibleUpdateItems} possible updates`
+          : (overview?.checkFailedWatchItems ?? 0) > 0
+            ? `${overview?.checkFailedWatchItems} could not check`
           : (overview?.unknownWatchItems ?? 0) > 0
             ? `${overview?.unknownWatchItems} unclear results`
             : (overview?.watchReviewItems ?? 0) > 0
