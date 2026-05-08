@@ -1,5 +1,51 @@
 # SimSuite Implementation Status
 
+## Current session note (May 8, 2026 - Updates Workflow v1)
+
+This session made the Updates workflow more honest and useful for source setup and review.
+
+Important changes and findings:
+
+- created `simsuite-reports/UPDATES_WORKFLOW_V1_REPORT.md` with an audit of current schema, commands, providers, route wiring, partial areas, stubs, and missing pieces.
+- cleaned up update states and labels around:
+  - `No update source`
+  - `Possible source`
+  - `Watched`
+  - `Reminder only`
+  - `Could not check`
+  - `Possible update`
+  - `Update may be available`
+  - `Checked recently`
+  - `No update found`
+- improved the focused Updates route when Library or Safe Action Preflight opens a specific file by `fileId`.
+- expanded the source review panel with what SimSuite can check, what it cannot check, detected clues, confidence, and safe next actions.
+- aligned Home, Library list/detail, More Details compatibility chips, Settings watched-page controls, Downloads special-mod source guidance, development mock data, and the tray tooltip with trust-first update wording.
+- preserved the current provider boundary: no scraping, no automatic download, no automatic replacement, and no broad CurseForge matching.
+
+Checks passed:
+
+- `npm run test:unit -- src/screens/UpdatesScreen.test.tsx`
+- `cargo test --manifest-path src-tauri/Cargo.toml tray_tooltip_prefers_exact_updates`
+- `npm run test:unit -- src/screens/library/LibraryDetailsPanel.test.tsx src/screens/library/libraryDisplay.test.ts src/screens/library/actionPreflight.test.ts`
+- `npm run build` with the existing Vite chunk-size warning
+- `npx tsc --noEmit`
+- `npm run test:unit` (`15` files, `49` tests)
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `cd src-tauri; cargo check` with existing Rust warnings
+- `cd src-tauri; cargo build --release` with existing Rust warnings
+- `npm run test:rust` (`219` tests, with existing Rust warnings)
+- native desktop fixture proof script
+- native desktop smoke script
+
+Important remaining gap:
+
+- the desktop fixture npm wrappers fail in native Windows PowerShell because they call `/mnt/c/...` PowerShell paths; the native PowerShell scripts pass.
+- `check_failed` is not yet a dedicated persisted backend status.
+- reminder-only state is still derived rather than first-class persisted state.
+- Updates setup/no-source coverage remains capped for very large libraries.
+- CurseForge/provider onboarding remains future work.
+- generic creator pages stay reminder-only unless a safe checker exists.
+
 ## Current session note (April 25, 2026 - Folder empty-state support)
 
 This session made selected Library folders useful even when they contain no files.

@@ -97,8 +97,8 @@ const WATCHING_FILTERS: Array<{
   { id: "all", label: "All watched", beginnerLabel: "All watched" },
   {
     id: "checked_recently",
-    label: "No new update found",
-    beginnerLabel: "No new update found",
+    label: "No update found",
+    beginnerLabel: "No update found",
   },
   {
     id: "check_available",
@@ -113,7 +113,7 @@ const ATTENTION_FILTERS: Array<{
   beginnerLabel: string;
 }> = [
   { id: "all", label: "All attention items", beginnerLabel: "All attention items" },
-  { id: "update_found", label: "Update found", beginnerLabel: "Update found" },
+  { id: "update_found", label: "Update may be available", beginnerLabel: "Possible update" },
   { id: "possible_update", label: "Possible update", beginnerLabel: "Possible update" },
   { id: "could_not_check", label: "Could not check", beginnerLabel: "Could not check" },
   { id: "provider_required", label: "Provider required", beginnerLabel: "Provider required" },
@@ -137,10 +137,10 @@ const SETUP_FILTERS: Array<{
   { id: "all", label: "All needing a source", beginnerLabel: "All needing a source" },
   {
     id: "possible_source",
-    label: "Possible source found",
-    beginnerLabel: "Possible source found",
+    label: "Possible source",
+    beginnerLabel: "Possible source",
   },
-  { id: "no_match", label: "No match yet", beginnerLabel: "No match yet" },
+  { id: "no_match", label: "No update source", beginnerLabel: "No update source" },
 ];
 
 function watchStatusIcon(status: WatchResult["status"]) {
@@ -159,12 +159,12 @@ function watchStatusIcon(status: WatchResult["status"]) {
 function watchStatusLabel(status: WatchResult["status"], userView: UserView) {
   const labels: Record<WatchResult["status"], { beginner: string; advanced: string }> = {
     exact_update_available: {
-      beginner: "Update found",
-      advanced: "Update found",
+      beginner: "Possible update",
+      advanced: "Update may be available",
     },
     possible_update: { beginner: "Possible update", advanced: "Possible update" },
-    unknown: { beginner: "Couldn't confirm", advanced: "Couldn't confirm" },
-    current: { beginner: "No new update found", advanced: "Checked recently" },
+    unknown: { beginner: "Could not check", advanced: "Could not check" },
+    current: { beginner: "No update found", advanced: "Checked recently" },
     not_watched: { beginner: "Check available", advanced: "Check available" },
   };
 
@@ -206,14 +206,14 @@ function watchSourceOriginLabel(origin: WatchResult["sourceOrigin"]) {
 
 function watchCapabilityLabel(watchResult: WatchResult | null, userView: UserView) {
   if (!watchResult?.sourceKind) {
-    return userView === "beginner" ? "No source saved yet" : "No source saved";
+    return userView === "beginner" ? "No update source" : "No update source";
   }
 
   switch (watchResult.capability) {
     case "can_refresh_now":
       return userView === "beginner"
-        ? "Checks for updates automatically"
-        : "Automatic checks supported";
+        ? "Update checks enabled"
+        : "Update checks enabled";
     case "provider_required":
       return watchResult.providerName
         ? `${watchResult.providerName} required`
@@ -233,7 +233,7 @@ function reviewReasonLabel(
     case "reference_only":
       return userView === "beginner" ? "Saved for reminders" : "Reminder only";
     case "unknown_result":
-      return userView === "beginner" ? "Couldn't confirm" : "Couldn't confirm";
+      return userView === "beginner" ? "Could not check" : "Could not check";
     default:
       return userView === "beginner" ? "Needs review" : "Review";
   }
@@ -284,18 +284,18 @@ function reminderOnlyEmptyMessage(filter: ReminderFilter, userView: UserView) {
 
 function sourceBehaviorSummary(watchResult: WatchResult | null, userView: UserView) {
   if (!watchResult?.sourceKind) {
-    return userView === "beginner" ? "No source is saved yet." : "No source is saved yet.";
+    return userView === "beginner" ? "No update source is saved yet." : "No update source is saved yet.";
   }
 
   if (watchResult.capability === "can_refresh_now") {
     return userView === "beginner"
-      ? "SimSuite can check this source automatically when you ask."
+      ? "SimSuite can check this source when you ask."
       : "This source supports explicit checks.";
   }
 
   if (watchResult.capability === "provider_required") {
     return userView === "beginner"
-      ? "This source is saved, but SimSuite cannot check it automatically yet."
+      ? "This source is saved, but SimSuite cannot check it yet."
       : "This source is saved, but provider support is still required.";
   }
 
@@ -338,7 +338,7 @@ function sourceConfidenceLabel(detail: FileDetail | null, row: SourceNeededRow |
 
   const watchResult = detail?.watchResult;
   if (!watchResult?.sourceKind) {
-    return "No source saved";
+    return "No update source";
   }
 
   if (watchResult.sourceOrigin === "built_in_special") {
@@ -354,6 +354,40 @@ function sourceConfidenceLabel(detail: FileDetail | null, row: SourceNeededRow |
   }
 
   return "Saved page, manual review only";
+}
+
+function sourceCanCheckCopy(detail: FileDetail | null) {
+  const watchResult = detail?.watchResult;
+  if (!watchResult?.sourceKind) {
+    return "Supported exact pages after you add or confirm a source.";
+  }
+
+  if (watchResult.capability === "can_refresh_now") {
+    return "This saved source can be checked when you run Check selected or Check watched now.";
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return "SimSuite can keep this source as a review item while provider support is future work.";
+  }
+
+  return "SimSuite can keep this saved page as a reminder for manual follow-up.";
+}
+
+function sourceCannotCheckCopy(detail: FileDetail | null) {
+  const watchResult = detail?.watchResult;
+  if (!watchResult?.sourceKind) {
+    return "SimSuite cannot infer a trusted source, scrape creator pages, or replace files from this screen.";
+  }
+
+  if (watchResult.capability === "can_refresh_now") {
+    return "A check result is only a lead. SimSuite will not download or replace files here.";
+  }
+
+  if (watchResult.capability === "provider_required") {
+    return "SimSuite cannot check this provider until an approved provider path exists.";
+  }
+
+  return "Reminder-only pages are not live update checks and do not prove latest versions.";
 }
 
 function updatesRouteForDetail(detail: FileDetail): {
@@ -471,7 +505,7 @@ function updatesRowFileId(row: LibraryWatchListItem | SourceNeededRow | Attentio
 }
 
 function sourceNeededStatusLabel(row: SourceNeededRow) {
-  return row.suggestionState === "possible_source" ? "Possible source found" : "No match yet";
+  return row.suggestionState === "possible_source" ? "Possible source" : "No update source";
 }
 
 function sourceNeededEmptyMessage(userView: UserView) {
@@ -842,8 +876,8 @@ export function UpdatesScreen({
           : `Checked ${summary.checkedSubjects} watched sources.`;
       const updateLabel =
         summary.exactUpdateItems === 1
-          ? "1 update found."
-          : `${summary.exactUpdateItems} updates found.`;
+          ? "1 possible update lead to review."
+          : `${summary.exactUpdateItems} possible update leads to review.`;
       setMessage(`${checkedLabel} ${updateLabel}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not refresh tracked pages.");
@@ -919,7 +953,7 @@ export function UpdatesScreen({
     watching: {
       title: "Watched",
       body:
-        "These files already have a checkable source. Keep the calm stuff here, and push real follow-up into Attention needed.",
+        "These files already have a checkable source. Calm results stay here, and review work moves into Attention needed.",
     },
     setup: {
       title: "Needs source",
@@ -966,13 +1000,13 @@ export function UpdatesScreen({
     mode === "watching"
       ? [
           {
-            label: "No new update found",
+            label: "No update found",
             value: watchingCheckedCount,
             tone: "good" as const,
             note:
               userView === "beginner"
-                ? "These watched files already have a recent clean result."
-                : "These watched files currently look steady after a real check.",
+                ? "These watched files have a recent check with no update found."
+                : "These watched files had a real check with no update found.",
           },
           {
             label: "Check available",
@@ -996,7 +1030,7 @@ export function UpdatesScreen({
       : mode === "setup"
         ? [
             {
-              label: "Possible source found",
+              label: "Possible source",
               value: setupPossibleSourceCount,
               tone: "good" as const,
               note:
@@ -1005,7 +1039,7 @@ export function UpdatesScreen({
                   : "These items have a clue-backed source suggestion.",
             },
             {
-              label: "No match yet",
+              label: "No update source",
               value: setupNoMatchCount,
               tone: "muted" as const,
               note:
@@ -1026,13 +1060,13 @@ export function UpdatesScreen({
         : mode === "attention"
           ? [
               {
-                label: "Update found",
+                label: "Update may be available",
                 value: attentionUpdateFoundCount,
                 tone: "good" as const,
                 note:
                   userView === "beginner"
-                    ? "These watched files have a clearer newer version waiting."
-                    : "These watched files have a strong update lead.",
+                    ? "These watched files have a stronger update lead to review."
+                    : "These watched files have a stronger update lead, not replacement proof.",
               },
               {
                 label: "Possible update",
@@ -1087,7 +1121,7 @@ export function UpdatesScreen({
                 tone: "warn" as const,
                 note:
                   userView === "beginner"
-                    ? "These are reminders, not automatic checks."
+                    ? "These are reminders, not live update checks."
                     : "Reminder-only pages stay separate on purpose.",
               },
             ];
@@ -1096,12 +1130,14 @@ export function UpdatesScreen({
         {
           label: "Status",
           value: selectedItem.watchResult
-            ? selectedItem.watchResult.capability === "saved_reference_only"
+            ? !selectedItem.watchResult.sourceKind
+              ? "No update source"
+              : selectedItem.watchResult.capability === "saved_reference_only"
               ? "Reminder only"
               : selectedItem.watchResult.capability === "provider_required"
                 ? "Provider required"
                 : watchStatusLabel(selectedItem.watchResult.status, userView)
-            : "No source saved",
+            : "No update source",
         },
         {
           label: mode === "setup" ? "Suggested source" : mode === "reminders" ? "Saved page" : "Watching",
@@ -1110,7 +1146,7 @@ export function UpdatesScreen({
               ? selectedSetupRow?.suggestedSourceKind
                 ? watchSourceKindLabel(selectedSetupRow.suggestedSourceKind)
                 : "No strong match yet"
-              : selectedItem.watchResult?.sourceLabel ?? "No source saved",
+              : selectedItem.watchResult?.sourceLabel ?? "No update source",
         },
         {
           label: "Installed",
@@ -1379,7 +1415,7 @@ export function UpdatesScreen({
 
         {selectionOutsideCurrentList && selectedItem ? (
           <div className="updates-inline-message">
-            Focused on <strong>{selectedItem.filename}</strong>. It is not in the current list, but you can still review or save a source below.
+            Focused from Library or Preflight: <strong>{selectedItem.filename}</strong>. It is not in the current list, but you can still review or save a source below.
           </div>
         ) : null}
 
@@ -1410,7 +1446,7 @@ export function UpdatesScreen({
                     : mode === "attention"
                       ? "Keep live update leads, provider blocks, and unclear checks here so watched results stay honest."
                       : mode === "reminders"
-                        ? "Reminder-only pages stay visible here without pretending SimSuite can check them automatically."
+                        ? "Reminder-only pages stay visible here without pretending SimSuite can check them live."
                         : "Watched sources stay together here so calm checks and ready-to-check items are easy to compare."}
               </p>
             </div>
@@ -1505,7 +1541,9 @@ export function UpdatesScreen({
               </div>
               {selectedItem.watchResult ? (
                 <span className="ghost-chip">
-                  {selectedItem.watchResult.capability === "saved_reference_only"
+                  {!selectedItem.watchResult.sourceKind
+                    ? "No update source"
+                    : selectedItem.watchResult.capability === "saved_reference_only"
                     ? "Reminder only"
                     : selectedItem.watchResult.capability === "provider_required"
                       ? "Provider required"
@@ -1541,10 +1579,14 @@ export function UpdatesScreen({
                     {watchStatusIcon(selectedItem.watchResult.status)}
                     <div>
                       <strong>
-                        {watchStatusLabel(selectedItem.watchResult.status, userView)}
+                        {selectedItem.watchResult.sourceKind
+                          ? watchStatusLabel(selectedItem.watchResult.status, userView)
+                          : "No update source"}
                       </strong>
                       <p className="text-muted">
-                        {watchCapabilityLabel(selectedItem.watchResult, userView)}
+                        {selectedItem.watchResult.sourceKind
+                          ? watchCapabilityLabel(selectedItem.watchResult, userView)
+                          : "Add or confirm a source"}
                       </p>
                     </div>
                   </div>
@@ -1611,13 +1653,21 @@ export function UpdatesScreen({
                     mode === "setup"
                       ? selectedSetupRow?.suggestionState === "possible_source"
                         ? "Review the suggested page, then save it if it looks right."
-                        : "Add a manual page or keep this as a reminder for later."
+                        : "Add or confirm a source."
                       : mode === "reminders"
                         ? "Use this as a manual bookmark, or replace it with a page SimSuite can actually check."
                         : mode === "attention"
                           ? "Review the result, then decide whether the saved page is good enough or needs replacing."
                           : "Run a check when needed, then keep or replace the source based on the result."
                   }
+                />
+                <DetailRow
+                  label="What SimSuite can check"
+                  value={sourceCanCheckCopy(selectedItem)}
+                />
+                <DetailRow
+                  label="What SimSuite cannot check"
+                  value={sourceCannotCheckCopy(selectedItem)}
                 />
               </div>
               {deriveSourceClues(selectedItem).length ? (
@@ -1646,7 +1696,7 @@ export function UpdatesScreen({
                     <Settings2 size={14} strokeWidth={2} />
                     {selectedItem.watchResult?.sourceUrl || selectedItem.watchResult?.sourceLabel
                       ? "Edit source"
-                      : "Set source"}
+                      : "Add or confirm a source"}
                   </button>
                 ) : (
                   <div className="updates-built-in-note">
@@ -1937,7 +1987,7 @@ function updatesGuidanceBody(mode: UpdateMode, userView: UserView) {
 
   if (mode === "reminders") {
     return userView === "beginner"
-      ? "Reminder-only pages are saved so you can come back later, but SimSuite is not checking them automatically."
+      ? "Reminder-only pages are saved so you can come back later, but SimSuite is not checking them live."
       : "Bookmarks and manual reference pages stay isolated here so they do not impersonate live watch sources.";
   }
 

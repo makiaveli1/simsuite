@@ -4116,9 +4116,9 @@ function buildDownloadInspectorSignals(
     signals.push({
       id: "latest",
       tone: "refresh",
-      label: "Latest",
-      title: `Official latest: ${specialDecision.officialLatest.latestVersion ?? "Known"}`,
-      body: "This is extra guidance from the official source and does not block a safe local update.",
+      label: "Source",
+      title: `Known source version: ${specialDecision.officialLatest.latestVersion ?? "Known"}`,
+      body: "This is extra guidance from the special-mod source. Review before using the download.",
     });
   } else if (versionResolution?.status === "same_version") {
     signals.push({

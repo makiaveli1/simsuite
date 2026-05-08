@@ -371,7 +371,7 @@ function buildMockWatchResult(
       latestVersion: "4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
-      note: "The official helper check agrees with the installed copy.",
+      note: "The helper check did not find a newer version.",
       evidence: [
         "The helper check matched the installed XML Injector version.",
       ],
@@ -391,7 +391,7 @@ function buildMockWatchResult(
       latestVersion: buildMockInstalledVersionSummary(file)?.version ?? null,
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "medium",
-      note: "SimSuite is using the built-in official page for this supported mod.",
+      note: "SimSuite is using the built-in source page for this supported mod.",
       evidence: [
         "The built-in GitHub releases page lines up with the installed copy.",
       ],
@@ -411,7 +411,7 @@ function buildMockWatchResult(
       latestVersion: null,
       checkedAt: null,
       confidence: "unknown",
-      note: "SimSuite is using the built-in official page for this supported mod, but this site is reference-only right now.",
+      note: "SimSuite is using the built-in source page for this supported mod, but this site is reference-only right now.",
       evidence: [],
     };
   }
@@ -429,7 +429,7 @@ function buildMockWatchResult(
       latestVersion: null,
       checkedAt: null,
       confidence: "unknown",
-      note: "SimSuite is using the built-in official page for this supported mod, but CurseForge needs a future approved API path.",
+      note: "SimSuite is using the built-in source page for this supported mod, but CurseForge needs a future approved API path.",
       evidence: [],
     };
   }
@@ -447,7 +447,7 @@ function buildMockWatchResult(
       latestVersion: null,
       checkedAt: null,
       confidence: "unknown",
-      note: "SimSuite is using the built-in official page for this supported mod, but CurseForge needs a future approved API path.",
+      note: "SimSuite is using the built-in source page for this supported mod, but CurseForge needs a future approved API path.",
       evidence: [],
     };
   }
@@ -517,7 +517,7 @@ function mockSavedWatchNote(
   const lowerUrl = sourceUrl?.toLowerCase() ?? "";
 
   if (sourceKind === "creator_page") {
-    return "Creator pages are saved as reminders for now. Automatic creator-page checks are not built yet.";
+    return "Creator pages are saved as reminders for now. Creator-page live checks are not built yet.";
   }
 
   if (lowerUrl.includes("curseforge.com/")) {
@@ -525,7 +525,7 @@ function mockSavedWatchNote(
   }
 
   if (lowerUrl.includes("lot51.cc/")) {
-    return "This page is saved, but this site blocks safe automatic checks right now.";
+    return "This page is saved, but this site blocks live checks right now.";
   }
 
   if (mockCanRefreshWatchSource(sourceKind, sourceUrl)) {
@@ -533,10 +533,10 @@ function mockSavedWatchNote(
       return "SimSuite can check this GitHub releases page now when you press Check now.";
     }
 
-    return "SimSuite can check this official page now when you press Check now.";
+    return "SimSuite can check this saved page now when you press Check now.";
   }
 
-  return "This page is saved as a reference, but SimSuite cannot check it automatically yet.";
+  return "This page is saved as a reference, but SimSuite cannot check it live yet.";
 }
 
 function buildMockRefreshedWatchResult(
@@ -691,7 +691,7 @@ function mockWatchReviewHint(watchResult: WatchResult) {
   if (reviewReason === "provider_needed") {
     return `${
       watchResult.providerName ?? "Provider"
-    } support is still needed before SimSuite can check this saved page automatically.`;
+    } support is still needed before SimSuite can check this saved page live.`;
   }
 
   if (reviewReason === "reference_only") {
@@ -1022,11 +1022,11 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       primaryFamilyItemName: item.displayName,
       siblingItemIds: [43, 44, 47],
       queueLane: "special_setup",
-      queueSummary: "Ready to update the installed MCCC folder.",
+      queueSummary: "Manual review needed before changing the installed MCCC folder.",
       explanation:
         guidedPlan?.explanation ??
-        "SimSuite found a complete MCCC download and a safe local update path.",
-      recommendedNextStep: "Update MC Command Center in the guided flow.",
+        "SimSuite found a complete MCCC download and a guided review path.",
+      recommendedNextStep: "Review MC Command Center in the guided flow.",
       incomingVersion: "2026.3.0",
       incomingSignature: "mccc-download-2026.3.0",
       incomingVersionSource: "inside mod",
@@ -6819,7 +6819,7 @@ async function mockInvoke<T>(
       const existingWatch = next.watchResult ?? buildMockWatchResult(next);
       if (existingWatch?.sourceOrigin === "built_in_special") {
         throw new Error(
-          "Supported special mods already use their own built-in official page here. Custom watch pages are not wired up yet.",
+          "Supported special mods already use their own built-in source page here. Custom watch pages are not wired up yet.",
         );
       }
       const canRefreshNow = mockCanRefreshWatchSource(sourceKind, sourceUrl);
@@ -6881,7 +6881,7 @@ async function mockInvoke<T>(
             fileId,
             saved: false,
             message:
-              "Supported special mods already use their own built-in official page here. Custom watch pages are not wired up yet.",
+              "Supported special mods already use their own built-in source page here. Custom watch pages are not wired up yet.",
           });
           continue;
         }

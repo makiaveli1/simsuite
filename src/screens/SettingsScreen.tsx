@@ -964,7 +964,7 @@ function SettingsAutomationSection({
         </div>
 
         <div className="settings-summary-card settings-focus-block">
-          <span className="section-label">Automatic update checks</span>
+          <span className="section-label">Scheduled watch checks</span>
           <strong>{automaticWatchChecks ? "On" : "Off"}</strong>
           <p className="workspace-toolbar-copy">
             SimSuite only checks saved pages that are safe to read directly. It does not
@@ -974,7 +974,7 @@ function SettingsAutomationSection({
           <div
             className="segmented-control"
             role="tablist"
-            aria-label="Automatic update checks"
+            aria-label="Scheduled watch checks"
           >
             <m.button
               type="button"
@@ -1017,8 +1017,8 @@ function SettingsAutomationSection({
           <div className="settings-summary-card settings-focus-block">
             <span className="section-label">Special mod update alerts</span>
             <p className="workspace-toolbar-copy">
-              When SimSuite finds an update for MCCC or another tracked special mod, decide
-              how to be notified.
+              When a supported check finds a possible update lead for MCCC or another
+              tracked special mod, decide how to be notified.
             </p>
             <div
               className="segmented-control"
@@ -1070,11 +1070,11 @@ function SettingsAutomationSection({
             </div>
             <p className="workspace-toolbar-copy workspace-toolbar-copy-muted">
               {appBehavior?.silentSpecialModUpdates === null &&
-                "When an update is found, SimSuite will ask before applying."}
+                "When a possible special-mod update lead appears, SimSuite will notify you before any follow-up."}
               {appBehavior?.silentSpecialModUpdates === true &&
-                "Special mod updates are checked but hidden from counts and tray."}
+                "Special mod update leads are checked but hidden from counts and tray."}
               {appBehavior?.silentSpecialModUpdates === false &&
-                "You'll be notified through counts and tray when updates are found."}
+                "You'll be notified through counts and tray when possible update leads appear."}
             </p>
           </div>
 
@@ -1093,7 +1093,7 @@ function SettingsAutomationSection({
             </m.button>
             <p className="workspace-toolbar-copy settings-inline-note">
               {automaticWatchChecks
-                ? `Automatic checks are set to ${watchIntervalLabel(
+                ? `Scheduled checks are set to ${watchIntervalLabel(
                     watchCheckIntervalHours,
                   )}.`
                 : "While this is off, SimSuite only checks watched pages when you ask it to."}
@@ -1356,7 +1356,7 @@ function formatWatchRefreshMessage(summary: WatchRefreshSummary) {
     `${summary.checkedSubjects} watched item${
       summary.checkedSubjects === 1 ? "" : "s"
     } checked`,
-    `${summary.exactUpdateItems} confirmed update${
+    `${summary.exactUpdateItems} possible update lead${
       summary.exactUpdateItems === 1 ? "" : "s"
     }`,
   ];

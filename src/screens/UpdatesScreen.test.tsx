@@ -174,14 +174,14 @@ it("lets the source queue be filtered between possible matches and no-match item
   expect(await screen.findByText("alpha.package")).toBeInTheDocument();
   expect(screen.getByText("beta.package")).toBeInTheDocument();
 
-  fireEvent.click(screen.getAllByRole("button", { name: /^possible source found$/i })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: /^possible source$/i })[0]);
 
   await waitFor(() => {
     expect(screen.getAllByText("alpha.package").length).toBeGreaterThan(0);
     expect(screen.queryAllByText("beta.package")).toHaveLength(0);
   });
 
-  fireEvent.click(screen.getAllByRole("button", { name: /^no match yet$/i })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: /^no update source$/i })[0]);
 
   await waitFor(() => {
     expect(screen.queryAllByText("alpha.package")).toHaveLength(0);
@@ -374,4 +374,164 @@ it("moves a saved setup item into the watching lane when the saved page supports
   });
   expect(screen.getByText("Source saved.")).toBeInTheDocument();
   expect(listLibraryWatchItemsMock).toHaveBeenCalledWith("all", 48);
+});
+
+it("uses possible-update wording for update leads without automatic-check claims", async () => {
+  const trackedRows: LibraryWatchListResponse = {
+    filter: "all",
+    total: 1,
+    items: [
+      {
+        fileId: 1,
+        filename: "alpha.package",
+        creator: "Creator One",
+        subjectLabel: "Alpha Mod",
+        installedVersion: "1.0.0",
+        watchResult: {
+          status: "exact_update_available",
+          sourceKind: "exact_page",
+          sourceOrigin: "saved_by_user",
+          sourceLabel: "GitHub Release",
+          sourceUrl: "https://github.com/example/mod/releases",
+          source: "website",
+          patreonUrl: null,
+          capability: "can_refresh_now",
+          canRefreshNow: true,
+          providerName: null,
+          latestVersion: "1.1.0",
+          checkedAt: "2026-05-08T09:00:00Z",
+          confidence: "strong",
+          note: "A newer version may be available from the saved page.",
+          evidence: ["Saved watch page last saw version 1.1.0."],
+        },
+      },
+    ],
+  };
+
+  vi.mocked(api.listLibraryWatchItems).mockResolvedValue(trackedRows);
+  vi.mocked(api.listLibraryWatchSetupItems).mockResolvedValue({
+    total: 0,
+    truncated: false,
+    exactPageTotal: 0,
+    exactPageTruncated: false,
+    exactPageItems: [],
+    items: [],
+  });
+  vi.mocked(api.listLibraryFiles).mockResolvedValue({ total: 0, items: [] });
+  vi.mocked(api.listLibraryWatchReviewItems).mockResolvedValue(emptyReview);
+  vi.mocked(api.getFileDetail).mockResolvedValue({
+    id: 1,
+    filename: "alpha.package",
+    path: "C:/Mods/alpha.package",
+    extension: ".package",
+    kind: "Gameplay",
+    subtype: null,
+    confidence: 0.91,
+    sourceLocation: "mods",
+    size: 1024,
+    modifiedAt: null,
+    creator: "Creator One",
+    bundleName: null,
+    bundleType: null,
+    groupedFileCount: null,
+    relativeDepth: 1,
+    safetyNotes: [],
+    parserWarnings: [],
+    installedVersionSummary: { version: "1.0.0" },
+    watchResult: trackedRows.items[0].watchResult,
+    insights: { ...emptyInsights, embeddedNames: ["Alpha"], familyHints: ["alpha"] },
+  } as never);
+
+  render(
+    <UiPreferencesProvider mode="seasoned">
+      <UpdatesScreen
+        refreshVersion={0}
+        onNavigate={() => {}}
+        userView="standard"
+        initialMode="attention"
+        initialFileId={1}
+      />
+    </UiPreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByText("Update may be available").length).toBeGreaterThan(0);
+  });
+  expect(screen.getAllByText("Update checks enabled").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Update found")).toBeNull();
+  expect(screen.queryByText(/automatic checks/i)).toBeNull();
+  expect(screen.queryByText(/checks for updates automatically/i)).toBeNull();
+});
+
+it("keeps focused no-source files useful even when they are not in the current setup page", async () => {
+  vi.mocked(api.listLibraryWatchItems).mockResolvedValue(emptyTracked);
+  vi.mocked(api.listLibraryWatchSetupItems).mockResolvedValue({
+    total: 0,
+    truncated: false,
+    exactPageTotal: 0,
+    exactPageTruncated: false,
+    exactPageItems: [],
+    items: [],
+  });
+  vi.mocked(api.listLibraryFiles).mockResolvedValue({ total: 0, items: [] });
+  vi.mocked(api.listLibraryWatchReviewItems).mockResolvedValue(emptyReview);
+  vi.mocked(api.getFileDetail).mockResolvedValue({
+    id: 42,
+    filename: "lonely.package",
+    path: "C:/Mods/lonely.package",
+    extension: ".package",
+    kind: "Gameplay",
+    subtype: null,
+    confidence: 0.74,
+    sourceLocation: "mods",
+    size: 1024,
+    modifiedAt: null,
+    creator: "Creator Two",
+    bundleName: null,
+    bundleType: null,
+    groupedFileCount: null,
+    relativeDepth: 1,
+    safetyNotes: [],
+    parserWarnings: [],
+    installedVersionSummary: null,
+    watchResult: {
+      status: "not_watched",
+      sourceKind: null,
+      sourceOrigin: "none",
+      sourceLabel: null,
+      sourceUrl: null,
+      source: null,
+      patreonUrl: null,
+      capability: "saved_reference_only",
+      canRefreshNow: false,
+      providerName: null,
+      latestVersion: null,
+      checkedAt: null,
+      confidence: "unknown",
+      note: "No approved watch source is saved for this installed content yet.",
+      evidence: [],
+    },
+    insights: { ...emptyInsights, creatorHints: ["Creator Two"], familyHints: ["lonely"] },
+  } as never);
+
+  render(
+    <UiPreferencesProvider mode="seasoned">
+      <UpdatesScreen
+        refreshVersion={0}
+        onNavigate={() => {}}
+        userView="standard"
+        initialMode="setup"
+        initialFileId={42}
+      />
+    </UiPreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByText("lonely.package").length).toBeGreaterThan(0);
+  });
+  expect(screen.getByText(/Focused from Library or Preflight/i)).toBeInTheDocument();
+  expect(screen.getAllByText("No update source").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Add or confirm a source").length).toBeGreaterThan(0);
+  expect(screen.getByText("What SimSuite can check")).toBeInTheDocument();
+  expect(screen.getByText("What SimSuite cannot check")).toBeInTheDocument();
 });

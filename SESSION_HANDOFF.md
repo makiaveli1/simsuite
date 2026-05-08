@@ -1,5 +1,66 @@
 # Session Handoff
 
+## Current Session (May 8, 2026 - Updates Workflow v1)
+
+- **Mode**: code
+- **Focus**: trust-first update source setup and update review flow
+
+### Progress Made
+
+1. **Audited the current Updates implementation**:
+   - durable audit note created in `simsuite-reports/UPDATES_WORKFLOW_V1_REPORT.md`
+   - confirmed real watch storage, commands, narrow checkers, route wiring, and existing gaps
+   - classified CurseForge and generic web checking as future/provider work for this sprint
+
+2. **Cleaned up update state wording**:
+   - Updates now uses cautious states such as `No update source`, `Possible source`, `Watched`, `Reminder only`, `Could not check`, `Possible update`, `Update may be available`, `Checked recently`, and `No update found`
+   - removed automatic-update style claims from the Updates workflow
+   - Home, Library, detail panels, More Details, Settings watched-page controls, Downloads special-mod source guidance, development mock data, and the tray tooltip now use the same trust-first wording
+
+3. **Improved focused Updates routing**:
+   - Library and Safe Action Preflight still route by `fileId`
+   - Updates now explains when a focused file came from Library or Preflight but is outside the current queue page
+   - no-source focused files now show source confidence, detected clues, what SimSuite can check, what it cannot check, and safe next actions
+
+4. **Kept provider scope conservative**:
+   - no scraping added
+   - no automatic download or replacement added
+   - no broad CurseForge matching added
+   - existing narrow GitHub/special-mod checker boundary was preserved
+
+### Verification
+
+- `npm run test:unit -- src/screens/UpdatesScreen.test.tsx` failed first on new trust-first expectations, then passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml tray_tooltip_prefers_exact_updates` failed first on old tooltip wording, then passed.
+- `npm run test:unit -- src/screens/library/LibraryDetailsPanel.test.tsx src/screens/library/libraryDisplay.test.ts src/screens/library/actionPreflight.test.ts` passed.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npx tsc --noEmit` passed.
+- `npm run test:unit` passed: `15` files, `49` tests.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` passed.
+- `cd src-tauri; cargo check` passed with existing Rust warnings.
+- `cd src-tauri; cargo build --release` passed with existing Rust warnings.
+- `npm run test:rust` passed: `219` tests, with existing Rust warnings.
+- `npm run desktop:proof:fixtures` and `npm run desktop:smoke:fixtures` failed before launch because the npm wrappers use `/mnt/c/...` PowerShell paths in this native Windows session.
+- Native fixture scripts passed:
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\run-desktop-library-proof.ps1`
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\run-tauri-smoke.ps1`
+
+### Known Problems / Gaps
+
+- Desktop fixture npm wrappers should be made cross-environment; the underlying PowerShell scripts work.
+- `content_watch_results.status` still does not persist a separate `check_failed` state.
+- Reminder-only behavior is still derived from capability/review reason rather than a dedicated persisted state.
+- The setup/no-source queue is still capped and not exhaustive for very large libraries.
+- CurseForge remains future provider work; no API integration or matching was added.
+- Generic creator pages remain reminder-only unless a safe supported checker exists.
+- A pre-existing `src/styles/globals.css` home hero metric tweak remains outside this sprint.
+
+### Next Best Step
+
+1. Make the desktop fixture npm wrappers work from both WSL-style shells and native Windows PowerShell.
+2. Add a dedicated persisted `check_failed` status if future update review needs clearer failure history.
+3. Design provider onboarding before adding CurseForge or other provider integrations.
+
 ## Current Session (April 25, 2026 - Folder empty-state support)
 
 - **Mode**: code

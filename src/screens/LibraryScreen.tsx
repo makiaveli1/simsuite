@@ -2393,13 +2393,13 @@ function formatInstalledVersionValue(value: string | null) {
 function watchStatusLabel(status: NonNullable<FileDetail["watchResult"]>["status"]) {
   switch (status) {
     case "current":
-      return "No new update found";
+      return "Checked recently";
     case "exact_update_available":
-      return "Update found";
+      return "Update may be available";
     case "possible_update":
       return "Possible update";
     case "unknown":
-      return "Couldn't confirm";
+      return "Could not check";
     case "not_watched":
     default:
       return "No update source";

@@ -1984,13 +1984,13 @@ export function buildSheetCompatibilitySection(
             className={`library-health-pill is-${watch.status === "current" ? "calm" : watch.status === "exact_update_available" ? "attention" : "muted"}`}
           >
             {watch.status === "current"
-              ? "No new update found"
+              ? "Checked recently"
               : watch.status === "exact_update_available"
-                ? "Update found"
+                ? "Update may be available"
                 : watch.status === "possible_update"
                   ? "Possible update"
                   : watch.status === "unknown"
-                    ? "Couldn't confirm"
+                    ? "Could not check"
                     : "No update source"}
           </strong>
         </div>
@@ -2308,13 +2308,13 @@ function computeLibraryHealthIssue(
 function describeWatchStatus(watchStatus?: WatchStatus): string {
   switch (watchStatus) {
     case "current":
-      return "No new update found";
+      return "Checked recently";
     case "exact_update_available":
-      return "Update found";
+      return "Update may be available";
     case "possible_update":
       return "Possible update";
     case "unknown":
-      return "Couldn't confirm";
+      return "Could not check";
     case "not_watched":
     default:
       return "No update source";

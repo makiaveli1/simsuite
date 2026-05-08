@@ -217,11 +217,11 @@ export function LibraryDetailSheet({
                         <span className="inspect-evidence-label">Compatibility</span>
                         {selectedFile.watchResult && (
                           <span className={`inspect-chip inspect-chip--compat inspect-chip--compat-${selectedFile.watchResult.status}`}>
-                            {selectedFile.watchResult.status === "current" ? "✓ No new update found" :
-                             selectedFile.watchResult.status === "exact_update_available" ? "↻ Update found" :
-                             selectedFile.watchResult.status === "possible_update" ? "↻ Possible update" :
-                             selectedFile.watchResult.status === "not_watched" ? "○ No update source" :
-                             selectedFile.watchResult.status === "unknown" ? "? Couldn't confirm" :
+                            {selectedFile.watchResult.status === "current" ? "Checked recently" :
+                             selectedFile.watchResult.status === "exact_update_available" ? "Update may be available" :
+                             selectedFile.watchResult.status === "possible_update" ? "Possible update" :
+                             selectedFile.watchResult.status === "not_watched" ? "No update source" :
+                             selectedFile.watchResult.status === "unknown" ? "Could not check" :
                              selectedFile.watchResult.status}
                           </span>
                         )}

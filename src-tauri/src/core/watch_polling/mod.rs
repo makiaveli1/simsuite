@@ -197,7 +197,7 @@ fn refresh_tray_tooltip(app: &AppHandle, state: &AppState) -> AppResult<()> {
 fn build_tray_tooltip(exact_updates: i64, possible_updates: i64, unknown_updates: i64) -> String {
     if exact_updates > 0 {
         return format!(
-            "SimSuite - {exact_updates} confirmed mod update{} waiting",
+            "SimSuite - {exact_updates} possible update{} to review",
             if exact_updates == 1 { "" } else { "s" }
         );
     }
@@ -216,7 +216,7 @@ fn build_tray_tooltip(exact_updates: i64, possible_updates: i64, unknown_updates
         );
     }
 
-    "SimSuite - watched mods look current".to_owned()
+    "SimSuite - no watched update leads right now".to_owned()
 }
 
 fn save_watch_refresh_error(state: &AppState, error: Option<String>) -> AppResult<()> {
@@ -270,11 +270,15 @@ mod tests {
     fn tray_tooltip_prefers_exact_updates() {
         assert_eq!(
             build_tray_tooltip(2, 1, 1),
-            "SimSuite - 2 confirmed mod updates waiting"
+            "SimSuite - 2 possible updates to review"
         );
         assert_eq!(
             build_tray_tooltip(0, 1, 0),
             "SimSuite - 1 possible mod update to check"
+        );
+        assert_eq!(
+            build_tray_tooltip(0, 0, 0),
+            "SimSuite - no watched update leads right now"
         );
     }
 

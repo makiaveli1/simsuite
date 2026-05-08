@@ -214,7 +214,7 @@ export function HomeScreen({
   const snapshotRows = [
     ["Inbox", (overview?.downloadsCount ?? 0).toLocaleString(), "Fresh downloads still waiting for a safe pass."],
     [userView === "beginner" ? "Needs review" : "Review", (overview?.reviewCount ?? 0).toLocaleString(), "Files that still need a human check."],
-    ["Update found", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Tracked pages with clear version evidence for a newer release."],
+    ["Update may be available", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Tracked pages with stronger evidence that a newer release may exist."],
     ...(!denseDetails
       ? []
       : [[
@@ -233,7 +233,7 @@ export function HomeScreen({
   ] as const;
 
   const watchRows = [
-    ["Update found", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages with clear evidence for a newer release."],
+    ["Update may be available", (overview?.exactUpdateItems ?? 0).toLocaleString(), "Pages with stronger evidence that a newer release may exist."],
     ["Possible updates", (overview?.possibleUpdateItems ?? 0).toLocaleString(), "Pages that changed but still need a little caution."],
     [watchSetupLabel, (overview?.watchSetupItems ?? 0).toLocaleString(), "Installed items that still need one saved update page first."],
     ...(!calmDetails
