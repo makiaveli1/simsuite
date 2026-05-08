@@ -28,6 +28,7 @@ Checks passed:
 - `npm run test:rust` (`221` tests, with existing Rust warnings)
 - `npm run desktop:proof:fixtures`
 - `npm run desktop:smoke:fixtures`
+- implementation commit: `4aaa7e7`
 
 Important remaining gap:
 

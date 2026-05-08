@@ -37,6 +37,7 @@
 - `npm run test:rust` passed: 221 tests, with existing Rust warnings.
 - `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
 - `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed`.
+- Implementation commit: `4aaa7e7`.
 
 ### Known Problems / Gaps
 

@@ -192,4 +192,4 @@ Future work:
 
 ## Commit
 
-- Pending before commit.
+- Implementation commit: `4aaa7e7` (`Persist update check failure and reminder-only states`).
