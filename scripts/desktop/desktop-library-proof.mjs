@@ -155,6 +155,66 @@ async function waitForVisibleCssText(driver, selector, timeoutMs = 30000) {
   throw new Error(`Timed out waiting for visible selector ${selector}`);
 }
 
+async function waitForVisibleElement(driver, selector, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const elements = await driver.findElements(By.css(selector));
+    for (const element of elements) {
+      if (await element.isDisplayed()) {
+        return element;
+      }
+    }
+    await sleep(driver, 250);
+  }
+  throw new Error(`Timed out waiting for visible selector ${selector}`);
+}
+
+async function clickVisibleButtonByAriaLabel(driver, ariaLabel, timeoutMs = 30000) {
+  const locator = By.xpath(`//button[@aria-label = ${xpathString(ariaLabel)}]`);
+  await driver.wait(until.elementLocated(locator), timeoutMs);
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const buttons = await driver.findElements(locator);
+    for (const button of buttons) {
+      if ((await button.isDisplayed()) && (await button.isEnabled())) {
+        try {
+          await button.click();
+        } catch {
+          await driver.executeScript("arguments[0].click()", button);
+        }
+        return;
+      }
+    }
+    await sleep(driver, 250);
+  }
+
+  throw new Error(`Could not find an enabled button with aria-label "${ariaLabel}".`);
+}
+
+async function clickAnyVisibleButton(driver, partialTexts, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    for (const partialText of partialTexts) {
+      const locator = By.xpath(`//button[contains(normalize-space(.), ${xpathString(partialText)})]`);
+      const buttons = await driver.findElements(locator);
+      for (const button of buttons) {
+        if ((await button.isDisplayed()) && (await button.isEnabled())) {
+          try {
+            await button.click();
+          } catch {
+            await driver.executeScript("arguments[0].click()", button);
+          }
+          return partialText;
+        }
+      }
+    }
+    await sleep(driver, 250);
+  }
+
+  throw new Error(`Could not find an enabled button containing any of: ${partialTexts.join(", ")}.`);
+}
+
 async function takeScreenshot(driver, outputPath) {
   const base64 = await driver.takeScreenshot();
   fs.writeFileSync(outputPath, Buffer.from(base64, "base64"));
@@ -310,16 +370,40 @@ async function main() {
     await takeScreenshot(driver, selectedShot);
     summary.screenshots.push(selectedShot);
 
+    await clickVisibleButtonByAriaLabel(driver, "Grid view");
+    await waitForVisibleElement(driver, ".library-grid", 30000);
+    await waitForVisibleElement(driver, ".library-card", 30000);
+    const gridShot = path.join(runDir, "02-library-grid-view.png");
+    await takeScreenshot(driver, gridShot);
+    summary.screenshots.push(gridShot);
+
+    await clickVisibleButtonByAriaLabel(driver, "Folders view");
+    await waitForVisibleElement(driver, ".library-folders-layout", 30000);
+    await waitForAnyText(driver, ["Game folders", "Direct files", "Mods", "Tray"], 30000);
+    const foldersShot = path.join(runDir, "03-library-folder-view.png");
+    await takeScreenshot(driver, foldersShot);
+    summary.screenshots.push(foldersShot);
+
+    await clickVisibleButtonByAriaLabel(driver, "List view");
+    await openRow(driver, targets.mccc);
+    summary.detailSheetButton = await clickAnyVisibleButton(driver, ["Inspect file", "More details"], 30000);
+    await waitForVisibleElement(driver, ".library-detail-sheet", 30000);
+    const detailSheetShot = path.join(runDir, "04-library-detail-sheet.png");
+    await takeScreenshot(driver, detailSheetShot);
+    summary.screenshots.push(detailSheetShot);
+    await clickAnyVisibleButton(driver, ["Done"], 30000);
+    await sleep(driver, 400);
+
     await clickVisibleButton(driver, "Review cautions");
     summary.mcccDetailText = await waitForVisibleCssText(driver, ".action-preflight-detail-block", 30000);
-    const detailShot = path.join(runDir, "02-library-preflight-detail-mccc.png");
+    const detailShot = path.join(runDir, "05-library-preflight-detail-mccc.png");
     await takeScreenshot(driver, detailShot);
     summary.screenshots.push(detailShot);
 
     await clickVisibleButton(driver, "Open Needs Review");
     summary.reviewHash = await waitForHash(driver, "#review", 30000);
     summary.reviewBodyHasMccc = /MCCC|MCCommandCenter/i.test(await getBodyText(driver));
-    const reviewShot = path.join(runDir, "03-review-route.png");
+    const reviewShot = path.join(runDir, "06-review-route.png");
     await takeScreenshot(driver, reviewShot);
     summary.screenshots.push(reviewShot);
 

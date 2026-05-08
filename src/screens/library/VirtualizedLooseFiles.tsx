@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
@@ -29,7 +29,6 @@ export function VirtualizedLooseFiles({
   onSelectFile,
 }: VirtualizedLooseFilesProps) {
   const [expanded, setExpanded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const count = allFiles.length;
   const selectedId = selectedFile?.id ?? null;
@@ -55,8 +54,42 @@ export function VirtualizedLooseFiles({
     );
   }
 
-  // ── Virtualized render: large list, user expanded it ─────────────────────
   const visibleCount = expanded ? count : VIRTUALIZE_THRESHOLD;
+
+  return (
+    <VirtualizedLooseFilesLarge
+      userView={userView}
+      allFiles={allFiles}
+      selectedId={selectedId}
+      onSelectFile={onSelectFile}
+      expanded={expanded}
+      visibleCount={visibleCount}
+      onExpandedChange={setExpanded}
+    />
+  );
+}
+
+interface VirtualizedLooseFilesLargeProps {
+  userView: UserView;
+  allFiles: LibraryFileRow[];
+  selectedId: number | null;
+  onSelectFile: (file: LibraryFileRow) => void;
+  expanded: boolean;
+  visibleCount: number;
+  onExpandedChange: (value: boolean) => void;
+}
+
+function VirtualizedLooseFilesLarge({
+  userView,
+  allFiles,
+  selectedId,
+  onSelectFile,
+  expanded,
+  visibleCount,
+  onExpandedChange,
+}: VirtualizedLooseFilesLargeProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const count = allFiles.length;
 
   const virtualizer = useVirtualizer({
     count: visibleCount,
@@ -68,11 +101,13 @@ export function VirtualizedLooseFiles({
   const virtualItems = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
-  // Pre-compute row models in a single pass
-  const modelCache = new Map<number, LibraryRowModel>();
-  for (const file of allFiles) {
-    modelCache.set(file.id, buildLibraryRowModel(file, userView));
-  }
+  const modelCache = useMemo(() => {
+    const cache = new Map<number, LibraryRowModel>();
+    for (const file of allFiles) {
+      cache.set(file.id, buildLibraryRowModel(file, userView));
+    }
+    return cache;
+  }, [allFiles, userView]);
 
   return (
     <div className="virtualized-loose-files">
@@ -142,7 +177,7 @@ export function VirtualizedLooseFiles({
           <button
             type="button"
             className="folder-load-more"
-            onClick={() => setExpanded(false)}
+            onClick={() => onExpandedChange(false)}
           >
             <ChevronUp size={14} strokeWidth={2} />
             Show less
@@ -151,7 +186,7 @@ export function VirtualizedLooseFiles({
           <button
             type="button"
             className="folder-load-more"
-            onClick={() => setExpanded(true)}
+            onClick={() => onExpandedChange(true)}
           >
             <ChevronDown size={14} strokeWidth={2} />
             Show all {count.toLocaleString()} files

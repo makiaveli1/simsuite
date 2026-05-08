@@ -34,6 +34,38 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
   enableSelection = true,
   showPagination = true,
 }: LibraryCollectionTableProps) {
+  // Build row models at the component top level so React hook order stays stable
+  // when the list changes between empty and populated states.
+  const modelCache = useMemo(() => {
+    const cache = new Map<number, LibraryRowModel>();
+    for (const row of rows) {
+      cache.set(row.id, buildLibraryRowModel(row, userView));
+    }
+    return cache;
+  }, [rows, userView]);
+
+  const filteredRows = useMemo(() => {
+    const seenBundleNames = new Set<string>();
+    const nextRows: LibraryFileRow[] = [];
+
+    for (const row of rows) {
+      const model = modelCache.get(row.id);
+      if (!model) continue;
+
+      const isGhost = model.kind === "Unknown" && !row.filename;
+      const isTrayDup =
+        row.bundleName != null &&
+        (row.groupedFileCount ?? 0) > 1 &&
+        seenBundleNames.has(row.bundleName);
+
+      if (isGhost || isTrayDup) continue;
+      if (row.bundleName) seenBundleNames.add(row.bundleName);
+      nextRows.push(row);
+    }
+
+    return nextRows;
+  }, [modelCache, rows]);
+
   return (
     <>
       <div className="table-scroll library-table-scroll library-list-shell">
@@ -51,40 +83,10 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
         </div>
 
         <div className="library-list-body">
-          {rows.length ? (
-            (() => {
-              // Phase 5y: single-pass model cache — buildLibraryRowModel called ONCE per row.
-              // Memoized over [rows, userView] — only recomputes when data or view changes.
-              const modelCache = useMemo(() => {
-                const cache = new Map<number, LibraryRowModel>();
-                for (const row of rows) {
-                  cache.set(row.id, buildLibraryRowModel(row, userView));
-                }
-                return cache;
-              }, [rows, userView]);
-
-              // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
-              // to a single pack-head row. Drop ghost rows (Unknown kind + empty title).
-              const seenBundleNames = new Set<string>();
-              const filteredRows: LibraryFileRow[] = [];
-              for (const row of rows) {
-                const model = modelCache.get(row.id)!;
-                // Ghost: Unknown kind with no filename — backend metadata entry, skip
-                const isGhost = model.kind === "Unknown" && !row.filename;
-                // Tray dup: bundle with more than one file — only show the first
-                const isTrayDup =
-                  row.bundleName != null &&
-                  (row.groupedFileCount ?? 0) > 1 &&
-                  seenBundleNames.has(row.bundleName);
-                if (isGhost) continue;
-                if (isTrayDup) continue;
-                if (row.bundleName) seenBundleNames.add(row.bundleName);
-                filteredRows.push(row);
-              }
-
-              return filteredRows.map((row) => {
-                const model = modelCache.get(row.id)!;
-                const isChecked = selectedIds.has(row.id);
+          {filteredRows.length ? (
+            filteredRows.map((row) => {
+              const model = modelCache.get(row.id)!;
+              const isChecked = selectedIds.has(row.id);
 
               return (
                 <m.div
@@ -265,8 +267,7 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                   </div>
                 </m.div>
               );
-              });
-            })()
+            })
           ) : (
             <div className="library-list-empty">
               {userView === "beginner"

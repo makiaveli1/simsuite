@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { LibraryFileRow } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
 
@@ -24,6 +24,10 @@ const SAMPLE_ROWS: LibraryFileRow[] = [
   },
 ];
 
+afterEach(() => {
+  cleanup();
+});
+
 it("shows a calm row in casual mode without the full path", () => {
   render(
     <LibraryCollectionTable
@@ -42,4 +46,38 @@ it("shows a calm row in casual mode without the full path", () => {
 
   expect(screen.getByText(/betterbuildbuy/i)).toBeInTheDocument();
   expect(screen.queryByText(/mods\\buildbuy/i)).not.toBeInTheDocument();
+});
+
+it("can rerender from empty results to populated rows without changing hook order", () => {
+  const props = {
+    userView: "standard" as const,
+    selectedId: null,
+    selectedIds: new Set<number>(),
+    page: 0,
+    totalPages: 1,
+    onSelect: () => {},
+    onToggleSelect: () => {},
+    onPrevPage: () => {},
+    onNextPage: () => {},
+  };
+
+  const { rerender } = render(
+    <LibraryCollectionTable
+      {...props}
+      rows={[]}
+    />,
+  );
+
+  expect(screen.getByText(/no indexed files match/i)).toBeInTheDocument();
+
+  expect(() =>
+    rerender(
+      <LibraryCollectionTable
+        {...props}
+        rows={SAMPLE_ROWS}
+      />,
+    ),
+  ).not.toThrow();
+
+  expect(screen.getAllByText(/betterbuildbuy/i).length).toBeGreaterThan(0);
 });

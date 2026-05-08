@@ -151,6 +151,54 @@ const emptyFolderMetadata: FolderTreeMetadata = {
   ],
 };
 
+const mixedSourceFolderMetadata: FolderTreeMetadata = {
+  total_folders: 4,
+  roots: [
+    {
+      path: "Mods",
+      name: "Mods",
+      depth: 0,
+      sourceLocation: "mods",
+      directFileCount: 0,
+      childFolderCount: 1,
+      totalFileCount: 1,
+      children: [
+        {
+          path: "Mods/Gameplay",
+          name: "Gameplay",
+          depth: 1,
+          sourceLocation: "mods",
+          directFileCount: 1,
+          childFolderCount: 0,
+          totalFileCount: 1,
+          children: [],
+        },
+      ],
+    },
+    {
+      path: "Tray",
+      name: "Tray",
+      depth: 0,
+      sourceLocation: "tray",
+      directFileCount: 0,
+      childFolderCount: 1,
+      totalFileCount: 1,
+      children: [
+        {
+          path: "Tray/Households",
+          name: "Households",
+          depth: 1,
+          sourceLocation: "tray",
+          directFileCount: 1,
+          childFolderCount: 0,
+          totalFileCount: 1,
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -223,4 +271,53 @@ it("shows an empty folder summary and opens the configured folder path", async (
   await waitFor(() => {
     expect(api.revealFileInFolder).toHaveBeenCalledWith("C:\\Mods\\Empty");
   });
+});
+
+it("keeps folder roots aligned with the active source filter", async () => {
+  vi.mocked(api.getLibraryFacets).mockResolvedValue(emptyFacets);
+  vi.mocked(api.getLibrarySettings).mockResolvedValue(librarySettings);
+  vi.mocked(api.getLibrarySummary).mockResolvedValue(emptySummary);
+  vi.mocked(api.listLibraryFiles).mockResolvedValue(emptyRows);
+  vi.mocked(api.getFolderTreeMetadata).mockResolvedValue(mixedSourceFolderMetadata);
+  vi.mocked(api.listLibraryFilesForTree).mockResolvedValue(emptyRows);
+  vi.mocked(api.listLibraryFolderFiles).mockResolvedValue(emptyRows);
+
+  render(
+    <UiPreferencesProvider mode="seasoned">
+      <LibraryScreen refreshVersion={0} onNavigate={() => {}} userView="standard" />
+    </UiPreferencesProvider>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
+  fireEvent.change(screen.getByLabelText(/filter by source/i), {
+    target: { value: "mods" },
+  });
+
+  await waitFor(() => {
+    expect(api.listLibraryFiles).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "mods",
+      }),
+    );
+  });
+  vi.mocked(api.listLibraryFolderFiles).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: /folders view/i }));
+
+  await waitFor(() => {
+    expect(api.listLibraryFolderFiles).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folderPath: "Mods",
+        recursive: false,
+      }),
+    );
+  });
+
+  expect(api.listLibraryFolderFiles).not.toHaveBeenCalledWith(
+    expect.objectContaining({
+      folderPath: "Tray",
+      recursive: false,
+    }),
+  );
+  expect(screen.queryByRole("button", { name: /^tray/i })).toBeNull();
 });

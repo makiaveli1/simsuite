@@ -386,6 +386,16 @@ export function LibraryScreen({
   }, [viewMode]);
 
   useEffect(() => {
+    if (viewMode !== "folders" || !activeFolderPath) return;
+    if (source === "mods" && activeFolderPath.startsWith("Tray")) {
+      setActiveFolderPath(null);
+    }
+    if (source === "tray" && activeFolderPath.startsWith("Mods")) {
+      setActiveFolderPath(null);
+    }
+  }, [activeFolderPath, source, viewMode]);
+
+  useEffect(() => {
     if (viewMode !== "folders") return;
 
     const seq = ++folderContentSeqRef.current;
@@ -811,6 +821,8 @@ export function LibraryScreen({
   // ── Folder tree ──────────────────────────────────────────────────────────
   // Tree rendering uses lightweight metadata and keeps the previous tree during warm reload.
   const folderTreeRoots = folderTree ?? prevTreeCacheRef.current ?? null;
+  const showModsFolderRoot = source !== "tray";
+  const showTrayFolderRoot = source !== "mods";
 
   const activeFolderNode = useMemo(() => {
     if (!activeFolderPath || !folderTreeRoots) return undefined;
@@ -852,8 +864,12 @@ export function LibraryScreen({
         ...folderTreeRoots.tray,
         rootFiles: rootItemsBySource.Tray,
       };
+      const rootFolders = [
+        showModsFolderRoot ? modsWithRoots : null,
+        showTrayFolderRoot ? trayWithRoots : null,
+      ].filter((item): item is FolderNode => item !== null);
       return {
-        subfolders: [modsWithRoots, trayWithRoots],
+        subfolders: rootFolders,
         files: [],
         rootFiles: [...rootItemsBySource.Mods, ...rootItemsBySource.Tray],
       };
@@ -871,7 +887,15 @@ export function LibraryScreen({
       files,
       rootFiles,
     };
-  }, [folderRows?.items, folderTreeRoots, activeFolderPath, activeFolderNode, rootItemsBySource]);
+  }, [
+    folderRows?.items,
+    folderTreeRoots,
+    activeFolderPath,
+    activeFolderNode,
+    rootItemsBySource,
+    showModsFolderRoot,
+    showTrayFolderRoot,
+  ]);
 
   // ── Synthetic root node for FolderContentPane when at root ─────────────
   const syntheticRoot: FolderNode = useMemo(() => {
@@ -882,13 +906,18 @@ export function LibraryScreen({
       name: "Root",
       fullPath: "",
       depth: -1,
-      children: [folderTreeRoots.mods, folderTreeRoots.tray],
+      children: [
+        showModsFolderRoot ? folderTreeRoots.mods : null,
+        showTrayFolderRoot ? folderTreeRoots.tray : null,
+      ].filter((item): item is FolderNode => item !== null),
       directFileCount: 0,
-      // Tree total (2,963 files in subfolders) + root-level files (9,777)
-      totalFileCount: folderTreeRoots.mods.totalFileCount + folderTreeRoots.tray.totalFileCount + rootFileCount,
-      childFolderCount: 2,
+      totalFileCount:
+        (showModsFolderRoot ? folderTreeRoots.mods.totalFileCount : 0) +
+        (showTrayFolderRoot ? folderTreeRoots.tray.totalFileCount : 0) +
+        rootFileCount,
+      childFolderCount: Number(showModsFolderRoot) + Number(showTrayFolderRoot),
     };
-  }, [folderTreeRoots, rootFileCount]);
+  }, [folderTreeRoots, rootFileCount, showModsFolderRoot, showTrayFolderRoot]);
 
   // ── Folder full path for "Open folder" (Phase 5ap) ───────────────────────────────
   // activeFolderPath is relative (e.g. "Mods/CAS/hairs") but Explorer needs the real
@@ -1902,14 +1931,14 @@ export function LibraryScreen({
                 cached (prevTreeCacheRef.current during a warm reload).
                 No spinner, no "Building folder tree…" text — the tree feels instant.
               */}
-              {(folderTreeRoots ?? prevTreeCacheRef.current) ? (
+              {(folderTreeRoots ?? prevTreeCacheRef.current) && showModsFolderRoot ? (
                 <FolderTreePane
                   tree={(folderTreeRoots ?? prevTreeCacheRef.current)!.mods}
                   activePath={activeFolderPath}
                   onNavigate={(path) => setActiveFolderPath(path)}
                 />
               ) : null}
-              {(folderTreeRoots ?? prevTreeCacheRef.current) ? (
+              {(folderTreeRoots ?? prevTreeCacheRef.current) && showTrayFolderRoot ? (
                 <FolderTreePane
                   tree={(folderTreeRoots ?? prevTreeCacheRef.current)!.tray}
                   activePath={activeFolderPath}

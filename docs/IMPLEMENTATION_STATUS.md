@@ -1,5 +1,37 @@
 # SimSuite Implementation Status
 
+## Current session note (May 8, 2026 - Library Production Readiness v1)
+
+This session made the Library surface more stable and added broader desktop proof coverage.
+
+Important changes and findings:
+
+- created `simsuite-reports/LIBRARY_PRODUCTION_READINESS_V1_REPORT.md` with the Library audit and verification notes.
+- confirmed the pre-existing `src/styles/globals.css` diff is a Home hero metric styling tweak and left it unstaged.
+- fixed conditional React hook usage in the Library list, grid, and direct-file renderers.
+- kept Library row/card model caching stable without adding full-library loads during ordinary browsing.
+- made the folder root panes respect the active Mods/Tray source filter.
+- changed Library update wording from stronger update claims to `Possible updates`, `Update leads first`, and `update leads`.
+- expanded the desktop Library proof script to cover list selection, grid view, folder view, detail sheet, Safe Action Preflight detail, and Needs Review routing.
+- did not add safe-delete, missing-mesh, dependency, scraping, automatic update, or replacement claims.
+
+Checks passed:
+
+- focused Library unit tests
+- `npx tsc --noEmit`
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run test:unit` (`19` files, `59` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- WSL runtime execution was not run in this sprint.
+- The desktop proof did not click real `Open folder`, Updates bridge, or Duplicates bridge actions from Library.
+- Separate browser console inspection was not run.
+- truly empty disk folders still need scanner metadata before the UI can show them from real data.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 8, 2026 - Updates State Persistence v1)
 
 This session made the Updates backend state model match the trust-first UI more closely.

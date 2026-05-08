@@ -9,7 +9,7 @@ type SortField = LibrarySortField;
 
 const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "has_updates", label: "Has Updates" },
+  { value: "has_updates", label: "Possible updates" },
   { value: "needs_attention", label: "Needs review" },
   { value: "not_tracked", label: "No update source" },
   { value: "duplicates", label: "Duplicates" },
@@ -19,7 +19,7 @@ const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: "name", label: "Name" },
   { value: "creator", label: "Creator" },
   { value: "recently_modified", label: "Recently Modified" },
-  { value: "has_updates_first", label: "Has updates first" },
+  { value: "has_updates_first", label: "Update leads first" },
 ];
 
 const CONFIDENCE_OPTIONS = [
@@ -350,7 +350,7 @@ export function LibraryTopStrip({
             )}
             {librarySummary.hasUpdates > 0 && (
               <span className="library-summary-pill has-updates">
-                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong> updates
+                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong> update leads
               </span>
             )}
             {librarySummary.needsReview > 0 && (

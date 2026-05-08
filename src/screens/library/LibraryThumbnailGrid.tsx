@@ -92,42 +92,41 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
   page,
   totalPages,
 }: LibraryThumbnailGridProps) {
+  // Keep hook order stable when grid results switch between empty and populated.
+  const modelCache = useMemo(() => {
+    const cache = new Map<number, LibraryCardModel>();
+    for (const row of rows) {
+      cache.set(row.id, buildLibraryCardModel(row, userView));
+    }
+    return cache;
+  }, [rows, userView]);
+
+  const filteredRows = useMemo(() => {
+    const seenBundleNames = new Set<string>();
+    const nextRows: LibraryFileRow[] = [];
+
+    for (const row of rows) {
+      const model = modelCache.get(row.id);
+      if (!model) continue;
+      if (model.kind === "Unknown" && !model.displayTitle) continue;
+      if (model.isGrouped && model.bundleName) {
+        if (seenBundleNames.has(model.bundleName)) continue;
+        seenBundleNames.add(model.bundleName);
+      }
+      nextRows.push(row);
+    }
+
+    return nextRows;
+  }, [modelCache, rows]);
+
   return (
     <>
       <div className="library-grid-scroll library-list-shell">
         <div className="library-grid">
-          {rows.length ? (
-            (() => {
-              // Phase 5y: single-pass model cache — buildLibraryCardModel called ONCE per row,
-              // not twice (filter + map). Cache is keyed by row.id so identity is stable
-              // within a render. Memoized over [rows, userView] — only recomputes when
-              // the actual data or view changes.
-              const modelCache = useMemo(() => {
-                const cache = new Map<number, LibraryCardModel>();
-                for (const row of rows) {
-                  cache.set(row.id, buildLibraryCardModel(row, userView));
-                }
-                return cache;
-              }, [rows, userView]);
-
-              // Phase 5: deduplicate tray packs — collapse all files sharing a bundleName
-              // to a single pack-head card. Also drop ghost cards (Unknown kind + empty title)
-              // that the backend returns as variant/metadata entries with no useful content.
-              const seenBundleNames = new Set<string>();
-              const filteredRows: LibraryFileRow[] = [];
-              for (const row of rows) {
-                const model = modelCache.get(row.id)!;
-                if (model.kind === "Unknown" && !model.displayTitle) continue;
-                if (model.isGrouped && model.bundleName) {
-                  if (seenBundleNames.has(model.bundleName)) continue;
-                  seenBundleNames.add(model.bundleName);
-                }
-                filteredRows.push(row);
-              }
-
-              return filteredRows.map((row) => {
-                const model = modelCache.get(row.id)!;
-                const isSelected = selectedId === row.id;
+          {filteredRows.length ? (
+            filteredRows.map((row) => {
+              const model = modelCache.get(row.id)!;
+              const isSelected = selectedId === row.id;
 
               return (
                 <m.div
@@ -258,8 +257,7 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
                   <div className={`library-card-confidence-bar confidence-bar--${model.confidenceLevel}`} aria-label={`${model.confidenceLevel} confidence`} />
                 </m.div>
               );
-              });
-            })()
+            })
           ) : (
             <div className="library-grid-empty">
               {userView === "beginner"

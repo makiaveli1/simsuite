@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (May 8, 2026 - Library Production Readiness v1)
+
+- **Mode**: code
+- **Focus**: make the Library surface more stable, honest, and runtime-proven
+
+### Progress Made
+
+1. **Audited the current Library implementation**:
+   - created `simsuite-reports/LIBRARY_PRODUCTION_READINESS_V1_REPORT.md`
+   - inspected Library route/view components, folder helpers, inspector/detail wiring, route bridges, backend folder/list commands, tests, and proof scripts
+   - inspected the pre-existing `src/styles/globals.css` change and confirmed it is a Home hero metric styling tweak, not a Library fix
+
+2. **Fixed Library runtime stability risks**:
+   - moved list and grid row model memoization out of conditional render branches
+   - split the large direct-files virtualized renderer into a child component so hook order stays stable
+   - added tests for empty-to-populated list/grid/direct-file transitions
+
+3. **Hardened folder view and wording**:
+   - folder roots now respect the active Mods/Tray source filter
+   - incompatible selected folder roots are cleared when the source filter changes
+   - Library update filter/sort/summary wording now says `Possible updates`, `Update leads first`, and `update leads`
+
+4. **Expanded desktop Library proof**:
+   - the npm proof now captures list selection, grid view, folder view, detail sheet, Safe Action Preflight detail, and Needs Review route screenshots
+
+### Verification
+
+- Focused Library tests passed.
+- `npx tsc --noEmit` passed.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npm run test:unit` passed: 19 files, 59 tests.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed`.
+
+### Known Problems / Gaps
+
+- WSL runtime was not run in this sprint.
+- Desktop proof did not click the real `Open folder`, Updates, or Duplicates Library bridge actions.
+- Separate browser console-log inspection was not run.
+- Truly empty disk folders still require scanner metadata before the UI can show them from real data.
+- Existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- The pre-existing `src/styles/globals.css` change remains unstaged and outside this sprint.
+
+### Next Best Step
+
+1. Add a dedicated Library runtime proof path for Open folder, Updates bridge, and Duplicates bridge when the fixtures expose those actions reliably.
+
 ## Current Session (May 8, 2026 - Updates State Persistence v1)
 
 - **Mode**: code
