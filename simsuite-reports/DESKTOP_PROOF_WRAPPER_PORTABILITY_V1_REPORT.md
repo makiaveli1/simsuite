@@ -127,4 +127,4 @@ Branch: `codex/updates-workflow-v1`
 
 ## Commit
 
-- Pending.
+- Implementation commit: `8beda41` (`Fix desktop proof npm wrappers across Windows and WSL`).
