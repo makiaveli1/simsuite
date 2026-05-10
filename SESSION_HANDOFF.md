@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 10, 2026 - Library Runtime Action Proof v1)
+
+- **Mode**: code
+- **Focus**: verify and harden the remaining important Library action paths without starting a new feature area
+
+### Progress Made
+
+1. **Audited the current Library action paths**:
+   - created `simsuite-reports/LIBRARY_RUNTIME_ACTION_PROOF_V1_REPORT.md`
+   - inspected Library bridge wiring, Duplicates route context, Open Folder reveal behavior, desktop proof scripts, and WebDriver runner behavior
+   - confirmed the pre-existing `src/styles/globals.css` change is still only a Home hero metric styling tweak and left it untouched
+
+2. **Fixed Library Duplicates bridge context**:
+   - wired `LibraryScreen` to pass selected duplicate file IDs through `App`
+   - added focused-file handling to `DuplicatesScreen`
+   - Duplicates now shows `Opened from Library` context for a focused possible duplicate pair
+
+3. **Expanded runtime proof**:
+   - desktop proof now clicks the real `Open in Duplicates` action from Library Safe Action Preflight
+   - desktop proof now clicks the real `Open in Updates` action from Library Safe Action Preflight
+   - desktop proof captures runtime errors from `console.error`, uncaught `error`, and `unhandledrejection`
+   - desktop proof inspects browser logs when WebDriver supports them
+   - WebDriver setup now matches `msedgedriver` to Edge WebView2, which Tauri actually uses
+
+4. **Added safe Open Folder proof**:
+   - did not click OS Explorer from the automated desktop proof
+   - added frontend/API proof that `Open folder` uses a real disk path for a selected file
+
+### Verification
+
+- Focused Duplicates/Open Folder tests passed.
+- `npx tsc --noEmit` passed.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npm run test:unit` passed: 20 files, 61 tests.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell and reached `DESKTOP_LIBRARY_PROOF_OK`.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell and reached `Desktop smoke passed`.
+
+### Known Problems / Gaps
+
+- Automated proof did not click the OS `Open folder` action because it launches Windows Explorer outside the app.
+- Browser log inspection found warning-level Tauri callback cleanup messages, but no injected runtime errors were captured during the Duplicates or Updates bridge checks.
+- WSL runtime was not run in this sprint.
+- Truly empty disk folders still require scanner metadata before the UI can show them from real data.
+- Existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- The pre-existing `src/styles/globals.css` change remains unstaged and outside this sprint.
+
+### Next Best Step
+
+1. Add a controlled Explorer-window proof lane for `Open folder` only if the harness can close external windows reliably.
+
 ## Current Session (May 8, 2026 - Library Production Readiness v1)
 
 - **Mode**: code

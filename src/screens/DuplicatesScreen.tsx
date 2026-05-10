@@ -21,6 +21,7 @@ interface DuplicatesScreenProps {
   refreshVersion: number;
   onNavigate: (screen: Screen) => void;
   userView: UserView;
+  initialFileIds?: number[];
 }
 
 const DUPLICATES_LAYOUT_PRESETS: Array<{
@@ -49,6 +50,7 @@ export function DuplicatesScreen({
   refreshVersion,
   onNavigate,
   userView,
+  initialFileIds,
 }: DuplicatesScreenProps) {
   const {
     duplicatesDetailWidth,
@@ -66,10 +68,34 @@ export function DuplicatesScreen({
   const [duplicateType, setDuplicateType] = useState("");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const focusedFileKey = (initialFileIds ?? [])
+    .filter((id) => Number.isFinite(id))
+    .join("|");
+  const focusedFileIds = useMemo(
+    () =>
+      focusedFileKey
+        ? focusedFileKey
+            .split("|")
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id))
+        : [],
+    [focusedFileKey],
+  );
+  const focusedFileIdSet = useMemo(() => new Set(focusedFileIds), [focusedFileIds]);
 
   useEffect(() => {
     void loadDuplicates();
   }, [refreshVersion, duplicateType]);
+
+  const focusedPair = useMemo(
+    () =>
+      pairs.find(
+        (item) =>
+          focusedFileIdSet.has(item.primaryFileId) ||
+          focusedFileIdSet.has(item.secondaryFileId),
+      ) ?? null,
+    [focusedFileIdSet, pairs],
+  );
 
   useEffect(() => {
     if (!pairs.length) {
@@ -77,10 +103,15 @@ export function DuplicatesScreen({
       return;
     }
 
+    if (focusedPair && selectedId !== focusedPair.id) {
+      setSelectedId(focusedPair.id);
+      return;
+    }
+
     if (!pairs.some((item) => item.id === selectedId)) {
       setSelectedId(pairs[0].id);
     }
-  }, [pairs, selectedId]);
+  }, [focusedPair, pairs, selectedId]);
 
   async function loadDuplicates() {
     setIsLoading(true);
@@ -117,6 +148,9 @@ export function DuplicatesScreen({
   }, [pairs, search]);
 
   const selected = filteredPairs.find((item) => item.id === selectedId) ?? null;
+  const focusedFilename = focusedPair
+    ? describeFocusedDuplicateFilename(focusedPair, focusedFileIdSet)
+    : null;
   const duplicateInspectorSections = selected
     ? [
         {
@@ -227,6 +261,17 @@ export function DuplicatesScreen({
           </button>
         </div>
       </div>
+
+      {focusedFileIds.length ? (
+        <div className="audit-rail-note duplicates-focus-caption">
+          <strong>Opened from Library.</strong>
+          <p>
+            {focusedPair && focusedFilename
+              ? `Focused a possible duplicate pair for ${focusedFilename}. Compare files before changing anything.`
+              : "No matching duplicate pair was found for the selected Library file. Showing the available duplicate candidates instead."}
+          </p>
+        </div>
+      ) : null}
 
       {filteredPairs.length ? (
         <div className="duplicates-workbench">
@@ -601,6 +646,19 @@ function formatDuplicateDate(value: string | null) {
     month: "short",
     year: "numeric",
   });
+}
+
+function describeFocusedDuplicateFilename(
+  pair: DuplicatePair,
+  focusedFileIds: Set<number>,
+) {
+  if (focusedFileIds.has(pair.primaryFileId)) {
+    return pair.primaryFilename;
+  }
+  if (focusedFileIds.has(pair.secondaryFileId)) {
+    return pair.secondaryFilename;
+  }
+  return pair.primaryFilename;
 }
 
 function DuplicateFileCard({

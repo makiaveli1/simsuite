@@ -59,6 +59,13 @@ async function sleep(driver, ms) {
 }
 
 async function getBodyText(driver) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      return await driver.findElement(By.css("body")).getText();
+    } catch {
+      await sleep(driver, 150);
+    }
+  }
   return await driver.findElement(By.css("body")).getText();
 }
 
@@ -99,13 +106,17 @@ async function clickVisibleButton(driver, partialText, timeoutMs = 30000) {
   while (Date.now() - startedAt < timeoutMs) {
     const buttons = await driver.findElements(locator);
     for (const button of buttons) {
-      if ((await button.isDisplayed()) && (await button.isEnabled())) {
-        try {
-          await button.click();
-        } catch {
-          await driver.executeScript("arguments[0].click()", button);
+      try {
+        if ((await button.isDisplayed()) && (await button.isEnabled())) {
+          try {
+            await button.click();
+          } catch {
+            await driver.executeScript("arguments[0].click()", button);
+          }
+          return;
         }
-        return;
+      } catch {
+        // Element went stale during a route transition; retry the locator.
       }
     }
     await sleep(driver, 250);
@@ -122,17 +133,21 @@ async function clickVisibleElement(driver, xpath, timeoutMs = 30000) {
   while (Date.now() - startedAt < timeoutMs) {
     const elements = await driver.findElements(locator);
     for (const element of elements) {
-      if (await element.isDisplayed()) {
-        await driver.executeScript(
-          "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
-          element,
-        );
-        try {
-          await element.click();
-        } catch {
-          await driver.executeScript("arguments[0].click()", element);
+      try {
+        if (await element.isDisplayed()) {
+          await driver.executeScript(
+            "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' })",
+            element,
+          );
+          try {
+            await element.click();
+          } catch {
+            await driver.executeScript("arguments[0].click()", element);
+          }
+          return;
         }
-        return;
+      } catch {
+        // Element went stale during a route transition; retry the locator.
       }
     }
     await sleep(driver, 250);
@@ -146,8 +161,12 @@ async function waitForVisibleCssText(driver, selector, timeoutMs = 30000) {
   while (Date.now() - startedAt < timeoutMs) {
     const elements = await driver.findElements(By.css(selector));
     for (const element of elements) {
-      if (await element.isDisplayed()) {
-        return await element.getText();
+      try {
+        if (await element.isDisplayed()) {
+          return await element.getText();
+        }
+      } catch {
+        // Element went stale during a route transition; retry the selector.
       }
     }
     await sleep(driver, 250);
@@ -160,8 +179,12 @@ async function waitForVisibleElement(driver, selector, timeoutMs = 30000) {
   while (Date.now() - startedAt < timeoutMs) {
     const elements = await driver.findElements(By.css(selector));
     for (const element of elements) {
-      if (await element.isDisplayed()) {
-        return element;
+      try {
+        if (await element.isDisplayed()) {
+          return element;
+        }
+      } catch {
+        // Element went stale during a route transition; retry the selector.
       }
     }
     await sleep(driver, 250);
@@ -177,13 +200,17 @@ async function clickVisibleButtonByAriaLabel(driver, ariaLabel, timeoutMs = 3000
   while (Date.now() - startedAt < timeoutMs) {
     const buttons = await driver.findElements(locator);
     for (const button of buttons) {
-      if ((await button.isDisplayed()) && (await button.isEnabled())) {
-        try {
-          await button.click();
-        } catch {
-          await driver.executeScript("arguments[0].click()", button);
+      try {
+        if ((await button.isDisplayed()) && (await button.isEnabled())) {
+          try {
+            await button.click();
+          } catch {
+            await driver.executeScript("arguments[0].click()", button);
+          }
+          return;
         }
-        return;
+      } catch {
+        // Element went stale during a route transition; retry the locator.
       }
     }
     await sleep(driver, 250);
@@ -199,13 +226,17 @@ async function clickAnyVisibleButton(driver, partialTexts, timeoutMs = 30000) {
       const locator = By.xpath(`//button[contains(normalize-space(.), ${xpathString(partialText)})]`);
       const buttons = await driver.findElements(locator);
       for (const button of buttons) {
-        if ((await button.isDisplayed()) && (await button.isEnabled())) {
-          try {
-            await button.click();
-          } catch {
-            await driver.executeScript("arguments[0].click()", button);
+        try {
+          if ((await button.isDisplayed()) && (await button.isEnabled())) {
+            try {
+              await button.click();
+            } catch {
+              await driver.executeScript("arguments[0].click()", button);
+            }
+            return partialText;
           }
-          return partialText;
+        } catch {
+          // Element went stale during a route transition; retry the locator.
         }
       }
     }
@@ -233,6 +264,100 @@ async function invokeTauri(driver, command, payload = {}) {
     command,
     payload,
   );
+}
+
+async function installRuntimeErrorCapture(driver) {
+  await driver.executeScript(() => {
+    if (window.__SIMSUITE_LIBRARY_PROOF_ERROR_CAPTURED__) {
+      return;
+    }
+
+    window.__SIMSUITE_LIBRARY_PROOF_ERROR_CAPTURED__ = true;
+    window.__SIMSUITE_LIBRARY_PROOF_ERRORS__ = [];
+
+    const serialize = (value) => {
+      try {
+        if (value instanceof Error) {
+          return value.stack || value.message;
+        }
+        if (typeof value === "object" && value !== null) {
+          return JSON.stringify(value);
+        }
+        return String(value);
+      } catch {
+        return Object.prototype.toString.call(value);
+      }
+    };
+
+    const record = (kind, values) => {
+      window.__SIMSUITE_LIBRARY_PROOF_ERRORS__.push({
+        kind,
+        message: values.map(serialize).join(" "),
+        at: new Date().toISOString(),
+      });
+    };
+
+    const originalConsoleError = console.error.bind(console);
+    console.error = (...args) => {
+      record("console.error", args);
+      originalConsoleError(...args);
+    };
+
+    window.addEventListener("error", (event) => {
+      record("error", [
+        event.message,
+        event.filename,
+        event.lineno,
+        event.colno,
+        event.error,
+      ]);
+    });
+
+    window.addEventListener("unhandledrejection", (event) => {
+      record("unhandledrejection", [event.reason]);
+    });
+  });
+}
+
+async function readRuntimeErrors(driver) {
+  return await driver.executeScript(
+    "return Array.isArray(window.__SIMSUITE_LIBRARY_PROOF_ERRORS__) ? window.__SIMSUITE_LIBRARY_PROOF_ERRORS__ : [];",
+  );
+}
+
+async function readBrowserLogEntries(driver) {
+  try {
+    const entries = await driver.manage().logs().get("browser");
+    return {
+      supported: true,
+      entries: entries.map((entry) => ({
+        level: String(entry.level?.name ?? entry.level ?? ""),
+        message: String(entry.message ?? ""),
+        timestamp: entry.timestamp ?? null,
+      })),
+    };
+  } catch (error) {
+    return {
+      supported: false,
+      error: error instanceof Error ? error.message : String(error),
+      entries: [],
+    };
+  }
+}
+
+async function assertNoRuntimeErrors(driver, summary, label) {
+  const errors = await readRuntimeErrors(driver);
+  if (!Array.isArray(summary.runtimeErrorChecks)) {
+    summary.runtimeErrorChecks = [];
+  }
+  summary.runtimeErrorChecks.push({
+    label,
+    count: errors.length,
+    errors,
+  });
+  if (errors.length > 0) {
+    throw new Error(`${label} captured ${errors.length} runtime error(s).`);
+  }
 }
 
 async function ensureLibraryIndexed(driver) {
@@ -331,6 +456,18 @@ async function openRow(driver, item) {
   throw lastError ?? new Error(`Could not open a library row for ${item.filename}`);
 }
 
+async function openLibraryPreflightFor(driver, item) {
+  await clickVisibleButton(driver, "Library");
+  await waitForHash(driver, "#library", 30000).catch(() => null);
+  await waitForAnyText(driver, ["MOD OR FILE", "MOD OR FILES", "SEARCH BY FILE OR CREATOR"], 30000);
+  await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-body", 30000);
+  await openRow(driver, item);
+  await waitForVisibleCssText(driver, ".action-preflight-card", 30000);
+  await clickVisibleButton(driver, "Review cautions");
+  return await waitForVisibleCssText(driver, ".action-preflight-detail-block", 30000);
+}
+
 async function main() {
   const session = loadSession();
   const appPath = resolveAppPath();
@@ -355,6 +492,7 @@ async function main() {
 
   try {
     await waitForAnyText(driver, ["HOME", "INBOX", "SETTINGS"], 60000);
+    await installRuntimeErrorCapture(driver);
     const items = await ensureLibraryIndexed(driver);
     const targets = pickTargets(items, session);
     summary.targets = {
@@ -400,12 +538,46 @@ async function main() {
     await takeScreenshot(driver, detailShot);
     summary.screenshots.push(detailShot);
 
-    await clickVisibleButton(driver, "Open Needs Review");
-    summary.reviewHash = await waitForHash(driver, "#review", 30000);
-    summary.reviewBodyHasMccc = /MCCC|MCCommandCenter/i.test(await getBodyText(driver));
-    const reviewShot = path.join(runDir, "06-review-route.png");
-    await takeScreenshot(driver, reviewShot);
-    summary.screenshots.push(reviewShot);
+    summary.duplicatesPreflightText = summary.mcccDetailText;
+    await clickVisibleButton(driver, "Open in Duplicates");
+    summary.duplicatesHash = await waitForHash(driver, "#duplicates", 30000);
+    await waitForVisibleElement(driver, ".duplicates-screen", 30000);
+    await waitForAnyText(driver, ["Opened from Library"], 30000);
+    const duplicatesBody = await getBodyText(driver);
+    summary.duplicatesBodyHasMccc = /mc_cmd_center|mc cmd center|mccc/i.test(duplicatesBody);
+    summary.duplicatesBodyHasLibraryFocus = /opened from library/i.test(duplicatesBody);
+    summary.duplicatesContextExcerpt = duplicatesBody.slice(0, 1500);
+    if (!summary.duplicatesBodyHasMccc || !summary.duplicatesBodyHasLibraryFocus) {
+      throw new Error("Duplicates bridge opened Duplicates without visible Library file context.");
+    }
+    const duplicatesShot = path.join(runDir, "06-duplicates-bridge-mccc.png");
+    await takeScreenshot(driver, duplicatesShot);
+    summary.screenshots.push(duplicatesShot);
+    await assertNoRuntimeErrors(driver, summary, "duplicates-bridge");
+
+    summary.updatesPreflightText = await openLibraryPreflightFor(driver, targets.mccc);
+    await clickVisibleButton(driver, "Open in Updates");
+    summary.updatesHash = await waitForHash(driver, "#updates", 30000);
+    await waitForVisibleElement(driver, ".updates-workbench", 30000);
+    await waitForAnyText(driver, ["Updates", "Needs source", "No update source"], 30000);
+    const updatesBody = await getBodyText(driver);
+    summary.updatesBodyHasMccc = /mc_cmd_center|mc cmd center|mccc/i.test(updatesBody);
+    summary.updatesContextExcerpt = updatesBody.slice(0, 1500);
+    if (!summary.updatesBodyHasMccc) {
+      throw new Error("Updates bridge opened Updates without visible MCCC file context.");
+    }
+    const updatesShot = path.join(runDir, "07-updates-bridge-mccc.png");
+    await takeScreenshot(driver, updatesShot);
+    summary.screenshots.push(updatesShot);
+    await assertNoRuntimeErrors(driver, summary, "updates-bridge");
+
+    summary.runtimeErrors = await readRuntimeErrors(driver);
+    summary.browserLogInspection = await readBrowserLogEntries(driver);
+    if (summary.runtimeErrors.length > 0) {
+      throw new Error(
+        `Library proof captured ${summary.runtimeErrors.length} runtime error(s).`,
+      );
+    }
 
     summary.finishedAt = new Date().toISOString();
     summary.ok = true;
@@ -413,6 +585,12 @@ async function main() {
     summary.finishedAt = new Date().toISOString();
     summary.ok = false;
     summary.error = error instanceof Error ? error.message : String(error);
+    try {
+      summary.runtimeErrors = await readRuntimeErrors(driver);
+      summary.browserLogInspection = await readBrowserLogEntries(driver);
+    } catch {
+      // keep the primary failure visible
+    }
     try {
       const failureShot = path.join(runDir, "failure.png");
       await takeScreenshot(driver, failureShot);

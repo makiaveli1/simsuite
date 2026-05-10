@@ -242,6 +242,33 @@ function Get-EdgeExecutablePath {
     return $null
 }
 
+function Get-EdgeWebViewExecutablePath {
+    $applicationRoots = @(
+        'C:\Program Files (x86)\Microsoft\EdgeWebView\Application',
+        'C:\Program Files\Microsoft\EdgeWebView\Application',
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\EdgeWebView\Application')
+    )
+
+    foreach ($root in $applicationRoots) {
+        if (-not $root -or -not (Test-Path $root)) {
+            continue
+        }
+
+        $versionDirectories = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.Name } -Descending
+
+        foreach ($directory in $versionDirectories) {
+            $candidate = Join-Path $directory.FullName 'msedgewebview2.exe'
+            if (Test-Path $candidate) {
+                return $candidate
+            }
+        }
+    }
+
+    return $null
+}
+
 function Get-FreeTcpPort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
     try {
@@ -344,8 +371,12 @@ $edgeDriverPath = Resolve-ToolPath `
         $defaultEdgeDriverPath,
         (Join-Path $userHome '.codex\tools\edgedriver\msedgedriver.exe')
     )
+$edgeWebViewExecutablePath = Get-EdgeWebViewExecutablePath
 $edgeExecutablePath = Get-EdgeExecutablePath
-$edgeBrowserVersion = Get-FileProductVersion -Path $edgeExecutablePath
+$edgeBrowserVersion = Get-FileProductVersion -Path $edgeWebViewExecutablePath
+if (-not $edgeBrowserVersion) {
+    $edgeBrowserVersion = Get-FileProductVersion -Path $edgeExecutablePath
+}
 $edgeDriverVersion = Get-FileProductVersion -Path $edgeDriverPath
 
 $fixture = $null

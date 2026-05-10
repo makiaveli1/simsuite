@@ -1,5 +1,5 @@
-import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { LibraryDetailsPanel } from "./LibraryDetailsPanel";
 
 const emptyInsights = {
@@ -311,4 +311,45 @@ it("shows action preflight wording without claiming dependency proof", () => {
   expect(screen.queryByText(/break saves/i)).toBeNull();
   expect(screen.queryByText(/mods that depend on it/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
+});
+
+it("opens the selected file folder with the real disk path in power view", () => {
+  const onOpenFolder = vi.fn();
+
+  render(
+    <LibraryDetailsPanel
+      userView="power"
+      selectedFile={
+        {
+          id: 9,
+          filename: "RuntimeProof.package",
+          path: "C:\\Fixtures\\Mods\\RuntimeProof\\RuntimeProof.package",
+          creator: "Fixture Creator",
+          kind: "Gameplay",
+          subtype: null,
+          confidence: 0.91,
+          safetyNotes: [],
+          parserWarnings: [],
+          duplicateTypes: [],
+          duplicatesCount: 0,
+          installedVersionSummary: null,
+          watchResult: null,
+          problemSignals: [],
+          insights: emptyInsights,
+        } as never
+      }
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+      onOpenFolder={onOpenFolder}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+
+  expect(onOpenFolder).toHaveBeenCalledWith(
+    "C:\\Fixtures\\Mods\\RuntimeProof\\RuntimeProof.package",
+  );
+  expect(onOpenFolder).not.toHaveBeenCalledWith(expect.stringMatching(/^Mods[\\/]/));
 });

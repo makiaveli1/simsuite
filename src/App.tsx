@@ -163,6 +163,10 @@ interface ReviewNavigationParams {
   fileId?: number;
 }
 
+interface DuplicatesNavigationParams {
+  fileIds?: number[];
+}
+
 function resolveUpdatesParams(): UpdatesNavigationParams {
   const params = new URLSearchParams(globalThis.location?.search ?? "");
   const mode = params.get("mode") as
@@ -244,6 +248,7 @@ function AppShell({
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [updatesParams, setUpdatesParams] = useState(resolveUpdatesParams());
   const [reviewParams, setReviewParams] = useState(resolveReviewParams());
+  const [duplicatesParams, setDuplicatesParams] = useState<DuplicatesNavigationParams>({});
   const lastTerminalScanKey = useRef<string | null>(null);
   const startupRefreshAttempted = useRef(false);
   const screenFrameRef = useRef<HTMLDivElement | null>(null);
@@ -345,6 +350,11 @@ function AppShell({
       }
       if (targetScreen === "review") {
         setReviewParams({ fileId });
+      }
+      if (targetScreen === "duplicates") {
+        setDuplicatesParams({
+          fileIds: fileIds?.length ? fileIds : fileId ? [fileId] : undefined,
+        });
       }
       setScreen(targetScreen);
     },
@@ -591,6 +601,9 @@ function AppShell({
         refreshVersion={workspaceVersions.library}
         onNavigate={setScreen}
         onNavigateWithParams={navigateWithParams}
+        onNavigateDuplicates={(fileIds) =>
+          navigateWithParams("duplicates", undefined, undefined, undefined, fileIds)
+        }
         userView={userView}
       />
     ) : screen === "updates" ? (
@@ -648,6 +661,7 @@ function AppShell({
         refreshVersion={workspaceVersions.duplicates}
         onNavigate={setScreen}
         userView={userView}
+        initialFileIds={duplicatesParams.fileIds}
       />
     ) : screen === "organize" ? (
       <OrganizeScreen

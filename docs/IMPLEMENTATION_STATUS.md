@@ -1,5 +1,39 @@
 # SimSuite Implementation Status
 
+## Current session note (May 10, 2026 - Library Runtime Action Proof v1)
+
+This session verified and hardened the remaining important Library runtime action paths.
+
+Important changes and findings:
+
+- created `simsuite-reports/LIBRARY_RUNTIME_ACTION_PROOF_V1_REPORT.md` with the focused action-path audit and proof notes.
+- confirmed the pre-existing `src/styles/globals.css` diff is still a Home hero metric styling tweak and left it unstaged.
+- wired the Library Duplicates bridge through `App` so selected file context reaches `DuplicatesScreen`.
+- added focused Duplicates context for Library-opened possible duplicate review.
+- expanded the desktop Library proof to click the real `Open in Duplicates` and `Open in Updates` actions from Library Safe Action Preflight.
+- added runtime-error capture for `console.error`, uncaught `error`, and `unhandledrejection` during desktop proof.
+- added browser-log inspection when WebDriver exposes browser logs.
+- updated the WebDriver runner to match `msedgedriver` to the installed Edge WebView2 runtime used by Tauri.
+- added safe frontend/API proof that `Open folder` calls the reveal handler with a real disk path, not a virtual Library path.
+- did not add safe-delete, missing-mesh, dependency, scraping, automatic update, or replacement claims.
+
+Checks passed:
+
+- focused Duplicates/Open Folder unit tests
+- `npx tsc --noEmit`
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run test:unit` (`20` files, `61` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- automated proof did not click the OS `Open folder` action because it launches Windows Explorer outside the app.
+- browser-log inspection found warning-level Tauri callback cleanup messages, but no injected runtime errors were captured during the bridge checks.
+- WSL runtime execution was not run in this sprint.
+- truly empty disk folders still need scanner metadata before the UI can show them from real data.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 8, 2026 - Library Production Readiness v1)
 
 This session made the Library surface more stable and added broader desktop proof coverage.
