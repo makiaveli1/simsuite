@@ -32,6 +32,7 @@
 - `npm run desktop:proof:fixtures` passed from native Windows PowerShell.
 - `npm run desktop:smoke:fixtures` passed from native Windows PowerShell.
 - Latest proof folder: `output/desktop/library-proof/2026-05-10T13-49-53-256Z`.
+- Implementation commit: `fb3986b`.
 
 ### Known Problems / Gaps
 

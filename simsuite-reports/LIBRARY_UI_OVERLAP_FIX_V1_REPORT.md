@@ -86,4 +86,4 @@ Date: 2026-05-10
 
 ## Commit
 
-Pending.
+- Implementation commit: `fb3986b` (`Fix Library layout overlap and spacing`).
