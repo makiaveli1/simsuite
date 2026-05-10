@@ -325,7 +325,7 @@ export function buildLibraryRowModel(
     watchStatusTone,
     healthLabel: healthIssue?.label ?? null,
     healthTone: healthIssue?.tone ?? null,
-    duplicateLabel: row.hasDuplicate ? "Duplicate" : null,
+    duplicateLabel: row.hasDuplicate ? "Possible duplicate" : null,
     duplicateTone: row.hasDuplicate ? "muted" : null,
     supportingFacts: supportingFacts.slice(0, flags.maxSupportingFacts),
     confidenceLevel,

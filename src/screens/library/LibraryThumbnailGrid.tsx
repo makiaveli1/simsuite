@@ -245,7 +245,7 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
                   {isSelected && (model.hasIssues || model.hasDuplicate || model.isMisplaced || model.watchStatusLabel !== 'No update source') && (
                     <div className="library-card-status-badges">
                       {model.hasIssues && <span className="library-issues-badge" title="Has safety notes">⚑</span>}
-                      {model.hasDuplicate && <span className="library-duplicate-badge">Duplicate</span>}
+                      {model.hasDuplicate && <span className="library-duplicate-badge">Possible duplicate</span>}
                       {model.isMisplaced && <span className="library-card-misplaced-badge">⚠ misplaced</span>}
                       {model.watchStatusLabel !== 'No update source' && (
                         <span className={`library-health-pill is-${model.watchStatusTone}`}>{model.watchStatusLabel}</span>

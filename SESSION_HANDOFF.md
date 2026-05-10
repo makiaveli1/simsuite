@@ -1,5 +1,49 @@
 # Session Handoff
 
+## Current Session (May 10, 2026 - Library UI Overlap Fix v1)
+
+- **Mode**: code
+- **Focus**: fix the visible Library overlap/layout problems at the current desktop proof size across Casual, Seasoned, and Creator modes
+
+### Progress Made
+
+1. **Audited the current Library layout and proof screenshots**:
+   - created `simsuite-reports/LIBRARY_UI_OVERLAP_FIX_V1_REPORT.md`
+   - reviewed the user screenshot and latest successful proof screenshots in `output/desktop/library-proof/2026-05-10T12-18-10-658Z`
+   - confirmed the pre-existing `src/styles/globals.css` diff is still the unrelated Home hero metric styling tweak
+
+2. **Stabilized the Library layout foundation**:
+   - bounded the Library center stage and right inspector as separate columns
+   - contained list/grid/folder scrolling inside the stage
+   - separated the table/list body from the pagination footer
+   - tightened toolbar/filter-chip wrapping and list column sizing
+   - softened Library status badge sizing while keeping trust-first wording
+
+3. **Verified all user modes**:
+   - added focused tests for Casual, Seasoned, and Creator Library toolbar/list rendering
+   - extended desktop proof geometry checks for Casual, Seasoned, Creator, and selected-file list layout
+   - captured `library-layout-overlap-fixed.png` plus mode-specific Library layout screenshots
+
+### Verification
+
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npx tsc --noEmit` passed.
+- `npm run test:unit` passed: 20 files, 68 tests.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell.
+- Latest proof folder: `output/desktop/library-proof/2026-05-10T13-49-53-256Z`.
+
+### Known Problems / Gaps
+
+- WSL runtime was not run in this sprint.
+- Smaller desktop widths rely on CSS responsive rules and unit coverage; only the default desktop proof size was screenshot-verified.
+- Existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- The unrelated Home changes in `src/screens/HomeScreen.tsx`, `docs/IMPLEMENTATION_STATUS.md`, `SESSION_HANDOFF.md`, and the Home hunk in `src/styles/globals.css` remain outside this Library sprint.
+
+### Next Best Step
+
+1. Add a separate narrow-window proof lane if future screenshots show problems below the default desktop proof size.
+
 ## Current Session (May 10, 2026 - Library Runtime Action Proof v1)
 
 - **Mode**: code

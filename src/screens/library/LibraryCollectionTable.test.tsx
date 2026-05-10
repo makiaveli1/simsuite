@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import type { LibraryFileRow } from "../../lib/types";
+import type { LibraryFileRow, UserView } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
 
 const SAMPLE_ROWS: LibraryFileRow[] = [
@@ -48,6 +48,31 @@ it("shows a calm row in casual mode without the full path", () => {
   expect(screen.queryByText(/mods\\buildbuy/i)).not.toBeInTheDocument();
 });
 
+it.each<UserView>(["beginner", "standard", "power"])(
+  "renders the list structure in %s mode",
+  (userView) => {
+    render(
+      <LibraryCollectionTable
+        userView={userView}
+        rows={SAMPLE_ROWS}
+        selectedId={1}
+        selectedIds={new Set()}
+        page={0}
+        totalPages={1}
+        onSelect={() => {}}
+        onToggleSelect={() => {}}
+        onPrevPage={() => {}}
+        onNextPage={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(userView === "beginner" ? "File" : "Mod or file")).toBeInTheDocument();
+    expect(screen.getByText(/betterbuildbuy/i)).toBeInTheDocument();
+    expect(screen.getByText(/status/i)).toBeInTheDocument();
+  },
+);
+
+
 it("can rerender from empty results to populated rows without changing hook order", () => {
   const props = {
     userView: "standard" as const,
@@ -80,4 +105,34 @@ it("can rerender from empty results to populated rows without changing hook orde
   ).not.toThrow();
 
   expect(screen.getAllByText(/betterbuildbuy/i).length).toBeGreaterThan(0);
+});
+
+it("uses cautious duplicate and update-source wording in row badges", () => {
+  render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={[
+        {
+          ...SAMPLE_ROWS[0],
+          id: 2,
+          filename: "PossiblePreset.package",
+          hasDuplicate: true,
+          watchStatus: "not_watched",
+        },
+      ]}
+      selectedId={2}
+      selectedIds={new Set()}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onToggleSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(screen.getAllByText(/possible duplicate/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/no update source/i)).toBeInTheDocument();
+  expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });

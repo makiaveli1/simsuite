@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
-import type { LibraryFacets, LibrarySummary } from "../../lib/types";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
+import type { LibraryFacets, LibrarySummary, UserView } from "../../lib/types";
 import { LibraryTopStrip } from "./LibraryTopStrip";
 
 const emptyFacets: LibraryFacets = {
@@ -21,10 +21,14 @@ const summaryWithUpdateLeads: LibrarySummary = {
   disabled: 0,
 };
 
-it("uses trust-first update wording in Library filters and summary", () => {
-  render(
+afterEach(() => {
+  cleanup();
+});
+
+function renderTopStrip(userView: UserView) {
+  return render(
     <LibraryTopStrip
-      userView="standard"
+      userView={userView}
       activeFilterCount={0}
       search=""
       sortBy="name"
@@ -53,8 +57,27 @@ it("uses trust-first update wording in Library filters and summary", () => {
       onViewModeChange={() => {}}
     />,
   );
+}
+
+it("uses trust-first update wording in Library filters and summary", () => {
+  renderTopStrip("standard");
 
   expect(screen.getByRole("button", { name: /possible updates/i })).toBeInTheDocument();
   expect(screen.getAllByText(/update leads/i).length).toBeGreaterThan(0);
   expect(screen.queryByText(/has updates/i)).toBeNull();
 });
+
+it.each<UserView>(["beginner", "standard", "power"])(
+  "keeps the main Library toolbar controls accessible in %s mode",
+  (userView) => {
+    renderTopStrip(userView);
+
+    expect(screen.getByRole("textbox", { name: /search library/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /sort by/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /items per page/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /list view/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /grid view/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /folders view/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /advanced/i })).toBeInTheDocument();
+  },
+);

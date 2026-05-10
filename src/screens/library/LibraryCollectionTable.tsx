@@ -185,7 +185,7 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                         {model.typeLabel}
                       </span>
                       {model.hasDuplicate && !model.duplicateLabel && (
-                        <span className="library-duplicate-badge">Duplicate</span>
+                        <span className="library-duplicate-badge">Possible duplicate</span>
                       )}
                       {(model.kind === "ScriptMods" ||
                         model.kind === "OverridesAndDefaults") && (

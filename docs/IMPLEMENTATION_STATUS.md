@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 10, 2026 - Library UI Overlap Fix v1)
+
+This session fixed the visible Library overlap and layout problems shown in the desktop screenshot.
+
+Important changes and findings:
+
+- created `simsuite-reports/LIBRARY_UI_OVERLAP_FIX_V1_REPORT.md` with the audit, screenshot review, layout classification, and verification notes.
+- reviewed the user screenshot and the latest successful desktop proof screenshots.
+- confirmed the pre-existing `src/styles/globals.css` diff is still an unrelated Home hero metric styling tweak.
+- bounded the Library center stage and right inspector so the list/table does not slide under the inspector.
+- contained list/grid/folder scrolling inside the Library stage and separated the list body from the pagination footer.
+- tightened toolbar controls, filter chips, list columns, and status badge density.
+- softened duplicate wording to `Possible duplicate` without adding safe-delete or confirmed-duplicate claims.
+- added tests and desktop geometry checks that cover Casual, Seasoned, and Creator modes.
+- updated the desktop proof harness to capture `library-layout-overlap-fixed.png` and assert no severe stage/inspector/footer/filter overlap at the default proof size.
+
+Checks passed:
+
+- `npm run build` with the existing Vite chunk-size warning
+- `npx tsc --noEmit`
+- `npm run test:unit` (`20` files, `68` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- WSL runtime execution was not run in this sprint.
+- Smaller desktop widths rely on CSS responsive rules and unit coverage; only the default proof size was screenshot-verified.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- unrelated Home UI polish changes remain unstaged and outside this Library sprint.
+
 ## Current session note (May 10, 2026 - Library Runtime Action Proof v1)
 
 This session verified and hardened the remaining important Library runtime action paths.

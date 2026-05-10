@@ -98,6 +98,20 @@ async function waitForHash(driver, expectedHash, timeoutMs = 30000) {
   throw new Error(`Timed out waiting for hash ${expectedHash}`);
 }
 
+async function navigateToScreen(driver, screen, timeoutMs = 30000) {
+  const expectedHash = `#${screen}`;
+  await driver.executeScript(
+    `
+      if (window.location.hash !== arguments[0]) {
+        window.location.hash = arguments[0];
+      }
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    `,
+    expectedHash,
+  );
+  await waitForHash(driver, expectedHash, timeoutMs).catch(() => null);
+}
+
 async function clickVisibleButton(driver, partialText, timeoutMs = 30000) {
   const locator = By.xpath(`//button[contains(normalize-space(.), ${xpathString(partialText)})]`);
   await driver.wait(until.elementLocated(locator), timeoutMs);
@@ -246,6 +260,11 @@ async function clickAnyVisibleButton(driver, partialTexts, timeoutMs = 30000) {
   throw new Error(`Could not find an enabled button containing any of: ${partialTexts.join(", ")}.`);
 }
 
+async function openLibraryScreen(driver) {
+  await navigateToScreen(driver, "library", 30000);
+  await waitForVisibleElement(driver, ".library-top-strip", 30000);
+}
+
 async function takeScreenshot(driver, outputPath) {
   const base64 = await driver.takeScreenshot();
   fs.writeFileSync(outputPath, Buffer.from(base64, "base64"));
@@ -360,9 +379,143 @@ async function assertNoRuntimeErrors(driver, summary, label) {
   }
 }
 
+async function collectLibraryGeometry(driver) {
+  return await driver.executeScript(() => {
+    const rectFor = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+
+    const doc = document.documentElement;
+    return {
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        clientWidth: doc.clientWidth,
+        scrollWidth: doc.scrollWidth,
+      },
+      workbench: rectFor(".library-workbench"),
+      stage: rectFor(".library-stage-shell"),
+      inspector: rectFor(".library-inspector-shell:not(.inspector-collapsed)"),
+      topStrip: rectFor(".library-top-strip"),
+      browseRow: rectFor(".library-browse-row"),
+      listShell: rectFor(".library-list-shell"),
+      listHeader: rectFor(".library-list-header"),
+      listBody: rectFor(".library-list-body"),
+      footer: rectFor(".library-stage-shell > .table-footer"),
+      activeNav: rectFor(".rail-nav.is-active"),
+      activeNavText: rectFor(".rail-nav.is-active span"),
+    };
+  });
+}
+
+function assertLibraryGeometry(geometry) {
+  const tolerance = 4;
+  const failures = [];
+  const overflow = geometry.viewport.scrollWidth - geometry.viewport.clientWidth;
+
+  if (overflow > tolerance) {
+    failures.push(`document has ${overflow}px horizontal overflow`);
+  }
+
+  if (geometry.stage && geometry.inspector && geometry.stage.right > geometry.inspector.left + tolerance) {
+    failures.push("Library stage overlaps the inspector column");
+  }
+
+  if (geometry.listShell && geometry.inspector && geometry.listShell.right > geometry.inspector.left + tolerance) {
+    failures.push("Library list viewport extends under the inspector");
+  }
+
+  if (geometry.topStrip && geometry.stage && geometry.topStrip.right > geometry.stage.right + tolerance) {
+    failures.push("Library toolbar extends outside the stage column");
+  }
+
+  if (geometry.browseRow && geometry.listHeader && geometry.browseRow.bottom > geometry.listHeader.top + tolerance) {
+    failures.push("Library filter chips overlap the list header");
+  }
+
+  if (geometry.listShell && geometry.footer && geometry.listShell.bottom > geometry.footer.top + tolerance) {
+    failures.push("Library list viewport overlaps the pagination footer");
+  }
+
+  if (
+    geometry.activeNav &&
+    geometry.activeNavText &&
+    (geometry.activeNavText.left < geometry.activeNav.left - tolerance ||
+      geometry.activeNavText.right > geometry.activeNav.right + tolerance ||
+      geometry.activeNavText.bottom > geometry.activeNav.bottom + tolerance)
+  ) {
+    failures.push("Active sidebar label is clipped outside its nav item");
+  }
+
+  return {
+    ok: failures.length === 0,
+    failures,
+  };
+}
+
+async function assertLibraryLayoutGeometry(driver, summary, label) {
+  const geometry = await collectLibraryGeometry(driver);
+  const result = assertLibraryGeometry(geometry);
+  if (!Array.isArray(summary.layoutGeometryChecks)) {
+    summary.layoutGeometryChecks = [];
+  }
+  summary.layoutGeometryChecks.push({
+    label,
+    ...result,
+    geometry,
+  });
+  if (!result.ok) {
+    throw new Error(`${label} layout geometry failed: ${result.failures.join("; ")}`);
+  }
+}
+
+async function setExperienceMode(driver, mode) {
+  const label = mode === "casual" ? "Casual" : mode === "creator" ? "Creator" : "Seasoned";
+  await navigateToScreen(driver, "settings", 30000);
+  await waitForAnyText(driver, ["Pick your household vibe", "Experience"], 30000);
+  await clickVisibleElement(
+    driver,
+    `//button[contains(@class, 'settings-view-card') and .//strong[normalize-space(.) = ${xpathString(label)}]]`,
+    30000,
+  );
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 10000) {
+    const activeMode = await driver.executeScript(
+      "return document.documentElement.dataset.userView || null;",
+    );
+    if (activeMode === mode) {
+      return;
+    }
+    await sleep(driver, 200);
+  }
+
+  throw new Error(`Timed out waiting for ${label} mode to apply.`);
+}
+
+async function verifyLibraryLayoutForMode(driver, summary, mode, outputPath) {
+  await setExperienceMode(driver, mode);
+  await openLibraryScreen(driver);
+  await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-shell", 30000);
+  await assertLibraryLayoutGeometry(driver, summary, `${mode}-list-layout`);
+  await takeScreenshot(driver, outputPath);
+  summary.screenshots.push(outputPath);
+}
+
 async function ensureLibraryIndexed(driver) {
-  await clickVisibleButton(driver, "Library");
-  await waitForAnyText(driver, ["Library", "MOD OR FILE", "MOD OR FILES"], 30000);
+  await openLibraryScreen(driver);
+  await waitForVisibleElement(driver, ".library-top-strip", 30000);
 
   const listResult = await invokeTauri(driver, "list_library_files", { query: { limit: 200 } });
   if (!listResult.ok) {
@@ -457,9 +610,7 @@ async function openRow(driver, item) {
 }
 
 async function openLibraryPreflightFor(driver, item) {
-  await clickVisibleButton(driver, "Library");
-  await waitForHash(driver, "#library", 30000).catch(() => null);
-  await waitForAnyText(driver, ["MOD OR FILE", "MOD OR FILES", "SEARCH BY FILE OR CREATOR"], 30000);
+  await openLibraryScreen(driver);
   await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
   await waitForVisibleElement(driver, ".library-list-body", 30000);
   await openRow(driver, item);
@@ -500,13 +651,35 @@ async function main() {
       generic: targets.generic?.filename ?? null,
     };
 
-    await clickVisibleButton(driver, "Library");
-    await waitForHash(driver, "#library", 30000).catch(() => null);
+    await verifyLibraryLayoutForMode(
+      driver,
+      summary,
+      "casual",
+      path.join(runDir, "00-library-layout-casual.png"),
+    );
+    await verifyLibraryLayoutForMode(
+      driver,
+      summary,
+      "seasoned",
+      path.join(runDir, "00-library-layout-seasoned.png"),
+    );
+    await verifyLibraryLayoutForMode(
+      driver,
+      summary,
+      "creator",
+      path.join(runDir, "00-library-layout-creator.png"),
+    );
+    await setExperienceMode(driver, "seasoned");
+    await openLibraryScreen(driver);
     summary.mcccRowNeedle = await openRow(driver, targets.mccc);
     summary.mcccCompactText = await waitForVisibleCssText(driver, ".action-preflight-card", 30000);
     const selectedShot = path.join(runDir, "01-library-selected-mccc.png");
     await takeScreenshot(driver, selectedShot);
     summary.screenshots.push(selectedShot);
+    await assertLibraryLayoutGeometry(driver, summary, "list-selected-layout");
+    const layoutShot = path.join(runDir, "library-layout-overlap-fixed.png");
+    await takeScreenshot(driver, layoutShot);
+    summary.screenshots.push(layoutShot);
 
     await clickVisibleButtonByAriaLabel(driver, "Grid view");
     await waitForVisibleElement(driver, ".library-grid", 30000);

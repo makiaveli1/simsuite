@@ -14758,6 +14758,409 @@ select:focus-visible {
   word-break: break-word;
 }
 
+/* Library overlap fix v1: keep the main stage, list, footer, and inspector
+   in separate bounded regions at normal desktop window sizes. */
+.library-workbench.workbench.workbench-two-panel {
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 356px);
+  column-gap: 0.68rem;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.library-workbench > .library-stage-shell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid color-mix(in srgb, var(--line-strong) 60%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 28%),
+    color-mix(in srgb, var(--shell-surface) 94%, black);
+}
+
+.library-workbench > .library-inspector-shell {
+  width: clamp(300px, 24vw, 356px);
+  min-width: 300px;
+  max-width: 356px;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 32%),
+    color-mix(in srgb, var(--surface) 90%, var(--bg-deep));
+}
+
+.library-workbench > .library-inspector-shell .inspector-content {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.68rem 0.72rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-4) 82%, transparent), transparent 38%),
+    color-mix(in srgb, var(--bg-deep) 42%, transparent);
+}
+
+.library-inspector-shell .library-details-empty {
+  min-height: 100%;
+  place-content: center;
+  align-items: center;
+  padding: clamp(1.6rem, 3.4vw, 2.4rem) 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background:
+    linear-gradient(140deg, color-mix(in srgb, var(--accent-soft) 48%, transparent), transparent 70%),
+    color-mix(in srgb, var(--surface-4) 76%, transparent);
+}
+
+.library-top-strip {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-4) 92%, transparent), transparent 140%),
+    var(--surface-4);
+}
+
+.library-toolbar-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto;
+  align-items: center;
+  gap: 0.62rem;
+  min-width: 0;
+  padding: 0.5rem 0.72rem;
+}
+
+.library-toolbar-search {
+  width: 100%;
+  max-width: 340px;
+  min-width: 0;
+}
+
+.library-toolbar-search .downloads-search-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.library-toolbar-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 0.34rem;
+}
+
+.library-sort-control,
+.library-page-size-control,
+.library-advanced-btn {
+  min-height: 32px;
+  max-width: 100%;
+}
+
+.library-sort-control {
+  min-width: 170px;
+}
+
+.library-sort-control select {
+  min-width: 0;
+  max-width: 128px;
+}
+
+.library-page-size-control {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.48rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-3);
+  color: var(--text-soft);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.library-page-size-control select {
+  min-width: 48px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.76rem;
+}
+
+.library-browse-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem 0.46rem;
+  min-width: 0;
+  padding: 0.44rem 0.72rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  overflow: visible;
+}
+
+.library-browse-group,
+.library-subtype-chips,
+.library-browse-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.34rem;
+  min-width: 0;
+}
+
+.library-browse-group--kinds {
+  flex: 1 1 400px;
+}
+
+.library-browse-group--watch {
+  flex: 1 1 320px;
+}
+
+.library-browse-sep {
+  width: 1px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--line-strong) 54%, transparent);
+}
+
+.library-browse-summary {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.library-summary-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.22rem;
+  padding: 0.14rem 0.44rem;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.library-kind-chip,
+.library-quick-chip,
+.library-subtype-chip {
+  min-height: 26px;
+  padding: 0.18rem 0.62rem;
+  font-size: 0.7rem;
+  line-height: 1.15;
+}
+
+.library-stage-shell > .library-table-scroll.library-list-shell,
+.library-stage-shell > .library-grid-scroll.library-list-shell {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0;
+  max-height: none;
+  border-width: 1px 0 0;
+  overflow: hidden !important;
+}
+
+.library-stage-shell > .library-grid-scroll.library-list-shell {
+  overflow-y: auto !important;
+}
+
+.library-list-header,
+.library-list-row {
+  grid-template-columns: 5px 44px 32px minmax(220px, 1fr) minmax(126px, 0.34fr) minmax(112px, 0.28fr);
+  column-gap: 0;
+  min-width: 0;
+}
+
+.library-list-header .library-list-col {
+  padding: 0.44rem 0.54rem;
+  line-height: 1.2;
+}
+
+.library-list-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.library-list-row {
+  min-width: 0;
+  height: 82px;
+}
+
+.library-list-row > .library-list-col {
+  min-width: 0;
+  padding: 0.52rem 0.56rem;
+  overflow: hidden;
+}
+
+.library-list-row > .library-list-col--thumb {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+}
+
+.library-list-row > .library-list-col--select {
+  padding-top: 0.48rem !important;
+}
+
+.library-row-title {
+  font-size: 0.92rem;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+
+.library-row-meta {
+  gap: 0.22rem;
+  margin-top: 0.22rem;
+}
+
+.library-row-identity {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-height: 1.24;
+}
+
+.library-status-cell {
+  min-width: 0;
+}
+
+.library-status-pills {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.22rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.library-list-row .library-health-pill,
+.library-card-status-badges .library-health-pill,
+.library-duplicate-badge {
+  max-width: 100%;
+  padding: 0.12rem 0.34rem;
+  font-size: 0.66rem;
+  line-height: 1.12;
+  letter-spacing: 0.025em;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.library-row-facts {
+  align-content: flex-start;
+  gap: 0.18rem 0.32rem;
+  min-width: 0;
+}
+
+.library-row-fact {
+  max-width: 100%;
+  font-size: 0.7rem;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+}
+
+.library-stage-shell > .table-footer {
+  flex: 0 0 auto !important;
+  min-height: 44px;
+  padding: 0.42rem 0.72rem !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-3) 86%, transparent), var(--surface-3)) !important;
+  border-top: 1px solid color-mix(in srgb, var(--line-strong) 58%, transparent) !important;
+  position: relative;
+  z-index: 1;
+}
+
+.table-pagination-bar {
+  display: none;
+}
+
+.library-folders-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, 28%) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.library-folder-tree-pane {
+  min-width: 0;
+  overflow: auto;
+  padding: 0.7rem 0.55rem;
+  border-right: 1px solid color-mix(in srgb, var(--line-strong) 54%, transparent);
+  background: color-mix(in srgb, var(--surface-4) 54%, transparent);
+}
+
+.library-folder-content-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.rail-nav span,
+.rail-action span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.08;
+}
+
+@media (max-width: 1360px) {
+  .library-workbench.workbench.workbench-two-panel {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    column-gap: 0.54rem;
+  }
+
+  .library-workbench > .library-inspector-shell {
+    width: 300px;
+    min-width: 300px;
+    max-width: 300px;
+  }
+
+  .library-toolbar-row {
+    grid-template-columns: minmax(180px, 1fr);
+    align-items: stretch;
+  }
+
+  .library-toolbar-search {
+    max-width: none;
+  }
+
+  .library-toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .library-list-header,
+  .library-list-row {
+    grid-template-columns: 5px 40px 30px minmax(190px, 1fr) minmax(112px, 0.32fr) minmax(96px, 0.24fr);
+  }
+
+  .library-facts-cell .library-row-fact:nth-child(n + 3) {
+    display: none;
+  }
+}
+
+@media (max-width: 1120px) {
+  .library-workbench.workbench.workbench-two-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-workbench > .library-inspector-shell {
+    position: absolute !important;
+    right: 0.65rem;
+    top: 0.65rem;
+    bottom: 0.65rem;
+    width: min(360px, calc(100vw - var(--sidebar-width) - 1.5rem));
+    min-width: 280px;
+    max-width: 360px;
+    z-index: 100;
+  }
+
+  .library-browse-sep {
+    display: none;
+  }
+}
+
 
 
 
