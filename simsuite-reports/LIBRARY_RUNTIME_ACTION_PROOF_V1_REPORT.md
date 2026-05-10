@@ -119,4 +119,4 @@ No fixture data was added. The existing fixture library already exposes the MCCC
 
 ## Commit
 
-Pending.
+- Implementation commit: `0497c5c` (`Verify Library runtime action bridges`).
