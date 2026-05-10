@@ -1,5 +1,38 @@
 # SimSuite Implementation Status
 
+## Current session note (May 10, 2026 - Library Row Sidebar Polish v1)
+
+This session fixed the row clipping and sidebar adjustability issues revealed after the Library overlap pass.
+
+Important changes and findings:
+
+- created `simsuite-reports/LIBRARY_ROW_SIDEBAR_POLISH_V1_REPORT.md` with the audit, row hierarchy decision, proof notes, and remaining gaps.
+- reviewed the user screenshot and the latest Library proof screenshots.
+- confirmed the unrelated Home changes in `src/screens/HomeScreen.tsx` and the Home hunk in `src/styles/globals.css` remain outside this sprint.
+- capped visible Library list-row status cues and compact facts so row content no longer half-renders at the bottom.
+- removed relationship hint chips and the visible `+1 more` overflow marker from list rows; deeper context remains in inspector, More Details, and Safe Action Preflight.
+- wired the right inspector to the existing persisted Library detail-width preference.
+- verified inspector resize wider, resize narrower, collapse, and expand behavior in desktop proof.
+- added row clipping geometry checks to the desktop proof harness.
+- kept wording trust-safe and did not add safe-delete, dependency, missing-mesh, or confirmed-duplicate claims.
+
+Checks passed:
+
+- `npx vitest run src/screens/library/libraryDisplay.test.ts src/screens/library/LibraryCollectionTable.test.tsx`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`20` files, `71` tests)
+- `npm run build` with the existing Vite chunk-size warning
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- WSL runtime was not run in this sprint.
+- A separate 1440x900 or 1600x900 proof lane was not added; the successful proof used the default desktop proof window.
+- full left-nav resizing and full folder-pane resizing remain future work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- unrelated Home UI polish changes remain unstaged and outside this Library sprint.
+
 ## Current session note (May 10, 2026 - Library UI Overlap Fix v1)
 
 This session fixed the visible Library overlap and layout problems shown in the desktop screenshot.

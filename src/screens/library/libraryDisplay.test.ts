@@ -4,6 +4,8 @@ import {
   buildLibraryRowModel,
   describeResourceSummary,
   libraryViewFlags,
+  summarizeLibraryRowFacts,
+  summarizeLibraryRowStatus,
   summarizeLibraryCareState,
   summarizePackageContentProfile,
   summarizeVersionSignalForUi,
@@ -167,6 +169,38 @@ describe("buildLibraryRowModel", () => {
     expect(buildBuyRow.supportingFacts).toContain("Deaderpool");
     // subtype is skipped — content profile is more useful than generic "Seating"
     expect(buildBuyRow.supportingFacts.join(" ")).not.toMatch(/Seating/);
+  });
+});
+
+describe("row display summaries", () => {
+  it("keeps dense row status to two visible cues and summarizes the rest", () => {
+    const row = buildLibraryRowModel(
+      {
+        ...SAMPLE_ROW,
+        hasDuplicate: true,
+        parserWarnings: ["Archive could not be inspected fully"],
+        watchStatus: "not_watched",
+      },
+      "standard",
+    );
+
+    const summary = summarizeLibraryRowStatus(row);
+
+    expect(summary.visible.map((pill) => pill.label)).toEqual([
+      "No update source",
+      "Warning",
+    ]);
+    expect(summary.hiddenLabels).toEqual(["Possible duplicate"]);
+  });
+
+  it("keeps list facts compact while preserving hidden detail labels", () => {
+    const row = buildLibraryRowModel(SAMPLE_ROW, "standard");
+    const standardSummary = summarizeLibraryRowFacts(row, "standard");
+    const creatorSummary = summarizeLibraryRowFacts(row, "power");
+
+    expect(standardSummary.visible).toHaveLength(1);
+    expect(standardSummary.hidden.length).toBeGreaterThan(0);
+    expect(creatorSummary.visible.length).toBeLessThanOrEqual(2);
   });
 });
 

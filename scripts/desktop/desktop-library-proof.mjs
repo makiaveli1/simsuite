@@ -396,6 +396,43 @@ async function collectLibraryGeometry(driver) {
     };
 
     const doc = document.documentElement;
+    const rowClipFailures = Array.from(document.querySelectorAll(".library-list-body .library-list-row"))
+      .slice(0, 10)
+      .flatMap((row, rowIndex) => {
+        const rowRect = row.getBoundingClientRect();
+        return Array.from(
+          row.querySelectorAll(
+            ".library-row-title, .library-row-meta, .library-row-identity, .library-health-pill, .library-row-fact, .library-row-swatches",
+          ),
+        )
+          .map((child) => {
+            const childRect = child.getBoundingClientRect();
+            if (childRect.width <= 0 || childRect.height <= 0) return null;
+            const bottomOverflow = childRect.bottom - rowRect.bottom;
+            const topOverflow = rowRect.top - childRect.top;
+            if (bottomOverflow > 3 || topOverflow > 3) {
+              return {
+                rowIndex,
+                className: child.className,
+                topOverflow,
+                bottomOverflow,
+                row: {
+                  top: rowRect.top,
+                  bottom: rowRect.bottom,
+                  height: rowRect.height,
+                },
+                child: {
+                  top: childRect.top,
+                  bottom: childRect.bottom,
+                  height: childRect.height,
+                },
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
+      });
+
     return {
       viewport: {
         width: window.innerWidth,
@@ -405,7 +442,8 @@ async function collectLibraryGeometry(driver) {
       },
       workbench: rectFor(".library-workbench"),
       stage: rectFor(".library-stage-shell"),
-      inspector: rectFor(".library-inspector-shell:not(.inspector-collapsed)"),
+      inspector: rectFor(".library-inspector-shell"),
+      inspectorExpanded: rectFor(".library-inspector-shell:not(.inspector-collapsed)"),
       topStrip: rectFor(".library-top-strip"),
       browseRow: rectFor(".library-browse-row"),
       listShell: rectFor(".library-list-shell"),
@@ -414,6 +452,7 @@ async function collectLibraryGeometry(driver) {
       footer: rectFor(".library-stage-shell > .table-footer"),
       activeNav: rectFor(".rail-nav.is-active"),
       activeNavText: rectFor(".rail-nav.is-active span"),
+      rowClipFailures,
     };
   });
 }
@@ -427,11 +466,11 @@ function assertLibraryGeometry(geometry) {
     failures.push(`document has ${overflow}px horizontal overflow`);
   }
 
-  if (geometry.stage && geometry.inspector && geometry.stage.right > geometry.inspector.left + tolerance) {
+  if (geometry.stage && geometry.inspectorExpanded && geometry.stage.right > geometry.inspectorExpanded.left + tolerance) {
     failures.push("Library stage overlaps the inspector column");
   }
 
-  if (geometry.listShell && geometry.inspector && geometry.listShell.right > geometry.inspector.left + tolerance) {
+  if (geometry.listShell && geometry.inspectorExpanded && geometry.listShell.right > geometry.inspectorExpanded.left + tolerance) {
     failures.push("Library list viewport extends under the inspector");
   }
 
@@ -457,6 +496,10 @@ function assertLibraryGeometry(geometry) {
     failures.push("Active sidebar label is clipped outside its nav item");
   }
 
+  if (geometry.rowClipFailures?.length > 0) {
+    failures.push(`Library row content is clipped in ${geometry.rowClipFailures.length} visible element(s)`);
+  }
+
   return {
     ok: failures.length === 0,
     failures,
@@ -477,6 +520,129 @@ async function assertLibraryLayoutGeometry(driver, summary, label) {
   if (!result.ok) {
     throw new Error(`${label} layout geometry failed: ${result.failures.join("; ")}`);
   }
+}
+
+async function getLibraryInspectorWidth(driver) {
+  return await driver.executeScript(() => {
+    const inspector = document.querySelector(".library-inspector-shell");
+    return inspector ? inspector.getBoundingClientRect().width : null;
+  });
+}
+
+async function dragLibraryInspectorHandle(driver, deltaX) {
+  const handles = await driver.findElements(By.css(".library-inspector-shell .resize-handle-left"));
+  if (handles.length === 0) {
+    return { ok: false, reason: "resize handle not found" };
+  }
+
+  try {
+    await driver
+      .actions({ async: true })
+      .move({ origin: handles[0], x: 6, y: 24 })
+      .press()
+      .move({ origin: "pointer", x: deltaX, y: 0, duration: 280 })
+      .release()
+      .perform();
+    return { ok: true, method: "webdriver-actions" };
+  } catch (error) {
+    const fallback = await driver.executeScript((moveBy) => {
+    const handle = document.querySelector(".library-inspector-shell .resize-handle-left");
+    const inspector = document.querySelector(".library-inspector-shell");
+    if (!handle || !inspector) {
+      return { ok: false, reason: "resize handle or inspector not found" };
+    }
+
+    const rect = handle.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    const pointerId = 11;
+    const eventBase = {
+      bubbles: true,
+      cancelable: true,
+      pointerId,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+    };
+
+    handle.dispatchEvent(new PointerEvent("pointerdown", {
+      ...eventBase,
+      clientX: startX,
+      clientY: startY,
+    }));
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...eventBase,
+      clientX: startX + moveBy,
+      clientY: startY,
+    }));
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      ...eventBase,
+      buttons: 0,
+      clientX: startX + moveBy,
+      clientY: startY,
+    }));
+
+    return {
+      ok: true,
+      cssWidth: getComputedStyle(document.documentElement).getPropertyValue("--library-detail-width"),
+    };
+    }, deltaX);
+    return {
+      ...fallback,
+      method: "synthetic-pointer-fallback",
+      actionError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function verifyLibraryInspectorAdjustability(driver, summary, runDir) {
+  await waitForVisibleElement(driver, ".library-inspector-shell:not(.inspector-collapsed)", 30000);
+  let initialWidth = await getLibraryInspectorWidth(driver);
+  if (initialWidth !== null && initialWidth > 360) {
+    await dragLibraryInspectorHandle(driver, 96);
+    await sleep(driver, 450);
+    initialWidth = await getLibraryInspectorWidth(driver);
+  }
+  const widerDrag = await dragLibraryInspectorHandle(driver, -96);
+  await sleep(driver, 450);
+  const widerWidth = await getLibraryInspectorWidth(driver);
+  if (!widerDrag.ok || widerWidth === null || initialWidth === null || widerWidth <= initialWidth + 20) {
+    throw new Error(`Inspector resize wider failed: ${JSON.stringify({ initialWidth, widerWidth, widerDrag })}`);
+  }
+  const widerShot = path.join(runDir, "08-library-inspector-wider.png");
+  await takeScreenshot(driver, widerShot);
+  summary.screenshots.push(widerShot);
+
+  const narrowerDrag = await dragLibraryInspectorHandle(driver, 84);
+  await sleep(driver, 450);
+  const narrowerWidth = await getLibraryInspectorWidth(driver);
+  if (!narrowerDrag.ok || narrowerWidth === null || narrowerWidth >= widerWidth - 20) {
+    throw new Error(`Inspector resize narrower failed: ${JSON.stringify({ widerWidth, narrowerWidth, narrowerDrag })}`);
+  }
+  const narrowerShot = path.join(runDir, "09-library-inspector-narrower.png");
+  await takeScreenshot(driver, narrowerShot);
+  summary.screenshots.push(narrowerShot);
+
+  await clickVisibleButtonByAriaLabel(driver, "Collapse inspector", 10000);
+  await waitForVisibleElement(driver, ".library-inspector-shell.inspector-collapsed", 10000);
+  await assertLibraryLayoutGeometry(driver, summary, "inspector-collapsed-layout");
+  const collapsedShot = path.join(runDir, "10-library-inspector-collapsed.png");
+  await takeScreenshot(driver, collapsedShot);
+  summary.screenshots.push(collapsedShot);
+
+  await clickVisibleButtonByAriaLabel(driver, "Expand inspector panel", 10000);
+  await waitForVisibleElement(driver, ".library-inspector-shell:not(.inspector-collapsed)", 10000);
+  await assertLibraryLayoutGeometry(driver, summary, "inspector-expanded-layout");
+
+  if (!Array.isArray(summary.inspectorAdjustabilityChecks)) {
+    summary.inspectorAdjustabilityChecks = [];
+  }
+  summary.inspectorAdjustabilityChecks.push({
+    initialWidth,
+    widerWidth,
+    narrowerWidth,
+  });
 }
 
 async function setExperienceMode(driver, mode) {
@@ -680,6 +846,10 @@ async function main() {
     const layoutShot = path.join(runDir, "library-layout-overlap-fixed.png");
     await takeScreenshot(driver, layoutShot);
     summary.screenshots.push(layoutShot);
+    const polishShot = path.join(runDir, "library-row-sidebar-polish.png");
+    await takeScreenshot(driver, polishShot);
+    summary.screenshots.push(polishShot);
+    await verifyLibraryInspectorAdjustability(driver, summary, runDir);
 
     await clickVisibleButtonByAriaLabel(driver, "Grid view");
     await waitForVisibleElement(driver, ".library-grid", 30000);

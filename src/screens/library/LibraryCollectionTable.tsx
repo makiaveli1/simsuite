@@ -2,7 +2,12 @@ import { useMemo, memo } from "react";
 import { m } from "motion/react";
 import { rowHover, rowPress } from "../../lib/motion";
 import type { LibraryFileRow, UserView } from "../../lib/types";
-import { buildLibraryRowModel, type LibraryRowModel } from "./libraryDisplay";
+import {
+  buildLibraryRowModel,
+  summarizeLibraryRowFacts,
+  summarizeLibraryRowStatus,
+  type LibraryRowModel,
+} from "./libraryDisplay";
 
 export interface LibraryCollectionTableProps {
   userView: UserView;
@@ -86,6 +91,8 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
           {filteredRows.length ? (
             filteredRows.map((row) => {
               const model = modelCache.get(row.id)!;
+              const statusSummary = summarizeLibraryRowStatus(model);
+              const factSummary = summarizeLibraryRowFacts(model, userView);
               const isChecked = selectedIds.has(row.id);
 
               return (
@@ -214,39 +221,21 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                     {model.identityLabel ? (
                       <div className="library-row-identity" title={model.identityLabel}>{model.identityLabel}</div>
                     ) : null}
-                    {/* Phase 5ao: relationship cue at bottom of name cell */}
-                    {model.relationshipCue ? (
-                      <div
-                        className={`library-row-rel-cue library-row-rel-cue--${model.relationshipCue.confidenceLabel.toLowerCase()}`}
-                        title={model.relationshipCue.description}
-                      >
-                        <span className={`library-row-rel-cue-dot library-row-rel-cue-dot--${model.relationshipCue.confidenceLabel.toLowerCase()}`} />
-                        {model.relationshipCue.compactLabel}
-                      </div>
-                    ) : null}
                   </div>
 
                   <div className="library-list-col library-list-col--status library-status-cell">
                     <div className="library-status-pills">
-                      <span className={`library-health-pill is-${model.watchStatusTone}`}>
-                        {model.watchStatusLabel}
-                      </span>
-                      {model.healthTone && (
-                        <span className={`library-health-pill is-${model.healthTone}`}>
-                          {model.healthLabel}
+                      {statusSummary.visible.map((pill) => (
+                        <span key={pill.key} className={`library-health-pill is-${pill.tone}`}>
+                          {pill.label}
                         </span>
-                      )}
-                      {model.duplicateLabel && (
-                        <span className={`library-health-pill is-${model.duplicateTone}`}>
-                          {model.duplicateLabel}
-                        </span>
-                      )}
+                      ))}
                     </div>
                   </div>
 
                   <div className="library-list-col library-list-col--facts library-facts-cell">
                     <div className="library-row-facts">
-                      {model.supportingFacts.map((fact) => (
+                      {factSummary.visible.map((fact) => (
                         <span key={fact} className="library-row-fact">
                           {fact}
                         </span>

@@ -12,6 +12,7 @@ import { DockSectionStack } from "../components/DockSectionStack";
 import { Workbench } from "../components/layout/Workbench";
 import { WorkbenchStage } from "../components/layout/WorkbenchStage";
 import { WorkbenchInspector } from "../components/layout/WorkbenchInspector";
+import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import {
   creatorConfidenceSuffix,
@@ -158,6 +159,7 @@ export function LibraryScreen({
   onNavigateDuplicates,
   userView,
 }: LibraryScreenProps) {
+  const { libraryDetailWidth, setLibraryDetailWidth } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
   const [selected, setSelected] = useState<FileDetail | null>(null);
@@ -1723,7 +1725,10 @@ export function LibraryScreen({
 
   return (
     <>
-    <Workbench fullHeight className="library-workbench">
+    <Workbench
+      fullHeight
+      className={`library-workbench${inspectorCollapsed ? " is-inspector-collapsed" : ""}`}
+    >
       <WorkbenchStage className="library-stage-shell">
         <LibraryTopStrip
           userView={userView}
@@ -1996,6 +2001,10 @@ export function LibraryScreen({
       {/* Right inspector panel */}
       <WorkbenchInspector
         className="library-inspector-shell"
+        width={libraryDetailWidth}
+        minWidth={300}
+        maxWidth={480}
+        onWidthChange={setLibraryDetailWidth}
         collapsible
         collapsed={inspectorCollapsed}
         onCollapse={setInspectorCollapsed}

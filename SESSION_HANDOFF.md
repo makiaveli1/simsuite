@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (May 10, 2026 - Library Row Sidebar Polish v1)
+
+- **Mode**: code
+- **Focus**: make Library list rows stop clipping/crowding detail chips and add practical right-inspector adjustability across Casual, Seasoned, and Creator modes
+
+### Progress Made
+
+1. **Audited row and sidebar polish gaps**:
+   - created `simsuite-reports/LIBRARY_ROW_SIDEBAR_POLISH_V1_REPORT.md`
+   - reviewed the user screenshot, current Library code, and latest desktop proof screenshots
+   - confirmed the unrelated Home worktree changes in `src/screens/HomeScreen.tsx` and the Home hunk in `src/styles/globals.css` remain outside this sprint
+
+2. **Cleaned up Library list-row hierarchy**:
+   - capped visible row status cues to the strongest trust-safe signals
+   - removed relationship hint chips and the `+1 more` row overflow chip from visible rows
+   - kept deeper duplicate/update/context details available in inspector, More Details, and Safe Action Preflight
+   - tightened row layout so visible chips and facts do not half-render at the bottom of rows
+
+3. **Added adjustable inspector proof**:
+   - wired the Library inspector to the existing persisted detail-width preference
+   - verified inspector resize wider, resize narrower, collapse, and expand behavior in desktop proof
+   - added row clipping geometry checks to the desktop Library proof harness
+
+### Verification
+
+- `npx vitest run src/screens/library/libraryDisplay.test.ts src/screens/library/LibraryCollectionTable.test.tsx` passed.
+- `npx tsc --noEmit` passed.
+- `npm run test:unit` passed: 20 files, 71 tests.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell.
+- Latest proof folder: `output/desktop/library-proof/2026-05-10T23-16-40-647Z`.
+
+### Known Problems / Gaps
+
+- WSL runtime was not run in this sprint.
+- A separate 1440x900 or 1600x900 proof lane was not added; the successful desktop proof used the default proof window.
+- Full left-nav resizing and full folder-pane resizing remain future work.
+- Existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- The unrelated Home changes remain outside this Library sprint.
+
+### Next Best Step
+
+1. Add a narrow-window desktop proof lane if future screenshots show issues around 1366x768 or 1440x900.
+
 ## Current Session (May 10, 2026 - Library UI Overlap Fix v1)
 
 - **Mode**: code

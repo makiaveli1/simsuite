@@ -136,3 +136,36 @@ it("uses cautious duplicate and update-source wording in row badges", () => {
   expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });
+
+it("keeps overflow row cues out of the row instead of half-rendering every badge", () => {
+  render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={[
+        {
+          ...SAMPLE_ROWS[0],
+          id: 3,
+          filename: "CrowdedSignals.package",
+          hasDuplicate: true,
+          watchStatus: "not_watched",
+          parserWarnings: ["Could not inspect fully"],
+        },
+      ]}
+      selectedId={3}
+      selectedIds={new Set()}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onToggleSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(screen.getByText(/no update source/i)).toBeInTheDocument();
+  expect(screen.getByText(/warning/i)).toBeInTheDocument();
+  expect(screen.queryByText(/\+1 more/i)).toBeNull();
+  expect(screen.queryByText(/possible duplicate/i)).toBeNull();
+  expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
+});

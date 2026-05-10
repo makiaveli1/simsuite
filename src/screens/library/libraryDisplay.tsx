@@ -172,6 +172,65 @@ export interface LibraryRowModel {
   relationshipCue?: RelationshipCue;
 }
 
+export interface LibraryRowStatusPill {
+  key: "watch" | "health" | "duplicate";
+  label: string;
+  tone: "calm" | "attention" | "muted";
+}
+
+export interface LibraryRowStatusSummary {
+  visible: LibraryRowStatusPill[];
+  hiddenLabels: string[];
+}
+
+export interface LibraryRowFactSummary {
+  visible: string[];
+  hidden: string[];
+}
+
+export function summarizeLibraryRowStatus(model: LibraryRowModel): LibraryRowStatusSummary {
+  const pills: LibraryRowStatusPill[] = [
+    {
+      key: "watch",
+      label: model.watchStatusLabel,
+      tone: model.watchStatusTone,
+    },
+  ];
+
+  if (model.healthLabel && model.healthTone) {
+    pills.push({
+      key: "health",
+      label: model.healthLabel,
+      tone: model.healthTone,
+    });
+  }
+
+  if (model.duplicateLabel) {
+    pills.push({
+      key: "duplicate",
+      label: model.duplicateLabel,
+      tone: model.duplicateTone ?? "muted",
+    });
+  }
+
+  return {
+    visible: pills.slice(0, 2),
+    hiddenLabels: pills.slice(2).map((pill) => pill.label),
+  };
+}
+
+export function summarizeLibraryRowFacts(
+  model: LibraryRowModel,
+  userView: UserView,
+): LibraryRowFactSummary {
+  const visibleCount = userView === "power" ? 2 : 1;
+
+  return {
+    visible: model.supportingFacts.slice(0, visibleCount),
+    hidden: model.supportingFacts.slice(visibleCount),
+  };
+}
+
 type LibraryCareSummarySource = Pick<
   FileDetail,
   "installedVersionSummary" | "safetyNotes" | "parserWarnings" | "kind" | "sourceLocation" | "problemSignals"

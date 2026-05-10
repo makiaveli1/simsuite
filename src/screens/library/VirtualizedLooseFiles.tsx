@@ -3,7 +3,12 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { FileDetail, LibraryFileRow, UserView } from "../../lib/types";
 import { LibraryCollectionTable } from "./LibraryCollectionTable";
-import { buildLibraryRowModel, type LibraryRowModel } from "./libraryDisplay";
+import {
+  buildLibraryRowModel,
+  summarizeLibraryRowFacts,
+  summarizeLibraryRowStatus,
+  type LibraryRowModel,
+} from "./libraryDisplay";
 
 // Phase 5aa: CSS row height for virtualizer. Must match .library-list-row height in globals.css.
 const ROW_HEIGHT = 88;
@@ -153,6 +158,7 @@ function VirtualizedLooseFilesLarge({
             return (
               <VirtualRow
                 key={file.id}
+                userView={userView}
                 file={file}
                 model={model}
                 isSelected={selectedId === file.id}
@@ -201,6 +207,7 @@ function VirtualizedLooseFilesLarge({
 // Mirrors LibraryCollectionTable row rendering without the table wrapper overhead.
 // Must stay visually identical to a .library-list-row in the main table.
 interface VirtualRowProps {
+  userView: UserView;
   file: LibraryFileRow;
   model: LibraryRowModel;
   isSelected: boolean;
@@ -208,7 +215,10 @@ interface VirtualRowProps {
   style: React.CSSProperties;
 }
 
-function VirtualRow({ file, model, isSelected, onSelect, style }: VirtualRowProps) {
+function VirtualRow({ userView, file, model, isSelected, onSelect, style }: VirtualRowProps) {
+  const statusSummary = summarizeLibraryRowStatus(model);
+  const factSummary = summarizeLibraryRowFacts(model, userView);
+
   return (
     <div
       className={[
@@ -282,24 +292,16 @@ function VirtualRow({ file, model, isSelected, onSelect, style }: VirtualRowProp
       </div>
       <div className="library-list-col library-list-col--status library-status-cell">
         <div className="library-status-pills">
-          <span className={`library-health-pill is-${model.watchStatusTone}`}>
-            {model.watchStatusLabel}
-          </span>
-          {model.healthTone && (
-            <span className={`library-health-pill is-${model.healthTone}`}>
-              {model.healthLabel}
+          {statusSummary.visible.map((pill) => (
+            <span key={pill.key} className={`library-health-pill is-${pill.tone}`}>
+              {pill.label}
             </span>
-          )}
-          {model.duplicateLabel && (
-            <span className={`library-health-pill is-${model.duplicateTone}`}>
-              {model.duplicateLabel}
-            </span>
-          )}
+          ))}
         </div>
       </div>
       <div className="library-list-col library-list-col--facts library-facts-cell">
         <div className="library-row-facts">
-          {model.supportingFacts.map((fact) => (
+          {factSummary.visible.map((fact) => (
             <span key={fact} className="library-row-fact">
               {fact}
             </span>
