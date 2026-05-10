@@ -155,5 +155,5 @@ Verified in the proof summary:
 
 ## Commit hashes
 
-- Pending before commit.
-
+- `a5742ce` - `Polish Library rows and adjustable sidebars`
+- A docs-only follow-up commit records this implementation hash; its hash is reported in the final handoff.

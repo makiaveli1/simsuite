@@ -24,6 +24,7 @@ Checks passed:
 - `npm run build` with the existing Vite chunk-size warning
 - `npm run desktop:proof:fixtures`
 - `npm run desktop:smoke:fixtures`
+- implementation commit: `a5742ce`
 
 Important remaining gap:
 
