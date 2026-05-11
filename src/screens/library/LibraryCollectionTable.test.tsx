@@ -24,6 +24,17 @@ const SAMPLE_ROWS: LibraryFileRow[] = [
   },
 ];
 
+const emptyInsights = {
+  format: null,
+  resourceSummary: [],
+  scriptNamespaces: [],
+  embeddedNames: [],
+  creatorHints: [],
+  versionHints: [],
+  versionSignals: [],
+  familyHints: [],
+};
+
 afterEach(() => {
   cleanup();
 });
@@ -135,6 +146,37 @@ it("uses cautious duplicate and update-source wording in row badges", () => {
   expect(screen.getByText(/no update source/i)).toBeInTheDocument();
   expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
+});
+
+it("shows row thumbnails without source labels covering the preview", () => {
+  const { container } = render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={[
+        {
+          ...SAMPLE_ROWS[0],
+          id: 4,
+          filename: "Thumbnailed.package",
+          insights: {
+            ...emptyInsights,
+            cachedThumbnailPreview: "iVBORw0KGgo=",
+          },
+        },
+      ]}
+      selectedId={4}
+      selectedIds={new Set()}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onToggleSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(container.querySelector(".library-row-thumb-img")).toBeInTheDocument();
+  expect(screen.queryByText(/^CH$/)).toBeNull();
+  expect(screen.queryByText(/^EM$/)).toBeNull();
 });
 
 it("keeps overflow row cues out of the row instead of half-rendering every badge", () => {

@@ -306,10 +306,50 @@ it("shows action preflight wording without claiming dependency proof", () => {
     />,
   );
 
-  expect(screen.getByText(/before changing/i)).toBeVisible();
+  expect(screen.getAllByText(/before changing/i).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /review cautions/i })).toBeVisible();
   expect(screen.queryByText(/break saves/i)).toBeNull();
   expect(screen.queryByText(/mods that depend on it/i)).toBeNull();
+  expect(screen.queryByText(/safe to delete/i)).toBeNull();
+});
+
+it("explains no-source and duplicate cues in the inspector without unsafe claims", () => {
+  render(
+    <LibraryDetailsPanel
+      userView="standard"
+      selectedFile={
+        {
+          id: 8,
+          filename: "PossiblePreset.package",
+          path: "Mods\\Presets\\PossiblePreset.package",
+          creator: "Preset Maker",
+          kind: "PresetsAndSliders",
+          subtype: "Body preset",
+          confidence: 0.88,
+          safetyNotes: [],
+          parserWarnings: [],
+          duplicateTypes: ["filename"],
+          duplicatesCount: 1,
+          installedVersionSummary: null,
+          watchResult: { status: "not_watched", sourceLabel: null },
+          problemSignals: [],
+          insights: emptyInsights,
+        } as never
+      }
+      onOpenInspectDetails={() => {}}
+      onOpenHealthDetails={() => {}}
+      onOpenDuplicates={() => {}}
+      onOpenEditDetails={() => {}}
+      onOpenUpdates={() => {}}
+    />,
+  );
+
+  expect(screen.getByText(/what this means/i)).toBeVisible();
+  expect(screen.getByText(/does not know where to check/i)).toBeVisible();
+  expect(screen.getByText(/compare duplicate candidates/i)).toBeVisible();
+  expect(screen.getByRole("button", { name: /open in updates/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /compare in duplicates/i })).toBeVisible();
+  expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });
 

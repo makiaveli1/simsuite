@@ -355,7 +355,7 @@ function librarySheetCopy(mode: Exclude<LibrarySheetMode, null>, userView: UserV
   if (mode === "health") {
     return userView === "power"
       ? "Warnings, update watch evidence, and bundle notes that affect how safely this file can live in your library."
-      : "Warnings, update status, and bundle notes that matter before you keep, replace, or trust this file.";
+      : "Warnings, update status, and bundle notes that matter before you keep, move, or disable this file.";
   }
 
   if (mode === "inspect") {

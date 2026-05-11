@@ -310,6 +310,67 @@ export function LibraryDetailsPanel({
         hasSafetyNotes ||
         hasParserWarnings),
   );
+  const contextNotes: Array<{
+    key: string;
+    title: string;
+    body: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }> = [];
+
+  if (watchStatus === "not_watched" || !watchStatus) {
+    contextNotes.push({
+      key: "watch-source",
+      title: "No update source",
+      body: "SimSuite does not know where to check this file for updates yet. Add or confirm a source in Updates when you are ready.",
+      actionLabel: !isCasual ? "Open in Updates" : undefined,
+      onAction: !isCasual ? onOpenUpdates : undefined,
+    });
+  } else if (watchStatus === "check_failed") {
+    contextNotes.push({
+      key: "check-failed",
+      title: "Could not check",
+      body: "SimSuite tried to check this source but could not finish. This does not mean the file is broken.",
+      actionLabel: !isCasual ? "Open in Updates" : undefined,
+      onAction: !isCasual ? onOpenUpdates : undefined,
+    });
+  } else if (watchStatus === "reminder_only") {
+    contextNotes.push({
+      key: "reminder-only",
+      title: "Reminder only",
+      body: "This source is saved for reference, but SimSuite cannot check it automatically yet.",
+      actionLabel: !isCasual ? "Open in Updates" : undefined,
+      onAction: !isCasual ? onOpenUpdates : undefined,
+    });
+  } else if (watchStatus === "possible_update" || watchStatus === "exact_update_available") {
+    contextNotes.push({
+      key: "update-lead",
+      title: "Possible update",
+      body: "SimSuite has an update lead for manual review. Review the source before changing files.",
+      actionLabel: !isCasual ? "Open in Updates" : undefined,
+      onAction: !isCasual ? onOpenUpdates : undefined,
+    });
+  }
+
+  if (hasDuplicates) {
+    contextNotes.push({
+      key: "duplicate",
+      title: "Possible duplicate",
+      body: "Compare duplicate candidates before you make changes. SimSuite is not choosing which file to keep.",
+      actionLabel: !isCasual && onOpenDuplicates ? "Compare in Duplicates" : undefined,
+      onAction: !isCasual ? onOpenDuplicates : undefined,
+    });
+  }
+
+  if (hasParserWarnings || problemSignalsForCare.length > 0) {
+    contextNotes.push({
+      key: "review",
+      title: "Manual review needed",
+      body: "SimSuite has limited information here. Inspect the details before moving, disabling, or removing this file.",
+      actionLabel: canOpenNeedsReview ? "Open Needs Review" : undefined,
+      onAction: canOpenNeedsReview ? onOpenNeedsReview : undefined,
+    });
+  }
 
   // ─── More actions — view-aware ───────────────────────────────────────────
   // Casual: one button, nothing else
@@ -415,6 +476,25 @@ export function LibraryDetailsPanel({
           ))}
         </div>
       </section>
+
+      {contextNotes.length > 0 ? (
+        <section className="library-details-card library-inspector-context-card">
+          <div className="section-label">What this means</div>
+          <div className="library-inspector-context-list">
+            {contextNotes.slice(0, isPower ? undefined : 3).map((note) => (
+              <div key={note.key} className="library-inspector-context-note">
+                <strong>{note.title}</strong>
+                <p>{note.body}</p>
+                {note.actionLabel && note.onAction ? (
+                  <button type="button" className="ghost-chip-inline-button" onClick={note.onAction}>
+                    {note.actionLabel}
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* ── Care — view-aware depth ── */}
       <section className="library-details-card">
@@ -757,7 +837,7 @@ function FolderSummaryPanel({
         {data.counts.duplicateCount > 0 && (
           <div className="folder-stat-tile folder-stat-tile--alert">
             <span className="folder-stat-tile__value">{data.counts.duplicateCount}</span>
-            <span className="folder-stat-tile__label">Duplicates</span>
+            <span className="folder-stat-tile__label">Possible dupes</span>
           </div>
         )}
       </div>

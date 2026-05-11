@@ -70,6 +70,12 @@ export function FolderContentPane({
         <div className="folder-content-summary">{summary}</div>
       </div>
 
+      <div className="folder-content-guidance">
+        {folderPath === null
+          ? "Browse Mods and Tray like real Sims 4 folders. Direct files are stored in the selected folder itself."
+          : "Folders show their child folders first, then Direct files stored in this folder."}
+      </div>
+
       {subfolders.length > 0 ? (
         <section>
           <div className="folder-content-section">
@@ -225,7 +231,9 @@ export function FolderContentPane({
       ) : null}
 
       {subfolders.length === 0 && files.length === 0 && rootFiles.length === 0 ? (
-        <div className="library-list-empty">This folder is empty.</div>
+        <div className="library-list-empty">
+          This folder has no indexed subfolders or Direct files.
+        </div>
       ) : null}
     </div>
   );

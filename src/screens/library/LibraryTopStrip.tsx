@@ -8,7 +8,7 @@ type WatchFilter = LibraryWatchFilter;
 type SortField = LibrarySortField;
 
 const WATCH_FILTER_OPTIONS: { value: WatchFilter; label: string }[] = [
-  { value: "all", label: "All" },
+  { value: "all", label: "All signals" },
   { value: "has_updates", label: "Possible updates" },
   { value: "needs_attention", label: "Needs review" },
   { value: "not_tracked", label: "No update source" },
@@ -274,6 +274,7 @@ export function LibraryTopStrip({
       {/* ── Quick filters row: kind chips + watch chips (secondary, visually subordinate) ── */}
       <div className="library-browse-row">
         <div className="library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
+          <span className="library-browse-label" aria-hidden="true">Types</span>
           <button
             type="button"
             className={`library-kind-chip${filters.kind === "" ? " is-active" : ""}`}
@@ -281,7 +282,7 @@ export function LibraryTopStrip({
             aria-pressed={filters.kind === ""}
             title="Show all types"
           >
-            All
+            All types
           </button>
           {facets?.kinds.map((kind) => {
             const cssClass = `type-pill--${kind.charAt(0).toLowerCase() + kind.slice(1)}`;
@@ -328,6 +329,7 @@ export function LibraryTopStrip({
         <div className="library-browse-sep" aria-hidden="true" />
 
         <div className="library-browse-group library-browse-group--watch" role="group" aria-label="Quick filters by status">
+          <span className="library-browse-label" aria-hidden="true">Signals</span>
           {WATCH_FILTER_OPTIONS.map((opt) => (
             <button
               key={opt.value}

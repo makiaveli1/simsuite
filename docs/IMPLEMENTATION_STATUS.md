@@ -1,5 +1,40 @@
 # SimSuite Implementation Status
 
+## Current session note (May 11, 2026 - Library Full UX Design Refinement v1)
+
+This session refined the Library as the main SimSuite work surface without changing backend behavior.
+
+Important changes and findings:
+
+- created `simsuite-reports/LIBRARY_FULL_UX_DESIGN_REFINEMENT_V1_REPORT.md` with the design audit, information placement matrix, redundancy audit, and proof notes.
+- clarified Library filters from ambiguous `All` chips to `All types` and `All signals`.
+- improved list-row hierarchy so identity, type, and the strongest trust-safe cues are easier to scan.
+- kept thumbnails honest across list, grid, folder, and inspector/detail surfaces: real previews when available, type fallbacks when missing, and no error language for normal missing previews.
+- added resting grid-card identity labels and moved grid swatches away from card titles.
+- added right-inspector explanations for no-source, possible duplicate, update/review, reminder-only, and failed-check cues.
+- tightened More Details and Safe Action Preflight copy so it guides before changing files without dependency or safe-delete claims.
+- improved folder root/empty guidance around Mods, Tray, and `Direct files`.
+- extended desktop proof with `library-full-ux-refinement.png` plus 1366 x 768 and 1440 x 900 Library geometry checks.
+- used existing React, TypeScript, CSS, tests, and proof scripts; no dependency or framework was added.
+
+Checks passed:
+
+- `npm run build` with the existing Vite chunk-size warning
+- `npx tsc --noEmit`
+- `npm run test:unit` (`21` files, `75` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+- proof folder: `output/desktop/library-proof/2026-05-11T00-50-35-715Z`
+- implementation commit: pending
+
+Important remaining gap:
+
+- WSL runtime was not run.
+- huge-library performance proof was not run.
+- thumbnail extraction behavior itself was not changed.
+- broader nav/app-shell redesign and CSS token extraction remain future work.
+- unrelated Home/status worktree changes remain outside this Library sprint.
+
 ## Current session note (May 10, 2026 - Library Row Sidebar Polish v1)
 
 This session fixed the row clipping and sidebar adjustability issues revealed after the Library overlap pass.

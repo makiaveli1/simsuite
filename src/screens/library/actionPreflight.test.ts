@@ -81,8 +81,8 @@ it("builds calm preflight cautions without fake dependency claims", () => {
       "Same folder",
     ]),
   );
-  expect(preflight.signals.some((signal) => /does not mean the files depend on each other/i.test(signal.explanation))).toBe(true);
-  expect(preflight.signals.some((signal) => /safe to delete|mesh|recolor|required by|used by/i.test(signal.explanation))).toBe(false);
+  expect(preflight.signals.some((signal) => /placement clue, not proof of a required relationship/i.test(signal.explanation))).toBe(true);
+  expect(preflight.signals.some((signal) => /safe to delete|mesh|recolor|required by|used by|depend on each other/i.test(signal.explanation))).toBe(false);
 });
 
 it("stays quiet when a file has no preflight signals", () => {

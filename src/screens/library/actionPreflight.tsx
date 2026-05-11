@@ -157,7 +157,7 @@ export function buildFileActionPreflight(
     title: "Before you change this file",
     summary: buildPreflightSummary(actionType, dedupedSignals.length),
     disclaimer:
-      "SimSuite has limited information here. These notes do not prove the file is safe or unsafe.",
+    "SimSuite has limited information here. These notes do not decide what you should change.",
     signals: dedupedSignals,
   };
 }
@@ -321,7 +321,7 @@ function buildRelationshipSignal(
     severity: "caution",
     proofLevel: mapRelationshipProof(relationship.proofLevel),
     label: relationshipTypeLabel(relationship.type),
-    explanation: `${describeRelationshipMeaning(relationship, file)} This does not mean the files depend on each other.`,
+    explanation: `${describeRelationshipMeaning(relationship, file)} This is a placement clue, not proof of a required relationship.`,
     evidence: uniqueStrings([countLabel, proofLevelToLabel(relationship.proofLevel)].filter(Boolean) as string[]),
     route: null,
     source: relationship.evidenceSource ?? "relationship_hint",
@@ -340,8 +340,8 @@ function buildPreflightSummary(actionType: ActionPreflightActionType, signalCoun
         ? "before you disable this file"
         : actionType === "move" || actionType === "organize"
           ? "before you move this file"
-          : actionType === "update" || actionType === "replace"
-            ? "before you replace this file"
+        : actionType === "update" || actionType === "replace"
+          ? "before you change this file"
             : "before you move, disable, or remove this file";
 
   return signalCount === 1

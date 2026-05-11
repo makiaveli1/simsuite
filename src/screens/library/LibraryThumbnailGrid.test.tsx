@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { LibraryFileRow } from "../../lib/types";
 import { LibraryThumbnailGrid } from "./LibraryThumbnailGrid";
 
@@ -27,6 +27,10 @@ const SAMPLE_ROWS: LibraryFileRow[] = [
     samePackPeerCount: 0,
   },
 ];
+
+afterEach(() => {
+  cleanup();
+});
 
 it("can rerender from empty results to populated cards without changing hook order", () => {
   const props = {
@@ -57,5 +61,23 @@ it("can rerender from empty results to populated cards without changing hook ord
     ),
   ).not.toThrow();
 
-  expect(screen.getByTitle("LongCreatorName_CozyChair.package")).toBeInTheDocument();
+  expect(screen.getAllByTitle("LongCreatorName_CozyChair.package").length).toBeGreaterThan(0);
+});
+
+it("shows card identity at rest while keeping missing preview fallback honest", () => {
+  render(
+    <LibraryThumbnailGrid
+      userView="standard"
+      rows={SAMPLE_ROWS}
+      selectedId={null}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(screen.getAllByText(/longcreatorname cozychair/i).length).toBeGreaterThan(0);
+  expect(screen.getByTitle(/no THUM preview available/i)).toBeInTheDocument();
 });

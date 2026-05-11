@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (May 11, 2026 - Library Full UX Design Refinement v1)
+
+- **Mode**: code
+- **Focus**: make the Library feel more intentionally designed across list, grid, folder, inspector, detail, preflight, bridge, and user-mode flows
+
+### Progress Made
+
+1. **Completed the requested design audit**:
+   - created `simsuite-reports/LIBRARY_FULL_UX_DESIGN_REFINEMENT_V1_REPORT.md`
+   - documented a view inventory, information placement matrix, redundancy audit, visual hierarchy audit, and workflow audit
+   - used the available frontend/design/test/performance skills as guidance while keeping the existing React/Tauri stack
+
+2. **Refined Library hierarchy and thumbnails**:
+   - clarified filter labels to `All types` and `All signals`
+   - kept list-row identity first and made row thumbnails/fallbacks small and non-dominant
+   - added resting grid-card identity labels so grid cards do not depend on hover/focus reveal
+   - moved grid fallback swatches away from card title text
+   - kept folder Direct files using file thumbnail/fallback logic and folder icons for folders only
+
+3. **Improved inspector and deeper panels**:
+   - added selected-cue explanations in the right inspector for no-source, duplicate, review, update, reminder-only, and failed-check states
+   - tightened detail sheet and Safe Action Preflight wording around changing files without adding dependency, safe-delete, or confirmed-duplicate claims
+   - made detail/preflight overlays more readable and less transparent
+
+### Verification
+
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `npx tsc --noEmit` passed.
+- `npm run test:unit` passed: 21 files, 75 tests.
+- `npm run desktop:proof:fixtures` passed from native Windows PowerShell.
+- `npm run desktop:smoke:fixtures` passed from native Windows PowerShell.
+- Latest proof folder: `output/desktop/library-proof/2026-05-11T00-50-35-715Z`.
+- Proof captured `library-full-ux-refinement.png`, `library-responsive-1366x768.png`, and `library-responsive-1440x900.png`.
+- Implementation commit: pending.
+
+### Known Problems / Gaps
+
+- WSL runtime was not run.
+- A huge-library performance fixture was not run.
+- Preview extraction behavior itself was not rebuilt; this pass improved display/fallback behavior only.
+- Larger app-shell/nav redesign and design-token extraction remain future work.
+- Unrelated Home/status worktree changes remain outside this Library sprint.
+
+### Next Best Step
+
+1. Review the latest proof screenshots against a real user library with extracted CC/Tray thumbnails and decide whether a dedicated thumbnail extraction sprint is needed.
+
 ## Current Session (May 10, 2026 - Library Row Sidebar Polish v1)
 
 - **Mode**: code

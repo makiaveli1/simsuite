@@ -679,6 +679,45 @@ async function verifyLibraryLayoutForMode(driver, summary, mode, outputPath) {
   summary.screenshots.push(outputPath);
 }
 
+async function setProofWindowSize(driver, width, height) {
+  try {
+    await driver.manage().window().setRect({ width, height });
+    await sleep(driver, 700);
+    return { ok: true, width, height };
+  } catch (error) {
+    return {
+      ok: false,
+      width,
+      height,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function verifyLibraryResponsiveViewport(driver, summary, runDir, width, height) {
+  const resize = await setProofWindowSize(driver, width, height);
+  if (!Array.isArray(summary.responsiveViewportChecks)) {
+    summary.responsiveViewportChecks = [];
+  }
+
+  if (!resize.ok) {
+    summary.responsiveViewportChecks.push(resize);
+    return;
+  }
+
+  await openLibraryScreen(driver);
+  await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-shell", 30000);
+  await assertLibraryLayoutGeometry(driver, summary, `library-responsive-${width}x${height}`);
+  const outputPath = path.join(runDir, `library-responsive-${width}x${height}.png`);
+  await takeScreenshot(driver, outputPath);
+  summary.screenshots.push(outputPath);
+  summary.responsiveViewportChecks.push({
+    ...resize,
+    screenshot: outputPath,
+  });
+}
+
 async function ensureLibraryIndexed(driver) {
   await openLibraryScreen(driver);
   await waitForVisibleElement(driver, ".library-top-strip", 30000);
@@ -849,6 +888,9 @@ async function main() {
     const polishShot = path.join(runDir, "library-row-sidebar-polish.png");
     await takeScreenshot(driver, polishShot);
     summary.screenshots.push(polishShot);
+    const fullUxShot = path.join(runDir, "library-full-ux-refinement.png");
+    await takeScreenshot(driver, fullUxShot);
+    summary.screenshots.push(fullUxShot);
     await verifyLibraryInspectorAdjustability(driver, summary, runDir);
 
     await clickVisibleButtonByAriaLabel(driver, "Grid view");
@@ -913,6 +955,9 @@ async function main() {
     await takeScreenshot(driver, updatesShot);
     summary.screenshots.push(updatesShot);
     await assertNoRuntimeErrors(driver, summary, "updates-bridge");
+
+    await verifyLibraryResponsiveViewport(driver, summary, runDir, 1366, 768);
+    await verifyLibraryResponsiveViewport(driver, summary, runDir, 1440, 900);
 
     summary.runtimeErrors = await readRuntimeErrors(driver);
     summary.browserLogInspection = await readBrowserLogEntries(driver);

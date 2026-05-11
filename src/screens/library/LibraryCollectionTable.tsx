@@ -139,7 +139,10 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                   {/* Thumbnail / preview cell — Phase 5e, updated 5k */}
                   <div className="library-list-col library-list-col--thumb">
                     {model.thumbnailPreview ? (
-                      <>
+                      <div
+                        className="library-row-thumb-real"
+                        title={model.previewSource && model.previewSource !== "fallback" ? `Preview source: ${model.previewSource}` : "Preview"}
+                      >
                         <img
                           src={`data:image/png;base64,${model.thumbnailPreview}`}
                           alt=""
@@ -147,15 +150,7 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                           loading="lazy"
                           decoding="async"
                         />
-                        {model.previewSource && model.previewSource !== 'fallback' ? (
-                          <span
-                            className={`library-row-thumb-source library-row-thumb-source--${model.previewSource}`}
-                            title={`Source: ${model.previewSource}`}
-                          >
-                            {model.previewSource === 'cache' ? 'CH' : model.previewSource === 'embedded' ? 'EM' : model.previewSource === 'external' ? 'EX' : '—'}
-                          </span>
-                        ) : null}
-                      </>
+                      </div>
                     ) : (
                       <div
                         className={`library-row-thumb-fallback library-row-thumb-fallback--${model.typeColor}`}
@@ -226,7 +221,10 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                   <div className="library-list-col library-list-col--status library-status-cell">
                     <div className="library-status-pills">
                       {statusSummary.visible.map((pill) => (
-                        <span key={pill.key} className={`library-health-pill is-${pill.tone}`}>
+                        <span
+                          key={pill.key}
+                          className={`library-health-pill library-health-pill--${pill.key} is-${pill.tone}`}
+                        >
                           {pill.label}
                         </span>
                       ))}
@@ -260,8 +258,8 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
           ) : (
             <div className="library-list-empty">
               {userView === "beginner"
-                ? "Nothing matches these filters right now."
-                : "No indexed files match the current filters."}
+                ? "No files match these filters. Try a broader search or clear a filter."
+                : "No indexed files match the current filters. Clear filters or search by creator/name."}
             </div>
           )}
         </div>

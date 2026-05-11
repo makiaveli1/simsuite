@@ -205,6 +205,12 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
 
                     {/* Resting state: tiny type pill at hero bottom — thumbnail leads */}
                     <div className="library-card-title-block">
+                      <div className="library-card-rest-title" title={model.title}>
+                        {model.displayTitle}
+                      </div>
+                      {model.identityLabel ? (
+                        <div className="library-card-rest-identity">{model.identityLabel}</div>
+                      ) : null}
                       <span className={`library-type-pill type-pill--${model.typeColor}`}>
                         {model.typeLabel}
                       </span>
@@ -261,8 +267,8 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
           ) : (
             <div className="library-grid-empty">
               {userView === "beginner"
-                ? "Nothing matches these filters right now."
-                : "No indexed files match the current filters."}
+                ? "No cards match these filters. Try a broader search or clear a filter."
+                : "No indexed files match the current filters. Clear filters or search by creator/name."}
             </div>
           )}
         </div>

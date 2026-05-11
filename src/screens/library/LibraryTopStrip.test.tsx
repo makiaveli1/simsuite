@@ -62,6 +62,8 @@ function renderTopStrip(userView: UserView) {
 it("uses trust-first update wording in Library filters and summary", () => {
   renderTopStrip("standard");
 
+  expect(screen.getByRole("button", { name: /all types/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /all signals/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /possible updates/i })).toBeInTheDocument();
   expect(screen.getAllByText(/update leads/i).length).toBeGreaterThan(0);
   expect(screen.queryByText(/has updates/i)).toBeNull();
