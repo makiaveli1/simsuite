@@ -347,8 +347,8 @@ it("explains no-source and duplicate cues in the inspector without unsafe claims
   expect(screen.getByText(/what this means/i)).toBeVisible();
   expect(screen.getByText(/does not know where to check/i)).toBeVisible();
   expect(screen.getByText(/compare duplicate candidates/i)).toBeVisible();
-  expect(screen.getByRole("button", { name: /open in updates/i })).toBeVisible();
-  expect(screen.getByRole("button", { name: /compare in duplicates/i })).toBeVisible();
+  expect(screen.getAllByRole("button", { name: /open in updates/i })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /compare in duplicates/i })).toHaveLength(1);
   expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();
 });

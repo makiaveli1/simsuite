@@ -164,19 +164,10 @@ export function buildFileActionPreflight(
 export function ActionPreflightCompact({
   preflight,
   onOpenHealthDetails,
-  onOpenNeedsReview,
-  onOpenDuplicates,
-  onOpenUpdates,
 }: ActionPreflightCompactProps) {
   if (!preflight || preflight.signals.length === 0) {
     return null;
   }
-
-  const primaryRoute = buildRouteButton(preflight.recommendedRoute, {
-    onOpenNeedsReview,
-    onOpenDuplicates,
-    onOpenUpdates,
-  });
 
   return (
     <section className="library-details-card action-preflight-card action-preflight-card--compact">
@@ -194,7 +185,6 @@ export function ActionPreflightCompact({
           <AlertTriangle size={14} strokeWidth={2} />
           Review cautions
         </button>
-        {primaryRoute}
       </div>
     </section>
   );

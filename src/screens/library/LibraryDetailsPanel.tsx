@@ -101,7 +101,6 @@ export function LibraryDetailsPanel({
   }
 
   const careSummary = summarizeLibraryCareState(selectedFile);
-  const hasUpdates = Boolean(selectedFile.installedVersionSummary);
   const watchStatus = selectedFile.watchResult?.status ?? null;
   const watchStatusLabel = watchStatusToLabel(watchStatus);
   const watchStatusTone = watchStatusToTone(watchStatus);
@@ -118,6 +117,14 @@ export function LibraryDetailsPanel({
   const hasDuplicates = (selectedFile.duplicatesCount ?? 0) > 0;
   const duplicateTypes = selectedFile.duplicateTypes ?? [];
   const allProblemSignals = selectedFile.problemSignals ?? [];
+  const hasUpdateAction = Boolean(
+    selectedFile.installedVersionSummary ||
+      selectedFile.watchResult ||
+      !watchStatus ||
+      allProblemSignals.some(
+        (signal) => signal.destination === "updates" || signal.signalType === "no_update_source",
+      ),
+  );
   const problemSignals = allProblemSignals.filter((signal) => signal.showInInspector);
   const problemSignalsForCare = problemSignals.filter(
     (signal) => signal.destination !== "duplicates" && signal.destination !== "updates",
@@ -314,8 +321,6 @@ export function LibraryDetailsPanel({
     key: string;
     title: string;
     body: string;
-    actionLabel?: string;
-    onAction?: () => void;
   }> = [];
 
   if (watchStatus === "not_watched" || !watchStatus) {
@@ -323,32 +328,24 @@ export function LibraryDetailsPanel({
       key: "watch-source",
       title: "No update source",
       body: "SimSuite does not know where to check this file for updates yet. Add or confirm a source in Updates when you are ready.",
-      actionLabel: !isCasual ? "Open in Updates" : undefined,
-      onAction: !isCasual ? onOpenUpdates : undefined,
     });
   } else if (watchStatus === "check_failed") {
     contextNotes.push({
       key: "check-failed",
       title: "Could not check",
       body: "SimSuite tried to check this source but could not finish. This does not mean the file is broken.",
-      actionLabel: !isCasual ? "Open in Updates" : undefined,
-      onAction: !isCasual ? onOpenUpdates : undefined,
     });
   } else if (watchStatus === "reminder_only") {
     contextNotes.push({
       key: "reminder-only",
       title: "Reminder only",
       body: "This source is saved for reference, but SimSuite cannot check it automatically yet.",
-      actionLabel: !isCasual ? "Open in Updates" : undefined,
-      onAction: !isCasual ? onOpenUpdates : undefined,
     });
   } else if (watchStatus === "possible_update" || watchStatus === "exact_update_available") {
     contextNotes.push({
       key: "update-lead",
       title: "Possible update",
       body: "SimSuite has an update lead for manual review. Review the source before changing files.",
-      actionLabel: !isCasual ? "Open in Updates" : undefined,
-      onAction: !isCasual ? onOpenUpdates : undefined,
     });
   }
 
@@ -357,8 +354,6 @@ export function LibraryDetailsPanel({
       key: "duplicate",
       title: "Possible duplicate",
       body: "Compare duplicate candidates before you make changes. SimSuite is not choosing which file to keep.",
-      actionLabel: !isCasual && onOpenDuplicates ? "Compare in Duplicates" : undefined,
-      onAction: !isCasual ? onOpenDuplicates : undefined,
     });
   }
 
@@ -367,8 +362,6 @@ export function LibraryDetailsPanel({
       key: "review",
       title: "Manual review needed",
       body: "SimSuite has limited information here. Inspect the details before moving, disabling, or removing this file.",
-      actionLabel: canOpenNeedsReview ? "Open Needs Review" : undefined,
-      onAction: canOpenNeedsReview ? onOpenNeedsReview : undefined,
     });
   }
 
@@ -485,11 +478,6 @@ export function LibraryDetailsPanel({
               <div key={note.key} className="library-inspector-context-note">
                 <strong>{note.title}</strong>
                 <p>{note.body}</p>
-                {note.actionLabel && note.onAction ? (
-                  <button type="button" className="ghost-chip-inline-button" onClick={note.onAction}>
-                    {note.actionLabel}
-                  </button>
-                ) : null}
               </div>
             ))}
           </div>
@@ -601,17 +589,6 @@ export function LibraryDetailsPanel({
           </p>
         ) : null}
 
-        {canOpenNeedsReview ? (
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={onOpenNeedsReview}
-            style={{ marginTop: "0.75rem" }}
-          >
-            <ExternalLink size={14} strokeWidth={2} />
-            {isCasual ? "Open Needs Review" : "Review this file"}
-          </button>
-        ) : null}
       </section>
 
       <ActionPreflightCompact
@@ -667,7 +644,7 @@ export function LibraryDetailsPanel({
           </button>
 
           <div className="library-details-actions-grid">
-            {!isCasual && hasHealthDetails ? (
+            {!isCasual && hasHealthDetails && actionPreflight.signals.length === 0 ? (
               <button
                 type="button"
                 className="secondary-action"
@@ -675,6 +652,28 @@ export function LibraryDetailsPanel({
               >
                 <ShieldAlert size={14} strokeWidth={2} />
                 Warnings & updates
+              </button>
+            ) : null}
+
+            {canOpenNeedsReview ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenNeedsReview}
+              >
+                <ExternalLink size={14} strokeWidth={2} />
+                {isCasual ? "Open Needs Review" : "Review this file"}
+              </button>
+            ) : null}
+
+            {hasDuplicates && !isCasual && onOpenDuplicates ? (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={onOpenDuplicates}
+              >
+                <ExternalLink size={14} strokeWidth={2} />
+                Compare in Duplicates
               </button>
             ) : null}
 
@@ -689,7 +688,7 @@ export function LibraryDetailsPanel({
               </button>
             ) : null}
 
-            {hasUpdates && !isCasual ? (
+            {hasUpdateAction && !isCasual ? (
               <button
                 type="button"
                 className="secondary-action"

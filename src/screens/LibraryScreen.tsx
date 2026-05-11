@@ -815,6 +815,12 @@ export function LibraryScreen({
     () => (selected ? buildFileActionPreflight(selected, relationship, "change") : null),
     [selected, relationship],
   );
+  const preflightHasUpdatesRoute = Boolean(
+    selectedPreflight?.signals.some((signal) => signal.route === "updates"),
+  );
+  const preflightHasReviewRoute = Boolean(
+    selectedPreflight?.signals.some((signal) => signal.route === "review"),
+  );
   const folderName = useMemo(
     () => (selected ? extractParentFolder(selected.path) : null),
     [selected],
@@ -1339,7 +1345,7 @@ export function LibraryScreen({
                       </p>
                     )}
 
-                    {onNavigateWithParams && updatesTarget ? (
+                    {onNavigateWithParams && updatesTarget && !preflightHasUpdatesRoute ? (
                       <button
                         type="button"
                         className="secondary-action"
@@ -1412,7 +1418,7 @@ export function LibraryScreen({
                               </div>
                             ))}
                         </div>
-                        {canOpenNeedsReview ? (
+                        {canOpenNeedsReview && !preflightHasReviewRoute ? (
                           <button
                             type="button"
                             className="secondary-action"

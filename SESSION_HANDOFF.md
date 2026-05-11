@@ -1,5 +1,47 @@
 # Session Handoff
 
+## Current Session (May 11, 2026 - Library Sidebar Redundancy Polish v1)
+
+- **Mode**: code
+- **Focus**: remove repeated Library inspector route actions, especially duplicate `Open in Updates` buttons in Seasoned mode
+
+### Progress Made
+
+1. **Centralized sidebar destination actions**:
+   - `What this means` now explains cues without inline route buttons
+   - compact Preflight now opens the caution detail only instead of adding another route button
+   - the lower `Open` action group owns Updates, Duplicates, Needs Review, Edit, and Open folder actions
+
+2. **Preserved useful routes without repetition**:
+   - no-source/update-tracking files still get one `Open in Updates` action
+   - duplicate candidates get one `Compare in Duplicates` action
+   - More Details avoids repeating Updates/Needs Review route buttons when Preflight already owns that route
+
+3. **Added regression proof**:
+   - desktop Library proof now fails if inspector route actions repeat
+   - the latest proof found `Open in Updates: 1`, `Compare in Duplicates: 1`, `Review this file: 1`, and no repeated route actions
+
+### Verification
+
+- `npx tsc --noEmit`
+- targeted Library tests: `3` files, `12` tests
+- `npm run build`
+- `npm run test:unit`: `22` files, `76` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-11T08-46-44-527Z`
+  - inspector route action check passed with no duplicate destination buttons
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend sprint.
+- Vite still reports the existing large chunk warning.
+- pre-existing unrelated Home/status worktree changes remain unstaged and outside this sprint.
+
+### Next Best Step
+
+1. Continue the planned edge/stress hardening pass, but keep checking for duplicate messages as part of every Library fixture screenshot review.
+
 ## Current Session (May 11, 2026 - Library Visual Productization v2)
 
 - **Mode**: code

@@ -1,5 +1,32 @@
 # SimSuite Implementation Status
 
+## Current session note (May 11, 2026 - Library Sidebar Redundancy Polish v1)
+
+This session removed repeated destination actions from the Library inspector.
+
+Important changes and findings:
+
+- `What this means` now explains selected-file cues without rendering route buttons inside each explanation card.
+- compact Preflight now opens the caution detail only, so it does not duplicate Updates/Duplicates/Review route buttons.
+- the lower `Open` action area is now the single owner for inspector destination actions.
+- no-source/update-tracking files still show one `Open in Updates` action.
+- duplicate candidates now show one `Compare in Duplicates` action in the central action area.
+- More Details avoids repeating Updates/Needs Review buttons when Preflight already exposes the same route.
+- desktop proof now has an inspector route-action check that fails if repeated route buttons reappear.
+
+Checks passed:
+
+- `npx tsc --noEmit`
+- targeted Library tests (`3` files, `12` tests)
+- `npm run build`
+- `npm run test:unit` (`22` files, `76` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 11, 2026 - Library Visual Productization v2)
 
 This session refined the Library presentation so list, grid, folder, inspector, More Details, and Preflight feel more like one finished desktop work surface.

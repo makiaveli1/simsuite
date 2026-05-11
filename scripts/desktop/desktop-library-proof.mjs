@@ -522,6 +522,55 @@ async function assertLibraryLayoutGeometry(driver, summary, label) {
   }
 }
 
+async function assertLibraryInspectorRouteActions(driver, summary, label) {
+  const result = await driver.executeScript(() => {
+    const routeLabels = [
+      "Open in Updates",
+      "Compare in Duplicates",
+      "Open in Duplicates",
+      "Open Needs Review",
+      "Review this file",
+    ];
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const buttons = Array.from(document.querySelectorAll(".library-inspector-shell button"))
+      .filter(isVisible)
+      .map((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    const counts = Object.fromEntries(
+      routeLabels.map((routeLabel) => [
+        routeLabel,
+        buttons.filter((label) => label.toLowerCase() === routeLabel.toLowerCase()).length,
+      ]),
+    );
+    return {
+      buttons,
+      counts,
+      duplicates: Object.entries(counts)
+        .filter(([, count]) => count > 1)
+        .map(([routeLabel, count]) => ({ routeLabel, count })),
+    };
+  });
+
+  if (!Array.isArray(summary.inspectorRouteActionChecks)) {
+    summary.inspectorRouteActionChecks = [];
+  }
+  summary.inspectorRouteActionChecks.push({
+    label,
+    ...result,
+  });
+  if (result.duplicates.length > 0) {
+    throw new Error(
+      `${label} inspector has repeated route actions: ${result.duplicates
+        .map((item) => `${item.routeLabel} x${item.count}`)
+        .join(", ")}`,
+    );
+  }
+}
+
 async function getLibraryInspectorWidth(driver) {
   return await driver.executeScript(() => {
     const inspector = document.querySelector(".library-inspector-shell");
@@ -897,6 +946,7 @@ async function main() {
     const visualInspectorShot = path.join(runDir, "library-visual-productization-inspector.png");
     await takeScreenshot(driver, visualInspectorShot);
     summary.screenshots.push(visualInspectorShot);
+    await assertLibraryInspectorRouteActions(driver, summary, "selected-inspector-route-actions");
     await verifyLibraryInspectorAdjustability(driver, summary, runDir);
 
     await clickVisibleButtonByAriaLabel(driver, "Grid view");
