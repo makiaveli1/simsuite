@@ -33,7 +33,7 @@
 - `npm run desktop:smoke:fixtures` passed from native Windows PowerShell.
 - Latest proof folder: `output/desktop/library-proof/2026-05-11T00-50-35-715Z`.
 - Proof captured `library-full-ux-refinement.png`, `library-responsive-1366x768.png`, and `library-responsive-1440x900.png`.
-- Implementation commit: pending.
+- Implementation commit: `df9635c`.
 
 ### Known Problems / Gaps
 

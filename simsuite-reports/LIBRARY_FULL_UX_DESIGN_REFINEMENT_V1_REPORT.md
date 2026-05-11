@@ -249,5 +249,5 @@ Runtime console/error capture reported no severe runtime errors in the proof sum
 
 ## Commit tracking
 
-- Implementation commit: pending.
+- Implementation commit: `df9635c`.
 - Docs hash commit: pending.

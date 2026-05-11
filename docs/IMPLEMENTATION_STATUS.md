@@ -25,7 +25,7 @@ Checks passed:
 - `npm run desktop:proof:fixtures`
 - `npm run desktop:smoke:fixtures`
 - proof folder: `output/desktop/library-proof/2026-05-11T00-50-35-715Z`
-- implementation commit: pending
+- implementation commit: `df9635c`
 
 Important remaining gap:
 
