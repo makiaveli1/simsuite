@@ -131,4 +131,5 @@ Unrelated worktree changes:
 
 ## Commit
 
-Pending until commit/push closeout.
+- Implementation commit: `6b511a6` - `Productize Library visual presentation`.
+- Follow-up docs commit: records this implementation hash in the sprint report.
