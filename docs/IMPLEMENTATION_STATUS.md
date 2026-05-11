@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (May 11, 2026 - Library Visual Productization v2)
+
+This session refined the Library presentation so list, grid, folder, inspector, More Details, and Preflight feel more like one finished desktop work surface.
+
+Important changes and findings:
+
+- kept the work frontend-only and did not add dependencies, backend schema changes, update persistence, scraping, replacement, dependency, safe-delete, or automatic update behavior.
+- added scoped Library visual productization styles in `src/styles/phase5k-cards.css`.
+- improved More Details as a first-class evidence surface with a selected-file lead card, preview/no-preview treatment, stronger sheet surface, cleaner metadata rows, and long-value wrapping.
+- softened Safe Action Preflight evidence labels from broad `Confirmed` wording to safer `Detected`/clue language where appropriate.
+- improved grid no-preview tiles, resting card identity, folder root/Direct files presentation, inspector empty/selected surfaces, and preflight card readability.
+- extended `scripts/desktop/desktop-library-proof.mjs` with named screenshots for Library visual productization states.
+- confirmed the previous Library layout/runtime proof still passes, including responsive `1366x768` and `1440x900` checks.
+- confirmed the pre-existing unrelated Home/status worktree changes remain outside this Library sprint.
+
+Checks passed:
+
+- `npx tsc --noEmit`
+- targeted Library Vitest set (`7` files, `19` tests)
+- `npm run build`
+- `npm run test:unit` (`22` files, `76` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- real extracted CC/Tray thumbnail behavior still needs live-library validation.
+- large-library stress fixtures and true empty disk folder metadata remain future Library hardening work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 11, 2026 - Library Full UX Design Refinement v1)
 
 This session refined the Library as the main SimSuite work surface without changing backend behavior.

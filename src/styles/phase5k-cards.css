@@ -2350,3 +2350,345 @@
   color: #f97316;
   font-weight: 600;
 }
+
+/* Library visual productization v2: focused polish for Library surfaces. */
+.workbench-sheet-shell:has(.library-detail-sheet) {
+  background:
+    radial-gradient(circle at 74% 18%, rgba(86, 255, 177, 0.08), transparent 30%),
+    rgba(1, 8, 10, 0.94) !important;
+  backdrop-filter: blur(18px) saturate(0.84) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(0.84) !important;
+}
+
+.library-detail-sheet {
+  background:
+    linear-gradient(180deg, rgba(15, 29, 32, 0.995), rgba(5, 11, 13, 0.998)) !important;
+  border-color: color-mix(in srgb, var(--line-strong) 88%, rgba(124, 255, 185, 0.12)) !important;
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.62),
+    inset 1px 0 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.library-detail-sheet .workbench-sheet-header {
+  background:
+    linear-gradient(180deg, rgba(17, 32, 35, 0.98), rgba(11, 22, 24, 0.94));
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+}
+
+.library-detail-sheet .workbench-sheet-copy {
+  max-width: 58ch;
+  color: color-mix(in srgb, var(--text-soft) 92%, white 4%);
+}
+
+.library-detail-sheet-lead {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(136px, 180px);
+  gap: 0.8rem !important;
+  align-items: stretch;
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line)) !important;
+  background:
+    linear-gradient(135deg, rgba(86, 255, 177, 0.08), transparent 60%),
+    color-mix(in srgb, var(--surface-3) 96%, black) !important;
+}
+
+.library-detail-sheet-lead-main {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.46rem;
+}
+
+.library-detail-sheet-lead-main > strong {
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.library-detail-sheet-preview-card {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.46rem;
+  min-width: 0;
+  min-height: 126px;
+  padding: 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.06), transparent 54%),
+    rgba(3, 10, 12, 0.72);
+}
+
+.library-detail-sheet-preview-image {
+  width: 100%;
+  max-width: 150px;
+  max-height: 118px;
+  object-fit: contain;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.library-detail-sheet-preview-fallback {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), transparent),
+    rgba(7, 16, 18, 0.78);
+}
+
+.library-detail-sheet-preview-fallback--script,
+.library-detail-sheet-preview-fallback--gameplay {
+  border-color: rgba(59, 130, 246, 0.32);
+}
+
+.library-detail-sheet-preview-fallback--cas {
+  border-color: rgba(236, 72, 153, 0.32);
+}
+
+.library-detail-sheet-preview-fallback--buildbuy,
+.library-detail-sheet-preview-fallback--override {
+  border-color: rgba(168, 85, 247, 0.32);
+}
+
+.library-detail-sheet-preview-fallback--tray {
+  border-color: rgba(251, 191, 36, 0.34);
+}
+
+.library-detail-sheet-fallback-icon {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  opacity: 0.72;
+  filter: saturate(0.82) contrast(0.92);
+}
+
+.library-detail-sheet-preview-caption {
+  color: color-mix(in srgb, var(--text-dim) 88%, white 5%);
+  font-size: 0.62rem;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.library-detail-sheet-preview-caption--active {
+  color: color-mix(in srgb, var(--accent) 72%, white 12%);
+}
+
+.library-detail-sheet .inspect-evidence-board {
+  grid-column: 1 / -1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.05)),
+    rgba(2, 12, 14, 0.58);
+  border-color: color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.library-detail-sheet .dock-section {
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: rgba(4, 14, 16, 0.72);
+}
+
+.library-detail-sheet .dock-section + .dock-section {
+  margin-top: 0.62rem;
+}
+
+.library-detail-sheet .dock-section-toggle {
+  min-height: 2.7rem;
+}
+
+.library-detail-sheet .dock-section-copy strong {
+  color: color-mix(in srgb, var(--text) 96%, white 4%);
+}
+
+.library-detail-sheet .dock-section-copy span {
+  color: color-mix(in srgb, var(--text-soft) 84%, transparent);
+}
+
+.library-detail-sheet .detail-list {
+  border-color: color-mix(in srgb, var(--line) 76%, transparent);
+}
+
+.library-detail-sheet .detail-row {
+  min-height: 2.4rem;
+  gap: 0.75rem;
+}
+
+.library-detail-sheet .detail-row > span,
+.library-detail-sheet .detail-row-label {
+  color: color-mix(in srgb, var(--text-soft) 78%, transparent);
+}
+
+.library-detail-sheet .detail-row > strong,
+.library-detail-sheet .detail-row-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.library-sheet-file-path {
+  max-width: min(54vw, 46rem);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.action-preflight-detail-block {
+  padding: 0.86rem !important;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.07), transparent 66%),
+    rgba(7, 17, 19, 0.96) !important;
+}
+
+.action-preflight-detail-block > .section-label {
+  color: color-mix(in srgb, var(--warning) 58%, var(--text-soft));
+}
+
+.action-preflight-row {
+  display: grid;
+  gap: 0.44rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+    rgba(3, 12, 14, 0.9) !important;
+}
+
+.action-preflight-row-meta .ghost-chip {
+  color: color-mix(in srgb, var(--text-soft) 86%, white 4%);
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.library-card {
+  background:
+    linear-gradient(180deg, rgba(18, 31, 35, 0.96), rgba(6, 14, 17, 0.98)) !important;
+  border-color: rgba(255, 255, 255, 0.095) !important;
+}
+
+.library-card:hover,
+.library-card:focus-within {
+  border-color: rgba(124, 255, 185, 0.28) !important;
+}
+
+.library-card-hero::after {
+  height: 82%;
+  background: linear-gradient(
+    to bottom,
+    rgba(4, 8, 11, 0) 0%,
+    rgba(4, 8, 11, 0.24) 42%,
+    rgba(4, 8, 11, 0.92) 100%
+  ) !important;
+}
+
+.library-card-hero .library-card-title-block {
+  z-index: 4 !important;
+  padding: 1.3rem 0.68rem 0.55rem !important;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(3, 9, 12, 0.78) 42%,
+    rgba(3, 9, 12, 0.98) 100%
+  ) !important;
+}
+
+.library-card-rest-title {
+  color: color-mix(in srgb, var(--text) 99%, white 1%) !important;
+  font-weight: 800 !important;
+  opacity: 1 !important;
+}
+
+.library-card-rest-identity {
+  color: color-mix(in srgb, var(--text-soft) 96%, white 5%) !important;
+  opacity: 1 !important;
+}
+
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--script,
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--gameplay {
+  background:
+    radial-gradient(circle at 52% 34%, rgba(59, 130, 246, 0.26), transparent 32%),
+    linear-gradient(160deg, rgba(28, 55, 98, 0.9), rgba(4, 12, 18, 0.98)) !important;
+}
+
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--cas {
+  background:
+    radial-gradient(circle at 52% 34%, rgba(236, 72, 153, 0.24), transparent 32%),
+    linear-gradient(160deg, rgba(91, 34, 67, 0.9), rgba(13, 7, 14, 0.98)) !important;
+}
+
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--buildbuy,
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--override {
+  background:
+    radial-gradient(circle at 52% 34%, rgba(168, 85, 247, 0.22), transparent 32%),
+    linear-gradient(160deg, rgba(61, 42, 92, 0.9), rgba(9, 8, 17, 0.98)) !important;
+}
+
+.library-card-hero .library-card-thumbnail-zone--fallback.library-card-hero--tray {
+  background:
+    radial-gradient(circle at 52% 34%, rgba(251, 191, 36, 0.24), transparent 32%),
+    linear-gradient(160deg, rgba(86, 68, 22, 0.9), rgba(13, 11, 5, 0.98)) !important;
+}
+
+.library-card-hero .library-card-fallback-icon {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.34) !important;
+}
+
+.library-folder-content-pane {
+  background:
+    linear-gradient(180deg, rgba(10, 21, 23, 0.84), rgba(3, 10, 12, 0.96));
+}
+
+.folder-content-header {
+  margin: 0.8rem 1rem 0.5rem;
+  padding: 0.78rem 0.86rem;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background:
+    linear-gradient(135deg, rgba(86, 255, 177, 0.055), transparent 58%),
+    rgba(6, 17, 19, 0.78);
+}
+
+.folder-content-guidance {
+  margin: 0 1rem 0.72rem !important;
+  padding: 0.55rem 0.68rem;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.folder-content-section {
+  margin-top: 0.82rem;
+  color: color-mix(in srgb, var(--text-soft) 88%, white 5%);
+}
+
+.folder-row {
+  min-height: 2.45rem;
+  border: 1px solid transparent;
+}
+
+.folder-row:hover,
+.folder-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: rgba(86, 255, 177, 0.045);
+}
+
+.library-details-empty {
+  margin: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(86, 255, 177, 0.08), transparent 36%),
+    rgba(7, 17, 19, 0.78);
+}
+
+@media (max-width: 1180px) {
+  .library-detail-sheet-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-detail-sheet-preview-card,
+  .library-detail-sheet .inspect-evidence-board {
+    grid-column: 1;
+  }
+}

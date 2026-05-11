@@ -891,6 +891,12 @@ async function main() {
     const fullUxShot = path.join(runDir, "library-full-ux-refinement.png");
     await takeScreenshot(driver, fullUxShot);
     summary.screenshots.push(fullUxShot);
+    const visualListShot = path.join(runDir, "library-visual-productization-list.png");
+    await takeScreenshot(driver, visualListShot);
+    summary.screenshots.push(visualListShot);
+    const visualInspectorShot = path.join(runDir, "library-visual-productization-inspector.png");
+    await takeScreenshot(driver, visualInspectorShot);
+    summary.screenshots.push(visualInspectorShot);
     await verifyLibraryInspectorAdjustability(driver, summary, runDir);
 
     await clickVisibleButtonByAriaLabel(driver, "Grid view");
@@ -899,6 +905,9 @@ async function main() {
     const gridShot = path.join(runDir, "02-library-grid-view.png");
     await takeScreenshot(driver, gridShot);
     summary.screenshots.push(gridShot);
+    const visualGridShot = path.join(runDir, "library-visual-productization-grid.png");
+    await takeScreenshot(driver, visualGridShot);
+    summary.screenshots.push(visualGridShot);
 
     await clickVisibleButtonByAriaLabel(driver, "Folders view");
     await waitForVisibleElement(driver, ".library-folders-layout", 30000);
@@ -906,6 +915,9 @@ async function main() {
     const foldersShot = path.join(runDir, "03-library-folder-view.png");
     await takeScreenshot(driver, foldersShot);
     summary.screenshots.push(foldersShot);
+    const visualFolderShot = path.join(runDir, "library-visual-productization-folder.png");
+    await takeScreenshot(driver, visualFolderShot);
+    summary.screenshots.push(visualFolderShot);
 
     await clickVisibleButtonByAriaLabel(driver, "List view");
     await openRow(driver, targets.mccc);
@@ -914,6 +926,9 @@ async function main() {
     const detailSheetShot = path.join(runDir, "04-library-detail-sheet.png");
     await takeScreenshot(driver, detailSheetShot);
     summary.screenshots.push(detailSheetShot);
+    const visualMoreDetailsShot = path.join(runDir, "library-visual-productization-more-details.png");
+    await takeScreenshot(driver, visualMoreDetailsShot);
+    summary.screenshots.push(visualMoreDetailsShot);
     await clickAnyVisibleButton(driver, ["Done"], 30000);
     await sleep(driver, 400);
 
@@ -922,6 +937,9 @@ async function main() {
     const detailShot = path.join(runDir, "05-library-preflight-detail-mccc.png");
     await takeScreenshot(driver, detailShot);
     summary.screenshots.push(detailShot);
+    const visualPreflightShot = path.join(runDir, "library-visual-productization-preflight.png");
+    await takeScreenshot(driver, visualPreflightShot);
+    summary.screenshots.push(visualPreflightShot);
 
     summary.duplicatesPreflightText = summary.mcccDetailText;
     await clickVisibleButton(driver, "Open in Duplicates");

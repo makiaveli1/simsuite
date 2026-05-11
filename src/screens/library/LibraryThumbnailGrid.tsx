@@ -68,7 +68,7 @@ function FallbackCategoryIcon({ kind }: { kind: string }) {
     <div
       className="library-card-fallback-icon"
       style={{ background: config.bg }}
-      title={`${kind} — no THUM preview available`}
+      title={`${kind} — no preview available`}
     >
       {config.symbol}
     </div>

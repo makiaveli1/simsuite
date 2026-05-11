@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { Eye, X } from "lucide-react";
 import { DockSectionStack, type DockSectionDefinition } from "../../components/DockSectionStack";
@@ -10,13 +9,7 @@ import { friendlyTypeLabel } from "../../lib/uiLanguage";
 import type { FileDetail, FileRelationship, UserView } from "../../lib/types";
 import {
   buildInspectorPreviewStrip,
-  computeDetailLibraryRelationship,
-  describeCreatorForInspector,
-  describeLibraryFamilyContext,
-  describeLibraryPrimaryLabel,
   extractColorSwatches,
-  extractParentFolder,
-  libraryIdentityLabelForFilename,
   summarizeLibraryResourceBadge,
   summarizeLibraryScriptContent,
   summarizeScriptScopeForUi,
@@ -46,15 +39,11 @@ export function LibraryDetailSheet({
   sections,
   userView,
   onClose,
-  relationship: relationshipProp,
-  folderName,
 }: LibraryDetailSheetProps) {
   if (!selectedFile || !mode) {
     return null;
   }
 
-  const inspectFamilyContext =
-    mode === "inspect" ? describeLibraryFamilyContext(selectedFile) : null;
   const inspectContentBadge =
     mode === "inspect"
       ? summarizeScriptScopeForUi(selectedFile.insights) ??
@@ -62,9 +51,6 @@ export function LibraryDetailSheet({
         summarizeLibraryResourceBadge(selectedFile)
       : null;
 
-  // Compute relationship if not passed down from parent
-  const relationship = relationshipProp ?? computeDetailLibraryRelationship(selectedFile, []);
-  const parentFolder = folderName ?? extractParentFolder(selectedFile.path);
   const inspectVersionBadge =
     mode === "inspect"
       ? summarizeVersionSignalForUi(selectedFile.insights, 0.8) ??
@@ -75,8 +61,13 @@ export function LibraryDetailSheet({
   const inspectPreviewStrip =
     mode === "inspect" ? buildInspectorPreviewStrip(selectedFile, userView) : null;
   const typeColor = typeColorForKind(selectedFile.kind);
-  const inspectPrimaryLabel = describeLibraryPrimaryLabel(selectedFile);
-  const inspectIdentityLabel = libraryIdentityLabelForFilename(selectedFile.filename, inspectPrimaryLabel);
+  const detailPreview =
+    selectedFile.insights?.thumbnailPreview ?? selectedFile.insights?.cachedThumbnailPreview ?? null;
+  const detailPreviewSource = selectedFile.insights?.thumbnailPreview
+    ? "Embedded preview"
+    : selectedFile.insights?.cachedThumbnailPreview
+      ? "Game cache preview"
+      : "No preview available";
 
   return (
     <AnimatePresence>
@@ -122,7 +113,7 @@ export function LibraryDetailSheet({
                 {/* Phase 5aj: lead = filename anchor + actionable badges only.
                     Kind, subtype, family context, creator — all already in the sidebar.
                     Evidence board carries what is genuinely new to the detail view. */}
-                <div>
+                <div className="library-detail-sheet-lead-main">
                   <span className="section-label">Selected</span>
                   <strong title={selectedFile.filename}>{selectedFile.filename}</strong>
                   {/* Actionable badges: version + content type — genuinely useful at a glance */}
@@ -162,7 +153,25 @@ export function LibraryDetailSheet({
                     </div>
                   ) : null}
                 </div>
-                {/* Evidence board — replaces repeated thumbnail in More Details */}
+                <div className="library-detail-sheet-preview-card">
+                  {detailPreview ? (
+                    <img
+                      src={`data:image/png;base64,${detailPreview}`}
+                      alt={`Preview for ${selectedFile.filename}`}
+                      className="library-detail-sheet-preview-image"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className={`library-detail-sheet-preview-fallback library-detail-sheet-preview-fallback--${typeColor}`}>
+                      <DetailSheetFallbackIcon kind={selectedFile.kind} />
+                    </div>
+                  )}
+                  <span className={detailPreview ? "library-detail-sheet-preview-caption library-detail-sheet-preview-caption--active" : "library-detail-sheet-preview-caption"}>
+                    {detailPreviewSource}
+                  </span>
+                </div>
+                {/* Evidence board — deeper clues that belong in More Details rather than rows. */}
                 {mode === "inspect" && (
                   <div className="inspect-evidence-board">
                     {/* Classification: kind + preview source */}

@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 11, 2026 - Library Visual Productization v2)
+
+- **Mode**: code
+- **Focus**: make the Library feel more finished as a desktop work surface across list, grid, folder, inspector, More Details, and Safe Action Preflight without changing backend truth or adding dependencies
+
+### Progress Made
+
+1. **Productized Library visual surfaces**:
+   - added a focused visual pass in `src/styles/phase5k-cards.css`
+   - improved panel/sheet opacity, grid fallback tiles, folder root structure, inspector empty/selected polish, detail rows, and preflight cards
+   - left the pre-existing `src/styles/globals.css` Home tweak untouched
+
+2. **Gave More Details a real evidence-sheet treatment**:
+   - added a selected-file lead card with preview/no-preview handling
+   - kept deeper metadata and long values in More Details so rows and inspector can stay calmer
+   - improved long value/path wrapping and section readability
+
+3. **Kept trust language cautious**:
+   - changed preflight proof labels away from broad `Confirmed` wording where it could sound too strong
+   - relationship hints now use safer labels such as `Indexed clue`
+   - no safe-delete, dependency, missing-mesh, official-source, automatic-update, or replacement claims were added
+
+4. **Extended desktop visual proof**:
+   - added named screenshots for list, grid, folder, inspector, More Details, and Preflight v2 states
+   - preserved list/grid/folder, inspector resize/collapse, detail sheet, preflight, Updates bridge, Duplicates bridge, responsive, and runtime console proof
+
+### Verification
+
+- `npx tsc --noEmit`
+- targeted Library Vitest set: `7` files, `19` tests
+- `npm run build`
+- `npm run test:unit`: `22` files, `76` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-11T01-49-27-273Z`
+  - geometry checks passed at default proof size, `1366x768`, and `1440x900`
+  - browser log inspection found no severe runtime errors; only known Tauri callback reload warnings were captured
+- `npm run desktop:smoke:fixtures`: passed against the release app
+
+### Known Problems / Gaps
+
+- real extracted CC/Tray thumbnails still need live-library validation beyond fixtures
+- large-library stress behavior and true empty disk folder metadata remain future Library hardening work
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend sprint
+- Vite still reports the existing large chunk warning
+- pre-existing unrelated Home/status worktree changes remain unstaged and outside this sprint
+
+### Next Best Step
+
+1. Run the planned Library edge-case/stress hardening sprint against messy synthetic data and a real-ish thumbnail set, with special attention to large folder counts, long names, missing metadata, and true empty disk folder metadata.
+
 ## Current Session (May 11, 2026 - Library Full UX Design Refinement v1)
 
 - **Mode**: code

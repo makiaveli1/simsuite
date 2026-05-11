@@ -15,7 +15,6 @@ import type {
 } from "../../lib/types";
 import {
   describeRelationshipMeaning,
-  proofLevelToLabel,
   relationshipCountLabel,
   relationshipTypeLabel,
 } from "./libraryDisplay";
@@ -322,7 +321,7 @@ function buildRelationshipSignal(
     proofLevel: mapRelationshipProof(relationship.proofLevel),
     label: relationshipTypeLabel(relationship.type),
     explanation: `${describeRelationshipMeaning(relationship, file)} This is a placement clue, not proof of a required relationship.`,
-    evidence: uniqueStrings([countLabel, proofLevelToLabel(relationship.proofLevel)].filter(Boolean) as string[]),
+    evidence: uniqueStrings([countLabel, relationshipPreflightEvidenceLabel(relationship.proofLevel)].filter(Boolean) as string[]),
     route: null,
     source: relationship.evidenceSource ?? "relationship_hint",
   };
@@ -496,6 +495,17 @@ function mapRelationshipProof(proof: FileRelationship["proofLevel"]): ActionPref
   }
 }
 
+function relationshipPreflightEvidenceLabel(proof: FileRelationship["proofLevel"]) {
+  switch (proof) {
+    case "fact":
+      return "Indexed clue";
+    case "claim":
+      return "Detected clue";
+    default:
+      return "Related hint";
+  }
+}
+
 function humanizeDuplicateType(type: string) {
   switch (type) {
     case "exact":
@@ -520,7 +530,7 @@ function uniqueRoutes(signals: ActionPreflightSignal[]) {
 function proofLabel(proofLevel: ActionPreflightProofLevel) {
   switch (proofLevel) {
     case "confirmed":
-      return "Confirmed";
+      return "Detected";
     case "detected":
       return "Detected";
     case "inferred":
