@@ -72,4 +72,8 @@ Pre-existing unrelated Home/status changes remain outside this sprint:
 
 ## Commit
 
-Pending.
+Implementation commit:
+
+- `7784912` - `Remove duplicate Library sidebar actions`
+
+This report was updated after the implementation commit so the final handoff can cite the pushed commit set.
