@@ -26,10 +26,22 @@ Everything else is comparison or review language:
 - same folder or same pack: `Related hint`;
 - same creator/family clues: `Same mod family`, only when bounded and tested.
 
+## v2.1 Guardrail
+
+Same-content duplicate proof must also be a real distinct-file pair:
+
+- both joined file rows exist;
+- both file IDs are positive and distinct;
+- both hashes are non-empty after trimming;
+- normalized hashes match;
+- both paths are non-empty;
+- normalized paths are not the same Windows path.
+
+Malformed exact rows, self-pairs, same-path rows, and stale rows with missing or mismatched hashes are not user-facing duplicates.
+
 ## Sources Reviewed
 
 - [Sims Mod Assistant on Mod The Sims](https://modthesims.info/d/647653/sims-mod-assistant.html?old=1)
 - [DBPF format overview](https://simstek.fandom.com/wiki/DBPF)
 - [TSR duplicate files help](https://thesimsresource.zendesk.com/hc/en-us/articles/31443197550995-Duplicate-Files-Show-in-My-Game)
 - [The Sims 4 Modders Reference file types](https://thesims4moddersreference.org/reference/file-types/)
-

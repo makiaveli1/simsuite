@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Duplicate Truth Guardrails v2.1)
+
+- **Mode**: code
+- **Focus**: harden the exact-content duplicate truth model without starting package/script fingerprinting, cleanup, or broad duplicate v3 work
+
+### Progress Made
+
+1. **Hardened exact duplicate proof**:
+   - user-facing `Duplicate` still means deterministic same-content proof only
+   - exact proof now requires joined real file rows, distinct positive file IDs, non-empty matching normalized hashes, non-empty paths, and distinct canonical paths
+   - stale or malformed exact rows no longer count as duplicates
+
+2. **Protected Library duplicate counts and filters**:
+   - duplicate overview, Library summary counts, Library duplicate filter, row flags, and file detail duplicate counts now revalidate exact proof
+   - stale filename/version rows with matching hashes are treated by their deterministic exact proof, not by their old weak row type
+   - name match, version review, same folder, same pack, same family, and malformed rows remain review/comparison language
+
+3. **Kept wording and scope tight**:
+   - no package/script fingerprints, cleanup/delete, safe-delete, dependency, missing-mesh, provider, or AI behavior was added
+   - Duplicates helper copy avoids future-action or weak duplicate wording
+   - touched duplicate runtime surfaces have a forbidden-wording test
+
+### Verification
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- targeted duplicate/frontend tests: `5` files, `22` tests
+- `cargo fmt`
+- `cargo check`
+- `cargo test duplicate`: `16` duplicate-focused tests
+- `cargo test`: `231` tests
+- `cargo build --release`
+- `npm run test:rust`: `231` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- package and script fingerprints are still future scan-time work.
+- same-mod-family matching beyond current filename/version behavior remains future work.
+- large duplicate-group stress proof and real-user large-library duplicate behavior remain unverified.
+- Rust validation still emits existing warnings in older modules.
+- Vite still reports the existing large chunk warning.
+- unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+### Next Best Step
+
+1. Large-library backend stress and SQL-direct folder query optimization.
+
 ## Current Session (May 12, 2026 - Library Duplicate Truth Engine v2)
 
 - **Mode**: code

@@ -341,10 +341,7 @@ pub fn get_home_overview(
         "SELECT COUNT(DISTINCT creator_id) FROM files WHERE creator_id IS NOT NULL",
     )?;
     let bundles_count = scalar(connection, "SELECT COUNT(*) FROM bundles")?;
-    let duplicates_count = scalar(
-        connection,
-        "SELECT COUNT(*) FROM duplicates WHERE duplicate_type = 'exact'",
-    )?;
+    let duplicates_count = scalar(connection, &exact_duplicate_pair_count_sql())?;
     let review_count = scalar(connection, "SELECT COUNT(*) FROM review_queue")?;
     let unsafe_count = scalar(
         connection,
@@ -515,15 +512,7 @@ pub fn get_library_summary(connection: &Connection) -> AppResult<LibrarySummary>
          AND (f.safety_notes <> '[]' OR f.parser_warnings <> '[]')",
     )?;
 
-    let duplicates = scalar(
-        connection,
-        "SELECT COUNT(DISTINCT file_id)\
-         FROM (\
-           SELECT file_id_a AS file_id FROM duplicates WHERE duplicate_type = 'exact'\
-           UNION\
-           SELECT file_id_b AS file_id FROM duplicates WHERE duplicate_type = 'exact'\
-         )",
-    )?;
+    let duplicates = scalar(connection, &exact_duplicate_file_count_sql())?;
 
     let disabled = scalar(
         connection,
@@ -549,6 +538,7 @@ pub fn list_library_files(
     let compact_paged_rows = query.limit.is_some();
     let (filters, params) = build_filters(&query);
     let order_by = build_order_by(query.sort_by);
+    let exact_duplicate_exists = exact_duplicate_exists_sql("f.id");
 
     let total_sql = format!(
         "SELECT COUNT(*)\n\
@@ -596,10 +586,7 @@ pub fn list_library_files(
              f.parser_warnings,\n\
              f.insights,\n\
              cwr.status,\n\
-             EXISTS (\n\
-               SELECT 1 FROM duplicates d\n\
-               WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id)\n\
-             ) AS has_duplicate,
+             {exact_duplicate_exists} AS has_duplicate,
 \
              EXISTS (\n\
                SELECT 1 FROM review_queue rq\n\
@@ -618,7 +605,8 @@ pub fn list_library_files(
              {order_by}\n\
              LIMIT ? OFFSET ?",
             filters = filters,
-            order_by = order_by
+            order_by = order_by,
+            exact_duplicate_exists = exact_duplicate_exists
         )
     } else {
         format!(
@@ -642,10 +630,7 @@ pub fn list_library_files(
              f.parser_warnings,\n\
              f.insights,\n\
              cwr.status,\n\
-             EXISTS (\n\
-               SELECT 1 FROM duplicates d\n\
-               WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id)\n\
-             ) AS has_duplicate,
+             {exact_duplicate_exists} AS has_duplicate,
 \
              EXISTS (\n\
                SELECT 1 FROM review_queue rq\n\
@@ -663,7 +648,8 @@ pub fn list_library_files(
             {filters}\n\
              {order_by}",
             filters = filters,
-            order_by = order_by
+            order_by = order_by,
+            exact_duplicate_exists = exact_duplicate_exists
         )
     };
 
@@ -1235,23 +1221,23 @@ pub fn get_file_detail(
 
             // Load duplicate info for this file.
             let duplicates_count: i64 = connection.query_row(
-                "SELECT COUNT(*) FROM duplicates
-                 WHERE duplicate_type = 'exact'
-                   AND (file_id_a = ?1 OR file_id_b = ?1)",
+                &format!(
+                    "SELECT COUNT(*)
+                     FROM duplicates d
+                     JOIN files da ON d.file_id_a = da.id
+                     JOIN files db ON d.file_id_b = db.id
+                     WHERE {}",
+                    exact_duplicate_for_file_sql("?1")
+                ),
                 params![file_id],
                 |row| row.get(0),
             )?;
-            let duplicate_types: Vec<String> = connection
-                .prepare(
-                    "SELECT DISTINCT duplicate_type FROM duplicates
-                     WHERE duplicate_type = 'exact'
-                       AND (file_id_a = ?1 OR file_id_b = ?1)
-                     ORDER BY duplicate_type",
-                )?
-                .query_map(params![file_id], |row| row.get(0))?
-                .collect::<Result<Vec<String>, _>>()?;
             detail.duplicates_count = duplicates_count.max(0) as usize;
-            detail.duplicate_types = duplicate_types;
+            detail.duplicate_types = if detail.duplicates_count > 0 {
+                vec!["exact".to_owned()]
+            } else {
+                Vec::new()
+            };
 
             let review_reasons: Vec<String> = connection
                 .prepare(
@@ -1352,11 +1338,8 @@ pub fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
             sql.push_str(" AND cws.subject_key IS NULL");
         }
         LibraryWatchFilter::Duplicates => {
-            sql.push_str(
-                " AND EXISTS (\
-                 SELECT 1 FROM duplicates d \
-                 WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id))",
-            );
+            sql.push_str(" AND ");
+            sql.push_str(&exact_duplicate_exists_sql("f.id"));
         }
         LibraryWatchFilter::All => {}
     }
@@ -1400,6 +1383,73 @@ fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {
     connection
         .query_row(sql, [], |row| row.get(0))
         .map_err(Into::into)
+}
+
+fn exact_duplicate_pair_count_sql() -> String {
+    format!(
+        "SELECT COUNT(*)
+         FROM duplicates d
+         JOIN files da ON d.file_id_a = da.id
+         JOIN files db ON d.file_id_b = db.id
+         WHERE {}",
+        exact_duplicate_pair_sql("da", "db", "d")
+    )
+}
+
+fn exact_duplicate_file_count_sql() -> String {
+    format!(
+        "SELECT COUNT(DISTINCT file_id)
+         FROM (
+           SELECT d.file_id_a AS file_id
+           FROM duplicates d
+           JOIN files da ON d.file_id_a = da.id
+           JOIN files db ON d.file_id_b = db.id
+           WHERE {proof}
+           UNION
+           SELECT d.file_id_b AS file_id
+           FROM duplicates d
+           JOIN files da ON d.file_id_a = da.id
+           JOIN files db ON d.file_id_b = db.id
+           WHERE {proof}
+         )",
+        proof = exact_duplicate_pair_sql("da", "db", "d")
+    )
+}
+
+fn exact_duplicate_exists_sql(file_expr: &str) -> String {
+    format!(
+        "EXISTS (
+           SELECT 1
+           FROM duplicates d
+           JOIN files da ON d.file_id_a = da.id
+           JOIN files db ON d.file_id_b = db.id
+           WHERE {}
+         )",
+        exact_duplicate_for_file_sql(file_expr)
+    )
+}
+
+fn exact_duplicate_for_file_sql(file_expr: &str) -> String {
+    format!(
+        "{} AND (d.file_id_a = {file_expr} OR d.file_id_b = {file_expr})",
+        exact_duplicate_pair_sql("da", "db", "d"),
+        file_expr = file_expr
+    )
+}
+
+fn exact_duplicate_pair_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+    format!(
+        "{pair}.file_id_a <> {pair}.file_id_b
+         AND TRIM(COALESCE({left}.hash, '')) <> ''
+         AND TRIM(COALESCE({right}.hash, '')) <> ''
+         AND LOWER(TRIM({left}.hash)) = LOWER(TRIM({right}.hash))
+         AND TRIM(COALESCE({left}.path, '')) <> ''
+         AND TRIM(COALESCE({right}.path, '')) <> ''
+         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+        left = left_alias,
+        right = right_alias,
+        pair = pair_alias
+    )
 }
 
 fn string_list(connection: &Connection, sql: &str) -> AppResult<Vec<String>> {
@@ -1506,6 +1556,7 @@ mod tests {
                     path,
                     filename,
                     extension,
+                    hash,
                     creator_id,
                     kind,
                     subtype,
@@ -1513,11 +1564,12 @@ mod tests {
                     source_location,
                     parser_warnings,
                     insights
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     "C:/Mods/TestCreator/installed.package",
                     "installed.package",
                     ".package",
+                    "installed-hash",
                     creator_id,
                     "Gameplay",
                     "Utility",
@@ -1534,6 +1586,7 @@ mod tests {
                     path,
                     filename,
                     extension,
+                    hash,
                     creator_id,
                     kind,
                     subtype,
@@ -1541,11 +1594,12 @@ mod tests {
                     source_location,
                     parser_warnings,
                     insights
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     "C:/Downloads/incoming.package",
                     "incoming.package",
                     ".package",
+                    "incoming-hash",
                     creator_id,
                     "Gameplay",
                     "Utility",
@@ -1611,12 +1665,13 @@ mod tests {
                         path,
                         filename,
                         extension,
+                        hash,
                         kind,
                         confidence,
                         source_location,
                         parser_warnings,
                         insights
-                     ) VALUES (?1, ?2, '.package', 'Gameplay', 0.8, 'mods', '[]', ?3)",
+                     ) VALUES (?1, ?2, '.package', 'installed-hash', 'Gameplay', 0.8, 'mods', '[]', ?3)",
                     params![
                         format!("C:/Mods/TestCreator/{filename}"),
                         filename,
@@ -1653,10 +1708,13 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
-                 VALUES (1, 2, 'filename', 'filename_match')",
+                 VALUES
+                   (1, 2, 'filename', 'filename_match'),
+                   (1, 2, 'exact', 'sha256'),
+                   (1, 1, 'exact', 'sha256')",
                 [],
             )
-            .expect("insert name-match comparison");
+            .expect("insert weak and malformed comparisons");
 
         let name_match_listing = list_library_files(
             &connection,
@@ -1668,6 +1726,12 @@ mod tests {
         .expect("name match listing");
         assert_eq!(name_match_listing.total, 0);
 
+        connection
+            .execute("DELETE FROM duplicates", [])
+            .expect("clear malformed rows");
+        connection
+            .execute("UPDATE files SET hash = 'installed-hash' WHERE id = 2", [])
+            .expect("align exact duplicate hash");
         connection
             .execute(
                 "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)

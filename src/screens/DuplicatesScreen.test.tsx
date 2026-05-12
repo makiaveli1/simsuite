@@ -99,4 +99,9 @@ it("focuses a duplicate pair when Library opens Duplicates with file context", a
     screen.getByText(/Focused a Library comparison for mc_cmd_center\.package/i),
   ).toBeVisible();
   expect(screen.getAllByText("mc_cmd_center.package").length).toBeGreaterThan(0);
+  expect(
+    screen.queryByText(
+      /possible duplicate|duplicate candidate|safe to delete|confirmed duplicate/i,
+    ),
+  ).toBeNull();
 });

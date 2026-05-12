@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2` plus `codex/library-duplicate-truth-guardrails-v21`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -190,13 +190,15 @@ Before this sprint, duplicate detection worked as follows:
 
 Duplicate Truth Engine v2 keeps the same database schema but makes the user-facing rule binary:
 
-- `exact` rows with matching non-empty hashes are exposed as `isDuplicate = true`, `comparisonKind = exact_file`, label `Duplicate`, and evidence `Same file contents`.
+- Rows with deterministic exact-file proof are exposed as `isDuplicate = true`, `comparisonKind = exact_file`, label `Duplicate`, and evidence `Same file contents`.
+- Exact-file proof requires two joined, distinct file IDs, non-empty normalized hashes that match, non-empty paths, and different normalized Windows paths.
 - `filename` rows are exposed as `isDuplicate = false`, `comparisonKind = name_match_review`, label `Name match`.
 - `version` rows are exposed as `isDuplicate = false`, `comparisonKind = version_review`, label `Version review`.
 - Returned pairs include `is_duplicate`, `comparison_kind`, `classification`, `classification_label`, `confidence_label`, `evidence`, and `cautions`.
 - Evidence can include same file contents, same filename, similar filename, version clue found, version differs, contents differ, size matches/differs, creator matches/differs/unknown, and detection method.
 - Cautions explicitly keep comparison manual and state when a row is not duplicate proof.
 - `get_file_detail`, Library row `has_duplicate`, Library duplicate filters, Home summary duplicate count, and Library summary duplicate count now count exact deterministic duplicates only.
+- Stale/malformed exact rows with missing hashes, mismatched hashes, self-pairs, missing file joins, or same canonical path pairs are ignored by duplicate counts and filters.
 
 Known false-positive risks:
 

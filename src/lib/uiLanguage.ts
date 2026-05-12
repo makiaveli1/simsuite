@@ -313,9 +313,9 @@ export function screenHelperLine(
       power: "Use grouped clues, keyword signals, and raw file reasons to lock Type decisions.",
     },
     duplicates: {
-      beginner: "These look like twins. Check the pairs before you clean anything up later.",
-      standard: "Use this desk to compare likely repeats before safe duplicate actions arrive.",
-      power: "Inspect exact, filename, and version-style matches with the fuller compare view.",
+      beginner: "Check exact duplicates and name matches before changing any files.",
+      standard: "Compare exact duplicates, name matches, and version reviews before any file-changing actions exist.",
+      power: "Inspect exact-content duplicates, filename matches, and version reviews with the fuller compare view.",
     },
     organize: {
       beginner: "Pick a tidy style, check a sample, then let the ready files scoot into place.",

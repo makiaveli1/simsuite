@@ -15,8 +15,12 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
         "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
          SELECT a.id, b.id, 'exact', 'sha256', CURRENT_TIMESTAMP
          FROM files a
-         JOIN files b ON a.hash = b.hash AND a.id < b.id
-         WHERE a.hash IS NOT NULL AND a.hash <> ''",
+         JOIN files b ON LOWER(TRIM(a.hash)) = LOWER(TRIM(b.hash)) AND a.id < b.id
+         WHERE TRIM(COALESCE(a.hash, '')) <> ''
+           AND TRIM(COALESCE(b.hash, '')) <> ''
+           AND TRIM(COALESCE(a.path, '')) <> ''
+           AND TRIM(COALESCE(b.path, '')) <> ''
+           AND LOWER(REPLACE(TRIM(a.path), '/', '\\')) <> LOWER(REPLACE(TRIM(b.path), '/', '\\'))",
         params![],
     )?;
 
@@ -30,19 +34,46 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
 }
 
 pub fn get_duplicate_overview(connection: &Connection) -> AppResult<DuplicateOverview> {
+    let exact_proof = exact_file_proof_sql("a", "b", "d");
     Ok(DuplicateOverview {
-        total_pairs: scalar(connection, "SELECT COUNT(*) FROM duplicates")?,
+        total_pairs: scalar(
+            connection,
+            "SELECT COUNT(*)
+             FROM duplicates d
+             JOIN files a ON d.file_id_a = a.id
+             JOIN files b ON d.file_id_b = b.id",
+        )?,
         exact_pairs: scalar(
             connection,
-            "SELECT COUNT(*) FROM duplicates WHERE duplicate_type = 'exact'",
+            &format!(
+                "SELECT COUNT(*)
+                 FROM duplicates d
+                 JOIN files a ON d.file_id_a = a.id
+                 JOIN files b ON d.file_id_b = b.id
+                 WHERE {exact_proof}"
+            ),
         )?,
         filename_pairs: scalar(
             connection,
-            "SELECT COUNT(*) FROM duplicates WHERE duplicate_type = 'filename'",
+            &format!(
+                "SELECT COUNT(*)
+                 FROM duplicates d
+                 JOIN files a ON d.file_id_a = a.id
+                 JOIN files b ON d.file_id_b = b.id
+                 WHERE d.duplicate_type = 'filename'
+                   AND NOT ({exact_proof})"
+            ),
         )?,
         version_pairs: scalar(
             connection,
-            "SELECT COUNT(*) FROM duplicates WHERE duplicate_type = 'version'",
+            &format!(
+                "SELECT COUNT(*)
+                 FROM duplicates d
+                 JOIN files a ON d.file_id_a = a.id
+                 JOIN files b ON d.file_id_b = b.id
+                 WHERE d.duplicate_type = 'version'
+                   AND NOT ({exact_proof})"
+            ),
         )?,
     })
 }
@@ -53,8 +84,10 @@ pub fn list_duplicate_pairs(
     limit: i64,
 ) -> AppResult<Vec<DuplicatePair>> {
     let limit = limit.max(1);
+    let exact_proof = exact_file_proof_sql("a", "b", "d");
     let items = if let Some(duplicate_type) = duplicate_type.filter(|value| !value.is_empty()) {
-        let mut statement = connection.prepare(
+        let duplicate_type = duplicate_type.trim().to_ascii_lowercase();
+        let mut statement = connection.prepare(&format!(
             "SELECT
                 d.id,
                 d.duplicate_type,
@@ -78,17 +111,20 @@ pub fn list_duplicate_pairs(
              JOIN files b ON d.file_id_b = b.id
              LEFT JOIN creators ca ON a.creator_id = ca.id
              LEFT JOIN creators cb ON b.creator_id = cb.id
-             WHERE d.duplicate_type = ?1
+             WHERE (
+                (?1 = 'exact' AND ({exact_proof}))
+                OR (?1 <> 'exact' AND d.duplicate_type = ?1 AND NOT ({exact_proof}))
+             )
              ORDER BY d.duplicate_type, a.filename COLLATE NOCASE, b.filename COLLATE NOCASE
              LIMIT ?2",
-        )?;
+        ))?;
 
         let rows = statement
             .query_map(params![duplicate_type, limit], map_duplicate_pair)?
             .collect::<Result<Vec<_>, _>>()?;
         rows
     } else {
-        let mut statement = connection.prepare(
+        let mut statement = connection.prepare(&format!(
             "SELECT
                 d.id,
                 d.duplicate_type,
@@ -113,15 +149,15 @@ pub fn list_duplicate_pairs(
              LEFT JOIN creators ca ON a.creator_id = ca.id
              LEFT JOIN creators cb ON b.creator_id = cb.id
              ORDER BY
-                CASE d.duplicate_type
-                    WHEN 'exact' THEN 0
-                    WHEN 'version' THEN 1
+                CASE
+                    WHEN ({exact_proof}) THEN 0
+                    WHEN d.duplicate_type = 'version' THEN 1
                     ELSE 2
                 END,
                 a.filename COLLATE NOCASE,
                 b.filename COLLATE NOCASE
              LIMIT ?1",
-        )?;
+        ))?;
 
         let rows = statement
             .query_map(params![limit], map_duplicate_pair)?
@@ -135,22 +171,30 @@ pub fn list_duplicate_pairs(
 fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair> {
     let duplicate_type: String = row.get(1)?;
     let detection_method: String = row.get(2)?;
+    let primary_file_id: i64 = row.get(3)?;
     let primary_filename: String = row.get(4)?;
+    let primary_path: String = row.get(5)?;
     let primary_creator: Option<String> = row.get(6)?;
     let primary_hash: Option<String> = row.get(7)?;
     let primary_size: i64 = row.get(9)?;
+    let secondary_file_id: i64 = row.get(10)?;
     let secondary_filename: String = row.get(11)?;
+    let secondary_path: String = row.get(12)?;
     let secondary_creator: Option<String> = row.get(13)?;
     let secondary_hash: Option<String> = row.get(14)?;
     let secondary_size: i64 = row.get(16)?;
     let intelligence = classify_duplicate_pair(
         &duplicate_type,
         &detection_method,
+        primary_file_id,
         &primary_filename,
+        &primary_path,
         primary_creator.as_deref(),
         primary_hash.as_deref(),
         primary_size,
+        secondary_file_id,
         &secondary_filename,
+        &secondary_path,
         secondary_creator.as_deref(),
         secondary_hash.as_deref(),
         secondary_size,
@@ -167,16 +211,16 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
         confidence_label: intelligence.confidence_label,
         evidence: intelligence.evidence,
         cautions: intelligence.cautions,
-        primary_file_id: row.get(3)?,
+        primary_file_id,
         primary_filename,
-        primary_path: row.get(5)?,
+        primary_path,
         primary_creator,
         primary_hash,
         primary_modified_at: row.get(8)?,
         primary_size,
-        secondary_file_id: row.get(10)?,
+        secondary_file_id,
         secondary_filename,
-        secondary_path: row.get(12)?,
+        secondary_path,
         secondary_creator,
         secondary_hash,
         secondary_modified_at: row.get(15)?,
@@ -199,16 +243,32 @@ struct DuplicateIntelligence {
 fn classify_duplicate_pair(
     duplicate_type: &str,
     detection_method: &str,
+    primary_file_id: i64,
     primary_filename: &str,
+    primary_path: &str,
     primary_creator: Option<&str>,
     primary_hash: Option<&str>,
     primary_size: i64,
+    secondary_file_id: i64,
     secondary_filename: &str,
+    secondary_path: &str,
     secondary_creator: Option<&str>,
     secondary_hash: Option<&str>,
     secondary_size: i64,
 ) -> DuplicateIntelligence {
     let same_hash = hashes_match(primary_hash, secondary_hash);
+    let exact_file_proof = exact_file_proof(
+        primary_file_id,
+        primary_path,
+        primary_hash,
+        secondary_file_id,
+        secondary_path,
+        secondary_hash,
+    );
+    let malformed_pair =
+        primary_file_id <= 0 || secondary_file_id <= 0 || primary_file_id == secondary_file_id;
+    let missing_path = path_missing(primary_path, secondary_path);
+    let same_canonical_path = same_canonical_path(primary_path, secondary_path);
     let same_filename = primary_filename.eq_ignore_ascii_case(secondary_filename);
     let primary_versions = version_tokens_from_filename(primary_filename);
     let secondary_versions = version_tokens_from_filename(secondary_filename);
@@ -218,13 +278,21 @@ fn classify_duplicate_pair(
         && primary_versions != secondary_versions;
 
     let (is_duplicate, comparison_kind, classification, classification_label, confidence_label) =
-        if duplicate_type.eq_ignore_ascii_case("exact") && same_hash {
+        if exact_file_proof {
             (
                 true,
                 "exact_file",
                 "duplicate",
                 "Duplicate",
                 "Same file contents",
+            )
+        } else if malformed_pair || missing_path || same_canonical_path {
+            (
+                false,
+                "unknown",
+                "unknown",
+                "Manual review needed",
+                "Limited evidence",
             )
         } else if duplicate_type.eq_ignore_ascii_case("version")
             || (has_version_clue && version_differs && !same_hash)
@@ -255,12 +323,24 @@ fn classify_duplicate_pair(
         };
 
     let mut evidence = Vec::new();
-    if same_hash {
+    if exact_file_proof {
         evidence.push("Same file contents".to_owned());
-    } else if primary_hash.filter(|value| !value.is_empty()).is_some()
-        && secondary_hash.filter(|value| !value.is_empty()).is_some()
-    {
+    } else if same_hash {
+        evidence.push("Matching hash needs manual review".to_owned());
+    } else if normalized_hash(primary_hash).is_some() && normalized_hash(secondary_hash).is_some() {
         evidence.push("Content hash differs".to_owned());
+    } else {
+        evidence.push("Hash missing".to_owned());
+    }
+
+    if malformed_pair {
+        evidence.push("Duplicate row is incomplete".to_owned());
+    }
+    if missing_path {
+        evidence.push("Path metadata is incomplete".to_owned());
+    }
+    if same_canonical_path {
+        evidence.push("Duplicate row points to the same path".to_owned());
     }
 
     if same_filename {
@@ -308,6 +388,9 @@ fn classify_duplicate_pair(
     if primary_creator.is_none() || secondary_creator.is_none() {
         cautions.push("Creator metadata is incomplete".to_owned());
     }
+    if malformed_pair || missing_path || same_canonical_path {
+        cautions.push("SimSuite has limited information here".to_owned());
+    }
 
     DuplicateIntelligence {
         is_duplicate,
@@ -321,10 +404,60 @@ fn classify_duplicate_pair(
 }
 
 fn hashes_match(primary_hash: Option<&str>, secondary_hash: Option<&str>) -> bool {
-    match (primary_hash, secondary_hash) {
-        (Some(left), Some(right)) => !left.is_empty() && left == right,
-        _ => false,
-    }
+    normalized_hash(primary_hash).is_some()
+        && normalized_hash(primary_hash) == normalized_hash(secondary_hash)
+}
+
+fn exact_file_proof(
+    primary_file_id: i64,
+    primary_path: &str,
+    primary_hash: Option<&str>,
+    secondary_file_id: i64,
+    secondary_path: &str,
+    secondary_hash: Option<&str>,
+) -> bool {
+    primary_file_id > 0
+        && secondary_file_id > 0
+        && primary_file_id != secondary_file_id
+        && !path_missing(primary_path, secondary_path)
+        && !same_canonical_path(primary_path, secondary_path)
+        && hashes_match(primary_hash, secondary_hash)
+}
+
+fn normalized_hash(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn same_canonical_path(primary_path: &str, secondary_path: &str) -> bool {
+    let primary = canonical_path_key(primary_path);
+    let secondary = canonical_path_key(secondary_path);
+    !primary.is_empty() && !secondary.is_empty() && primary == secondary
+}
+
+fn path_missing(primary_path: &str, secondary_path: &str) -> bool {
+    canonical_path_key(primary_path).is_empty() || canonical_path_key(secondary_path).is_empty()
+}
+
+fn canonical_path_key(path: &str) -> String {
+    path.trim().replace('/', "\\").to_ascii_lowercase()
+}
+
+fn exact_file_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+    format!(
+        "{pair}.file_id_a <> {pair}.file_id_b
+         AND TRIM(COALESCE({left}.hash, '')) <> ''
+         AND TRIM(COALESCE({right}.hash, '')) <> ''
+         AND LOWER(TRIM({left}.hash)) = LOWER(TRIM({right}.hash))
+         AND TRIM(COALESCE({left}.path, '')) <> ''
+         AND TRIM(COALESCE({right}.path, '')) <> ''
+         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+        left = left_alias,
+        right = right_alias,
+        pair = pair_alias
+    )
 }
 
 fn normalize_creator(value: Option<&str>) -> Option<String> {
@@ -427,7 +560,9 @@ fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
             for right in (left + 1)..files.len() {
                 let (left_id, left_hash) = &files[left];
                 let (right_id, right_hash) = &files[right];
-                if left_hash == right_hash {
+                let left_normalized = normalized_hash(Some(left_hash));
+                let right_normalized = normalized_hash(Some(right_hash));
+                if left_normalized == right_normalized {
                     continue;
                 }
 
@@ -631,6 +766,21 @@ mod tests {
         connection.last_insert_rowid()
     }
 
+    fn insert_duplicate_row(
+        connection: &Connection,
+        left_id: i64,
+        right_id: i64,
+        duplicate_type: &str,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
+                 VALUES (?1, ?2, ?3, 'test_fixture')",
+                params![left_id, right_id, duplicate_type],
+            )
+            .expect("insert duplicate row");
+    }
+
     #[test]
     fn rebuild_duplicates_detects_exact_filename_and_version_pairs() {
         let mut connection = Connection::open_in_memory().expect("db");
@@ -653,19 +803,19 @@ mod tests {
     }
 
     #[test]
-    fn filename_duplicates_match_case_insensitively_without_readding_exact_pairs() {
+    fn filename_duplicates_match_case_insensitively_and_exact_pairs_stay_separate() {
         let mut connection = Connection::open_in_memory().expect("db");
         database::initialize(&mut connection).expect("schema");
 
         insert_file(&connection, "Hair.package", Some("aaa"), 10);
         insert_file(&connection, "hair.package", Some("bbb"), 10);
-        insert_file(&connection, "HAIR.package", Some("bbb"), 10);
+        insert_file(&connection, "hair-copy.package", Some("bbb"), 10);
 
         rebuild_duplicates(&mut connection).expect("rebuild");
         let overview = get_duplicate_overview(&connection).expect("overview");
 
         assert_eq!(overview.exact_pairs, 1);
-        assert_eq!(overview.filename_pairs, 2);
+        assert_eq!(overview.filename_pairs, 1);
     }
 
     #[test]
@@ -714,6 +864,77 @@ mod tests {
         assert!(!pairs[0]
             .cautions
             .contains(&"This is not duplicate proof".to_owned()));
+    }
+
+    #[test]
+    fn exact_filter_skips_malformed_exact_rows() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let empty_left = insert_file(&connection, "empty-a.package", Some("   "), 10);
+        let empty_right = insert_file(&connection, "empty-b.package", Some(""), 10);
+        let mismatch_left = insert_file(&connection, "mismatch-a.package", Some("aaa"), 10);
+        let mismatch_right = insert_file(&connection, "mismatch-b.package", Some("bbb"), 10);
+        let self_pair = insert_file(&connection, "self.package", Some("self"), 10);
+        let same_path_left = insert_file(&connection, "same-path-a.package", Some("samepath"), 10);
+        let same_path_right = insert_file(&connection, "same-path-b.package", Some("samepath"), 10);
+        let empty_path_left =
+            insert_file(&connection, "empty-path-a.package", Some("emptypath"), 10);
+        let empty_path_right =
+            insert_file(&connection, "empty-path-b.package", Some("emptypath"), 10);
+        connection
+            .execute(
+                "UPDATE files SET path = ?1 WHERE id = ?2",
+                params![r"c:\mods\samepath\same-path-a.package", same_path_right],
+            )
+            .expect("update same canonical path");
+        connection
+            .execute(
+                "UPDATE files SET path = '' WHERE id = ?1",
+                params![empty_path_left],
+            )
+            .expect("clear path");
+
+        insert_duplicate_row(&connection, empty_left, empty_right, "exact");
+        insert_duplicate_row(&connection, mismatch_left, mismatch_right, "exact");
+        insert_duplicate_row(&connection, self_pair, self_pair, "exact");
+        insert_duplicate_row(&connection, same_path_left, same_path_right, "exact");
+        insert_duplicate_row(&connection, empty_path_left, empty_path_right, "exact");
+
+        let exact_pairs =
+            list_duplicate_pairs(&connection, Some("exact".to_owned()), 10).expect("pairs");
+        assert!(exact_pairs.is_empty());
+
+        let all_pairs = list_duplicate_pairs(&connection, None, 10).expect("all pairs");
+        assert_eq!(all_pairs.len(), 5);
+        assert!(all_pairs.iter().all(|pair| !pair.is_duplicate));
+        assert!(all_pairs
+            .iter()
+            .all(|pair| pair.comparison_kind == "unknown"));
+        assert!(all_pairs.iter().any(|pair| pair
+            .evidence
+            .contains(&"Path metadata is incomplete".to_owned())));
+    }
+
+    #[test]
+    fn stale_filename_row_with_matching_hash_is_still_exact_proof() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "fixture.package", Some("ABC123"), 10);
+        let right = insert_file(&connection, "fixture.package", Some(" abc123 "), 10);
+        insert_duplicate_row(&connection, left, right, "filename");
+
+        let exact_pairs =
+            list_duplicate_pairs(&connection, Some("exact".to_owned()), 10).expect("pairs");
+        assert_eq!(exact_pairs.len(), 1);
+        assert!(exact_pairs[0].is_duplicate);
+        assert_eq!(exact_pairs[0].comparison_kind, "exact_file");
+        assert_eq!(exact_pairs[0].classification_label, "Duplicate");
+
+        let name_pairs =
+            list_duplicate_pairs(&connection, Some("filename".to_owned()), 10).expect("pairs");
+        assert!(name_pairs.is_empty());
     }
 
     #[test]

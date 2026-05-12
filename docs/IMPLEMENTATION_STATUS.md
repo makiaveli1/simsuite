@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Duplicate Truth Guardrails v2.1)
+
+This session did a final light hardening pass on Library duplicate truth before moving to backend scale work.
+
+Important changes and findings:
+
+- kept the current duplicate rule: user-facing `Duplicate` means deterministic same-content proof only.
+- matching non-empty full file hash remains the only implemented proof.
+- exact proof now revalidates joined file rows, distinct positive file IDs, non-empty matching normalized hashes, non-empty paths, and distinct canonical paths.
+- stale or malformed exact rows no longer count as duplicates.
+- duplicate overview counts, Library summary counts, Library duplicate filter, row duplicate flags, and file detail duplicate counts now use validated exact-content proof.
+- stale filename/version rows with matching hashes are treated by deterministic exact proof instead of their old weak row type.
+- name match, version review, same folder, same pack, same family, and malformed rows remain review/comparison language.
+- no migration was needed.
+- no package/script fingerprinting, cleanup/delete, safe-delete, dependency, missing-mesh, provider, or AI behavior was added.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- targeted duplicate/frontend tests (`5` files, `22` tests)
+- `cargo fmt`
+- `cargo check`
+- `cargo test duplicate` (`16` duplicate-focused tests)
+- `cargo test` (`231` tests)
+- `cargo build --release`
+- `npm run test:rust` (`231` tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- package/script fingerprints, same-mod-family matching, large duplicate-group stress proof, true empty disk-folder metadata, live real-library thumbnail validation, and real-user large-library duplicate proof remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- next backend sprint: Large-library backend stress and SQL-direct folder query optimization.
+
 ## Current session note (May 12, 2026 - Library Duplicate Truth Engine v2)
 
 This session made Library duplicate language deterministic and stricter.
