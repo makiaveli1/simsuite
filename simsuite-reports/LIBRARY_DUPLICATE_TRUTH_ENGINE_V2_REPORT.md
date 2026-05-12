@@ -279,5 +279,8 @@ Proof summary:
 
 ## Commit
 
-Pending commit.
+Implementation commit:
 
+- `fbb7945` - Make Library duplicate detection deterministic
+
+This report was updated after the implementation commit so the final branch history also contains a docs-only hash record commit.
