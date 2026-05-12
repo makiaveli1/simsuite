@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Large-Scale Backend Stress v1)
+
+- **Mode**: code
+- **Focus**: add deterministic 5,000 to 10,000 row backend stress proof for Library query, folder, relationship, duplicate, and preview-light paths
+
+### Progress Made
+
+1. **Added opt-in large Library stress proof**:
+   - added `npm run test:library:stress`
+   - added a 10,000-row synthetic Library backend stress test
+   - covered large direct folders, nested folders, empty folder metadata, Mods and Tray roots, long paths, missing metadata, relationship-heavy groups, and preview/no-preview rows
+
+2. **Measured scale-sensitive backend paths**:
+   - measured paged list, search, filter, sort, folder tree metadata, direct folder listing, recursive folder listing, empty folder listing, relationship-heavy rows, file detail, duplicate overview, and preview diagnostics
+   - latest synthetic timings ranged from `0 ms` to `119 ms` for the Library query paths in the local run
+
+3. **Hardened duplicate review generation under load**:
+   - kept duplicate truth unchanged: user-facing Duplicate still requires deterministic same-content proof
+   - capped non-exact filename and version review pair generation at `2,000` pairs per candidate group
+   - duplicate stress test confirmed exact duplicate count stays exact-only while name/version review rows remain bounded
+   - fixed a sort SQL spacing bug exposed by stress coverage
+
+### Verification
+
+- `npm run test:library:stress`: passed
+- `cargo fmt`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `cargo check`
+- `cargo test`: `241` passed, `2` ignored stress tests
+- `cargo build --release`
+- `npm run test:rust`: `241` passed, `2` ignored stress tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- no real user 10,000+ file library was scanned or benchmarked.
+- the stress harness does not measure disk scanning throughput.
+- duplicate review group stress is intentionally opt-in and still comparatively heavy.
+- package/script duplicate fingerprints remain future scan-time work.
+- relationship count SQL aggregation/cache remains the next backend hardening candidate if real-library traces show repeated broad count cost.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+### Next Best Step
+
+1. Relationship count SQL aggregation/cache v2 if real-library traces show broad count cost; otherwise Duplicate Truth Engine v3 scan-time package/script fingerprints.
+
 ## Current Session (May 12, 2026 - Library Thumbnail Preview Pipeline v1)
 
 - **Mode**: code

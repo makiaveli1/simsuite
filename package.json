@@ -20,7 +20,8 @@
         "desktop:smoke:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1",
         "desktop:smoke:apply:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
         "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
-        "test:unit": "vitest run"
+        "test:unit": "vitest run",
+        "test:library:stress": "cargo test --manifest-path src-tauri/Cargo.toml large_ -- --ignored --nocapture"
     },
     "dependencies": {
         "@rollup/rollup-linux-x64-gnu": "^4.60.2",

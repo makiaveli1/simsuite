@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, and `codex/library-true-empty-folder-metadata-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, and `codex/library-large-scale-backend-stress-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -105,7 +105,7 @@ Scanner behavior:
 Partial or weak areas:
 
 - Existing users need a scan/rescan before previously existing empty folders appear in Folder view.
-- Large-library scan still needs stress proof. Folder query coverage now includes a 1,076-row synthetic backend test, but 5,000 to 10,000 row proof remains future work.
+- Large-library query proof now includes an opt-in 10,000-row synthetic backend stress harness. Full scan/watcher stress on real disk trees remains future work.
 - Thumbnail validation has fixture proof but not live real-library proof.
 
 ## 5. Package Inspection Map
@@ -210,6 +210,7 @@ Duplicate Truth Engine v2 keeps the same database schema but makes the user-faci
 - Exact-file proof requires two joined, distinct file IDs, non-empty normalized hashes that match, non-empty paths, and different normalized Windows paths.
 - `filename` rows are exposed as `isDuplicate = false`, `comparisonKind = name_match_review`, label `Name match`.
 - `version` rows are exposed as `isDuplicate = false`, `comparisonKind = version_review`, label `Version review`.
+- Non-exact filename/version review pair generation is capped per candidate group to avoid unbounded all-pairs growth in large same-name/version-key groups. Exact duplicate truth rules are unchanged.
 - Returned pairs include `is_duplicate`, `comparison_kind`, `classification`, `classification_label`, `confidence_label`, `evidence`, and `cautions`.
 - Evidence can include same file contents, same filename, similar filename, version clue found, version differs, contents differ, size matches/differs, creator matches/differs/unknown, and detection method.
 - Cautions explicitly keep comparison manual and state when a row is not duplicate proof.
@@ -274,14 +275,16 @@ What is already safer:
 - Core duplicate indexes exist.
 - `idx_files_source_location_depth` supports source/depth folder filtering.
 - `library_folders` indexes support source/path/parent/depth folder tree loading.
+- The opt-in `npm run test:library:stress` harness inserts 10,000 synthetic Library rows plus 5,002 duplicate stress rows and prints query timings without committing generated output.
+- Recent 10,000-row synthetic timings were informational: list first page about 103 ms, search about 18 ms, filter about 17 ms, sort about 110 ms, folder tree metadata about 119 ms, large direct folder page about 80 ms, recursive folder page about 67 ms, relationship-heavy page about 29 ms, file detail about 4 ms, duplicate overview about 0 ms, preview diagnostics about 73 ms on this machine.
 
 Risks:
 
 - Folder path-prefix matching for file listing still needs a normalized relative path/index if 10,000+ file proof shows it is slow.
-- Folder tree file counts still load metadata-only file rows for aggregation and need larger-library proof.
+- Folder tree file counts still load metadata-only file rows for aggregation, but the 10,000-row synthetic proof was acceptable on this machine.
 - `list_library_files_for_tree` is still registered for compatibility, though bounded.
-- Relationship peer counts currently run for filtered list sets and still need large all-library stress proof.
-- Duplicate pair generation can still grow within very large same-name/version-key groups.
+- Relationship peer counts still aggregate over filtered list sets, but the stress harness showed the relationship-heavy filtered page path remained reasonable at 1,500 related rows. A more advanced SQL/cache pass remains future work if real libraries show broader filtered-set costs.
+- Exact duplicate pair generation can still grow within very large same-hash groups. Non-exact filename/version review groups are now capped.
 - No large real-library stress benchmark is committed yet.
 
 ## 14. Missing Feature Map
@@ -291,7 +294,7 @@ Risks:
 | SQL-direct folder content queries | already solved for v1 | `list_library_folder_files` now uses SQL-scoped source/depth/path filters with paging and preview control. |
 | Improved duplicate version classification | already solved for current truth boundary | v2/v2.1 keep only validated same-file-content rows as duplicates; name/version/family rows are review/comparison only. |
 | True empty disk-folder metadata | implemented for v1 | Scanner writes real `library_folders` rows for Mods/Tray folders, including empty folders. Existing libraries need a scan/rescan before old empty folders appear. |
-| Large-library stress backend proof | should do later | Add 5,000 to 10,000 row synthetic and real-library-safe backend timing proof. |
+| Large-library stress backend proof | partially solved | Added an opt-in 10,000-row synthetic backend stress harness and a 5,002-row duplicate review group stress harness. Real-library proof remains future work. |
 | Live real-library thumbnail validation | partially prepared | Sanitized preview diagnostics and selected-file preview persistence now exist. Real CC/Tray thumbnail validation on user content is still future work. |
 | Dependency detection | do not do until deterministic proof exists | Needs research and strong evidence model. |
 | Missing mesh detection | do not do until deterministic proof exists | High false-positive risk. |

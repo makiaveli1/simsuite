@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::OnceLock,
+};
 
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -8,10 +12,13 @@ use crate::{
     models::{DuplicateOverview, DuplicatePair},
 };
 
-pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
-    connection.execute("DELETE FROM duplicates", [])?;
+const MAX_REVIEW_PAIRS_PER_GROUP: usize = 2_000;
 
-    connection.execute(
+pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    transaction.execute("DELETE FROM duplicates", [])?;
+
+    transaction.execute(
         "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
          SELECT a.id, b.id, 'exact', 'sha256', CURRENT_TIMESTAMP
          FROM files a
@@ -24,12 +31,13 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
         params![],
     )?;
 
-    insert_filename_duplicates(connection)?;
+    insert_filename_duplicates(&transaction)?;
 
-    insert_version_duplicates(connection)?;
+    insert_version_duplicates(&transaction)?;
 
     let count: i64 =
-        connection.query_row("SELECT COUNT(*) FROM duplicates", [], |row| row.get(0))?;
+        transaction.query_row("SELECT COUNT(*) FROM duplicates", [], |row| row.get(0))?;
+    transaction.commit()?;
     Ok(count as usize)
 }
 
@@ -477,7 +485,7 @@ fn unique_strings(values: Vec<String>) -> Vec<String> {
     out
 }
 
-fn insert_version_duplicates(connection: &mut Connection) -> AppResult<()> {
+fn insert_version_duplicates(connection: &Connection) -> AppResult<()> {
     let mut statement = connection.prepare(
         "SELECT id, filename, extension
          FROM files
@@ -505,8 +513,14 @@ fn insert_version_duplicates(connection: &mut Connection) -> AppResult<()> {
         }
     }
 
+    let mut insert_statement = connection.prepare(
+        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+         VALUES (?1, ?2, 'version', 'version_token_strip', CURRENT_TIMESTAMP)",
+    )?;
+
     for files in grouped.values().filter(|items| items.len() > 1) {
-        for left in 0..files.len() {
+        let mut inserted_for_group = 0_usize;
+        'pairs: for left in 0..files.len() {
             for right in (left + 1)..files.len() {
                 let (left_id, left_name) = &files[left];
                 let (right_id, right_name) = &files[right];
@@ -519,11 +533,11 @@ fn insert_version_duplicates(connection: &mut Connection) -> AppResult<()> {
                     continue;
                 }
 
-                connection.execute(
-                    "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
-                     VALUES (?1, ?2, 'version', 'version_token_strip', CURRENT_TIMESTAMP)",
-                    params![pair_key.0, pair_key.1],
-                )?;
+                insert_statement.execute(params![pair_key.0, pair_key.1])?;
+                inserted_for_group += 1;
+                if inserted_for_group >= MAX_REVIEW_PAIRS_PER_GROUP {
+                    break 'pairs;
+                }
             }
         }
     }
@@ -531,7 +545,7 @@ fn insert_version_duplicates(connection: &mut Connection) -> AppResult<()> {
     Ok(())
 }
 
-fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
+fn insert_filename_duplicates(connection: &Connection) -> AppResult<()> {
     let mut statement = connection.prepare(
         "SELECT id, filename, COALESCE(hash, '')
          FROM files
@@ -555,8 +569,14 @@ fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
             .push((file_id, hash));
     }
 
+    let mut insert_statement = connection.prepare(
+        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+         VALUES (?1, ?2, 'filename', 'filename_match', CURRENT_TIMESTAMP)",
+    )?;
+
     for files in grouped.values().filter(|items| items.len() > 1) {
-        for left in 0..files.len() {
+        let mut inserted_for_group = 0_usize;
+        'pairs: for left in 0..files.len() {
             for right in (left + 1)..files.len() {
                 let (left_id, left_hash) = &files[left];
                 let (right_id, right_hash) = &files[right];
@@ -567,11 +587,11 @@ fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
                 }
 
                 let pair_key = ordered_pair(*left_id, *right_id);
-                connection.execute(
-                    "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
-                     VALUES (?1, ?2, 'filename', 'filename_match', CURRENT_TIMESTAMP)",
-                    params![pair_key.0, pair_key.1],
-                )?;
+                insert_statement.execute(params![pair_key.0, pair_key.1])?;
+                inserted_for_group += 1;
+                if inserted_for_group >= MAX_REVIEW_PAIRS_PER_GROUP {
+                    break 'pairs;
+                }
             }
         }
     }
@@ -579,11 +599,14 @@ fn insert_filename_duplicates(connection: &mut Connection) -> AppResult<()> {
     Ok(())
 }
 
-fn load_existing_pairs(connection: &Connection) -> AppResult<Vec<(i64, i64)>> {
+fn load_existing_pairs(connection: &Connection) -> AppResult<HashSet<(i64, i64)>> {
     let mut statement = connection.prepare("SELECT file_id_a, file_id_b FROM duplicates")?;
     let rows = statement
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|(left, right)| ordered_pair(left, right))
+        .collect::<HashSet<_>>();
     Ok(rows)
 }
 
@@ -711,6 +734,7 @@ fn scalar(connection: &Connection, sql: &str) -> AppResult<i64> {
 #[cfg(test)]
 mod tests {
     use rusqlite::params;
+    use std::time::Instant;
 
     use crate::database;
 
@@ -1081,5 +1105,83 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("possible duplicate")
         }));
+    }
+
+    #[test]
+    #[ignore = "large synthetic stress harness; run npm run test:library:stress"]
+    fn large_same_name_and_version_review_groups_are_bounded() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+        let started_at = Instant::now();
+
+        {
+            let transaction = connection.transaction().expect("stress transaction");
+            {
+                let mut statement = transaction
+                    .prepare(
+                        "INSERT INTO files (
+                            path, filename, extension, hash, size, kind, confidence,
+                            source_location, relative_depth, safety_notes, parser_warnings
+                         ) VALUES (?1, ?2, '.package', ?3, ?4, 'CAS', 0.8, 'mods', 1, '[]', '[]')",
+                    )
+                    .expect("prepare stress insert");
+
+                for index in 0..2_500 {
+                    statement
+                        .execute(params![
+                            format!(r"C:\Mods\SameNameGroup\same_name_{index:04}.package"),
+                            "same_name_stress.package",
+                            format!("same-name-hash-{index:04}"),
+                            10_i64 + index as i64,
+                        ])
+                        .expect("insert same-name stress row");
+                }
+
+                for index in 0..2_500 {
+                    statement
+                        .execute(params![
+                            format!(r"C:\Mods\VersionGroup\stress_mod_v{index:04}.package"),
+                            format!("stress_mod_v{index:04}.package"),
+                            format!("version-hash-{index:04}"),
+                            20_i64 + index as i64,
+                        ])
+                        .expect("insert version stress row");
+                }
+
+                statement
+                    .execute(params![
+                        r"C:\Mods\Exact\exact-a.package",
+                        "exact-a.package",
+                        "shared-exact-hash",
+                        30_i64,
+                    ])
+                    .expect("insert exact stress left");
+                statement
+                    .execute(params![
+                        r"C:\Mods\Exact\exact-b.package",
+                        "exact-b.package",
+                        "shared-exact-hash",
+                        30_i64,
+                    ])
+                    .expect("insert exact stress right");
+            }
+            transaction.commit().expect("commit stress rows");
+        }
+
+        let count = rebuild_duplicates(&mut connection).expect("rebuild stress duplicates");
+        let overview = get_duplicate_overview(&connection).expect("stress duplicate overview");
+
+        assert_eq!(overview.exact_pairs, 1);
+        assert_eq!(overview.filename_pairs, MAX_REVIEW_PAIRS_PER_GROUP as i64);
+        assert_eq!(overview.version_pairs, MAX_REVIEW_PAIRS_PER_GROUP as i64);
+        assert_eq!(overview.total_pairs, count as i64);
+
+        eprintln!(
+            "duplicate_review_group_stress rows=5002 pairs={} filename_pairs={} version_pairs={} elapsed_ms={}",
+            overview.total_pairs,
+            overview.filename_pairs,
+            overview.version_pairs,
+            started_at.elapsed().as_millis()
+        );
     }
 }

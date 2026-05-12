@@ -1,5 +1,45 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Large-Scale Backend Stress v1)
+
+This session added deterministic large-scale backend stress proof for Library query paths without scanning real user files or adding user-facing features.
+
+Important changes and findings:
+
+- added `npm run test:library:stress` for opt-in large synthetic backend stress checks.
+- added a 10,000-row Library stress fixture covering Mods and Tray rows, large direct folders, nested folders, empty folder metadata, long paths, missing metadata, same-pack relationship-heavy rows, preview/no-preview rows, package rows, script rows, and Tray-like rows.
+- measured paged list, search, filter, sort, folder tree metadata, folder direct listing, folder recursive listing, empty folder listing, relationship-heavy page rows, file detail, duplicate overview, and preview diagnostics.
+- local informational timings for the 10,000-row Library stress run ranged from `0 ms` to `119 ms` for the measured Library query paths.
+- fixed a sort SQL spacing bug where some sort modes could generate `ORDER BYCASE`.
+- kept duplicate truth unchanged: user-facing Duplicate still means deterministic same-content proof.
+- capped non-exact filename and version review pair generation at `2,000` pairs per candidate group.
+- duplicate stress coverage confirmed exact duplicate counts stay exact-only while name/version review rows remain bounded.
+- no migration, dependency, cleanup action, package/script fingerprint, or broad frontend change was added.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `npm run test:library:stress`
+- `cargo fmt`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `cargo check`
+- `cargo test` (`241` passed, `2` ignored stress tests)
+- `cargo build --release`
+- `npm run test:rust` (`241` passed, `2` ignored stress tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- no real user 10,000+ file library was scanned or benchmarked.
+- disk scan throughput remains unmeasured by this stress harness.
+- duplicate review group stress is opt-in and still comparatively heavy.
+- package/script duplicate fingerprints, real-library thumbnail validation, and relationship count SQL aggregation/cache remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- next backend recommendation: relationship count SQL aggregation/cache v2 if real-library traces show broad count cost; otherwise Duplicate Truth Engine v3 scan-time package/script fingerprints.
+
 ## Current session note (May 12, 2026 - Library Thumbnail Preview Pipeline v1)
 
 This session added backend thumbnail diagnostics and made selected-file package preview hydration persist back into the Library index.

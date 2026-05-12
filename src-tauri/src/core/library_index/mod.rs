@@ -1651,7 +1651,7 @@ fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
             "ORDER BY c.canonical_name COLLATE NOCASE ASC, f.filename COLLATE NOCASE ASC",
         ),
         LibrarySortField::RecentlyModified => String::from(
-            "ORDER BY\
+            "ORDER BY \
                  CASE WHEN f.modified_at IS NULL THEN 1 ELSE 0 END ASC,\
                  f.modified_at DESC,\
                  f.filename COLLATE NOCASE ASC",
@@ -1660,7 +1660,7 @@ fn build_order_by(sort_by: Option<LibrarySortField>) -> String {
             // Sort by update priority: update leads first, then failed or unclear
             // checks, then quieter reminder/current/not-watched states.
             String::from(
-                "ORDER BY\
+                "ORDER BY \
                  CASE cwr.status\
                  WHEN 'exact_update_available' THEN 1\
                  WHEN 'possible_update' THEN 2\
@@ -1864,7 +1864,10 @@ mod tests {
 
     use crate::{
         database,
-        models::{LibraryFolderFilesQuery, LibraryQuery, LibrarySettings, LibraryWatchFilter},
+        models::{
+            LibraryFolderFilesQuery, LibraryQuery, LibrarySettings, LibrarySortField,
+            LibraryWatchFilter,
+        },
         seed::load_seed_pack,
     };
     use std::time::Instant;
@@ -2566,6 +2569,509 @@ mod tests {
         eprintln!(
             "library_folder_stress rows=1076 elapsed_ms={}",
             started_at.elapsed().as_millis()
+        );
+    }
+
+    #[test]
+    #[ignore = "large synthetic stress harness; run npm run test:library:stress"]
+    fn large_library_backend_stress_queries_remain_bounded_and_truthful() {
+        let (mut connection, settings, seed_pack) = setup_library_env();
+        let started_at = Instant::now();
+        let mut timings = Vec::<(&'static str, u128)>::new();
+
+        connection
+            .execute("DELETE FROM duplicates", [])
+            .expect("clear duplicates");
+        connection
+            .execute("DELETE FROM files", [])
+            .expect("clear files");
+        connection
+            .execute("DELETE FROM library_folders", [])
+            .expect("clear folders");
+        connection
+            .execute("DELETE FROM bundles", [])
+            .expect("clear bundles");
+
+        connection
+            .execute(
+                "INSERT INTO creators (canonical_name, notes) VALUES ('StressCreator', 'stress fixture')",
+                [],
+            )
+            .expect("insert stress creator");
+        let creator_id = connection.last_insert_rowid();
+
+        let mut bundle_ids = Vec::new();
+        for index in 0..25 {
+            connection
+                .execute(
+                    "INSERT INTO bundles (bundle_name, bundle_type, file_count, confidence)
+                     VALUES (?1, 'package_set', 60, 0.91)",
+                    params![format!("Stress Pack {index:02}")],
+                )
+                .expect("insert stress bundle");
+            bundle_ids.push(connection.last_insert_rowid());
+        }
+        let relationship_bundle_id = bundle_ids[0];
+        let empty_insights = default_insights_json();
+        let preview_insights = serde_json::to_string(&crate::models::FileInsights {
+            thumbnail_preview: Some("stress-preview".to_owned()),
+            ..Default::default()
+        })
+        .expect("preview insights");
+
+        {
+            let transaction = connection.transaction().expect("stress transaction");
+            {
+                let mut folder_statement = transaction
+                    .prepare(
+                        "INSERT INTO library_folders (
+                            source_location,
+                            relative_path,
+                            normalized_relative_path,
+                            parent_normalized_relative_path,
+                            name,
+                            depth,
+                            full_path
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    )
+                    .expect("prepare folder insert");
+                for (source, relative, normalized, parent, name, depth, full_path) in [
+                    ("mods", "", "", None, "Mods", 0, "C:/Mods"),
+                    (
+                        "mods",
+                        "HugeDirect",
+                        "hugedirect",
+                        Some(""),
+                        "HugeDirect",
+                        1,
+                        "C:/Mods/HugeDirect",
+                    ),
+                    ("mods", "Deep", "deep", Some(""), "Deep", 1, "C:/Mods/Deep"),
+                    (
+                        "mods",
+                        "Deep/Level 1",
+                        "deep/level 1",
+                        Some("deep"),
+                        "Level 1",
+                        2,
+                        "C:/Mods/Deep/Level 1",
+                    ),
+                    (
+                        "mods",
+                        "Deep/Level 1/Level 2",
+                        "deep/level 1/level 2",
+                        Some("deep/level 1"),
+                        "Level 2",
+                        3,
+                        "C:/Mods/Deep/Level 1/Level 2",
+                    ),
+                    (
+                        "mods",
+                        "Relationships",
+                        "relationships",
+                        Some(""),
+                        "Relationships",
+                        1,
+                        "C:/Mods/Relationships",
+                    ),
+                    (
+                        "mods",
+                        "Mixed Missing",
+                        "mixed missing",
+                        Some(""),
+                        "Mixed Missing",
+                        1,
+                        "C:/Mods/Mixed Missing",
+                    ),
+                    (
+                        "mods",
+                        "Empty Stress",
+                        "empty stress",
+                        Some(""),
+                        "Empty Stress",
+                        1,
+                        "C:/Mods/Empty Stress",
+                    ),
+                    ("tray", "", "", None, "Tray", 0, "C:/Tray"),
+                    (
+                        "tray",
+                        "Saved Lots",
+                        "saved lots",
+                        Some(""),
+                        "Saved Lots",
+                        1,
+                        "C:/Tray/Saved Lots",
+                    ),
+                ] {
+                    folder_statement
+                        .execute(params![
+                            source, relative, normalized, parent, name, depth, full_path
+                        ])
+                        .expect("insert stress folder");
+                }
+                for index in 0..150 {
+                    folder_statement
+                        .execute(params![
+                            "mods",
+                            format!("Empty Stress/Empty {index:03}"),
+                            format!("empty stress/empty {index:03}"),
+                            Some("empty stress"),
+                            format!("Empty {index:03}"),
+                            2_i64,
+                            format!("C:/Mods/Empty Stress/Empty {index:03}"),
+                        ])
+                        .expect("insert empty stress folder");
+                }
+            }
+
+            {
+                let mut file_statement = transaction
+                    .prepare(
+                        "INSERT INTO files (
+                            path,
+                            filename,
+                            extension,
+                            hash,
+                            size,
+                            creator_id,
+                            bundle_id,
+                            kind,
+                            subtype,
+                            confidence,
+                            source_location,
+                            relative_depth,
+                            safety_notes,
+                            parser_warnings,
+                            insights
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, '[]', '[]', ?13)",
+                    )
+                    .expect("prepare file insert");
+
+                for index in 0..5_000 {
+                    let filename = if index == 123 {
+                        "stress_target_0123.package".to_owned()
+                    } else {
+                        format!("huge_direct_{index:05}.package")
+                    };
+                    let long_segment = if index % 997 == 0 {
+                        "_with_a_very_long_creator_style_filename_segment_that_should_not_change_query_shape"
+                    } else {
+                        ""
+                    };
+                    file_statement
+                        .execute(params![
+                            format!("C:/Mods/HugeDirect/{filename}{long_segment}"),
+                            filename,
+                            ".package",
+                            format!("stress-huge-hash-{index:05}"),
+                            1_024_i64 + index as i64,
+                            Some(creator_id),
+                            Some(bundle_ids[index % bundle_ids.len()]),
+                            if index % 4 == 0 { "CAS" } else { "Gameplay" },
+                            if index % 9 == 0 {
+                                Some("Hair")
+                            } else {
+                                Some("Utility")
+                            },
+                            0.86_f64,
+                            "mods",
+                            1_i64,
+                            if index % 1_000 == 0 {
+                                &preview_insights
+                            } else {
+                                &empty_insights
+                            },
+                        ])
+                        .expect("insert huge direct file");
+                }
+
+                for index in 0..2_000 {
+                    file_statement
+                        .execute(params![
+                            format!("C:/Mods/Deep/Level 1/Level 2/deep_nested_{index:05}.package"),
+                            format!("deep_nested_{index:05}.package"),
+                            ".package",
+                            format!("stress-deep-hash-{index:05}"),
+                            2_048_i64 + index as i64,
+                            Some(creator_id),
+                            Some(bundle_ids[index % bundle_ids.len()]),
+                            "Gameplay",
+                            Some("Nested"),
+                            0.81_f64,
+                            "mods",
+                            3_i64,
+                            &empty_insights,
+                        ])
+                        .expect("insert deep file");
+                }
+
+                for index in 0..1_500 {
+                    file_statement
+                        .execute(params![
+                            format!("C:/Mods/Relationships/relationship_pack_{index:05}.package"),
+                            format!("relationship_pack_{index:05}.package"),
+                            ".package",
+                            format!("stress-relationship-hash-{index:05}"),
+                            3_072_i64 + index as i64,
+                            Some(creator_id),
+                            Some(relationship_bundle_id),
+                            "Gameplay",
+                            Some("PackMember"),
+                            0.9_f64,
+                            "mods",
+                            1_i64,
+                            &empty_insights,
+                        ])
+                        .expect("insert relationship file");
+                }
+
+                for index in 0..1_000 {
+                    file_statement
+                        .execute(params![
+                            format!("C:/Tray/Saved Lots/tray_item_{index:05}.trayitem"),
+                            format!("tray_item_{index:05}.trayitem"),
+                            ".trayitem",
+                            format!("stress-tray-hash-{index:05}"),
+                            4_096_i64 + index as i64,
+                            Option::<i64>::None,
+                            Option::<i64>::None,
+                            "TrayItem",
+                            Option::<String>::None,
+                            0.78_f64,
+                            "tray",
+                            1_i64,
+                            &empty_insights,
+                        ])
+                        .expect("insert tray file");
+                }
+
+                for index in 0..500 {
+                    file_statement
+                        .execute(params![
+                            format!(
+                                "C:/Mods/Mixed Missing/Unknown Creator Folder With A Very Long Name {index:05}/unknown_{index:05}.ts4script"
+                            ),
+                            format!("unknown_{index:05}.ts4script"),
+                            ".ts4script",
+                            format!("stress-unknown-hash-{index:05}"),
+                            512_i64 + index as i64,
+                            Option::<i64>::None,
+                            Option::<i64>::None,
+                            "Unknown",
+                            Option::<String>::None,
+                            0.41_f64,
+                            "mods",
+                            1_i64,
+                            &empty_insights,
+                        ])
+                        .expect("insert missing metadata file");
+                }
+            }
+
+            transaction.commit().expect("commit stress fixture");
+        }
+
+        let op_started = Instant::now();
+        let first_page = list_library_files(
+            &connection,
+            LibraryQuery {
+                limit: Some(50),
+                offset: Some(0),
+                include_previews: Some(false),
+                sort_by: Some(LibrarySortField::Name),
+                ..Default::default()
+            },
+        )
+        .expect("large library first page");
+        timings.push(("list_first_page", op_started.elapsed().as_millis()));
+        assert_eq!(first_page.total, 10_000);
+        assert_eq!(first_page.items.len(), 50);
+        assert!(first_page
+            .items
+            .iter()
+            .all(|item| item.insights.thumbnail_preview.is_none()));
+
+        let op_started = Instant::now();
+        let search = list_library_files(
+            &connection,
+            LibraryQuery {
+                search: Some("stress_target".to_owned()),
+                limit: Some(10),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("large library search");
+        timings.push(("list_search", op_started.elapsed().as_millis()));
+        assert_eq!(search.total, 1);
+        assert_eq!(search.items[0].filename, "stress_target_0123.package");
+
+        let op_started = Instant::now();
+        let filtered = list_library_files(
+            &connection,
+            LibraryQuery {
+                kind: Some("CAS".to_owned()),
+                limit: Some(75),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("large library filter");
+        timings.push(("list_filter", op_started.elapsed().as_millis()));
+        assert!(filtered.total > 1_000);
+        assert_eq!(filtered.items.len(), 75);
+
+        let op_started = Instant::now();
+        let sorted = list_library_files(
+            &connection,
+            LibraryQuery {
+                sort_by: Some(LibrarySortField::RecentlyModified),
+                limit: Some(100),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("large library sort");
+        timings.push(("list_sort", op_started.elapsed().as_millis()));
+        assert_eq!(sorted.total, 10_000);
+        assert_eq!(sorted.items.len(), 100);
+
+        let op_started = Instant::now();
+        let metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
+            .expect("large folder tree");
+        timings.push(("folder_tree_metadata", op_started.elapsed().as_millis()));
+        assert!(metadata.total_folders >= 160);
+        let mods = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        let huge_direct = mods
+            .children
+            .iter()
+            .find(|node| node.name == "HugeDirect")
+            .expect("huge direct folder");
+        assert_eq!(huge_direct.direct_file_count, 5_000);
+        assert_eq!(huge_direct.total_file_count, 5_000);
+        let empty_stress = mods
+            .children
+            .iter()
+            .find(|node| node.name == "Empty Stress")
+            .expect("empty stress folder");
+        assert_eq!(empty_stress.total_file_count, 0);
+        assert_eq!(empty_stress.child_folder_count, 150);
+
+        let op_started = Instant::now();
+        let direct_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/HugeDirect".to_owned(),
+                recursive: false,
+                limit: Some(75),
+                offset: Some(100),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("large direct folder");
+        timings.push(("folder_direct_page", op_started.elapsed().as_millis()));
+        assert_eq!(direct_folder.total, 5_000);
+        assert_eq!(direct_folder.items.len(), 75);
+        assert!(direct_folder
+            .items
+            .iter()
+            .all(|item| item.insights.thumbnail_preview.is_none()));
+
+        let op_started = Instant::now();
+        let recursive_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Deep".to_owned(),
+                recursive: true,
+                limit: Some(80),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("large recursive folder");
+        timings.push(("folder_recursive_page", op_started.elapsed().as_millis()));
+        assert_eq!(recursive_folder.total, 2_000);
+        assert_eq!(recursive_folder.items.len(), 80);
+
+        let op_started = Instant::now();
+        let empty_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Empty Stress/Empty 042".to_owned(),
+                recursive: false,
+                limit: Some(25),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("empty folder listing");
+        timings.push(("empty_folder_listing", op_started.elapsed().as_millis()));
+        assert_eq!(empty_folder.total, 0);
+        assert!(empty_folder.items.is_empty());
+
+        let op_started = Instant::now();
+        let relationship_page = list_library_files(
+            &connection,
+            LibraryQuery {
+                search: Some("relationship_pack".to_owned()),
+                limit: Some(20),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("relationship-heavy page");
+        timings.push(("relationship_peer_counts", op_started.elapsed().as_millis()));
+        assert_eq!(relationship_page.total, 1_500);
+        assert_eq!(relationship_page.items.len(), 20);
+        assert!(relationship_page
+            .items
+            .iter()
+            .all(|item| item.same_folder_peer_count == 1_499));
+        assert!(relationship_page
+            .items
+            .iter()
+            .all(|item| item.same_pack_peer_count == 1_499));
+
+        let detail_id: i64 = connection
+            .query_row(
+                "SELECT id FROM files WHERE filename = 'stress_target_0123.package'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stress detail id");
+        let op_started = Instant::now();
+        let detail = get_file_detail(&connection, &settings, &seed_pack, detail_id)
+            .expect("stress detail")
+            .expect("detail exists");
+        timings.push(("file_detail", op_started.elapsed().as_millis()));
+        assert_eq!(detail.filename, "stress_target_0123.package");
+
+        let op_started = Instant::now();
+        let duplicate_overview =
+            crate::core::duplicate_detector::get_duplicate_overview(&connection)
+                .expect("duplicate overview");
+        timings.push(("duplicate_overview", op_started.elapsed().as_millis()));
+        assert_eq!(duplicate_overview.exact_pairs, 0);
+
+        let op_started = Instant::now();
+        let preview_diagnostics =
+            get_library_preview_diagnostics(&connection).expect("preview diagnostics");
+        timings.push(("preview_diagnostics", op_started.elapsed().as_millis()));
+        assert_eq!(preview_diagnostics.total_rows, 10_000);
+        assert_eq!(preview_diagnostics.rows_with_preview, 5);
+        assert_eq!(preview_diagnostics.package_rows, 8_500);
+        assert_eq!(preview_diagnostics.script_rows, 500);
+        assert_eq!(preview_diagnostics.tray_rows, 1_000);
+
+        eprintln!(
+            "library_large_backend_stress rows=10000 total_elapsed_ms={} timings={:?}",
+            started_at.elapsed().as_millis(),
+            timings
         );
     }
 
