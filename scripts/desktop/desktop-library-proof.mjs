@@ -285,6 +285,29 @@ async function invokeTauri(driver, command, payload = {}) {
   );
 }
 
+async function collectPreviewDiagnostics(driver, summary, label) {
+  const result = await invokeTauri(driver, "get_library_preview_diagnostics");
+  if (!Array.isArray(summary.previewDiagnostics)) {
+    summary.previewDiagnostics = [];
+  }
+  if (!result.ok) {
+    summary.previewDiagnostics.push({ label, ok: false, error: result.error });
+    throw new Error(`Preview diagnostics failed: ${result.error}`);
+  }
+
+  const diagnostics = result.response;
+  summary.previewDiagnostics.push({ label, ok: true, diagnostics });
+  if (
+    diagnostics &&
+    diagnostics.totalRows !== diagnostics.rowsWithPreview + diagnostics.rowsWithoutPreview
+  ) {
+    throw new Error(
+      `Preview diagnostics count mismatch for ${label}: totalRows=${diagnostics.totalRows}`,
+    );
+  }
+  return diagnostics;
+}
+
 async function installRuntimeErrorCapture(driver) {
   await driver.executeScript(() => {
     if (window.__SIMSUITE_LIBRARY_PROOF_ERROR_CAPTURED__) {
@@ -1367,6 +1390,7 @@ async function main() {
       generic: targets.generic?.filename ?? null,
       duplicate: targets.duplicate?.filename ?? null,
     };
+    await collectPreviewDiagnostics(driver, summary, "after-fixture-index");
 
     await verifyLibraryLayoutForMode(
       driver,
@@ -1467,6 +1491,7 @@ async function main() {
     await openRow(driver, targets.mccc);
     summary.detailSheetButton = await clickAnyVisibleButton(driver, ["Inspect file", "More details"], 30000);
     await waitForVisibleElement(driver, ".library-detail-sheet", 30000);
+    await collectPreviewDiagnostics(driver, summary, "after-detail-open");
     const detailSheetShot = path.join(runDir, "04-library-detail-sheet.png");
     await takeScreenshot(driver, detailSheetShot);
     summary.screenshots.push(detailSheetShot);

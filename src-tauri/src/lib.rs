@@ -156,6 +156,7 @@ pub fn run() {
             commands::get_download_item_review_plan,
             commands::get_library_facets,
             commands::get_library_summary,
+            commands::get_library_preview_diagnostics,
             commands::get_duplicate_overview,
             commands::list_duplicate_pairs,
             commands::list_rule_presets,
@@ -246,6 +247,10 @@ mod tests {
         assert!(
             handler_source.contains("commands::list_library_folder_files"),
             "missing Tauri command registration for list_library_folder_files"
+        );
+        assert!(
+            handler_source.contains("commands::get_library_preview_diagnostics"),
+            "missing Tauri command registration for get_library_preview_diagnostics"
         );
     }
 }

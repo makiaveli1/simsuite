@@ -39,6 +39,7 @@ The normal flow is:
 | `get_scan_status` | implemented | Exposes current scan progress/state. |
 | `get_library_facets` | implemented | Returns creator/type/source facets for filters. |
 | `get_library_summary` | implemented | Returns Library summary counts. |
+| `get_library_preview_diagnostics` | implemented | Returns sanitized preview coverage counts only; no filenames, paths, thumbnails, or user file payloads. |
 | `list_library_files` | implemented | Paged Library rows; preview payload is controlled by `include_previews`. |
 | `list_library_folder_files` | implemented, recently hardened | Returns direct or recursive folder contents through SQL-scoped source/depth/path filters, supports Library filters/search/sort, pagination, and preview control. |
 | `list_library_files_for_tree` | compatibility endpoint, bounded | Still registered for older callers, but now caps returned rows at 5,000 and strips previews. `get_folder_tree_metadata` plus `list_library_folder_files` is the preferred path. |
@@ -116,6 +117,16 @@ Package inspection boundary:
 - Tray extensions are classified as Tray content.
 - Parser warnings and inspection failures are retained as manual review evidence.
 - Thumbnail extraction is deferred during scan and resolved lazily for detail/preview surfaces.
+- Selected `.package` detail loading can now persist a newly found embedded/game-cache preview back into indexed `files.insights`, so later row/grid/folder queries can reuse the preview without parsing during normal browsing.
+
+Thumbnail/preview state:
+
+- Preview data currently lives in `FileInsights.thumbnail_preview` and `FileInsights.cached_thumbnail_preview`.
+- `get_library_preview_diagnostics` classifies indexed rows as preview available, package deferred-or-missing, or unsupported by current extractor, using sanitized aggregate counts.
+- Failure and stale-cache states are not persistently tracked yet. Diagnostics expose that limitation instead of pretending those states are known.
+- `.ts4script`, Tray content, and unsupported file types do not currently have a committed thumbnail extractor.
+- Fixture proof still mostly covers fallback behavior because fixture files do not contain real Sims thumbnail payloads.
+- Real-library thumbnail validation remains future work and should report only sanitized counts unless the user explicitly provides shareable fixture content.
 
 What is not proven:
 
@@ -256,7 +267,8 @@ What is already safer:
 - Folder tree metadata now has scan-owned folder rows, so empty folders no longer require fake file rows.
 - Legacy `list_library_files_for_tree` is capped at 5,000 preview-light rows.
 - Preview payloads are controlled by `include_previews`.
-- Detail preview resolution is lazy.
+- Detail preview resolution is lazy and selected-file only; found previews are persisted for later indexed row/grid/folder display.
+- Preview diagnostics are explicit and sanitized, not part of ordinary Library browsing.
 - Duplicate hashing is candidate-based during scan.
 - Duplicate list command has a limit.
 - Core duplicate indexes exist.
@@ -280,7 +292,7 @@ Risks:
 | Improved duplicate version classification | already solved for current truth boundary | v2/v2.1 keep only validated same-file-content rows as duplicates; name/version/family rows are review/comparison only. |
 | True empty disk-folder metadata | implemented for v1 | Scanner writes real `library_folders` rows for Mods/Tray folders, including empty folders. Existing libraries need a scan/rescan before old empty folders appear. |
 | Large-library stress backend proof | should do later | Add 5,000 to 10,000 row synthetic and real-library-safe backend timing proof. |
-| Live real-library thumbnail validation | should do later | Validate on safe user-provided or anonymized real content. |
+| Live real-library thumbnail validation | partially prepared | Sanitized preview diagnostics and selected-file preview persistence now exist. Real CC/Tray thumbnail validation on user content is still future work. |
 | Dependency detection | do not do until deterministic proof exists | Needs research and strong evidence model. |
 | Missing mesh detection | do not do until deterministic proof exists | High false-positive risk. |
 | Recolor-to-mesh linking | do later after deterministic metadata work | Must not imply dependency until proven. |

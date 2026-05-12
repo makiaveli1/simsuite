@@ -11,9 +11,9 @@ use crate::{
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, FolderTreeMetadata,
         FolderTreeNode, HomeOverview, LibraryFacets, LibraryFileRow, LibraryFolderFilesQuery,
-        LibraryListResponse, LibraryQuery, LibrarySettings, LibrarySortField, LibrarySummary,
-        LibraryWatchFilter, ProblemSignal, ProblemSignalDestination, ProblemSignalProofLevel,
-        ProblemSignalSeverity, WatchStatus,
+        LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
+        LibrarySortField, LibrarySummary, LibraryWatchFilter, ProblemSignal,
+        ProblemSignalDestination, ProblemSignalProofLevel, ProblemSignalSeverity, WatchStatus,
     },
     seed::{SeedPack, TaxonomySeed},
 };
@@ -532,6 +532,79 @@ pub fn get_library_summary(connection: &Connection) -> AppResult<LibrarySummary>
         duplicates: duplicates as i64,
         disabled: disabled as i64,
     })
+}
+
+pub fn get_library_preview_diagnostics(
+    connection: &Connection,
+) -> AppResult<LibraryPreviewDiagnostics> {
+    let mut diagnostics = LibraryPreviewDiagnostics {
+        deferred_extraction_enabled: crate::core::file_inspector::THUMBNAIL_DEFERRED,
+        ..Default::default()
+    };
+
+    let mut statement = connection.prepare(
+        "SELECT source_location, extension, insights
+         FROM files
+         WHERE source_location <> 'downloads'",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (source_location, extension, insights_json) in rows {
+        let insights = parse_insights(insights_json);
+        let has_embedded = has_preview_payload(&insights.thumbnail_preview);
+        let has_cached = has_preview_payload(&insights.cached_thumbnail_preview);
+        let has_preview = has_embedded || has_cached;
+        let source = source_location.trim().to_ascii_lowercase();
+        let extension = extension.trim().to_ascii_lowercase();
+        let is_package = extension == ".package" && source != "tray";
+        let is_script = extension == ".ts4script";
+        let is_tray = source == "tray";
+
+        diagnostics.total_rows += 1;
+        if has_preview {
+            diagnostics.rows_with_preview += 1;
+        } else {
+            diagnostics.rows_without_preview += 1;
+        }
+        if has_embedded {
+            diagnostics.embedded_preview_rows += 1;
+        }
+        if has_cached {
+            diagnostics.cached_preview_rows += 1;
+        }
+
+        if is_package {
+            diagnostics.package_rows += 1;
+            if has_preview {
+                diagnostics.package_rows_with_preview += 1;
+            } else {
+                diagnostics.package_rows_deferred_or_missing += 1;
+            }
+            continue;
+        }
+
+        diagnostics.unsupported_rows += 1;
+        if !has_preview {
+            diagnostics.unsupported_without_preview += 1;
+        }
+        if is_script {
+            diagnostics.script_rows += 1;
+        } else if is_tray {
+            diagnostics.tray_rows += 1;
+        } else {
+            diagnostics.other_unsupported_rows += 1;
+        }
+    }
+
+    Ok(diagnostics)
 }
 
 pub fn list_library_files(
@@ -1483,16 +1556,21 @@ pub fn get_file_detail(
                     .map(|result| result.status.clone()),
             });
 
-            // Phase 5an: resolve thumbnails on-demand if they were deferred during scan.
-            // During scan, thumbnails are skipped (THUMBNAIL_DEFERRED=true) to avoid
-            // 3× DBPF re-parse per file. Here we do the deferred thumbnail work.
-            use crate::core::file_inspector::resolve_package_thumbnails_deferred;
-            let (embedded_thumb, cached_thumb) =
-                resolve_package_thumbnails_deferred(Path::new(&detail.path));
-            detail.insights.thumbnail_preview =
-                detail.insights.thumbnail_preview.or(embedded_thumb);
-            detail.insights.cached_thumbnail_preview =
-                detail.insights.cached_thumbnail_preview.or(cached_thumb);
+            // Resolve thumbnails only for selected package details. This keeps
+            // expensive DBPF/cache reads out of ordinary list, grid, and folder
+            // browsing while allowing a found preview to be reused later.
+            if detail.extension.eq_ignore_ascii_case(".package") {
+                use crate::core::file_inspector::resolve_package_thumbnails_deferred;
+                let (embedded_thumb, cached_thumb) =
+                    resolve_package_thumbnails_deferred(Path::new(&detail.path));
+                if merge_preview_results_into_insights(
+                    &mut detail.insights,
+                    embedded_thumb,
+                    cached_thumb,
+                ) {
+                    persist_file_insights(connection, detail.id, &detail.insights)?;
+                }
+            }
 
             Ok(Some(detail))
         }
@@ -1691,6 +1769,55 @@ fn parse_insights(value: Option<String>) -> FileInsights {
     }
 }
 
+fn has_preview_payload(value: &Option<String>) -> bool {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+}
+
+fn normalize_preview_payload(value: Option<String>) -> Option<String> {
+    value.filter(|payload| !payload.trim().is_empty())
+}
+
+fn merge_preview_results_into_insights(
+    insights: &mut FileInsights,
+    embedded_thumb: Option<String>,
+    cached_thumb: Option<String>,
+) -> bool {
+    let mut changed = false;
+
+    if !has_preview_payload(&insights.thumbnail_preview) {
+        if let Some(value) = normalize_preview_payload(embedded_thumb) {
+            insights.thumbnail_preview = Some(value);
+            changed = true;
+        }
+    }
+
+    if !has_preview_payload(&insights.cached_thumbnail_preview) {
+        if let Some(value) = normalize_preview_payload(cached_thumb) {
+            insights.cached_thumbnail_preview = Some(value);
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn persist_file_insights(
+    connection: &Connection,
+    file_id: i64,
+    insights: &FileInsights,
+) -> AppResult<()> {
+    let insights_json = serde_json::to_string(insights)?;
+    connection.execute(
+        "UPDATE files SET insights = ?1 WHERE id = ?2",
+        params![insights_json, file_id],
+    )?;
+    Ok(())
+}
+
 fn compact_library_row_insights(
     mut insights: FileInsights,
     include_previews: bool,
@@ -1743,8 +1870,9 @@ mod tests {
     use std::time::Instant;
 
     use super::{
-        get_file_detail, get_folder_tree_metadata, get_library_facets, list_library_files,
-        list_library_folder_files, MAX_FOLDER_QUERY_LIMIT,
+        get_file_detail, get_folder_tree_metadata, get_library_facets,
+        get_library_preview_diagnostics, list_library_files, list_library_folder_files,
+        merge_preview_results_into_insights, persist_file_insights, MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -1910,6 +2038,118 @@ mod tests {
             )
             .expect("insert library folder row");
         connection.last_insert_rowid()
+    }
+
+    #[test]
+    fn preview_diagnostics_count_available_deferred_and_unsupported_rows() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+
+        let embedded_json = serde_json::to_string(&crate::models::FileInsights {
+            thumbnail_preview: Some("embedded-preview".to_owned()),
+            ..Default::default()
+        })
+        .expect("embedded insights");
+        let cached_json = serde_json::to_string(&crate::models::FileInsights {
+            cached_thumbnail_preview: Some("cached-preview".to_owned()),
+            ..Default::default()
+        })
+        .expect("cached insights");
+        let empty_json = default_insights_json();
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES
+                   ('C:/Mods/embedded.package', 'embedded.package', '.package', 'CAS', 0.9, 'mods', 0, '[]', ?1),
+                   ('C:/Mods/cached.package', 'cached.package', '.package', 'CAS', 0.9, 'mods', 0, '[]', ?2),
+                   ('C:/Mods/script.ts4script', 'script.ts4script', '.ts4script', 'ScriptMods', 0.9, 'mods', 0, '[]', ?3),
+                   ('C:/Tray/household.trayitem', 'household.trayitem', '.trayitem', 'TrayItem', 0.9, 'tray', 0, '[]', ?3)",
+                params![embedded_json, cached_json, empty_json],
+            )
+            .expect("insert preview diagnostic rows");
+
+        let diagnostics =
+            get_library_preview_diagnostics(&connection).expect("preview diagnostics");
+
+        assert_eq!(diagnostics.total_rows, 5);
+        assert_eq!(diagnostics.rows_with_preview, 2);
+        assert_eq!(diagnostics.rows_without_preview, 3);
+        assert_eq!(diagnostics.embedded_preview_rows, 1);
+        assert_eq!(diagnostics.cached_preview_rows, 1);
+        assert_eq!(diagnostics.package_rows, 3);
+        assert_eq!(diagnostics.package_rows_with_preview, 2);
+        assert_eq!(diagnostics.package_rows_deferred_or_missing, 1);
+        assert_eq!(diagnostics.script_rows, 1);
+        assert_eq!(diagnostics.tray_rows, 1);
+        assert_eq!(diagnostics.unsupported_rows, 2);
+        assert_eq!(diagnostics.unsupported_without_preview, 2);
+        assert_eq!(diagnostics.failed_extraction_rows, 0);
+        assert_eq!(diagnostics.stale_preview_rows, 0);
+        assert!(!diagnostics.failure_state_tracked);
+        assert!(!diagnostics.stale_state_tracked);
+        assert!(diagnostics.deferred_extraction_enabled);
+    }
+
+    #[test]
+    fn selected_detail_preview_merge_preserves_existing_preview_payloads() {
+        let mut insights = crate::models::FileInsights::default();
+
+        assert!(merge_preview_results_into_insights(
+            &mut insights,
+            Some("embedded-preview".to_owned()),
+            Some("cached-preview".to_owned()),
+        ));
+        assert_eq!(
+            insights.thumbnail_preview.as_deref(),
+            Some("embedded-preview")
+        );
+        assert_eq!(
+            insights.cached_thumbnail_preview.as_deref(),
+            Some("cached-preview")
+        );
+
+        assert!(!merge_preview_results_into_insights(
+            &mut insights,
+            Some("new-embedded".to_owned()),
+            Some("new-cached".to_owned()),
+        ));
+        assert_eq!(
+            insights.thumbnail_preview.as_deref(),
+            Some("embedded-preview")
+        );
+        assert_eq!(
+            insights.cached_thumbnail_preview.as_deref(),
+            Some("cached-preview")
+        );
+    }
+
+    #[test]
+    fn selected_detail_preview_persistence_updates_indexed_insights() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights = crate::models::FileInsights {
+            thumbnail_preview: Some("detail-preview".to_owned()),
+            ..Default::default()
+        };
+
+        persist_file_insights(&connection, 1, &insights).expect("persist preview insights");
+
+        let stored: String = connection
+            .query_row("SELECT insights FROM files WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .expect("stored insights");
+        let parsed: crate::models::FileInsights =
+            serde_json::from_str(&stored).expect("parse stored insights");
+        assert_eq!(parsed.thumbnail_preview.as_deref(), Some("detail-preview"));
     }
 
     #[test]

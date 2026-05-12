@@ -2317,19 +2317,10 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
     Some(BASE64_STANDARD.encode(&png_bytes))
 }
 
-/// Attempt to find and decode a cached thumbnail for a package from localthumbcache.package.
-
-/// Look up a thumbnail image from Sims 4 Mod Manager's cached images.
+/// Extract the first embedded package THUM resource as a base64 PNG.
 ///
-/// Mod Manager stores CC thumbnail PNGs in `<Documents>/Sims 4 Mod Manager Data/images/`
-/// named `[CC]<decimal_instance_id>.png`. The filename→image mapping is stored in
-/// `db_cc.sqlite` (Files table: name=filename, image=full path to PNG).
-///
-/// This is the **primary** thumbnail source on Likwid's machine. The game's own
-/// `localthumbcache.package` in OneDrive is a 200-byte OneDrive placeholder stub
-/// with no real thumbnail data.
-///
-/// Returns base64 PNG if found, None if DB or image is unavailable.
+/// This stays first-party: the package file is read directly and no external
+/// mod-manager cache is consulted.
 fn extract_embedded_thum(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let header = parse_dbpf_header_internal(&mut file).ok()?;

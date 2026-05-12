@@ -648,12 +648,30 @@ export interface FileInsights {
    * This is typically larger/higher quality than embedded THUM.
    * Unavailable if Sims 4 is not installed or the package has no cached thumbnail.
    */
-  /** From Sims 4 Mod Manager's pre-extracted PNG cache (optional adapter) */
-  // MODMANAGER REMOVED — first-party only (Phase 5m)
-  // modmanagerThumbnailPreview?: string | null;
   cachedThumbnailPreview?: string | null;
   /** Where the thumbnail came from — embedded THUM, localthumbcache, external, or fallback */
   previewSource?: PreviewSource;
+}
+
+export interface LibraryPreviewDiagnostics {
+  totalRows: number;
+  rowsWithPreview: number;
+  rowsWithoutPreview: number;
+  embeddedPreviewRows: number;
+  cachedPreviewRows: number;
+  packageRows: number;
+  packageRowsWithPreview: number;
+  packageRowsDeferredOrMissing: number;
+  scriptRows: number;
+  trayRows: number;
+  otherUnsupportedRows: number;
+  unsupportedRows: number;
+  unsupportedWithoutPreview: number;
+  failedExtractionRows: number;
+  stalePreviewRows: number;
+  failureStateTracked: boolean;
+  staleStateTracked: boolean;
+  deferredExtractionEnabled: boolean;
 }
 
 export interface CreatorLearningInfo {

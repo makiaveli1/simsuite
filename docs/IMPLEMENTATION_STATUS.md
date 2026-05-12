@@ -1,5 +1,42 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Thumbnail Preview Pipeline v1)
+
+This session added backend thumbnail diagnostics and made selected-file package preview hydration persist back into the Library index.
+
+Important changes and findings:
+
+- added a sanitized `get_library_preview_diagnostics` command and TypeScript API method.
+- diagnostics report aggregate preview coverage only, with no filenames, paths, thumbnails, or user file payloads.
+- selected `.package` detail loading can persist newly found embedded/cache preview data into `files.insights`.
+- later list, grid, and folder queries can reuse that indexed preview without parsing thumbnails during ordinary browsing.
+- desktop proof records preview diagnostics after fixture indexing and after detail opening.
+- fixture proof remains honest: current fixtures contain no real Sims thumbnail payloads, so they report `0` preview rows and fallback thumbnails remain expected.
+- `.ts4script`, Tray, and unsupported file types still have no committed thumbnail extractor.
+- real-library preview validation was not run because this sprint did not scan or retain real user Sims files.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `cargo test preview` (`11` focused tests)
+- `cargo fmt`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `cargo check`
+- `cargo test` (`241` tests)
+- `cargo build --release`
+- `npm run test:rust` (`241` tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- live real-library thumbnail validation, Tray thumbnail extraction, script preview extraction, persistent failed/stale preview state, larger backend stress harnesses, and relationship-count aggregation/cache work remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- next backend recommendation: larger 5,000 to 10,000 row backend stress harness.
+
+
 ## Current session note (May 12, 2026 - Library True Empty Folder Metadata v1)
 
 This session added real scanner-owned folder metadata so the Library can show actual empty Mods/Tray folders without creating fake file rows.

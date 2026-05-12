@@ -510,6 +510,29 @@ pub struct FileInsights {
     pub family_hints: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryPreviewDiagnostics {
+    pub total_rows: i64,
+    pub rows_with_preview: i64,
+    pub rows_without_preview: i64,
+    pub embedded_preview_rows: i64,
+    pub cached_preview_rows: i64,
+    pub package_rows: i64,
+    pub package_rows_with_preview: i64,
+    pub package_rows_deferred_or_missing: i64,
+    pub script_rows: i64,
+    pub tray_rows: i64,
+    pub other_unsupported_rows: i64,
+    pub unsupported_rows: i64,
+    pub unsupported_without_preview: i64,
+    pub failed_extraction_rows: i64,
+    pub stale_preview_rows: i64,
+    pub failure_state_tracked: bool,
+    pub stale_state_tracked: bool,
+    pub deferred_extraction_enabled: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CreatorLearningInfo {

@@ -43,6 +43,7 @@ import type {
   RejectedItem,
   OrganizationPreview,
   LibraryFacets,
+  LibraryPreviewDiagnostics,
   LibrarySummary,
   LibraryFolderFilesQuery,
   LibraryWatchBulkSaveResult,
@@ -151,8 +152,6 @@ const emptyInsights = {
   versionHints: [],
   versionSignals: [],
   familyHints: [],
-  // MODMANAGER REMOVED — first-party only (Phase 5m)
-  // modmanagerThumbnailPreview: null,
   cachedThumbnailPreview: null,
 };
 const emptyCreatorLearning = (): CreatorLearningInfo => ({
@@ -174,8 +173,6 @@ const normalizeMockInsights = (
   versionSignals: insights.versionSignals ?? [],
   familyHints: insights.familyHints ?? [],
   thumbnailPreview: insights.thumbnailPreview ?? null,
-  // MODMANAGER REMOVED
-  // modmanagerThumbnailPreview: insights.modmanagerThumbnailPreview ?? null,
   cachedThumbnailPreview: insights.cachedThumbnailPreview ?? null,
   previewSource: insights.previewSource ?? 'fallback',
 });
@@ -6039,6 +6036,78 @@ function mockLibraryFiles() {
   return buildMockLibraryRelationshipState();
 }
 
+function buildMockPreviewDiagnostics(): LibraryPreviewDiagnostics {
+  const rows = mockLibraryFiles().filter((item) => item.sourceLocation !== "downloads");
+  const diagnostics: LibraryPreviewDiagnostics = {
+    totalRows: 0,
+    rowsWithPreview: 0,
+    rowsWithoutPreview: 0,
+    embeddedPreviewRows: 0,
+    cachedPreviewRows: 0,
+    packageRows: 0,
+    packageRowsWithPreview: 0,
+    packageRowsDeferredOrMissing: 0,
+    scriptRows: 0,
+    trayRows: 0,
+    otherUnsupportedRows: 0,
+    unsupportedRows: 0,
+    unsupportedWithoutPreview: 0,
+    failedExtractionRows: 0,
+    stalePreviewRows: 0,
+    failureStateTracked: false,
+    staleStateTracked: false,
+    deferredExtractionEnabled: true,
+  };
+
+  for (const row of rows) {
+    const hasEmbedded = Boolean(row.insights?.thumbnailPreview?.trim());
+    const hasCached = Boolean(row.insights?.cachedThumbnailPreview?.trim());
+    const hasPreview = hasEmbedded || hasCached;
+    const source = row.sourceLocation.toLowerCase();
+    const extension = row.extension.toLowerCase();
+    const isPackage = extension === ".package" && source !== "tray";
+    const isScript = extension === ".ts4script";
+    const isTray = source === "tray";
+
+    diagnostics.totalRows += 1;
+    if (hasPreview) {
+      diagnostics.rowsWithPreview += 1;
+    } else {
+      diagnostics.rowsWithoutPreview += 1;
+    }
+    if (hasEmbedded) {
+      diagnostics.embeddedPreviewRows += 1;
+    }
+    if (hasCached) {
+      diagnostics.cachedPreviewRows += 1;
+    }
+
+    if (isPackage) {
+      diagnostics.packageRows += 1;
+      if (hasPreview) {
+        diagnostics.packageRowsWithPreview += 1;
+      } else {
+        diagnostics.packageRowsDeferredOrMissing += 1;
+      }
+      continue;
+    }
+
+    diagnostics.unsupportedRows += 1;
+    if (!hasPreview) {
+      diagnostics.unsupportedWithoutPreview += 1;
+    }
+    if (isScript) {
+      diagnostics.scriptRows += 1;
+    } else if (isTray) {
+      diagnostics.trayRows += 1;
+    } else {
+      diagnostics.otherUnsupportedRows += 1;
+    }
+  }
+
+  return diagnostics;
+}
+
 function normalizeMockAlias(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -6340,6 +6409,8 @@ async function mockInvoke<T>(
         ],
       } as T;
       }
+    case "get_library_preview_diagnostics":
+      return buildMockPreviewDiagnostics() as T;
     case "get_duplicate_overview":
       return {
         totalPairs: mockDuplicatePairs.length,
@@ -7666,6 +7737,8 @@ export const api = {
     invoke<OrganizationPreview>("preview_download_item", { itemId, presetName }),
   getLibraryFacets: (kind?: string) => invoke<LibraryFacets>("get_library_facets", kind ? { kind } : {}),
   getLibrarySummary: () => invoke<LibrarySummary>("get_library_summary"),
+  getLibraryPreviewDiagnostics: () =>
+    invoke<LibraryPreviewDiagnostics>("get_library_preview_diagnostics"),
   getDuplicateOverview: () => invoke<DuplicateOverview>("get_duplicate_overview"),
   listDuplicatePairs: (duplicateType?: string, limit?: number) =>
     invoke<DuplicatePair[]>("list_duplicate_pairs", { duplicateType, limit }),

@@ -34,14 +34,14 @@ use crate::{
         DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
         DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata, GuidedInstallPlan,
         HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
-        LibraryListResponse, LibraryQuery, LibrarySettings, LibrarySummary,
-        LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult, LibraryWatchListResponse,
-        LibraryWatchReviewResponse, LibraryWatchSetupResponse, OrganizationPreview, RejectResult,
-        RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
-        ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState,
-        ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan, StagingAreasSummary,
-        StagingCommitResult, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
-        WorkspaceChange, WorkspaceDomain,
+        LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
+        LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
+        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
+        OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
+        ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
+        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        StagingAreasSummary, StagingCommitResult, WatchListFilter, WatchRefreshSummary,
+        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -609,6 +609,27 @@ pub async fn get_library_summary(state: State<'_, AppState>) -> Result<LibrarySu
             )
         });
         Ok(summary)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_library_preview_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<LibraryPreviewDiagnostics, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_library_preview_diagnostics", move || {
+        let started_at = Instant::now();
+        let connection = state.connection().map_err(map_error)?;
+        let diagnostics =
+            library_index::get_library_preview_diagnostics(&connection).map_err(map_error)?;
+        log_slow_command("get_library_preview_diagnostics", started_at, || {
+            format!(
+                "for {} library row(s), {} row(s) with preview",
+                diagnostics.total_rows, diagnostics.rows_with_preview
+            )
+        });
+        Ok(diagnostics)
     })
     .await
 }

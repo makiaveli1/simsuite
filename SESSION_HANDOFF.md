@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Thumbnail Preview Pipeline v1)
+
+- **Mode**: code
+- **Focus**: validate and harden the Library thumbnail/preview pipeline without broad UI work or committing user files
+
+### Progress Made
+
+1. **Added sanitized preview diagnostics**:
+   - added `get_library_preview_diagnostics`
+   - diagnostics report aggregate counts only: preview rows, missing rows, package deferred-or-missing rows, unsupported rows, and whether failed/stale states are tracked
+   - desktop proof now records diagnostics after fixture indexing and after opening details
+
+2. **Persisted selected-file preview hydration**:
+   - selected `.package` detail loading can still resolve deferred embedded/cache previews lazily
+   - newly found preview data is now persisted back into indexed `files.insights`
+   - list/grid/folder rows can reuse that indexed preview later without parsing thumbnails during normal browsing
+
+3. **Kept fixture proof honest**:
+   - fixture proof still shows fallback previews because fixtures contain no real Sims thumbnail payloads
+   - latest diagnostics reported `11` fixture rows, `0` with preview, `5` package rows deferred-or-missing, and `6` unsupported script rows
+   - no real user files, real thumbnails, or private paths were committed
+
+### Verification
+
+- `cargo test preview`: `11` focused tests
+- `cargo fmt`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `cargo check`
+- `cargo test`: `241` tests
+- `cargo build --release`
+- `npm run test:rust`: `241` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- real-library CC/package thumbnail coverage was not verified in this sprint.
+- Tray thumbnail extraction is still not implemented.
+- `.ts4script` preview extraction is still not implemented.
+- failed/stale/not-attempted preview state is not persisted per file yet.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+### Next Best Step
+
+1. Larger 5,000 to 10,000 row backend stress harness, then relationship-count aggregation/cache work.
+
+
 ## Current Session (May 12, 2026 - Library True Empty Folder Metadata v1)
 
 - **Mode**: code
