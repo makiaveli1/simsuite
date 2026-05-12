@@ -228,4 +228,4 @@ The following pre-existing unrelated files remain outside this sprint and should
 ## Commit
 
 - `46682c0` - Index true empty Library folders
-- Documentation hash record commit pending.
+- A docs-only follow-up commit records this sprint report after the implementation commit.
