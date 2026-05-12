@@ -247,4 +247,5 @@ Only this sprint's documentation hunks should be staged from the docs. Home and 
 
 ## Commit
 
-Pending.
+- Implementation commit: `89083c9d486edc823e10fea7a5a153e00773ead9`
+- Follow-up docs hash commit: pending at the time this report section was written.
