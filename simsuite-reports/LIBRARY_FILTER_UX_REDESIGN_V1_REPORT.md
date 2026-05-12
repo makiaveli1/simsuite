@@ -97,4 +97,5 @@ Pre-existing unrelated Home/status changes must remain outside this sprint:
 
 ## Commit
 
-Pending until the sprint commit is created.
+- Implementation commit: `fffb6ce788902c860edaae32b012c76682d01f5f` (`Redesign Library filter experience`).
+- This report follow-up records the implementation hash; the final handoff includes the pushed branch and follow-up commit hash.
