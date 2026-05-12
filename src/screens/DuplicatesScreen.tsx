@@ -141,6 +141,9 @@ export function DuplicatesScreen({
         item.secondaryCreator,
         item.primaryPath,
         item.secondaryPath,
+        item.classificationLabel,
+        item.confidenceLabel,
+        ...(item.evidence ?? []),
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term)),
@@ -168,6 +171,14 @@ export function DuplicatesScreen({
                 value={selected.detectionMethod}
               />
               <DetailRow
+                label={userView === "beginner" ? "What it means" : "Classification"}
+                value={selected.classificationLabel}
+              />
+              <DetailRow
+                label="Evidence strength"
+                value={selected.confidenceLabel}
+              />
+              <DetailRow
                 label="Left creator"
                 value={selected.primaryCreator ?? unknownCreatorLabel(userView)}
               />
@@ -182,6 +193,18 @@ export function DuplicatesScreen({
                     selected.primarySize - selected.secondarySize,
                   ).toLocaleString()} bytes`}
                 />
+              ) : null}
+              {selected.evidence.length ? (
+                <div className="tag-list">
+                  {selected.evidence.map((item) => (
+                    <span key={item} className="ghost-chip">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {selected.cautions.length ? (
+                <p className="text-muted">{selected.cautions.join(" · ")}</p>
               ) : null}
             </div>
           ),
@@ -279,7 +302,7 @@ export function DuplicatesScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Pairs</p>
-                <h2>{userView === "beginner" ? "Possible repeats" : "Detected duplicates"}</h2>
+                <h2>{userView === "beginner" ? "Possible repeats" : "Duplicate intelligence"}</h2>
               </div>
               <button
                 type="button"
@@ -304,12 +327,12 @@ export function DuplicatesScreen({
                 tone="good"
               />
               <SummaryStat
-                label="Filename"
+                label="Name matches"
                 value={overview?.filenamePairs ?? 0}
                 tone="neutral"
               />
               <SummaryStat
-                label="Version"
+                label="Version clues"
                 value={overview?.versionPairs ?? 0}
                 tone="low"
               />
@@ -405,12 +428,12 @@ export function DuplicatesScreen({
                   <div className="header-actions">
                     <span
                       className={`confidence-badge ${duplicateToneClass(
-                        selected.duplicateType,
+                        selected.classification,
                       )}`}
                     >
-                      {selected.duplicateType}
+                      {selected.classificationLabel}
                     </span>
-                    <span className="ghost-chip">{selected.detectionMethod}</span>
+                    <span className="ghost-chip">{selected.confidenceLabel}</span>
                   </div>
                 ) : null}
               </div>
@@ -505,8 +528,8 @@ export function DuplicatesScreen({
                       </span>
                     </div>
                     <div className="queue-meta">
-                      <span className="ghost-chip">{pair.duplicateType}</span>
-                      <span className="ghost-chip">{pair.detectionMethod}</span>
+                      <span className="ghost-chip">{pair.classificationLabel}</span>
+                      <span className="ghost-chip">{pair.confidenceLabel}</span>
                     </div>
                   </m.button>
                 ))}
@@ -531,7 +554,7 @@ export function DuplicatesScreen({
                     </p>
                     <h2>{selected.primaryFilename}</h2>
                   </div>
-                  <span className="ghost-chip">{selected.duplicateType}</span>
+                  <span className="ghost-chip">{selected.classificationLabel}</span>
                 </div>
 
                 <DockSectionStack
@@ -554,7 +577,7 @@ export function DuplicatesScreen({
                     : "Select a duplicate pair to inspect the path comparison, detection method, and exact hash details when available."
                 }
                 icon={SearchX}
-                meta={["Read-only for now", "Cleanup actions come later"]}
+                meta={["Compare-only for now", "No cleanup action here"]}
               />
             )}
           </ResizableDetailPanel>
@@ -574,18 +597,18 @@ export function DuplicatesScreen({
           }
           icon={Copy}
           tone="info"
-          meta={["Exact, filename, and version views available"]}
+          meta={["Exact, name, and version-clue views available"]}
         />
       )}
     </section>
   );
 }
 
-function duplicateToneClass(duplicateType: string) {
-  switch (duplicateType.toLowerCase()) {
-    case "exact":
+function duplicateToneClass(classification: string) {
+  switch (classification.toLowerCase()) {
+    case "exact_duplicate":
       return "good";
-    case "filename":
+    case "possible_duplicate":
       return "medium";
     default:
       return "low";
@@ -593,23 +616,31 @@ function duplicateToneClass(duplicateType: string) {
 }
 
 function duplicateStageHeadline(pair: DuplicatePair, userView: UserView) {
-  switch (pair.duplicateType.toLowerCase()) {
-    case "exact":
+  switch (pair.classification.toLowerCase()) {
+    case "exact_duplicate":
       return userView === "beginner"
-        ? "These two files look identical, so folder context is usually the fastest way to spot the extra copy."
-        : "This pair looks identical, so path and folder context should carry most of the decision.";
-    case "filename":
+        ? "SimSuite matched the file contents. Compare folders and backups before changing anything."
+        : "This pair has same-file-content evidence, so path and folder context should carry most of the review.";
+    case "possible_duplicate":
       return userView === "beginner"
-        ? "These names line up closely, but the file details may still differ once you compare both copies."
-        : "This filename match still needs context because the underlying file details may differ.";
+        ? "These names line up closely, but the file details may still differ once you compare both files."
+        : "This name match still needs context because the underlying file details may differ.";
+    case "possible_version_variant":
+      return userView === "beginner"
+        ? "Version clues suggest these may be different releases of the same mod."
+        : "This looks like a version variant, so size, folder context, and naming clues matter most.";
     default:
       return userView === "beginner"
-        ? "This looks like a version overlap, so compare folder, size, and naming before deciding anything."
-        : "This looks like a version overlap, so size, folder context, and naming clues matter most.";
+        ? "SimSuite has limited information here, so compare the files manually before changing anything."
+        : "This pair needs manual comparison because the duplicate evidence is limited.";
   }
 }
 
 function duplicateStageSupportHeading(pair: DuplicatePair) {
+  if (pair.evidence.length) {
+    return pair.evidence.slice(0, 2).join(" · ");
+  }
+
   if (pair.primaryCreator && pair.primaryCreator === pair.secondaryCreator) {
     return `Both copies currently point to ${pair.primaryCreator}.`;
   }
@@ -627,8 +658,8 @@ function duplicateStageSupportBody(pair: DuplicatePair, userView: UserView) {
       : `There is a ${sizeDelta.toLocaleString()} byte gap between them, which can help separate the newer or edited copy.`;
 
   return userView === "beginner"
-    ? `${sizeLine} The deeper proof stays on the right if you want the full comparison.`
-    : `${sizeLine} Keep the middle stage for quick comparison and the right inspector for the full evidence trail.`;
+    ? `${sizeLine} The deeper evidence stays on the right if you want the full comparison. ${pair.cautions[0] ?? ""}`.trim()
+    : `${sizeLine} Keep the middle stage for quick comparison and the right inspector for the evidence trail. ${pair.cautions[0] ?? ""}`.trim();
 }
 
 function formatDuplicateDate(value: string | null) {

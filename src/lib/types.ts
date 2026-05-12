@@ -515,6 +515,11 @@ export interface DuplicatePair {
   id: number;
   duplicateType: string;
   detectionMethod: string;
+  classification: string;
+  classificationLabel: string;
+  confidenceLabel: string;
+  evidence: string[];
+  cautions: string[];
   primaryFileId: number;
   primaryFilename: string;
   primaryPath: string;

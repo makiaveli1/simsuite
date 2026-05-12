@@ -2697,12 +2697,12 @@ export function computeFolderSummary(
     relationshipClusters.push({
       id: "dup",
       type: "duplicate",
-      proofLevel: "fact",
-      confidenceLabel: "Confirmed",
+      proofLevel: "claim",
+      confidenceLabel: "Possible",
       affectedFileCount: duplicateFiles.length,
       peakPeerCount: 0,
-      title: "Duplicate files",
-      description: `${duplicateFiles.length} file${duplicateFiles.length !== 1 ? "s" : ""} marked as exact duplicates`,
+      title: "Possible duplicate files",
+      description: `${duplicateFiles.length} file${duplicateFiles.length !== 1 ? "s" : ""} flagged for duplicate comparison`,
     });
   }
 

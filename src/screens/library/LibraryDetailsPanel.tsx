@@ -613,11 +613,11 @@ export function LibraryDetailsPanel({
             {duplicateTypes.map((type) => (
               <span key={type} className="ghost-chip">
                 {type === "exact"
-                  ? "Exact match"
+                  ? "Same file contents"
                   : type === "filename"
                     ? "Same filename"
                     : type === "version"
-                      ? "Same version"
+                      ? "Possible version variant"
                       : type}
               </span>
             ))}

@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Backend Map and Duplicate Intelligence v1)
+
+This session moved Library work from frontend polish to backend truth and duplicate evidence.
+
+Important changes and findings:
+
+- added `docs/LIBRARY_BACKEND_SYSTEMS_MAP.md` with a current map of Library commands, database tables/indexes, scanner/indexing, package inspection, folder metadata, detail data, problem signals, relationship hints, duplicate detection, update/watch state, review queue, scalability risks, and missing systems.
+- kept the existing duplicate database schema unchanged; no migration was needed for v1.
+- `list_duplicate_pairs` now enriches returned pairs with `classification`, `classificationLabel`, `confidenceLabel`, `evidence`, and `cautions`.
+- exact hash/content matches are reported as `exact_duplicate` with `Same file contents` evidence.
+- same-name matches without exact-content proof are reported as `possible_duplicate`.
+- version-token matches are reported as `possible_version_variant`.
+- same folder and same pack remain related hints only and do not create duplicate pairs by themselves.
+- `get_file_detail` now reports the number of duplicate pairs for a file instead of the number of distinct duplicate types.
+- duplicate problem signals now use `Possible duplicate` and detected proof strength unless exact-content evidence is present in the duplicate pair response.
+- no cleanup/delete/safe-delete/dependency/missing-mesh/provider/AI behavior was added.
+- pre-existing unrelated Home/status/global CSS worktree changes remain outside this backend sprint.
+
+Checks passed:
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `cargo fmt`
+- `cargo check`
+- `cargo test` (`227` tests)
+- `cargo build --release`
+- `npm run test:rust` (`227` tests)
+- `npm run desktop:smoke:fixtures`
+- `npm run desktop:proof:fixtures` after sequential rerun (`DESKTOP_LIBRARY_PROOF_OK`)
+
+Important remaining gap:
+
+- Duplicate Intelligence v1 is evidence-based but not perfect. It uses hash, filename, version-token, size, creator, and detection-method evidence; broader same-mod-family matching still needs v2 work.
+- large-library stress and backend query performance proof remain future work.
+- true empty disk-folder metadata remains future scanner/indexer work.
+- live real-library thumbnail validation remains future proof work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
 ## Current session note (May 12, 2026 - Library Cohesive Cozy Polish v1)
 
 This session preserved the recent uncommitted Library follow-ups and added a scoped cozy atmosphere pass.

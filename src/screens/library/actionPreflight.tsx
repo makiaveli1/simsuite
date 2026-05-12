@@ -283,12 +283,12 @@ function buildDuplicateSignal(
     id: "duplicate-candidate",
     signalType: "duplicate_candidate",
     severity: "caution",
-    proofLevel: "confirmed",
-    label: "Duplicate candidate",
+    proofLevel: "detected",
+    label: "Possible duplicate",
     explanation:
       file.duplicatesCount === 1
-        ? "SimSuite found one matching duplicate pair for this file, so compare the files before changing either copy."
-        : `SimSuite found ${file.duplicatesCount} matching duplicate pairs for this file, so compare the files before changing any copy.`,
+        ? "SimSuite found one duplicate comparison pair for this file, so compare the files before changing either copy."
+        : `SimSuite found ${file.duplicatesCount} duplicate comparison pairs for this file, so compare the files before changing any copy.`,
     evidence: file.duplicateTypes.map(humanizeDuplicateType),
     route: "duplicates",
     source: "duplicate_types",
@@ -499,11 +499,11 @@ function relationshipPreflightEvidenceLabel(proof: FileRelationship["proofLevel"
 function humanizeDuplicateType(type: string) {
   switch (type) {
     case "exact":
-      return "Exact duplicate match";
+      return "Same file contents";
     case "filename":
       return "Same filename match";
     case "version":
-      return "Same version match";
+      return "Possible version variant";
     default:
       return type;
   }

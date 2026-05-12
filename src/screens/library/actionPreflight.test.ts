@@ -32,11 +32,11 @@ it("builds calm preflight cautions without fake dependency claims", () => {
         {
           signalType: "duplicate_candidate",
           severity: "caution",
-          proofLevel: "confirmed",
-          shortLabel: "Duplicate candidate",
-          explanation: "Compare before removing anything.",
+          proofLevel: "detected",
+          shortLabel: "Possible duplicate",
+          explanation: "Compare before changing either copy.",
           source: "duplicates",
-          evidence: ["Matched by duplicate detector"],
+          evidence: ["Duplicate comparison rule matched"],
           destination: "duplicates",
           showInLibrary: false,
           showInInspector: true,
@@ -76,7 +76,7 @@ it("builds calm preflight cautions without fake dependency claims", () => {
   expect(preflight.signals.map((signal) => signal.label)).toEqual(
     expect.arrayContaining([
       "Review suggested",
-      "Duplicate candidate",
+      "Possible duplicate",
       "No update source",
       "Same folder",
     ]),

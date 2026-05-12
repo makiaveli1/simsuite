@@ -186,11 +186,11 @@ fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
         signals.push(ProblemSignal {
             signal_type: "duplicate_candidate".to_owned(),
             severity: ProblemSignalSeverity::Caution,
-            proof_level: ProblemSignalProofLevel::Confirmed,
-            short_label: "Duplicate candidate".to_owned(),
-            explanation: "SimSuite found another file that matches this one by duplicate rules, so compare before removing anything.".to_owned(),
+            proof_level: ProblemSignalProofLevel::Detected,
+            short_label: "Possible duplicate".to_owned(),
+            explanation: "SimSuite found another file that matches duplicate comparison rules, so compare before changing either copy.".to_owned(),
             source: "duplicates".to_owned(),
-            evidence: vec!["Matched by duplicate detector".to_owned()],
+            evidence: vec!["Duplicate comparison rule matched".to_owned()],
             destination: Some(ProblemSignalDestination::Duplicates),
             show_in_library: false,
             show_in_inspector: true,
@@ -1227,6 +1227,12 @@ pub fn get_file_detail(
             detail.watch_result = watch_result;
 
             // Load duplicate info for this file.
+            let duplicates_count: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM duplicates
+                 WHERE file_id_a = ?1 OR file_id_b = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )?;
             let duplicate_types: Vec<String> = connection
                 .prepare(
                     "SELECT DISTINCT duplicate_type FROM duplicates
@@ -1235,7 +1241,7 @@ pub fn get_file_detail(
                 )?
                 .query_map(params![file_id], |row| row.get(0))?
                 .collect::<Result<Vec<String>, _>>()?;
-            detail.duplicates_count = duplicate_types.len();
+            detail.duplicates_count = duplicates_count.max(0) as usize;
             detail.duplicate_types = duplicate_types;
 
             let review_reasons: Vec<String> = connection
@@ -1583,6 +1589,49 @@ mod tests {
         assert_eq!(listing.total, 1);
         assert_eq!(listing.items.len(), 1);
         assert_eq!(listing.items[0].filename, "installed.package");
+    }
+
+    #[test]
+    fn file_detail_reports_duplicate_pair_count_not_type_count_only() {
+        let (connection, settings, seed_pack) = setup_library_env();
+
+        for filename in ["installed-copy-a.package", "installed-copy-b.package"] {
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path,
+                        filename,
+                        extension,
+                        kind,
+                        confidence,
+                        source_location,
+                        parser_warnings,
+                        insights
+                     ) VALUES (?1, ?2, '.package', 'Gameplay', 0.8, 'mods', '[]', ?3)",
+                    params![
+                        format!("C:/Mods/TestCreator/{filename}"),
+                        filename,
+                        serde_json::to_string(&crate::models::FileInsights::default())
+                            .expect("insights json"),
+                    ],
+                )
+                .expect("insert duplicate peer");
+        }
+
+        connection
+            .execute(
+                "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
+                 VALUES (1, 3, 'exact', 'sha256'), (1, 4, 'exact', 'sha256')",
+                [],
+            )
+            .expect("insert duplicate pairs");
+
+        let detail = get_file_detail(&connection, &settings, &seed_pack, 1)
+            .expect("detail")
+            .expect("installed detail");
+
+        assert_eq!(detail.duplicates_count, 2);
+        assert_eq!(detail.duplicate_types, vec!["exact".to_owned()]);
     }
 
     #[test]

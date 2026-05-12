@@ -1,5 +1,53 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Backend Map and Duplicate Intelligence v1)
+
+- **Mode**: code
+- **Focus**: map the Library backend and strengthen duplicate truth/evidence without adding cleanup, dependency, missing-mesh, provider, or frontend redesign work
+
+### Progress Made
+
+1. **Mapped Library backend systems**:
+   - added `docs/LIBRARY_BACKEND_SYSTEMS_MAP.md`
+   - documented Tauri commands, database tables/indexes, scanner/indexing, package inspection, folder metadata, detail/inspector data, problem signals, relationships, duplicate detection, watch/update state, review queue, performance risks, and missing systems
+
+2. **Improved duplicate intelligence v1**:
+   - kept the existing duplicate table schema unchanged
+   - added query-time pair classification and evidence to `list_duplicate_pairs`
+   - classifies returned pairs as `exact_duplicate`, `possible_duplicate`, or `possible_version_variant`
+   - exposes evidence and cautions so Duplicates can explain why a pair was shown
+   - fixed `get_file_detail` so `duplicatesCount` counts pairs, not distinct duplicate types
+
+3. **Kept wording trust-safe**:
+   - generic duplicate signals now use `Possible duplicate` with detected proof strength
+   - exact duplicate wording is only used for same-file-content hash evidence
+   - no cleanup/delete/safe-delete/dependency/missing-mesh claims were added
+
+### Verification
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `cargo fmt`
+- `cargo check`
+- `cargo test`: `227` tests
+- `cargo build --release`
+- `npm run test:rust`: `227` tests
+- `npm run desktop:smoke:fixtures`: passed
+- `npm run desktop:proof:fixtures`: passed on sequential rerun with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot/proof folder: `output/desktop/library-proof/2026-05-12T03-32-11-028Z`
+
+### Known Problems / Gaps
+
+- `desktop:proof:fixtures` failed once when run in parallel with smoke because both builds touched `dist/assets`; rerunning proof by itself passed.
+- Rust validation still emits existing warnings in older modules.
+- Vite still reports the existing large chunk warning.
+- large-library stress, true empty disk-folder metadata, live real-library thumbnail validation, same-mod-family v2 matching, and safe action evidence modeling remain future backend work.
+- unrelated Home/status/global CSS worktree changes remain outside this Library backend sprint.
+
+### Next Best Step
+
+1. Run a Duplicate Intelligence v2 sprint with synthetic large duplicate/version fixtures and bounded performance measurements.
 ## Current Session (May 12, 2026 - Library Cohesive Cozy Polish v1)
 
 - **Mode**: code
