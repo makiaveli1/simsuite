@@ -728,7 +728,6 @@ export function LibraryScreen({
     setSource("");
     setMinConfidence("");
     setWatchFilter("all");
-    setSortBy("name");
     setPage(0);
   }
 
@@ -791,8 +790,7 @@ export function LibraryScreen({
     creator !== "" ||
     source !== "" ||
     minConfidence !== "" ||
-    watchFilter !== "all" ||
-    sortBy !== "name";
+    watchFilter !== "all";
   const activeFilterCount = hasActiveFilters
     ? [
         search.trim(),
@@ -802,7 +800,6 @@ export function LibraryScreen({
         source,
         minConfidence,
         watchFilter !== "all" ? "watch" : null,
-        sortBy !== "name" ? "sort" : null,
       ].filter(Boolean).length
     : 0;
 
@@ -1781,6 +1778,10 @@ export function LibraryScreen({
           }}
           onSortByChange={(value) => {
             setSortBy(value);
+            setPage(0);
+          }}
+          onResetSort={() => {
+            setSortBy("name");
             setPage(0);
           }}
         />

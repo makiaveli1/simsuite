@@ -267,8 +267,8 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
           ) : (
             <div className="library-grid-empty">
               {userView === "beginner"
-                ? "No cards match these filters. Try a broader search or clear a filter."
-                : "No indexed files match the current filters. Clear filters or search by creator/name."}
+                ? "No cards match these filters. Try clearing search, choosing another type, or showing all signals."
+                : "No indexed files match the current filters. Clear search, choose another type, or show all signals."}
             </div>
           )}
         </div>

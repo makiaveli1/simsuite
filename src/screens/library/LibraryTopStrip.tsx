@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ArrowUpDown, Folder, Grid3X3, LayoutList, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, Folder, Grid3X3, LayoutList, Search, SlidersHorizontal, X } from "lucide-react";
 import type { LibraryFacets, LibrarySortField, LibrarySummary, LibraryWatchFilter, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
@@ -54,6 +54,7 @@ interface LibraryTopStripProps {
   onDensityChange: (value: number) => void;
   onSearchChange: (value: string) => void;
   onSortByChange: (value: SortField) => void;
+  onResetSort: () => void;
   onWatchFilterChange: (value: WatchFilter) => void;
   onFiltersChange: (next: Partial<LibraryToolbarFilters>) => void;
   onDrawerToggle: () => void;
@@ -72,6 +73,14 @@ function sourceLabel(source: string) {
   return source;
 }
 
+function watchFilterLabel(value: WatchFilter) {
+  return WATCH_FILTER_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function sortLabel(value: SortField) {
+  return SORT_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 export function LibraryTopStrip({
   userView,
   activeFilterCount,
@@ -85,6 +94,7 @@ export function LibraryTopStrip({
   viewMode,
   onSearchChange,
   onSortByChange,
+  onResetSort,
   onWatchFilterChange,
   onFiltersChange,
   onDrawerToggle,
@@ -102,6 +112,7 @@ export function LibraryTopStrip({
   const normalizedDensity = clampDensity(densityValue);
   const hasActiveFilters = activeFilterCount > 0;
   const drawerFilterCount = [filters.creator, filters.source, filters.minConfidence, filters.subtype].filter(Boolean).length;
+  const sortIsActive = sortBy !== "name";
   const activeDrawerFilters = [
     filters.creator
       ? { key: "creator", label: `Creator: ${filters.creator}`, clear: () => onFiltersChange({ creator: "" }) }
@@ -120,6 +131,19 @@ export function LibraryTopStrip({
       ? { key: "subtype", label: `Subtype: ${filters.subtype}`, clear: () => onFiltersChange({ subtype: "" }) }
       : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+  const activeFilterPills = [
+    search.trim()
+      ? { key: "search", label: `Search: ${search.trim()}`, clear: () => onSearchChange("") }
+      : null,
+    filters.kind
+      ? { key: "kind", label: `Type: ${friendlyTypeLabel(filters.kind)}`, clear: () => onFiltersChange({ kind: "" }) }
+      : null,
+    watchFilter !== "all"
+      ? { key: "signal", label: `Signal: ${watchFilterLabel(watchFilter)}`, clear: () => onWatchFilterChange("all") }
+      : null,
+    ...activeDrawerFilters,
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+  const showActiveStateRow = activeFilterPills.length > 0 || sortIsActive;
 
   useEffect(() => {
     if (drawerOpen && !previousDrawerOpenRef.current) {
@@ -134,9 +158,9 @@ export function LibraryTopStrip({
   }, [drawerOpen]);
 
   return (
-    <div className="library-top-strip">
+    <div className={`library-top-strip library-top-strip--${userView}`}>
       {/* ── Primary row: search + core controls + density widget ── */}
-      <div className="library-toolbar-row">
+      <div className="library-toolbar-row library-command-row">
         <label className="field library-toolbar-search">
           <span className="sr-only">Search by file or creator</span>
           <div className="downloads-search-input">
@@ -144,7 +168,7 @@ export function LibraryTopStrip({
             <input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search by name or creator…"
+              placeholder="Search name or creator"
               aria-label="Search library"
             />
             {search ? (
@@ -160,7 +184,7 @@ export function LibraryTopStrip({
           </div>
         </label>
 
-        <div className="library-toolbar-actions">
+        <div className="library-toolbar-actions library-command-actions">
           <div className="library-sort-control" aria-label="Sort library">
             <ArrowUpDown size={13} strokeWidth={2} />
             <select
@@ -263,43 +287,50 @@ export function LibraryTopStrip({
               {drawerFilterCount > 0 ? (
                 <span className="active-badge">{drawerFilterCount}</span>
               ) : null}
-              <span className={`library-advanced-btn__caret${drawerOpen ? " is-open" : ""}`} aria-hidden="true">
-                ▾
-              </span>
+              <ChevronDown
+                size={12}
+                strokeWidth={2}
+                className={`library-advanced-btn__caret${drawerOpen ? " is-open" : ""}`}
+                aria-hidden="true"
+              />
             </button>
           ) : null}
         </div>
       </div>
 
       {/* ── Quick filters row: kind chips + watch chips (secondary, visually subordinate) ── */}
-      <div className="library-browse-row">
-        <div className="library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
-          <span className="library-browse-label" aria-hidden="true">Types</span>
-          <button
-            type="button"
-            className={`library-kind-chip${filters.kind === "" ? " is-active" : ""}`}
-            onClick={() => onFiltersChange({ kind: "" })}
-            aria-pressed={filters.kind === ""}
-            title="Show all types"
-          >
-            All types
-          </button>
-          {facets?.kinds.map((kind) => {
-            const cssClass = `type-pill--${kind.charAt(0).toLowerCase() + kind.slice(1)}`;
-            const isActive = filters.kind === kind;
-            return (
-              <button
-                key={kind}
-                type="button"
-                className={`library-kind-chip ${cssClass}${isActive ? " is-active" : ""}`}
-                onClick={() => onFiltersChange({ kind: isActive ? "" : kind })}
-                aria-pressed={isActive}
-                title={isActive ? `Showing ${friendlyTypeLabel(kind)} — click to clear` : `Show ${friendlyTypeLabel(kind)}`}
-              >
-                {friendlyTypeLabel(kind)}
-              </button>
-            );
-          })}
+      <div className="library-browse-row library-filter-deck" aria-label="Library filters">
+        <div className="library-filter-group library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
+          <div className="library-filter-group-header">
+            <span className="library-browse-label">Types</span>
+          </div>
+          <div className="library-filter-chip-row">
+            <button
+              type="button"
+              className={`library-kind-chip${filters.kind === "" ? " is-active" : ""}`}
+              onClick={() => onFiltersChange({ kind: "" })}
+              aria-pressed={filters.kind === ""}
+              title="Show all types"
+            >
+              All types
+            </button>
+            {facets?.kinds.map((kind) => {
+              const cssClass = `type-pill--${kind.charAt(0).toLowerCase() + kind.slice(1)}`;
+              const isActive = filters.kind === kind;
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  className={`library-kind-chip ${cssClass}${isActive ? " is-active" : ""}`}
+                  onClick={() => onFiltersChange({ kind: isActive ? "" : kind })}
+                  aria-pressed={isActive}
+                  title={isActive ? `Showing ${friendlyTypeLabel(kind)} - click to clear` : `Show ${friendlyTypeLabel(kind)}`}
+                >
+                  {friendlyTypeLabel(kind)}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Contextual subtype chips — only in grid view, when a kind is active */}
@@ -307,7 +338,7 @@ export function LibraryTopStrip({
           <div className="library-browse-sep" aria-hidden="true" />
         )}
         {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
-          <div className="library-subtype-chips" role="group" aria-label="Filter by subtype">
+          <div className="library-filter-group library-subtype-chips" role="group" aria-label="Filter by subtype">
             {facets.subtypes.map((s) => {
               const isActive = filters.subtype === s;
               return (
@@ -317,7 +348,7 @@ export function LibraryTopStrip({
                   className={`library-subtype-chip${isActive ? " is-active" : ""}`}
                   onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
                   aria-pressed={isActive}
-                  title={isActive ? `Showing ${s} — click to clear` : `Show ${s}`}
+                  title={isActive ? `Showing ${s} - click to clear` : `Show ${s}`}
                 >
                   {s}
                 </button>
@@ -328,19 +359,23 @@ export function LibraryTopStrip({
 
         <div className="library-browse-sep" aria-hidden="true" />
 
-        <div className="library-browse-group library-browse-group--watch" role="group" aria-label="Quick filters by status">
-          <span className="library-browse-label" aria-hidden="true">Signals</span>
-          {WATCH_FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`library-quick-chip${watchFilter === opt.value ? " is-active" : ""}`}
-              onClick={() => onWatchFilterChange(opt.value)}
-              aria-pressed={watchFilter === opt.value}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="library-filter-group library-browse-group library-browse-group--watch" role="group" aria-label="Filter by signal">
+          <div className="library-filter-group-header">
+            <span className="library-browse-label">Signals</span>
+          </div>
+          <div className="library-filter-chip-row">
+            {WATCH_FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`library-quick-chip${watchFilter === opt.value ? " is-active" : ""}`}
+                onClick={() => onWatchFilterChange(opt.value)}
+                aria-pressed={watchFilter === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {librarySummary ? (
@@ -363,6 +398,51 @@ export function LibraryTopStrip({
           </div>
         ) : null}
       </div>
+
+      {showActiveStateRow ? (
+        <div className="library-active-filter-row" aria-label="Active Library filters">
+          {activeFilterPills.length > 0 ? (
+            <>
+              <span className="library-active-filter-row__label">Showing</span>
+              <div className="library-active-filter-pills">
+                {activeFilterPills.map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    className="library-active-filter-pill"
+                    onClick={filter.clear}
+                    aria-label={`Clear ${filter.label}`}
+                    title={`Clear ${filter.label}`}
+                  >
+                    {filter.label}
+                    <X size={11} strokeWidth={2} />
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="library-clear-filters-button"
+                onClick={onResetFilters}
+              >
+                Clear filters
+              </button>
+            </>
+          ) : null}
+
+          {sortIsActive ? (
+            <div className="library-sort-state">
+              <span className="library-sort-state-pill">Sorted: {sortLabel(sortBy)}</span>
+              <button
+                type="button"
+                className="library-reset-sort-button"
+                onClick={onResetSort}
+              >
+                Reset sort
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* ── Advanced drawer: creator/source/confidence/subtype + active filter pills ── */}
       {flags.showAdvancedFilters ? (
@@ -446,14 +526,15 @@ export function LibraryTopStrip({
               </div>
             )}
 
-            <button
-              type="button"
-              className="secondary-action library-drawer-reset"
-              onClick={onResetFilters}
-              disabled={!hasActiveFilters}
-            >
-              Clear all
-            </button>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                className="secondary-action library-drawer-reset"
+                onClick={onResetFilters}
+              >
+                Clear filters
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

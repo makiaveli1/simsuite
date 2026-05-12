@@ -258,8 +258,8 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
           ) : (
             <div className="library-list-empty">
               {userView === "beginner"
-                ? "No files match these filters. Try a broader search or clear a filter."
-                : "No indexed files match the current filters. Clear filters or search by creator/name."}
+                ? "No files match these filters. Try clearing search, choosing another type, or showing all signals."
+                : "No indexed files match the current filters. Clear search, choose another type, or show all signals."}
             </div>
           )}
         </div>

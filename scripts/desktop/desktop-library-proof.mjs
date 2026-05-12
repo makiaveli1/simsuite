@@ -396,6 +396,37 @@ async function collectLibraryGeometry(driver) {
     };
 
     const doc = document.documentElement;
+    const rectForElement = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const commandControls = Array.from(document.querySelectorAll(".library-command-actions > *"))
+      .filter(isVisible)
+      .map((element, index) => ({ index, className: element.className, rect: rectForElement(element) }));
+    const commandControlOverlapFailures = [];
+    for (let a = 0; a < commandControls.length; a += 1) {
+      for (let b = a + 1; b < commandControls.length; b += 1) {
+        const first = commandControls[a];
+        const second = commandControls[b];
+        const horizontalOverlap = Math.min(first.rect.right, second.rect.right) - Math.max(first.rect.left, second.rect.left);
+        const verticalOverlap = Math.min(first.rect.bottom, second.rect.bottom) - Math.max(first.rect.top, second.rect.top);
+        if (horizontalOverlap > 3 && verticalOverlap > 3) {
+          commandControlOverlapFailures.push({ first, second, horizontalOverlap, verticalOverlap });
+        }
+      }
+    }
     const rowClipFailures = Array.from(document.querySelectorAll(".library-list-body .library-list-row"))
       .slice(0, 10)
       .flatMap((row, rowIndex) => {
@@ -445,6 +476,11 @@ async function collectLibraryGeometry(driver) {
       inspector: rectFor(".library-inspector-shell"),
       inspectorExpanded: rectFor(".library-inspector-shell:not(.inspector-collapsed)"),
       topStrip: rectFor(".library-top-strip"),
+      commandRow: rectFor(".library-command-row"),
+      filterDeck: rectFor(".library-filter-deck"),
+      activeFilterRow: rectFor(".library-active-filter-row"),
+      advancedButton: rectFor(".library-advanced-btn"),
+      searchInput: rectFor("input[aria-label='Search library']"),
       browseRow: rectFor(".library-browse-row"),
       listShell: rectFor(".library-list-shell"),
       listHeader: rectFor(".library-list-header"),
@@ -452,6 +488,7 @@ async function collectLibraryGeometry(driver) {
       footer: rectFor(".library-stage-shell > .table-footer"),
       activeNav: rectFor(".rail-nav.is-active"),
       activeNavText: rectFor(".rail-nav.is-active span"),
+      commandControlOverlapFailures,
       rowClipFailures,
     };
   });
@@ -480,6 +517,22 @@ function assertLibraryGeometry(geometry) {
 
   if (geometry.browseRow && geometry.listHeader && geometry.browseRow.bottom > geometry.listHeader.top + tolerance) {
     failures.push("Library filter chips overlap the list header");
+  }
+
+  if (geometry.activeFilterRow && geometry.listHeader && geometry.activeFilterRow.bottom > geometry.listHeader.top + tolerance) {
+    failures.push("Library active filter row overlaps the list header");
+  }
+
+  if (geometry.commandControlOverlapFailures?.length > 0) {
+    failures.push(`Library command controls overlap in ${geometry.commandControlOverlapFailures.length} visible pair(s)`);
+  }
+
+  if (!geometry.searchInput || geometry.searchInput.width < 120 || geometry.searchInput.height < 20) {
+    failures.push("Library search input is not visible or usable");
+  }
+
+  if (!geometry.advancedButton || geometry.advancedButton.width < 64 || geometry.advancedButton.height < 24) {
+    failures.push("Library Advanced control is not visible or usable");
   }
 
   if (geometry.listShell && geometry.footer && geometry.listShell.bottom > geometry.footer.top + tolerance) {
@@ -728,6 +781,63 @@ async function verifyLibraryLayoutForMode(driver, summary, mode, outputPath) {
   summary.screenshots.push(outputPath);
 }
 
+async function setLibrarySearch(driver, value) {
+  const input = await waitForVisibleElement(driver, "input[aria-label='Search library']", 30000);
+  await input.clear();
+  if (value) {
+    await input.sendKeys(value);
+  }
+  await sleep(driver, 600);
+}
+
+async function verifyLibraryFilterUx(driver, summary, runDir) {
+  if (!Array.isArray(summary.filterUxChecks)) {
+    summary.filterUxChecks = [];
+  }
+
+  await setExperienceMode(driver, "seasoned");
+  await openLibraryScreen(driver);
+  await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-shell", 30000);
+
+  await clickVisibleButton(driver, "Script Mods");
+  await sleep(driver, 500);
+  await clickVisibleButton(driver, "No update source");
+  await sleep(driver, 500);
+  await setLibrarySearch(driver, "mc");
+  await waitForVisibleElement(driver, ".library-active-filter-row", 30000);
+  await assertLibraryLayoutGeometry(driver, summary, "filter-active-state-layout");
+  const activeShot = path.join(runDir, "library-filter-active-state.png");
+  await takeScreenshot(driver, activeShot);
+  summary.screenshots.push(activeShot);
+
+  await clickVisibleButton(driver, "Advanced");
+  await waitForVisibleElement(driver, ".library-filter-drawer", 30000);
+  await assertLibraryLayoutGeometry(driver, summary, "filter-advanced-open-layout");
+  const advancedShot = path.join(runDir, "library-filter-advanced-open.png");
+  await takeScreenshot(driver, advancedShot);
+  summary.screenshots.push(advancedShot);
+
+  await setLibrarySearch(driver, "zzzz-no-match-filter-proof");
+  await waitForAnyText(driver, ["No indexed files match", "No files match"], 30000);
+  await assertLibraryLayoutGeometry(driver, summary, "filter-no-results-layout");
+  const noResultsShot = path.join(runDir, "library-filter-no-results.png");
+  await takeScreenshot(driver, noResultsShot);
+  summary.screenshots.push(noResultsShot);
+
+  await clickVisibleButton(driver, "Clear filters");
+  await sleep(driver, 700);
+  await clickVisibleButton(driver, "Advanced").catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-shell", 30000);
+  await assertLibraryLayoutGeometry(driver, summary, "filter-cleared-layout");
+
+  summary.filterUxChecks.push({
+    activeStateScreenshot: activeShot,
+    advancedScreenshot: advancedShot,
+    noResultsScreenshot: noResultsShot,
+  });
+}
+
 async function setProofWindowSize(driver, width, height) {
   try {
     await driver.manage().window().setRect({ width, height });
@@ -761,9 +871,13 @@ async function verifyLibraryResponsiveViewport(driver, summary, runDir, width, h
   const outputPath = path.join(runDir, `library-responsive-${width}x${height}.png`);
   await takeScreenshot(driver, outputPath);
   summary.screenshots.push(outputPath);
+  const filterOutputPath = path.join(runDir, `library-filter-responsive-${width}x${height}.png`);
+  await takeScreenshot(driver, filterOutputPath);
+  summary.screenshots.push(filterOutputPath);
   summary.responsiveViewportChecks.push({
     ...resize,
     screenshot: outputPath,
+    filterScreenshot: filterOutputPath,
   });
 }
 
@@ -911,18 +1025,28 @@ async function main() {
       "casual",
       path.join(runDir, "00-library-layout-casual.png"),
     );
+    const filterCasualShot = path.join(runDir, "library-filter-ux-casual.png");
+    await takeScreenshot(driver, filterCasualShot);
+    summary.screenshots.push(filterCasualShot);
     await verifyLibraryLayoutForMode(
       driver,
       summary,
       "seasoned",
       path.join(runDir, "00-library-layout-seasoned.png"),
     );
+    const filterSeasonedShot = path.join(runDir, "library-filter-ux-seasoned.png");
+    await takeScreenshot(driver, filterSeasonedShot);
+    summary.screenshots.push(filterSeasonedShot);
     await verifyLibraryLayoutForMode(
       driver,
       summary,
       "creator",
       path.join(runDir, "00-library-layout-creator.png"),
     );
+    const filterCreatorShot = path.join(runDir, "library-filter-ux-creator.png");
+    await takeScreenshot(driver, filterCreatorShot);
+    summary.screenshots.push(filterCreatorShot);
+    await verifyLibraryFilterUx(driver, summary, runDir);
     await setExperienceMode(driver, "seasoned");
     await openLibraryScreen(driver);
     summary.mcccRowNeedle = await openRow(driver, targets.mccc);

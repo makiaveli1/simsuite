@@ -16160,13 +16160,248 @@ select:focus-visible {
   line-height: 1.42;
 }
 
+/* Library filter UX redesign v1: command bar + filter deck */
+.library-command-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-soft) 10%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-4) 92%, transparent);
+}
+
+.library-command-actions {
+  gap: 0.42rem;
+}
+
+.library-sort-control,
+.library-page-size-control,
+.library-advanced-btn {
+  border-color: color-mix(in srgb, var(--line-strong) 54%, transparent);
+  background: color-mix(in srgb, var(--surface-3) 86%, transparent);
+}
+
+.library-advanced-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.28rem 0.58rem;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.library-advanced-btn.is-active,
+.library-advanced-btn:has(.active-badge) {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  color: var(--text);
+}
+
+.library-advanced-btn__caret {
+  transition: transform 140ms ease;
+}
+
+.library-advanced-btn__caret.is-open {
+  transform: rotate(180deg);
+}
+
+.active-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.24rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.library-filter-deck {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 1px minmax(260px, 1fr) auto;
+  align-items: start;
+  gap: 0.46rem;
+  padding: 0.5rem 0.72rem;
+  background: color-mix(in srgb, var(--surface-4) 76%, transparent);
+}
+
+.library-filter-deck .library-filter-group {
+  display: grid;
+  align-content: start;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.library-filter-group-header {
+  display: flex;
+  align-items: center;
+  min-height: 0.8rem;
+}
+
+.library-filter-deck .library-browse-label {
+  width: auto;
+  margin: 0;
+  color: color-mix(in srgb, var(--text-dim) 88%, transparent);
+}
+
+.library-filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.34rem;
+  min-width: 0;
+}
+
+.library-filter-deck .library-kind-chip,
+.library-filter-deck .library-quick-chip,
+.library-filter-deck .library-subtype-chip {
+  border-color: color-mix(in srgb, var(--line) 76%, transparent);
+  background: color-mix(in srgb, var(--surface-3) 36%, transparent);
+  color: color-mix(in srgb, var(--text-soft) 92%, transparent);
+}
+
+.library-filter-deck .library-kind-chip.is-active,
+.library-filter-deck .library-quick-chip.is-active,
+.library-filter-deck .library-subtype-chip.is-active {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.library-filter-deck .library-quick-chip.is-active,
+.library-filter-deck .library-kind-chip:not([class*="type-pill--"]).is-active {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface-3));
+  color: var(--text);
+}
+
+.library-active-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.36rem 0.48rem;
+  min-width: 0;
+  padding: 0.36rem 0.72rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 48%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-soft) 16%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface-3) 54%, transparent);
+}
+
+.library-active-filter-row__label {
+  color: color-mix(in srgb, var(--text-dim) 88%, transparent);
+  font-size: 0.58rem;
+  font-weight: 780;
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.library-active-filter-pills,
+.library-sort-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.library-sort-state {
+  margin-left: auto;
+}
+
+.library-active-filter-pill,
+.library-clear-filters-button,
+.library-reset-sort-button,
+.library-sort-state-pill,
+.library-inline-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 24px;
+  padding: 0.18rem 0.46rem;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  background: color-mix(in srgb, var(--surface-4) 70%, transparent);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  font-weight: 660;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.library-sort-state-pill {
+  cursor: default;
+  color: color-mix(in srgb, var(--text-dim) 88%, transparent);
+}
+
+.library-clear-filters-button,
+.library-reset-sort-button {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  color: color-mix(in srgb, var(--accent) 78%, white 14%);
+}
+
+.library-active-filter-pill:hover,
+.library-clear-filters-button:hover,
+.library-reset-sort-button:hover,
+.library-inline-filter-pill:hover {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+  color: var(--text);
+}
+
+.library-filter-drawer[aria-hidden="true"] {
+  display: none;
+}
+
+.library-filter-drawer {
+  padding: 0.42rem 0.72rem 0.58rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  background: color-mix(in srgb, var(--surface-4) 88%, black 4%);
+}
+
+.library-filter-drawer-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) auto;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.library-drawer-active-filters {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.library-drawer-reset {
+  justify-self: end;
+  white-space: nowrap;
+}
+
 @media (max-width: 1366px) {
   .library-card-rest-title {
     font-size: 0.74rem;
   }
 
+  .library-filter-deck {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-filter-deck .library-browse-sep {
+    display: none;
+  }
+
+  .library-filter-deck .library-browse-label {
+    width: auto;
+    margin-bottom: 0;
+  }
+
   .library-browse-label {
     width: 100%;
     margin-bottom: 0.08rem;
+  }
+
+  .library-sort-state {
+    margin-left: 0;
   }
 }

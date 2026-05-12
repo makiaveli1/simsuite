@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Filter UX Redesign v1)
+
+This session redesigned the Library filter/search/control surface into a clearer command bar and filter deck.
+
+Important changes and findings:
+
+- kept the work frontend-only and did not add dependencies, backend commands, Rust changes, update provider work, scraping, replacement, dependency, or safe-delete behavior.
+- `LibraryTopStrip` now has a primary command row for search, sort, page size, view controls, grid density, and Advanced.
+- type filters are grouped under `Types`; signal filters are grouped under `Signals`.
+- active search/type/signal/advanced filters now appear as removable pills.
+- `Clear filters` clears only search and narrowing filters, while sort has a separate `Sorted: ...` state and `Reset sort`.
+- view mode, page size, grid density, and inspector state are preserved when clearing filters.
+- no-results copy now points users toward clearing search/type/signal filters without implying missing or broken files.
+- desktop proof now captures Casual, Seasoned, Creator, active filter state, Advanced open state, no-results, and responsive filter screenshots.
+- geometry proof now checks command-control overlap, filter/header overlap, active-row overlap, search visibility, Advanced visibility, and horizontal overflow.
+- pre-existing unrelated Home/status worktree changes remain outside this Library sprint.
+
+Checks passed:
+
+- targeted Library filter Vitest set (`3` files, `18` tests)
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `80` tests)
+- `npm run build`
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- large-library stress fixtures and true empty disk folder metadata remain future Library hardening work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 11, 2026 - Library Sidebar Redundancy Polish v1)
 
 This session removed repeated destination actions from the Library inspector.

@@ -1,5 +1,49 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Filter UX Redesign v1)
+
+- **Mode**: code
+- **Focus**: redesign the Library filter/search/control area into a clearer command bar and filter deck without backend changes or new dependencies
+
+### Progress Made
+
+1. **Reworked the Library filter surface**:
+   - `LibraryTopStrip` now separates primary commands, grouped filters, and active state
+   - search, sort, page size, view controls, grid density, and Advanced stay in the command row
+   - type chips live under `Types`; care/status chips live under `Signals`
+   - active search/type/signal/advanced filters render as removable pills
+
+2. **Clarified reset behavior**:
+   - `Clear filters` clears search and narrowing filters only
+   - sort is shown separately as `Sorted: ...` with its own `Reset sort`
+   - view mode, page size, density, and inspector state are not reset by filter clearing
+
+3. **Extended proof for filter UX**:
+   - added screenshots for Casual, Seasoned, Creator, active filters, no-results, Advanced open, `1366x768`, and `1440x900`
+   - added geometry checks for command overlap, filter/header overlap, active-row overlap, search visibility, Advanced visibility, and page overflow
+
+### Verification
+
+- targeted Library filter tests passed: `3` files, `18` tests
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `80` tests
+- `npm run build`
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-12T00-03-33-220Z`
+  - filter screenshots include `library-filter-active-state.png`, `library-filter-no-results.png`, and responsive filter captures
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend sprint.
+- Vite still reports the existing large chunk warning.
+- pre-existing unrelated Home/status worktree changes remain unstaged and outside this sprint.
+- deeper large-library stress and true empty disk folder metadata remain future Library hardening work.
+
+### Next Best Step
+
+1. Run the Library edge-case/stress hardening sprint with large synthetic fixture data, long names, missing metadata, and folder edge cases.
+
 ## Current Session (May 11, 2026 - Library Sidebar Redundancy Polish v1)
 
 - **Mode**: code
