@@ -83,10 +83,16 @@ CREATE TABLE IF NOT EXISTS files (
   safety_notes TEXT NOT NULL DEFAULT '[]',
   parser_warnings TEXT NOT NULL DEFAULT '[]',
   insights TEXT NOT NULL DEFAULT '{}',
+  content_fingerprint TEXT,
+  content_fingerprint_kind TEXT,
+  content_fingerprint_version TEXT,
+  content_fingerprint_status TEXT NOT NULL DEFAULT 'not_attempted',
+  content_fingerprint_error TEXT,
   indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files (hash);
+CREATE INDEX IF NOT EXISTS idx_files_content_fingerprint ON files (content_fingerprint_kind, content_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_files_filename ON files (filename);
 CREATE INDEX IF NOT EXISTS idx_files_creator_id ON files (creator_id);
 CREATE INDEX IF NOT EXISTS idx_files_bundle_id ON files (bundle_id);

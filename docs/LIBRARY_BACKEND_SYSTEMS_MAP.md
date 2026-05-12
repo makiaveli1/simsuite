@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, and `codex/trust-boundaries-automation-readiness-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, and `codex/library-duplicate-truth-engine-v3-fingerprints`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -47,7 +47,7 @@ The normal flow is:
 | `get_file_detail` | implemented | Lazy detail query with watch, duplicate, review, and preview resolution. |
 | `reveal_file_in_folder` | implemented | Opens Explorer for file or parent folder; uses real paths. |
 | `get_duplicate_overview` | implemented | Counts duplicate rows by stored type. |
-| `list_duplicate_pairs` | implemented, now being strengthened | Lists duplicate pairs; previously exposed only `exact`, `filename`, and `version` plus basic fields. |
+| `list_duplicate_pairs` | implemented | Lists exact duplicate, name-match review, and version-review pairs. Exact rows can now explain same file, same package, or same script contents. |
 | `get_review_queue` | implemented | Reads rule-engine review queue data. |
 | `list_library_watch_items` | implemented | Library watch source overview. |
 | `list_library_watch_setup_items` | implemented | Files needing update source setup. |
@@ -73,7 +73,7 @@ Important Library tables:
 | `creators` / `creator_aliases` / `user_creator_aliases` | Creator metadata and learned aliases. | Seed, scanner, user learning. | Library facets, detail, duplicate display. | Missing creator is common and must remain weak evidence. |
 | `bundles` | Same-pack/bundle grouping. | Bundle detector. | Library relationship hints, folder summaries. | Same pack is not duplicate proof. |
 | `library_folders` | Real Mods/Tray folder metadata, including empty folders. | Scanner during scan/rescan. | Folder tree metadata and real Open Folder path plumbing. | Existing libraries need a scan/rescan before old empty folders appear. |
-| `duplicates` | Stored exact duplicate and comparison rows. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema still stores `exact`, `filename`, `version`; v2 treats only `exact` rows with matching non-empty hashes as user-facing duplicates. |
+| `duplicates` | Stored exact duplicate and comparison rows. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema still stores `exact`, `filename`, `version`; exact rows must validate same file/package/script contents before user-facing Duplicate is shown. |
 | `review_queue` | Files needing manual review. | Scanner/rule engine. | Needs Review, Library problem signals. | Review means manual review, not broken content proof. |
 | `content_watch_sources` / `content_watch_results` | Update/source watch configuration and last results. | Updates/watch commands. | Library update cues, Updates route. | Provider checks are limited; no official-source claim. |
 | `scan_sessions` | Scan summary history. | Scanner. | Home/Library status. | Mostly summary state. |
@@ -82,7 +82,7 @@ Important Library tables:
 
 Important indexes:
 
-- `idx_files_hash`, `idx_files_filename`, `idx_files_creator_id`, `idx_files_bundle_id`, `idx_files_kind`, `idx_files_source_location`.
+- `idx_files_hash`, `idx_files_content_fingerprint`, `idx_files_filename`, `idx_files_creator_id`, `idx_files_bundle_id`, `idx_files_kind`, `idx_files_source_location`.
 - `idx_files_download_item_id`, `idx_files_source_location_kind`, `idx_files_source_location_filename`, `idx_files_relative_depth`, `idx_files_source_location_depth`.
 - `idx_library_folders_source_location`, `idx_library_folders_source_path`, `idx_library_folders_source_parent`, `idx_library_folders_source_depth`.
 - `idx_duplicates_duplicate_type`, `idx_duplicates_file_id_a`, `idx_duplicates_file_id_b`.
@@ -98,8 +98,8 @@ Scanner behavior:
 - Walks configured Mods and Tray roots.
 - Records real folder metadata for the root, child, and nested directories, including folders with no supported files.
 - Indexes only supported Sims file rows as Library content; folder rows are separate and do not create fake files.
-- Stores real file paths, filename, extension, source location, relative depth, size, timestamps, creator/category metadata, parser warnings, safety notes, and optional hash.
-- Uses `scanner-v20` cache fingerprints to reuse unchanged file inspection results.
+- Stores real file paths, filename, extension, source location, relative depth, size, timestamps, creator/category metadata, parser warnings, safety notes, optional hash, and optional package/script content fingerprint metadata.
+- Uses `scanner-v21` cache fingerprints to reuse unchanged file inspection results after package/script content fingerprints have been populated.
 - Hashes only size-candidate duplicate groups instead of every file, which is good for scan performance.
 - Handles inspection errors by recording warnings/default metadata instead of failing the whole scan.
 - Rebuilds bundles and duplicate pairs after scan.
@@ -120,6 +120,9 @@ Package inspection boundary:
 - Parser warnings and inspection failures are retained as manual review evidence.
 - Thumbnail extraction is deferred during scan and resolved lazily for detail/preview surfaces.
 - Selected `.package` detail loading can now persist a newly found embedded/game-cache preview back into indexed `files.insights`, so later row/grid/folder queries can reuse the preview without parsing during normal browsing.
+- `.package` files can now receive a scan-time package content fingerprint when the DBPF index and every bounded resource payload can be read safely. The fingerprint uses resource type, group, instance IDs, and payload hashes in stable sorted order.
+- `.ts4script` files can now receive a scan-time script content fingerprint when the archive can be read safely. The fingerprint uses normalized archive entry paths and entry payload hashes in stable sorted order.
+- Fingerprint failures are sanitized status metadata. They do not become duplicate proof.
 
 Thumbnail/preview state:
 
@@ -208,16 +211,19 @@ Before this sprint, duplicate detection worked as follows:
 
 Duplicate Truth Engine v2 keeps the same database schema but makes the user-facing rule binary:
 
-- Rows with deterministic exact-file proof are exposed as `isDuplicate = true`, `comparisonKind = exact_file`, label `Duplicate`, and evidence `Same file contents`.
-- Exact-file proof requires two joined, distinct file IDs, non-empty normalized hashes that match, non-empty paths, and different normalized Windows paths.
+- Rows with deterministic exact proof are exposed as `isDuplicate = true`, label `Duplicate`, and careful evidence.
+- `exact_file` proof requires two joined, distinct file IDs, non-empty normalized hashes that match, non-empty paths, and different normalized Windows paths.
+- `exact_package` proof requires two joined, distinct `.package` rows with available matching `package` content fingerprints, matching fingerprint version, non-empty paths, and different normalized Windows paths.
+- `exact_script` proof requires two joined, distinct `.ts4script` rows with available matching `script` content fingerprints, matching fingerprint version, non-empty paths, and different normalized Windows paths.
+- Package/script fingerprint exacts still use `duplicates.duplicate_type = 'exact'`; the source is stored in `detection_method` as `package_fingerprint_v1` or `script_fingerprint_v1`.
 - `filename` rows are exposed as `isDuplicate = false`, `comparisonKind = name_match_review`, label `Name match`.
 - `version` rows are exposed as `isDuplicate = false`, `comparisonKind = version_review`, label `Version review`.
 - Non-exact filename/version review pair generation is capped per candidate group to avoid unbounded all-pairs growth in large same-name/version-key groups. Exact duplicate truth rules are unchanged.
 - Returned pairs include `is_duplicate`, `comparison_kind`, `classification`, `classification_label`, `confidence_label`, `evidence`, and `cautions`.
-- Evidence can include same file contents, same filename, similar filename, version clue found, version differs, contents differ, size matches/differs, creator matches/differs/unknown, and detection method.
+- Evidence can include same file contents, same package contents, same script contents, same filename, similar filename, version clue found, version differs, contents differ, size matches/differs, creator matches/differs/unknown, and detection method.
 - Cautions explicitly keep comparison manual and state when a row is not duplicate proof.
 - `get_file_detail`, Library row `has_duplicate`, Library duplicate filters, Home summary duplicate count, and Library summary duplicate count now count exact deterministic duplicates only.
-- Stale/malformed exact rows with missing hashes, mismatched hashes, self-pairs, missing file joins, or same canonical path pairs are ignored by duplicate counts and filters.
+- Stale/malformed exact rows with missing hashes, mismatched hashes, unavailable fingerprints, self-pairs, missing file joins, or same canonical path pairs are ignored by duplicate counts and filters.
 
 Known false-positive risks:
 
@@ -228,6 +234,7 @@ Known false-positive risks:
 
 Known false-negative risks:
 
+- Package/script fingerprints are only populated after a scan or rescan with `scanner-v21`; older indexed rows need refresh before this proof is available.
 - Same mod family with strongly different filenames may not be grouped.
 - Installed-vs-inbox version comparisons are not fully modeled by duplicate detection today.
 - Metadata-derived title/creator matches are not yet used as a bounded duplicate key.

@@ -19,7 +19,10 @@ use crate::{
     commands::emit_scan_progress,
     core::{
         bundle_detector, duplicate_detector,
-        file_inspector::{inspect_file, InspectionOutcome, THUMBNAIL_DEFERRED},
+        file_inspector::{
+            compute_content_fingerprint, inspect_file, ContentFingerprintOutcome,
+            InspectionOutcome, THUMBNAIL_DEFERRED,
+        },
         filename_parser::{detect_creator_hint, parse_filename, FilenameClassification},
     },
     database,
@@ -88,6 +91,11 @@ struct CachedFileRecord {
     safety_notes_json: String,
     parser_warnings_json: String,
     insights_json: String,
+    content_fingerprint: Option<String>,
+    content_fingerprint_kind: Option<String>,
+    content_fingerprint_version: Option<String>,
+    content_fingerprint_status: String,
+    content_fingerprint_error: Option<String>,
 }
 
 impl CachedFileRecord {
@@ -121,7 +129,8 @@ const SCAN_CACHE_FINGERPRINT_KEY: &str = "scan_cache_fingerprint";
 // Bump when stored inspection output meaning changes so unchanged files are re-inspected once.
 // v18: THUM (0x3C1AF1F2) thumbnail extraction added — all cached files must be re-inspected
 // v19: localthumbcache cached_thumbnail_preview added — all cached files must be re-inspected
-const SCAN_CACHE_VERSION: &str = "scanner-v20";
+// v21: package/script content fingerprints added — package/script rows must be re-inspected
+const SCAN_CACHE_VERSION: &str = "scanner-v21";
 
 pub fn library_scan_needs_refresh(
     connection: &Connection,
@@ -303,8 +312,10 @@ where
             "INSERT INTO files (
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
-                scan_session_id, relative_depth, safety_notes, parser_warnings, insights
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                scan_session_id, relative_depth, safety_notes, parser_warnings, insights,
+                content_fingerprint, content_fingerprint_kind, content_fingerprint_version,
+                content_fingerprint_status, content_fingerprint_error
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -680,7 +691,12 @@ fn load_cached_files(
                 relative_depth,
                 safety_notes,
                 parser_warnings,
-                insights
+                insights,
+                content_fingerprint,
+                content_fingerprint_kind,
+                content_fingerprint_version,
+                content_fingerprint_status,
+                content_fingerprint_error
              FROM files
              WHERE source_location IN ('mods', 'tray')"
         }
@@ -701,7 +717,12 @@ fn load_cached_files(
                 relative_depth,
                 safety_notes,
                 parser_warnings,
-                insights
+                insights,
+                content_fingerprint,
+                content_fingerprint_kind,
+                content_fingerprint_version,
+                content_fingerprint_status,
+                content_fingerprint_error
              FROM files
              WHERE source_location = 'mods'"
         }
@@ -722,7 +743,12 @@ fn load_cached_files(
                 relative_depth,
                 safety_notes,
                 parser_warnings,
-                insights
+                insights,
+                content_fingerprint,
+                content_fingerprint_kind,
+                content_fingerprint_version,
+                content_fingerprint_status,
+                content_fingerprint_error
              FROM files
              WHERE source_location = 'tray'"
         }
@@ -749,6 +775,13 @@ fn load_cached_files(
                 safety_notes_json: row.get(13)?,
                 parser_warnings_json: row.get(14)?,
                 insights_json: row.get(15)?,
+                content_fingerprint: row.get(16)?,
+                content_fingerprint_kind: row.get(17)?,
+                content_fingerprint_version: row.get(18)?,
+                content_fingerprint_status: row
+                    .get::<_, Option<String>>(19)?
+                    .unwrap_or_else(|| "not_attempted".to_owned()),
+                content_fingerprint_error: row.get(20)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1044,6 +1077,11 @@ fn insert_cached_file(
         &cached.safety_notes_json,
         &cached.parser_warnings_json,
         &cached.insights_json,
+        cached.content_fingerprint.as_deref(),
+        cached.content_fingerprint_kind.as_deref(),
+        cached.content_fingerprint_version.as_deref(),
+        &cached.content_fingerprint_status,
+        cached.content_fingerprint_error.as_deref(),
     ])?;
     let file_id = transaction.last_insert_rowid();
 
@@ -1074,6 +1112,25 @@ pub(crate) fn insert_parsed_file(
         Err(err) => {
             tracing::warn!("inspect_file failed for {}: {err}", file.path.display());
             Default::default()
+        }
+    };
+    let content_fingerprint = match compute_content_fingerprint(&file.path, &file.extension) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::warn!(
+                "content fingerprint unavailable for {}: {err}",
+                file.path
+                    .file_name()
+                    .map(|value| value.to_string_lossy())
+                    .unwrap_or_else(|| "<unknown>".into())
+            );
+            ContentFingerprintOutcome {
+                kind: None,
+                fingerprint: None,
+                version: None,
+                status: "failed".to_owned(),
+                error: Some("fingerprint unavailable".to_owned()),
+            }
         }
     };
     apply_folder_creator_hint(&mut classification, file, seed_pack);
@@ -1108,6 +1165,11 @@ pub(crate) fn insert_parsed_file(
         &safety_notes_json,
         &parser_warnings_json,
         &insights_json,
+        content_fingerprint.fingerprint.as_deref(),
+        content_fingerprint.kind.as_deref(),
+        content_fingerprint.version.as_deref(),
+        &content_fingerprint.status,
+        content_fingerprint.error.as_deref(),
     ])?;
     let file_id = transaction.last_insert_rowid();
 
@@ -1710,6 +1772,11 @@ mod tests {
                 safety_notes_json: "[]".to_owned(),
                 parser_warnings_json: "[]".to_owned(),
                 insights_json: "{}".to_owned(),
+                content_fingerprint: None,
+                content_fingerprint_kind: None,
+                content_fingerprint_version: None,
+                content_fingerprint_status: "not_attempted".to_owned(),
+                content_fingerprint_error: None,
             },
         );
 

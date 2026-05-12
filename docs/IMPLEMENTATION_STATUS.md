@@ -1,5 +1,45 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Duplicate Truth Engine v3 Fingerprints)
+
+This session adds a deeper deterministic duplicate proof layer without adding cleanup, delete, quarantine, safe-delete, AI, or automatic file actions.
+
+Important changes and findings:
+
+- added scan-time package content fingerprints for `.package` files when the DBPF index and bounded resource payloads can be read safely.
+- added scan-time script content fingerprints for `.ts4script` archives using normalized entry paths and entry payload hashes.
+- fixed DBPF record parsing so index values are assigned into `DbpfRecord`; package fingerprints use resource payload hashes, not resource keys alone.
+- added `files.content_fingerprint*` metadata plus `idx_files_content_fingerprint`.
+- bumped scanner cache to `scanner-v21`; old indexed package/script rows need a scan/rescan to populate fingerprints.
+- duplicate rebuild can now create exact duplicate rows from same file contents, same package contents, or same script contents.
+- Library duplicate counts, filters, and detail counts include exact package/script proof.
+- name matches, version reviews, same folder, same pack, and same mod family remain review-only.
+- no user files are moved, deleted, quarantined, replaced, or auto-sorted.
+
+Checks passed:
+
+- `npm run build` (existing Vite chunk-size warning remains)
+- `npx tsc --noEmit`
+- `npm run test:unit` (`23` files, `88` tests)
+- `cargo fmt`
+- `cargo check` (existing unused-code warnings remain)
+- `cargo test` (`251` passed, `2` ignored)
+- `cargo build --release` (existing unused-code warnings remain)
+- `npm run test:rust` (`251` passed, `2` ignored)
+- `cargo test --manifest-path src-tauri/Cargo.toml fingerprint -- --nocapture` (`12` focused tests)
+- `npm run test:library:stress`
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures` timed out after creating screenshots, so it is not counted as passed.
+- `npm run desktop:smoke:fixtures` built and launched the release app, then failed in the existing Downloads inbox fixture path with a query parameter mismatch and `MCCC_Update_Test` timeout.
+
+Important remaining gap:
+
+- real user package/script library coverage and scan-time cost have not been measured.
+- package/script fingerprints do not prove dependencies, missing meshes, broken content, update state, or safe deletion.
+- runtime proof is limited because proof did not complete and smoke is blocked by an existing Downloads inbox fixture/query issue outside the duplicate fingerprint path.
+
 ## Current session note (May 12, 2026 - Trust Boundaries and Automation Readiness v1)
 
 This session defines SimSuite's trust boundaries before future automation, sorting, updating, cleanup, quarantine, delete, or AI-assisted work.

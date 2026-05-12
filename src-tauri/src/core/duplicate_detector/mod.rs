@@ -31,6 +31,43 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
         params![],
     )?;
 
+    transaction.execute(
+        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+         SELECT a.id,
+                b.id,
+                'exact',
+                CASE LOWER(TRIM(a.content_fingerprint_kind))
+                    WHEN 'package' THEN 'package_fingerprint_v1'
+                    WHEN 'script' THEN 'script_fingerprint_v1'
+                    ELSE 'content_fingerprint_v1'
+                END,
+                CURRENT_TIMESTAMP
+         FROM files a
+         JOIN files b
+            ON LOWER(TRIM(a.content_fingerprint)) = LOWER(TRIM(b.content_fingerprint))
+           AND LOWER(TRIM(a.content_fingerprint_kind)) = LOWER(TRIM(b.content_fingerprint_kind))
+           AND a.id < b.id
+         WHERE TRIM(COALESCE(a.content_fingerprint, '')) <> ''
+           AND TRIM(COALESCE(b.content_fingerprint, '')) <> ''
+           AND LOWER(TRIM(COALESCE(a.content_fingerprint_kind, ''))) IN ('package', 'script')
+           AND LOWER(TRIM(COALESCE(b.content_fingerprint_kind, ''))) IN ('package', 'script')
+           AND LOWER(TRIM(COALESCE(a.content_fingerprint_status, ''))) = 'available'
+           AND LOWER(TRIM(COALESCE(b.content_fingerprint_status, ''))) = 'available'
+           AND TRIM(COALESCE(a.content_fingerprint_version, '')) <> ''
+           AND TRIM(COALESCE(b.content_fingerprint_version, '')) <> ''
+           AND LOWER(TRIM(a.content_fingerprint_version)) = LOWER(TRIM(b.content_fingerprint_version))
+           AND TRIM(COALESCE(a.path, '')) <> ''
+           AND TRIM(COALESCE(b.path, '')) <> ''
+           AND LOWER(REPLACE(TRIM(a.path), '/', '\\')) <> LOWER(REPLACE(TRIM(b.path), '/', '\\'))
+           AND NOT EXISTS (
+                SELECT 1
+                FROM duplicates existing
+                WHERE existing.file_id_a = a.id
+                  AND existing.file_id_b = b.id
+           )",
+        params![],
+    )?;
+
     insert_filename_duplicates(&transaction)?;
 
     insert_version_duplicates(&transaction)?;
@@ -42,7 +79,7 @@ pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
 }
 
 pub fn get_duplicate_overview(connection: &Connection) -> AppResult<DuplicateOverview> {
-    let exact_proof = exact_file_proof_sql("a", "b", "d");
+    let exact_proof = exact_duplicate_proof_sql("a", "b", "d");
     Ok(DuplicateOverview {
         total_pairs: scalar(
             connection,
@@ -92,7 +129,7 @@ pub fn list_duplicate_pairs(
     limit: i64,
 ) -> AppResult<Vec<DuplicatePair>> {
     let limit = limit.max(1);
-    let exact_proof = exact_file_proof_sql("a", "b", "d");
+    let exact_proof = exact_duplicate_proof_sql("a", "b", "d");
     let items = if let Some(duplicate_type) = duplicate_type.filter(|value| !value.is_empty()) {
         let duplicate_type = duplicate_type.trim().to_ascii_lowercase();
         let mut statement = connection.prepare(&format!(
@@ -113,7 +150,15 @@ pub fn list_duplicate_pairs(
                 cb.canonical_name,
                 b.hash,
                 b.modified_at,
-                b.size
+                b.size,
+                a.content_fingerprint_kind,
+                a.content_fingerprint,
+                a.content_fingerprint_version,
+                a.content_fingerprint_status,
+                b.content_fingerprint_kind,
+                b.content_fingerprint,
+                b.content_fingerprint_version,
+                b.content_fingerprint_status
              FROM duplicates d
              JOIN files a ON d.file_id_a = a.id
              JOIN files b ON d.file_id_b = b.id
@@ -150,7 +195,15 @@ pub fn list_duplicate_pairs(
                 cb.canonical_name,
                 b.hash,
                 b.modified_at,
-                b.size
+                b.size,
+                a.content_fingerprint_kind,
+                a.content_fingerprint,
+                a.content_fingerprint_version,
+                a.content_fingerprint_status,
+                b.content_fingerprint_kind,
+                b.content_fingerprint,
+                b.content_fingerprint_version,
+                b.content_fingerprint_status
              FROM duplicates d
              JOIN files a ON d.file_id_a = a.id
              JOIN files b ON d.file_id_b = b.id
@@ -191,6 +244,14 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
     let secondary_creator: Option<String> = row.get(13)?;
     let secondary_hash: Option<String> = row.get(14)?;
     let secondary_size: i64 = row.get(16)?;
+    let primary_content_kind: Option<String> = row.get(17)?;
+    let primary_content_fingerprint: Option<String> = row.get(18)?;
+    let primary_content_version: Option<String> = row.get(19)?;
+    let primary_content_status: Option<String> = row.get(20)?;
+    let secondary_content_kind: Option<String> = row.get(21)?;
+    let secondary_content_fingerprint: Option<String> = row.get(22)?;
+    let secondary_content_version: Option<String> = row.get(23)?;
+    let secondary_content_status: Option<String> = row.get(24)?;
     let intelligence = classify_duplicate_pair(
         &duplicate_type,
         &detection_method,
@@ -206,6 +267,14 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
         secondary_creator.as_deref(),
         secondary_hash.as_deref(),
         secondary_size,
+        primary_content_kind.as_deref(),
+        primary_content_fingerprint.as_deref(),
+        primary_content_version.as_deref(),
+        primary_content_status.as_deref(),
+        secondary_content_kind.as_deref(),
+        secondary_content_fingerprint.as_deref(),
+        secondary_content_version.as_deref(),
+        secondary_content_status.as_deref(),
     );
 
     Ok(DuplicatePair {
@@ -263,6 +332,14 @@ fn classify_duplicate_pair(
     secondary_creator: Option<&str>,
     secondary_hash: Option<&str>,
     secondary_size: i64,
+    primary_content_kind: Option<&str>,
+    primary_content_fingerprint: Option<&str>,
+    primary_content_version: Option<&str>,
+    primary_content_status: Option<&str>,
+    secondary_content_kind: Option<&str>,
+    secondary_content_fingerprint: Option<&str>,
+    secondary_content_version: Option<&str>,
+    secondary_content_status: Option<&str>,
 ) -> DuplicateIntelligence {
     let same_hash = hashes_match(primary_hash, secondary_hash);
     let exact_file_proof = exact_file_proof(
@@ -272,6 +349,20 @@ fn classify_duplicate_pair(
         secondary_file_id,
         secondary_path,
         secondary_hash,
+    );
+    let exact_content_fingerprint_proof = exact_content_fingerprint_proof(
+        primary_file_id,
+        primary_path,
+        primary_content_kind,
+        primary_content_fingerprint,
+        primary_content_version,
+        primary_content_status,
+        secondary_file_id,
+        secondary_path,
+        secondary_content_kind,
+        secondary_content_fingerprint,
+        secondary_content_version,
+        secondary_content_status,
     );
     let malformed_pair =
         primary_file_id <= 0 || secondary_file_id <= 0 || primary_file_id == secondary_file_id;
@@ -293,6 +384,22 @@ fn classify_duplicate_pair(
                 "duplicate",
                 "Duplicate",
                 "Same file contents",
+            )
+        } else if exact_content_fingerprint_proof.as_deref() == Some("package") {
+            (
+                true,
+                "exact_package",
+                "duplicate",
+                "Duplicate",
+                "Same package contents",
+            )
+        } else if exact_content_fingerprint_proof.as_deref() == Some("script") {
+            (
+                true,
+                "exact_script",
+                "duplicate",
+                "Duplicate",
+                "Same script contents",
             )
         } else if malformed_pair || missing_path || same_canonical_path {
             (
@@ -333,6 +440,22 @@ fn classify_duplicate_pair(
     let mut evidence = Vec::new();
     if exact_file_proof {
         evidence.push("Same file contents".to_owned());
+    } else if exact_content_fingerprint_proof.as_deref() == Some("package") {
+        evidence.push("Same package contents".to_owned());
+        if normalized_hash(primary_hash).is_some()
+            && normalized_hash(secondary_hash).is_some()
+            && !same_hash
+        {
+            evidence.push("Outer file hash differs".to_owned());
+        }
+    } else if exact_content_fingerprint_proof.as_deref() == Some("script") {
+        evidence.push("Same script contents".to_owned());
+        if normalized_hash(primary_hash).is_some()
+            && normalized_hash(secondary_hash).is_some()
+            && !same_hash
+        {
+            evidence.push("Outer file hash differs".to_owned());
+        }
     } else if same_hash {
         evidence.push("Matching hash needs manual review".to_owned());
     } else if normalized_hash(primary_hash).is_some() && normalized_hash(secondary_hash).is_some() {
@@ -432,11 +555,82 @@ fn exact_file_proof(
         && hashes_match(primary_hash, secondary_hash)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn exact_content_fingerprint_proof(
+    primary_file_id: i64,
+    primary_path: &str,
+    primary_kind: Option<&str>,
+    primary_fingerprint: Option<&str>,
+    primary_version: Option<&str>,
+    primary_status: Option<&str>,
+    secondary_file_id: i64,
+    secondary_path: &str,
+    secondary_kind: Option<&str>,
+    secondary_fingerprint: Option<&str>,
+    secondary_version: Option<&str>,
+    secondary_status: Option<&str>,
+) -> Option<String> {
+    if primary_file_id <= 0
+        || secondary_file_id <= 0
+        || primary_file_id == secondary_file_id
+        || path_missing(primary_path, secondary_path)
+        || same_canonical_path(primary_path, secondary_path)
+    {
+        return None;
+    }
+
+    if normalize_status(primary_status).as_deref() != Some("available")
+        || normalize_status(secondary_status).as_deref() != Some("available")
+    {
+        return None;
+    }
+
+    let primary_kind = normalize_content_kind(primary_kind)?;
+    let secondary_kind = normalize_content_kind(secondary_kind)?;
+    if primary_kind != secondary_kind {
+        return None;
+    }
+
+    let primary_version = normalize_text(primary_version)?;
+    let secondary_version = normalize_text(secondary_version)?;
+    if primary_version != secondary_version {
+        return None;
+    }
+
+    let primary_fingerprint = normalized_hash(primary_fingerprint)?;
+    let secondary_fingerprint = normalized_hash(secondary_fingerprint)?;
+    if primary_fingerprint != secondary_fingerprint {
+        return None;
+    }
+
+    Some(primary_kind)
+}
+
 fn normalized_hash(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_ascii_lowercase())
+}
+
+fn normalize_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn normalize_status(value: Option<&str>) -> Option<String> {
+    normalize_text(value)
+}
+
+fn normalize_content_kind(value: Option<&str>) -> Option<String> {
+    let normalized = normalize_text(value)?;
+    if matches!(normalized.as_str(), "package" | "script") {
+        Some(normalized)
+    } else {
+        None
+    }
 }
 
 fn same_canonical_path(primary_path: &str, secondary_path: &str) -> bool {
@@ -466,6 +660,39 @@ fn exact_file_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -
         right = right_alias,
         pair = pair_alias
     )
+}
+
+fn exact_content_fingerprint_proof_sql(
+    left_alias: &str,
+    right_alias: &str,
+    pair_alias: &str,
+) -> String {
+    format!(
+        "{pair}.file_id_a <> {pair}.file_id_b
+         AND TRIM(COALESCE({left}.content_fingerprint, '')) <> ''
+         AND TRIM(COALESCE({right}.content_fingerprint, '')) <> ''
+         AND LOWER(TRIM({left}.content_fingerprint)) = LOWER(TRIM({right}.content_fingerprint))
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) = LOWER(TRIM(COALESCE({right}.content_fingerprint_kind, '')))
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) IN ('package', 'script')
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_status, ''))) = 'available'
+         AND LOWER(TRIM(COALESCE({right}.content_fingerprint_status, ''))) = 'available'
+         AND TRIM(COALESCE({left}.content_fingerprint_version, '')) <> ''
+         AND TRIM(COALESCE({right}.content_fingerprint_version, '')) <> ''
+         AND LOWER(TRIM({left}.content_fingerprint_version)) = LOWER(TRIM({right}.content_fingerprint_version))
+         AND TRIM(COALESCE({left}.path, '')) <> ''
+         AND TRIM(COALESCE({right}.path, '')) <> ''
+         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+        left = left_alias,
+        right = right_alias,
+        pair = pair_alias
+    )
+}
+
+fn exact_duplicate_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+    let file_proof = exact_file_proof_sql(left_alias, right_alias, pair_alias);
+    let fingerprint_proof =
+        exact_content_fingerprint_proof_sql(left_alias, right_alias, pair_alias);
+    format!("(({file_proof}) OR ({fingerprint_proof}))")
 }
 
 fn normalize_creator(value: Option<&str>) -> Option<String> {
@@ -805,6 +1032,26 @@ mod tests {
             .expect("insert duplicate row");
     }
 
+    fn set_content_fingerprint(
+        connection: &Connection,
+        file_id: i64,
+        kind: &str,
+        fingerprint: &str,
+    ) {
+        connection
+            .execute(
+                "UPDATE files
+                 SET content_fingerprint_kind = ?1,
+                     content_fingerprint = ?2,
+                     content_fingerprint_version = 'v1',
+                     content_fingerprint_status = 'available',
+                     content_fingerprint_error = NULL
+                 WHERE id = ?3",
+                params![kind, fingerprint, file_id],
+            )
+            .expect("set fingerprint");
+    }
+
     #[test]
     fn rebuild_duplicates_detects_exact_filename_and_version_pairs() {
         let mut connection = Connection::open_in_memory().expect("db");
@@ -888,6 +1135,74 @@ mod tests {
         assert!(!pairs[0]
             .cautions
             .contains(&"This is not duplicate proof".to_owned()));
+    }
+
+    #[test]
+    fn exact_package_fingerprint_pair_returns_duplicate_classification() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "outer-a.package", Some("outer-a"), 100);
+        let right = insert_file(&connection, "outer-b.package", Some("outer-b"), 120);
+        set_content_fingerprint(&connection, left, "package", "package-fingerprint");
+        set_content_fingerprint(&connection, right, "package", "package-fingerprint");
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let pairs = list_duplicate_pairs(&connection, Some("exact".to_owned()), 10).expect("pairs");
+
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "exact_package");
+        assert_eq!(pairs[0].classification_label, "Duplicate");
+        assert!(pairs[0]
+            .evidence
+            .contains(&"Same package contents".to_owned()));
+    }
+
+    #[test]
+    fn exact_script_fingerprint_pair_returns_duplicate_classification() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "outer-a.ts4script", Some("outer-a"), 100);
+        let right = insert_file(&connection, "outer-b.ts4script", Some("outer-b"), 120);
+        set_content_fingerprint(&connection, left, "script", "script-fingerprint");
+        set_content_fingerprint(&connection, right, "script", "script-fingerprint");
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let pairs = list_duplicate_pairs(&connection, Some("exact".to_owned()), 10).expect("pairs");
+
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "exact_script");
+        assert_eq!(pairs[0].classification_label, "Duplicate");
+        assert!(pairs[0]
+            .evidence
+            .contains(&"Same script contents".to_owned()));
+    }
+
+    #[test]
+    fn package_fingerprint_requires_payload_match_and_available_status() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "left.package", Some("outer-a"), 100);
+        let right = insert_file(&connection, "right.package", Some("outer-b"), 120);
+        let failed = insert_file(&connection, "failed.package", Some("outer-c"), 120);
+        set_content_fingerprint(&connection, left, "package", "package-a");
+        set_content_fingerprint(&connection, right, "package", "package-b");
+        set_content_fingerprint(&connection, failed, "package", "package-a");
+        connection
+            .execute(
+                "UPDATE files SET content_fingerprint_status = 'failed' WHERE id = ?1",
+                params![failed],
+            )
+            .expect("mark failed");
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let overview = get_duplicate_overview(&connection).expect("overview");
+
+        assert_eq!(overview.exact_pairs, 0);
     }
 
     #[test]

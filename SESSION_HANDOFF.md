@@ -1,5 +1,54 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Duplicate Truth Engine v3 Fingerprints)
+
+- **Mode**: code
+- **Focus**: add deterministic scan-time package/script content fingerprints without weakening duplicate trust boundaries
+
+### Progress Made
+
+1. **Added deterministic content fingerprints**:
+   - `.package` fingerprints use DBPF resource type, group, instance IDs, and bounded resource payload hashes in stable sorted order
+   - `.ts4script` fingerprints use normalized archive entry paths and entry payload hashes in stable sorted order
+   - corrupt, partial, empty, unreadable, oversized, or unsupported files do not get duplicate proof
+
+2. **Connected fingerprints to exact duplicate truth**:
+   - added `files.content_fingerprint*` metadata and `idx_files_content_fingerprint`
+   - scanner cache bumped to `scanner-v21` so package/script rows are refreshed once
+   - duplicate rebuild now emits exact rows from full-file hash, package fingerprint, or script fingerprint proof
+   - Library duplicate counts, filters, and file detail duplicate counts now include exact package/script proof
+
+3. **Preserved trust boundaries**:
+   - no cleanup, delete, quarantine, safe-delete, automatic move, update replacement, dependency, missing-mesh, or AI behavior was added
+   - name matches and version reviews remain non-duplicate comparison categories
+   - exact duplicate evidence is still not a safe-delete instruction
+
+### Verification
+
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `88` tests).
+- `cargo fmt`: passed.
+- `cargo check`: passed with existing unused-code warnings.
+- `cargo test`: passed (`251` passed, `2` ignored).
+- `cargo build --release`: passed with existing unused-code warnings.
+- `npm run test:rust`: passed (`251` passed, `2` ignored).
+- `npm run test:library:stress`: passed. The 10,000-row Library stress paths stayed bounded; duplicate review-group stress remained comparatively heavy at about `35.8s`.
+- `npm run desktop:proof:fixtures`: timed out after screenshots were created, so it is not counted as passed.
+- `npm run desktop:smoke:fixtures`: built and launched the release app, then failed in the existing Downloads inbox fixture path with a query parameter mismatch and `MCCC_Update_Test` timeout.
+
+### Known Problems / Gaps
+
+- Existing indexed package/script rows need a scan/rescan to populate the new fingerprints.
+- Real user libraries were not scanned or benchmarked for package/script fingerprint coverage.
+- Package/script fingerprints do not prove dependencies, missing meshes, broken content, update state, or safe deletion.
+- Desktop runtime proof is limited this sprint because proof timed out and smoke is blocked by an existing Downloads inbox fixture/query issue outside the duplicate fingerprint path.
+
+### Next Best Step
+
+1. Commit the fingerprint sprint after staging only sprint-relevant files.
+2. Next backend implementation candidate: Staging backend safety/readiness audit, or Auto Sorting Suggested Plan v1 as preview-only with no file movement unless confirmed.
+
 ## Current Session (May 12, 2026 - Trust Boundaries and Automation Readiness v1)
 
 - **Mode**: code

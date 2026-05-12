@@ -1735,11 +1735,43 @@ fn exact_duplicate_for_file_sql(file_expr: &str) -> String {
 }
 
 fn exact_duplicate_pair_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+    let file_proof = exact_file_duplicate_pair_sql(left_alias, right_alias, pair_alias);
+    let fingerprint_proof = exact_content_fingerprint_pair_sql(left_alias, right_alias, pair_alias);
+    format!("(({file_proof}) OR ({fingerprint_proof}))")
+}
+
+fn exact_file_duplicate_pair_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
     format!(
         "{pair}.file_id_a <> {pair}.file_id_b
          AND TRIM(COALESCE({left}.hash, '')) <> ''
          AND TRIM(COALESCE({right}.hash, '')) <> ''
          AND LOWER(TRIM({left}.hash)) = LOWER(TRIM({right}.hash))
+         AND TRIM(COALESCE({left}.path, '')) <> ''
+         AND TRIM(COALESCE({right}.path, '')) <> ''
+         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+        left = left_alias,
+        right = right_alias,
+        pair = pair_alias
+    )
+}
+
+fn exact_content_fingerprint_pair_sql(
+    left_alias: &str,
+    right_alias: &str,
+    pair_alias: &str,
+) -> String {
+    format!(
+        "{pair}.file_id_a <> {pair}.file_id_b
+         AND TRIM(COALESCE({left}.content_fingerprint, '')) <> ''
+         AND TRIM(COALESCE({right}.content_fingerprint, '')) <> ''
+         AND LOWER(TRIM({left}.content_fingerprint)) = LOWER(TRIM({right}.content_fingerprint))
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) = LOWER(TRIM(COALESCE({right}.content_fingerprint_kind, '')))
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) IN ('package', 'script')
+         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_status, ''))) = 'available'
+         AND LOWER(TRIM(COALESCE({right}.content_fingerprint_status, ''))) = 'available'
+         AND TRIM(COALESCE({left}.content_fingerprint_version, '')) <> ''
+         AND TRIM(COALESCE({right}.content_fingerprint_version, '')) <> ''
+         AND LOWER(TRIM({left}.content_fingerprint_version)) = LOWER(TRIM({right}.content_fingerprint_version))
          AND TRIM(COALESCE({left}.path, '')) <> ''
          AND TRIM(COALESCE({right}.path, '')) <> ''
          AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
@@ -2290,6 +2322,46 @@ mod tests {
         .expect("exact listing");
         assert_eq!(exact_listing.total, 1);
         assert!(exact_listing.items[0].has_duplicate);
+    }
+
+    #[test]
+    fn duplicate_library_counts_include_exact_package_fingerprints() {
+        let (connection, settings, seed_pack) = setup_library_env();
+
+        connection
+            .execute(
+                "UPDATE files
+                 SET content_fingerprint_kind = 'package',
+                     content_fingerprint = 'same-package-fingerprint',
+                     content_fingerprint_version = 'v1',
+                     content_fingerprint_status = 'available'
+                 WHERE id IN (1, 2)",
+                [],
+            )
+            .expect("set package fingerprints");
+        connection
+            .execute(
+                "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
+                 VALUES (1, 2, 'exact', 'package_fingerprint_v1')",
+                [],
+            )
+            .expect("insert package fingerprint duplicate");
+
+        let detail = get_file_detail(&connection, &settings, &seed_pack, 1)
+            .expect("detail")
+            .expect("installed detail");
+        assert_eq!(detail.duplicates_count, 1);
+
+        let listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                watch_filter: Some(LibraryWatchFilter::Duplicates),
+                ..Default::default()
+            },
+        )
+        .expect("duplicate listing");
+        assert_eq!(listing.total, 1);
+        assert!(listing.items[0].has_duplicate);
     }
 
     #[test]

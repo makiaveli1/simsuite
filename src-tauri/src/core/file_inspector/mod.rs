@@ -12,6 +12,7 @@ use tracing::{debug, warn};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use flate2::read::ZlibDecoder;
 use image::{DynamicImage, ImageBuffer, ImageEncoder, Rgba};
+use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::{
@@ -27,6 +28,9 @@ const MAX_RESOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_ENTRIES: usize = 256;
 const MAX_SCRIPT_HINT_ENTRIES: usize = 16;
 const MAX_SCRIPT_HINT_BYTES: u64 = 128 * 1024;
+const MAX_SCRIPT_FINGERPRINT_ENTRIES: usize = 512;
+const MAX_SCRIPT_FINGERPRINT_ENTRY_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_SCRIPT_FINGERPRINT_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_DISPLAY_VALUES: usize = 8;
 const MAX_CREATOR_HINTS: usize = 4;
 const MAX_VERSION_SIGNALS: usize = 16;
@@ -182,6 +186,47 @@ pub struct InspectionOutcome {
     pub kind_confidence_floor: f64,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContentFingerprintOutcome {
+    pub kind: Option<String>,
+    pub fingerprint: Option<String>,
+    pub version: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+impl ContentFingerprintOutcome {
+    fn available(kind: &str, fingerprint: String) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            fingerprint: Some(fingerprint),
+            version: Some("v1".to_owned()),
+            status: "available".to_owned(),
+            error: None,
+        }
+    }
+
+    fn failed(kind: &str, error: impl Into<String>) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            fingerprint: None,
+            version: Some("v1".to_owned()),
+            status: "failed".to_owned(),
+            error: Some(sanitize_fingerprint_error(error.into())),
+        }
+    }
+
+    fn unsupported() -> Self {
+        Self {
+            kind: None,
+            fingerprint: None,
+            version: None,
+            status: "unsupported".to_owned(),
+            error: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DbpfHeader {
     record_count: u32,
@@ -192,6 +237,9 @@ struct DbpfHeader {
 #[derive(Debug, Clone, Copy)]
 struct DbpfRecord {
     resource_type: u32,
+    group_id: u32,
+    instance_id_high: u32,
+    instance_id_low: u32,
     offset: u32,
     packed_size: u32,
     mem_size: u32,
@@ -201,6 +249,17 @@ struct DbpfRecord {
 impl DbpfRecord {
     fn is_compressed(&self) -> bool {
         self.compressed != 0 || (self.mem_size > 0 && self.mem_size != self.packed_size)
+    }
+}
+
+pub fn compute_content_fingerprint(
+    path: &Path,
+    extension: &str,
+) -> AppResult<ContentFingerprintOutcome> {
+    match extension {
+        ".ts4script" => Ok(compute_script_content_fingerprint(path)),
+        ".package" => Ok(compute_package_content_fingerprint(path)),
+        _ => Ok(ContentFingerprintOutcome::unsupported()),
     }
 }
 
@@ -215,6 +274,159 @@ pub fn inspect_file(
         ".package" => inspect_package(path, seed_pack, defer_thumbnails),
         _ => Ok(InspectionOutcome::default()),
     }
+}
+
+fn compute_script_content_fingerprint(path: &Path) -> ContentFingerprintOutcome {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) => return ContentFingerprintOutcome::failed("script", error.to_string()),
+    };
+    let mut archive = match ZipArchive::new(file) {
+        Ok(archive) => archive,
+        Err(error) => return ContentFingerprintOutcome::failed("script", error.to_string()),
+    };
+
+    if archive.len() == 0 {
+        return ContentFingerprintOutcome::failed("script", "archive has no entries");
+    }
+    if archive.len() > MAX_SCRIPT_FINGERPRINT_ENTRIES {
+        return ContentFingerprintOutcome::failed("script", "archive has too many entries");
+    }
+
+    let mut entries = Vec::new();
+    let mut total_payload_bytes = 0_u64;
+    let mut seen_paths = BTreeSet::new();
+
+    for index in 0..archive.len() {
+        let mut entry = match archive.by_index(index) {
+            Ok(entry) => entry,
+            Err(error) => return ContentFingerprintOutcome::failed("script", error.to_string()),
+        };
+        if entry.is_dir() {
+            continue;
+        }
+
+        let Some(normalized_path) = normalize_script_fingerprint_path(entry.name()) else {
+            continue;
+        };
+        if !seen_paths.insert(normalized_path.clone()) {
+            return ContentFingerprintOutcome::failed("script", "archive contains duplicate paths");
+        }
+
+        let entry_size = entry.size();
+        if entry_size > MAX_SCRIPT_FINGERPRINT_ENTRY_BYTES {
+            return ContentFingerprintOutcome::failed("script", "archive entry is too large");
+        }
+        total_payload_bytes = total_payload_bytes.saturating_add(entry_size);
+        if total_payload_bytes > MAX_SCRIPT_FINGERPRINT_TOTAL_BYTES {
+            return ContentFingerprintOutcome::failed("script", "archive payload is too large");
+        }
+
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 16 * 1024];
+        let mut read_bytes = 0_u64;
+        loop {
+            let read = match entry.read(&mut buffer) {
+                Ok(read) => read,
+                Err(error) => {
+                    return ContentFingerprintOutcome::failed("script", error.to_string())
+                }
+            };
+            if read == 0 {
+                break;
+            }
+            read_bytes = read_bytes.saturating_add(read as u64);
+            if read_bytes > MAX_SCRIPT_FINGERPRINT_ENTRY_BYTES {
+                return ContentFingerprintOutcome::failed("script", "archive entry is too large");
+            }
+            hasher.update(&buffer[..read]);
+        }
+        let payload_hash = hex_digest(hasher.finalize().as_slice());
+        entries.push((normalized_path, read_bytes, payload_hash));
+    }
+
+    if entries.is_empty() {
+        return ContentFingerprintOutcome::failed(
+            "script",
+            "archive has no fingerprintable entries",
+        );
+    }
+
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut hasher = Sha256::new();
+    hasher.update(b"simsuite-script-content-fingerprint-v1");
+    hasher.update((entries.len() as u64).to_le_bytes());
+    for (path, size, payload_hash) in entries {
+        hasher.update((path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update(size.to_le_bytes());
+        hasher.update(payload_hash.as_bytes());
+    }
+
+    ContentFingerprintOutcome::available("script", hex_digest(hasher.finalize().as_slice()))
+}
+
+fn compute_package_content_fingerprint(path: &Path) -> ContentFingerprintOutcome {
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) => return ContentFingerprintOutcome::failed("package", error.to_string()),
+    };
+    let header = match parse_dbpf_header(&mut file) {
+        Ok(header) => header,
+        Err(error) => return ContentFingerprintOutcome::failed("package", error.to_string()),
+    };
+    let records = match parse_dbpf_records(&mut file, header) {
+        Ok(records) => records,
+        Err(error) => return ContentFingerprintOutcome::failed("package", error.to_string()),
+    };
+
+    if records.is_empty() {
+        return ContentFingerprintOutcome::failed("package", "package has no records");
+    }
+    if records.len() != header.record_count as usize {
+        return ContentFingerprintOutcome::failed("package", "package index is incomplete");
+    }
+
+    let mut entries = Vec::with_capacity(records.len());
+    for record in &records {
+        if record.packed_size == 0 || record.packed_size as usize > MAX_RESOURCE_BYTES {
+            return ContentFingerprintOutcome::failed("package", "resource payload is too large");
+        }
+        let payload = match read_record_bytes(path, &mut file, record) {
+            Ok(payload) => payload,
+            Err(error) => return ContentFingerprintOutcome::failed("package", error.to_string()),
+        };
+        if payload.is_empty() {
+            return ContentFingerprintOutcome::failed(
+                "package",
+                "resource payload could not be read",
+            );
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(&payload);
+        entries.push((
+            record.resource_type,
+            record.group_id,
+            record.instance_id_high,
+            record.instance_id_low,
+            hex_digest(hasher.finalize().as_slice()),
+        ));
+    }
+
+    entries.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(b"simsuite-package-content-fingerprint-v1");
+    hasher.update((entries.len() as u64).to_le_bytes());
+    for (resource_type, group_id, instance_id_high, instance_id_low, payload_hash) in entries {
+        hasher.update(resource_type.to_le_bytes());
+        hasher.update(group_id.to_le_bytes());
+        hasher.update(instance_id_high.to_le_bytes());
+        hasher.update(instance_id_low.to_le_bytes());
+        hasher.update(payload_hash.as_bytes());
+    }
+
+    ContentFingerprintOutcome::available("package", hex_digest(hasher.finalize().as_slice()))
 }
 
 fn inspect_ts4script(path: &Path, seed_pack: &SeedPack) -> AppResult<InspectionOutcome> {
@@ -856,6 +1068,52 @@ fn collect_family_hints<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<St
     hints.into_iter().take(MAX_DISPLAY_VALUES).collect()
 }
 
+fn normalize_script_fingerprint_path(path: &str) -> Option<String> {
+    let mut normalized = path.trim().replace('\\', "/");
+    while let Some(stripped) = normalized.strip_prefix("./") {
+        normalized = stripped.to_owned();
+    }
+    normalized = normalized
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/");
+    let lowered = normalized.to_ascii_lowercase();
+    if lowered.is_empty()
+        || lowered.starts_with("__macosx/")
+        || lowered == "__macosx"
+        || lowered.ends_with("/.ds_store")
+        || lowered == ".ds_store"
+    {
+        return None;
+    }
+
+    Some(lowered)
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
+fn sanitize_fingerprint_error(error: String) -> String {
+    let first_line = error.lines().next().unwrap_or_default().trim();
+    let cleaned = first_line
+        .replace('\\', "/")
+        .split('/')
+        .next_back()
+        .unwrap_or(first_line)
+        .trim()
+        .to_owned();
+    if cleaned.is_empty() {
+        "fingerprint unavailable".to_owned()
+    } else {
+        cleaned.chars().take(120).collect()
+    }
+}
+
 fn parse_dbpf_header(file: &mut File) -> AppResult<DbpfHeader> {
     let mut header = [0_u8; DBPF_HEADER_SIZE];
     file.seek(SeekFrom::Start(0))?;
@@ -914,6 +1172,11 @@ fn read_index_buffer(file: &mut File, header_offset: u32, index_size: u32) -> Ap
         let mut buf = vec![0_u8; to_read];
         file.seek(SeekFrom::Start(header_offset as u64))?;
         file.read_exact(&mut buf)?;
+        if (index_size as usize) <= buf.len() {
+            if let Some(dec) = try_zlib_decompress(&buf[..index_size as usize]) {
+                return Ok(dec);
+            }
+        }
         if let Some(dec) = try_zlib_decompress(&buf) {
             return Ok(dec);
         }
@@ -927,6 +1190,11 @@ fn read_index_buffer(file: &mut File, header_offset: u32, index_size: u32) -> Ap
         file.seek(SeekFrom::Start(BASE96))?;
         let n = file.read(&mut buf)?;
         buf.truncate(n);
+        if (index_size as usize) <= buf.len() {
+            if let Some(dec) = try_zlib_decompress(&buf[..index_size as usize]) {
+                return Ok(dec);
+            }
+        }
         try_zlib_decompress(&buf).ok_or_else(|| {
             AppError::Message("DBPF index: zlib decompression failed at byte 96".to_owned())
         })
@@ -963,10 +1231,13 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
         let mut values = common_values;
         for (index, value) in values.iter_mut().enumerate() {
             if ((common_mask >> index) & 1) == 0 {
-                if read_u32_from_cursor(&mut cursor).is_err() {
-                    // Ran past end of buffer — stop silently (incomplete/truncated index)
-                    return Ok(records);
-                }
+                *value = match read_u32_from_cursor(&mut cursor) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        // Ran past end of buffer — stop silently (incomplete/truncated index)
+                        return Ok(records);
+                    }
+                };
             }
         }
 
@@ -981,6 +1252,9 @@ fn parse_dbpf_records(file: &mut File, header: DbpfHeader) -> AppResult<Vec<Dbpf
 
         records.push(DbpfRecord {
             resource_type: values[0],
+            group_id: values[1],
+            instance_id_high: values[2],
+            instance_id_low: values[3],
             offset: values[4],
             packed_size: values[5],
             mem_size: values[6],
@@ -1100,9 +1374,13 @@ fn read_record_bytes(path: &Path, file: &mut File, record: &DbpfRecord) -> AppRe
 
     // Hard bounds check before any seek/read.
     if offset >= file_size || offset.saturating_add(packed) > file_size {
+        let package_name = path
+            .file_name()
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_else(|| "<unknown>".into());
         tracing::warn!(
-            "Skipping out-of-bounds DBPF record in {}: type=0x{:08X} offset={} packed={} file_size={}",
-            path.display(),
+            "Skipping out-of-bounds DBPF record in package {}: type=0x{:08X} offset={} packed={} file_size={}",
+            package_name,
             record.resource_type,
             offset,
             packed,
@@ -2499,10 +2777,10 @@ mod tests {
     use crate::seed::load_seed_pack;
 
     use super::{
-        build_resource_summary, decompress_legacy, decompress_record_bytes,
-        infer_kind_from_package_signals, infer_kind_from_resources, inspect_file,
-        parse_name_map_entries, parse_stbl_entries, read_seven_bit_string_be, DbpfRecord,
-        RESOURCE_CAS_PART, RESOURCE_CATALOG, RESOURCE_DEFINITION, RESOURCE_SKINTONE,
+        build_resource_summary, compute_content_fingerprint, decompress_legacy,
+        decompress_record_bytes, infer_kind_from_package_signals, infer_kind_from_resources,
+        inspect_file, parse_name_map_entries, parse_stbl_entries, read_seven_bit_string_be,
+        DbpfRecord, RESOURCE_CAS_PART, RESOURCE_CATALOG, RESOURCE_DEFINITION, RESOURCE_SKINTONE,
         RESOURCE_STRING_TABLE,
     };
 
@@ -2570,6 +2848,167 @@ mod tests {
             .any(|value| value == "twistedmexi"));
 
         fs::remove_file(filepath).expect("cleanup");
+    }
+
+    fn write_script_archive(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(path).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        for (name, payload) in entries {
+            writer.start_file(*name, options).expect("start");
+            writer.write_all(payload).expect("write");
+        }
+        writer.finish().expect("finish");
+    }
+
+    #[test]
+    fn script_content_fingerprint_ignores_zip_entry_order() {
+        let temp = tempdir().expect("tempdir");
+        let first = temp.path().join("first.ts4script");
+        let second = temp.path().join("second.ts4script");
+
+        write_script_archive(
+            &first,
+            &[
+                ("mod/main.py", b"print('same')"),
+                ("mod/lib.py", b"VALUE = 42"),
+            ],
+        );
+        write_script_archive(
+            &second,
+            &[
+                ("mod/lib.py", b"VALUE = 42"),
+                ("mod/main.py", b"print('same')"),
+            ],
+        );
+
+        let left = compute_content_fingerprint(&first, ".ts4script").expect("fingerprint left");
+        let right = compute_content_fingerprint(&second, ".ts4script").expect("fingerprint right");
+
+        assert_eq!(left.kind.as_deref(), Some("script"));
+        assert_eq!(left.status, "available", "{left:?}");
+        assert_eq!(left.fingerprint, right.fingerprint);
+    }
+
+    #[test]
+    fn script_content_fingerprint_changes_when_payload_changes() {
+        let temp = tempdir().expect("tempdir");
+        let first = temp.path().join("first.ts4script");
+        let second = temp.path().join("second.ts4script");
+
+        write_script_archive(&first, &[("mod/main.py", b"print('same')")]);
+        write_script_archive(&second, &[("mod/main.py", b"print('different')")]);
+
+        let left = compute_content_fingerprint(&first, ".ts4script").expect("fingerprint left");
+        let right = compute_content_fingerprint(&second, ".ts4script").expect("fingerprint right");
+
+        assert_ne!(left.fingerprint, right.fingerprint, "{left:?} {right:?}");
+    }
+
+    #[test]
+    fn corrupt_script_archive_has_no_duplicate_fingerprint() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("broken.ts4script");
+        fs::write(&path, b"not a zip").expect("write");
+
+        let outcome = compute_content_fingerprint(&path, ".ts4script").expect("fingerprint");
+
+        assert_eq!(outcome.kind.as_deref(), Some("script"));
+        assert_eq!(outcome.status, "failed");
+        assert!(outcome.fingerprint.is_none());
+    }
+
+    fn write_test_dbpf_package(path: &Path, resources: &[(u32, u32, u32, u32, &[u8])]) {
+        let mut index = Vec::new();
+        index.extend_from_slice(&0_u32.to_le_bytes());
+        let mut payload_offset = 512_u32;
+        for (resource_type, group, instance_high, instance_low, payload) in resources {
+            index.extend_from_slice(&resource_type.to_le_bytes());
+            index.extend_from_slice(&group.to_le_bytes());
+            index.extend_from_slice(&instance_high.to_le_bytes());
+            index.extend_from_slice(&instance_low.to_le_bytes());
+            index.extend_from_slice(&payload_offset.to_le_bytes());
+            index.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            index.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            index.extend_from_slice(&0_u32.to_le_bytes());
+            payload_offset += payload.len() as u32;
+        }
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&index).expect("compress write");
+        let compressed_index = encoder.finish().expect("compress finish");
+
+        let mut bytes = vec![0_u8; 96];
+        bytes[0..4].copy_from_slice(b"DBPF");
+        bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&1_u32.to_le_bytes());
+        bytes[12..16].copy_from_slice(&96_u32.to_le_bytes());
+        bytes[36..40].copy_from_slice(&(resources.len() as u32).to_le_bytes());
+        bytes[44..48].copy_from_slice(&(compressed_index.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&compressed_index);
+        bytes.resize(512, 0);
+        for (_, _, _, _, payload) in resources {
+            bytes.extend_from_slice(payload);
+        }
+
+        fs::write(path, bytes).expect("write package");
+    }
+
+    #[test]
+    fn package_content_fingerprint_ignores_dbpf_resource_order() {
+        let temp = tempdir().expect("tempdir");
+        let first = temp.path().join("first.package");
+        let second = temp.path().join("second.package");
+
+        write_test_dbpf_package(
+            &first,
+            &[
+                (RESOURCE_STRING_TABLE, 1, 0, 10, b"strings"),
+                (RESOURCE_CATALOG, 1, 0, 20, b"catalog"),
+            ],
+        );
+        write_test_dbpf_package(
+            &second,
+            &[
+                (RESOURCE_CATALOG, 1, 0, 20, b"catalog"),
+                (RESOURCE_STRING_TABLE, 1, 0, 10, b"strings"),
+            ],
+        );
+
+        let left = compute_content_fingerprint(&first, ".package").expect("fingerprint left");
+        let right = compute_content_fingerprint(&second, ".package").expect("fingerprint right");
+
+        assert_eq!(left.kind.as_deref(), Some("package"));
+        assert_eq!(left.status, "available", "{left:?}");
+        assert_eq!(left.fingerprint, right.fingerprint, "{left:?} {right:?}");
+    }
+
+    #[test]
+    fn package_content_fingerprint_uses_payload_hash_not_resource_keys_only() {
+        let temp = tempdir().expect("tempdir");
+        let first = temp.path().join("first.package");
+        let second = temp.path().join("second.package");
+
+        write_test_dbpf_package(&first, &[(RESOURCE_STRING_TABLE, 1, 0, 10, b"strings")]);
+        write_test_dbpf_package(&second, &[(RESOURCE_STRING_TABLE, 1, 0, 10, b"different")]);
+
+        let left = compute_content_fingerprint(&first, ".package").expect("fingerprint left");
+        let right = compute_content_fingerprint(&second, ".package").expect("fingerprint right");
+
+        assert_ne!(left.fingerprint, right.fingerprint);
+    }
+
+    #[test]
+    fn corrupt_package_has_no_duplicate_fingerprint() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("broken.package");
+        fs::write(&path, b"not dbpf").expect("write");
+
+        let outcome = compute_content_fingerprint(&path, ".package").expect("fingerprint");
+
+        assert_eq!(outcome.kind.as_deref(), Some("package"));
+        assert_eq!(outcome.status, "failed");
+        assert!(outcome.fingerprint.is_none());
     }
 
     #[test]
@@ -2809,6 +3248,9 @@ mod tests {
         let compressed = encoder.finish().expect("finish");
         let record = DbpfRecord {
             resource_type: RESOURCE_STRING_TABLE,
+            group_id: 0,
+            instance_id_high: 0,
+            instance_id_low: 0,
             offset: 0,
             packed_size: compressed.len() as u32,
             mem_size: 7,

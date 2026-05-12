@@ -638,8 +638,8 @@ function duplicateStageHeadline(pair: DuplicatePair, userView: UserView) {
     case "exact_package":
     case "exact_script":
       return userView === "beginner"
-        ? "SimSuite matched the file contents. Compare folders and backups before changing anything."
-        : "This pair has same-file-content evidence, so path and folder context should carry most of the review.";
+        ? "SimSuite matched the contents. Compare folders and backups before changing anything."
+        : "This pair has same-content evidence, so path and folder context should carry most of the review.";
     case "name_match_review":
       return userView === "beginner"
         ? "These names match, but SimSuite did not find same-content duplicate proof."

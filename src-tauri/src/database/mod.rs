@@ -830,6 +830,16 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "insights",
         "TEXT NOT NULL DEFAULT '{}'",
     )?;
+    ensure_column(connection, "files", "content_fingerprint", "TEXT")?;
+    ensure_column(connection, "files", "content_fingerprint_kind", "TEXT")?;
+    ensure_column(connection, "files", "content_fingerprint_version", "TEXT")?;
+    ensure_column(
+        connection,
+        "files",
+        "content_fingerprint_status",
+        "TEXT NOT NULL DEFAULT 'not_attempted'",
+    )?;
+    ensure_column(connection, "files", "content_fingerprint_error", "TEXT")?;
     ensure_column(connection, "files", "download_item_id", "INTEGER")?;
     ensure_column(connection, "files", "source_origin_path", "TEXT")?;
     ensure_column(connection, "files", "archive_member_path", "TEXT")?;
@@ -938,6 +948,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
          CREATE INDEX IF NOT EXISTS idx_files_source_location_filename ON files (source_location, filename);
          CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
          CREATE INDEX IF NOT EXISTS idx_files_relative_depth ON files (relative_depth);
+         CREATE INDEX IF NOT EXISTS idx_files_content_fingerprint ON files (content_fingerprint_kind, content_fingerprint);
          CREATE INDEX IF NOT EXISTS idx_library_folders_source_location ON library_folders (source_location);
          CREATE INDEX IF NOT EXISTS idx_library_folders_source_path ON library_folders (source_location, normalized_relative_path);
          CREATE INDEX IF NOT EXISTS idx_library_folders_source_parent ON library_folders (source_location, parent_normalized_relative_path);
@@ -1585,6 +1596,11 @@ mod tests {
         assert!(columns.contains(&"source_origin_path".to_owned()));
         assert!(columns.contains(&"archive_member_path".to_owned()));
         assert!(columns.contains(&"insights".to_owned()));
+        assert!(columns.contains(&"content_fingerprint".to_owned()));
+        assert!(columns.contains(&"content_fingerprint_kind".to_owned()));
+        assert!(columns.contains(&"content_fingerprint_version".to_owned()));
+        assert!(columns.contains(&"content_fingerprint_status".to_owned()));
+        assert!(columns.contains(&"content_fingerprint_error".to_owned()));
 
         let index_exists: Option<String> = connection
             .query_row(
@@ -1597,6 +1613,21 @@ mod tests {
             .optional()
             .expect("index lookup");
         assert_eq!(index_exists.as_deref(), Some("idx_files_download_item_id"));
+
+        let fingerprint_index_exists: Option<String> = connection
+            .query_row(
+                "SELECT name
+                 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_files_content_fingerprint'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("fingerprint index lookup");
+        assert_eq!(
+            fingerprint_index_exists.as_deref(),
+            Some("idx_files_content_fingerprint")
+        );
     }
 
     #[test]

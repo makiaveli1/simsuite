@@ -16,8 +16,8 @@ These notes are research guidance for SimSuite's duplicate truth engine. They ar
 SimSuite should only show user-facing `Duplicate` wording when it has deterministic same-content evidence:
 
 - same non-empty full file hash;
-- future: same normalized package resource fingerprint with payload hashes;
-- future: same normalized script archive fingerprint with entry payload hashes.
+- same normalized package resource fingerprint with payload hashes;
+- same normalized script archive fingerprint with entry payload hashes.
 
 Everything else is comparison or review language:
 
@@ -38,6 +38,19 @@ Same-content duplicate proof must also be a real distinct-file pair:
 - normalized paths are not the same Windows path.
 
 Malformed exact rows, self-pairs, same-path rows, and stale rows with missing or mismatched hashes are not user-facing duplicates.
+
+## v3 Package / Script Fingerprints
+
+SimSuite now stores scan-time content fingerprints for packages and scripts when it can compute them safely.
+
+- Package fingerprints use DBPF resource type, group, instance IDs, and resource payload hashes in stable sorted order.
+- Script fingerprints use normalized archive entry paths and entry payload hashes in stable sorted order.
+- ZIP order, ZIP timestamps, and package container ordering are not duplicate evidence by themselves.
+- Resource keys alone are not duplicate proof.
+- Corrupt, partial, oversized, or unreadable files produce no duplicate proof.
+- Fingerprints are scan-time metadata. Library browsing and the Duplicates route do not parse package/script payloads during render.
+
+These fingerprints only expand exact duplicate proof. They still do not prove safe deletion, missing dependencies, missing meshes, broken content, or update state.
 
 ## Sources Reviewed
 
