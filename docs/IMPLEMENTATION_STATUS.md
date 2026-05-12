@@ -1,5 +1,40 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library True Empty Folder Metadata v1)
+
+This session added real scanner-owned folder metadata so the Library can show actual empty Mods/Tray folders without creating fake file rows.
+
+Important changes and findings:
+
+- added a `library_folders` table with indexes for source, normalized path, parent path, and depth.
+- scanner now records real directory rows for Mods and Tray roots, child folders, nested folders, and folders with zero supported Sims files.
+- file indexing remains separate; empty folders do not create fake `files` rows and unsupported files are not counted as Library content.
+- rescans clear and rewrite folder metadata for the scanned source root, so deleted empty folders are removed from the tree.
+- `get_folder_tree_metadata` now builds from real folder rows and overlays indexed file counts.
+- folder tree nodes now expose `diskPath`, and Library Open Folder prefers that real backend path.
+- desktop fixture proof now creates and selects `Empty Proof Folder`.
+- users need a scan/rescan before previously existing empty folders appear.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `cargo fmt`
+- `cargo check`
+- `cargo test` (`238` tests)
+- `cargo build --release`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `npm run test:rust` (`238` tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`, screenshot includes `library-empty-folder-metadata.png`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- live real-library thumbnail validation, 5,000 to 10,000 row folder-tree stress proof, package/script duplicate fingerprints, relationship count aggregation/cache work, and Staging backend cleanup remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- next backend recommendation: live real-library thumbnail validation and preview pipeline hardening, then larger backend stress harness work.
+
 ## Current session note (May 12, 2026 - Library Backend Performance and Folder Query v1)
 
 This session moved the Library backend scale work forward by making folder file browsing SQL-scoped and adding deterministic backend stress coverage.

@@ -132,6 +132,7 @@ const emptyFolderMetadata: FolderTreeMetadata = {
       name: "Mods",
       depth: 0,
       sourceLocation: "mods",
+      diskPath: "D:\\Sims\\Mods",
       directFileCount: 0,
       childFolderCount: 1,
       totalFileCount: 0,
@@ -141,6 +142,7 @@ const emptyFolderMetadata: FolderTreeMetadata = {
           name: "Empty",
           depth: 1,
           sourceLocation: "mods",
+          diskPath: "D:\\Sims\\Mods\\Empty",
           directFileCount: 0,
           childFolderCount: 0,
           totalFileCount: 0,
@@ -270,7 +272,7 @@ it("shows an empty folder summary and opens the configured folder path", async (
   fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
 
   await waitFor(() => {
-    expect(api.revealFileInFolder).toHaveBeenCalledWith("C:\\Mods\\Empty");
+    expect(api.revealFileInFolder).toHaveBeenCalledWith("D:\\Sims\\Mods\\Empty");
   });
 });
 

@@ -639,6 +639,8 @@ pub struct FolderTreeNode {
     pub depth: i64,
     /// "mods" or "tray".
     pub source_location: String,
+    /// Real disk folder path when SimSuite has scanner-owned folder metadata.
+    pub disk_path: Option<String>,
     /// Number of files directly inside this folder.
     pub direct_file_count: i64,
     /// Number of immediate child subfolders.

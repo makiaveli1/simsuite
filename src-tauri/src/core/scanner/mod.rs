@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Statement, Transaction};
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 use tracing::{info, warn};
@@ -51,6 +51,23 @@ pub(crate) struct DiscoveredFile {
     pub(crate) created_at: Option<String>,
     pub(crate) modified_at: Option<String>,
     pub(crate) relative_depth: i64,
+}
+
+#[derive(Debug, Clone)]
+struct DiscoveredFolder {
+    source_location: String,
+    relative_path: String,
+    normalized_relative_path: String,
+    parent_normalized_relative_path: Option<String>,
+    name: String,
+    depth: i64,
+    full_path: PathBuf,
+}
+
+#[derive(Debug, Default)]
+struct DiscoveredLibraryContent {
+    files: Vec<DiscoveredFile>,
+    folders: Vec<DiscoveredFolder>,
 }
 
 #[derive(Debug, Clone)]
@@ -207,8 +224,8 @@ where
         phase: ScanPhase::Collecting,
     })?;
 
-    let discovered =
-        collect_supported_files_with_progress(&scan_roots, &mut errors, |count, path| {
+    let discovered_content =
+        collect_library_content_with_progress(&scan_roots, &mut errors, |count, path| {
             emit(ScanProgress {
                 total_files: count,
                 processed_files: 0,
@@ -219,6 +236,8 @@ where
                 phase: ScanPhase::Collecting,
             })
         })?;
+    let discovered = discovered_content.files;
+    let discovered_folders = discovered_content.folders;
     emit(ScanProgress {
         total_files: discovered.len(),
         processed_files: 0,
@@ -254,6 +273,31 @@ where
     {
         let transaction = connection.transaction()?;
         clear_previous_scan_data(&transaction, &scan_roots)?;
+        let mut folder_insert = transaction.prepare(
+            "INSERT INTO library_folders (
+                source_location,
+                relative_path,
+                normalized_relative_path,
+                parent_normalized_relative_path,
+                name,
+                depth,
+                full_path,
+                scan_session_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(source_location, normalized_relative_path) DO UPDATE SET
+                relative_path = excluded.relative_path,
+                parent_normalized_relative_path = excluded.parent_normalized_relative_path,
+                name = excluded.name,
+                depth = excluded.depth,
+                full_path = excluded.full_path,
+                scan_session_id = excluded.scan_session_id,
+                indexed_at = CURRENT_TIMESTAMP",
+        )?;
+        for folder in &discovered_folders {
+            insert_discovered_folder(&mut folder_insert, session_id, folder)?;
+        }
+        drop(folder_insert);
+
         let mut creator_cache = HashMap::new();
         let mut file_insert = transaction.prepare(
             "INSERT INTO files (
@@ -429,16 +473,32 @@ fn collect_roots(settings: &crate::models::LibrarySettings) -> AppResult<Vec<Sca
 fn collect_supported_files_with_progress<F>(
     scan_roots: &[ScanRoot],
     errors: &mut Vec<String>,
-    mut on_progress: F,
+    on_progress: F,
 ) -> AppResult<Vec<DiscoveredFile>>
 where
     F: FnMut(usize, &Path) -> AppResult<()>,
 {
-    let mut discovered = Vec::new();
+    Ok(collect_library_content_with_progress(scan_roots, errors, on_progress)?.files)
+}
+
+fn collect_library_content_with_progress<F>(
+    scan_roots: &[ScanRoot],
+    errors: &mut Vec<String>,
+    mut on_progress: F,
+) -> AppResult<DiscoveredLibraryContent>
+where
+    F: FnMut(usize, &Path) -> AppResult<()>,
+{
+    let mut content = DiscoveredLibraryContent::default();
 
     for root in scan_roots {
         for entry in WalkDir::new(&root.path).into_iter() {
             match entry {
+                Ok(entry) if entry.file_type().is_dir() => {
+                    if let Some(folder) = discovered_folder_for_entry(root, entry.path()) {
+                        content.folders.push(folder);
+                    }
+                }
                 Ok(entry) if entry.file_type().is_file() => {
                     let extension = normalize_extension(entry.path());
                     if extension.is_empty() || !is_supported_extension(root.root_type, &extension) {
@@ -468,11 +528,8 @@ where
                         .unwrap_or(0);
                     let progress_path = path.clone();
 
-                    discovered.push(DiscoveredFile {
-                        source_location: match root.root_type {
-                            RootType::Mods => "mods".to_owned(),
-                            RootType::Tray => "tray".to_owned(),
-                        },
+                    content.files.push(DiscoveredFile {
+                        source_location: source_location_for_scan_root(root.root_type).to_owned(),
                         root_path: root.path.clone(),
                         filename: path
                             .file_name()
@@ -495,8 +552,8 @@ where
                         relative_depth: relative_depth as i64,
                     });
 
-                    if discovered.len() == 1 || discovered.len() % 150 == 0 {
-                        on_progress(discovered.len(), &progress_path)?;
+                    if content.files.len() == 1 || content.files.len() % 150 == 0 {
+                        on_progress(content.files.len(), &progress_path)?;
                     }
                 }
                 Ok(_) => {}
@@ -508,8 +565,90 @@ where
         }
     }
 
-    discovered.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(discovered)
+    content
+        .files
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    content
+        .folders
+        .sort_by(|left, right| left.full_path.cmp(&right.full_path));
+    Ok(content)
+}
+
+fn discovered_folder_for_entry(root: &ScanRoot, path: &Path) -> Option<DiscoveredFolder> {
+    let relative_path = path.strip_prefix(&root.path).ok()?;
+    let relative_path = normalize_relative_folder_path(relative_path);
+    let normalized_relative_path = normalize_folder_key(&relative_path);
+    let parent_normalized_relative_path = parent_normalized_folder_key(&normalized_relative_path);
+    let source_location = source_location_for_scan_root(root.root_type).to_owned();
+    let name = if normalized_relative_path.is_empty() {
+        root_folder_name(root.root_type).to_owned()
+    } else {
+        path.file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| root_folder_name(root.root_type).to_owned())
+    };
+    let depth = if normalized_relative_path.is_empty() {
+        0
+    } else {
+        normalized_relative_path.split('/').count() as i64
+    };
+
+    Some(DiscoveredFolder {
+        source_location,
+        relative_path,
+        normalized_relative_path,
+        parent_normalized_relative_path,
+        name,
+        depth,
+        full_path: path.to_path_buf(),
+    })
+}
+
+fn normalize_relative_folder_path(path: &Path) -> String {
+    path.components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => Some(value.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn normalize_folder_key(value: &str) -> String {
+    value
+        .replace('\\', "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn parent_normalized_folder_key(normalized_relative_path: &str) -> Option<String> {
+    if normalized_relative_path.is_empty() {
+        return None;
+    }
+    normalized_relative_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent.to_owned())
+        .or_else(|| Some(String::new()))
+}
+
+fn source_location_for_scan_root(root_type: RootType) -> &'static str {
+    match root_type {
+        RootType::Mods => "mods",
+        RootType::Tray => "tray",
+    }
+}
+
+fn root_folder_name(root_type: RootType) -> &'static str {
+    match root_type {
+        RootType::Mods => "Mods",
+        RootType::Tray => "Tray",
+    }
 }
 
 fn load_cached_files(
@@ -630,6 +769,10 @@ fn clear_previous_scan_data(transaction: &Transaction<'_>, roots: &[ScanRoot]) -
         .iter()
         .any(|root| matches!(root.root_type, RootType::Mods))
     {
+        transaction.execute(
+            "DELETE FROM library_folders WHERE source_location = 'mods'",
+            [],
+        )?;
         transaction.execute("DELETE FROM files WHERE source_location = 'mods'", [])?;
     }
 
@@ -637,6 +780,10 @@ fn clear_previous_scan_data(transaction: &Transaction<'_>, roots: &[ScanRoot]) -
         .iter()
         .any(|root| matches!(root.root_type, RootType::Tray))
     {
+        transaction.execute(
+            "DELETE FROM library_folders WHERE source_location = 'tray'",
+            [],
+        )?;
         transaction.execute("DELETE FROM files WHERE source_location = 'tray'", [])?;
     }
 
@@ -846,6 +993,24 @@ fn ensure_creator(
     let creator_id = transaction.last_insert_rowid();
     creator_cache.insert(creator_name.to_owned(), creator_id);
     Ok(creator_id)
+}
+
+fn insert_discovered_folder(
+    folder_insert: &mut Statement<'_>,
+    session_id: i64,
+    folder: &DiscoveredFolder,
+) -> AppResult<()> {
+    folder_insert.execute(params![
+        &folder.source_location,
+        &folder.relative_path,
+        &folder.normalized_relative_path,
+        folder.parent_normalized_relative_path.as_deref(),
+        &folder.name,
+        folder.depth,
+        folder.full_path.to_string_lossy().to_string(),
+        session_id,
+    ])?;
+    Ok(())
 }
 
 fn insert_cached_file(
@@ -1676,6 +1841,167 @@ mod tests {
         assert_eq!(listing.items.len(), 1);
         assert_eq!(listing.items[0].creator.as_deref(), Some("LittleMsSam"));
         assert_eq!(listing.items[0].kind, "Gameplay");
+    }
+
+    #[test]
+    fn scan_records_true_empty_library_folders() {
+        let temp = tempdir().expect("tempdir");
+        let mods = temp.path().join("Mods");
+        let tray = temp.path().join("Tray");
+        let empty_nested = mods.join("EmptyOnly").join("Nested");
+        let with_files = mods.join("WithFiles");
+        let empty_tray = tray.join("EmptyTray");
+        fs::create_dir_all(&empty_nested).expect("nested empty mods folder");
+        fs::create_dir_all(&with_files).expect("mods folder with files");
+        fs::create_dir_all(&empty_tray).expect("empty tray folder");
+        fs::write(with_files.join("has-file.package"), b"package").expect("package");
+
+        let seed_pack = load_seed_pack().expect("seed");
+        let state = build_state(&temp, seed_pack, |connection| {
+            database::save_library_paths(
+                connection,
+                &crate::models::LibrarySettings {
+                    mods_path: Some(mods.to_string_lossy().to_string()),
+                    tray_path: Some(tray.to_string_lossy().to_string()),
+                    downloads_path: None,
+                    ..Default::default()
+                },
+            )
+            .expect("save settings");
+        });
+
+        let summary = scan_library_with_progress(&state, |_| Ok(())).expect("scan");
+        let connection = state.connection().expect("connection");
+
+        assert_eq!(summary.files_scanned, 1);
+        let indexed_files: i64 = connection
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .expect("file count");
+        assert_eq!(indexed_files, 1);
+
+        let nested_full_path: String = connection
+            .query_row(
+                "SELECT full_path FROM library_folders
+                 WHERE source_location = 'mods'
+                   AND normalized_relative_path = 'emptyonly/nested'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("nested empty folder row");
+        assert_eq!(PathBuf::from(nested_full_path), empty_nested);
+
+        let empty_tray_full_path: String = connection
+            .query_row(
+                "SELECT full_path FROM library_folders
+                 WHERE source_location = 'tray'
+                   AND normalized_relative_path = 'emptytray'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("empty tray folder row");
+        assert_eq!(PathBuf::from(empty_tray_full_path), empty_tray);
+
+        let metadata = library_index::get_folder_tree_metadata(
+            &connection,
+            &crate::models::LibraryQuery::default(),
+        )
+        .expect("folder metadata");
+        let mods_root = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        let empty_only = mods_root
+            .children
+            .iter()
+            .find(|node| node.name == "EmptyOnly")
+            .expect("empty folder in tree");
+        let empty_only_path = empty_nested
+            .parent()
+            .expect("parent")
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(empty_only.total_file_count, 0);
+        assert_eq!(empty_only.direct_file_count, 0);
+        assert_eq!(
+            empty_only.disk_path.as_deref(),
+            Some(empty_only_path.as_str())
+        );
+
+        let direct_listing = library_index::list_library_folder_files(
+            &connection,
+            crate::models::LibraryFolderFilesQuery {
+                folder_path: "Mods/EmptyOnly".to_owned(),
+                recursive: false,
+                limit: Some(25),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("empty folder direct listing");
+        assert_eq!(direct_listing.total, 0);
+        assert!(direct_listing.items.is_empty());
+
+        let tray_root = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Tray")
+            .expect("tray root");
+        assert!(tray_root
+            .children
+            .iter()
+            .any(|node| node.name == "EmptyTray" && node.total_file_count == 0));
+    }
+
+    #[test]
+    fn rescan_removes_deleted_empty_folder_metadata() {
+        let temp = tempdir().expect("tempdir");
+        let mods = temp.path().join("Mods");
+        let deleted_empty = mods.join("DeletedEmpty");
+        fs::create_dir_all(&deleted_empty).expect("empty folder");
+
+        let seed_pack = load_seed_pack().expect("seed");
+        let state = build_state(&temp, seed_pack, |connection| {
+            database::save_library_paths(
+                connection,
+                &crate::models::LibrarySettings {
+                    mods_path: Some(mods.to_string_lossy().to_string()),
+                    tray_path: None,
+                    downloads_path: None,
+                    ..Default::default()
+                },
+            )
+            .expect("save settings");
+        });
+
+        scan_library_with_progress(&state, |_| Ok(())).expect("initial scan");
+        {
+            let connection = state.connection().expect("connection");
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM library_folders
+                     WHERE source_location = 'mods'
+                       AND normalized_relative_path = 'deletedempty'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("initial folder count");
+            assert_eq!(count, 1);
+        }
+
+        fs::remove_dir_all(&deleted_empty).expect("remove empty folder");
+        scan_library_with_progress(&state, |_| Ok(())).expect("rescan");
+        let connection = state.connection().expect("connection");
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_folders
+                 WHERE source_location = 'mods'
+                   AND normalized_relative_path = 'deletedempty'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rescan folder count");
+        assert_eq!(count, 0);
     }
 
     #[test]

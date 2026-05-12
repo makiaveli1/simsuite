@@ -371,6 +371,7 @@ export interface FolderTreeNode {
   name: string;
   depth: number;
   sourceLocation: string;
+  diskPath?: string | null;
   directFileCount: number;
   childFolderCount: number;
   totalFileCount: number;

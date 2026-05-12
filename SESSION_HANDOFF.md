@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library True Empty Folder Metadata v1)
+
+- **Mode**: code
+- **Focus**: make the Library folder backend record real empty Mods/Tray folders without fake file rows
+
+### Progress Made
+
+1. **Added real folder metadata**:
+   - added `library_folders` schema and runtime schema repair
+   - scanner now records real Mods/Tray directories, including nested folders with zero supported files
+   - folder rows store source, relative path, normalized path, parent path, depth, name, scan session, and real disk path
+
+2. **Updated folder tree behavior**:
+   - `get_folder_tree_metadata` now builds from real folder metadata and overlays indexed file counts
+   - empty folder nodes can show `0` direct/total files
+   - folder nodes expose backend `diskPath`
+   - Library Open Folder now prefers backend real disk paths over virtual folder paths
+
+3. **Added proof coverage**:
+   - backend tests cover empty Mods/Tray folders, nested empty folders, empty folder listing, and rescan removal
+   - desktop fixture creates `Empty Proof Folder`
+   - desktop Library proof captures `library-empty-folder-metadata.png`
+
+### Verification
+
+- `cargo fmt`
+- `cargo check`
+- `cargo test`: `238` tests
+- `cargo build --release`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `npm run test:rust`: `238` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- existing users need a scan/rescan before old empty folders appear.
+- folder tree file-count aggregation still needs 5,000 to 10,000 row stress proof.
+- live real-library thumbnail validation remains future work.
+- package/script duplicate fingerprints remain future scan-time work.
+- Rust validation still emits existing warnings in older modules.
+- Vite still reports the existing large chunk warning.
+- unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+### Next Best Step
+
+1. Live real-library thumbnail validation and preview pipeline hardening, followed by a larger 5,000 to 10,000 row backend stress harness.
+
 ## Current Session (May 12, 2026 - Library Backend Performance and Folder Query v1)
 
 - **Mode**: code

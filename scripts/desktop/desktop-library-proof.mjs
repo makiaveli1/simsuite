@@ -1166,6 +1166,23 @@ async function openFolderWithDirectFileRows(driver) {
   throw lastError ?? new Error("Could not open a folder containing direct file rows.");
 }
 
+async function openEmptyProofFolder(driver, session) {
+  const emptyFolderName = session?.fixture?.emptyProofFolder ?? "Empty Proof Folder";
+  await clickVisibleButton(driver, emptyFolderName, 30000);
+  await waitForAnyText(
+    driver,
+    [
+      "0 files",
+      "Folder is empty",
+      "No direct files",
+      "No files in this folder",
+      "This folder exists on disk",
+    ],
+    30000,
+  );
+  return emptyFolderName;
+}
+
 async function setProofWindowSize(driver, width, height) {
   try {
     await driver.manage().window().setRect({ width, height });
@@ -1437,6 +1454,11 @@ async function main() {
     const folderThumbnailShot = path.join(runDir, "library-folder-row-thumbnails.png");
     await takeScreenshot(driver, folderThumbnailShot);
     summary.screenshots.push(folderThumbnailShot);
+    summary.emptyProofFolder = await openEmptyProofFolder(driver, session);
+    await assertLibraryLayoutGeometry(driver, summary, "folder-empty-real-disk-folder-layout");
+    const emptyFolderShot = path.join(runDir, "library-empty-folder-metadata.png");
+    await takeScreenshot(driver, emptyFolderShot);
+    summary.screenshots.push(emptyFolderShot);
     const cozyFolderShot = path.join(runDir, "library-cozy-polish-folder.png");
     await takeScreenshot(driver, cozyFolderShot);
     summary.screenshots.push(cozyFolderShot);

@@ -50,6 +50,7 @@ function collectAllFileIds(node: FolderNode): number[] {
 export interface FolderNode {
   name: string;
   fullPath: string;
+  diskPath?: string | null;
   depth: number;
   children: FolderNode[];
   directFileCount: number;

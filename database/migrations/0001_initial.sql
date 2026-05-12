@@ -95,6 +95,25 @@ CREATE INDEX IF NOT EXISTS idx_files_source_location ON files (source_location);
 CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
 CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
 
+CREATE TABLE IF NOT EXISTS library_folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_location TEXT NOT NULL CHECK (source_location IN ('mods', 'tray')),
+  relative_path TEXT NOT NULL DEFAULT '',
+  normalized_relative_path TEXT NOT NULL DEFAULT '',
+  parent_normalized_relative_path TEXT,
+  name TEXT NOT NULL,
+  depth INTEGER NOT NULL DEFAULT 0,
+  full_path TEXT NOT NULL,
+  scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
+  indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (source_location, normalized_relative_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_library_folders_source_location ON library_folders (source_location);
+CREATE INDEX IF NOT EXISTS idx_library_folders_source_path ON library_folders (source_location, normalized_relative_path);
+CREATE INDEX IF NOT EXISTS idx_library_folders_source_parent ON library_folders (source_location, parent_normalized_relative_path);
+CREATE INDEX IF NOT EXISTS idx_library_folders_source_depth ON library_folders (source_location, depth);
+
 CREATE TABLE IF NOT EXISTS download_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_path TEXT NOT NULL UNIQUE,

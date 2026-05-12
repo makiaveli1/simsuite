@@ -580,6 +580,7 @@ export function LibraryScreen({
       return {
         name: n.name,
         fullPath: n.path,
+        diskPath: n.diskPath ?? null,
         depth: n.depth,
         children: n.children.map(nodeToFolderNode),
         directFileCount: n.directFileCount,
@@ -590,10 +591,12 @@ export function LibraryScreen({
     const roots = meta.roots.map(nodeToFolderNode);
     const mods = roots.find((r) => r.name === "Mods") ?? {
       name: "Mods", fullPath: "Mods", depth: 0,
+      diskPath: librarySettings?.modsPath ?? null,
       children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0,
     };
     const tray = roots.find((r) => r.name === "Tray") ?? {
       name: "Tray", fullPath: "Tray", depth: 0,
+      diskPath: librarySettings?.trayPath ?? null,
       children: [], directFileCount: 0, totalFileCount: 0, childFolderCount: 0,
     };
     return { mods, tray };
@@ -940,6 +943,7 @@ export function LibraryScreen({
   // Fall back to the first available file path when settings are unavailable.
   const folderFullPath = useMemo<string | undefined>(() => {
     if (!activeFolderPath) return undefined;
+    if (activeFolderNode?.diskPath) return activeFolderNode.diskPath;
     const configuredPath = configuredFolderPath(activeFolderPath, librarySettings);
     if (configuredPath) return configuredPath;
     const first = folderContents?.files[0] ?? folderContents?.rootFiles[0];
@@ -950,7 +954,7 @@ export function LibraryScreen({
     const lastSlash = normalised.lastIndexOf("/");
     if (lastSlash < 0) return undefined;
     return normalised.substring(0, lastSlash).replace(/\//g, "\\");
-  }, [activeFolderPath, folderContents, librarySettings]);
+  }, [activeFolderPath, activeFolderNode?.diskPath, folderContents, librarySettings]);
 
   // ── Folder summary (Phase 5ao) ───────────────────────────────────────────────
   // Computed when: in folder view (activeFolderPath set) and no file selected.

@@ -808,6 +808,19 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             original_path TEXT NOT NULL,
             original_hash TEXT,
             backup_path TEXT
+        );
+        CREATE TABLE IF NOT EXISTS library_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_location TEXT NOT NULL CHECK (source_location IN ('mods', 'tray')),
+            relative_path TEXT NOT NULL DEFAULT '',
+            normalized_relative_path TEXT NOT NULL DEFAULT '',
+            parent_normalized_relative_path TEXT,
+            name TEXT NOT NULL,
+            depth INTEGER NOT NULL DEFAULT 0,
+            full_path TEXT NOT NULL,
+            scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
+            indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (source_location, normalized_relative_path)
         );",
     )?;
 
@@ -925,6 +938,10 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
          CREATE INDEX IF NOT EXISTS idx_files_source_location_filename ON files (source_location, filename);
          CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
          CREATE INDEX IF NOT EXISTS idx_files_relative_depth ON files (relative_depth);
+         CREATE INDEX IF NOT EXISTS idx_library_folders_source_location ON library_folders (source_location);
+         CREATE INDEX IF NOT EXISTS idx_library_folders_source_path ON library_folders (source_location, normalized_relative_path);
+         CREATE INDEX IF NOT EXISTS idx_library_folders_source_parent ON library_folders (source_location, parent_normalized_relative_path);
+         CREATE INDEX IF NOT EXISTS idx_library_folders_source_depth ON library_folders (source_location, depth);
          CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id ON snapshot_items (snapshot_id);
          CREATE TABLE IF NOT EXISTS special_mod_family_state (
             profile_key TEXT PRIMARY KEY,

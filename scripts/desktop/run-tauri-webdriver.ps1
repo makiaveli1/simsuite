@@ -78,6 +78,7 @@ function Initialize-SmokeFixtures {
     $installedSmartCore = Join-Path $mods 'Smart Core Script'
     $installedGenericWatch = Join-Path $mods 'Generic Watch'
     $installedGenericWatchBackup = Join-Path $mods 'Generic Watch Backup'
+    $emptyProofFolder = Join-Path $mods 'Empty Proof Folder'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
     $xmlSameRoot = Join-Path $root 'incoming-xml-same'
@@ -115,6 +116,7 @@ function Initialize-SmokeFixtures {
         $installedSmartCore,
         $installedGenericWatch,
         $installedGenericWatchBackup,
+        $emptyProofFolder,
         $incomingRoot,
         $blockedRoot,
         $xmlSameRoot,
@@ -202,6 +204,7 @@ function Initialize-SmokeFixtures {
         SmartCoreSameItem = $smartCoreSameItem
         SmartCoreOlderItem = $smartCoreOlderItem
         GenericWatchFile = $genericWatchFile
+        EmptyProofFolder = 'Empty Proof Folder'
     }
 }
 
@@ -494,6 +497,7 @@ $session = @{
                 smartCoreSameItem = $fixture.SmartCoreSameItem
                 smartCoreOlderItem = $fixture.SmartCoreOlderItem
                 genericWatchFile = $fixture.GenericWatchFile
+                emptyProofFolder = $fixture.EmptyProofFolder
             }
         } else {
             $null

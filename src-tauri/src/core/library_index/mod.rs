@@ -984,12 +984,22 @@ struct FolderFileRow {
     relative_depth: i64,
 }
 
+#[derive(Debug)]
+struct FolderMetadataRow {
+    source_location: String,
+    relative_path: String,
+    name: String,
+    depth: i64,
+    disk_path: String,
+}
+
 #[derive(Debug, Clone)]
 struct FolderNodeAccumulator {
     path: String,
     name: String,
     depth: i64,
     source_location: String,
+    disk_path: Option<String>,
     direct_file_count: i64,
     total_file_count: i64,
     children: BTreeSet<String>,
@@ -999,6 +1009,7 @@ pub fn get_folder_tree_metadata(
     connection: &Connection,
     query: &LibraryQuery,
 ) -> AppResult<FolderTreeMetadata> {
+    let folder_rows = load_library_folder_rows(connection, query)?;
     let (filters, params) = build_filters(query);
     let sql = format!(
         "SELECT f.path, f.source_location, f.relative_depth\n\
@@ -1023,13 +1034,66 @@ pub fn get_folder_tree_metadata(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(build_folder_metadata_from_rows(rows))
+    Ok(build_folder_metadata_from_rows(folder_rows, rows))
 }
 
-fn build_folder_metadata_from_rows(rows: Vec<FolderFileRow>) -> FolderTreeMetadata {
+fn load_library_folder_rows(
+    connection: &Connection,
+    query: &LibraryQuery,
+) -> AppResult<Vec<FolderMetadataRow>> {
+    let sources = folder_sources_for_query(query);
+    if sources.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(sources.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT source_location, relative_path, name, depth, full_path\n\
+         FROM library_folders\n\
+         WHERE source_location IN ({placeholders})\n\
+         ORDER BY source_location COLLATE NOCASE, normalized_relative_path COLLATE NOCASE"
+    );
+    let params = sources.into_iter().map(Value::Text).collect::<Vec<Value>>();
+
+    let mut statement = connection.prepare(&sql)?;
+    let rows = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            Ok(FolderMetadataRow {
+                source_location: row.get(0)?,
+                relative_path: row.get(1)?,
+                name: row.get(2)?,
+                depth: row.get(3)?,
+                disk_path: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(rows)
+}
+
+fn folder_sources_for_query(query: &LibraryQuery) -> Vec<String> {
+    match query.source.as_deref().map(str::trim) {
+        Some(source) if source.eq_ignore_ascii_case("mods") => vec!["mods".to_owned()],
+        Some(source) if source.eq_ignore_ascii_case("tray") => vec!["tray".to_owned()],
+        Some(source) if !source.is_empty() => Vec::new(),
+        _ => vec!["mods".to_owned(), "tray".to_owned()],
+    }
+}
+
+fn build_folder_metadata_from_rows(
+    folder_rows: Vec<FolderMetadataRow>,
+    file_rows: Vec<FolderFileRow>,
+) -> FolderTreeMetadata {
     let mut nodes: BTreeMap<String, FolderNodeAccumulator> = BTreeMap::new();
 
-    for row in rows {
+    for row in folder_rows {
+        add_folder_metadata_row(&mut nodes, row);
+    }
+
+    for row in file_rows {
         let Some(segments) =
             folder_segments_for_file(&row.path, &row.source_location, row.relative_depth)
         else {
@@ -1046,6 +1110,7 @@ fn build_folder_metadata_from_rows(rows: Vec<FolderFileRow>) -> FolderTreeMetada
                     name: segments[index].clone(),
                     depth: index as i64,
                     source_location,
+                    disk_path: None,
                     direct_file_count: 0,
                     total_file_count: 0,
                     children: BTreeSet::new(),
@@ -1082,6 +1147,56 @@ fn build_folder_metadata_from_rows(rows: Vec<FolderFileRow>) -> FolderTreeMetada
     }
 }
 
+fn add_folder_metadata_row(
+    nodes: &mut BTreeMap<String, FolderNodeAccumulator>,
+    row: FolderMetadataRow,
+) {
+    let Some(mut segments) =
+        folder_segments_for_folder_row(&row.source_location, &row.relative_path)
+    else {
+        return;
+    };
+    if segments.is_empty() {
+        return;
+    }
+
+    if row.depth == 0 {
+        segments[0] = row.name.clone();
+    } else if let Some(last) = segments.last_mut() {
+        *last = row.name.clone();
+    }
+
+    for index in 0..segments.len() {
+        let path = segments[..=index].join("/");
+        let source_location = row.source_location.to_ascii_lowercase();
+        let is_row_node = index == segments.len() - 1;
+        let entry = nodes
+            .entry(path.clone())
+            .or_insert_with(|| FolderNodeAccumulator {
+                path: path.clone(),
+                name: segments[index].clone(),
+                depth: index as i64,
+                source_location,
+                disk_path: None,
+                direct_file_count: 0,
+                total_file_count: 0,
+                children: BTreeSet::new(),
+            });
+        if is_row_node {
+            entry.name = segments[index].clone();
+            entry.depth = index as i64;
+            entry.disk_path = Some(row.disk_path.clone());
+        }
+
+        if index > 0 {
+            let parent_path = segments[..index].join("/");
+            if let Some(parent) = nodes.get_mut(&parent_path) {
+                parent.children.insert(path.clone());
+            }
+        }
+    }
+}
+
 fn build_folder_node(
     path: &str,
     nodes: &BTreeMap<String, FolderNodeAccumulator>,
@@ -1099,6 +1214,7 @@ fn build_folder_node(
         name: node.name.clone(),
         depth: node.depth,
         source_location: node.source_location.clone(),
+        disk_path: node.disk_path.clone(),
         direct_file_count: node.direct_file_count,
         child_folder_count: children.len() as i64,
         total_file_count: node.total_file_count,
@@ -1179,6 +1295,22 @@ fn folder_segments_for_file(
     let mut segments = Vec::with_capacity(child_segments.len() + 1);
     segments.push(root);
     segments.extend(child_segments);
+    Some(segments)
+}
+
+fn folder_segments_for_folder_row(
+    source_location: &str,
+    relative_path: &str,
+) -> Option<Vec<String>> {
+    let mut segments = vec![folder_root_name(source_location)?];
+    segments.extend(
+        relative_path
+            .replace('\\', "/")
+            .split('/')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .map(ToOwned::to_owned),
+    );
     Some(segments)
 }
 
@@ -1742,6 +1874,41 @@ mod tests {
                 ],
             )
             .expect("insert library file row");
+        connection.last_insert_rowid()
+    }
+
+    fn insert_library_folder_row(
+        connection: &rusqlite::Connection,
+        source_location: &str,
+        relative_path: &str,
+        normalized_relative_path: &str,
+        parent_normalized_relative_path: Option<&str>,
+        name: &str,
+        depth: i64,
+        full_path: &str,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location,
+                    relative_path,
+                    normalized_relative_path,
+                    parent_normalized_relative_path,
+                    name,
+                    depth,
+                    full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    source_location,
+                    relative_path,
+                    normalized_relative_path,
+                    parent_normalized_relative_path,
+                    name,
+                    depth,
+                    full_path,
+                ],
+            )
+            .expect("insert library folder row");
         connection.last_insert_rowid()
     }
 
@@ -2371,6 +2538,128 @@ mod tests {
             .expect("tray root");
         assert_eq!(tray.direct_file_count, 1);
         assert_eq!(tray.total_file_count, 1);
+    }
+
+    #[test]
+    fn folder_tree_metadata_includes_true_empty_folder_rows() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        connection
+            .execute(
+                "DELETE FROM files WHERE source_location IN ('mods', 'tray')",
+                [],
+            )
+            .expect("clear fixture files");
+
+        insert_library_folder_row(&connection, "mods", "", "", None, "Mods", 0, "C:/Mods");
+        insert_library_folder_row(
+            &connection,
+            "mods",
+            "Empty",
+            "empty",
+            Some(""),
+            "Empty",
+            1,
+            "C:/Mods/Empty",
+        );
+        insert_library_folder_row(
+            &connection,
+            "mods",
+            "Empty/Nested",
+            "empty/nested",
+            Some("empty"),
+            "Nested",
+            2,
+            "C:/Mods/Empty/Nested",
+        );
+        insert_library_folder_row(&connection, "tray", "", "", None, "Tray", 0, "C:/Tray");
+        insert_library_folder_row(
+            &connection,
+            "tray",
+            "Saved Rooms",
+            "saved rooms",
+            Some(""),
+            "Saved Rooms",
+            1,
+            "C:/Tray/Saved Rooms",
+        );
+
+        let metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
+            .expect("folder metadata");
+
+        let mods = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        assert_eq!(mods.disk_path.as_deref(), Some("C:/Mods"));
+        assert_eq!(mods.direct_file_count, 0);
+        assert_eq!(mods.total_file_count, 0);
+        assert_eq!(mods.child_folder_count, 1);
+
+        let empty = mods
+            .children
+            .iter()
+            .find(|node| node.name == "Empty")
+            .expect("empty folder");
+        assert_eq!(empty.path, "Mods/Empty");
+        assert_eq!(empty.disk_path.as_deref(), Some("C:/Mods/Empty"));
+        assert_eq!(empty.direct_file_count, 0);
+        assert_eq!(empty.total_file_count, 0);
+        assert_eq!(empty.child_folder_count, 1);
+
+        let nested = empty
+            .children
+            .iter()
+            .find(|node| node.name == "Nested")
+            .expect("nested empty folder");
+        assert_eq!(nested.path, "Mods/Empty/Nested");
+        assert_eq!(nested.disk_path.as_deref(), Some("C:/Mods/Empty/Nested"));
+        assert_eq!(nested.direct_file_count, 0);
+        assert_eq!(nested.total_file_count, 0);
+
+        let tray = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Tray")
+            .expect("tray root");
+        let saved_rooms = tray
+            .children
+            .iter()
+            .find(|node| node.name == "Saved Rooms")
+            .expect("empty tray folder");
+        assert_eq!(
+            saved_rooms.disk_path.as_deref(),
+            Some("C:/Tray/Saved Rooms")
+        );
+        assert_eq!(saved_rooms.total_file_count, 0);
+
+        let empty_listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Empty".to_owned(),
+                recursive: false,
+                limit: Some(25),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("empty folder direct listing");
+        assert_eq!(empty_listing.total, 0);
+        assert!(empty_listing.items.is_empty());
+
+        let recursive_listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Empty".to_owned(),
+                recursive: true,
+                limit: Some(25),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("empty folder recursive listing");
+        assert_eq!(recursive_listing.total, 0);
+        assert!(recursive_listing.items.is_empty());
     }
 
     #[test]
