@@ -603,12 +603,12 @@ pub struct LibraryFileRow {
     /// resolution for the detail panel; list query leaves this None.
     #[serde(skip)]
     pub installed_version: Option<String>,
-    /// How many other files share the same source + depth level.
-    /// Window COUNT over (source_location, relative_depth) — zero-cost per row.
+    /// How many other files share the same indexed parent folder in the
+    /// current filtered result set.
     #[serde(default)]
     pub same_folder_peer_count: i64,
-    /// How many other files are in the same bundle (same bundle_id).
-    /// Window COUNT over bundle_id partition — zero-cost per row.
+    /// How many other files are in the same bundle (same bundle_id) in the
+    /// current filtered result set.
     #[serde(default)]
     pub same_pack_peer_count: i64,
     #[serde(default)]

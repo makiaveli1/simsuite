@@ -1,5 +1,45 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Backend Performance and Folder Query v1)
+
+This session moved the Library backend scale work forward by making folder file browsing SQL-scoped and adding deterministic backend stress coverage.
+
+Important changes and findings:
+
+- `list_library_folder_files` no longer loads a broad Library listing before filtering by folder in Rust.
+- folder content queries now use SQL source/depth/path criteria, active Library filters/search/sort, limit/offset, and preview controls together.
+- folder query paging is bounded with a default limit of `500` and maximum returned page of `1,000`.
+- mismatched source filters return an empty response safely.
+- legacy `list_library_files_for_tree` remains registered for compatibility, but now caps returned rows at `5,000` and strips previews.
+- added `idx_files_source_location_depth` for source/depth folder filtering.
+- added backend tests for direct folder rows, recursive folder rows, root Mods/Tray direct files, source filters, search/sort inside folder queries, preview inclusion/exclusion, and root-scoped path matching.
+- added a 1,076-row synthetic folder stress test; local timing reported `library_folder_stress rows=1076 elapsed_ms=212`.
+- duplicate truth rules were not changed.
+- true empty disk-folder metadata remains future work because the current folder tree is still file-row based.
+- relationship peer counts are not N+1, but still need large all-library filtered-set stress proof.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `cargo fmt`
+- `cargo check`
+- `cargo test` (`235` tests)
+- `cargo test library_index::tests::folder_file_listing -- --nocapture` (`5` focused folder tests)
+- `cargo test legacy_tree_file_query_is_bounded_and_preview_light -- --nocapture`
+- `cargo build --release`
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `npm run test:rust` (`235` tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- true empty disk-folder metadata, live real-library thumbnail validation, package/script duplicate fingerprints, 5,000 to 10,000 row backend stress proof, and real user large-library proof remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+- next backend sprint recommendation: true empty disk-folder metadata, unless thumbnail hydration becomes more urgent.
+
 ## Current session note (May 12, 2026 - Library Duplicate Truth Guardrails v2.1)
 
 This session did a final light hardening pass on Library duplicate truth before moving to backend scale work.

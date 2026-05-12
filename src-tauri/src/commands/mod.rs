@@ -2569,8 +2569,27 @@ pub async fn list_library_folder_files(
     .await
 }
 
-/// Returns all library files matching the given filters, WITHOUT pagination.
-/// Used by the folder-tree builder which needs the complete filtered dataset.
+const LIBRARY_TREE_FILE_COMPAT_LIMIT: i64 = 5_000;
+
+fn bounded_library_tree_file_query(query: LibraryQuery) -> LibraryQuery {
+    LibraryQuery {
+        limit: Some(
+            query
+                .limit
+                .unwrap_or(LIBRARY_TREE_FILE_COMPAT_LIMIT)
+                .max(0)
+                .min(LIBRARY_TREE_FILE_COMPAT_LIMIT),
+        ),
+        offset: Some(query.offset.unwrap_or(0).max(0)),
+        include_previews: Some(false),
+        ..query
+    }
+}
+
+/// Compatibility endpoint for older folder-tree callers.
+/// Current Library folder rendering should use get_folder_tree_metadata plus
+/// list_library_folder_files. Keep this bounded so it cannot return an
+/// unbounded full-library payload if an older caller still reaches it.
 #[tauri::command]
 pub async fn list_library_files_for_tree(
     query: LibraryQuery,
@@ -2580,12 +2599,10 @@ pub async fn list_library_files_for_tree(
     run_blocking_command("list_library_files_for_tree", move || {
         let started_at = Instant::now();
         let connection = state.connection().map_err(map_error)?;
-        // Strip pagination: the folder tree needs ALL matching files, not a slice.
-        let tree_query = LibraryQuery {
-            limit: None,
-            offset: None,
-            ..query
-        };
+        // Keep the legacy tree payload bounded. The response still includes the
+        // full total count from list_library_files, but only returns a capped
+        // row slice and never includes preview-heavy row data.
+        let tree_query = bounded_library_tree_file_query(query);
         let response =
             library_index::list_library_files(&connection, tree_query).map_err(map_error)?;
         log_slow_command("list_library_files_for_tree", started_at, || {
@@ -3366,12 +3383,13 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        approved_review_action_url, approved_watch_source_url, is_locked_read_error,
-        retry_locked_read, review_action_url_matches, validate_review_download_redirect,
+        approved_review_action_url, approved_watch_source_url, bounded_library_tree_file_query,
+        is_locked_read_error, retry_locked_read, review_action_url_matches,
+        validate_review_download_redirect, LIBRARY_TREE_FILE_COMPAT_LIMIT,
     };
     use crate::{
         error::AppError,
-        models::{ReviewPlanAction, ReviewPlanActionKind},
+        models::{LibraryQuery, ReviewPlanAction, ReviewPlanActionKind},
     };
     use reqwest::Url;
 
@@ -3412,6 +3430,20 @@ mod tests {
         assert!(!is_locked_read_error(&AppError::Message(
             "no such table: missing".to_owned()
         )));
+    }
+
+    #[test]
+    fn legacy_tree_file_query_is_bounded_and_preview_light() {
+        let query = bounded_library_tree_file_query(LibraryQuery {
+            limit: Some(LIBRARY_TREE_FILE_COMPAT_LIMIT + 100),
+            offset: Some(-10),
+            include_previews: Some(true),
+            ..Default::default()
+        });
+
+        assert_eq!(query.limit, Some(LIBRARY_TREE_FILE_COMPAT_LIMIT));
+        assert_eq!(query.offset, Some(0));
+        assert_eq!(query.include_previews, Some(false));
     }
 
     #[test]

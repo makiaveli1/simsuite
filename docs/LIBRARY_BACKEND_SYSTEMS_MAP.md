@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2` plus `codex/library-duplicate-truth-guardrails-v21`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, and `codex/library-backend-performance-folder-query-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -40,8 +40,8 @@ The normal flow is:
 | `get_library_facets` | implemented | Returns creator/type/source facets for filters. |
 | `get_library_summary` | implemented | Returns Library summary counts. |
 | `list_library_files` | implemented | Paged Library rows; preview payload is controlled by `include_previews`. |
-| `list_library_folder_files` | partial | Returns folder contents, but currently builds a broader Library listing and filters in memory. This is a large-folder risk. |
-| `list_library_files_for_tree` | stale/weak | Still registered for tree builders; strips pagination and can become unbounded. `get_folder_tree_metadata` is the preferred lightweight path. |
+| `list_library_folder_files` | implemented, recently hardened | Returns direct or recursive folder contents through SQL-scoped source/depth/path filters, supports Library filters/search/sort, pagination, and preview control. |
+| `list_library_files_for_tree` | compatibility endpoint, bounded | Still registered for older callers, but now caps returned rows at 5,000 and strips previews. `get_folder_tree_metadata` plus `list_library_folder_files` is the preferred path. |
 | `get_folder_tree_metadata` | implemented | Builds folder tree metadata from indexed file paths only. Does not see truly empty disk folders. |
 | `get_file_detail` | implemented | Lazy detail query with watch, duplicate, review, and preview resolution. |
 | `reveal_file_in_folder` | implemented | Opens Explorer for file or parent folder; uses real paths. |
@@ -79,7 +79,7 @@ Important Library tables:
 Important indexes:
 
 - `idx_files_hash`, `idx_files_filename`, `idx_files_creator_id`, `idx_files_bundle_id`, `idx_files_kind`, `idx_files_source_location`.
-- `idx_files_download_item_id`, `idx_files_source_location_kind`, `idx_files_source_location_filename`, `idx_files_relative_depth`.
+- `idx_files_download_item_id`, `idx_files_source_location_kind`, `idx_files_source_location_filename`, `idx_files_relative_depth`, `idx_files_source_location_depth`.
 - `idx_duplicates_duplicate_type`, `idx_duplicates_file_id_a`, `idx_duplicates_file_id_b`.
 - `idx_review_queue_created_at`, `idx_review_queue_file_id`.
 - `idx_content_watch_sources_kind`, `idx_content_watch_sources_anchor_file_id`, `idx_content_watch_results_status`.
@@ -100,7 +100,7 @@ Scanner behavior:
 Partial or weak areas:
 
 - True empty disk folders are not indexed as folder metadata because the folder tree is file-row based.
-- Large-library scan and folder query performance still need stress proof.
+- Large-library scan still needs stress proof. Folder query coverage now includes a 1,076-row synthetic backend test, but 5,000 to 10,000 row proof remains future work.
 - Thumbnail validation has fixture proof but not live real-library proof.
 
 ## 5. Package Inspection Map
@@ -126,13 +126,13 @@ What is not proven:
 Folder systems:
 
 - `get_folder_tree_metadata` builds a folder tree from indexed file paths and source roots.
-- `list_library_folder_files` returns direct or recursive files under a folder path.
+- `list_library_folder_files` returns direct or recursive files under a folder path through SQL-scoped source/depth/path criteria.
 - Mods/Tray source roots are represented through `source_location` and normalized folder paths.
 - Open/reveal uses real disk paths.
 
 Weak areas:
 
-- `list_library_folder_files` currently filters after loading a broader listing, so very large folders can be inefficient.
+- `list_library_folder_files` no longer broad-loads the Library before filtering, but path-prefix matching still lacks a dedicated normalized relative path column/index.
 - True empty disk folders do not appear unless a file row causes the folder path to exist.
 - Folder tree metadata is indexed-file metadata, not a full filesystem mirror.
 
@@ -247,17 +247,20 @@ Needs Review is a manual review queue. It is not a broken-content detector.
 What is already safer:
 
 - Library list supports limit/offset paging.
+- Folder file listing is now SQL-scoped and paged instead of broad list plus in-memory folder filtering.
+- Legacy `list_library_files_for_tree` is capped at 5,000 preview-light rows.
 - Preview payloads are controlled by `include_previews`.
 - Detail preview resolution is lazy.
 - Duplicate hashing is candidate-based during scan.
 - Duplicate list command has a limit.
 - Core duplicate indexes exist.
+- `idx_files_source_location_depth` supports source/depth folder filtering.
 
 Risks:
 
-- `list_library_folder_files` loads a broad listing then filters in memory.
-- `list_library_files_for_tree` is still registered and can be unbounded.
-- Relationship peer counts currently run for filtered list sets and need stress proof.
+- Folder path-prefix matching still needs a normalized relative path/index if 10,000+ file proof shows it is slow.
+- `list_library_files_for_tree` is still registered for compatibility, though bounded.
+- Relationship peer counts currently run for filtered list sets and still need large all-library stress proof.
 - Duplicate pair generation can still grow within very large same-name/version-key groups.
 - No large real-library stress benchmark is committed yet.
 
@@ -265,9 +268,10 @@ Risks:
 
 | Feature | Status | Recommendation |
 | --- | --- | --- |
-| Improved duplicate version classification | should do now | Add query-time classification/evidence without migration. |
+| SQL-direct folder content queries | already solved for v1 | `list_library_folder_files` now uses SQL-scoped source/depth/path filters with paging and preview control. |
+| Improved duplicate version classification | already solved for current truth boundary | v2/v2.1 keep only validated same-file-content rows as duplicates; name/version/family rows are review/comparison only. |
 | True empty disk-folder metadata | should do later | Needs scanner/indexer folder rows or folder metadata table. |
-| Large-library stress backend proof | should do later | Add synthetic backend fixture/perf tests. |
+| Large-library stress backend proof | should do later | Add 5,000 to 10,000 row synthetic and real-library-safe backend timing proof. |
 | Live real-library thumbnail validation | should do later | Validate on safe user-provided or anonymized real content. |
 | Dependency detection | do not do until deterministic proof exists | Needs research and strong evidence model. |
 | Missing mesh detection | do not do until deterministic proof exists | High false-positive risk. |

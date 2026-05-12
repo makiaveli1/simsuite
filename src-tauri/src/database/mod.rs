@@ -923,6 +923,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
          CREATE INDEX IF NOT EXISTS idx_files_download_item_id_source_location ON files (download_item_id, source_location);
          CREATE INDEX IF NOT EXISTS idx_files_source_location_kind ON files (source_location, kind);
          CREATE INDEX IF NOT EXISTS idx_files_source_location_filename ON files (source_location, filename);
+         CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
          CREATE INDEX IF NOT EXISTS idx_files_relative_depth ON files (relative_depth);
          CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id ON snapshot_items (snapshot_id);
          CREATE TABLE IF NOT EXISTS special_mod_family_state (

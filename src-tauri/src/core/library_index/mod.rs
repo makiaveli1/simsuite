@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     core::{content_versions, scanner},
+    database,
     error::AppResult,
     models::{
         CategoryOverrideInfo, CreatorLearningInfo, FileDetail, FileInsights, FolderTreeMetadata,
@@ -16,6 +17,9 @@ use crate::{
     },
     seed::{SeedPack, TaxonomySeed},
 };
+
+const DEFAULT_FOLDER_QUERY_LIMIT: i64 = 500;
+const MAX_FOLDER_QUERY_LIMIT: i64 = 1_000;
 
 struct ProblemSignalInput<'a> {
     kind: &'a str,
@@ -534,9 +538,21 @@ pub fn list_library_files(
     connection: &Connection,
     query: LibraryQuery,
 ) -> AppResult<LibraryListResponse> {
+    list_library_files_scoped(connection, query, "", Vec::new())
+}
+
+fn list_library_files_scoped(
+    connection: &Connection,
+    query: LibraryQuery,
+    extra_filters: &str,
+    extra_params: Vec<Value>,
+) -> AppResult<LibraryListResponse> {
     let include_previews = query.include_previews.unwrap_or(true);
     let compact_paged_rows = query.limit.is_some();
     let (filters, params) = build_filters(&query);
+    let scoped_filters = format!("{filters}{extra_filters}");
+    let mut scoped_params = params.clone();
+    scoped_params.extend(extra_params);
     let order_by = build_order_by(query.sort_by);
     let exact_duplicate_exists = exact_duplicate_exists_sql("f.id");
 
@@ -548,21 +564,22 @@ pub fn list_library_files(
          LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
          LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
          WHERE f.source_location <> 'downloads'\n\
-        {filters}",
-        filters = filters
+        {scoped_filters}",
+        scoped_filters = scoped_filters
     );
 
-    let total = connection.query_row(&total_sql, params_from_iter(params.iter()), |row| {
-        row.get(0)
-    })?;
-    let peer_counts = load_relationship_peer_counts(connection, &filters, &params)?;
+    let total =
+        connection.query_row(&total_sql, params_from_iter(scoped_params.iter()), |row| {
+            row.get(0)
+        })?;
+    let peer_counts = load_relationship_peer_counts(connection, &scoped_filters, &scoped_params)?;
 
     // Pagination: only apply LIMIT/OFFSET when query.limit is explicitly set.
     // When limit is None (tree-mode), return all filtered rows without LIMIT/OFFSET.
     let rows_sql = if query.limit.is_some() {
         let limit = query.limit.unwrap_or(100);
         let offset = query.offset.unwrap_or(0);
-        let mut row_params = params.clone();
+        let mut row_params = scoped_params.clone();
         row_params.push(Value::Integer(limit));
         row_params.push(Value::Integer(offset));
         format!(
@@ -601,10 +618,10 @@ pub fn list_library_files(
              LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
              LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
              WHERE f.source_location <> 'downloads'\n\
-            {filters}\n\
+            {scoped_filters}\n\
              {order_by}\n\
              LIMIT ? OFFSET ?",
-            filters = filters,
+            scoped_filters = scoped_filters,
             order_by = order_by,
             exact_duplicate_exists = exact_duplicate_exists
         )
@@ -645,9 +662,9 @@ pub fn list_library_files(
              LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
              LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
              WHERE f.source_location <> 'downloads'\n\
-            {filters}\n\
+            {scoped_filters}\n\
              {order_by}",
-            filters = filters,
+            scoped_filters = scoped_filters,
             order_by = order_by,
             exact_duplicate_exists = exact_duplicate_exists
         )
@@ -656,12 +673,12 @@ pub fn list_library_files(
     let row_params = if query.limit.is_some() {
         let limit = query.limit.unwrap_or(100);
         let offset = query.offset.unwrap_or(0);
-        let mut p = params.clone();
+        let mut p = scoped_params.clone();
         p.push(Value::Integer(limit));
         p.push(Value::Integer(offset));
         p
     } else {
-        params.clone()
+        scoped_params.clone()
     };
 
     let mut statement = connection.prepare(&rows_sql)?;
@@ -759,37 +776,130 @@ pub fn list_library_folder_files(
     };
 
     let mut filters = query.filters;
-    filters.source = Some(source);
-    filters.limit = None;
-    filters.offset = None;
+    if filters
+        .source
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .is_some_and(|filter_source| !filter_source.eq_ignore_ascii_case(&source))
+    {
+        return Ok(empty_library_list_response());
+    }
+    filters.source = None;
+    filters.limit = Some(bounded_folder_query_limit(query.limit));
+    filters.offset = Some(query.offset.unwrap_or(0).max(0));
     filters.include_previews = query.include_previews.or(filters.include_previews);
 
-    let listing = list_library_files(connection, filters)?;
+    let folder_scope =
+        build_folder_scope_filter(connection, &source, &target_segments, query.recursive)?;
+    list_library_files_scoped(connection, filters, &folder_scope.sql, folder_scope.params)
+}
 
-    let filtered_items = listing
-        .items
-        .into_iter()
-        .filter(|item| {
-            folder_segments_for_file(&item.path, &item.source_location, item.relative_depth)
-                .map(|segments| {
-                    virtual_folder_matches(&segments, &target_segments, query.recursive)
-                })
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-    let total = filtered_items.len() as i64;
-    let offset = query.offset.unwrap_or(0).max(0) as usize;
-    let limit = query
-        .limit
-        .map(|value| value.max(0) as usize)
-        .unwrap_or(filtered_items.len());
-    let items = filtered_items
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect::<Vec<_>>();
+fn empty_library_list_response() -> LibraryListResponse {
+    LibraryListResponse {
+        total: 0,
+        items: Vec::new(),
+    }
+}
 
-    Ok(LibraryListResponse { total, items })
+fn bounded_folder_query_limit(limit: Option<i64>) -> i64 {
+    limit
+        .unwrap_or(DEFAULT_FOLDER_QUERY_LIMIT)
+        .max(0)
+        .min(MAX_FOLDER_QUERY_LIMIT)
+}
+
+#[derive(Debug)]
+struct FolderScopeFilter {
+    sql: String,
+    params: Vec<Value>,
+}
+
+fn build_folder_scope_filter(
+    connection: &Connection,
+    source: &str,
+    target_segments: &[String],
+    recursive: bool,
+) -> AppResult<FolderScopeFilter> {
+    let child_segments = target_segments.iter().skip(1).cloned().collect::<Vec<_>>();
+    let child_depth = child_segments.len() as i64;
+    let mut sql = String::from(" AND f.source_location = ?");
+    let mut params = vec![Value::Text(source.to_owned())];
+
+    if child_segments.is_empty() {
+        if !recursive {
+            sql.push_str(" AND f.relative_depth = 0");
+        }
+        return Ok(FolderScopeFilter { sql, params });
+    }
+
+    if recursive {
+        sql.push_str(" AND f.relative_depth >= ?");
+    } else {
+        sql.push_str(" AND f.relative_depth = ?");
+    }
+    params.push(Value::Integer(child_depth));
+
+    sql.push_str(" AND LOWER(REPLACE(f.path, '\\', '/')) LIKE ? ESCAPE '~'");
+    params.push(Value::Text(folder_path_like_pattern(
+        folder_root_disk_path(connection, source)?.as_deref(),
+        &child_segments,
+    )));
+
+    Ok(FolderScopeFilter { sql, params })
+}
+
+fn folder_root_disk_path(connection: &Connection, source: &str) -> AppResult<Option<String>> {
+    let settings = database::get_library_settings(connection)?;
+    let root = match source {
+        "mods" => settings.mods_path,
+        "tray" => settings.tray_path,
+        _ => None,
+    };
+    Ok(root)
+}
+
+fn folder_path_like_pattern(root_path: Option<&str>, child_segments: &[String]) -> String {
+    let child_path = child_segments
+        .iter()
+        .map(|segment| escape_like(&normalize_path_for_query(segment)))
+        .collect::<Vec<_>>()
+        .join("/");
+
+    if let Some(root_path) = root_path
+        .map(normalize_path_for_query)
+        .filter(|value| !value.is_empty())
+    {
+        return format!(
+            "{}/{}%",
+            escape_like(&root_path),
+            folder_child_prefix(&child_path)
+        );
+    }
+
+    format!("%/{}%", folder_child_prefix(&child_path))
+}
+
+fn folder_child_prefix(child_path: &str) -> String {
+    if child_path.ends_with('/') {
+        child_path.to_owned()
+    } else {
+        format!("{child_path}/")
+    }
+}
+
+fn normalize_path_for_query(path: &str) -> String {
+    path.trim()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('~', "~~")
+        .replace('%', "~%")
+        .replace('_', "~_")
 }
 
 #[derive(Debug)]
@@ -1038,29 +1148,6 @@ fn source_location_for_folder_root(root: &str) -> Option<String> {
         return Some("tray".to_owned());
     }
     None
-}
-
-fn virtual_folder_matches(
-    file_segments: &[String],
-    target_segments: &[String],
-    recursive: bool,
-) -> bool {
-    if target_segments.is_empty() {
-        return false;
-    }
-    if recursive {
-        return file_segments.len() >= target_segments.len()
-            && target_segments
-                .iter()
-                .zip(file_segments.iter())
-                .all(|(target, actual)| target.eq_ignore_ascii_case(actual));
-    }
-
-    file_segments.len() == target_segments.len()
-        && target_segments
-            .iter()
-            .zip(file_segments.iter())
-            .all(|(target, actual)| target.eq_ignore_ascii_case(actual))
 }
 
 fn folder_segments_for_file(
@@ -1521,10 +1608,11 @@ mod tests {
         models::{LibraryFolderFilesQuery, LibraryQuery, LibrarySettings, LibraryWatchFilter},
         seed::load_seed_pack,
     };
+    use std::time::Instant;
 
     use super::{
         get_file_detail, get_folder_tree_metadata, get_library_facets, list_library_files,
-        list_library_folder_files,
+        list_library_folder_files, MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -1539,6 +1627,7 @@ mod tests {
             downloads_path: Some("C:/Downloads".to_owned()),
             ..Default::default()
         };
+        database::save_library_paths(&mut connection, &settings).expect("save library paths");
 
         connection
             .execute(
@@ -1613,6 +1702,47 @@ mod tests {
             .expect("download file");
 
         (connection, settings, seed_pack)
+    }
+
+    fn default_insights_json() -> String {
+        serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json")
+    }
+
+    fn insert_library_file_row(
+        connection: &rusqlite::Connection,
+        path: &str,
+        filename: &str,
+        source_location: &str,
+        relative_depth: i64,
+        kind: &str,
+        confidence: f64,
+        insights_json: Option<String>,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights
+                 ) VALUES (?1, ?2, '.package', ?3, ?4, ?5, ?6, '[]', ?7)",
+                params![
+                    path,
+                    filename,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    insights_json.unwrap_or_else(default_insights_json),
+                ],
+            )
+            .expect("insert library file row");
+        connection.last_insert_rowid()
     }
 
     #[test]
@@ -1871,6 +2001,244 @@ mod tests {
 
         assert_eq!(listing.total, 0);
         assert!(listing.items.is_empty());
+    }
+
+    #[test]
+    fn folder_file_listing_uses_root_scoped_sql_and_avoids_path_tail_false_positive() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+
+        insert_library_file_row(
+            &connection,
+            "C:/Mods/TestCreator/real.package",
+            "real.package",
+            "mods",
+            1,
+            "Gameplay",
+            0.88,
+            None,
+        );
+        insert_library_file_row(
+            &connection,
+            "C:/Archive/TestCreator/archive-copy.package",
+            "archive-copy.package",
+            "mods",
+            1,
+            "Gameplay",
+            0.82,
+            None,
+        );
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/TestCreator".to_owned(),
+                recursive: false,
+                limit: Some(10),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("folder listing");
+
+        assert!(listing
+            .items
+            .iter()
+            .any(|item| item.filename == "real.package"));
+        assert!(listing
+            .items
+            .iter()
+            .all(|item| item.filename != "archive-copy.package"));
+    }
+
+    #[test]
+    fn folder_file_listing_supports_recursive_search_sort_preview_and_paging_under_load() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let started_at = Instant::now();
+
+        for index in 0..1_000 {
+            insert_library_file_row(
+                &connection,
+                &format!("C:/Mods/HugeFolder/huge_{index:04}.package"),
+                &format!("huge_{index:04}.package"),
+                "mods",
+                1,
+                if index % 3 == 0 { "CAS" } else { "Gameplay" },
+                0.5,
+                None,
+            );
+        }
+        for index in 0..75 {
+            insert_library_file_row(
+                &connection,
+                &format!("C:/Mods/HugeFolder/Nested/nested_{index:04}.package"),
+                &format!("nested_{index:04}.package"),
+                "mods",
+                2,
+                "Gameplay",
+                0.7,
+                None,
+            );
+        }
+        let preview_json = serde_json::to_string(&crate::models::FileInsights {
+            thumbnail_preview: Some("preview-bytes".to_owned()),
+            ..Default::default()
+        })
+        .expect("preview insights");
+        insert_library_file_row(
+            &connection,
+            "C:/Mods/HugeFolder/special_preview.package",
+            "special_preview.package",
+            "mods",
+            1,
+            "Gameplay",
+            0.9,
+            Some(preview_json),
+        );
+
+        let direct_page = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/HugeFolder".to_owned(),
+                recursive: false,
+                filters: LibraryQuery {
+                    sort_by: Some(crate::models::LibrarySortField::Name),
+                    ..Default::default()
+                },
+                limit: Some(25),
+                offset: Some(50),
+                include_previews: Some(false),
+            },
+        )
+        .expect("direct folder page");
+
+        assert_eq!(direct_page.total, 1_001);
+        assert_eq!(direct_page.items.len(), 25);
+        assert!(direct_page
+            .items
+            .iter()
+            .all(|item| item.insights.thumbnail_preview.is_none()));
+
+        let recursive = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/HugeFolder".to_owned(),
+                recursive: true,
+                limit: Some(2_000),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("recursive folder page");
+        assert_eq!(recursive.total, 1_076);
+        assert_eq!(recursive.items.len(), MAX_FOLDER_QUERY_LIMIT as usize);
+
+        let search_with_preview = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/HugeFolder".to_owned(),
+                recursive: true,
+                filters: LibraryQuery {
+                    search: Some("special_preview".to_owned()),
+                    ..Default::default()
+                },
+                limit: Some(10),
+                include_previews: Some(true),
+                ..Default::default()
+            },
+        )
+        .expect("search with preview");
+        assert_eq!(search_with_preview.total, 1);
+        assert_eq!(
+            search_with_preview.items[0]
+                .insights
+                .thumbnail_preview
+                .as_deref(),
+            Some("preview-bytes")
+        );
+
+        eprintln!(
+            "library_folder_stress rows=1076 elapsed_ms={}",
+            started_at.elapsed().as_millis()
+        );
+    }
+
+    #[test]
+    fn folder_file_listing_handles_root_direct_files_and_source_filters() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        insert_library_file_row(
+            &connection,
+            "C:/Mods/root_only.package",
+            "root_only.package",
+            "mods",
+            0,
+            "Gameplay",
+            0.84,
+            None,
+        );
+        insert_library_file_row(
+            &connection,
+            "C:/Tray/root_household.trayitem",
+            "root_household.trayitem",
+            "tray",
+            0,
+            "TrayHousehold",
+            0.91,
+            None,
+        );
+
+        let mods_root = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods".to_owned(),
+                recursive: false,
+                limit: Some(50),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("mods root files");
+        assert!(mods_root
+            .items
+            .iter()
+            .any(|item| item.filename == "root_only.package"));
+        assert!(mods_root
+            .items
+            .iter()
+            .all(|item| item.source_location == "mods"));
+
+        let tray_root = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Tray".to_owned(),
+                recursive: false,
+                filters: LibraryQuery {
+                    source: Some("tray".to_owned()),
+                    ..Default::default()
+                },
+                limit: Some(50),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("tray root files");
+        assert_eq!(tray_root.total, 1);
+        assert_eq!(tray_root.items[0].filename, "root_household.trayitem");
+
+        let mismatched_source = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Tray".to_owned(),
+                recursive: false,
+                filters: LibraryQuery {
+                    source: Some("mods".to_owned()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .expect("mismatched source");
+        assert_eq!(mismatched_source.total, 0);
+        assert!(mismatched_source.items.is_empty());
     }
 
     #[test]

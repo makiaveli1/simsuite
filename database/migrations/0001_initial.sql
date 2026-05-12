@@ -92,6 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_files_creator_id ON files (creator_id);
 CREATE INDEX IF NOT EXISTS idx_files_bundle_id ON files (bundle_id);
 CREATE INDEX IF NOT EXISTS idx_files_kind ON files (kind);
 CREATE INDEX IF NOT EXISTS idx_files_source_location ON files (source_location);
+CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
 CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
 
 CREATE TABLE IF NOT EXISTS download_items (
