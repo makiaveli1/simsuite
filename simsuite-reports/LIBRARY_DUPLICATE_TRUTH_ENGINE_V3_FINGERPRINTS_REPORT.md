@@ -229,7 +229,7 @@ Pre-existing `.cocoindex_code/*`, Home screen, global CSS, and unrelated status/
 
 ### Commit
 
-Pending final commit.
+- `55df040` - Add scan-time duplicate content fingerprints
 
 ### Final honest verdict
 
