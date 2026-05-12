@@ -57,8 +57,8 @@ function casualExplanation(state: SpecialDecisionState): string | null {
   switch (state) {
     case "review_manually":          return "This needs a quick review before applying.";
     case "repair_before_update":      return "This may need repair before it can be updated.";
-    case "install_dependency_first":  return "Some required files are missing first.";
-    case "open_dependency_item":      return "Another item needs to be opened first.";
+    case "install_dependency_first":  return "A support file needs review first.";
+    case "open_dependency_item":      return "Another support item needs to be opened first.";
     case "open_related_item":        return "This is related to another item.";
     case "separate_supported_files":  return "Some files may need to be handled separately.";
     case "guided_ready":             return null; // not shown — nothing needs attention
@@ -72,8 +72,8 @@ function seasonedReason(state: SpecialDecisionState): string | null {
   switch (state) {
     case "review_manually":          return "manual decision";
     case "repair_before_update":     return "repair first";
-    case "install_dependency_first": return "missing dependency";
-    case "open_dependency_item":     return "open dependency";
+    case "install_dependency_first": return "support file review";
+    case "open_dependency_item":     return "open support item";
     case "open_related_item":        return "related item";
     case "separate_supported_files":  return "separate files";
     case "guided_ready":             return null; // shown via state badge

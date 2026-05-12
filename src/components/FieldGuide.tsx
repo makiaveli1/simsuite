@@ -128,7 +128,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           tone: "warn",
           items: [
             "It will not move files straight from AI guesses.",
-            "It will not auto-fix risky items without showing you a preview.",
+            "It will not change risky items without a preview and your approval.",
             "It will not mix Tray content into Mods folders.",
           ],
         },
@@ -308,7 +308,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "updates",
       RefreshCw,
       "Updates",
-      "Set up trusted watch sources, separate manual reminders from real checks, and review possible updates without overclaiming.",
+      "Set up configured watch sources, separate manual reminders from real checks, and review possible updates without overclaiming.",
       viewCopy(userView, {
         beginner: "See which files need a source, which ones are watched, and which ones need a closer look.",
         standard: "Manage update sources, watch the checkable pages, and keep manual follow-up separate from checked results.",

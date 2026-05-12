@@ -1,5 +1,49 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Trust Boundaries and Automation Readiness v1)
+
+- **Mode**: code
+- **Focus**: define SimSuite's trust boundaries before future sorting, updating, duplicate cleanup, quarantine, delete, or AI-assisted workflows
+
+### Progress Made
+
+1. **Created the standing trust-boundary policy**:
+   - added `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`
+   - defined deterministic facts, evidence-backed cues, heuristic hints, and review-only states
+   - defined automation readiness levels `0` through `5`, with destructive Level 5 automation forbidden for now
+   - added AI boundaries: AI may summarize, suggest, and rank review items, but must not decide broken/safe/delete/dependency/update truth
+
+2. **Softened current overclaiming risk**:
+   - replaced Field Guide `auto-fix` phrasing with preview/approval wording
+   - replaced Downloads dependency-style copy with support-file/review wording
+   - softened special-mod setup copy from safe/fix language toward preview, repair review, configured-source, and approval wording
+
+3. **Added a focused copy guard**:
+   - added `src/trustBoundaryCopy.test.ts`
+   - the test scans current trust-sensitive UI surfaces for forbidden user-facing claims such as `auto-fix`, `quarantine`, `safe to delete`, `confirmed safe`, `AI verified`, `missing mesh`, and `missing dependency`
+
+### Verification
+
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: `23` files, `88` tests.
+- `cargo fmt`
+- `cargo check`: passed with existing unused-code warnings.
+- `cargo test`: `241` passed, `2` ignored stress tests.
+- `cargo build --release`: passed with existing unused-code warnings.
+- `npm run test:rust`: `241` passed, `2` ignored stress tests.
+- Desktop proof/smoke were not run because this was a docs/static-copy/backend-string sprint with no route flow, schema, command contract, or geometry change.
+
+### Known Problems / Gaps
+
+- This sprint does not add sorting, update replacement, duplicate cleanup, quarantine, delete, package/script fingerprints, dependency detection, missing-mesh detection, or AI runtime behavior.
+- Some backend/internal names still use legacy terms such as `officialLatest` or `missingDependencies`; current user-facing copy was softened where it could overclaim.
+- Unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+### Next Best Step
+
+1. Relationship count SQL aggregation/cache v2 if real-library traces show broad count cost; otherwise Duplicate Truth Engine v3 scan-time package/script fingerprints.
+
 ## Current Session (May 12, 2026 - Library Large-Scale Backend Stress v1)
 
 - **Mode**: code

@@ -1,5 +1,39 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Trust Boundaries and Automation Readiness v1)
+
+This session defines SimSuite's trust boundaries before future automation, sorting, updating, cleanup, quarantine, delete, or AI-assisted work.
+
+Important changes and findings:
+
+- added `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` as the standing trust policy for future implementation prompts.
+- defined deterministic facts, evidence-backed cues, heuristic hints, review-only states, and future-work claims.
+- defined automation readiness levels `0` through `5`; destructive Level 5 file automation is forbidden for now.
+- defined AI boundaries: AI may summarize metadata, suggest categories/search terms, explain review clues, and draft organization plans, but it must not decide broken/safe/delete/dependency/update truth.
+- added a required report section for future implementation reports: `### What this means for the user`; trust-sensitive work also needs `### Trust / safety boundary`.
+- softened current Field Guide and Downloads wording that could imply auto-fix, dependency proof, safe install, or trusted/official proof.
+- added `src/trustBoundaryCopy.test.ts` to guard current trust-sensitive UI surfaces against forbidden user-facing claims.
+- no new automation feature, delete action, quarantine, update replacement, dependency graph, missing-mesh detection, package/script duplicate fingerprint, or AI runtime was added.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `npm run build` (existing Vite chunk-size warning remains)
+- `npx tsc --noEmit`
+- `npm run test:unit` (`23` files, `88` tests)
+- `cargo fmt`
+- `cargo check` (existing unused-code warnings remain)
+- `cargo test` (`241` passed, `2` ignored stress tests)
+- `cargo build --release` (existing unused-code warnings remain)
+- `npm run test:rust` (`241` passed, `2` ignored stress tests)
+
+Desktop proof/smoke were not run because this was a docs/static-copy/backend-string sprint with no route flow, schema, command contract, or geometry change.
+
+Important remaining gap:
+
+- future sorting/updating/staging/AI sprints still need implementation-specific safety design, backup/undo rules, confirmation flows, and proof before they can touch real user files.
+- next backend recommendation: relationship count SQL aggregation/cache v2 if real-library traces show broad count cost; otherwise Duplicate Truth Engine v3 scan-time package/script fingerprints.
+
 ## Current session note (May 12, 2026 - Library Large-Scale Backend Stress v1)
 
 This session added deterministic large-scale backend stress proof for Library query paths without scanning real user files or adding user-facing features.

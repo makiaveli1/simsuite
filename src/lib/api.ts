@@ -348,9 +348,9 @@ function buildMockWatchResult(
       latestVersion: "2026.4.0",
       checkedAt: "2026-03-11T10:00:00.000Z",
       confidence: "strong",
-      note: "Official latest is a helper check and does not replace local install truth.",
+      note: "Source-version checks are helper clues and do not replace local install truth.",
       evidence: [
-        "The official MCCC page shows a newer release than the installed copy.",
+        "The configured MCCC source shows a newer release than the installed copy.",
       ],
     };
   }
@@ -580,7 +580,7 @@ function buildMockRefreshedWatchResult(
       latestVersion: "2026.4.0",
       checkedAt,
       confidence: "strong",
-      note: "Official latest is a helper check and does not replace local install truth.",
+      note: "Source version checks are helper clues and do not replace local install truth.",
       evidence: [
         "The saved MCCC page shows a newer release than the installed copy.",
       ],
@@ -1076,7 +1076,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       officialLatest: buildMockOfficialLatest(
         item,
         "2026.3.0",
-        "Official latest is extra guidance only and does not block the local update.",
+        "Source version guidance is helper-only and does not block the local update.",
       ),
       applyReady: true,
       availableActions,
@@ -1110,7 +1110,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       queueSummary: "Blocked until the missing MCCC core files are present.",
       explanation:
         reviewPlan?.explanation ??
-        "SimSuite found MCCC clues, but the local pack is missing required files.",
+        "SimSuite found MCCC clues, but the local pack is missing expected files.",
       recommendedNextStep:
         reviewPlan?.recommendedNextStep ??
         "Download the missing MCCC files, then let SimSuite check the full set again.",
@@ -1133,7 +1133,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       officialLatest: buildMockOfficialLatest(
         item,
         "2026.3.0",
-        "Official latest is helper-only here. The missing local files are the real blocker.",
+        "Source version guidance is helper-only here. Expected local files were not found.",
       ),
       applyReady: false,
       availableActions,
@@ -1190,7 +1190,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       officialLatest: buildMockOfficialLatest(
         item,
         "2026.3.0",
-        "Official latest is only extra guidance. The local mixed archive is the main issue.",
+        "Source version guidance is extra context. The local mixed archive is the main issue.",
       ),
       applyReady: false,
       availableActions,
@@ -1246,7 +1246,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       officialLatest: buildMockOfficialLatest(
         item,
         "4",
-        "Official latest is extra guidance only and does not block a safe fresh install.",
+        "Source version guidance is extra context and does not block a guided fresh install.",
       ),
       applyReady: true,
       availableActions,
@@ -1277,13 +1277,13 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       primaryFamilyItemName: item.displayName,
       siblingItemIds: [42],
       queueLane: "blocked",
-      queueSummary: "Repair the old MCCC layout first, then finish the update.",
+      queueSummary: "Preview the old MCCC layout repair first, then finish the update after approval.",
       explanation:
         reviewPlan?.explanation ??
-        "SimSuite found the update, but the installed MCCC files still need a safe repair first.",
+        "SimSuite found the update, but the installed MCCC files still need a reviewed repair first.",
       recommendedNextStep:
         reviewPlan?.recommendedNextStep ??
-        "Repair the old MCCC setup first, then finish the update.",
+        "Review the old MCCC setup repair first, then finish the update after approval.",
       incomingVersion: "2026.1.1",
       incomingSignature: "mccc-download-2026.1.1",
       incomingVersionSource: "download name",
@@ -1306,7 +1306,7 @@ function buildMockSpecialDecision(item: DownloadsInboxItem): SpecialModDecision 
       officialLatest: buildMockOfficialLatest(
         item,
         "2026.3.0",
-        "Official latest is helper-only. The local repair-first rule is still what matters here.",
+        "Source version guidance is helper-only. The local repair-first review is still what matters here.",
       ),
       applyReady: false,
       availableActions,
@@ -3408,14 +3408,14 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
     matchedProfileName: "MC Command Center",
     specialFamily: "Script suite",
     assessmentReasons: [
-      "SimSuite found MC Command Center clues, but the required core script file was not found.",
+      "SimSuite found MC Command Center clues, but the expected core script file was not found.",
     ],
     dependencySummary: [],
     missingDependencies: [],
     inboxDependencies: [],
     incompatibilityWarnings: [],
     postInstallNotes: [
-      "MCCC needs its core script file before SimSuite can install it safely.",
+      "MCCC needs its core script file before SimSuite can continue with a guided setup.",
     ],
     evidenceSummary: [
       "This looks like part of an MCCC set, but the core script file is missing.",
@@ -3489,14 +3489,14 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
     lastSeenAt: "2026-03-09T09:10:00.000Z",
     updatedAt: "2026-03-09T09:12:00.000Z",
     errorMessage: null,
-    notes: ["A required support library is already waiting in the Inbox."],
+    notes: ["A support file is already waiting in the Inbox."],
     intakeMode: "needs_review",
     riskLevel: "medium",
     matchedProfileKey: null,
     matchedProfileName: null,
-    specialFamily: "Dependency check",
+    specialFamily: "Support-file check",
     assessmentReasons: [
-      "This download mentions XML Injector as a required library.",
+      "This download mentions XML Injector as a support file to review.",
       "XML Injector is also waiting in the Inbox.",
     ],
     dependencySummary: ["XML Injector is also waiting in the Inbox."],
@@ -3504,10 +3504,10 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
     inboxDependencies: ["XML Injector"],
     incompatibilityWarnings: [],
     postInstallNotes: [
-      "Install XML Injector before moving mods that depend on it.",
+      "Review XML Injector before moving mods that mention it.",
     ],
     evidenceSummary: [
-      "SimSuite found a required-library note and matched XML Injector in the Inbox.",
+      "SimSuite found a support-file note and matched XML Injector in the Inbox.",
     ],
     catalogSource: mockXmlInjectorCatalogSource,
     existingInstallDetected: false,
@@ -3549,7 +3549,7 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
       "Keep one current XML Injector install in a shallow Mods folder.",
     ],
     evidenceSummary: [
-      "SimSuite found a full XML Injector set and a safe install path.",
+      "SimSuite found a full XML Injector set and a guided install path.",
     ],
     catalogSource: mockXmlInjectorCatalogSource,
     existingInstallDetected: false,
@@ -3572,10 +3572,10 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
     firstSeenAt: "2026-03-10T11:24:00.000Z",
     lastSeenAt: "2026-03-10T11:24:00.000Z",
     updatedAt: "2026-03-10T11:30:00.000Z",
-    errorMessage: "Older MC Command Center files are spread around Mods and need a safe repair first.",
+    errorMessage: "Older MC Command Center files are spread around Mods and need a reviewed repair first.",
     notes: [
       "Rechecked with newer SimSuite rules on Mar 10, 2026.",
-      "SimSuite found a safe repair path for the older MC Command Center setup.",
+      "SimSuite found a repair preview for the older MC Command Center setup.",
     ],
     intakeMode: "blocked",
     riskLevel: "high",
@@ -3584,8 +3584,8 @@ let mockDownloadsItems: DownloadsInboxItem[] = [
     specialFamily: "Script suite",
     assessmentReasons: [
       "The new archive looks like a full MC Command Center set.",
-      "Older MC Command Center files were found loose in Mods instead of one safe folder.",
-      "SimSuite can fix that layout before the update runs.",
+      "Older MC Command Center files were found loose in Mods instead of one shallow folder.",
+      "SimSuite can preview a layout repair before the update runs.",
     ],
     dependencySummary: [],
     missingDependencies: [],
@@ -3620,7 +3620,7 @@ const mockRulePresets: RulePreset[] = [
     name: "Mirror Mode",
     template: "keep-current-safe-shape",
     priority: 150,
-    description: "Keeps safe folders that already make sense and only fixes risky paths.",
+    description: "Keeps folders that already make sense and previews changes for risky paths.",
   },
   {
     name: "Creator First",
@@ -4784,7 +4784,7 @@ function buildMockDownloadDetail(itemId: number): DownloadInboxDetail | null {
           confidence: 0.72,
           size: 4_096,
           sourceLocation: "downloads",
-          safetyNotes: ["This note says XML Injector is required."],
+          safetyNotes: ["This note mentions XML Injector."],
         },
       ],
     };
@@ -5176,18 +5176,18 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       mode: "needs_review",
       profileKey: null,
       profileName: null,
-      specialFamily: "Dependency check",
+      specialFamily: "Support-file check",
       explanation:
-        "This download looks safe, but it says XML Injector is required first. SimSuite found XML Injector in the Inbox and can set it up before checking this download again.",
+        "This download has a support-file note for XML Injector. SimSuite found XML Injector in the Inbox and can set it up before checking this download again.",
       recommendedNextStep:
-        "Install XML Injector first, then let SimSuite re-check this download.",
+        "Review XML Injector first, then let SimSuite re-check this download.",
       dependencies: [
         {
           key: "xml_injector",
           displayName: "XML Injector",
           status: "inbox",
           summary:
-            "XML Injector is in the Inbox and ready for safe setup as XML_Injector_v4.zip.",
+            "XML Injector is in the Inbox and ready for guided setup as XML_Injector_v4.zip.",
           inboxItemId: 46,
           inboxItemName: "XML_Injector_v4.zip",
           inboxItemIntakeMode: "guided",
@@ -5205,11 +5205,11 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
           kind: "Gameplay",
           subtype: "Utility",
           creator: "adeepindigo",
-          notes: ["This mod is waiting for XML Injector."],
+          notes: ["This mod mentions XML Injector and is waiting for review."],
         },
       ],
       evidence: [
-        "The included readme says XML Injector is required.",
+        "The included readme mentions XML Injector.",
         "SimSuite matched an XML Injector archive already waiting in the Inbox.",
       ],
       existingLayoutFindings: [],
@@ -5220,7 +5220,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       availableActions: [
         buildMockReviewAction(
           "install_dependency",
-          "Install XML Injector first",
+          "Set up XML Injector first",
           "SimSuite can set up XML Injector from the Inbox, then re-check this waiting mod.",
           100,
           46,
@@ -5249,7 +5249,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       explanation:
         "This looks like part of an MC Command Center update, but the core script file is missing, so SimSuite will not guess how to install it.",
       recommendedNextStep:
-        "Download the missing official MCCC files, then let SimSuite re-check the full set.",
+        "Download the missing MCCC files from the configured source, then let SimSuite re-check the full set.",
       dependencies: [],
       incompatibilityWarnings: [],
       reviewFiles: [
@@ -5262,23 +5262,23 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
           kind: "ScriptMods",
           subtype: "Module",
           creator: "Deaderpool",
-          notes: ["The core script file is missing from this set."],
+          notes: ["The expected core script file is missing from this set."],
         },
       ],
       evidence: [
         "The archive contains MC Command Center module files.",
-        "The required core script file mc_cmd_center.ts4script was not found.",
+        "The expected core script file mc_cmd_center.ts4script was not found.",
       ],
       existingLayoutFindings: [],
       postInstallNotes: [
-        "MCCC needs its core script file before SimSuite can install it safely.",
+        "MCCC needs its core script file before SimSuite can continue with a guided setup.",
       ],
       catalogSource: mockMcccCatalogSource,
       availableActions: [
         buildMockReviewAction(
           "download_missing_files",
           "Download missing MCCC files",
-          "SimSuite can grab the trusted official MCCC archive, stage it in the Inbox, and re-check the full set.",
+          "SimSuite can fetch the configured-source MCCC archive, stage it in the Inbox, and re-check the full set.",
           100,
           null,
           "MC Command Center",
@@ -5409,9 +5409,9 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       profileName: "MC Command Center",
       specialFamily: "Script suite",
       explanation:
-        "SimSuite found a full MC Command Center update, but your older MCCC files are still spread around Mods. The safe fix is to clear that old setup out of the way before the update runs.",
+        "SimSuite found a full MC Command Center update, but your older MCCC files are still spread around Mods. It can preview a repair before the update runs.",
       recommendedNextStep:
-        "Fix the old MCCC setup first, then let SimSuite finish the update in the same safe run.",
+        "Review the old MCCC setup repair first, then let SimSuite finish the update after approval.",
       dependencies: [],
       incompatibilityWarnings: [],
       reviewFiles: [
@@ -5440,7 +5440,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       ],
       evidence: [
         "The download name and staged files match the MC Command Center profile.",
-        "The required core script file mc_cmd_center.ts4script was found in the new download.",
+        "The expected core script file mc_cmd_center.ts4script was found in the new download.",
         "Older MCCC files were found loose in Mods instead of one shallow MCCC folder.",
       ],
       existingLayoutFindings: [
@@ -5455,17 +5455,17 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
       availableActions: [
         buildMockReviewAction(
           "repair_special",
-          "Fix old MCCC setup",
-          "SimSuite can move the older MCCC files out of the way, keep your settings, and finish the update.",
+          "Preview old MCCC repair",
+          "SimSuite can preview moving the older MCCC files out of the way, keep your settings, and finish the update after approval.",
           100,
           null,
           "MC Command Center",
         ),
       ],
       repairPlanAvailable: true,
-      repairActionLabel: "Fix old MCCC setup",
+      repairActionLabel: "Preview old MCCC repair",
       repairReason:
-        "SimSuite can move the older MCCC files out of the way, keep your settings, and then finish the update.",
+        "SimSuite can preview moving the older MCCC files out of the way, keep your settings, and then finish the update after approval.",
       repairTargetFolder: `${DEFAULT_MODS_PATH}\\MCCC`,
       repairMoveFiles: [
         {
@@ -6362,8 +6362,8 @@ async function mockInvoke<T>(
         presetName: (payload?.presetName as string | undefined) ?? "Category First",
         detectedStructure:
           itemId === 45
-            ? "Dependency resolved. This batch can now use the normal safe hand-off."
-            : "Downloads inbox batch ready for a safe hand-off.",
+            ? "Support-file review complete. This batch can now use the normal hand-off preview."
+            : "Downloads inbox batch ready for a hand-off preview.",
         totalConsidered: suggestions.length,
         recommendedPreset: "Minimal Safe",
         recommendedReason:
@@ -6585,14 +6585,14 @@ async function mockInvoke<T>(
                   matchedProfileKey: null,
                   matchedProfileName: null,
                   specialFamily: null,
-                  assessmentReasons: ["XML Injector was installed first, so this batch can use the normal safe hand-off."],
+                  assessmentReasons: ["XML Injector was installed first, so this batch can use the normal hand-off preview."],
                   dependencySummary: [],
                   missingDependencies: [],
                   inboxDependencies: [],
                   reviewFileCount: 0,
-                  notes: ["Dependency resolved. This batch is ready for a normal safe hand-off."],
+                  notes: ["Support-file review complete. This batch is ready for a normal hand-off preview."],
                   postInstallNotes: [],
-                  evidenceSummary: ["The required XML Injector library was installed from the Inbox."],
+                  evidenceSummary: ["The XML Injector support file was installed from the Inbox."],
                   catalogSource: null,
                   updatedAt: new Date().toISOString(),
                 }
@@ -6615,7 +6615,7 @@ async function mockInvoke<T>(
       const itemId = payload?.itemId as number;
       const plan = buildMockReviewPlan(itemId);
       if (!plan?.repairPlanAvailable) {
-        throw new Error("This inbox item does not have a safe repair plan.");
+        throw new Error("This inbox item does not have a repair preview.");
       }
 
       const repairedCount = plan.repairMoveFiles.length;
@@ -6706,7 +6706,7 @@ async function mockInvoke<T>(
           deferredReviewCount: result.deferredReviewCount,
           snapshotName: result.snapshotName,
           message:
-            "Old MCCC setup fixed. SimSuite cleared the older files out of the way, kept your settings safe, and queued the guided update.",
+            "Old MCCC setup updated after approval. SimSuite moved the older files through the guided flow, kept your settings, and queued the guided update.",
         } as T;
       }
 
@@ -6732,7 +6732,7 @@ async function mockInvoke<T>(
           deferredReviewCount: result.deferredReviewCount,
           snapshotName: result.snapshotName,
           message:
-            "Dependency installed first. SimSuite re-checked the waiting mod and moved it onto the safer path.",
+            "Support file installed after approval. SimSuite re-checked the waiting mod and moved it onto the guided path.",
         } as T;
       }
 
@@ -6749,7 +6749,7 @@ async function mockInvoke<T>(
           preservedCount: 0,
           deferredReviewCount: 0,
           snapshotName: null,
-          message: `Opened ${action.relatedItemName ?? "the dependency"} in the Inbox.`,
+          message: `Opened ${action.relatedItemName ?? "the support item"} in the Inbox.`,
         } as T;
       }
 
@@ -6783,7 +6783,7 @@ async function mockInvoke<T>(
           preservedCount: 0,
           deferredReviewCount: 0,
           snapshotName: null,
-          message: `Opened the official ${action.relatedItemName ?? "download"} page in your browser.`,
+          message: `Opened the ${action.relatedItemName ?? "download"} source page in your browser.`,
         } as T;
       }
 
@@ -6804,7 +6804,7 @@ async function mockInvoke<T>(
                 reviewFileCount: 0,
                 notes: [
                   "Rechecked with newer SimSuite rules on Mar 10, 2026.",
-                  "Trusted official MCCC files were staged into the Inbox.",
+                  "Configured-source MCCC files were staged into the Inbox.",
                   "This batch is now ready for guided special setup.",
                 ],
                 guidedInstallAvailable: true,
@@ -6831,7 +6831,7 @@ async function mockInvoke<T>(
           deferredReviewCount: 0,
           snapshotName: null,
           message:
-            "Trusted MCCC files were downloaded into the Inbox and the batch is ready for guided setup.",
+            "Configured-source MCCC files were downloaded into the Inbox and the batch is ready for guided setup.",
         } as T;
       }
 

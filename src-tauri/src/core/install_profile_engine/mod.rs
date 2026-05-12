@@ -1061,13 +1061,13 @@ pub fn build_review_plan_cached(
         (
             layout.repair_plan_available,
             if layout.repair_plan_available {
-                Some(format!("Fix old {} setup", profile.display_name))
+                Some(format!("Preview old {} repair", profile.display_name))
             } else {
                 None
             },
             if layout.repair_plan_available {
                 Some(format!(
-                    "SimSuite can clear the older {} files out of the way, keep the settings safe, and then continue with the update.",
+                    "SimSuite can preview moving the older {} files out of the way, keep the settings, and then continue with the update after approval.",
                     profile.display_name
                 ))
             } else {
@@ -1768,17 +1768,17 @@ fn build_special_queue_summary(
                 )
             } else {
                 format!(
-                    "SimSuite recognized a full {} pack and has a safe install plan ready.",
+                    "SimSuite recognized a full {} pack and has a guided install preview ready.",
                     profile.display_name
                 )
             }
         }
         SpecialDecisionState::RepairBeforeUpdate => format!(
-            "SimSuite found a full {} pack and can fix the older setup before updating.",
+            "SimSuite found a full {} pack and can preview repairs for the older setup before updating.",
             profile.display_name
         ),
         SpecialDecisionState::InstallDependencyFirst => format!(
-            "{} is ready, but one required helper needs to be installed first.",
+            "{} is ready, but one support file needs review first.",
             profile.display_name
         ),
         SpecialDecisionState::OpenDependencyItem => format!(
@@ -1790,11 +1790,11 @@ fn build_special_queue_summary(
             profile.display_name
         ),
         SpecialDecisionState::DownloadMissingFiles => format!(
-            "This {} download is incomplete, but SimSuite can fetch the trusted official pack first.",
+            "This {} download is incomplete, but SimSuite can fetch the configured-source pack first.",
             profile.display_name
         ),
         SpecialDecisionState::OpenOfficialSource => format!(
-            "This {} download is incomplete and still needs the official full pack.",
+            "This {} download is incomplete and still needs the configured-source full pack.",
             profile.display_name
         ),
         SpecialDecisionState::SeparateSupportedFiles => format!(
@@ -2817,7 +2817,7 @@ fn evaluate_download_item_with_context(
             reasons.push(profile_block_reason(
                 &candidate.profile,
                 0,
-                "Required core files are missing from this special-mod set.",
+                "Expected core files were not found in this special-mod set.",
             ));
             return Ok(EvaluationResult {
                 assessment: DownloadItemAssessment {
@@ -2845,7 +2845,7 @@ fn evaluate_download_item_with_context(
                 explanation: profile_block_reason(
                     &candidate.profile,
                     0,
-                    "SimSuite found part of a known special suite, but the required core files are missing.",
+                    "SimSuite found part of a known special suite, but the expected core files were not found.",
                 ),
                 recommended_next_step:
                     "Download the full special-mod archive again or keep this item in review."
@@ -2857,7 +2857,7 @@ fn evaluate_download_item_with_context(
             reasons.push(profile_block_reason(
                 &candidate.profile,
                 2,
-                "The older install is spread around Mods and needs one safe repair pass first.",
+                "The older install is spread around Mods and needs a reviewed repair preview first.",
             ));
             return Ok(EvaluationResult {
                 assessment: DownloadItemAssessment {
@@ -2887,7 +2887,7 @@ fn evaluate_download_item_with_context(
                     candidate.profile.display_name, candidate.profile.display_name
                 ),
                 recommended_next_step: format!(
-                    "Fix the old {} setup first, then let SimSuite finish the update safely.",
+                    "Review the old {} setup repair first, then let SimSuite finish the update after approval.",
                     candidate.profile.display_name
                 ),
             });
@@ -3049,12 +3049,12 @@ fn evaluate_download_item_with_context(
         {
             let explanation = if !missing_dependencies.is_empty() {
                 format!(
-                    "{} needs another support library before SimSuite can install it safely.",
+                    "{} has a support file to review before guided setup can continue.",
                     candidate.profile.display_name
                 )
             } else if !inbox_dependencies.is_empty() {
                 format!(
-                    "{} depends on another special mod that is also waiting in the Inbox.",
+                    "{} has another support item waiting in the Inbox.",
                     candidate.profile.display_name
                 )
             } else {
@@ -3089,7 +3089,7 @@ fn evaluate_download_item_with_context(
                 existing_layout_findings: layout.warnings,
                 explanation,
                 recommended_next_step:
-                    "Resolve the dependency or incompatibility first, then come back to this special setup."
+                    "Review the support item or incompatibility first, then come back to this special setup."
                         .to_owned(),
             });
         }
@@ -3190,7 +3190,7 @@ fn evaluate_download_item_with_context(
         let explanation = if !missing_dependencies.is_empty() {
             "This download mentions another support library that is not installed yet.".to_owned()
         } else if !inbox_dependencies.is_empty() {
-            "This download depends on another library that is also waiting in the Inbox.".to_owned()
+            "This download has another support item waiting in the Inbox.".to_owned()
         } else {
             "This download has a known incompatibility warning and should be reviewed first."
                 .to_owned()
@@ -3227,9 +3227,8 @@ fn evaluate_download_item_with_context(
             dependencies,
             existing_layout_findings: Vec::new(),
             explanation,
-            recommended_next_step:
-                "Install the missing dependency first or review the conflict before moving this item."
-                    .to_owned(),
+            recommended_next_step: "Review the support file or conflict before moving this item."
+                .to_owned(),
         });
     }
 
@@ -3348,7 +3347,7 @@ fn collect_profile_evidence(
     }
     if required_core_present {
         reasons.push(format!(
-            "Required core files for {} were found.",
+            "Expected core files for {} were found.",
             profile.display_name
         ));
     }
@@ -3360,7 +3359,7 @@ fn collect_profile_evidence(
     }
     if !profile.required_all_filenames.is_empty() && required_exact_filenames_found > 0 {
         reasons.push(format!(
-            "{} required exact file name(s) for {} were found.",
+            "{} expected exact file name(s) for {} were found.",
             required_exact_filenames_found, profile.display_name
         ));
     }
@@ -3471,7 +3470,7 @@ fn resolve_dependency_status(
                 && item.intake_mode == DownloadIntakeMode::Guided
             {
                 format!(
-                    "{} is in the Inbox and ready for safe setup as {}.",
+                    "{} is in the Inbox and ready for guided setup as {}.",
                     rule.display_name, item.display_name
                 )
             } else {
@@ -3485,7 +3484,7 @@ fn resolve_dependency_status(
             (
                 "missing".to_owned(),
                 format!(
-                    "{} is required before this mod can be installed safely.",
+                    "{} is a support file to review before this mod can continue.",
                     rule.display_name
                 ),
             )
@@ -4428,7 +4427,7 @@ fn build_evidence_summary(evidence: &ProfileEvidence) -> Vec<String> {
         ));
     }
     if evidence.required_core_present {
-        summary.push("Required core files were found.".to_owned());
+        summary.push("Expected core files were found.".to_owned());
     }
     if evidence.required_exact_filenames_found > 0 {
         summary.push(format!(
@@ -4480,9 +4479,9 @@ fn build_available_review_actions(
         if layout.repair_plan_available {
             actions.push(ReviewPlanAction {
                 kind: ReviewPlanActionKind::RepairSpecial,
-                label: format!("Fix old {} setup", profile.display_name),
+                label: format!("Preview old {} repair", profile.display_name),
                 description: format!(
-                    "Move the older {} files out of the way, keep the settings files safe, and continue the update.",
+                    "Preview moving the older {} files out of the way, keep the settings files, and continue the update after approval.",
                     profile.display_name
                 ),
                 priority: 100,
@@ -4518,7 +4517,7 @@ fn build_available_review_actions(
                     kind: ReviewPlanActionKind::DownloadMissingFiles,
                     label: format!("Download missing {} files", profile.display_name),
                     description: format!(
-                        "Fetch the official {} archive into the Inbox first, then re-check it before installing anything.",
+                        "Fetch the configured-source {} archive into the Inbox first, then re-check it before installing anything.",
                         profile.display_name
                     ),
                     priority: 92,
@@ -4531,7 +4530,7 @@ fn build_available_review_actions(
                     kind: ReviewPlanActionKind::OpenOfficialSource,
                     label: format!("Open the {} page", profile.display_name),
                     description: format!(
-                        "Open the official {} page so you can grab the full archive yourself.",
+                        "Open the configured {} source page so you can grab the full archive yourself.",
                         profile.display_name
                     ),
                     priority: 88,
@@ -4583,7 +4582,7 @@ fn build_available_review_actions(
                         kind: ReviewPlanActionKind::DownloadMissingFiles,
                         label: format!("Download {}", dependency.display_name),
                         description: format!(
-                            "Fetch the official {} file into the Inbox, then re-check this download.",
+                            "Fetch the configured-source {} file into the Inbox, then re-check this download.",
                             dependency.display_name
                         ),
                         priority: 89,
@@ -4596,7 +4595,7 @@ fn build_available_review_actions(
                         kind: ReviewPlanActionKind::OpenOfficialSource,
                         label: format!("Open {} page", dependency.display_name),
                         description: format!(
-                            "Open the official {} page so you can grab the required library.",
+                            "Open the configured {} source page so you can grab the support file.",
                             dependency.display_name
                         ),
                         priority: 82,
@@ -4615,7 +4614,7 @@ fn build_available_review_actions(
                 kind: ReviewPlanActionKind::OpenOfficialSource,
                 label: format!("Open the {} page", profile.display_name),
                 description: format!(
-                    "Open the official {} page for the install notes and the latest download.",
+                    "Open the configured {} source page for install notes and download details.",
                     profile.display_name
                 ),
                 priority: 60,
@@ -7654,7 +7653,7 @@ mod tests {
             .any(|value| value.contains("matching special-mod files")));
         assert!(summary
             .iter()
-            .any(|value| value.contains("Required core files")));
+            .any(|value| value.contains("Expected core files")));
         assert!(summary.iter().any(|value| value.contains("xml injector")));
     }
 }

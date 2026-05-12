@@ -952,8 +952,8 @@ export function DownloadsScreen({
         const result = await api.applyGuidedDownloadItem(selectedItem.id, true);
         setStatusMessage(
           isSameVersion
-            ? `${selectedGuidedPlan.profileName} was reinstalled safely. ${result.replacedCount} current file(s) were refreshed and ${result.preservedCount} settings file(s) were kept.`
-            : `${selectedGuidedPlan.profileName} installed safely. ${result.installedCount} new file(s) moved, ${result.replacedCount} old file(s) replaced, and ${result.preservedCount} settings file(s) kept.`,
+            ? `${selectedGuidedPlan.profileName} was reinstalled after approval. ${result.replacedCount} current file(s) were refreshed and ${result.preservedCount} settings file(s) were kept.`
+            : `${selectedGuidedPlan.profileName} was installed after approval. ${result.installedCount} new file(s) moved, ${result.replacedCount} old file(s) replaced, and ${result.preservedCount} settings file(s) kept.`,
         );
         onDataChanged();
         await reloadInboxAfterMutation();
@@ -2247,14 +2247,14 @@ function buildDownloadsDialogConfig({
     const isSameVersion = specialDecision?.sameVersion ?? false;
 
     return {
-      eyebrow: userView === "beginner" ? "Safe setup" : "Guided setup",
+      eyebrow: "Guided setup",
       title: isSameVersion
         ? `Reinstall ${guidedPlan.profileName}?`
-        : `Install ${guidedPlan.profileName} safely?`,
+        : `Install ${guidedPlan.profileName} after preview?`,
       description: isSameVersion
         ? "SimSuite matched this download against the installed copy and found the same version. Reinstall only if you want to refresh the current setup cleanly."
         : "SimSuite has a guided install plan ready for this special mod. It will follow the matched setup path instead of dropping files in blind.",
-      confirmLabel: isSameVersion ? "Reinstall safely" : "Start safe install",
+      confirmLabel: isSameVersion ? "Reinstall after preview" : "Start guided install",
       tone: "accent" as const,
       metrics: [
         { label: "Replace", value: guidedPlan.replaceFiles.length.toLocaleString() },
@@ -2380,7 +2380,7 @@ function buildDownloadsDialogConfig({
       description:
         userView === "beginner"
           ? "SimSuite can clear the older setup out of the way, keep your saved files, and then continue the update safely."
-          : "A safe repair path is ready. SimSuite will move the older layout aside, keep the settings files, and then continue the update if the batch still checks out.",
+          : "A repair preview is ready. SimSuite will show the older layout changes, keep the settings files, and then continue the update after approval if the batch still checks out.",
       confirmLabel: action.label,
       tone: "warn" as const,
       metrics: [
@@ -2674,15 +2674,13 @@ function GuidedPreviewPanel({
       ? [
           {
             id: "dependencies",
-            label: userView === "beginner" ? "Depends on" : "Dependencies",
+            label: "Support files",
             count: plan.dependencies.length,
             content: (
               <div className="downloads-stage-tab-panel-stack">
                 <div className="downloads-guided-card downloads-guided-card-neutral">
                   <div className="downloads-guided-card-header">
-                    <strong>
-                      {userView === "beginner" ? "What it depends on" : "Dependencies"}
-                    </strong>
+                    <strong>Support files to check</strong>
                     <span className="ghost-chip">{plan.dependencies.length}</span>
                   </div>
                   <div className="downloads-evidence-list">
@@ -2804,7 +2802,7 @@ function GuidedPreviewPanel({
         <p>{plan.explanation}</p>
         <div className="detail-list">
           <DetailRow label="Family" value={plan.specialFamily ?? "Special mod"} />
-          <DetailRow label="Dependency" value={dependencySummary} />
+          <DetailRow label="Support files" value={dependencySummary} />
           <DetailRow
             label="Existing install"
             value={plan.existingInstallDetected ? "Found" : "Not found"}
@@ -3007,15 +3005,13 @@ function SpecialReviewPanel({
       ? [
           {
             id: "dependencies",
-            label: userView === "beginner" ? "Depends on" : "Dependencies",
+            label: "Support files",
             count: reviewPlan.dependencies.length,
             content: (
               <div className="downloads-stage-tab-panel-stack">
                 <div className="downloads-guided-card downloads-guided-card-neutral">
                   <div className="downloads-guided-card-header">
-                    <strong>
-                      {userView === "beginner" ? "What it depends on" : "Dependencies"}
-                    </strong>
+                    <strong>Support files to check</strong>
                     <span className="ghost-chip">{reviewPlan.dependencies.length}</span>
                   </div>
                   <div className="downloads-evidence-list">
@@ -3029,7 +3025,7 @@ function SpecialReviewPanel({
                             {dependency.inboxItemGuidedInstallAvailable &&
                             dependency.inboxItemIntakeMode === "guided"
                               ? "SimSuite can install this first from the Inbox."
-                              : "Open this dependency in the Inbox before returning here."}
+                              : "Open this support item in the Inbox before returning here."}
                           </span>
                         ) : null}
                       </div>
@@ -3078,7 +3074,7 @@ function SpecialReviewPanel({
         <div className="detail-list">
           <DetailRow label="Family" value={reviewPlan.specialFamily ?? "Special mod"} />
           <DetailRow
-            label="Dependency"
+            label="Support files"
             value={summarizeDependencies(reviewPlan.dependencies)}
           />
           <DetailRow
@@ -3097,10 +3093,10 @@ function SpecialReviewPanel({
           <div className="downloads-guided-card-header">
             <strong>
               {userView === "beginner"
-                ? "One safe fix is ready"
+                ? "Repair preview is ready"
                 : userView === "power"
                   ? "Repair queue"
-                  : "Safe repair plan"}
+                  : "Repair preview"}
             </strong>
             <span className="ghost-chip">
               {reviewPlan.repairMoveFiles.length +
@@ -3113,7 +3109,7 @@ function SpecialReviewPanel({
             <div className="downloads-repair-copy">
               <div className="section-label">
                 {userView === "beginner"
-                  ? "Safe fix"
+                  ? "Repair preview"
                   : userView === "power"
                     ? "Repair action"
                     : "Next approved action"}
@@ -3121,8 +3117,8 @@ function SpecialReviewPanel({
               <strong>{reviewPlan.repairReason ?? reviewActionDescription(repairAction)}</strong>
               <span>
                 {userView === "beginner"
-                  ? "SimSuite can clear the older setup out of the way first, then continue with the update."
-                  : "SimSuite will clear the older setup out of the way first so the update can continue safely."}
+                  ? "SimSuite can show the older setup repair first, then continue with the update after approval."
+                  : "SimSuite will preview the older setup repair first so the update can continue after approval."}
               </span>
             </div>
             <button
@@ -3440,7 +3436,7 @@ function buildInspectorSections({
           <DetailRow label="Setup type" value="Special setup" />
           <DetailRow label="Profile" value={selectedGuidedPlan.profileName} />
           <DetailRow
-            label="Dependency"
+            label="Support files"
             value={summarizeDependencies(selectedGuidedPlan.dependencies)}
           />
           <DetailRow label="Care level" value={riskLevelLabel(selectedItem.riskLevel)} />
@@ -3467,9 +3463,9 @@ function buildInspectorSections({
             <SummaryStat label="Needs review" value={selectedGuidedPlan.reviewFiles.length} tone="low" />
           </div>
           <div className="audit-what-card">
-            <strong>Safe install path</strong>
+            <strong>Guided install preview</strong>
             <span>
-              SimSuite keeps the suite together, stays inside a safe script depth, and makes a restore point before anything moves.
+              SimSuite keeps the suite together, stays inside the Sims script-depth limit, and makes a restore point before anything moves.
             </span>
           </div>
         </>
@@ -3569,7 +3565,7 @@ function buildInspectorSections({
               value={selectedReviewPlan.profileName ?? "Not matched"}
             />
             <DetailRow
-              label="Dependency"
+              label="Support files"
               value={summarizeDependencies(selectedReviewPlan.dependencies)}
             />
             <DetailRow label="Care level" value={riskLevelLabel(selectedItem.riskLevel)} />
@@ -3600,10 +3596,10 @@ function buildInspectorSections({
       selectedReviewPlan.postInstallNotes.length
         ? [{
         id: "reviewDependency",
-        label: userView === "beginner" ? "What it depends on" : "Deps + warnings",
+        label: userView === "beginner" ? "Support files" : "Support files + warnings",
         hint:
           userView === "beginner"
-            ? "Anything else this mod needs first."
+            ? "Anything else SimSuite wants you to check first."
             : "Required helpers, conflicts, and notes.",
         defaultCollapsed: userView === "beginner",
         children: (
@@ -3618,13 +3614,13 @@ function buildInspectorSections({
                       {dependency.inboxItemGuidedInstallAvailable &&
                       dependency.inboxItemIntakeMode === "guided"
                         ? "SimSuite can install it from the Inbox after approval."
-                        : "Open that dependency in the Inbox before returning here."}
+                        : "Open that support item in the Inbox before returning here."}
                     </>
                   ) : null}
                 </div>
               ))
             ) : (
-              <div className="downloads-evidence-row">No extra dependency is required.</div>
+              <div className="downloads-evidence-row">No extra support file is required.</div>
             )}
             {selectedReviewPlan.incompatibilityWarnings.map((warning) => (
               <div key={warning} className="downloads-evidence-row">
@@ -3849,14 +3845,14 @@ function buildSpecialVersionSection(
   specialDecision: SpecialModDecision,
   userView: UserView,
 ): DockSectionDefinition {
-  const officialLatest = specialDecision.officialLatest;
-  const officialVersion =
-    officialLatest?.status === "known"
-      ? officialLatest.latestVersion ?? "Known, but not labeled"
-      : officialLatest?.status === "check_failed"
-        ? "Could not check latest source"
-      : officialLatest?.status === "unknown"
-        ? "Latest online version unknown"
+  const sourceLatest = specialDecision.officialLatest;
+  const sourceVersion =
+    sourceLatest?.status === "known"
+      ? sourceLatest.latestVersion ?? "Known, but not labeled"
+      : sourceLatest?.status === "check_failed"
+        ? "Could not check source"
+      : sourceLatest?.status === "unknown"
+        ? "Source version unknown"
         : "Not checked yet";
 
   return {
@@ -3864,7 +3860,7 @@ function buildSpecialVersionSection(
     label: userView === "beginner" ? "Version check" : "Versions",
     hint:
       userView === "beginner"
-        ? "What is installed, what you downloaded, and what clue SimSuite trusted."
+        ? "What is installed, what you downloaded, and what clue SimSuite used."
         : "Installed copy, incoming pack, and the local evidence SimSuite used first.",
     defaultCollapsed: false,
     children: (
@@ -3906,7 +3902,7 @@ function buildSpecialVersionSection(
               true,
             )}
           />
-          <DetailRow label="Official latest" value={officialVersion} />
+          <DetailRow label="Known source version" value={sourceVersion} />
         </div>
         {specialDecision.incomingVersionEvidence.length ? (
           <div className="detail-block">
@@ -4073,7 +4069,7 @@ function buildDownloadInspectorSignals(
       body: coveredByInstalledFamily
         ? "A fuller pack from this family is already installed, so this leftover batch can stay out of the install path."
         : reviewPlan?.repairPlanAvailable
-          ? "A safe repair path is ready from this panel."
+          ? "A repair preview is ready from this panel."
           : "It still needs one more check before anything can move.",
     });
   }
@@ -4278,7 +4274,7 @@ function fallbackQueueSummary(item: DownloadsInboxItem) {
     case "special_setup":
       if (item.guidedInstallAvailable) {
         return item.existingInstallDetected
-          ? "SimSuite found an older special setup and is ready to update it safely."
+          ? "SimSuite found an older special setup and has a guided update preview ready."
           : "SimSuite recognized a supported special mod and has a guided next step ready.";
       }
       if (item.existingInstallDetected) {
@@ -4333,7 +4329,7 @@ function queueLaneHint(lane: DownloadQueueLane, userView: UserView) {
     case "waiting_on_you":
       return userView === "beginner"
         ? "These need one more choice from you first."
-        : "Dependencies, missing files, or a small decision are still in the way.";
+        : "Support files, missing files, or a small decision are still in the way.";
     case "blocked":
       return userView === "beginner"
         ? "SimSuite stopped these to stay safe."
@@ -4396,7 +4392,7 @@ function friendlyDependencyState(status: string) {
     case "in_inbox":
       return "Also in Inbox";
     case "missing":
-      return "Missing";
+      return "Needs review";
     case "conflict":
       return "Conflict found";
     default:
@@ -4414,7 +4410,7 @@ function summarizeDependencies(dependencies: DependencyStatus[]) {
   }
 
   if (dependencies.some((dependency) => dependency.status === "missing")) {
-    return "Missing";
+    return "Needs review";
   }
 
   if (dependencies.some((dependency) => dependency.status === "in_inbox")) {
@@ -4561,12 +4557,12 @@ function downloadsInspectorIdleNote(
     if (guidedPlan?.reviewFiles.length) {
       return userView === "beginner"
         ? `SimSuite matched this special mod, but ${guidedPlan.reviewFiles.length.toLocaleString()} file(s) still need one more safety check.`
-        : `SimSuite recognized this special mod, but ${guidedPlan.reviewFiles.length.toLocaleString()} file(s) still need review before the guided install is safe.`;
+        : `SimSuite recognized this special mod, but ${guidedPlan.reviewFiles.length.toLocaleString()} file(s) still need review before the guided install can continue.`;
     }
 
     return userView === "beginner"
-      ? "This special setup still needs a safe install plan."
-      : "This special setup still needs a safe guided plan before anything can move.";
+      ? "This special setup still needs a guided install preview."
+      : "This special setup still needs a reviewed guided plan before anything can move.";
   }
 
   if (safeCount === 0) {
@@ -4592,8 +4588,8 @@ function downloadsNextStepTitle(
 ) {
   if (reviewAction?.kind === "repair_special") {
     return userView === "beginner"
-      ? "Fix the old setup first"
-      : "Repair the old special-mod setup";
+      ? "Preview old setup repair"
+      : "Review the old special-mod setup repair";
   }
 
   if (reviewAction) {
@@ -4617,10 +4613,10 @@ function downloadsNextStepTitle(
       return guidedPlan?.existingInstallDetected ||
         specialDecision.existingInstallState === "clean"
         ? userView === "beginner"
-          ? "Update this special mod safely"
+          ? "Update this special mod after preview"
           : "Guided update is ready"
         : userView === "beginner"
-          ? "Install this special mod safely"
+          ? "Install this special mod after preview"
           : "Guided install is ready";
     }
 
@@ -4631,8 +4627,8 @@ function downloadsNextStepTitle(
     }
 
     return userView === "beginner"
-      ? "Follow the next safe setup step"
-      : "Use the safest next special-mod step";
+      ? "Follow the next guided setup step"
+      : "Use the next reviewed special-mod step";
   }
 
   if (versionResolution?.status === "same_version") {
@@ -4667,10 +4663,10 @@ function downloadsNextStepTitle(
     if (guidedPlan?.applyReady && canApply) {
       return guidedPlan.existingInstallDetected
         ? userView === "beginner"
-          ? "Update this special mod safely"
+          ? "Update this special mod after preview"
           : "Guided update is ready"
         : userView === "beginner"
-          ? "Install this special mod safely"
+          ? "Install this special mod after preview"
           : "Guided install is ready";
     }
 
@@ -4714,7 +4710,7 @@ function downloadsNextStepDescription(
   if (reviewAction?.kind === "repair_special") {
     return userView === "beginner"
       ? "SimSuite can move the older files out of the way, keep your settings, and then continue the update."
-      : "SimSuite found a safe repair path for the old install layout, so it can clear the older files out of the way and continue the update after approval.";
+      : "SimSuite found a repair preview for the old install layout, so it can show the older files that would move before continuing the update after approval.";
   }
 
   if (reviewAction) {
@@ -4737,7 +4733,7 @@ function downloadsNextStepDescription(
     if (specialDecision.applyReady) {
       return userView === "beginner"
         ? "SimSuite has checked the files, the folder, and the update rules for this special mod."
-        : "The backend has a full safe install or update plan ready for this special mod.";
+        : "The backend has a guided install or update preview ready for this special mod.";
     }
 
     return specialDecision.recommendedNextStep;
@@ -4776,7 +4772,7 @@ function downloadsNextStepDescription(
 
     return userView === "beginner"
       ? "SimSuite recognized the mod, but one more safety check is still needed."
-      : "The download matches a known special mod, but the guided plan is not safe enough to apply yet.";
+      : "The download matches a known special mod, but the guided plan still needs review before it can be applied.";
   }
 
   if (item.intakeMode === "needs_review") {
@@ -4787,8 +4783,8 @@ function downloadsNextStepDescription(
 
   if (item.intakeMode === "blocked") {
     return userView === "beginner"
-      ? "The files or structure are not safe enough to move, so SimSuite stopped here."
-      : "SimSuite stopped because the staged files or current install shape are not safe to continue.";
+      ? "The files or structure still need review before anything moves, so SimSuite stopped here."
+      : "SimSuite stopped because the staged files or current install shape still need review.";
   }
 
   if (safeCount > 0) {
@@ -4813,7 +4809,7 @@ function previewPanelTitle(
         ? "One more setup check is needed"
         : "Guided setup needs review";
     }
-    return userView === "beginner" ? "How to install this safely" : "Guided install";
+    return userView === "beginner" ? "Guided install steps" : "Guided install";
   }
   if (intakeMode === "blocked") {
     return userView === "beginner" ? "Why this was blocked" : "Blocked item";
@@ -4834,7 +4830,7 @@ function applyButtonLabel(
 ) {
   if (isApplying) {
     if (reviewPlan?.repairPlanAvailable && intakeMode !== "guided") {
-      return userView === "beginner" ? "Fixing..." : "Repairing...";
+      return userView === "beginner" ? "Preparing repair..." : "Repairing...";
     }
     if (specialDecision?.sameVersion) {
       return userView === "beginner" ? "Reinstalling..." : "Reinstalling...";
@@ -4857,8 +4853,8 @@ function applyButtonLabel(
         specialDecision?.existingInstallState === "repairable");
     return userView === "beginner"
       ? existingInstallDetected
-        ? "Update safely"
-        : "Install safely"
+        ? "Update after preview"
+        : "Install after preview"
       : existingInstallDetected
         ? "Apply guided update"
         : "Apply guided install";
@@ -4867,8 +4863,8 @@ function applyButtonLabel(
   if (intakeMode === "needs_review") {
     return reviewPlan?.repairPlanAvailable
       ? userView === "beginner"
-        ? "Fix old setup"
-        : "Run repair"
+        ? "Preview repair"
+        : "Run repair preview"
       : userView === "beginner"
         ? "Review needed first"
         : "Needs review first";
@@ -4877,8 +4873,8 @@ function applyButtonLabel(
   if (intakeMode === "blocked") {
     return reviewPlan?.repairPlanAvailable
       ? userView === "beginner"
-        ? "Fix old setup"
-        : "Run repair"
+        ? "Preview repair"
+        : "Run repair preview"
       : userView === "beginner"
         ? "Blocked"
         : "Blocked";
