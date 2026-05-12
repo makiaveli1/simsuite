@@ -221,7 +221,7 @@ Pre-existing unrelated changes in `.cocoindex_code/*`, `src/screens/HomeScreen.t
 
 ### Commit hashes
 
-- Pending until commit.
+- `7248327` - Harden Library thumbnail preview pipeline.
 
 ### Final honest verdict
 
