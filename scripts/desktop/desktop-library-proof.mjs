@@ -463,6 +463,25 @@ async function collectLibraryGeometry(driver) {
           })
           .filter(Boolean);
       });
+    const rowThumbnailFailures = Array.from(document.querySelectorAll(".library-list-body .library-list-row"))
+      .slice(0, 10)
+      .map((row, rowIndex) => {
+        const thumb = row.querySelector(".library-row-thumb-frame");
+        if (!thumb) {
+          return { rowIndex, reason: "missing thumbnail frame" };
+        }
+        const rect = thumb.getBoundingClientRect();
+        if (rect.width < 40 || rect.height < 40) {
+          return {
+            rowIndex,
+            reason: "thumbnail frame too small",
+            width: rect.width,
+            height: rect.height,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     return {
       viewport: {
@@ -477,6 +496,8 @@ async function collectLibraryGeometry(driver) {
       inspectorExpanded: rectFor(".library-inspector-shell:not(.inspector-collapsed)"),
       topStrip: rectFor(".library-top-strip"),
       commandRow: rectFor(".library-command-row"),
+      filterPanel: rectFor(".library-filter-collapse-shell"),
+      filterToggle: rectFor("button[aria-controls='library-filter-panel']"),
       filterDeck: rectFor(".library-filter-deck"),
       activeFilterRow: rectFor(".library-active-filter-row"),
       advancedButton: rectFor(".library-advanced-btn"),
@@ -490,6 +511,7 @@ async function collectLibraryGeometry(driver) {
       activeNavText: rectFor(".rail-nav.is-active span"),
       commandControlOverlapFailures,
       rowClipFailures,
+      rowThumbnailFailures,
     };
   });
 }
@@ -531,6 +553,10 @@ function assertLibraryGeometry(geometry) {
     failures.push("Library search input is not visible or usable");
   }
 
+  if (!geometry.filterToggle || geometry.filterToggle.width < 64 || geometry.filterToggle.height < 24) {
+    failures.push("Library Filters toggle is not visible or usable");
+  }
+
   if (!geometry.advancedButton || geometry.advancedButton.width < 64 || geometry.advancedButton.height < 24) {
     failures.push("Library Advanced control is not visible or usable");
   }
@@ -553,6 +579,10 @@ function assertLibraryGeometry(geometry) {
     failures.push(`Library row content is clipped in ${geometry.rowClipFailures.length} visible element(s)`);
   }
 
+  if (geometry.rowThumbnailFailures?.length > 0) {
+    failures.push(`Library row thumbnails are missing or too small in ${geometry.rowThumbnailFailures.length} visible row(s)`);
+  }
+
   return {
     ok: failures.length === 0,
     failures,
@@ -572,6 +602,88 @@ async function assertLibraryLayoutGeometry(driver, summary, label) {
   });
   if (!result.ok) {
     throw new Error(`${label} layout geometry failed: ${result.failures.join("; ")}`);
+  }
+}
+
+async function assertLibraryFilterCollapseGeometry(driver, summary, label, expectedExpanded) {
+  const state = await driver.executeScript(() => {
+    const rectFor = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        display: style.display,
+        visibility: style.visibility,
+        opacity: style.opacity,
+      };
+    };
+    const doc = document.documentElement;
+    const toggle = document.querySelector("button[aria-controls='library-filter-panel']");
+    const shell = document.querySelector(".library-filter-collapse-shell");
+    return {
+      toggle: rectFor("button[aria-controls='library-filter-panel']"),
+      shell: rectFor(".library-filter-collapse-shell"),
+      searchInput: rectFor("input[aria-label='Search library']"),
+      listHeader: rectFor(".library-list-header"),
+      topStrip: rectFor(".library-top-strip"),
+      ariaExpanded: toggle?.getAttribute("aria-expanded") ?? null,
+      ariaHidden: shell?.getAttribute("aria-hidden") ?? null,
+      className: shell?.className ?? "",
+      overflow: doc.scrollWidth - doc.clientWidth,
+    };
+  });
+
+  const failures = [];
+  const tolerance = 4;
+  if (!state.toggle || state.toggle.width < 64 || state.toggle.height < 24) {
+    failures.push("Filters toggle is not visible or usable");
+  }
+  if (!state.searchInput || state.searchInput.width < 120 || state.searchInput.height < 20) {
+    failures.push("Search input is not visible while filters are collapsed/expanded");
+  }
+  if (!state.shell) {
+    failures.push("Filter collapse shell is missing");
+  }
+  if (state.overflow > tolerance) {
+    failures.push(`document has ${state.overflow}px horizontal overflow`);
+  }
+  if (expectedExpanded) {
+    if (state.ariaExpanded !== "true" || state.ariaHidden !== "false" || !state.className.includes("is-expanded")) {
+      failures.push("Filter panel did not report the expanded state");
+    }
+    if (state.shell && state.shell.height < 40) {
+      failures.push("Expanded filter panel is unexpectedly short");
+    }
+  } else {
+    if (state.ariaExpanded !== "false" || state.ariaHidden !== "true" || !state.className.includes("is-collapsed")) {
+      failures.push("Filter panel did not report the collapsed state");
+    }
+    if (state.shell && state.shell.height > 12) {
+      failures.push(`Collapsed filter panel still consumes ${Math.round(state.shell.height)}px`);
+    }
+  }
+  if (state.topStrip && state.listHeader && state.topStrip.bottom > state.listHeader.top + tolerance) {
+    failures.push("Collapsed/expanded filter area overlaps the list header");
+  }
+
+  if (!Array.isArray(summary.filterCollapseChecks)) {
+    summary.filterCollapseChecks = [];
+  }
+  summary.filterCollapseChecks.push({
+    label,
+    ok: failures.length === 0,
+    failures,
+    state,
+  });
+  if (failures.length > 0) {
+    throw new Error(`${label} filter collapse geometry failed: ${failures.join("; ")}`);
   }
 }
 
@@ -831,11 +943,227 @@ async function verifyLibraryFilterUx(driver, summary, runDir) {
   await waitForVisibleElement(driver, ".library-list-shell", 30000);
   await assertLibraryLayoutGeometry(driver, summary, "filter-cleared-layout");
 
+  await clickVisibleButton(driver, "Filters");
+  await sleep(driver, 500);
+  await assertLibraryFilterCollapseGeometry(driver, summary, "filter-collapsed-layout", false);
+  const collapsedShot = path.join(runDir, "library-filter-collapsed.png");
+  await takeScreenshot(driver, collapsedShot);
+  summary.screenshots.push(collapsedShot);
+
+  await clickVisibleButton(driver, "Filters");
+  await sleep(driver, 500);
+  await assertLibraryFilterCollapseGeometry(driver, summary, "filter-expanded-layout", true);
+  await assertLibraryLayoutGeometry(driver, summary, "filter-reexpanded-layout");
+
   summary.filterUxChecks.push({
     activeStateScreenshot: activeShot,
     advancedScreenshot: advancedShot,
     noResultsScreenshot: noResultsShot,
+    collapsedScreenshot: collapsedShot,
   });
+}
+
+async function ensureLibraryFiltersExpanded(driver) {
+  const expanded = await driver.executeScript(() => {
+    return document
+      .querySelector("button[aria-controls='library-filter-panel']")
+      ?.getAttribute("aria-expanded");
+  });
+  if (expanded !== "true") {
+    await clickVisibleButton(driver, "Filters");
+    await sleep(driver, 400);
+  }
+}
+
+async function ensureLibraryAdvancedOpen(driver) {
+  await ensureLibraryFiltersExpanded(driver);
+  const expanded = await driver.executeScript(() => {
+    return document
+      .querySelector(".library-advanced-btn")
+      ?.getAttribute("aria-expanded");
+  });
+  if (expanded !== "true") {
+    await clickVisibleButton(driver, "Advanced");
+    await sleep(driver, 400);
+  }
+  await waitForVisibleElement(driver, ".library-filter-drawer", 30000);
+}
+
+async function assertLibraryAtmosphere(driver, summary, label) {
+  const state = await driver.executeScript(() => {
+    const doc = document.documentElement;
+    const button = Array.from(document.querySelectorAll("button")).find((candidate) =>
+      (candidate.getAttribute("aria-label") ?? "").toLowerCase().includes("cozy library glow"),
+    );
+    const workbench = document.querySelector(".library-workbench");
+    const stage = document.querySelector(".library-stage-shell");
+    const inspector = document.querySelector(".library-inspector-shell");
+    const rectFor = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    return {
+      rootAtmosphere: doc.dataset.libraryAtmosphere ?? null,
+      workbenchAtmosphere: workbench?.getAttribute("data-library-atmosphere") ?? null,
+      buttonPressed: button?.getAttribute("aria-pressed") ?? null,
+      buttonLabel: button?.getAttribute("aria-label") ?? null,
+      overflow: doc.scrollWidth - doc.clientWidth,
+      stage: rectFor(stage),
+      inspector: rectFor(inspector),
+    };
+  });
+
+  const failures = [];
+  if (state.rootAtmosphere !== "cozy") {
+    failures.push("Root atmosphere state is not cozy");
+  }
+  if (state.workbenchAtmosphere !== "cozy") {
+    failures.push("Library workbench does not expose cozy atmosphere");
+  }
+  if (state.buttonPressed !== "true") {
+    failures.push("Cozy glow toggle is not pressed");
+  }
+  if (state.overflow > 4) {
+    failures.push(`document has ${state.overflow}px horizontal overflow`);
+  }
+
+  if (!Array.isArray(summary.atmosphereChecks)) {
+    summary.atmosphereChecks = [];
+  }
+  summary.atmosphereChecks.push({
+    label,
+    ok: failures.length === 0,
+    failures,
+    state,
+  });
+
+  if (failures.length > 0) {
+    throw new Error(`${label} atmosphere check failed: ${failures.join("; ")}`);
+  }
+}
+
+async function verifyLibraryAtmosphere(driver, summary, runDir) {
+  await setExperienceMode(driver, "seasoned");
+  await openLibraryScreen(driver);
+  await clickVisibleButtonByAriaLabel(driver, "List view", 10000).catch(() => null);
+  await waitForVisibleElement(driver, ".library-list-shell", 30000);
+  await ensureLibraryAdvancedOpen(driver);
+
+  const pressed = await driver.executeScript(() => {
+    const button = Array.from(document.querySelectorAll("button")).find((candidate) =>
+      (candidate.getAttribute("aria-label") ?? "").toLowerCase().includes("cozy library glow"),
+    );
+    return button?.getAttribute("aria-pressed") ?? null;
+  });
+  if (pressed !== "true") {
+    await clickVisibleElement(
+      driver,
+      "//button[contains(@aria-label, 'cozy Library glow')]",
+      30000,
+    );
+    await sleep(driver, 500);
+  }
+
+  await assertLibraryAtmosphere(driver, summary, "library-atmosphere-on");
+  const atmosphereShot = path.join(runDir, "library-cozy-polish-atmosphere-on.png");
+  await takeScreenshot(driver, atmosphereShot);
+  summary.screenshots.push(atmosphereShot);
+
+  await clickVisibleButton(driver, "Filters");
+  await sleep(driver, 500);
+  await assertLibraryFilterCollapseGeometry(driver, summary, "cozy-filter-collapsed-layout", false);
+  const collapsedShot = path.join(runDir, "library-cozy-polish-filters-collapsed.png");
+  await takeScreenshot(driver, collapsedShot);
+  summary.screenshots.push(collapsedShot);
+
+  await clickVisibleButton(driver, "Filters");
+  await sleep(driver, 500);
+  await assertLibraryFilterCollapseGeometry(driver, summary, "cozy-filter-expanded-layout", true);
+  await assertLibraryLayoutGeometry(driver, summary, "cozy-list-layout");
+  const listShot = path.join(runDir, "library-cozy-polish-list.png");
+  await takeScreenshot(driver, listShot);
+  summary.screenshots.push(listShot);
+}
+
+async function assertLibraryGridDensityControl(driver, summary, label) {
+  if (!Array.isArray(summary.gridDensityControlChecks)) {
+    summary.gridDensityControlChecks = [];
+  }
+
+  const geometry = await driver.executeScript(() => {
+    const rectFor = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+
+    const slider = document.querySelector("input[aria-label='Grid card size']");
+
+    return {
+      rail: rectFor(".library-density-rail"),
+      label: document.querySelector(".density-rail-label")?.textContent?.trim() ?? null,
+      value: document.querySelector(".density-rail-value")?.textContent?.trim() ?? null,
+      track: rectFor(".density-rail-track"),
+      thumb: rectFor(".density-rail-thumb"),
+      slider: rectFor("input[aria-label='Grid card size']"),
+      sliderValueText: slider?.getAttribute("aria-valuetext") ?? null,
+    };
+  });
+
+  const failures = [];
+  if (!geometry.rail || geometry.rail.width < 190 || geometry.rail.height < 30) {
+    failures.push("Grid card size control is not visible or large enough");
+  }
+  if (!geometry.track || geometry.track.width < 70 || geometry.track.height < 20) {
+    failures.push("Grid card size track is not visible or controllable");
+  }
+  if (!geometry.thumb || geometry.thumb.width < 16 || geometry.thumb.height < 16) {
+    failures.push("Grid card size slider thumb is not visibly anchored");
+  }
+  if (!geometry.slider || geometry.slider.width < 70 || geometry.slider.height < 20 || !geometry.sliderValueText) {
+    failures.push("Grid card size range input is not accessible");
+  }
+  if (!geometry.label) {
+    failures.push("Grid card size label is missing");
+  }
+
+  summary.gridDensityControlChecks.push({ label, geometry, failures });
+
+  if (failures.length > 0) {
+    throw new Error(`Grid card size control geometry failed (${label}): ${failures.join("; ")}`);
+  }
+}
+
+async function openFolderWithDirectFileRows(driver) {
+  const folderNames = ["MCCC", "Lot51 Core Library", "Generic Watch", "Lumpinou Toolbox", "Mods"];
+  let lastError = null;
+  for (const folderName of folderNames) {
+    try {
+      await clickVisibleButton(driver, folderName);
+      await waitForVisibleElement(driver, ".library-folder-content-pane .library-list-row .library-row-thumb-frame", 12000);
+      return folderName;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error("Could not open a folder containing direct file rows.");
 }
 
 async function setProofWindowSize(driver, width, height) {
@@ -1047,6 +1375,7 @@ async function main() {
     await takeScreenshot(driver, filterCreatorShot);
     summary.screenshots.push(filterCreatorShot);
     await verifyLibraryFilterUx(driver, summary, runDir);
+    await verifyLibraryAtmosphere(driver, summary, runDir);
     await setExperienceMode(driver, "seasoned");
     await openLibraryScreen(driver);
     summary.mcccRowNeedle = await openRow(driver, targets.mccc);
@@ -1082,6 +1411,13 @@ async function main() {
     const visualGridShot = path.join(runDir, "library-visual-productization-grid.png");
     await takeScreenshot(driver, visualGridShot);
     summary.screenshots.push(visualGridShot);
+    await assertLibraryGridDensityControl(driver, summary, "grid-card-size-control");
+    const gridSizeShot = path.join(runDir, "library-grid-size-control-polish.png");
+    await takeScreenshot(driver, gridSizeShot);
+    summary.screenshots.push(gridSizeShot);
+    const cozyGridShot = path.join(runDir, "library-cozy-polish-grid.png");
+    await takeScreenshot(driver, cozyGridShot);
+    summary.screenshots.push(cozyGridShot);
 
     await clickVisibleButtonByAriaLabel(driver, "Folders view");
     await waitForVisibleElement(driver, ".library-folders-layout", 30000);
@@ -1092,6 +1428,14 @@ async function main() {
     const visualFolderShot = path.join(runDir, "library-visual-productization-folder.png");
     await takeScreenshot(driver, visualFolderShot);
     summary.screenshots.push(visualFolderShot);
+    summary.folderThumbnailProofFolder = await openFolderWithDirectFileRows(driver);
+    await assertLibraryLayoutGeometry(driver, summary, "folder-direct-file-thumbnails-layout");
+    const folderThumbnailShot = path.join(runDir, "library-folder-row-thumbnails.png");
+    await takeScreenshot(driver, folderThumbnailShot);
+    summary.screenshots.push(folderThumbnailShot);
+    const cozyFolderShot = path.join(runDir, "library-cozy-polish-folder.png");
+    await takeScreenshot(driver, cozyFolderShot);
+    summary.screenshots.push(cozyFolderShot);
 
     await clickVisibleButtonByAriaLabel(driver, "List view");
     await openRow(driver, targets.mccc);
@@ -1103,6 +1447,9 @@ async function main() {
     const visualMoreDetailsShot = path.join(runDir, "library-visual-productization-more-details.png");
     await takeScreenshot(driver, visualMoreDetailsShot);
     summary.screenshots.push(visualMoreDetailsShot);
+    const cozyDetailSheetShot = path.join(runDir, "library-cozy-polish-detail-sheet.png");
+    await takeScreenshot(driver, cozyDetailSheetShot);
+    summary.screenshots.push(cozyDetailSheetShot);
     await clickAnyVisibleButton(driver, ["Done"], 30000);
     await sleep(driver, 400);
 
@@ -1114,6 +1461,9 @@ async function main() {
     const visualPreflightShot = path.join(runDir, "library-visual-productization-preflight.png");
     await takeScreenshot(driver, visualPreflightShot);
     summary.screenshots.push(visualPreflightShot);
+    const cozyPreflightShot = path.join(runDir, "library-cozy-polish-preflight.png");
+    await takeScreenshot(driver, cozyPreflightShot);
+    summary.screenshots.push(cozyPreflightShot);
 
     summary.duplicatesPreflightText = summary.mcccDetailText;
     await clickVisibleButton(driver, "Open in Duplicates");

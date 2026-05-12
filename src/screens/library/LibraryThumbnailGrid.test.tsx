@@ -80,4 +80,5 @@ it("shows card identity at rest while keeping missing preview fallback honest", 
 
   expect(screen.getAllByText(/longcreatorname cozychair/i).length).toBeGreaterThan(0);
   expect(screen.getAllByTitle(/no preview available/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/no preview/i)).toBeInTheDocument();
 });

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { ArrowUpDown, ChevronDown, Folder, Grid3X3, LayoutList, Search, SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useRef, type CSSProperties } from "react";
+import { ArrowUpDown, ChevronDown, Folder, Grid3X3, LayoutList, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { LibraryFacets, LibrarySortField, LibrarySummary, LibraryWatchFilter, UserView } from "../../lib/types";
 import { libraryViewFlags } from "./libraryDisplay";
 import { friendlyTypeLabel } from "../../lib/uiLanguage";
@@ -50,8 +50,12 @@ interface LibraryTopStripProps {
   viewMode: "list" | "grid" | "folders";
   pageSize: number;
   densityValue: number;
+  filtersCollapsed: boolean;
+  atmosphereEnabled: boolean;
   onPageSizeChange: (value: number) => void;
   onDensityChange: (value: number) => void;
+  onFiltersCollapsedChange: (collapsed: boolean) => void;
+  onAtmosphereChange: (enabled: boolean) => void;
   onSearchChange: (value: string) => void;
   onSortByChange: (value: SortField) => void;
   onResetSort: () => void;
@@ -104,12 +108,21 @@ export function LibraryTopStrip({
   onPageSizeChange,
   densityValue,
   onDensityChange,
+  filtersCollapsed,
+  atmosphereEnabled,
+  onFiltersCollapsedChange,
+  onAtmosphereChange,
 }: LibraryTopStripProps) {
   const flags = libraryViewFlags(userView);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const firstDrawerControlRef = useRef<HTMLSelectElement | null>(null);
   const previousDrawerOpenRef = useRef(drawerOpen);
+  const filterPanelId = "library-filter-panel";
+  const filtersExpanded = !filtersCollapsed;
   const normalizedDensity = clampDensity(densityValue);
+  const densityStyle = {
+    "--density-position": `${normalizedDensity}%`,
+  } as CSSProperties;
   const hasActiveFilters = activeFilterCount > 0;
   const drawerFilterCount = [filters.creator, filters.source, filters.minConfidence, filters.subtype].filter(Boolean).length;
   const sortIsActive = sortBy !== "name";
@@ -144,6 +157,15 @@ export function LibraryTopStrip({
     ...activeDrawerFilters,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
   const showActiveStateRow = activeFilterPills.length > 0 || sortIsActive;
+  const activeFilterBadgeCount = activeFilterPills.length;
+
+  const toggleFiltersExpanded = () => {
+    if (filtersExpanded && drawerOpen) {
+      onDrawerToggle();
+    }
+
+    onFiltersCollapsedChange(filtersExpanded);
+  };
 
   useEffect(() => {
     if (drawerOpen && !previousDrawerOpenRef.current) {
@@ -241,19 +263,21 @@ export function LibraryTopStrip({
             </button>
           </div>
 
-          {/* ── Density rail — Phase 5aj: compact icon-only pill ── */}
+          {/* ── Grid card size — continuous rail with visible handle ── */}
           {viewMode === "grid" && (
-            <div className="library-density-rail" aria-label="Card density">
+            <div className="library-density-rail" role="group" aria-label="Grid card size">
+              <span className="density-rail-label">Size</span>
               <Grid3X3
-                size={11}
+                size={12}
                 strokeWidth={1.8}
-                className="density-rail-icon density-rail-icon--dense"
+                className="density-rail-icon density-rail-icon--small"
+                aria-hidden="true"
               />
-              <div className="density-rail-track">
-                <div
-                  className="density-rail-fill"
-                  style={{ width: `${normalizedDensity}%` }}
-                />
+              <div className="density-rail-track" style={densityStyle}>
+                <div className="density-rail-fill" aria-hidden="true" />
+                <span className="density-rail-thumb" aria-hidden="true">
+                  <span />
+                </span>
                 <input
                   type="range"
                   min="0"
@@ -262,18 +286,41 @@ export function LibraryTopStrip({
                   value={normalizedDensity}
                   onChange={(event) => onDensityChange(clampDensity(Number(event.target.value)))}
                   className="density-rail-slider"
-                  aria-label={`Card density ${Math.round(normalizedDensity)} percent`}
+                  aria-label="Grid card size"
+                  aria-valuetext={`${Math.round(normalizedDensity)} percent card size`}
                 />
               </div>
-              <LayoutList
-                size={13}
+              <Grid3X3
+                size={16}
                 strokeWidth={1.8}
-                className="density-rail-icon density-rail-icon--spacious"
+                className="density-rail-icon density-rail-icon--large"
+                aria-hidden="true"
               />
             </div>
           )}
 
-          {flags.showAdvancedFilters ? (
+          <button
+            type="button"
+            className={`library-filter-toggle${filtersExpanded ? " is-open" : ""}${activeFilterBadgeCount > 0 ? " has-active-filters" : ""}`}
+            onClick={toggleFiltersExpanded}
+            aria-expanded={filtersExpanded}
+            aria-controls={filterPanelId}
+            aria-label={`${filtersExpanded ? "Hide" : "Show"} filters${activeFilterBadgeCount > 0 ? `, ${activeFilterBadgeCount} active` : ""}`}
+          >
+            <SlidersHorizontal size={13} strokeWidth={2} aria-hidden="true" />
+            Filters
+            {activeFilterBadgeCount > 0 ? (
+              <span className="library-filter-toggle__badge">{activeFilterBadgeCount}</span>
+            ) : null}
+            <ChevronDown
+              size={12}
+              strokeWidth={2}
+              className="library-filter-toggle__caret"
+              aria-hidden="true"
+            />
+          </button>
+
+          {filtersExpanded && flags.showAdvancedFilters ? (
             <button
               ref={filterButtonRef}
               type="button"
@@ -298,246 +345,269 @@ export function LibraryTopStrip({
         </div>
       </div>
 
-      {/* ── Quick filters row: kind chips + watch chips (secondary, visually subordinate) ── */}
-      <div className="library-browse-row library-filter-deck" aria-label="Library filters">
-        <div className="library-filter-group library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
-          <div className="library-filter-group-header">
-            <span className="library-browse-label">Types</span>
-          </div>
-          <div className="library-filter-chip-row">
-            <button
-              type="button"
-              className={`library-kind-chip${filters.kind === "" ? " is-active" : ""}`}
-              onClick={() => onFiltersChange({ kind: "" })}
-              aria-pressed={filters.kind === ""}
-              title="Show all types"
-            >
-              All types
-            </button>
-            {facets?.kinds.map((kind) => {
-              const cssClass = `type-pill--${kind.charAt(0).toLowerCase() + kind.slice(1)}`;
-              const isActive = filters.kind === kind;
-              return (
+      <div
+        id={filterPanelId}
+        className={`library-filter-collapse-shell${filtersExpanded ? " is-expanded" : " is-collapsed"}`}
+        aria-hidden={!filtersExpanded}
+      >
+        <div className="library-filter-collapse-inner">
+          {/* ── Quick filters row: kind chips + watch chips (secondary, visually subordinate) ── */}
+          <div className="library-browse-row library-filter-deck" aria-label="Library filters">
+            <div className="library-filter-group library-browse-group library-browse-group--kinds" role="group" aria-label="Filter by type">
+              <div className="library-filter-group-header">
+                <span className="library-browse-label">Types</span>
+              </div>
+              <div className="library-filter-chip-row">
                 <button
-                  key={kind}
                   type="button"
-                  className={`library-kind-chip ${cssClass}${isActive ? " is-active" : ""}`}
-                  onClick={() => onFiltersChange({ kind: isActive ? "" : kind })}
-                  aria-pressed={isActive}
-                  title={isActive ? `Showing ${friendlyTypeLabel(kind)} - click to clear` : `Show ${friendlyTypeLabel(kind)}`}
+                  className={`library-kind-chip${filters.kind === "" ? " is-active" : ""}`}
+                  onClick={() => onFiltersChange({ kind: "" })}
+                  aria-pressed={filters.kind === ""}
+                  title="Show all types"
                 >
-                  {friendlyTypeLabel(kind)}
+                  All types
                 </button>
-              );
-            })}
-          </div>
-        </div>
+                {facets?.kinds.map((kind) => {
+                  const cssClass = `type-pill--${kind.charAt(0).toLowerCase() + kind.slice(1)}`;
+                  const isActive = filters.kind === kind;
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      className={`library-kind-chip ${cssClass}${isActive ? " is-active" : ""}`}
+                      onClick={() => onFiltersChange({ kind: isActive ? "" : kind })}
+                      aria-pressed={isActive}
+                      title={isActive ? `Showing ${friendlyTypeLabel(kind)} - click to clear` : `Show ${friendlyTypeLabel(kind)}`}
+                    >
+                      {friendlyTypeLabel(kind)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-        {/* Contextual subtype chips — only in grid view, when a kind is active */}
-        {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
-          <div className="library-browse-sep" aria-hidden="true" />
-        )}
-        {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
-          <div className="library-filter-group library-subtype-chips" role="group" aria-label="Filter by subtype">
-            {facets.subtypes.map((s) => {
-              const isActive = filters.subtype === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`library-subtype-chip${isActive ? " is-active" : ""}`}
-                  onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
-                  aria-pressed={isActive}
-                  title={isActive ? `Showing ${s} - click to clear` : `Show ${s}`}
-                >
-                  {s}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="library-browse-sep" aria-hidden="true" />
-
-        <div className="library-filter-group library-browse-group library-browse-group--watch" role="group" aria-label="Filter by signal">
-          <div className="library-filter-group-header">
-            <span className="library-browse-label">Signals</span>
-          </div>
-          <div className="library-filter-chip-row">
-            {WATCH_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`library-quick-chip${watchFilter === opt.value ? " is-active" : ""}`}
-                onClick={() => onWatchFilterChange(opt.value)}
-                aria-pressed={watchFilter === opt.value}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {librarySummary ? (
-          <div className="library-browse-summary" aria-label="Library health summary">
-            {librarySummary.tracked > 0 && (
-              <span className="library-summary-pill">
-                <strong>{librarySummary.tracked.toLocaleString()}</strong> tracked
-              </span>
+            {/* Contextual subtype chips — only in grid view, when a kind is active */}
+            {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+              <div className="library-browse-sep" aria-hidden="true" />
             )}
-            {librarySummary.hasUpdates > 0 && (
-              <span className="library-summary-pill has-updates">
-                <strong>{librarySummary.hasUpdates.toLocaleString()}</strong> update leads
-              </span>
+            {viewMode === 'grid' && filters.kind && facets?.subtypes && facets.subtypes.length > 0 && (
+              <div className="library-filter-group library-subtype-chips" role="group" aria-label="Filter by subtype">
+                {facets.subtypes.map((s) => {
+                  const isActive = filters.subtype === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`library-subtype-chip${isActive ? " is-active" : ""}`}
+                      onClick={() => onFiltersChange({ subtype: isActive ? "" : s })}
+                      aria-pressed={isActive}
+                      title={isActive ? `Showing ${s} - click to clear` : `Show ${s}`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-            {librarySummary.needsReview > 0 && (
-              <span className="library-summary-pill needs-review">
-                <strong>{librarySummary.needsReview.toLocaleString()}</strong> review
-              </span>
-            )}
-          </div>
-        ) : null}
-      </div>
 
-      {showActiveStateRow ? (
-        <div className="library-active-filter-row" aria-label="Active Library filters">
-          {activeFilterPills.length > 0 ? (
-            <>
-              <span className="library-active-filter-row__label">Showing</span>
-              <div className="library-active-filter-pills">
-                {activeFilterPills.map((filter) => (
+            <div className="library-browse-sep" aria-hidden="true" />
+
+            <div className="library-filter-group library-browse-group library-browse-group--watch" role="group" aria-label="Filter by signal">
+              <div className="library-filter-group-header">
+                <span className="library-browse-label">Signals</span>
+              </div>
+              <div className="library-filter-chip-row">
+                {WATCH_FILTER_OPTIONS.map((opt) => (
                   <button
-                    key={filter.key}
+                    key={opt.value}
                     type="button"
-                    className="library-active-filter-pill"
-                    onClick={filter.clear}
-                    aria-label={`Clear ${filter.label}`}
-                    title={`Clear ${filter.label}`}
+                    className={`library-quick-chip${watchFilter === opt.value ? " is-active" : ""}`}
+                    onClick={() => onWatchFilterChange(opt.value)}
+                    aria-pressed={watchFilter === opt.value}
                   >
-                    {filter.label}
-                    <X size={11} strokeWidth={2} />
+                    {opt.label}
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                className="library-clear-filters-button"
-                onClick={onResetFilters}
-              >
-                Clear filters
-              </button>
-            </>
+            </div>
+
+            {librarySummary ? (
+              <div className="library-browse-summary" aria-label="Library health summary">
+                {librarySummary.tracked > 0 && (
+                  <span className="library-summary-pill">
+                    <strong>{librarySummary.tracked.toLocaleString()}</strong> tracked
+                  </span>
+                )}
+                {librarySummary.hasUpdates > 0 && (
+                  <span className="library-summary-pill has-updates">
+                    <strong>{librarySummary.hasUpdates.toLocaleString()}</strong> update leads
+                  </span>
+                )}
+                {librarySummary.needsReview > 0 && (
+                  <span className="library-summary-pill needs-review">
+                    <strong>{librarySummary.needsReview.toLocaleString()}</strong> review
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {showActiveStateRow ? (
+            <div className="library-active-filter-row" aria-label="Active Library filters">
+              {activeFilterPills.length > 0 ? (
+                <>
+                  <span className="library-active-filter-row__label">Showing</span>
+                  <div className="library-active-filter-pills">
+                    {activeFilterPills.map((filter) => (
+                      <button
+                        key={filter.key}
+                        type="button"
+                        className="library-active-filter-pill"
+                        onClick={filter.clear}
+                        aria-label={`Clear ${filter.label}`}
+                        title={`Clear ${filter.label}`}
+                      >
+                        {filter.label}
+                        <X size={11} strokeWidth={2} />
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="library-clear-filters-button"
+                    onClick={onResetFilters}
+                  >
+                    Clear filters
+                  </button>
+                </>
+              ) : null}
+
+              {sortIsActive ? (
+                <div className="library-sort-state">
+                  <span className="library-sort-state-pill">Sorted: {sortLabel(sortBy)}</span>
+                  <button
+                    type="button"
+                    className="library-reset-sort-button"
+                    onClick={onResetSort}
+                  >
+                    Reset sort
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
-          {sortIsActive ? (
-            <div className="library-sort-state">
-              <span className="library-sort-state-pill">Sorted: {sortLabel(sortBy)}</span>
-              <button
-                type="button"
-                className="library-reset-sort-button"
-                onClick={onResetSort}
-              >
-                Reset sort
-              </button>
+          {/* ── Advanced drawer: creator/source/confidence/subtype + active filter pills ── */}
+          {filtersExpanded && flags.showAdvancedFilters ? (
+            <div
+              id="library-filter-drawer"
+              className="library-filter-drawer"
+              aria-hidden={!drawerOpen}
+            >
+              <div className="library-filter-drawer-inner">
+                <label className="field library-toolbar-select">
+                  <span className="sr-only">Creator</span>
+                  <select
+                    ref={firstDrawerControlRef}
+                    id="lib-filter-creator"
+                    value={filters.creator}
+                    onChange={(event) => onFiltersChange({ creator: event.target.value })}
+                    aria-label="Filter by creator"
+                  >
+                    <option value="">All creators</option>
+                    {facets?.creators.map((creatorOption) => (
+                      <option key={creatorOption} value={creatorOption}>{creatorOption}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field library-toolbar-select">
+                  <span className="sr-only">Source</span>
+                  <select
+                    id="lib-filter-source"
+                    value={filters.source}
+                    onChange={(event) => onFiltersChange({ source: event.target.value })}
+                    aria-label="Filter by source"
+                  >
+                    <option value="">All sources</option>
+                    <option value="mods">Mods</option>
+                    <option value="tray">Tray</option>
+                  </select>
+                </label>
+
+                <label className="field library-toolbar-select">
+                  <span className="sr-only">Confidence</span>
+                  <select
+                    value={filters.minConfidence}
+                    onChange={(event) => onFiltersChange({ minConfidence: event.target.value })}
+                    aria-label="Minimum confidence"
+                  >
+                    {CONFIDENCE_OPTIONS.map((option) => (
+                      <option key={option.value || "any"} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field library-toolbar-select">
+                  <span className="sr-only">Subtype</span>
+                  <select
+                    value={filters.subtype}
+                    onChange={(event) => onFiltersChange({ subtype: event.target.value })}
+                    aria-label="Filter by subtype"
+                  >
+                    <option value="">All subtypes</option>
+                    {facets?.subtypes.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className={`library-atmosphere-toggle${atmosphereEnabled ? " is-active" : ""}`}
+                  onClick={() => onAtmosphereChange(!atmosphereEnabled)}
+                  aria-pressed={atmosphereEnabled}
+                  aria-label={`${atmosphereEnabled ? "Turn off" : "Turn on"} cozy Library glow`}
+                  title="Warm the Library surfaces without changing data"
+                >
+                  <Sparkles size={13} strokeWidth={2} aria-hidden="true" />
+                  <span className="library-atmosphere-toggle__copy">
+                    <strong>Cozy glow</strong>
+                    <span>Soft Library atmosphere</span>
+                  </span>
+                </button>
+
+                {activeDrawerFilters.length > 0 && (
+                  <div className="library-drawer-active-filters" aria-label="Active precision filters">
+                    {activeDrawerFilters.map((filter) => (
+                      <button
+                        key={filter.key}
+                        type="button"
+                        className="library-inline-filter-pill"
+                        onClick={filter.clear}
+                        title={`Clear ${filter.label}`}
+                      >
+                        {filter.label}
+                        <X size={11} strokeWidth={2} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {hasActiveFilters ? (
+                  <button
+                    type="button"
+                    className="secondary-action library-drawer-reset"
+                    onClick={onResetFilters}
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
-      ) : null}
-
-      {/* ── Advanced drawer: creator/source/confidence/subtype + active filter pills ── */}
-      {flags.showAdvancedFilters ? (
-        <div
-          id="library-filter-drawer"
-          className="library-filter-drawer"
-          aria-hidden={!drawerOpen}
-        >
-          <div className="library-filter-drawer-inner">
-            <label className="field library-toolbar-select">
-              <span className="sr-only">Creator</span>
-              <select
-                ref={firstDrawerControlRef}
-                id="lib-filter-creator"
-                value={filters.creator}
-                onChange={(event) => onFiltersChange({ creator: event.target.value })}
-                aria-label="Filter by creator"
-              >
-                <option value="">All creators</option>
-                {facets?.creators.map((creatorOption) => (
-                  <option key={creatorOption} value={creatorOption}>{creatorOption}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field library-toolbar-select">
-              <span className="sr-only">Source</span>
-              <select
-                id="lib-filter-source"
-                value={filters.source}
-                onChange={(event) => onFiltersChange({ source: event.target.value })}
-                aria-label="Filter by source"
-              >
-                <option value="">All sources</option>
-                <option value="mods">Mods</option>
-                <option value="tray">Tray</option>
-              </select>
-            </label>
-
-            <label className="field library-toolbar-select">
-              <span className="sr-only">Confidence</span>
-              <select
-                value={filters.minConfidence}
-                onChange={(event) => onFiltersChange({ minConfidence: event.target.value })}
-                aria-label="Minimum confidence"
-              >
-                {CONFIDENCE_OPTIONS.map((option) => (
-                  <option key={option.value || "any"} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field library-toolbar-select">
-              <span className="sr-only">Subtype</span>
-              <select
-                value={filters.subtype}
-                onChange={(event) => onFiltersChange({ subtype: event.target.value })}
-                aria-label="Filter by subtype"
-              >
-                <option value="">All subtypes</option>
-                {facets?.subtypes.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-            </label>
-
-            {activeDrawerFilters.length > 0 && (
-              <div className="library-drawer-active-filters" aria-label="Active precision filters">
-                {activeDrawerFilters.map((filter) => (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    className="library-inline-filter-pill"
-                    onClick={filter.clear}
-                    title={`Clear ${filter.label}`}
-                  >
-                    {filter.label}
-                    <X size={11} strokeWidth={2} />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                className="secondary-action library-drawer-reset"
-                onClick={onResetFilters}
-              >
-                Clear filters
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }

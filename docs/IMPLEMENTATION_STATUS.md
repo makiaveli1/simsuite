@@ -1,5 +1,92 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Cohesive Cozy Polish v1)
+
+This session preserved the recent uncommitted Library follow-ups and added a scoped cozy atmosphere pass.
+
+Important changes and findings:
+
+- kept the work frontend-only and did not add dependencies, backend commands, Rust changes, update provider work, scraping, replacement, dependency, or safe-delete behavior.
+- preserved the continuous grid card-size slider, collapsible filter deck, and row/folder thumbnail follow-ups.
+- wired the Library filter disclosure to the existing `libraryFiltersCollapsed` preference so collapse state persists through the current preference system.
+- added a persisted `Cozy glow` control in the Library Advanced drawer.
+- `Cozy glow` applies a scoped Library atmosphere through CSS variables and `data-library-atmosphere`, affecting Library surfaces, selected states, thumbnail fallbacks, grid cards, More Details, and Preflight.
+- the atmosphere layer is CSS-only, respects reduced-motion rules, and does not request previews, run timers, or change backend data.
+- desktop proof now checks the cozy state and captures `library-cozy-polish-*.png` screenshots.
+- pre-existing unrelated Home/status worktree changes remain outside this Library sprint.
+
+Checks passed:
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- fixture data still lacks real Sims thumbnails, so row/folder/grid proof mostly shows designed fallbacks.
+- large-library stress, true empty disk-folder metadata, and live real-library thumbnail validation remain future Library readiness work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
+## Current session note (May 12, 2026 - Library Row and Folder Thumbnail Follow-up)
+
+This session made Library list rows and folder direct-file rows display thumbnails/fallbacks consistently.
+
+Important changes and findings:
+
+- kept the work frontend-only and did not add dependencies, backend commands, Rust changes, update provider work, scraping, replacement, dependency, or safe-delete behavior.
+- added a shared `LibraryRowThumbnail` component used by standard list rows and virtualized folder/direct-file rows.
+- list rows and folder direct-file rows now request preview fields for the visible row data.
+- real cached/extracted previews render when the index already has them.
+- missing previews now render as a designed thumbnail fallback with type color and a no-preview icon, not a tiny blank square.
+- desktop proof now checks visible row thumbnail geometry and captures `library-folder-row-thumbnails.png`.
+- pre-existing unrelated Home/status worktree changes remain outside this Library follow-up.
+
+Checks passed:
+
+- targeted Library thumbnail Vitest set (`3` files, `14` tests)
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run test:unit` (`22` files, `84` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- fixture data does not contain real Sims thumbnails, so visual proof shows fallback thumbnails.
+- fresh thumbnail extraction is still detail/on-demand work; row and folder views show indexed previews when present and fallbacks otherwise.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
+## Current session note (May 12, 2026 - Library Grid Density and Filter Collapse Follow-up)
+
+This session refined the Library grid card-size slider and made the filter deck collapsible.
+
+Important changes and findings:
+
+- kept the work frontend-only and did not add dependencies, backend commands, Rust changes, update provider work, scraping, replacement, dependency, or safe-delete behavior.
+- the grid card-size control remains a continuous left-to-right slider, with a smaller visible footprint and a clearer clickable thumb/rail.
+- `LibraryTopStrip` now has a persistent `Filters` disclosure button in the command row.
+- the type/signal filter deck, active filter row, and Advanced drawer collapse and expand together.
+- active filters remain discoverable while collapsed through a small count on the `Filters` button.
+- collapse/expand uses a smooth grid-row height transition and respects reduced-motion preferences.
+- desktop proof now captures `library-filter-collapsed.png` and checks collapsed/expanded filter geometry.
+- pre-existing unrelated Home/status worktree changes remain outside this Library follow-up.
+
+Checks passed:
+
+- targeted Library top-strip/grid Vitest set (`2` files, `12` tests)
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run test:unit` (`22` files, `82` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- collapse state is local UI state only; persistence can be considered later if users want the Library to remember it.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
 ## Current session note (May 12, 2026 - Library Filter UX Redesign v1)
 
 This session redesigned the Library filter/search/control surface into a clearer command bar and filter deck.

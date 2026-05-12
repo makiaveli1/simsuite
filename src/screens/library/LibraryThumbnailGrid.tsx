@@ -188,6 +188,7 @@ export const LibraryThumbnailGrid = memo(function LibraryThumbnailGrid({
                     ) : (
                       <div className={`library-card-thumbnail-zone--fallback library-card-hero--${model.typeColor}`}>
                         <FallbackCategoryIcon kind={model.kind} />
+                        <span className="library-card-fallback-caption">No preview</span>
                         <div className="library-thumb-source-dot" title="No preview available">
                           <span className="source-dot" />
                         </div>

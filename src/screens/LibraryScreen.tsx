@@ -159,7 +159,14 @@ export function LibraryScreen({
   onNavigateDuplicates,
   userView,
 }: LibraryScreenProps) {
-  const { libraryDetailWidth, setLibraryDetailWidth } = useUiPreferences();
+  const {
+    libraryDetailWidth,
+    setLibraryDetailWidth,
+    libraryFiltersCollapsed,
+    setLibraryFiltersCollapsed,
+    libraryAtmosphere,
+    setLibraryAtmosphere,
+  } = useUiPreferences();
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [rows, setRows] = useState<LibraryListResponse | null>(null);
   const [selected, setSelected] = useState<FileDetail | null>(null);
@@ -419,7 +426,7 @@ export function LibraryScreen({
                 folderPath,
                 recursive: false,
                 filters,
-                includePreviews: false,
+                includePreviews: true,
               }),
             ),
           );
@@ -435,7 +442,7 @@ export function LibraryScreen({
           folderPath: activeFolderPath,
           recursive: true,
           filters,
-          includePreviews: false,
+          includePreviews: true,
         });
         if (seq !== folderContentSeqRef.current) return;
         setFolderRows(response);
@@ -514,7 +521,9 @@ export function LibraryScreen({
       sortBy: sortBy || undefined,
       limit: pageSize,
       offset: page * pageSize,
-      includePreviews: viewMode === "grid",
+      // Visible Library rows should show cached/extracted previews when the
+      // index already has them. This does not trigger thumbnail parsing here.
+      includePreviews: true,
     });
 
     // Discard stale response — a newer request may have fired since this one started.
@@ -1731,6 +1740,7 @@ export function LibraryScreen({
     <Workbench
       fullHeight
       className={`library-workbench${inspectorCollapsed ? " is-inspector-collapsed" : ""}`}
+      data-library-atmosphere={libraryAtmosphere ? "cozy" : "standard"}
     >
       <WorkbenchStage className="library-stage-shell">
         <LibraryTopStrip
@@ -1745,8 +1755,12 @@ export function LibraryScreen({
           viewMode={viewMode}
           pageSize={pageSize}
           densityValue={densityValue}
+          filtersCollapsed={libraryFiltersCollapsed}
+          atmosphereEnabled={libraryAtmosphere}
           onPageSizeChange={(v) => { setPageSize(v); setPage(0); }}
           onDensityChange={setDensityValue}
+          onFiltersCollapsedChange={setLibraryFiltersCollapsed}
+          onAtmosphereChange={setLibraryAtmosphere}
           onViewModeChange={setViewMode}
           filters={{
             kind,

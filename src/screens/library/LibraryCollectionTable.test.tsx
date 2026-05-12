@@ -175,8 +175,39 @@ it("shows row thumbnails without source labels covering the preview", () => {
   );
 
   expect(container.querySelector(".library-row-thumb-img")).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-real")).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-source-dot--cache")).toBeInTheDocument();
   expect(screen.queryByText(/^CH$/)).toBeNull();
   expect(screen.queryByText(/^EM$/)).toBeNull();
+});
+
+it("shows an intentional row thumbnail fallback for types without previews", () => {
+  const { container } = render(
+    <LibraryCollectionTable
+      userView="standard"
+      rows={[
+        {
+          ...SAMPLE_ROWS[0],
+          id: 5,
+          filename: "ScriptWithoutPreview.package",
+          kind: "ScriptMods",
+          insights: emptyInsights,
+        },
+      ]}
+      selectedId={5}
+      selectedIds={new Set()}
+      page={0}
+      totalPages={1}
+      onSelect={() => {}}
+      onToggleSelect={() => {}}
+      onPrevPage={() => {}}
+      onNextPage={() => {}}
+    />,
+  );
+
+  expect(container.querySelector(".library-row-thumb-fallback")).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-frame--script")).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-fallback-icon")).toBeInTheDocument();
 });
 
 it("keeps overflow row cues out of the row instead of half-rendering every badge", () => {

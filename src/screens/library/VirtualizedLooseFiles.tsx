@@ -9,6 +9,7 @@ import {
   summarizeLibraryRowStatus,
   type LibraryRowModel,
 } from "./libraryDisplay";
+import { LibraryRowThumbnail } from "./LibraryRowThumbnail";
 
 // Phase 5aa: CSS row height for virtualizer. Must match .library-list-row height in globals.css.
 const ROW_HEIGHT = 88;
@@ -246,35 +247,7 @@ function VirtualRow({ userView, file, model, isSelected, onSelect, style }: Virt
         ) : null}
       </div>
       <div className="library-list-col library-list-col--thumb">
-        {model.thumbnailPreview ? (
-          <>
-            <img
-              src={`data:image/png;base64,${model.thumbnailPreview}`}
-              alt=""
-              className="library-row-thumb-img"
-            />
-            {model.previewSource && model.previewSource !== "fallback" ? (
-              <span
-                className={`library-row-thumb-source library-row-thumb-source--${model.previewSource}`}
-                title={`Source: ${model.previewSource}`}
-              >
-                {model.previewSource === "cache"
-                  ? "CH"
-                  : model.previewSource === "embedded"
-                  ? "EM"
-                  : model.previewSource === "external"
-                  ? "EX"
-                  : "—"}
-              </span>
-            ) : null}
-          </>
-        ) : (
-          <div
-            className={`library-row-thumb-fallback library-row-thumb-fallback--${model.typeColor}`}
-            title={model.typeLabel}
-            aria-label={model.typeLabel}
-          />
-        )}
+        <LibraryRowThumbnail model={model} />
       </div>
       <div className="library-list-col library-list-col--select" />
       <div className="library-list-col library-list-col--name library-name-cell">

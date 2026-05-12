@@ -202,6 +202,7 @@ const mixedSourceFolderMetadata: FolderTreeMetadata = {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  globalThis.localStorage?.clear();
 });
 
 it("loads selected folder contents from the folder-file command without prefetching every library row", async () => {
@@ -234,7 +235,7 @@ it("loads selected folder contents from the folder-file command without prefetch
       expect.objectContaining({
         folderPath: "Mods/Gameplay",
         recursive: true,
-        includePreviews: false,
+        includePreviews: true,
       }),
     );
   });
@@ -320,4 +321,41 @@ it("keeps folder roots aligned with the active source filter", async () => {
     }),
   );
   expect(screen.queryByRole("button", { name: /^tray/i })).toBeNull();
+});
+
+it("persists the Library atmosphere preference and applies the scoped workbench state", async () => {
+  globalThis.localStorage?.setItem("simsuite:library-atmosphere", "true");
+  vi.mocked(api.getLibraryFacets).mockResolvedValue(emptyFacets);
+  vi.mocked(api.getLibrarySettings).mockResolvedValue(librarySettings);
+  vi.mocked(api.getLibrarySummary).mockResolvedValue(emptySummary);
+  vi.mocked(api.listLibraryFiles).mockResolvedValue(emptyRows);
+  vi.mocked(api.getFolderTreeMetadata).mockResolvedValue(folderMetadata);
+  vi.mocked(api.listLibraryFilesForTree).mockResolvedValue(emptyRows);
+  vi.mocked(api.listLibraryFolderFiles).mockResolvedValue(emptyRows);
+
+  render(
+    <UiPreferencesProvider mode="seasoned">
+      <LibraryScreen refreshVersion={0} onNavigate={() => {}} userView="standard" />
+    </UiPreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(document.documentElement.dataset.libraryAtmosphere).toBe("cozy");
+  });
+
+  expect(document.querySelector(".library-workbench")).toHaveAttribute(
+    "data-library-atmosphere",
+    "cozy",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
+  const cozyToggle = screen.getByRole("button", { name: /turn off cozy library glow/i });
+  expect(cozyToggle).toHaveAttribute("aria-pressed", "true");
+
+  fireEvent.click(cozyToggle);
+
+  await waitFor(() => {
+    expect(document.documentElement.dataset.libraryAtmosphere).toBe("standard");
+  });
+  expect(globalThis.localStorage?.getItem("simsuite:library-atmosphere")).toBe("false");
 });

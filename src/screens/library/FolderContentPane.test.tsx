@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { LibraryFileRow } from "../../lib/types";
 import { FolderContentPane } from "./FolderContentPane";
 import type { FolderNode } from "./folderTree";
@@ -34,6 +34,10 @@ const directFile: LibraryFileRow = {
   parserWarnings: [],
 };
 
+afterEach(() => {
+  cleanup();
+});
+
 it("uses Direct files wording and row thumbnail fallbacks for folder file rows", () => {
   const { container } = render(
     <FolderContentPane
@@ -54,4 +58,41 @@ it("uses Direct files wording and row thumbnail fallbacks for folder file rows",
   expect(screen.getByText(/directpreset/i)).toBeInTheDocument();
   expect(container.querySelector(".library-row-thumb-fallback")).toBeInTheDocument();
   expect(screen.queryByText(/loose files/i)).toBeNull();
+});
+
+it("shows real row thumbnails for Direct files in folder view when previews are available", () => {
+  const { container } = render(
+    <FolderContentPane
+      userView="standard"
+      folderPath="Mods/Presets"
+      subfolders={[]}
+      files={[]}
+      rootFiles={[
+        {
+          ...directFile,
+          id: 2,
+          filename: "DirectWithPreview.package",
+          insights: {
+            format: null,
+            resourceSummary: [],
+            scriptNamespaces: [],
+            embeddedNames: [],
+            creatorHints: [],
+            versionHints: [],
+            versionSignals: [],
+            familyHints: [],
+            cachedThumbnailPreview: "iVBORw0KGgo=",
+          },
+        },
+      ]}
+      tree={emptyTree}
+      onNavigate={() => {}}
+      onSelectFile={() => {}}
+      selectedFile={null}
+    />,
+  );
+
+  expect(screen.getByText(/direct files in Mods\/Presets/i)).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-img")).toBeInTheDocument();
+  expect(container.querySelector(".library-row-thumb-real")).toBeInTheDocument();
 });

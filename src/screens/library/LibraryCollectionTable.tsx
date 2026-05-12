@@ -8,6 +8,7 @@ import {
   summarizeLibraryRowStatus,
   type LibraryRowModel,
 } from "./libraryDisplay";
+import { LibraryRowThumbnail } from "./LibraryRowThumbnail";
 
 export interface LibraryCollectionTableProps {
   userView: UserView;
@@ -136,28 +137,9 @@ export const LibraryCollectionTable = memo(function LibraryCollectionTable({
                     ) : null}
                   </div>
 
-                  {/* Thumbnail / preview cell — Phase 5e, updated 5k */}
+                  {/* Thumbnail / preview cell — real preview when present, honest fallback otherwise */}
                   <div className="library-list-col library-list-col--thumb">
-                    {model.thumbnailPreview ? (
-                      <div
-                        className="library-row-thumb-real"
-                        title={model.previewSource && model.previewSource !== "fallback" ? `Preview source: ${model.previewSource}` : "Preview"}
-                      >
-                        <img
-                          src={`data:image/png;base64,${model.thumbnailPreview}`}
-                          alt=""
-                          className="library-row-thumb-img"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        className={`library-row-thumb-fallback library-row-thumb-fallback--${model.typeColor}`}
-                        title={model.typeLabel}
-                        aria-label={model.typeLabel}
-                      />
-                    )}
+                    <LibraryRowThumbnail model={model} />
                   </div>
 
                   <div

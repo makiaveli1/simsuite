@@ -33,6 +33,7 @@ const STORAGE_KEYS = {
   downloadsQueueHeight: "simsuite:downloads-queue-height",
   libraryDetailWidth: "simsuite:library-detail-width",
   libraryTableHeight: "simsuite:library-table-height",
+  libraryAtmosphere: "simsuite:library-atmosphere",
   reviewDetailWidth: "simsuite:review-detail-width",
   reviewQueueHeight: "simsuite:review-queue-height",
   duplicatesDetailWidth: "simsuite:duplicates-detail-width",
@@ -152,6 +153,7 @@ interface UiPreferencesContextValue {
   duplicatesDetailWidth: number;
   duplicatesQueueHeight: number;
   libraryFiltersCollapsed: boolean;
+  libraryAtmosphere: boolean;
   duplicatesFiltersCollapsed: boolean;
   updatesFiltersCollapsed: boolean;
   libraryLayoutPreset: LibraryLayoutPreset;
@@ -190,6 +192,7 @@ interface UiPreferencesContextValue {
   setDuplicatesDetailWidth: (width: number) => void;
   setDuplicatesQueueHeight: (height: number) => void;
   setLibraryFiltersCollapsed: (collapsed: boolean) => void;
+  setLibraryAtmosphere: (enabled: boolean) => void;
   setDuplicatesFiltersCollapsed: (collapsed: boolean) => void;
   setUpdatesFiltersCollapsed: (collapsed: boolean) => void;
   applyLibraryLayoutPreset: (preset: LibraryLayoutPreset) => void;
@@ -592,6 +595,9 @@ export function UiPreferencesProvider({
       modeProfile.defaults.libraryFiltersCollapsed,
     ),
   );
+  const [libraryAtmosphere, setLibraryAtmosphere] = useState(() =>
+    readStoredBoolean(STORAGE_KEYS.libraryAtmosphere, false),
+  );
   const [duplicatesFiltersCollapsed, setDuplicatesFiltersCollapsedState] =
     useState(() =>
       readModeStoredBoolean(
@@ -981,6 +987,7 @@ export function UiPreferencesProvider({
     root.dataset.theme = theme;
     root.dataset.density = density;
     root.dataset.userView = mode;
+    root.dataset.libraryAtmosphere = libraryAtmosphere ? "cozy" : "standard";
     root.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
     root.style.setProperty("--home-primary-width", `${homePrimaryWidth}px`);
     root.style.setProperty("--home-secondary-width", `${homeSecondaryWidth}px`);
@@ -1100,6 +1107,10 @@ export function UiPreferencesProvider({
       String(libraryFiltersCollapsed),
     );
     globalThis.localStorage?.setItem(
+      STORAGE_KEYS.libraryAtmosphere,
+      String(libraryAtmosphere),
+    );
+    globalThis.localStorage?.setItem(
       modeScopedKey(mode, STORAGE_KEYS.duplicatesFiltersCollapsed),
       String(duplicatesFiltersCollapsed),
     );
@@ -1146,6 +1157,7 @@ export function UiPreferencesProvider({
     duplicatesDetailWidth,
     duplicatesQueueHeight,
     libraryFiltersCollapsed,
+    libraryAtmosphere,
     duplicatesFiltersCollapsed,
     updatesFiltersCollapsed,
     libraryLayoutPreset,
@@ -1179,6 +1191,7 @@ export function UiPreferencesProvider({
         duplicatesDetailWidth,
         duplicatesQueueHeight,
         libraryFiltersCollapsed,
+        libraryAtmosphere,
         duplicatesFiltersCollapsed,
         updatesFiltersCollapsed,
         libraryLayoutPreset,
@@ -1209,6 +1222,7 @@ export function UiPreferencesProvider({
         setDuplicatesDetailWidth,
         setDuplicatesQueueHeight,
         setLibraryFiltersCollapsed,
+        setLibraryAtmosphere,
         setDuplicatesFiltersCollapsed,
         setUpdatesFiltersCollapsed,
         applyLibraryLayoutPreset,
@@ -1240,6 +1254,7 @@ export function UiPreferencesProvider({
           setDuplicatesDetailWidthState(duplicatesDefaults.detailWidth);
           setDuplicatesQueueHeightState(duplicatesDefaults.queueHeight);
           setLibraryFiltersCollapsedState(defaults.libraryFiltersCollapsed);
+          setLibraryAtmosphere(false);
           setDuplicatesFiltersCollapsedState(defaults.duplicatesFiltersCollapsed);
           setUpdatesFiltersCollapsedState(defaults.updatesFiltersCollapsed);
           setLibraryLayoutPresetState(defaults.libraryLayoutPreset);

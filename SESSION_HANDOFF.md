@@ -1,5 +1,138 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Cohesive Cozy Polish v1)
+
+- **Mode**: code
+- **Focus**: preserve the uncommitted Library follow-ups, make the Library filter collapse preference-backed, and add a scoped cozy atmosphere mode
+
+### Progress Made
+
+1. **Preserved recent Library follow-ups**:
+   - kept the continuous grid card-size slider work
+   - kept the collapsible filter deck and active filter count behavior
+   - kept the shared row/folder thumbnail renderer and preview-field query changes
+
+2. **Added Library Atmosphere Mode v1**:
+   - added a persisted `Cozy glow` control in the Library Advanced drawer
+   - applies a scoped `data-library-atmosphere="cozy"` state to the Library workbench and root preference layer
+   - warms Library surfaces, selected states, thumbnail fallbacks, grid cards, More Details, and Preflight without changing data behavior
+
+3. **Made filter collapse preference-backed**:
+   - wired the Library filter disclosure to the existing `libraryFiltersCollapsed` preference
+   - collapse state now follows the existing mode-scoped localStorage preference path
+
+4. **Extended proof and tests**:
+   - added unit coverage for the cozy toggle, persisted atmosphere state, and controlled filter collapse
+   - desktop proof now checks cozy atmosphere state and captures `library-cozy-polish-*.png` screenshots
+
+### Verification
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-12T02-24-21-812Z`
+  - new screenshots include `library-cozy-polish-atmosphere-on.png`, `library-cozy-polish-list.png`, `library-cozy-polish-grid.png`, `library-cozy-polish-folder.png`, `library-cozy-polish-detail-sheet.png`, and `library-cozy-polish-preflight.png`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- fixture proof still uses fallback thumbnails because the fixtures do not include real Sims thumbnail payloads.
+- large-library stress, true empty disk-folder metadata, and live real-library thumbnail validation remain future Library readiness work.
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend work.
+- Vite still reports the existing large chunk warning.
+- unrelated Home/status worktree changes remain outside this Library sprint.
+
+### Next Best Step
+
+1. Run the Library stress/edge hardening sprint against larger synthetic data and, separately, validate real-library thumbnail hydration with user data.
+
+## Current Session (May 12, 2026 - Library Row and Folder Thumbnail Follow-up)
+
+- **Mode**: code
+- **Focus**: make Library row view and folder direct-file view show thumbnail previews/fallbacks consistently
+
+### Progress Made
+
+1. **Unified row thumbnails**:
+   - added `LibraryRowThumbnail` for list rows and virtualized folder/direct-file rows
+   - real cached/extracted previews render when row data includes them
+   - missing previews now show a clear thumbnail-shaped fallback, not a tiny blank square
+
+2. **Enabled preview payloads for visible row surfaces**:
+   - Library list rows now request previews for the current page
+   - folder direct-file rows now request previews from folder-file queries
+   - this only includes previews already present in indexed row data; it does not add new thumbnail parsing during list render
+
+3. **Extended proof and tests**:
+   - added tests for list thumbnails, fallback thumbnails, and folder direct-file thumbnails
+   - desktop proof now checks row thumbnail geometry and captures `library-folder-row-thumbnails.png`
+
+### Verification
+
+- targeted Library thumbnail tests passed: `3` files, `14` tests
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run test:unit`: `22` files, `84` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-12T01-49-51-658Z`
+  - new screenshot: `library-folder-row-thumbnails.png`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- fixture files do not contain real extracted Sims thumbnails, so proof shows designed fallback thumbnails.
+- list/folder rows do not trigger fresh thumbnail extraction; if the index has no preview, the UI shows the fallback.
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend work.
+- Vite still reports the existing large chunk warning.
+
+### Next Best Step
+
+1. If real user libraries still lack previews after this, add a separate thumbnail hydration path with throttling and caching rather than resolving thumbnails for every row during normal browsing.
+
+## Current Session (May 12, 2026 - Library Grid Density and Filter Collapse Follow-up)
+
+- **Mode**: code
+- **Focus**: refine the Library grid card-size control and make the filter deck collapsible without changing backend behavior
+
+### Progress Made
+
+1. **Refined grid card sizing**:
+   - kept the control as a continuous left-to-right slider instead of a three-mode switch
+   - reduced the visible control size and added a clear, clickable thumb/rail treatment
+   - kept the control neutral and restrained so it fits the Library command bar
+
+2. **Made filters collapsible**:
+   - added a persistent `Filters` disclosure button in the command row
+   - the filter deck, active filter row, and Advanced drawer now fold away together
+   - active filters are still visible through a small count on the collapsed button
+   - collapse/expand uses a smooth height animation with reduced-motion support
+
+3. **Extended proof**:
+   - desktop proof now captures `library-filter-collapsed.png`
+   - added geometry checks for collapsed and expanded filter states, including overflow, search visibility, and list-header overlap
+
+### Verification
+
+- targeted Library top-strip/grid tests passed: `2` files, `12` tests
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run test:unit`: `22` files, `82` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot folder: `output/desktop/library-proof/2026-05-12T01-25-32-526Z`
+  - new screenshot: `library-filter-collapsed.png`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- Tauri release builds still emit existing Rust warnings unrelated to this frontend work.
+- Vite still reports the existing large chunk warning.
+- pre-existing unrelated Home/status worktree changes remain outside this Library follow-up.
+
+### Next Best Step
+
+1. Review the collapsed filter screenshot in-app and decide whether the default should remain expanded or become preference-backed in a later sprint.
+
 ## Current Session (May 12, 2026 - Library Filter UX Redesign v1)
 
 - **Mode**: code

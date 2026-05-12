@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { useUiPreferences } from "../UiPreferencesContext";
 
-interface WorkbenchProps {
+interface WorkbenchProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
   threePanel?: boolean;
@@ -15,7 +15,9 @@ export function Workbench({
   className, 
   threePanel = false,
   noPadding = false,
-  fullHeight = false
+  fullHeight = false,
+  style,
+  ...rest
 }: WorkbenchProps) {
   const layoutClass = threePanel ? "workbench-three-panel" : "workbench-two-panel";
   const { density } = useUiPreferences();
@@ -35,10 +37,12 @@ export function Workbench({
   
   return (
     <div 
+      {...rest}
       className={classes}
       style={{ 
-        height: fullHeight ? "100%" : undefined,
-        padding: noPadding ? "0" : undefined 
+        ...style,
+        height: fullHeight ? "100%" : style?.height,
+        padding: noPadding ? "0" : style?.padding,
       }}
     >
       {children}

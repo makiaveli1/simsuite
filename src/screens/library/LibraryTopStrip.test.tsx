@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 import type { LibraryFacets, LibrarySummary, UserView } from "../../lib/types";
 import { LibraryTopStrip } from "./LibraryTopStrip";
 
@@ -53,8 +53,12 @@ function renderTopStrip(userView: UserView, overrides: Partial<ComponentProps<ty
     viewMode: "list",
     pageSize: 100,
     densityValue: 50,
+    filtersCollapsed: false,
+    atmosphereEnabled: false,
     onPageSizeChange: vi.fn(),
     onDensityChange: vi.fn(),
+    onFiltersCollapsedChange: vi.fn(),
+    onAtmosphereChange: vi.fn(),
     onSearchChange: vi.fn(),
     onSortByChange: vi.fn(),
     onResetSort: vi.fn(),
@@ -97,6 +101,7 @@ it.each<UserView>(["beginner", "standard", "power"])(
     expect(screen.getByRole("button", { name: /list view/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /grid view/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /folders view/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hide filters/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /advanced/i })).toBeInTheDocument();
   },
 );
@@ -227,4 +232,130 @@ it("keeps Advanced accessible and shows precision filter count", () => {
 
   fireEvent.click(advanced);
   expect(onDrawerToggle).toHaveBeenCalledTimes(1);
+});
+
+it("collapses the filter deck while keeping command controls available", () => {
+  const onDrawerToggle = vi.fn();
+  const props: ComponentProps<typeof LibraryTopStrip> = {
+    userView: "standard",
+    activeFilterCount: 4,
+    search: "mccc",
+    sortBy: "name",
+    watchFilter: "not_tracked",
+    filters: {
+      kind: "ScriptMods",
+      creator: "Deaderpool",
+      source: "",
+      subtype: "",
+      minConfidence: "",
+    },
+    facets: facetsWithKinds,
+    drawerOpen: true,
+    librarySummary: summaryWithUpdateLeads,
+    viewMode: "list",
+    pageSize: 100,
+    densityValue: 50,
+    atmosphereEnabled: false,
+    onPageSizeChange: vi.fn(),
+    onDensityChange: vi.fn(),
+    onAtmosphereChange: vi.fn(),
+    onSearchChange: vi.fn(),
+    onSortByChange: vi.fn(),
+    onResetSort: vi.fn(),
+    onWatchFilterChange: vi.fn(),
+    onFiltersChange: vi.fn(),
+    onResetFilters: vi.fn(),
+    onViewModeChange: vi.fn(),
+    onDrawerToggle,
+    filtersCollapsed: false,
+    onFiltersCollapsedChange: vi.fn(),
+  };
+
+  function ControlledTopStrip() {
+    const [collapsed, setCollapsed] = useState(false);
+    const [drawerOpen, setDrawerOpen] = useState(true);
+
+    return (
+      <LibraryTopStrip
+        {...props}
+        drawerOpen={drawerOpen}
+        filtersCollapsed={collapsed}
+        onDrawerToggle={() => {
+          onDrawerToggle();
+          setDrawerOpen((current) => !current);
+        }}
+        onFiltersCollapsedChange={setCollapsed}
+      />
+    );
+  }
+
+  render(<ControlledTopStrip />);
+
+  const panel = document.getElementById("library-filter-panel");
+  const toggle = screen.getByRole("button", { name: /hide filters/i });
+  expect(panel).toHaveAttribute("aria-hidden", "false");
+  expect(toggle).toHaveTextContent("4");
+  expect(screen.getByRole("button", { name: /advanced/i })).toBeInTheDocument();
+
+  fireEvent.click(toggle);
+
+  expect(onDrawerToggle).toHaveBeenCalledTimes(1);
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(panel).toHaveAttribute("aria-hidden", "true");
+  expect(screen.getByRole("textbox", { name: /search library/i })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: /sort by/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /advanced/i })).toBeNull();
+  expect(screen.getByRole("button", { name: /show filters, 4 active/i })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /show filters/i }));
+  expect(panel).toHaveAttribute("aria-hidden", "false");
+  expect(screen.getByRole("button", { name: /advanced/i })).toBeInTheDocument();
+});
+
+it("offers a persisted cozy Library glow control in Advanced", () => {
+  const onAtmosphereChange = vi.fn();
+
+  renderTopStrip("standard", {
+    drawerOpen: true,
+    atmosphereEnabled: false,
+    onAtmosphereChange,
+  });
+
+  const cozyToggle = screen.getByRole("button", { name: /turn on cozy library glow/i });
+  expect(cozyToggle).toHaveAttribute("aria-pressed", "false");
+  expect(cozyToggle).toHaveTextContent("Cozy glow");
+
+  fireEvent.click(cozyToggle);
+  expect(onAtmosphereChange).toHaveBeenCalledWith(true);
+});
+
+it("shows the cozy Library glow control as pressed when atmosphere is on", () => {
+  renderTopStrip("standard", {
+    drawerOpen: true,
+    atmosphereEnabled: true,
+  });
+
+  const cozyToggle = screen.getByRole("button", { name: /turn off cozy library glow/i });
+  expect(cozyToggle).toHaveAttribute("aria-pressed", "true");
+});
+
+it("gives grid card sizing a continuous slider with an obvious handle", () => {
+  const onDensityChange = vi.fn();
+
+  renderTopStrip("standard", {
+    viewMode: "grid",
+    densityValue: 50,
+    onDensityChange,
+  });
+
+  expect(screen.getByRole("group", { name: /grid card size/i })).toBeInTheDocument();
+  expect(screen.getByText("Size")).toBeInTheDocument();
+
+  const slider = screen.getByRole("slider", { name: /grid card size/i });
+  expect(slider).toHaveAttribute("aria-valuetext", "50 percent card size");
+  expect(screen.queryByRole("button", { name: /smaller grid cards/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: /larger grid cards/i })).toBeNull();
+
+  fireEvent.change(slider, { target: { value: "75" } });
+  expect(onDensityChange).toHaveBeenCalledWith(75);
 });
