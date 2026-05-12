@@ -183,4 +183,5 @@ Next: Large-library backend stress and SQL-direct folder query optimization.
 
 ## Commit
 
-Pending commit.
+- Implementation commit: `2c492803237e6ec70a70cc31c515053648b2f62b` - `Harden Library duplicate truth guardrails`.
+- Hash-record commit: this follow-up docs commit records the implementation hash; final object ID is listed in the task closeout.
