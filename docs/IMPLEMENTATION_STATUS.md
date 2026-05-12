@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Desktop Proof Downloads Query Fix v1)
+
+This session restored the desktop runtime proof and smoke lanes after the Duplicate Truth Engine v3 fingerprint sprint.
+
+Important changes and findings:
+
+- fixed the Downloads processed-source ingestion SQL in `src-tauri/src/core/downloads_watcher/mod.rs`.
+- root cause: the Downloads path still prepared the old 17-placeholder `files` insert while the shared scanner helper now writes the five `content_fingerprint*` fields added by v3.
+- the `MCCC_Update_Test` smoke timeout was secondary to that backend query failure; the fixture row could not appear because ingestion failed first.
+- added `processed_download_ingest_uses_current_file_insert_shape` to exercise the same processed archive path used by desktop smoke.
+- no duplicate truth rules, Tauri command contracts, schema, migrations, frontend copy, or proof selectors were changed.
+- no delete, quarantine, safe-delete, auto-update, auto-sort, dependency, missing-mesh, or AI behavior was added.
+
+Checks passed:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml processed_download_ingest_uses_current_file_insert_shape -- --nocapture`
+- `cargo fmt`
+- `npm run build` (existing Vite chunk-size warning remains)
+- `npx tsc --noEmit`
+- `npm run test:unit` (`23` files, `88` tests)
+- `cargo check` (existing unused-code warnings remain)
+- `cargo test` (`252` passed, `2` ignored)
+- `cargo build --release` (existing unused-code warnings remain)
+- `npm run test:rust` (`252` passed, `2` ignored)
+- `npm run desktop:smoke:fixtures`
+- `npm run desktop:proof:fixtures`
+
+Desktop/runtime proof:
+
+- smoke passed against `src-tauri/target/release/simsuite.exe`.
+- proof completed with `DESKTOP_LIBRARY_PROOF_OK`.
+- latest proof folder: `output/desktop/library-proof/2026-05-12T23-41-00-611Z`.
+
+Important remaining gap:
+
+- the old timed-out proof run cannot be fully reconstructed because it was killed before writing `summary.json`.
+- real user Downloads folders and real user mod archives were not scanned.
+- next recommended sprint: Staging backend safety/readiness audit before any new file-changing workflow.
+
 ## Current session note (May 12, 2026 - Library Duplicate Truth Engine v3 Fingerprints)
 
 This session adds a deeper deterministic duplicate proof layer without adding cleanup, delete, quarantine, safe-delete, AI, or automatic file actions.

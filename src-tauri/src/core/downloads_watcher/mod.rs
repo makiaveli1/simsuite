@@ -2504,8 +2504,10 @@ fn ingest_processed_source(
             "INSERT INTO files (
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
-                scan_session_id, relative_depth, safety_notes, parser_warnings, insights
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                scan_session_id, relative_depth, safety_notes, parser_warnings, insights,
+                content_fingerprint, content_fingerprint_kind, content_fingerprint_version,
+                content_fingerprint_status, content_fingerprint_error
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -3917,11 +3919,11 @@ mod tests {
         build_archive_staging_root, can_skip_observed_source, checking_downloads_status,
         derive_item_status, extract_zip_archive_single_pass, get_download_item_guided_plan,
         get_download_item_selection, has_auto_recheck_note, ingest_held_archive_source,
-        ingest_ignored_non_sims_source, list_download_queue, load_existing_items,
-        mark_item_rechecked_with_new_rules, mark_missing_direct_sources_for_paths,
-        parse_string_array, preview_download_item, reassess_existing_item,
-        refresh_download_item_status, should_use_full_downloads_scan, staging_segment_for_source,
-        summarize_status, ExistingDownloadItem, ObservedSource,
+        ingest_ignored_non_sims_source, ingest_processed_source, list_download_queue,
+        load_existing_items, mark_item_rechecked_with_new_rules,
+        mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
+        reassess_existing_item, refresh_download_item_status, should_use_full_downloads_scan,
+        staging_segment_for_source, summarize_status, ExistingDownloadItem, ObservedSource,
     };
     use crate::core::install_profile_engine::SpecialDecisionContext;
     use crate::database::initialize;
@@ -3931,6 +3933,7 @@ mod tests {
     use crate::seed;
     use chrono::{TimeZone, Utc};
     use rusqlite::{params, Connection};
+    use std::collections::HashMap;
     use std::{fs::File, io::Write};
     use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
@@ -4649,6 +4652,77 @@ mod tests {
                     .iter()
                     .any(|note| note.contains("Skipped ZIP extraction"))
         );
+    }
+
+    #[test]
+    fn processed_download_ingest_uses_current_file_insert_shape() {
+        let temp = tempdir().expect("temp dir");
+        let downloads = temp.path().join("Downloads");
+        let mods = temp.path().join("Mods");
+        let tray = temp.path().join("Tray");
+        let staging = temp.path().join("staged-mccc");
+        std::fs::create_dir_all(&downloads).expect("downloads dir");
+        std::fs::create_dir_all(&mods).expect("mods dir");
+        std::fs::create_dir_all(&tray).expect("tray dir");
+        std::fs::create_dir_all(&staging).expect("staging dir");
+
+        let package_path = staging.join("mc_cmd_center.package");
+        std::fs::write(&package_path, b"mccc package bytes").expect("package fixture");
+        let source_path = downloads.join("MCCC_Update_Test.zip");
+        std::fs::write(&source_path, b"zip placeholder").expect("source fixture");
+        let metadata = source_path.metadata().expect("source metadata");
+
+        let mut connection = setup_connection();
+        crate::database::save_library_paths(
+            &mut connection,
+            &LibrarySettings {
+                mods_path: Some(mods.to_string_lossy().to_string()),
+                tray_path: Some(tray.to_string_lossy().to_string()),
+                downloads_path: Some(downloads.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("library settings");
+        let seed_pack = seed::load_seed_pack().expect("seed");
+        let discovered = vec![
+            super::build_discovered_file(&staging, &package_path).expect("discovered package")
+        ];
+        let source = ObservedSource {
+            path: source_path.clone(),
+            display_name: "MCCC_Update_Test.zip".to_owned(),
+            source_kind: "archive".to_owned(),
+            archive_format: Some("zip".to_owned()),
+            source_size: metadata.len() as i64,
+            source_modified_at: metadata.modified().ok().map(super::system_time_to_rfc3339),
+        };
+        let mut special_context = SpecialDecisionContext::default();
+
+        let item_id = ingest_processed_source(
+            &mut connection,
+            &seed_pack,
+            &HashMap::new(),
+            &source,
+            None,
+            discovered,
+            Some(&staging),
+            &[],
+            &mut special_context,
+        )
+        .expect("processed source should insert current files shape");
+
+        let (file_count, fingerprint_status): (i64, String) = connection
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(content_fingerprint_status), '')
+                 FROM files
+                 WHERE download_item_id = ?1
+                   AND source_location = 'downloads'",
+                params![item_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("download files");
+
+        assert_eq!(file_count, 1);
+        assert!(!fingerprint_status.trim().is_empty());
     }
 
     #[test]

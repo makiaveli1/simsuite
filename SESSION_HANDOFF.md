@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Desktop Proof Downloads Query Fix v1)
+
+- **Mode**: code
+- **Focus**: restore desktop proof/smoke lanes after Duplicate Truth Engine v3 by fixing the Downloads inbox query mismatch
+
+### Progress Made
+
+1. **Fixed the Downloads processed-source insert path**:
+   - `ingest_processed_source` still prepared the old `files` insert shape after v3 added content fingerprint columns
+   - updated that insert to include `content_fingerprint`, `content_fingerprint_kind`, `content_fingerprint_version`, `content_fingerprint_status`, and `content_fingerprint_error`
+   - added `processed_download_ingest_uses_current_file_insert_shape` to cover the Downloads archive ingestion path that smoke uses for `MCCC_Update_Test`
+
+2. **Restored runtime proof lanes**:
+   - `npm run desktop:smoke:fixtures` now passes against the release app
+   - `npm run desktop:proof:fixtures` now completes with `DESKTOP_LIBRARY_PROOF_OK`
+   - latest proof folder: `output/desktop/library-proof/2026-05-12T23-41-00-611Z`
+
+3. **Kept trust boundaries unchanged**:
+   - no delete, quarantine, safe-delete, auto-update, auto-sort, dependency, missing-mesh, or AI behavior was added
+   - duplicate fingerprints remain proof for comparison only, not cleanup instructions
+
+### Verification
+
+- `cargo test --manifest-path src-tauri/Cargo.toml processed_download_ingest_uses_current_file_insert_shape -- --nocapture`: passed.
+- `cargo fmt`: passed.
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `88` tests).
+- `cargo check`: passed with existing unused-code warnings.
+- `cargo test`: passed (`252` passed, `2` ignored).
+- `cargo build --release`: passed with existing unused-code warnings.
+- `npm run test:rust`: passed (`252` passed, `2` ignored).
+- `npm run desktop:smoke:fixtures`: passed.
+- `npm run desktop:proof:fixtures`: passed.
+
+### Known Problems / Gaps
+
+- The old timed-out proof run did not write `summary.json`, so the exact stale wait in that run cannot be reconstructed.
+- Real user Downloads folders and real user mod archives were not scanned.
+- Existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
+### Next Best Step
+
+1. Staging backend safety/readiness audit, before any Auto Sorting or new file-changing workflow.
+
 ## Current Session (May 12, 2026 - Library Duplicate Truth Engine v3 Fingerprints)
 
 - **Mode**: code
