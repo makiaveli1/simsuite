@@ -352,8 +352,8 @@ export function LibraryDetailsPanel({
   if (hasDuplicates) {
     contextNotes.push({
       key: "duplicate",
-      title: "Possible duplicate",
-      body: "Compare duplicate candidates before you make changes. SimSuite is not choosing which file to keep.",
+      title: "Duplicate",
+      body: "SimSuite found same-file-content evidence. Compare before changing anything; SimSuite is not choosing which file to keep.",
     });
   }
 
@@ -606,8 +606,8 @@ export function LibraryDetailsPanel({
           <p className="library-care-summary">
             This file appears in{" "}
             {selectedFile.duplicatesCount === 1
-              ? "1 duplicate pair"
-              : `${selectedFile.duplicatesCount} duplicate pairs`}.
+              ? "1 exact-content duplicate pair"
+              : `${selectedFile.duplicatesCount} exact-content duplicate pairs`}.
           </p>
           <div className="tag-list">
             {duplicateTypes.map((type) => (
@@ -615,9 +615,9 @@ export function LibraryDetailsPanel({
                 {type === "exact"
                   ? "Same file contents"
                   : type === "filename"
-                    ? "Same filename"
+                    ? "Name match"
                     : type === "version"
-                      ? "Possible version variant"
+                      ? "Version review"
                       : type}
               </span>
             ))}
@@ -836,7 +836,7 @@ function FolderSummaryPanel({
         {data.counts.duplicateCount > 0 && (
           <div className="folder-stat-tile folder-stat-tile--alert">
             <span className="folder-stat-tile__value">{data.counts.duplicateCount}</span>
-            <span className="folder-stat-tile__label">Possible dupes</span>
+            <span className="folder-stat-tile__label">Duplicates</span>
           </div>
         )}
       </div>

@@ -151,7 +151,7 @@ export interface LibraryRowModel {
   isMisplaced: boolean;
   /** Tray identity facts if this is a tray kind, null otherwise */
   trayIdentity: TrayIdentity | null;
-  /** Duplicate flag — renders only when this file appears in a duplicate pair. */
+  /** Duplicate flag - renders only when this file appears in an exact-content duplicate pair. */
   hasDuplicate: boolean;
   watchStatusLabel: string;
   watchStatusTone: "calm" | "attention" | "muted";
@@ -384,7 +384,7 @@ export function buildLibraryRowModel(
     watchStatusTone,
     healthLabel: healthIssue?.label ?? null,
     healthTone: healthIssue?.tone ?? null,
-    duplicateLabel: row.hasDuplicate ? "Possible duplicate" : null,
+    duplicateLabel: row.hasDuplicate ? "Duplicate" : null,
     duplicateTone: row.hasDuplicate ? "muted" : null,
     supportingFacts: supportingFacts.slice(0, flags.maxSupportingFacts),
     confidenceLevel,
@@ -1272,7 +1272,7 @@ export function computeFileRelationship(
     return {
       type: "duplicate",
       proofLevel: "fact",
-      label: "Possible duplicate",
+      label: "Duplicate",
       peerCount: duplicatePairs,
       countScope: duplicatePairs ? "full_library" : undefined,
       evidenceSource: "duplicate_detector",
@@ -1385,7 +1385,7 @@ export function computeDetailLibraryRelationship(
 export function relationshipTypeLabel(type: FileRelationship["type"]): string {
   switch (type) {
     case "duplicate":
-      return "Possible duplicate";
+      return "Duplicate";
     case "same_pack":
       return "Same pack";
     case "same_folder":
@@ -2507,7 +2507,7 @@ export interface FolderRelationshipCluster {
   id: string;
   type: "duplicate" | "same_pack" | "same_folder";
   proofLevel: ProofLevel;
-  confidenceLabel: "Confirmed" | "Likely" | "Possible";
+  confidenceLabel: "Confirmed" | "Likely" | "Possible" | "Same file contents";
   /** How many files in this folder belong to this cluster. */
   affectedFileCount: number;
   /** Peak peer count for same_folder / same_pack clusters. */
@@ -2553,12 +2553,12 @@ export function deriveRelationshipCue(rel: FileRelationship | null): Relationshi
       return {
         type: rel.type,
         proofLevel: rel.proofLevel,
-        confidenceLabel: label,
-        shortLabel: "Possible duplicate",
-        compactLabel: "Possible duplicate",
+        confidenceLabel: "Same file contents",
+        shortLabel: "Duplicate",
+        compactLabel: "Duplicate",
         description: count > 0
-          ? `SimSuite found ${count === 1 ? "another indexed file" : `${count} indexed files`} that look like duplicates.`
-          : "SimSuite found another indexed file that looks like a duplicate.",
+          ? `SimSuite found ${count === 1 ? "another indexed file" : `${count} indexed files`} with same-file-content evidence.`
+          : "SimSuite found another indexed file with same-file-content evidence.",
         relatedCount: count,
       };
     case "same_pack":
@@ -2697,12 +2697,12 @@ export function computeFolderSummary(
     relationshipClusters.push({
       id: "dup",
       type: "duplicate",
-      proofLevel: "claim",
-      confidenceLabel: "Possible",
+      proofLevel: "fact",
+      confidenceLabel: "Same file contents",
       affectedFileCount: duplicateFiles.length,
       peakPeerCount: 0,
-      title: "Possible duplicate files",
-      description: `${duplicateFiles.length} file${duplicateFiles.length !== 1 ? "s" : ""} flagged for duplicate comparison`,
+      title: "Duplicate files",
+      description: `${duplicateFiles.length} file${duplicateFiles.length !== 1 ? "s" : ""} with same-file-content evidence`,
     });
   }
 

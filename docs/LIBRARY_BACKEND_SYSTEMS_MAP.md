@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 
-This map is based on current repo inspection on branch `codex/library-backend-map-duplicates-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -69,7 +69,7 @@ Important Library tables:
 | `files` | Main indexed Library/download file rows. | Scanner, downloads/staging flows. | Library list, folder, detail, duplicates, watch, review. | Large-library query and folder filtering need stress proof. |
 | `creators` / `creator_aliases` / `user_creator_aliases` | Creator metadata and learned aliases. | Seed, scanner, user learning. | Library facets, detail, duplicate display. | Missing creator is common and must remain weak evidence. |
 | `bundles` | Same-pack/bundle grouping. | Bundle detector. | Library relationship hints, folder summaries. | Same pack is not duplicate proof. |
-| `duplicates` | Stored duplicate pair candidates. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema only stores `exact`, `filename`, `version`; richer evidence is computed at query time in v1. |
+| `duplicates` | Stored exact duplicate and comparison rows. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema still stores `exact`, `filename`, `version`; v2 treats only `exact` rows with matching non-empty hashes as user-facing duplicates. |
 | `review_queue` | Files needing manual review. | Scanner/rule engine. | Needs Review, Library problem signals. | Review means manual review, not broken content proof. |
 | `content_watch_sources` / `content_watch_results` | Update/source watch configuration and last results. | Updates/watch commands. | Library update cues, Updates route. | Provider checks are limited; no official-source claim. |
 | `scan_sessions` | Scan summary history. | Scanner. | Home/Library status. | Mostly summary state. |
@@ -144,7 +144,7 @@ Weak areas:
 - Parser warnings and scan safety notes.
 - File insights.
 - Watch/update source summary.
-- Duplicate pair count and duplicate type list.
+- Exact duplicate pair count and duplicate type list.
 - Problem signals.
 - Lazy preview/thumbnail resolution.
 
@@ -160,7 +160,7 @@ Current signal sources:
 | `inspection_failed` | parser/review reason | manual review | Needs Review | Broken content. |
 | `safety_note` | scan safety note | manual review | Needs Review | Safe delete/dependency proof. |
 | `parser_warning` | parser warnings | detected clue | Needs Review | Broken content. |
-| `duplicate_candidate` | duplicates table | comparison clue | Duplicates | Safe delete or exact identity unless exact hash evidence exists. |
+| `duplicate_candidate` | exact duplicate rows only for Library/detail signals | Duplicates | Safe delete or cleanup choice. |
 | `stored_in_tray` | source location | factual source state | none | Active mod behavior. |
 | `no_update_source` | watch state | factual missing watch config | Updates | Outdated state. |
 | `weak_metadata` | low classification confidence | weak metadata clue | Needs Review | Broken content. |
@@ -171,12 +171,12 @@ Current signal sources:
 
 Relationship hints include:
 
-- Possible duplicate / exact-content comparison from the duplicate detector.
+- Duplicate/exact-content comparison from the duplicate detector.
 - Same pack from bundle grouping.
 - Same folder from folder peer counts.
 - Tray grouping hints where available.
 
-Only duplicate detector evidence should route to Duplicates. Same pack and same folder are related hints, not duplicate proof. None of these relationships prove dependencies.
+Only exact duplicate detector evidence should route from Library as a duplicate. Same-name, version, same pack, and same folder are review or related hints, not duplicate proof. None of these relationships prove dependencies.
 
 ## 10. Duplicate Detection Map
 
@@ -188,20 +188,20 @@ Before this sprint, duplicate detection worked as follows:
 - Overview counts rows by `duplicate_type`.
 - Pair listing returns basic file identity, path, creator, hash, modified date, size, duplicate type, and detection method.
 
-Duplicate Intelligence v1 keeps the same database schema but strengthens the command output:
+Duplicate Truth Engine v2 keeps the same database schema but makes the user-facing rule binary:
 
-- `exact` rows with matching non-empty hashes are exposed as `exact_duplicate` with the label `Exact duplicate` and evidence `Same file contents`.
-- `filename` rows are exposed as `possible_duplicate`, not exact proof.
-- `version` rows are exposed as `possible_version_variant`, not duplicate cleanup proof.
-- Returned pairs now include `classification`, `classification_label`, `confidence_label`, `evidence`, and `cautions`.
-- Evidence can include same file contents, same filename, similar filename, version clue found, version differs, size matches/differs, creator matches/differs/unknown, and detection method.
-- Cautions explicitly keep comparison manual and state when a pair is not same-file-content proof.
-- `get_file_detail` now counts duplicate pairs, not merely distinct duplicate types.
+- `exact` rows with matching non-empty hashes are exposed as `isDuplicate = true`, `comparisonKind = exact_file`, label `Duplicate`, and evidence `Same file contents`.
+- `filename` rows are exposed as `isDuplicate = false`, `comparisonKind = name_match_review`, label `Name match`.
+- `version` rows are exposed as `isDuplicate = false`, `comparisonKind = version_review`, label `Version review`.
+- Returned pairs include `is_duplicate`, `comparison_kind`, `classification`, `classification_label`, `confidence_label`, `evidence`, and `cautions`.
+- Evidence can include same file contents, same filename, similar filename, version clue found, version differs, contents differ, size matches/differs, creator matches/differs/unknown, and detection method.
+- Cautions explicitly keep comparison manual and state when a row is not duplicate proof.
+- `get_file_detail`, Library row `has_duplicate`, Library duplicate filters, Home summary duplicate count, and Library summary duplicate count now count exact deterministic duplicates only.
 
 Known false-positive risks:
 
 - Same filename with different contents can be a different version or manual review case, not a real duplicate.
-- Version-token matches can look like duplicates in the UI even though they are better described as possible version variants.
+- Version-token matches are now version reviews, not duplicate claims.
 - Missing creator/type should not raise confidence by itself.
 - Same folder and same pack must remain related hints only.
 

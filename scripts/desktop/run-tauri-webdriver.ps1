@@ -77,6 +77,7 @@ function Initialize-SmokeFixtures {
     $installedToolbox = Join-Path $mods 'Lumpinou Toolbox'
     $installedSmartCore = Join-Path $mods 'Smart Core Script'
     $installedGenericWatch = Join-Path $mods 'Generic Watch'
+    $installedGenericWatchBackup = Join-Path $mods 'Generic Watch Backup'
     $incomingRoot = Join-Path $root 'incoming-mccc'
     $blockedRoot = Join-Path $root 'blocked-mccc'
     $xmlSameRoot = Join-Path $root 'incoming-xml-same'
@@ -113,6 +114,7 @@ function Initialize-SmokeFixtures {
         $installedToolbox,
         $installedSmartCore,
         $installedGenericWatch,
+        $installedGenericWatchBackup,
         $incomingRoot,
         $blockedRoot,
         $xmlSameRoot,
@@ -180,6 +182,7 @@ function Initialize-SmokeFixtures {
     New-SmokeTs4script -Path (Join-Path $smartCoreOlderRoot 'SmartCoreScript.ts4script') -Version '2.8.0' -Marker 'Smart Core Script version'
     New-SmokeZip -SourceRoot $smartCoreOlderRoot -ZipPath (Join-Path $downloads "$smartCoreOlderItem.zip")
     Write-SmokePackage -Path (Join-Path $installedGenericWatch $genericWatchFile) -Content 'generic watch fixture v1.0'
+    Write-SmokePackage -Path (Join-Path $installedGenericWatchBackup $genericWatchFile) -Content 'generic watch fixture v1.0'
 
     return @{
         Root = $root

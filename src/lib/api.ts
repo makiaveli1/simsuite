@@ -3903,8 +3903,10 @@ const mockDuplicatePairs: DuplicatePair[] = [
     id: 501,
     duplicateType: "exact",
     detectionMethod: "sha256",
-    classification: "exact_duplicate",
-    classificationLabel: "Exact duplicate",
+    isDuplicate: true,
+    comparisonKind: "exact_file",
+    classification: "duplicate",
+    classificationLabel: "Duplicate",
     confidenceLabel: "Same file contents",
     evidence: ["Same file contents", "Size matches", "Creator matches"],
     cautions: ["Compare before changing anything"],
@@ -3927,13 +3929,16 @@ const mockDuplicatePairs: DuplicatePair[] = [
     id: 502,
     duplicateType: "filename",
     detectionMethod: "filename_match",
-    classification: "possible_duplicate",
-    classificationLabel: "Possible duplicate",
-    confidenceLabel: "Strong name match",
+    isDuplicate: false,
+    comparisonKind: "name_match_review",
+    classification: "name_match_review",
+    classificationLabel: "Name match",
+    confidenceLabel: "Name match",
     evidence: ["Same filename", "Content hash differs", "Size differs", "Creator matches"],
     cautions: [
       "Compare before changing anything",
-      "This is not same-file-content proof",
+      "This is not duplicate proof",
+      "Same filename is not same-content proof",
     ],
     primaryFileId: 7,
     primaryFilename: "Miiko_Eyebrows.package",
@@ -3954,8 +3959,10 @@ const mockDuplicatePairs: DuplicatePair[] = [
     id: 503,
     duplicateType: "version",
     detectionMethod: "version_token_strip",
-    classification: "possible_version_variant",
-    classificationLabel: "Possible version variant",
+    isDuplicate: false,
+    comparisonKind: "version_review",
+    classification: "version_review",
+    classificationLabel: "Version review",
     confidenceLabel: "Version clue",
     evidence: [
       "Similar filename",
@@ -3966,7 +3973,7 @@ const mockDuplicatePairs: DuplicatePair[] = [
     ],
     cautions: [
       "Compare before changing anything",
-      "This is not same-file-content proof",
+      "This is not duplicate proof",
       "This may be another release of the same mod",
     ],
     primaryFileId: 201,
@@ -5731,13 +5738,13 @@ function buildMockDuplicateProblemSignal(
     signalType: "duplicate_candidate",
     severity: "caution",
     proofLevel: "detected",
-    shortLabel: "Possible duplicate",
-    explanation: "Compare before changing either copy.",
+    shortLabel: "Duplicate",
+    explanation: "SimSuite found another file with the same file contents. Compare before changing either copy.",
     source: "duplicates",
     evidence: [
       duplicateCount === 1
-        ? "Duplicate comparison rule matched"
-        : `Duplicate comparison rule matched (${duplicateCount} pairs)`,
+        ? "Same file contents"
+        : `Same file contents (${duplicateCount} pairs)`,
     ],
     destination: "duplicates",
     showInLibrary: false,
@@ -5857,7 +5864,7 @@ function buildMockLibraryRelationshipState() {
   const libraryIds = new Set(libraryFiles.map((item) => item.id));
 
   const duplicateCounts = new Map<number, number>();
-  for (const pair of mockDuplicatePairs) {
+  for (const pair of mockDuplicatePairs.filter((item) => item.isDuplicate)) {
     if (libraryIds.has(pair.primaryFileId)) {
       duplicateCounts.set(pair.primaryFileId, (duplicateCounts.get(pair.primaryFileId) ?? 0) + 1);
     }

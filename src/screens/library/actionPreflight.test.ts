@@ -18,7 +18,7 @@ it("builds calm preflight cautions without fake dependency claims", () => {
         {
           signalType: "review_suggested",
           severity: "warning",
-          proofLevel: "confirmed",
+          proofLevel: "detected",
           shortLabel: "Review suggested",
           explanation: "SimSuite found warning signals that are worth a closer look.",
           source: "review_queue",
@@ -32,11 +32,11 @@ it("builds calm preflight cautions without fake dependency claims", () => {
         {
           signalType: "duplicate_candidate",
           severity: "caution",
-          proofLevel: "detected",
-          shortLabel: "Possible duplicate",
-          explanation: "Compare before changing either copy.",
+          proofLevel: "confirmed",
+          shortLabel: "Duplicate",
+          explanation: "SimSuite found another file with the same file contents. Compare before changing either copy.",
           source: "duplicates",
-          evidence: ["Duplicate comparison rule matched"],
+          evidence: ["Same file contents"],
           destination: "duplicates",
           showInLibrary: false,
           showInInspector: true,
@@ -76,7 +76,7 @@ it("builds calm preflight cautions without fake dependency claims", () => {
   expect(preflight.signals.map((signal) => signal.label)).toEqual(
     expect.arrayContaining([
       "Review suggested",
-      "Possible duplicate",
+      "Duplicate",
       "No update source",
       "Same folder",
     ]),

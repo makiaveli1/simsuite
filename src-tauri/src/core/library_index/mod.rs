@@ -187,10 +187,10 @@ fn build_problem_signals(input: &ProblemSignalInput<'_>) -> Vec<ProblemSignal> {
             signal_type: "duplicate_candidate".to_owned(),
             severity: ProblemSignalSeverity::Caution,
             proof_level: ProblemSignalProofLevel::Detected,
-            short_label: "Possible duplicate".to_owned(),
-            explanation: "SimSuite found another file that matches duplicate comparison rules, so compare before changing either copy.".to_owned(),
+            short_label: "Duplicate".to_owned(),
+            explanation: "SimSuite found another file with the same file contents. Compare before changing either copy.".to_owned(),
             source: "duplicates".to_owned(),
-            evidence: vec!["Duplicate comparison rule matched".to_owned()],
+            evidence: vec!["Same file contents".to_owned()],
             destination: Some(ProblemSignalDestination::Duplicates),
             show_in_library: false,
             show_in_inspector: true,
@@ -341,7 +341,10 @@ pub fn get_home_overview(
         "SELECT COUNT(DISTINCT creator_id) FROM files WHERE creator_id IS NOT NULL",
     )?;
     let bundles_count = scalar(connection, "SELECT COUNT(*) FROM bundles")?;
-    let duplicates_count = scalar(connection, "SELECT COUNT(*) FROM duplicates")?;
+    let duplicates_count = scalar(
+        connection,
+        "SELECT COUNT(*) FROM duplicates WHERE duplicate_type = 'exact'",
+    )?;
     let review_count = scalar(connection, "SELECT COUNT(*) FROM review_queue")?;
     let unsafe_count = scalar(
         connection,
@@ -514,8 +517,12 @@ pub fn get_library_summary(connection: &Connection) -> AppResult<LibrarySummary>
 
     let duplicates = scalar(
         connection,
-        "SELECT COUNT(DISTINCT d.file_id_a)\
-         FROM duplicates d",
+        "SELECT COUNT(DISTINCT file_id)\
+         FROM (\
+           SELECT file_id_a AS file_id FROM duplicates WHERE duplicate_type = 'exact'\
+           UNION\
+           SELECT file_id_b AS file_id FROM duplicates WHERE duplicate_type = 'exact'\
+         )",
     )?;
 
     let disabled = scalar(
@@ -591,7 +598,7 @@ pub fn list_library_files(
              cwr.status,\n\
              EXISTS (\n\
                SELECT 1 FROM duplicates d\n\
-               WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
+               WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id)\n\
              ) AS has_duplicate,
 \
              EXISTS (\n\
@@ -637,7 +644,7 @@ pub fn list_library_files(
              cwr.status,\n\
              EXISTS (\n\
                SELECT 1 FROM duplicates d\n\
-               WHERE d.file_id_a = f.id OR d.file_id_b = f.id\n\
+               WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id)\n\
              ) AS has_duplicate,
 \
              EXISTS (\n\
@@ -1229,14 +1236,16 @@ pub fn get_file_detail(
             // Load duplicate info for this file.
             let duplicates_count: i64 = connection.query_row(
                 "SELECT COUNT(*) FROM duplicates
-                 WHERE file_id_a = ?1 OR file_id_b = ?1",
+                 WHERE duplicate_type = 'exact'
+                   AND (file_id_a = ?1 OR file_id_b = ?1)",
                 params![file_id],
                 |row| row.get(0),
             )?;
             let duplicate_types: Vec<String> = connection
                 .prepare(
                     "SELECT DISTINCT duplicate_type FROM duplicates
-                     WHERE file_id_a = ?1 OR file_id_b = ?1
+                     WHERE duplicate_type = 'exact'
+                       AND (file_id_a = ?1 OR file_id_b = ?1)
                      ORDER BY duplicate_type",
                 )?
                 .query_map(params![file_id], |row| row.get(0))?
@@ -1345,8 +1354,8 @@ pub fn build_filters(query: &LibraryQuery) -> (String, Vec<Value>) {
         LibraryWatchFilter::Duplicates => {
             sql.push_str(
                 " AND EXISTS (\
-                 SELECT 1 FROM duplicates d\
-                 WHERE d.file_id_a = f.id OR d.file_id_b = f.id)",
+                 SELECT 1 FROM duplicates d \
+                 WHERE d.duplicate_type = 'exact' AND (d.file_id_a = f.id OR d.file_id_b = f.id))",
             );
         }
         LibraryWatchFilter::All => {}
@@ -1459,7 +1468,7 @@ mod tests {
 
     use crate::{
         database,
-        models::{LibraryFolderFilesQuery, LibraryQuery, LibrarySettings},
+        models::{LibraryFolderFilesQuery, LibraryQuery, LibrarySettings, LibraryWatchFilter},
         seed::load_seed_pack,
     };
 
@@ -1592,7 +1601,7 @@ mod tests {
     }
 
     #[test]
-    fn file_detail_reports_duplicate_pair_count_not_type_count_only() {
+    fn file_detail_reports_exact_duplicate_pair_count_only() {
         let (connection, settings, seed_pack) = setup_library_env();
 
         for filename in ["installed-copy-a.package", "installed-copy-b.package"] {
@@ -1621,7 +1630,10 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
-                 VALUES (1, 3, 'exact', 'sha256'), (1, 4, 'exact', 'sha256')",
+                 VALUES
+                   (1, 3, 'exact', 'sha256'),
+                   (1, 4, 'exact', 'sha256'),
+                   (1, 2, 'filename', 'filename_match')",
                 [],
             )
             .expect("insert duplicate pairs");
@@ -1632,6 +1644,48 @@ mod tests {
 
         assert_eq!(detail.duplicates_count, 2);
         assert_eq!(detail.duplicate_types, vec!["exact".to_owned()]);
+    }
+
+    #[test]
+    fn duplicate_library_filter_only_returns_exact_content_duplicates() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+
+        connection
+            .execute(
+                "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
+                 VALUES (1, 2, 'filename', 'filename_match')",
+                [],
+            )
+            .expect("insert name-match comparison");
+
+        let name_match_listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                watch_filter: Some(LibraryWatchFilter::Duplicates),
+                ..Default::default()
+            },
+        )
+        .expect("name match listing");
+        assert_eq!(name_match_listing.total, 0);
+
+        connection
+            .execute(
+                "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method)
+                 VALUES (1, 2, 'exact', 'sha256')",
+                [],
+            )
+            .expect("insert exact duplicate");
+
+        let exact_listing = list_library_files(
+            &connection,
+            LibraryQuery {
+                watch_filter: Some(LibraryWatchFilter::Duplicates),
+                ..Default::default()
+            },
+        )
+        .expect("exact listing");
+        assert_eq!(exact_listing.total, 1);
+        assert!(exact_listing.items[0].has_duplicate);
     }
 
     #[test]

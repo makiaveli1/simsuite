@@ -1,5 +1,56 @@
 # Session Handoff
 
+## Current Session (May 12, 2026 - Library Duplicate Truth Engine v2)
+
+- **Mode**: code
+- **Focus**: make user-facing duplicate language deterministic by reserving duplicate labels for exact same-content evidence
+
+### Progress Made
+
+1. **Tightened duplicate truth rules**:
+   - exact same non-empty file hash is now the only implemented duplicate proof
+   - same-name rows are now `Name match` review rows, not duplicate rows
+   - version-token rows are now `Version review` rows, not duplicate rows
+   - Library duplicate counts, duplicate filters, and file detail duplicate counts now count exact duplicate rows only
+
+2. **Updated API and UI wording**:
+   - `DuplicatePair` now exposes `isDuplicate` and `comparisonKind`
+   - Duplicates separates `Duplicates`, `Name matches`, and `Version reviews`
+   - Library rows, inspector, More Details, and Preflight no longer show uncertain same-name/version matches as duplicate labels
+   - no cleanup/delete/safe-delete/dependency/missing-mesh claims were added
+
+3. **Updated proof fixtures**:
+   - desktop fixture data now includes an exact-content duplicate pair
+   - Duplicates bridge proof now opens the exact duplicate fixture instead of a version/update-style MCCC item
+
+### Verification
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit`: `22` files, `87` tests
+- `cargo fmt`
+- `cargo check`
+- `cargo test`: `229` tests
+- `cargo build --release`
+- `npm run test:rust`: `229` tests
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`
+  - latest screenshot/proof folder: `output/desktop/library-proof/2026-05-12T11-32-16-213Z`
+- `npm run desktop:smoke:fixtures`: passed
+
+### Known Problems / Gaps
+
+- package and script fingerprints are still future scan-time work because SimSuite does not currently store normalized package/script payload fingerprints.
+- same-mod-family matching beyond filename/version keys remains future work.
+- large-library duplicate stress proof, true empty disk-folder metadata, and live real-library thumbnail validation remain future Library backend work.
+- Rust validation still emits existing warnings in older modules.
+- Vite still reports the existing large chunk warning.
+- unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this Library duplicate sprint.
+
+### Next Best Step
+
+1. Add Duplicate Truth Engine v3 with scan-time package/script fingerprints and large synthetic duplicate fixtures.
+
+
 ## Current Session (May 12, 2026 - Library Backend Map and Duplicate Intelligence v1)
 
 - **Mode**: code

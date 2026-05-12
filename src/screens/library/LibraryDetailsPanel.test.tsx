@@ -269,10 +269,10 @@ it("shows action preflight wording without claiming dependency proof", () => {
               signalType: "duplicate_candidate",
               severity: "caution",
               proofLevel: "detected",
-              shortLabel: "Possible duplicate",
-              explanation: "SimSuite found another file that matches duplicate comparison rules, so compare before changing either copy.",
+              shortLabel: "Duplicate",
+              explanation: "SimSuite found another file with the same file contents. Compare before changing either copy.",
               source: "duplicates",
-              evidence: ["Duplicate comparison rule matched"],
+              evidence: ["Same file contents"],
               destination: "duplicates",
               showInLibrary: false,
               showInInspector: true,
@@ -328,7 +328,7 @@ it("explains no-source and duplicate cues in the inspector without unsafe claims
           confidence: 0.88,
           safetyNotes: [],
           parserWarnings: [],
-          duplicateTypes: ["filename"],
+          duplicateTypes: ["exact"],
           duplicatesCount: 1,
           installedVersionSummary: null,
           watchResult: { status: "not_watched", sourceLabel: null },
@@ -346,7 +346,7 @@ it("explains no-source and duplicate cues in the inspector without unsafe claims
 
   expect(screen.getByText(/what this means/i)).toBeVisible();
   expect(screen.getByText(/does not know where to check/i)).toBeVisible();
-  expect(screen.getByText(/compare duplicate candidates/i)).toBeVisible();
+  expect(screen.getByText(/same-file-content evidence/i)).toBeVisible();
   expect(screen.getAllByRole("button", { name: /open in updates/i })).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: /compare in duplicates/i })).toHaveLength(1);
   expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();

@@ -263,7 +263,7 @@ export interface FileRelationship {
 export interface RelationshipCue {
   type: "duplicate" | RelationshipType;
   proofLevel: ProofLevel;
-  confidenceLabel: "Confirmed" | "Likely" | "Possible";
+  confidenceLabel: "Confirmed" | "Likely" | "Possible" | "Same file contents";
   shortLabel: string;
   compactLabel: string;
   description: string;
@@ -515,6 +515,8 @@ export interface DuplicatePair {
   id: number;
   duplicateType: string;
   detectionMethod: string;
+  isDuplicate: boolean;
+  comparisonKind: string;
   classification: string;
   classificationLabel: string;
   confidenceLabel: string;

@@ -284,11 +284,11 @@ function buildDuplicateSignal(
     signalType: "duplicate_candidate",
     severity: "caution",
     proofLevel: "detected",
-    label: "Possible duplicate",
+    label: "Duplicate",
     explanation:
       file.duplicatesCount === 1
-        ? "SimSuite found one duplicate comparison pair for this file, so compare the files before changing either copy."
-        : `SimSuite found ${file.duplicatesCount} duplicate comparison pairs for this file, so compare the files before changing any copy.`,
+        ? "SimSuite found one same-file-content duplicate pair for this file. Compare before changing either copy."
+        : `SimSuite found ${file.duplicatesCount} same-file-content duplicate pairs for this file. Compare before changing any copy.`,
     evidence: file.duplicateTypes.map(humanizeDuplicateType),
     route: "duplicates",
     source: "duplicate_types",
@@ -501,9 +501,9 @@ function humanizeDuplicateType(type: string) {
     case "exact":
       return "Same file contents";
     case "filename":
-      return "Same filename match";
+      return "Name match";
     case "version":
-      return "Possible version variant";
+      return "Version review";
     default:
       return type;
   }

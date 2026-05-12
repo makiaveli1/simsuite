@@ -160,6 +160,8 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
         id: row.get(0)?,
         duplicate_type,
         detection_method,
+        is_duplicate: intelligence.is_duplicate,
+        comparison_kind: intelligence.comparison_kind,
         classification: intelligence.classification,
         classification_label: intelligence.classification_label,
         confidence_label: intelligence.confidence_label,
@@ -184,6 +186,8 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DuplicateIntelligence {
+    is_duplicate: bool,
+    comparison_kind: String,
     classification: String,
     classification_label: String,
     confidence_label: String,
@@ -213,25 +217,41 @@ fn classify_duplicate_pair(
         && !secondary_versions.is_empty()
         && primary_versions != secondary_versions;
 
-    let (classification, classification_label, confidence_label) =
+    let (is_duplicate, comparison_kind, classification, classification_label, confidence_label) =
         if duplicate_type.eq_ignore_ascii_case("exact") && same_hash {
-            ("exact_duplicate", "Exact duplicate", "Same file contents")
+            (
+                true,
+                "exact_file",
+                "duplicate",
+                "Duplicate",
+                "Same file contents",
+            )
         } else if duplicate_type.eq_ignore_ascii_case("version")
             || (has_version_clue && version_differs && !same_hash)
         {
             (
-                "possible_version_variant",
-                "Possible version variant",
+                false,
+                "version_review",
+                "version_review",
+                "Version review",
                 "Version clue",
             )
         } else if duplicate_type.eq_ignore_ascii_case("filename") || same_filename {
             (
-                "possible_duplicate",
-                "Possible duplicate",
-                "Strong name match",
+                false,
+                "name_match_review",
+                "name_match_review",
+                "Name match",
+                "Name match",
             )
         } else {
-            ("unknown", "Manual review needed", "Limited evidence")
+            (
+                false,
+                "unknown",
+                "unknown",
+                "Manual review needed",
+                "Limited evidence",
+            )
         };
 
     let mut evidence = Vec::new();
@@ -276,17 +296,22 @@ fn classify_duplicate_pair(
     evidence.push(format!("Detection method: {detection_method}"));
 
     let mut cautions = vec!["Compare before changing anything".to_owned()];
-    if classification != "exact_duplicate" {
-        cautions.push("This is not same-file-content proof".to_owned());
+    if !is_duplicate {
+        cautions.push("This is not duplicate proof".to_owned());
     }
-    if classification == "possible_version_variant" {
+    if classification == "version_review" {
         cautions.push("This may be another release of the same mod".to_owned());
+    }
+    if classification == "name_match_review" {
+        cautions.push("Same filename is not same-content proof".to_owned());
     }
     if primary_creator.is_none() || secondary_creator.is_none() {
         cautions.push("Creator metadata is incomplete".to_owned());
     }
 
     DuplicateIntelligence {
+        is_duplicate,
+        comparison_kind: comparison_kind.to_owned(),
         classification: classification.to_owned(),
         classification_label: classification_label.to_owned(),
         confidence_label: confidence_label.to_owned(),
@@ -657,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_hash_pair_returns_exact_classification_with_evidence() {
+    fn exact_hash_pair_returns_duplicate_classification_with_evidence() {
         let mut connection = Connection::open_in_memory().expect("db");
         database::initialize(&mut connection).expect("schema");
 
@@ -680,17 +705,19 @@ mod tests {
         let pairs = list_duplicate_pairs(&connection, Some("exact".to_owned()), 10).expect("pairs");
 
         assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].classification, "exact_duplicate");
-        assert_eq!(pairs[0].classification_label, "Exact duplicate");
+        assert!(pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "exact_file");
+        assert_eq!(pairs[0].classification, "duplicate");
+        assert_eq!(pairs[0].classification_label, "Duplicate");
         assert!(pairs[0].evidence.contains(&"Same file contents".to_owned()));
         assert!(pairs[0].evidence.contains(&"Creator matches".to_owned()));
         assert!(!pairs[0]
             .cautions
-            .contains(&"This is not same-file-content proof".to_owned()));
+            .contains(&"This is not duplicate proof".to_owned()));
     }
 
     #[test]
-    fn filename_match_is_possible_duplicate_not_exact_content_proof() {
+    fn filename_match_is_name_review_not_duplicate_proof() {
         let mut connection = Connection::open_in_memory().expect("db");
         database::initialize(&mut connection).expect("schema");
 
@@ -702,8 +729,10 @@ mod tests {
             list_duplicate_pairs(&connection, Some("filename".to_owned()), 10).expect("pairs");
 
         assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].classification, "possible_duplicate");
-        assert_eq!(pairs[0].classification_label, "Possible duplicate");
+        assert!(!pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "name_match_review");
+        assert_eq!(pairs[0].classification, "name_match_review");
+        assert_eq!(pairs[0].classification_label, "Name match");
         assert!(pairs[0].evidence.contains(&"Same filename".to_owned()));
         assert!(pairs[0]
             .evidence
@@ -711,11 +740,14 @@ mod tests {
         assert!(pairs[0].evidence.contains(&"Creator differs".to_owned()));
         assert!(pairs[0]
             .cautions
-            .contains(&"This is not same-file-content proof".to_owned()));
+            .contains(&"This is not duplicate proof".to_owned()));
+        assert!(pairs[0]
+            .cautions
+            .contains(&"Same filename is not same-content proof".to_owned()));
     }
 
     #[test]
-    fn version_token_match_is_possible_version_variant() {
+    fn version_token_match_is_version_review_not_duplicate() {
         let mut connection = Connection::open_in_memory().expect("db");
         database::initialize(&mut connection).expect("schema");
 
@@ -739,8 +771,10 @@ mod tests {
             list_duplicate_pairs(&connection, Some("version".to_owned()), 10).expect("pairs");
 
         assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].classification, "possible_version_variant");
-        assert_eq!(pairs[0].classification_label, "Possible version variant");
+        assert!(!pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "version_review");
+        assert_eq!(pairs[0].classification, "version_review");
+        assert_eq!(pairs[0].classification_label, "Version review");
         assert!(pairs[0].evidence.contains(&"Version clue found".to_owned()));
         assert!(pairs[0].evidence.contains(&"Version differs".to_owned()));
         assert!(pairs[0]
@@ -801,10 +835,30 @@ mod tests {
             list_duplicate_pairs(&connection, Some("filename".to_owned()), 10).expect("pairs");
 
         assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].classification, "possible_duplicate");
+        assert!(!pairs[0].is_duplicate);
+        assert_eq!(pairs[0].classification, "name_match_review");
         assert!(pairs[0].evidence.contains(&"Creator unknown".to_owned()));
         assert!(pairs[0]
             .cautions
             .contains(&"Creator metadata is incomplete".to_owned()));
+    }
+
+    #[test]
+    fn duplicate_output_labels_do_not_use_possible_duplicate() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        insert_file(&connection, "preset.package", Some("111"), 10);
+        insert_file(&connection, "preset.package", Some("222"), 10);
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let pairs = list_duplicate_pairs(&connection, None, 10).expect("pairs");
+
+        assert!(pairs.iter().all(|pair| {
+            !pair
+                .classification_label
+                .to_ascii_lowercase()
+                .contains("possible duplicate")
+        }));
     }
 }

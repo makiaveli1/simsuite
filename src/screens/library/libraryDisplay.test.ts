@@ -190,7 +190,7 @@ describe("row display summaries", () => {
       "No update source",
       "Warning",
     ]);
-    expect(summary.hiddenLabels).toEqual(["Possible duplicate"]);
+    expect(summary.hiddenLabels).toEqual(["Duplicate"]);
   });
 
   it("keeps list facts compact while preserving hidden detail labels", () => {

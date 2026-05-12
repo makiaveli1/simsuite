@@ -118,7 +118,7 @@ it("can rerender from empty results to populated rows without changing hook orde
   expect(screen.getAllByText(/betterbuildbuy/i).length).toBeGreaterThan(0);
 });
 
-it("uses cautious duplicate and update-source wording in row badges", () => {
+it("uses deterministic duplicate and update-source wording in row badges", () => {
   render(
     <LibraryCollectionTable
       userView="standard"
@@ -142,7 +142,7 @@ it("uses cautious duplicate and update-source wording in row badges", () => {
     />,
   );
 
-  expect(screen.getAllByText(/possible duplicate/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/^duplicate$/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/no update source/i)).toBeInTheDocument();
   expect(screen.queryByText(/confirmed duplicate/i)).toBeNull();
   expect(screen.queryByText(/safe to delete/i)).toBeNull();

@@ -18,7 +18,7 @@ it("renders preflight evidence with cautious labels instead of over-strong confi
       safetyNotes: [],
       parserWarnings: [],
       duplicatesCount: 1,
-      duplicateTypes: ["filename"],
+      duplicateTypes: ["exact"],
       problemSignals: [
         {
           signalType: "review_suggested",

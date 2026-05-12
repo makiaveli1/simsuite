@@ -596,7 +596,7 @@ pub struct LibraryFileRow {
     /// Pre-computed watch status for list display. Derived from content_watch_results.
     #[serde(default)]
     pub watch_status: WatchStatus,
-    /// True if this file appears in any duplicate pair (exact hash, filename, or version).
+    /// True if this file appears in an exact deterministic duplicate pair.
     #[serde(default)]
     pub has_duplicate: bool,
     /// Installed version string for list display — populated from content_versions
@@ -807,6 +807,8 @@ pub struct DuplicatePair {
     pub id: i64,
     pub duplicate_type: String,
     pub detection_method: String,
+    pub is_duplicate: bool,
+    pub comparison_kind: String,
     pub classification: String,
     pub classification_label: String,
     pub confidence_label: String,
@@ -855,10 +857,10 @@ pub struct FileDetail {
     pub watch_result: Option<WatchResult>,
     pub creator_learning: CreatorLearningInfo,
     pub category_override: CategoryOverrideInfo,
-    /// Number of duplicate pairs this file appears in (exact hash, filename, or version match).
+    /// Number of exact deterministic duplicate pairs this file appears in.
     #[serde(default)]
     pub duplicates_count: usize,
-    /// Types of duplicates this file is involved in.
+    /// Exact duplicate evidence types this file is involved in.
     #[serde(default)]
     pub duplicate_types: Vec<String>,
     /// Installed version string, if this file has a watch source with version data.

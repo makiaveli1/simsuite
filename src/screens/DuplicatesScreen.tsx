@@ -32,7 +32,7 @@ const DUPLICATES_LAYOUT_PRESETS: Array<{
   {
     id: "sweep",
     label: "Sweep",
-    hint: "Leaves more width for the duplicate pair list and keeps filters open.",
+    hint: "Leaves more width for the comparison pair list and keeps filters open.",
   },
   {
     id: "balanced",
@@ -143,6 +143,7 @@ export function DuplicatesScreen({
         item.secondaryPath,
         item.classificationLabel,
         item.confidenceLabel,
+        item.comparisonKind,
         ...(item.evidence ?? []),
       ]
         .filter(Boolean)
@@ -290,8 +291,8 @@ export function DuplicatesScreen({
           <strong>Opened from Library.</strong>
           <p>
             {focusedPair && focusedFilename
-              ? `Focused a possible duplicate pair for ${focusedFilename}. Compare files before changing anything.`
-              : "No matching duplicate pair was found for the selected Library file. Showing the available duplicate candidates instead."}
+              ? `Focused a Library comparison for ${focusedFilename}. Compare files before changing anything.`
+              : "No matching duplicate comparison was found for the selected Library file. Showing the available comparisons instead."}
           </p>
         </div>
       ) : null}
@@ -302,7 +303,7 @@ export function DuplicatesScreen({
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Pairs</p>
-                <h2>{userView === "beginner" ? "Possible repeats" : "Duplicate intelligence"}</h2>
+                <h2>{userView === "beginner" ? "File comparisons" : "Duplicate intelligence"}</h2>
               </div>
               <button
                 type="button"
@@ -317,12 +318,12 @@ export function DuplicatesScreen({
 
             <div className="summary-matrix duplicates-summary-strip">
               <SummaryStat
-                label={userView === "beginner" ? "Matches" : "Pairs"}
+                label={userView === "beginner" ? "Checks" : "Comparisons"}
                 value={overview?.totalPairs ?? 0}
                 tone="neutral"
               />
               <SummaryStat
-                label="Exact"
+                label="Duplicates"
                 value={overview?.exactPairs ?? 0}
                 tone="good"
               />
@@ -332,7 +333,7 @@ export function DuplicatesScreen({
                 tone="neutral"
               />
               <SummaryStat
-                label="Version clues"
+                label="Version reviews"
                 value={overview?.versionPairs ?? 0}
                 tone="low"
               />
@@ -364,10 +365,10 @@ export function DuplicatesScreen({
                       value={duplicateType}
                       onChange={(event) => setDuplicateType(event.target.value)}
                     >
-                      <option value="">All</option>
-                      <option value="exact">Exact</option>
-                      <option value="filename">Filename</option>
-                      <option value="version">Version</option>
+                      <option value="">All comparisons</option>
+                      <option value="exact">Duplicates</option>
+                      <option value="filename">Name matches</option>
+                      <option value="version">Version reviews</option>
                     </select>
                   </label>
                 </div>
@@ -417,7 +418,9 @@ export function DuplicatesScreen({
                   <h2>
                     {selected
                       ? userView === "beginner"
-                        ? "Compare both copies"
+                        ? selected.isDuplicate
+                          ? "Compare both copies"
+                          : "Review this comparison"
                         : "Compare this pair"
                       : userView === "beginner"
                         ? "Pick a match to compare"
@@ -428,7 +431,7 @@ export function DuplicatesScreen({
                   <div className="header-actions">
                     <span
                       className={`confidence-badge ${duplicateToneClass(
-                        selected.classification,
+                        selected,
                       )}`}
                     >
                       {selected.classificationLabel}
@@ -446,7 +449,11 @@ export function DuplicatesScreen({
 
                   <div className="duplicates-compare-grid">
                     <DuplicateFileCard
-                      label={userView === "beginner" ? "First copy" : "Primary file"}
+                      label={
+                        selected.isDuplicate && userView === "beginner"
+                          ? "First copy"
+                          : "Primary file"
+                      }
                       filename={selected.primaryFilename}
                       creator={selected.primaryCreator}
                       path={selected.primaryPath}
@@ -455,7 +462,11 @@ export function DuplicatesScreen({
                       userView={userView}
                     />
                     <DuplicateFileCard
-                      label={userView === "beginner" ? "Second copy" : "Secondary file"}
+                      label={
+                        selected.isDuplicate && userView === "beginner"
+                          ? "Second copy"
+                          : "Secondary file"
+                      }
                       filename={selected.secondaryFilename}
                       creator={selected.secondaryCreator}
                       path={selected.secondaryPath}
@@ -476,8 +487,8 @@ export function DuplicatesScreen({
                   title={userView === "beginner" ? "Select a match" : "Select a pair"}
                   body={
                     userView === "beginner"
-                      ? "Choose one possible repeat below to compare both copies side by side."
-                      : "Pick a duplicate pair from the queue below to bring it into the center stage."
+                      ? "Choose one comparison below to review both files side by side."
+                      : "Pick a comparison pair from the queue below to bring it into the center stage."
                   }
                   icon={SearchX}
                   compact
@@ -573,8 +584,8 @@ export function DuplicatesScreen({
                 title={userView === "beginner" ? "Select a match" : "Select a pair"}
                 body={
                   userView === "beginner"
-                    ? "Choose one possible repeat from the queue to compare both file paths and see how SimSuite matched them."
-                    : "Select a duplicate pair to inspect the path comparison, detection method, and exact hash details when available."
+                    ? "Choose one comparison from the queue to compare both file paths and see how SimSuite matched them."
+                    : "Select a comparison pair to inspect the path comparison, detection method, and exact hash details when available."
                 }
                 icon={SearchX}
                 meta={["Compare-only for now", "No cleanup action here"]}
@@ -592,23 +603,29 @@ export function DuplicatesScreen({
           }
           body={
             userView === "beginner"
-              ? "Try clearing the search or switching the match type if you want to look for broader possible repeats."
-              : "Clear the search or broaden the duplicate type filter to see more of the indexed overlap set."
+              ? "Try clearing the search or switching the match type if you want to look for broader comparisons."
+              : "Clear the search or broaden the comparison type filter to see more of the indexed overlap set."
           }
           icon={Copy}
           tone="info"
-          meta={["Exact, name, and version-clue views available"]}
+          meta={["Duplicates, name matches, and version reviews available"]}
         />
       )}
     </section>
   );
 }
 
-function duplicateToneClass(classification: string) {
-  switch (classification.toLowerCase()) {
-    case "exact_duplicate":
+function duplicateToneClass(pair: DuplicatePair) {
+  if (pair.isDuplicate) {
+    return "good";
+  }
+
+  switch (pair.comparisonKind.toLowerCase()) {
+    case "exact_file":
+    case "exact_package":
+    case "exact_script":
       return "good";
-    case "possible_duplicate":
+    case "name_match_review":
       return "medium";
     default:
       return "low";
@@ -616,16 +633,18 @@ function duplicateToneClass(classification: string) {
 }
 
 function duplicateStageHeadline(pair: DuplicatePair, userView: UserView) {
-  switch (pair.classification.toLowerCase()) {
-    case "exact_duplicate":
+  switch (pair.comparisonKind.toLowerCase()) {
+    case "exact_file":
+    case "exact_package":
+    case "exact_script":
       return userView === "beginner"
         ? "SimSuite matched the file contents. Compare folders and backups before changing anything."
         : "This pair has same-file-content evidence, so path and folder context should carry most of the review.";
-    case "possible_duplicate":
+    case "name_match_review":
       return userView === "beginner"
-        ? "These names line up closely, but the file details may still differ once you compare both files."
-        : "This name match still needs context because the underlying file details may differ.";
-    case "possible_version_variant":
+        ? "These names match, but SimSuite did not find same-content duplicate proof."
+        : "This name match is for review only because the underlying file contents differ or are not proven identical.";
+    case "version_review":
       return userView === "beginner"
         ? "Version clues suggest these may be different releases of the same mod."
         : "This looks like a version variant, so size, folder context, and naming clues matter most.";
@@ -654,7 +673,9 @@ function duplicateStageSupportBody(pair: DuplicatePair, userView: UserView) {
   const sizeDelta = Math.abs(pair.primarySize - pair.secondarySize);
   const sizeLine =
     sizeDelta === 0
-      ? "That often means the folder path is the best next clue."
+      ? pair.isDuplicate
+        ? "The file sizes match, so folder path and backups are the next context to check."
+        : "Matching size alone is not duplicate proof."
       : `There is a ${sizeDelta.toLocaleString()} byte gap between them, which can help separate the newer or edited copy.`;
 
   return userView === "beginner"

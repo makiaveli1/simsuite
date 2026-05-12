@@ -1258,12 +1258,15 @@ function pickTargets(items, session) {
     return filename.includes("mc_cmd_center") || filename.includes("mccc");
   });
   const generic = items.find((item) => String(item.filename ?? "").toLowerCase() === genericWatchFile.toLowerCase());
+  const duplicate = generic?.hasDuplicate
+    ? generic
+    : items.find((item) => item?.hasDuplicate === true);
 
   if (!mccc) {
     throw new Error("Could not find an MCCC fixture row in the desktop library.");
   }
 
-  return { mccc, generic };
+  return { mccc, generic, duplicate };
 }
 
 function buildRowNeedles(item) {
@@ -1345,6 +1348,7 @@ async function main() {
     summary.targets = {
       mccc: targets.mccc.filename,
       generic: targets.generic?.filename ?? null,
+      duplicate: targets.duplicate?.filename ?? null,
     };
 
     await verifyLibraryLayoutForMode(
@@ -1465,19 +1469,26 @@ async function main() {
     await takeScreenshot(driver, cozyPreflightShot);
     summary.screenshots.push(cozyPreflightShot);
 
-    summary.duplicatesPreflightText = summary.mcccDetailText;
+    if (!targets.duplicate) {
+      throw new Error("Could not find an exact duplicate fixture row in the desktop library.");
+    }
+    summary.duplicatesPreflightText = await openLibraryPreflightFor(driver, targets.duplicate);
     await clickVisibleButton(driver, "Open in Duplicates");
     summary.duplicatesHash = await waitForHash(driver, "#duplicates", 30000);
     await waitForVisibleElement(driver, ".duplicates-screen", 30000);
     await waitForAnyText(driver, ["Opened from Library"], 30000);
     const duplicatesBody = await getBodyText(driver);
-    summary.duplicatesBodyHasMccc = /mc_cmd_center|mc cmd center|mccc/i.test(duplicatesBody);
+    const duplicateTargetFilename = String(targets.duplicate.filename ?? "");
+    const duplicateTargetStem = duplicateTargetFilename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    summary.duplicatesBodyHasTarget =
+      duplicatesBody.toLowerCase().includes(duplicateTargetFilename.toLowerCase()) ||
+      duplicatesBody.toLowerCase().includes(duplicateTargetStem.toLowerCase());
     summary.duplicatesBodyHasLibraryFocus = /opened from library/i.test(duplicatesBody);
     summary.duplicatesContextExcerpt = duplicatesBody.slice(0, 1500);
-    if (!summary.duplicatesBodyHasMccc || !summary.duplicatesBodyHasLibraryFocus) {
+    if (!summary.duplicatesBodyHasTarget || !summary.duplicatesBodyHasLibraryFocus) {
       throw new Error("Duplicates bridge opened Duplicates without visible Library file context.");
     }
-    const duplicatesShot = path.join(runDir, "06-duplicates-bridge-mccc.png");
+    const duplicatesShot = path.join(runDir, "06-duplicates-bridge-exact.png");
     await takeScreenshot(driver, duplicatesShot);
     summary.screenshots.push(duplicatesShot);
     await assertNoRuntimeErrors(driver, summary, "duplicates-bridge");

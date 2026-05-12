@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (May 12, 2026 - Library Duplicate Truth Engine v2)
+
+This session made Library duplicate language deterministic and stricter.
+
+Important changes and findings:
+
+- added short Sims duplicate-detection research notes in `docs/SIMS_DUPLICATE_DETECTION_NOTES.md`.
+- refreshed `docs/LIBRARY_BACKEND_SYSTEMS_MAP.md` for the v2 duplicate truth rule.
+- kept the duplicate database schema unchanged; no migration was needed.
+- `DuplicatePair` now exposes `isDuplicate` and `comparisonKind`.
+- exact same non-empty file hash is the only implemented duplicate proof.
+- same-name rows are now `Name match` review rows, not duplicate rows.
+- version-token rows are now `Version review` rows, not duplicate rows.
+- Library duplicate counts, Library duplicate filters, Home/Library summaries, and file detail duplicate counts now count exact deterministic duplicate rows only.
+- Duplicates now separates exact duplicates from name/version review rows and keeps compare-before-changing guidance.
+- desktop fixture data now includes an exact-content duplicate pair, and Library proof uses that target for the Duplicates bridge.
+- package and script fingerprints were not implemented because SimSuite does not currently store normalized package/script payload fingerprints; those should be scan-time work in a later sprint.
+- no cleanup/delete/safe-delete/dependency/missing-mesh/provider/AI behavior was added.
+- pre-existing unrelated Home/status/global CSS and generated `.cocoindex` changes remain outside this sprint.
+
+Checks passed:
+
+- `npm run build`
+- `npx tsc --noEmit`
+- `npm run test:unit` (`22` files, `87` tests)
+- `cargo fmt`
+- `cargo check`
+- `cargo test` (`229` tests)
+- `cargo build --release`
+- `npm run test:rust` (`229` tests)
+- `npm run desktop:proof:fixtures` (`DESKTOP_LIBRARY_PROOF_OK`)
+- `npm run desktop:smoke:fixtures`
+
+Important remaining gap:
+
+- package/script fingerprints, same-mod-family matching, large-library duplicate stress proof, true empty disk-folder metadata, and live real-library thumbnail validation remain future backend work.
+- existing Rust warnings and the Vite chunk-size warning remain unchanged.
+
+
 ## Current session note (May 12, 2026 - Library Backend Map and Duplicate Intelligence v1)
 
 This session moved Library work from frontend polish to backend truth and duplicate evidence.

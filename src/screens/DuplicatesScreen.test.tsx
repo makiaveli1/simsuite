@@ -24,9 +24,11 @@ const duplicatePairs: DuplicatePair[] = [
     id: 1,
     duplicateType: "filename",
     detectionMethod: "Filename match",
-    classification: "possible_duplicate",
-    classificationLabel: "Possible duplicate",
-    confidenceLabel: "Strong name match",
+    isDuplicate: false,
+    comparisonKind: "name_match_review",
+    classification: "name_match_review",
+    classificationLabel: "Name match",
+    confidenceLabel: "Name match",
     evidence: ["Same filename", "Creator unknown"],
     cautions: ["Compare before changing anything"],
     primaryFileId: 11,
@@ -48,8 +50,10 @@ const duplicatePairs: DuplicatePair[] = [
     id: 2,
     duplicateType: "exact",
     detectionMethod: "Exact hash match",
-    classification: "exact_duplicate",
-    classificationLabel: "Exact duplicate",
+    isDuplicate: true,
+    comparisonKind: "exact_file",
+    classification: "duplicate",
+    classificationLabel: "Duplicate",
     confidenceLabel: "Same file contents",
     evidence: ["Same file contents", "Size matches", "Creator matches"],
     cautions: ["Compare before changing anything"],
@@ -92,7 +96,7 @@ it("focuses a duplicate pair when Library opens Duplicates with file context", a
 
   expect(await screen.findByText("Opened from Library.")).toBeVisible();
   expect(
-    screen.getByText(/Focused a possible duplicate pair for mc_cmd_center\.package/i),
+    screen.getByText(/Focused a Library comparison for mc_cmd_center\.package/i),
   ).toBeVisible();
   expect(screen.getAllByText("mc_cmd_center.package").length).toBeGreaterThan(0);
 });
