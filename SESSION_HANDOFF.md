@@ -1,5 +1,46 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Navigation Workflow + Linear Roadmap v1)
+
+- **Mode**: planning/docs/Linear setup
+- **Focus**: organize the next SimSuite phase before Auto Sorting, Staging plan implementation, AI, provider work, or any file-changing workflow
+
+### Progress Made
+
+1. **Copied the master roadmap into the repo**:
+   - source Markdown: `C:\Users\likwi\Downloads\simsuite_master_roadmap_linear_plan.md`
+   - repo copy: `docs/planning/simsuite_master_roadmap_linear_plan.md`
+   - HTML copy was not added because Markdown is the source artifact
+
+2. **Created the navigation/workflow architecture plan**:
+   - added `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`
+   - recorded current route inventory, overlap decisions, mode visibility recommendations, future sidebar model, migration phases, and safety plan
+   - no route/sidebar behavior was changed
+
+3. **Set up Linear roadmap tracking**:
+   - project: `SimSuite - Safe Automation Roadmap`
+   - team: `Veliveli`
+   - milestones M0-M8 created
+   - area/type/trust/P0-P3 labels created
+   - issues VEL-5 through VEL-30 created from the roadmap
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `89` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+### Known Problems / Gaps
+
+- This sprint is planning-only; navigation has not been simplified in the app yet.
+- Linear issues use the existing `Backlog` status; no custom status workflow was configured.
+- Existing unrelated dirty files remain and should not be committed with this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Finish validation and commit only the planning/Linear docs for this sprint.
+2. Next implementation candidate: Staging Preview Plan Foundation v1, starting with the `StagingPlan` contract and no file movement.
+
 ## Current Session (May 13, 2026 - Staging Backend Safety Readiness v1)
 
 - **Mode**: code

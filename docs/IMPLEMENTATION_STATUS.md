@@ -1,5 +1,37 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Navigation Workflow + Linear Roadmap v1)
+
+This session is a planning, documentation, and Linear setup sprint. It does not change route/sidebar behavior, backend commands, schemas, Auto Sorting, Staging actions, AI, provider integration, or user files.
+
+Important changes and findings:
+
+- copied the user-provided master roadmap Markdown into `docs/planning/simsuite_master_roadmap_linear_plan.md`.
+- added `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`.
+- current recommendation: keep Home, Scan, Library, Inbox, Organize, Updates, Review, and Settings as the future core sidebar.
+- future fold direction: Staging into Organize as preview/plans, Creators and Types into Library lenses, Duplicates into Library/Review comparison with Creator-mode top-level visibility allowed until migration.
+- clarified product ownership:
+  - Inbox = intake / new content.
+  - Staging = preview of a proposed plan.
+  - Organize = planning workspace for suggested organization.
+- Linear project `SimSuite - Safe Automation Roadmap` was created for team `Veliveli`.
+- Linear milestones M0-M8, roadmap labels, and issues VEL-5 through VEL-30 were created.
+- no files are moved, deleted, disabled, quarantined, replaced, or auto-sorted by this sprint.
+
+Checks passed:
+
+- `npx tsc --noEmit`
+- `npm run test:unit` (`23` files, `89` tests)
+- `npm run build` (existing Vite chunk-size warning remains)
+
+Desktop/runtime proof:
+
+- skipped unless validation finds route/runtime risk, because this sprint is docs/Linear only and does not change app behavior.
+
+Recommended next sprint:
+
+- Staging Preview Plan Foundation v1, starting with a preview-only `StagingPlan` contract and no file movement.
+
 ## Current session note (May 13, 2026 - Staging Backend Safety Readiness v1)
 
 This session audits and guards Staging before any Auto Sorting, file-moving, quarantine, cleanup, or update-replacement workflow is built.

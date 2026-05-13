@@ -4,6 +4,8 @@ Date: 2026-05-13
 
 This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Staging, sorting, and AI prompts should use it before adding automation.
 
+Navigation and workflow simplification planning now lives in `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`. That plan is the source of truth for which pages should stay top-level, become Library lenses, fold into Organize, or move toward Help/Settings.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.
