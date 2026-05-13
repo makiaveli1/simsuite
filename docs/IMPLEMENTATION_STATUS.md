@@ -1,5 +1,31 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Auto Sorting Rules Audit v1)
+
+This session defines the safe rule foundation for future Auto Sorting Suggested Plans. It does not implement the generator, move files, expose Apply, add cleanup, add quarantine, add delete, add AI decisions, or change routes.
+
+Important changes and findings:
+
+- added `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`.
+- classified Library/scanner/parser/duplicate/bundle/review/update signals by evidence level.
+- defined approved destination buckets, action kinds, do-not-move rules, future per-file plan item requirements, generator scope, UI expectations, and test strategy.
+- confirmed the next generator should build preview-only `StagingPlan` items with `wouldTouchFiles=false`.
+- confirmed the legacy Organize preview/apply path still exists and should not be used as the new Auto Sorting generator path.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `90` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- skipped because no route behavior, UI code, backend commands, schemas, or runtime code changed.
+
+Recommended next sprint:
+
+- Suggested Plan Generator v1, still preview-only and no file movement.
+
 ## Current session note (May 13, 2026 - Staging Preview Plan Foundation v1)
 
 This session adds the first preview-only StagingPlan foundation before Auto Sorting or any file-changing workflow.

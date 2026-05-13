@@ -6,6 +6,8 @@ This document is the standing trust policy for SimSuite. Future Library, Inbox, 
 
 Navigation and workflow simplification planning now lives in `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`. That plan is the source of truth for which pages should stay top-level, become Library lenses, fold into Organize, or move toward Help/Settings.
 
+Auto Sorting rules planning now lives in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`. That audit is the source of truth for which evidence signals may drive preview-only organization suggestions.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.
@@ -102,6 +104,19 @@ Before Staging can apply real file changes, it must have:
 - recoverable error handling.
 - a per-file result log.
 - unit tests and desktop proof for the full workflow.
+
+## Auto Sorting Suggested Plan Rules
+
+Auto Sorting may start only as a Level 3 suggested plan. It may suggest destinations, groups, review routes, or leave-in-place decisions, but it must keep `wouldTouchFiles=false` until a separate Apply Safety Contract exists.
+
+Future Auto Sorting generator work must use the rules in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`:
+
+- deterministic and evidence-backed signals may suggest buckets with caveats.
+- heuristic signals may support review-only suggestions, but they must not drive strong move suggestions alone.
+- exact duplicates route to duplicate review, not cleanup or automatic movement.
+- parser warnings, inspection failures, weak metadata, unsupported types, and conflicting clues route to review or leave-in-place.
+- filename/version/folder/pack/family hints remain review-only unless backed by stronger evidence.
+- AI must not decide the category, destination, safety, dependency, or update truth.
 
 ## AI Assistance Boundary
 
