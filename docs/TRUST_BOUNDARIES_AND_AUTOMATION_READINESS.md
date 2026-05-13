@@ -78,6 +78,8 @@ Current Staging may:
 - show file counts and sizes.
 - explain that no files are changed from the Staging screen yet.
 - describe future requirements for applying changes.
+- return a preview-only `StagingPlan` with `wouldTouchFiles=false`.
+- show folder-level review items with reasons and caveats when per-file organization suggestions do not exist yet.
 
 Current Staging must not expose enabled controls that:
 
@@ -86,6 +88,8 @@ Current Staging must not expose enabled controls that:
 - quarantine, disable, or replace files.
 - claim a plan is safe.
 - let AI decide a file action.
+
+`StagingPlan` v1 is a Level 3 suggested-plan contract only. It may describe staged folders and future review needs, but it must not create destinations, claim a move is ready, or imply a plan can be applied until per-file preview, user confirmation, backup/restore, path validation, conflict handling, recoverable errors, and proof exist.
 
 Before Staging can apply real file changes, it must have:
 

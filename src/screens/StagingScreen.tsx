@@ -3,6 +3,7 @@ import { AnimatePresence, m } from "motion/react";
 import {
   Archive,
   Inbox,
+  ListChecks,
   LoaderCircle,
   ShieldCheck,
 } from "lucide-react";
@@ -11,6 +12,8 @@ import type {
   Screen,
   StagingArea,
   StagingAreasSummary,
+  StagingPlan,
+  StagingPlanItem,
   UserView,
 } from "../lib/types";
 
@@ -105,16 +108,174 @@ function EmptyStaging() {
   );
 }
 
+interface StagingPlanPanelProps {
+  plan: StagingPlan | null;
+}
+
+function planStatusLabel(plan: StagingPlan): string {
+  if (plan.status === "blocked") return "Not ready to apply yet";
+  if (plan.status === "ready_for_review") return "Ready for review";
+  return "Preview only";
+}
+
+function actionLabel(item: StagingPlanItem): string {
+  switch (item.actionKind) {
+    case "suggest_move":
+      return "Suggested move";
+    case "suggest_group":
+      return "Suggested group";
+    case "no_action":
+      return "No action";
+    case "suggest_review":
+    default:
+      return "Review item";
+  }
+}
+
+function evidenceLabel(item: StagingPlanItem): string {
+  switch (item.evidenceLevel) {
+    case "deterministic":
+      return "Deterministic fact";
+    case "evidence_backed":
+      return "Evidence-backed cue";
+    case "heuristic":
+      return "Heuristic hint";
+    case "review_only":
+    default:
+      return "Manual review needed";
+  }
+}
+
+function StagingPlanPanel({ plan }: StagingPlanPanelProps) {
+  if (!plan) {
+    return (
+      <m.section
+        className="staging-card"
+        aria-label="Preview plan"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.15 }}
+      >
+        <div className="staging-card-header">
+          <div className="staging-card-meta">
+            <ListChecks size={16} className="staging-card-icon" />
+            <span className="staging-card-item-id">Preview plan</span>
+            <span className="staging-card-badge staging-card-badge--pending">
+              Not ready to apply yet
+            </span>
+          </div>
+        </div>
+        <div className="staging-card-actions" aria-label="Preview plan safety">
+          <ShieldCheck size={14} />
+          <span className="staging-sub-info">
+            Preview plan could not be loaded. No files changed.
+          </span>
+        </div>
+      </m.section>
+    );
+  }
+
+  return (
+    <m.section
+      className="staging-card"
+      aria-label="Preview plan"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.15 }}
+    >
+      <div className="staging-card-header">
+        <div className="staging-card-meta">
+          <ListChecks size={16} className="staging-card-icon" />
+          <span className="staging-card-item-id">{plan.title}</span>
+          <span className="staging-card-badge staging-card-badge--pending">
+            {planStatusLabel(plan)}
+          </span>
+        </div>
+        <div className="staging-card-stats">
+          <span>{plan.itemCount} plan item{plan.itemCount !== 1 ? "s" : ""}</span>
+          <span className="staging-card-sep">|</span>
+          <span>No files changed</span>
+        </div>
+      </div>
+
+      <div className="staging-card-subs">
+        <div className="staging-sub-row">
+          <span className="staging-sub-name">Summary</span>
+          <span className="staging-sub-info">{plan.summary}</span>
+        </div>
+        {plan.caveats.map((caveat) => (
+          <div key={caveat} className="staging-sub-row">
+            <span className="staging-sub-name">Caveat</span>
+            <span className="staging-sub-info">{caveat}</span>
+          </div>
+        ))}
+        {plan.items.length === 0 ? (
+          <div className="staging-sub-row">
+            <span className="staging-sub-name">Plan items</span>
+            <span className="staging-sub-info">
+              No preview items yet. Staging needs more plan data before review.
+            </span>
+          </div>
+        ) : (
+          plan.items.map((item) => (
+            <div key={item.id} className="staging-sub-row">
+              <span className="staging-sub-name">{item.fileName}</span>
+              <span className="staging-sub-info">
+                {actionLabel(item)} | {evidenceLabel(item)} | {item.reason}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="staging-card-actions" aria-label="Preview plan safety">
+        <button
+          type="button"
+          className="staging-btn staging-btn--disabled"
+          disabled
+        >
+          <ShieldCheck size={14} />
+          Preview plan only
+        </button>
+        <span className="staging-sub-info">
+          Review before applying. Backup and restore support are still required.
+        </span>
+      </div>
+    </m.section>
+  );
+}
+
 export function StagingScreen(_props: StagingScreenProps) {
   const [summary, setSummary] = useState<StagingAreasSummary | null>(null);
+  const [plan, setPlan] = useState<StagingPlan | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadStagingAreas = useCallback(async () => {
     try {
-      const data = await api.getStagingAreas();
-      setSummary(data);
+      const [areasResult, planResult] = await Promise.allSettled([
+        api.getStagingAreas(),
+        api.getStagingPreviewPlan(),
+      ]);
+
+      if (areasResult.status === "fulfilled") {
+        setSummary(areasResult.value);
+      } else {
+        console.error(
+          "[StagingScreen] failed to load staging areas:",
+          areasResult.reason,
+        );
+      }
+
+      if (planResult.status === "fulfilled") {
+        setPlan(planResult.value);
+      } else {
+        console.error(
+          "[StagingScreen] failed to load staging preview plan:",
+          planResult.reason,
+        );
+      }
     } catch (err) {
-      console.error("[StagingScreen] failed to load staging areas:", err);
+      console.error("[StagingScreen] failed to load staging data:", err);
     } finally {
       setLoading(false);
     }
@@ -177,6 +338,8 @@ export function StagingScreen(_props: StagingScreenProps) {
         screen yet. Future file-changing workflows need preview, user
         confirmation, backup and restore support, and recoverable errors.
       </m.div>
+
+      <StagingPlanPanel plan={plan} />
 
       {areas.length === 0 ? (
         <EmptyStaging />

@@ -113,6 +113,13 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 - Keep the direct Staging route safe during transition.
 - Do not expose apply/move/delete/quarantine controls.
 
+Current M2 foundation note:
+
+- `StagingPlan` v1 is defined as a preview-only contract with `wouldTouchFiles=false`.
+- `get_staging_preview_plan` is read-only and can describe current app-local staged folders as review items.
+- The direct Staging route can show this plan, but it still does not apply, move, delete, clean up, quarantine, or auto-sort files.
+- Per-file organization suggestions remain future Auto Sorting Suggested Plan work.
+
 ### Phase 3 - Fold Creators And Types Into Library Lenses
 
 - Preserve the existing creator/type browsing value.

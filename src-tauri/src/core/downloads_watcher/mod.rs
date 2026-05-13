@@ -34,7 +34,9 @@ use crate::{
         DownloadsSelectionResponse, DownloadsTimelineEntry, DownloadsWatcherState,
         DownloadsWatcherStatus, GuidedInstallPlan, IgnoreItemsResult, LibrarySettings,
         OrganizationPreview, RejectResult, RejectedItem, SpecialReviewPlan, StagingArea,
-        StagingAreasSummary, StagingSubDirectory, WorkspaceChange, WorkspaceDomain,
+        StagingAreasSummary, StagingPlan, StagingPlanActionKind, StagingPlanEvidenceLevel,
+        StagingPlanItem, StagingPlanSource, StagingPlanStatus, StagingSubDirectory,
+        WorkspaceChange, WorkspaceDomain,
     },
 };
 
@@ -3851,6 +3853,73 @@ pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary>
     })
 }
 
+/// Builds a preview-only plan from current app-local staging folders.
+///
+/// This is intentionally folder-level for v1. It does not infer per-file moves,
+/// destinations, or apply readiness.
+pub fn build_staging_preview_plan(app_data_dir: &Path) -> AppResult<StagingPlan> {
+    let summary = list_staging_areas(app_data_dir)?;
+    let mut items = Vec::new();
+
+    for area in &summary.areas {
+        for (index, subdirectory) in area.subdirectories.iter().enumerate() {
+            items.push(StagingPlanItem {
+                id: format!("staging-{}-{}", area.item_id, index + 1),
+                file_id: None,
+                file_name: subdirectory.name.clone(),
+                current_path: Some(subdirectory.path.clone()),
+                suggested_destination_path: None,
+                action_kind: StagingPlanActionKind::SuggestReview,
+                evidence_level: StagingPlanEvidenceLevel::ReviewOnly,
+                reason: "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.".to_owned(),
+                caveats: vec![
+                    "Folder-level staging data only; no per-file move is suggested.".to_owned(),
+                    "No files changed. This plan is preview-only.".to_owned(),
+                    "Future file changes require user confirmation, backup and restore support, path validation, and recoverable errors.".to_owned(),
+                ],
+                would_touch_files: false,
+            });
+        }
+    }
+
+    let item_count = items.len();
+    let status = if item_count == 0 {
+        StagingPlanStatus::Blocked
+    } else {
+        StagingPlanStatus::PreviewOnly
+    };
+    let summary_text = if item_count == 0 {
+        if summary.areas.is_empty() {
+            "No staged content is available for a preview plan.".to_owned()
+        } else {
+            "Staging has folder entries, but no reviewable staged subfolders were found.".to_owned()
+        }
+    } else {
+        format!(
+            "{} staged folder{} can be reviewed as a preview-only plan. No files changed.",
+            item_count,
+            if item_count == 1 { "" } else { "s" }
+        )
+    };
+
+    Ok(StagingPlan {
+        id: "staging-preview-plan-v1".to_owned(),
+        created_at: Utc::now().to_rfc3339(),
+        source: StagingPlanSource::Staging,
+        status,
+        title: "Staging preview plan".to_owned(),
+        summary: summary_text,
+        item_count,
+        would_touch_files: false,
+        caveats: vec![
+            "Current Staging data is folder-level; per-file organization suggestions are future work.".to_owned(),
+            "No files changed. This command is read-only.".to_owned(),
+            "Backup and restore support plus user confirmation are required before any future apply workflow.".to_owned(),
+        ],
+        items,
+    })
+}
+
 /// Counts files and total bytes (recursive) in a directory.
 fn count_dir_contents(path: &Path) -> (usize, u64) {
     let mut file_count = 0usize;
@@ -3916,11 +3985,11 @@ pub fn cleanup_staging_areas(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_archive_staging_root, can_skip_observed_source, checking_downloads_status,
-        derive_item_status, extract_zip_archive_single_pass, get_download_item_guided_plan,
-        get_download_item_selection, has_auto_recheck_note, ingest_held_archive_source,
-        ingest_ignored_non_sims_source, ingest_processed_source, list_download_queue,
-        load_existing_items, mark_item_rechecked_with_new_rules,
+        build_archive_staging_root, build_staging_preview_plan, can_skip_observed_source,
+        checking_downloads_status, derive_item_status, extract_zip_archive_single_pass,
+        get_download_item_guided_plan, get_download_item_selection, has_auto_recheck_note,
+        ingest_held_archive_source, ingest_ignored_non_sims_source, ingest_processed_source,
+        list_download_queue, load_existing_items, mark_item_rechecked_with_new_rules,
         mark_missing_direct_sources_for_paths, parse_string_array, preview_download_item,
         reassess_existing_item, refresh_download_item_status, should_use_full_downloads_scan,
         staging_segment_for_source, summarize_status, ExistingDownloadItem, ObservedSource,
@@ -3929,6 +3998,7 @@ mod tests {
     use crate::database::initialize;
     use crate::models::{
         DownloadQueueLane, DownloadsInboxQuery, DownloadsWatcherState, LibrarySettings,
+        StagingPlanActionKind, StagingPlanEvidenceLevel, StagingPlanSource, StagingPlanStatus,
     };
     use crate::seed;
     use chrono::{TimeZone, Utc};
@@ -3985,6 +4055,55 @@ mod tests {
         assert_ne!(first_root, second_root);
         assert!(first_root.to_string_lossy().contains("mccc-partial-zip"));
         assert!(second_root.to_string_lossy().contains("mccc-update-zip"));
+    }
+
+    #[test]
+    fn staging_preview_plan_is_blocked_when_no_staged_content_exists() {
+        let temp = tempdir().expect("temp dir");
+
+        let plan = build_staging_preview_plan(temp.path()).expect("preview plan");
+
+        assert_eq!(plan.id, "staging-preview-plan-v1");
+        assert_eq!(plan.source, StagingPlanSource::Staging);
+        assert_eq!(plan.status, StagingPlanStatus::Blocked);
+        assert_eq!(plan.item_count, 0);
+        assert!(!plan.would_touch_files);
+        assert!(plan.items.is_empty());
+        assert!(plan.summary.contains("No staged content"));
+        assert!(plan.caveats.iter().any(|value| value.contains("read-only")));
+    }
+
+    #[test]
+    fn staging_preview_plan_returns_folder_level_review_items_only() {
+        let temp = tempdir().expect("temp dir");
+        let staged_folder = temp.path().join("downloads_inbox").join("42").join("clean");
+        std::fs::create_dir_all(&staged_folder).expect("staged folder");
+        std::fs::write(staged_folder.join("example.package"), b"fixture").expect("fixture file");
+
+        let plan = build_staging_preview_plan(temp.path()).expect("preview plan");
+
+        assert_eq!(plan.source, StagingPlanSource::Staging);
+        assert_eq!(plan.status, StagingPlanStatus::PreviewOnly);
+        assert_eq!(plan.item_count, 1);
+        assert!(!plan.would_touch_files);
+        assert!(plan.summary.contains("No files changed"));
+
+        let item = plan.items.first().expect("review item");
+        assert_eq!(item.file_id, None);
+        assert_eq!(item.file_name, "clean");
+        assert_eq!(
+            item.current_path.as_deref(),
+            Some(staged_folder.to_string_lossy().as_ref())
+        );
+        assert_eq!(item.suggested_destination_path, None);
+        assert_eq!(item.action_kind, StagingPlanActionKind::SuggestReview);
+        assert_eq!(item.evidence_level, StagingPlanEvidenceLevel::ReviewOnly);
+        assert!(!item.would_touch_files);
+        assert!(item.reason.contains("does not include per-file"));
+        assert!(item
+            .caveats
+            .iter()
+            .any(|value| value.contains("preview-only")));
     }
 
     #[test]

@@ -1,5 +1,38 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Staging Preview Plan Foundation v1)
+
+This session adds the first preview-only StagingPlan foundation before Auto Sorting or any file-changing workflow.
+
+Important changes and findings:
+
+- added shared Rust and TypeScript `StagingPlan` / `StagingPlanItem` types.
+- added read-only `get_staging_preview_plan`.
+- the new command returns `wouldTouchFiles=false` and does not call commit, cleanup, or move-engine apply paths.
+- current Staging data is still folder-level only, so v1 produces folder-level `suggest_review` items instead of fake per-file move suggestions.
+- the visible Staging route now shows a preview plan section with caveats and “No files changed” copy.
+- no files are moved, deleted, disabled, quarantined, replaced, cleaned up, or auto-sorted by this sprint.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `90` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: passed.
+- `cargo check`: passed with existing Rust warning noise.
+- `cargo test`: passed (`255` passed, `2` ignored).
+- `cargo build --release`: passed with existing Rust warning noise.
+- `npm run test:rust`: passed (`255` passed, `2` ignored).
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Staging preview screenshot captured at `output/desktop/library-proof/2026-05-13T14-07-26-741Z/08-staging-preview-plan.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+
+Recommended next sprint:
+
+- Auto Sorting rules audit for preview-only suggested plans.
+
 ## Current session note (May 13, 2026 - Navigation Workflow + Linear Roadmap v1)
 
 This session is a planning, documentation, and Linear setup sprint. It does not change route/sidebar behavior, backend commands, schemas, Auto Sorting, Staging actions, AI, provider integration, or user files.

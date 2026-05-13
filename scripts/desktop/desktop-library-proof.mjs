@@ -1556,6 +1556,37 @@ async function main() {
     summary.screenshots.push(updatesShot);
     await assertNoRuntimeErrors(driver, summary, "updates-bridge");
 
+    await navigateToScreen(driver, "staging", 30000);
+    summary.stagingHash = await waitForHash(driver, "#staging", 30000);
+    await waitForVisibleElement(driver, ".staging-screen", 30000);
+    await waitForAnyText(
+      driver,
+      ["Preview plan", "Preview plan only", "No files changed", "Staging is preview-only"],
+      30000,
+    );
+    const stagingBody = await getBodyText(driver);
+    summary.stagingBodyHasPreviewPlan = /preview plan/i.test(stagingBody);
+    summary.stagingBodyHasNoFilesChanged = /no files (will be )?changed/i.test(stagingBody);
+    summary.stagingContextExcerpt = stagingBody.slice(0, 1500);
+    summary.stagingEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /commit|cleanup|delete|quarantine|move|apply/i.test(text));
+    `);
+    if (!summary.stagingBodyHasPreviewPlan || !summary.stagingBodyHasNoFilesChanged) {
+      throw new Error("Staging did not show the preview-only plan boundary.");
+    }
+    if (summary.stagingEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Staging exposed enabled file-changing controls: ${summary.stagingEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    const stagingShot = path.join(runDir, "08-staging-preview-plan.png");
+    await takeScreenshot(driver, stagingShot);
+    summary.screenshots.push(stagingShot);
+    await assertNoRuntimeErrors(driver, summary, "staging-preview-plan");
+
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1366, 768);
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1440, 900);
 

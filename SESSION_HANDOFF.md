@@ -1,5 +1,53 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Staging Preview Plan Foundation v1)
+
+- **Mode**: code
+- **Focus**: add preview-only `StagingPlan` foundation before Auto Sorting, Apply, file movement, cleanup, quarantine, delete, or AI workflows
+
+### Progress Made
+
+1. **Defined the preview-only plan contract**:
+   - added shared Rust/TypeScript `StagingPlan` and `StagingPlanItem` models
+   - plan and item objects carry `wouldTouchFiles=false`
+   - v1 statuses support `preview_only`, `blocked`, and future `ready_for_review`
+
+2. **Added a read-only Staging preview command**:
+   - `get_staging_preview_plan` reads current app-local staged folders
+   - v1 returns blocked empty plans when no staged content exists
+   - v1 returns folder-level `suggest_review` items when staged folders exist
+   - the command does not call commit, cleanup, or move-engine apply paths
+
+3. **Updated the visible Staging route**:
+   - Staging now renders a preview plan section with summary, caveats, and review-only items
+   - existing staged folder summary remains visible
+   - no enabled apply, move, delete, cleanup, quarantine, or commit controls were added
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `90` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: passed.
+- `cargo check`: passed with existing Rust warning noise.
+- `cargo test`: passed (`255` passed, `2` ignored).
+- `cargo build --release`: passed with existing Rust warning noise.
+- `npm run test:rust`: passed (`255` passed, `2` ignored).
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Staging proof screenshot captured at `output/desktop/library-proof/2026-05-13T14-07-26-741Z/08-staging-preview-plan.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+
+### Known Problems / Gaps
+
+- StagingPlan v1 is folder-level only; it does not create per-file organization suggestions.
+- Auto Sorting remains future work.
+- Future file-changing workflows still require preview, confirmation, backup/restore, path validation, conflict handling, recoverable errors, per-file logs, tests, and desktop proof.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant files.
+2. Recommended next sprint: Auto Sorting rules audit for preview-only suggested plans.
+
 ## Current Session (May 13, 2026 - Navigation Workflow + Linear Roadmap v1)
 
 - **Mode**: planning/docs/Linear setup
