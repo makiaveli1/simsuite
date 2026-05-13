@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Organize Plan Review UI v1)
+
+This session adds the first visible review UI for generated organization plans inside the existing Organize route. It does not create a new route, fold Staging into Organize, expose Apply, move files, add cleanup, add quarantine, add delete, add replacement, or add AI decisions.
+
+Important changes and findings:
+
+- replaced the visible legacy Organize preset/snapshot/apply surface with a preview-only generated-plan review surface.
+- `OrganizeScreen` now calls `api.generateSortingPreviewPlan(...)` only for generated organization previews.
+- added bounded folder-scope controls for Mods/Tray, folder path, recursive mode, and item limit.
+- rendered plan buckets, reasons, caveats, source signals, blocked reasons, suggested destinations, and “No files changed” copy.
+- added frontend tests proving the UI calls the preview generator, renders plan details, handles blocked/error states, and does not call legacy apply/snapshot APIs.
+- updated desktop proof to verify Organize loads, generates a preview, shows plan detail, and has no enabled file-changing controls.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`25` files, `96` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Organize proof screenshot captured at `output/desktop/library-proof/2026-05-13T23-15-26-072Z/organize-plan-review-ui-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Rust commands were not run separately because no Rust files changed; both desktop lanes built the release Tauri app and showed existing Rust warning noise only.
+
+Recommended next sprint:
+
+- Staging/Organize consolidation follow-up, still preview-only, or Apply Safety Contract design before any real file-changing workflow.
+
 ## Current session note (May 13, 2026 - Suggested Plan Generator v1)
 
 This session adds the first preview-only Auto Sorting suggested-plan generator. It does not move files, expose Apply, add cleanup, add quarantine, add delete, add AI decisions, or change route/sidebar behavior.

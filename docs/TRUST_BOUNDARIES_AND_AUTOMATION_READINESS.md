@@ -111,6 +111,8 @@ Auto Sorting may start only as a Level 3 suggested plan. It may suggest destinat
 
 The first generator command, `generate_sorting_preview_plan`, is read-only. It returns preview-only `StagingPlan` data for selected Library files or a bounded Library folder scope. It must not call legacy Organize apply paths, Staging commit/cleanup commands, move-engine apply paths, shell operations, AI, delete, quarantine, or cleanup behavior.
 
+The current Organize route may display generated `StagingPlan` results for review. It must keep the plan surface preview-only, show reasons and caveats, keep `wouldTouchFiles=false`, and avoid enabled Apply, move, cleanup, delete, quarantine, replacement, or automatic sorting controls.
+
 Auto Sorting generator work must use the rules in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`:
 
 - deterministic and evidence-backed signals may suggest buckets with caveats.

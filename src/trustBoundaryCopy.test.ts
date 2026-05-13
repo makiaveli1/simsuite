@@ -9,6 +9,7 @@ const userFacingClaimSurfaces = [
   "src/screens/LibraryScreen.tsx",
   "src/screens/DuplicatesScreen.tsx",
   "src/screens/UpdatesScreen.tsx",
+  "src/screens/OrganizeScreen.tsx",
   "src/screens/StagingScreen.tsx",
   "src/screens/library/actionPreflight.tsx",
   "src/screens/library/LibraryCollectionTable.tsx",
@@ -44,5 +45,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/User confirmation required/i);
     expect(source).not.toMatch(/commitStagingArea|commitAllStagingAreas|cleanupStagingAreas/);
     expect(source).not.toMatch(/Commit to Library|Commit all|Reject all|Reject staged files|Remove staged files/i);
+  });
+
+  it("keeps the current Organize screen preview-only", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/screens/OrganizeScreen.tsx"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/generateSortingPreviewPlan/);
+    expect(source).toMatch(/No files changed/i);
+    expect(source).toMatch(/Preview only/i);
+    expect(source).not.toMatch(/previewOrganization|applyPreviewOrganization|listSnapshots|restoreSnapshot|listRulePresets/);
+    expect(source).not.toMatch(/Safe to move|Safe move|Ready to move|Auto-sort now|Sort automatically/i);
   });
 });

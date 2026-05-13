@@ -1,31 +1,28 @@
-import { startTransition, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { m } from "motion/react";
 import {
+  AlertCircle,
+  CheckCircle2,
   FolderTree,
+  Info,
+  ListChecks,
+  LoaderCircle,
   RefreshCw,
-  ShieldAlert,
+  ShieldCheck,
   Workflow,
 } from "lucide-react";
-import { DockSectionStack } from "../components/DockSectionStack";
-import { ResizableEdgeHandle } from "../components/ResizableEdgeHandle";
-import { ResizableDetailPanel } from "../components/ResizableDetailPanel";
-import { useUiPreferences } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
-import { hoverLift, rowHover, rowPress, stagedListItem, tapPress } from "../lib/motion";
-import {
-  friendlyTypeLabel,
-  sampleCountLabel,
-  sampleToggleLabel,
-  reviewStateLabel,
-  screenHelperLine,
-  unknownCreatorLabel,
-} from "../lib/uiLanguage";
+import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import type {
-  OrganizationPreview,
-  PreviewSuggestion,
-  RulePreset,
+  GenerateSortingPreviewPlanRequest,
   Screen,
-  SnapshotSummary,
+  StagingPlan,
+  StagingPlanActionKind,
+  StagingPlanBucket,
+  StagingPlanCurrentRoot,
+  StagingPlanEvidenceLevel,
+  StagingPlanItem,
   UserView,
 } from "../lib/types";
 
@@ -36,1250 +33,507 @@ interface OrganizeScreenProps {
   userView: UserView;
 }
 
-type PreviewFilter = "all" | "safe" | "review" | "aligned";
-type PreviewState = "safe" | "review" | "aligned";
-type NoteTone = "good" | "warn" | "review" | "neutral";
+type SourceLocation = "mods" | "tray";
 
-interface PresetCopy {
-  title: string;
-  shortLabel: string;
-  description: string;
-}
+const BUCKET_ORDER: StagingPlanBucket[] = [
+  "script_mods",
+  "cas",
+  "build_buy",
+  "gameplay",
+  "presets_sliders",
+  "overrides_defaults",
+  "tray",
+  "needs_review",
+  "unknown_leave_in_place",
+];
 
-interface NoteSummary {
-  label: string;
-  tone: NoteTone;
-}
-
-const PRESET_COPY: Record<string, PresetCopy> = {
-  "Mirror Mode": {
-    title: "Keep my current folders",
-    shortLabel: "Keep current",
-    description:
-      "Leaves safe folders alone and only fixes placements that break the rules.",
-  },
-  "Category First": {
-    title: "Sort by type",
-    shortLabel: "By type",
-    description:
-      "Puts type folders first so CC is easier to browse by category.",
-  },
-  "Creator First": {
-    title: "Sort by creator",
-    shortLabel: "By creator",
-    description:
-      "Keeps each creator together before splitting their files by type.",
-  },
-  Hybrid: {
-    title: "Blend type and creator",
-    shortLabel: "Balanced",
-    description:
-      "Uses type folders first but still keeps each creator grouped underneath.",
-  },
-  "Minimal Safe": {
-    title: "Safest cleanup",
-    shortLabel: "Safest",
-    description:
-      "Uses a conservative layout and is the easiest first cleanup for mixed folders.",
-  },
+const BUCKET_LABELS: Record<StagingPlanBucket, string> = {
+  script_mods: "Script Mods",
+  cas: "CAS",
+  build_buy: "Build/Buy",
+  gameplay: "Gameplay",
+  presets_sliders: "Presets & Sliders",
+  overrides_defaults: "Overrides & Defaults",
+  tray: "Tray",
+  needs_review: "Needs Review",
+  unknown_leave_in_place: "Unknown / Leave in place",
 };
 
-const FILTER_LABELS: Record<PreviewFilter, string> = {
-  all: "All",
-  safe: "Ready",
-  review: "Needs review",
-  aligned: "Already sorted",
+const ACTION_LABELS: Record<StagingPlanActionKind, string> = {
+  suggest_move: "Suggested destination",
+  suggest_group: "Suggested group",
+  suggest_review: "Needs review",
+  leave_in_place: "Leave in place",
+  no_action: "No action suggested",
 };
 
-const BEGINNER_PRESET_ORDER = ["Minimal Safe", "Mirror Mode", "Category First"] as const;
+const EVIDENCE_LABELS: Record<StagingPlanEvidenceLevel, string> = {
+  deterministic: "Deterministic",
+  evidence_backed: "Evidence-backed",
+  heuristic: "Heuristic",
+  review_only: "Review-only",
+};
 
-export function OrganizeScreen({
-  refreshVersion,
-  onNavigate,
-  onDataChanged,
-  userView,
-}: OrganizeScreenProps) {
-  const {
-    organizeRailWidth,
-    setOrganizeRailWidth,
-    organizePreviewHeight,
-    setOrganizePreviewHeight,
-  } = useUiPreferences();
-  const [presets, setPresets] = useState<RulePreset[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState(() =>
-    userView === "beginner" ? "Minimal Safe" : "Category First",
+const ROOT_LABELS: Record<StagingPlanCurrentRoot, string> = {
+  mods: "Mods",
+  tray: "Tray",
+  downloads: "Downloads",
+  inbox: "Inbox",
+  unknown: "Unknown",
+};
+
+function statusLabel(plan: StagingPlan): string {
+  switch (plan.status) {
+    case "blocked":
+      return "Blocked";
+    case "ready_for_review":
+      return "Ready for review";
+    case "preview_only":
+    default:
+      return "Preview only";
+  }
+}
+
+function groupItemsByBucket(items: StagingPlanItem[]) {
+  const grouped = new Map<StagingPlanBucket, StagingPlanItem[]>();
+  for (const bucket of BUCKET_ORDER) {
+    grouped.set(bucket, []);
+  }
+  for (const item of items) {
+    grouped.get(item.bucket)?.push(item);
+  }
+  return BUCKET_ORDER.map((bucket) => ({
+    bucket,
+    label: BUCKET_LABELS[bucket],
+    items: grouped.get(bucket) ?? [],
+  })).filter((group) => group.items.length > 0);
+}
+
+function SafetyBanner() {
+  return (
+    <m.section
+      className="organize-plan-safety"
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.14 }}
+      aria-label="Preview safety boundary"
+    >
+      <ShieldCheck size={18} />
+      <div>
+        <strong>No files changed</strong>
+        <span>
+          Organize now reviews preview plans only. Future file-changing work
+          still needs user confirmation, backup and restore support, and a
+          recoverable result log.
+        </span>
+      </div>
+    </m.section>
   );
-  const [preview, setPreview] = useState<OrganizationPreview | null>(null);
-  const [activeFilter, setActiveFilter] = useState<PreviewFilter>("all");
-  const [showAllPreviewRows, setShowAllPreviewRows] = useState(
-    userView === "power",
-  );
-  const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
-  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
-  const [restoringSnapshotId, setRestoringSnapshotId] = useState<number | null>(
-    null,
-  );
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+}
 
-  useEffect(() => {
-    void api
-      .listRulePresets()
-      .then((items) => {
-        startTransition(() => {
-          setPresets(items);
-          if (items.length > 0) {
-            const preferredDefault =
-              userView === "beginner" ? "Minimal Safe" : "Category First";
-            setSelectedPreset((current) =>
-              items.some((item) => item.name === current)
-                ? current
-                : items.some((item) => item.name === preferredDefault)
-                  ? preferredDefault
-                  : items[0].name,
-            );
-          }
-        });
-      })
-      .catch((error) => setErrorMessage(toErrorMessage(error)));
-  }, [userView]);
-
-  useEffect(() => {
-    if (!selectedPreset) {
-      return;
-    }
-
-    void refreshWorkspace(selectedPreset, showAllPreviewRows);
-  }, [refreshVersion, selectedPreset, showAllPreviewRows]);
-
-  useEffect(() => {
-    const visibleSuggestions = filterSuggestions(preview?.suggestions ?? [], activeFilter);
-    if (!visibleSuggestions.length) {
-      setSelectedFileId(null);
-      return;
-    }
-
-    if (!visibleSuggestions.some((item) => item.fileId === selectedFileId)) {
-      setSelectedFileId(visibleSuggestions[0].fileId);
-    }
-  }, [activeFilter, preview, selectedFileId]);
-
-  async function refreshWorkspace(presetName: string, showAll = showAllPreviewRows) {
-    await Promise.all([loadPreview(presetName, showAll), loadSnapshots()]);
-  }
-
-  async function loadPreview(presetName: string, showAll = showAllPreviewRows) {
-    setIsLoadingPreview(true);
-    setErrorMessage(null);
-
-    try {
-      const nextPreview = await api.previewOrganization(presetName, showAll ? 0 : 60);
-      startTransition(() => setPreview(nextPreview));
-    } catch (error) {
-      setErrorMessage(toErrorMessage(error));
-    } finally {
-      setIsLoadingPreview(false);
-    }
-  }
-
-  async function loadSnapshots() {
-    setIsLoadingSnapshots(true);
-
-    try {
-      const nextSnapshots = await api.listSnapshots(10);
-      startTransition(() => setSnapshots(nextSnapshots));
-    } catch (error) {
-      setErrorMessage(toErrorMessage(error));
-    } finally {
-      setIsLoadingSnapshots(false);
-    }
-  }
-
-  async function handleApply() {
-    const safeCount = preview?.safeCount ?? 0;
-    if (!preview || safeCount === 0) {
-      return;
-    }
-
-    const confirmed = globalThis.confirm(
-      userView === "beginner"
-        ? `Move ${safeCount} ready files? SimSuite will create a restore point first.`
-        : `Apply ${safeCount} safe move suggestions using ${selectedPreset}? A snapshot will be created first.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setIsApplying(true);
-    setErrorMessage(null);
-
-    try {
-      const result = await api.applyPreviewOrganization(selectedPreset, 80, true);
-      setStatusMessage(
-        userView === "beginner"
-          ? `Moved ${result.movedCount} ready files. Restore point ${result.snapshotName} is ready if you want to undo.`
-          : `Applied ${result.movedCount} safe moves. Snapshot ${result.snapshotName} is ready.`,
-      );
-      onDataChanged();
-    } catch (error) {
-      setErrorMessage(toErrorMessage(error));
-    } finally {
-      setIsApplying(false);
-    }
-  }
-
-  async function handleRestore(snapshot: SnapshotSummary) {
-    const confirmed = globalThis.confirm(
-      userView === "beginner"
-        ? `Restore ${snapshot.snapshotName}? SimSuite will try to put ${snapshot.itemCount} tracked files back where they were.`
-        : `Restore snapshot ${snapshot.snapshotName}? This will move ${snapshot.itemCount} tracked items back to their original paths when possible.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setRestoringSnapshotId(snapshot.id);
-    setErrorMessage(null);
-
-    try {
-      const result = await api.restoreSnapshot(snapshot.id, true);
-      setStatusMessage(
-        userView === "beginner"
-          ? `Restored ${result.restoredCount} files from ${snapshot.snapshotName}.`
-          : `Restored ${result.restoredCount} items from ${snapshot.snapshotName}.`,
-      );
-      onDataChanged();
-    } catch (error) {
-      setErrorMessage(toErrorMessage(error));
-    } finally {
-      setRestoringSnapshotId(null);
-    }
-  }
-
-  const safeCount = preview?.safeCount ?? 0;
-  const unchangedCount = preview?.alignedCount ?? 0;
-  const reviewCount = preview?.reviewCount ?? 0;
-  const filteredSuggestions = filterSuggestions(preview?.suggestions ?? [], activeFilter);
-  const filteredTotalCount = preview
-    ? filteredSuggestionTotal(preview, activeFilter)
-    : 0;
-  const selectedPresetCopy = getPresetCopy(selectedPreset);
-  const recommendedPresetCopy = getPresetCopy(preview?.recommendedPreset);
-  const isRecommendedSelected =
-    Boolean(preview?.recommendedPreset) && preview?.recommendedPreset === selectedPreset;
-  const visiblePresets = visiblePresetOptions(presets, userView, preview?.recommendedPreset);
-  const isSamplingRows =
-    Boolean(preview) &&
-    !showAllPreviewRows &&
-    filteredSuggestions.length < filteredTotalCount;
-  const selectedSuggestion =
-    filteredSuggestions.find((item) => item.fileId === selectedFileId) ??
-    preview?.suggestions.find((item) => item.fileId === selectedFileId) ??
-    null;
+function PlanItemCard({ item, index }: { item: StagingPlanItem; index: number }) {
+  const hasPathDetail = item.currentPath || item.suggestedDestinationPath;
+  const hasSignals = item.sourceSignals.length > 0;
+  const hasBlockedReasons = item.blockedReasons.length > 0;
 
   return (
-    <section className="screen-shell workbench workbench-screen organize-screen">
-      <div className="screen-header-row">
-        <div className="screen-heading">
-          <p className="eyebrow">{userView === "beginner" ? "Guided cleanup" : "Workflow"}</p>
-          <div className="screen-title-row">
-            <Workflow size={18} strokeWidth={2} />
-            <h1>{userView === "beginner" ? "Tidy Up" : "Organize"}</h1>
-          </div>
-          <p className="workspace-toolbar-copy">{screenHelperLine("organize", userView)}</p>
+    <m.article
+      className="organize-plan-item"
+      {...stagedListItem(index)}
+      whileHover={hoverLift}
+      whileTap={tapPress}
+    >
+      <div className="organize-plan-item-header">
+        <div className="organize-plan-item-title">
+          <span>{item.fileName}</span>
+          <small>{ROOT_LABELS[item.currentRoot]} source</small>
         </div>
-        <div className="header-actions">
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => void refreshWorkspace(selectedPreset)}
-            disabled={isLoadingPreview || isLoadingSnapshots || isApplying}
-          >
-            <RefreshCw size={14} strokeWidth={2} />
-            {isLoadingPreview || isLoadingSnapshots ? "Refreshing..." : "Refresh"}
-          </button>
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => onNavigate("review")}
-          >
-            <ShieldAlert size={14} strokeWidth={2} />
-            {userView === "beginner" ? "Open files in review" : "Review"}
-          </button>
+        <div className="organize-plan-status-row" aria-label="Plan item labels">
+          <span className="organize-plan-status-chip">
+            {ACTION_LABELS[item.actionKind]}
+          </span>
+          <span className="organize-plan-status-chip">
+            {EVIDENCE_LABELS[item.evidenceLevel]}
+          </span>
+          <span className="organize-plan-status-chip">
+            {item.confidenceLabel}
+          </span>
         </div>
       </div>
 
-      {statusMessage ? <div className="status-banner">{statusMessage}</div> : null}
-      {errorMessage ? (
-        <div className="status-banner status-banner-error">{errorMessage}</div>
-      ) : null}
+      <div className="organize-plan-detail-block">
+        <h4>Why SimSuite suggested this</h4>
+        <p>{item.reason}</p>
+      </div>
 
-      <div className="organize-layout">
-        <ResizableEdgeHandle
-          label="Resize organize left panel"
-          value={organizeRailWidth}
-          min={240}
-          max={480}
-          onChange={setOrganizeRailWidth}
-          side="right"
-          className="layout-resize-handle organize-layout-handle"
-        />
-        <div className="organize-rail">
-          <div className="panel-card organize-summary-card">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">{userView === "beginner" ? "This pass" : "Batch window"}</p>
-                <h2>{userView === "beginner" ? "Ready now" : "Safe subset"}</h2>
-              </div>
-              <span className="ghost-chip">{selectedPresetCopy.shortLabel}</span>
+      {hasPathDetail && (
+        <div className="organize-plan-path-grid">
+          {item.currentPath && (
+            <div className="organize-plan-path-card">
+              <span>Current path</span>
+              <code>{item.currentPath}</code>
             </div>
-
-            <div className="audit-rail-note organize-rail-note">
-              <strong>Lead with the safe path first.</strong>
-              <p>
-                Keep the suggested rule set if it looks right, skim the center preview,
-                then move only the files already marked safe.
-              </p>
+          )}
+          {item.suggestedDestinationPath && (
+            <div className="organize-plan-path-card">
+              <span>Suggested destination</span>
+              <code>{item.suggestedDestinationPath}</code>
             </div>
+          )}
+        </div>
+      )}
 
-            <div className="summary-matrix organize-summary-strip">
-              <SummaryStat
-                label={userView === "beginner" ? "Ready now" : "Safe"}
-                value={safeCount}
-                tone="good"
-              />
-              <SummaryStat
-                label={userView === "beginner" ? "Needs review" : "Review"}
-                value={reviewCount}
-                tone="low"
-              />
-              <SummaryStat
-                label={userView === "beginner" ? "Already tidy" : "Aligned"}
-                value={unchangedCount}
-                tone="neutral"
-              />
-              {userView === "power" || (userView === "beginner" && (preview?.correctedCount ?? 0) > 0) ? (
-                <SummaryStat
-                  label={userView === "beginner" ? "Safety fixes" : "Corrected"}
-                  value={preview?.correctedCount ?? 0}
-                  tone="neutral"
-                />
-              ) : null}
-            </div>
+      {item.caveats.length > 0 && (
+        <div className="organize-plan-detail-block">
+          <h4>Caveats</h4>
+          <ul className="organize-plan-caveats">
+            {item.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-            <div className="organize-recommendation-card">
-              <div className="organize-recommendation-topline">
-                <span className="section-label">
-                  {userView === "beginner" ? "Best fit for this library" : "Recommended preset"}
-                </span>
-                {isRecommendedSelected ? (
-                  <span className="confidence-badge good">Using it</span>
-                ) : (
-                  <span className="ghost-chip">Suggested</span>
-                )}
-              </div>
-              <strong>{recommendedPresetCopy.title}</strong>
-              <p className="organize-muted">
-                {preview?.recommendedReason ??
-                  "SimSuite will recommend the safest tidy style after it reads the current folder shape."}
-              </p>
-              <div className="system-ledger">
-                <LedgerRow
-                  label={userView === "beginner" ? "Current folder shape" : "Structure"}
-                  value={
-                    preview?.detectedStructure ??
-                    (isLoadingPreview ? "Refreshing..." : "Awaiting preview")
-                  }
-                />
-              </div>
-              {!isRecommendedSelected && preview?.recommendedPreset ? (
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={() => {
-                    setStatusMessage(null);
-                    setSelectedPreset(preview.recommendedPreset);
-                  }}
-                >
-                  <FolderTree size={14} strokeWidth={2} />
-                  {userView === "beginner" ? "Use this style" : "Use recommended rule set"}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="organize-action-stack">
-              <button
-                type="button"
-                className="primary-action"
-                onClick={() => void handleApply()}
-                disabled={!preview || safeCount === 0 || isApplying}
-              >
-                {isApplying
-                  ? "Applying..."
-                  : userView === "beginner"
-                    ? `Move ${safeCount} ready files`
-                    : `Apply ${safeCount} safe moves`}
-              </button>
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() => onNavigate("review")}
-                disabled={reviewCount === 0}
-              >
-                <ShieldAlert size={14} strokeWidth={2} />
-                {userView === "beginner"
-                  ? `Check ${reviewCount} files in review`
-                  : `Open ${reviewCount} review items`}
-              </button>
-            </div>
-          </div>
-
-          <div className="panel-card organize-preset-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">{userView === "beginner" ? "Tidy styles" : "Presets"}</p>
-                <h2>{userView === "beginner" ? "Choose how to sort" : "Sorting rules"}</h2>
-              </div>
-            </div>
-
-            {userView === "beginner" ? (
-              <p className="organize-muted">
-                Start with the safest style first. Switch only if you want a different folder shape.
-              </p>
-            ) : null}
-
-            <div className="organize-preset-grid">
-              {visiblePresets.map((preset, index) => {
-                const presetCopy = getPresetCopy(preset.name);
-                const isRecommended = preview?.recommendedPreset === preset.name;
-
-                return (
-                  <m.button
-                    key={preset.name}
-                    type="button"
-                    className={`organize-preset-button ${
-                      selectedPreset === preset.name ? "is-selected" : ""
-                    } ${isRecommended ? "is-recommended" : ""}`}
-                    title={preset.description}
-                    onClick={() => {
-                      setStatusMessage(null);
-                      setSelectedPreset(preset.name);
-                    }}
-                    whileHover={hoverLift}
-                    whileTap={tapPress}
-                    {...stagedListItem(index)}
-                  >
-                    <div className="organize-preset-topline">
-                      <strong>{presetCopy.title}</strong>
-                      <div className="organize-preset-badges">
-                        {isRecommended ? (
-                          <span className="confidence-badge good">Best fit</span>
-                        ) : null}
-                        {selectedPreset === preset.name ? (
-                          <span className="ghost-chip">Current</span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <span className="organize-muted">{presetCopy.description}</span>
-                    {userView === "power" ? <code>{preset.template}</code> : null}
-                  </m.button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="panel-card organize-issues-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">
-                  {userView === "beginner" ? "What needs review" : "Issue summary"}
-                </p>
-                <h2>{userView === "beginner" ? "Why some files stopped" : "Checks in this pass"}</h2>
-              </div>
-              <span className="ghost-chip">
-                {preview?.issueSummary.length ?? 0} groups
+      {hasSignals && (
+        <div className="organize-plan-detail-block">
+          <h4>Source signals</h4>
+          <div className="organize-plan-tags">
+            {item.sourceSignals.map((signal) => (
+              <span key={signal} className="organize-plan-tag">
+                {signal}
               </span>
-            </div>
-
-            {preview?.issueSummary.length ? (
-              <div className="organize-issue-list">
-                {preview.issueSummary.map((issue, index) => (
-                  <m.button
-                    key={issue.code}
-                    type="button"
-                    className={`organize-issue-row organize-issue-row-${issueToneClass(
-                      issue.tone,
-                    )}`}
-                    onClick={() =>
-                      setActiveFilter(issue.tone === "review" ? "review" : "all")
-                    }
-                    whileHover={hoverLift}
-                    whileTap={tapPress}
-                    {...stagedListItem(index)}
-                  >
-                    <div className="organize-issue-copy">
-                      <strong>{issue.label}</strong>
-                      <span>
-                        {issue.tone === "review"
-                          ? "Opens the files that still need review in the sample list."
-                          : "Shows a safety correction or warning in this pass."}
-                      </span>
-                    </div>
-                    <span className={`confidence-badge ${issueToneClass(issue.tone)}`}>
-                      {issue.count}
-                    </span>
-                  </m.button>
-                ))}
-              </div>
-            ) : (
-              <div className="detail-empty compact-empty">
-                <p className="eyebrow">Checks</p>
-                <h2>{userView === "beginner" ? "No blockers in this sample" : "No grouped issues"}</h2>
-              </div>
-            )}
+            ))}
           </div>
         </div>
+      )}
 
-        <div className="organize-stage">
-          <div className="organize-main-column">
-            <ResizableEdgeHandle
-              label="Resize preview and restore point sections"
-              value={organizePreviewHeight}
-              min={280}
-              max={720}
-              onChange={setOrganizePreviewHeight}
-              side="bottom"
-              className="layout-resize-handle organize-stage-handle"
-            />
-            <div className="panel-card organize-preview-panel">
-              <div className="panel-heading organize-preview-heading">
-                <div>
-                  <p className="eyebrow">{userView === "beginner" ? "Step 2" : "Preview list"}</p>
-                  <h2>
-                    {userView === "beginner"
-                      ? "Check example files"
-                      : "Example files from this pass"}
-                  </h2>
-                </div>
-                <div className="downloads-guided-card-actions organize-preview-actions">
-                  <button
-                    type="button"
-                    className="secondary-action compact-action"
-                    onClick={() => setShowAllPreviewRows((current) => !current)}
-                    disabled={!preview || (filteredTotalCount || preview?.totalConsidered || 0) === 0}
-                  >
-                    {sampleToggleLabel(showAllPreviewRows)}
-                  </button>
-                  <span className="ghost-chip">
-                    {sampleCountLabel(
-                      filteredSuggestions.length,
-                      (filteredTotalCount || preview?.totalConsidered) ?? 0,
-                      !isSamplingRows,
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              <p className="organize-muted organize-preview-caption">
-                {isSamplingRows
-                  ? userView === "beginner"
-                    ? "These are a few sample files from the full tidy pass. Open the full list if you want every file."
-                    : "This list starts as a sample so you can skim the pass quickly, then open the full list when needed."
-                  : userView === "beginner"
-                    ? "You are seeing every file in this pass."
-                    : "The full checked list is open."}
-              </p>
-
-              <div className="organize-filter-strip" role="tablist" aria-label="Preview filter">
-                {(Object.keys(FILTER_LABELS) as PreviewFilter[]).map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    className={`organize-filter-button ${
-                      activeFilter === filter ? "is-active" : ""
-                    }`}
-                    onClick={() => setActiveFilter(filter)}
-                  >
-                    {FILTER_LABELS[filter]}
-                  </button>
-                ))}
-              </div>
-
-              <div className="preview-list">
-                {filteredSuggestions.length ? (
-                  filteredSuggestions.map((item, index) => {
-                    const state = previewState(item);
-                    const primaryNote = getPrimaryNoteSummary(item.validatorNotes);
-                    const supportCopy = previewSupportCopy(item, userView, primaryNote?.label);
-
-                    return (
-                      <m.button
-                        key={item.fileId}
-                        type="button"
-                        className={`preview-row organize-preview-row ${
-                          selectedFileId === item.fileId ? "is-selected" : ""
-                        } preview-row-state-${state}`}
-                        onClick={() => setSelectedFileId(item.fileId)}
-                        title={item.ruleLabel}
-                        whileHover={rowHover}
-                        whileTap={rowPress}
-                        {...stagedListItem(index)}
-                      >
-                        <div className="preview-row-main">
-                          <strong className="organize-file-name">{item.filename}</strong>
-                          <span>{composePreviewMeta(item, userView)}</span>
-                        </div>
-                        <div className="preview-row-route organize-preview-route">
-                          <div className="organize-route-card">
-                            <div className="section-label">
-                              {previewRouteLabel(item, userView)}
-                            </div>
-                            <div
-                              className="organize-route-path"
-                              title={cleanPreviewPath(item.finalRelativePath)}
-                            >
-                              <code>{compactPreviewPath(item.finalRelativePath, userView)}</code>
-                            </div>
-                          </div>
-                          <div className="organize-route-details">
-                            <strong className="organize-route-status">
-                              {previewStateDetail(item, userView)}
-                            </strong>
-                            {supportCopy ? (
-                              <span className="organize-row-note">{supportCopy}</span>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="preview-row-meta">
-                          {item.corrected ? (
-                            <span className="ghost-chip organize-preview-fix-chip">
-                              {userView === "beginner" ? "Safety fix" : "Corrected"}
-                            </span>
-                          ) : null}
-                          <span className={`confidence-badge ${previewStateTone(state)}`}>
-                            {previewStateLabel(state, userView)}
-                          </span>
-                        </div>
-                      </m.button>
-                    );
-                  })
-                ) : (
-                  <div className="detail-empty compact-empty">
-                    <p className="eyebrow">Preview</p>
-                    <h2>
-                      {activeFilter === "all"
-                        ? "No files in this sample"
-                        : `No ${FILTER_LABELS[activeFilter].toLowerCase()} files in this sample`}
-                    </h2>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="panel-card organize-snapshot-panel">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Rollback</p>
-                  <h2>{userView === "beginner" ? "Restore points" : "Snapshots"}</h2>
-                </div>
-                <span className="ghost-chip">
-                  {isLoadingSnapshots ? "Loading..." : `${snapshots.length} recent`}
-                </span>
-              </div>
-
-              <div className="snapshot-list organize-snapshot-list">
-                {snapshots.length ? (
-                  snapshots.map((snapshot, index) => (
-                    <m.div
-                      key={snapshot.id}
-                      className="snapshot-row"
-                      title={snapshot.description ?? "Approved organization batch"}
-                      whileHover={rowHover}
-                      {...stagedListItem(index)}
-                    >
-                      <div className="snapshot-main">
-                        <strong>{snapshot.snapshotName}</strong>
-                        <span>{formatDate(snapshot.createdAt)}</span>
-                      </div>
-                      <div className="snapshot-meta">
-                        <span className="ghost-chip">{snapshot.itemCount} items</span>
-                        <button
-                          type="button"
-                          className="secondary-action"
-                          onClick={() => void handleRestore(snapshot)}
-                          disabled={restoringSnapshotId === snapshot.id}
-                        >
-                          {restoringSnapshotId === snapshot.id
-                            ? "Restoring..."
-                            : userView === "beginner"
-                              ? "Undo"
-                            : "Restore"}
-                        </button>
-                      </div>
-                    </m.div>
-                  ))
-                ) : (
-                  <div className="detail-empty compact-empty">
-                    <p className="eyebrow">
-                      {userView === "beginner" ? "Restore points" : "Snapshots"}
-                    </p>
-                    <h2>
-                      {userView === "beginner" ? "No restore points yet" : "No rollback history"}
-                    </h2>
-                  </div>
-                )}
-              </div>
-            </div>
+      {hasBlockedReasons && (
+        <div className="organize-plan-detail-block">
+          <h4>Blocked reasons</h4>
+          <div className="organize-plan-tags">
+            {item.blockedReasons.map((reason) => (
+              <span
+                key={reason}
+                className="organize-plan-tag organize-plan-tag--blocked"
+              >
+                {reason}
+              </span>
+            ))}
           </div>
+        </div>
+      )}
+    </m.article>
+  );
+}
 
-          <ResizableDetailPanel
-            ariaLabel="Preview inspector"
-            className="organize-preview-inspector"
-          >
-            {selectedSuggestion ? (
-              <PreviewInspector
-                suggestion={selectedSuggestion}
-                userView={userView}
-              />
-            ) : (
-              <div className="detail-empty">
-                <p className="eyebrow">
-                  {userView === "beginner" ? "Selected file" : "Inspector"}
-                </p>
-                <h2>{userView === "beginner" ? "Select a file" : "Select a preview item"}</h2>
-              </div>
-            )}
-          </ResizableDetailPanel>
+interface PlanResultProps {
+  plan: StagingPlan | null;
+  isGenerating: boolean;
+  errorMessage: string | null;
+}
+
+function PlanResult({ plan, isGenerating, errorMessage }: PlanResultProps) {
+  const groupedItems = useMemo(
+    () => groupItemsByBucket(plan?.items ?? []),
+    [plan],
+  );
+
+  if (isGenerating) {
+    return (
+      <section className="organize-plan-empty" aria-live="polite">
+        <LoaderCircle size={24} className="spin" />
+        <h3>Generating preview</h3>
+        <p>SimSuite is building a bounded review plan. No files changed.</p>
+      </section>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <section className="organize-plan-empty organize-plan-empty--error">
+        <AlertCircle size={24} />
+        <h3>Could not generate preview plan</h3>
+        <p>{errorMessage}</p>
+      </section>
+    );
+  }
+
+  if (!plan) {
+    return (
+      <section className="organize-plan-empty">
+        <Workflow size={24} />
+        <h3>No generated plan yet</h3>
+        <p>
+          Choose a bounded Library scope, then generate a preview. SimSuite will
+          show review items, reasons, and caveats before any file-changing
+          workflow exists.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="organize-plan-results" aria-label="Generated plan">
+      <div className="organize-plan-summary">
+        <div>
+          <div className="eyebrow">Suggested plan</div>
+          <h3>{plan.title}</h3>
+          <p>{plan.summary}</p>
+        </div>
+        <div className="organize-plan-summary-grid">
+          <span>
+            <strong>{statusLabel(plan)}</strong>
+            <small>Status</small>
+          </span>
+          <span>
+            <strong>{plan.itemCount}</strong>
+            <small>Items</small>
+          </span>
+          <span>
+            <strong>No</strong>
+            <small>Files changed</small>
+          </span>
         </div>
       </div>
+
+      {plan.caveats.length > 0 && (
+        <div className="organize-plan-detail-block">
+          <h4>Plan caveats</h4>
+          <ul className="organize-plan-caveats">
+            {plan.caveats.map((caveat) => (
+              <li key={caveat}>{caveat}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {plan.items.length === 0 ? (
+        <section className="organize-plan-empty">
+          <Info size={24} />
+          <h3>{plan.status === "blocked" ? "Blocked" : "No preview items"}</h3>
+          <p>
+            SimSuite did not find enough bounded file data for a review plan.
+            No files changed.
+          </p>
+        </section>
+      ) : (
+        <div className="organize-plan-bucket-list">
+          {groupedItems.map((group) => (
+            <section
+              key={group.bucket}
+              className="organize-plan-bucket"
+              aria-label={`${group.label} suggestions`}
+            >
+              <div className="organize-plan-bucket-heading">
+                <h3>{group.label}</h3>
+                <span>
+                  {group.items.length} item{group.items.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <m.div
+                className="organize-plan-item-list"
+                initial="hidden"
+                animate="show"
+                variants={{
+                  hidden: { opacity: 1 },
+                  show: {
+                    opacity: 1,
+                    transition: { staggerChildren: 0.04 },
+                  },
+                }}
+              >
+                {group.items.map((item, index) => (
+                  <PlanItemCard key={item.id} item={item} index={index} />
+                ))}
+              </m.div>
+            </section>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
-function PreviewInspector({
-  suggestion,
+export function OrganizeScreen({
+  refreshVersion: _refreshVersion,
+  onNavigate,
+  onDataChanged: _onDataChanged,
   userView,
-}: {
-  suggestion: PreviewSuggestion;
-  userView: UserView;
-}) {
-  const state = previewState(suggestion);
-  const stateLabel = previewStateLabel(state, userView);
-  const presetCopy = getPresetCopy(suggestion.ruleLabel);
-  const noteSummaries = suggestion.validatorNotes.map(describeValidatorNote);
-  const previewInspectorSections = [
-    {
-      id: "outcome",
-        label: userView === "beginner" ? "What will happen" : "Outcome",
-      hint:
-        userView === "beginner"
-          ? "Shows whether this file is ready, already tidy, or needs review."
-          : "Final status, preset choice, and file basics.",
-      children: (
-        <>
-          <div className={`organize-inspector-state organize-inspector-state-${state}`}>
-            <span className={`confidence-badge ${previewStateTone(state)}`}>
-              {stateLabel}
-            </span>
-            <strong>{previewStateHeadline(suggestion, userView)}</strong>
-            <p>{previewStateDetail(suggestion, userView)}</p>
-          </div>
-          <div className="detail-list">
-            <LedgerRow
-              label={userView === "beginner" ? "Tidy style" : "Preset"}
-              value={presetCopy.title}
-            />
-            <LedgerRow label="Type" value={friendlyTypeLabel(suggestion.kind)} />
-            <LedgerRow
-              label="Creator"
-              value={suggestion.creator ?? unknownCreatorLabel(userView)}
-            />
-            {userView === "power" && suggestion.bundleName ? (
-              <LedgerRow label="Bundle" value={suggestion.bundleName} />
-            ) : null}
-          </div>
-        </>
-      ),
-    },
-    {
-      id: "paths",
-      label: userView === "beginner" ? "Current and safe destination" : "Path preview",
-      hint:
-        userView === "beginner"
-          ? "Shows where the file is now and where the validated pass would place it."
-          : "Current, rule output, and validated output paths.",
-      children: (
-        <div className="path-grid organize-path-grid">
-          <div className="detail-block">
-            <div className="section-label">{userView === "beginner" ? "Now" : "Current"}</div>
-            <div className="path-card">{suggestion.currentPath}</div>
-          </div>
-          {userView !== "beginner" ? (
-            <div className="detail-block">
-              <div className="section-label">Rule output</div>
-              <div className="path-card">{suggestion.suggestedRelativePath}</div>
-            </div>
-          ) : null}
-          <div className="detail-block">
-            <div className="section-label">
-              {userView === "beginner" ? "Safe destination" : "Validated output"}
-            </div>
-            <div className="path-card">{suggestion.finalRelativePath}</div>
-          </div>
+}: OrganizeScreenProps) {
+  const [sourceLocation, setSourceLocation] = useState<SourceLocation>("mods");
+  const [folderPath, setFolderPath] = useState("");
+  const [recursive, setRecursive] = useState(true);
+  const [limit, setLimit] = useState(60);
+  const [plan, setPlan] = useState<StagingPlan | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleGeneratePreview = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsGenerating(true);
+    setErrorMessage(null);
+
+    const request: GenerateSortingPreviewPlanRequest = {
+      scope: {
+        kind: "library_folder",
+        sourceLocation,
+        folderPath: folderPath.trim(),
+        recursive,
+        limit,
+      },
+    };
+
+    try {
+      const nextPlan = await api.generateSortingPreviewPlan(request);
+      setPlan(nextPlan);
+    } catch (error) {
+      setPlan(null);
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="screen-shell workbench organize-screen">
+      <section className="screen-hero workbench-hero">
+        <div className="screen-hero-copy">
+          <span className="eyebrow">Organize</span>
+          <h1>Review suggested organization plans.</h1>
+          <p>
+            Generate preview-only Library plans, inspect the reasons and
+            caveats, then decide what needs manual review. SimSuite does not
+            change files from this page.
+          </p>
         </div>
-      ),
-    },
-    {
-      id: "checks",
-      label:
-        suggestion.reviewRequired
-          ? userView === "beginner"
-            ? "Why it needs review"
-            : "Review reasons"
-          : userView === "beginner"
-            ? "Safety checks"
-            : "Validator notes",
-      hint:
-        suggestion.reviewRequired
-          ? "These checks explain what still needs a human decision."
-          : "These checks show any safety corrections applied before the move.",
-      badge: noteSummaries.length ? `${noteSummaries.length}` : null,
-      children: noteSummaries.length ? (
-        <div className="organize-note-list">
-          {noteSummaries.map((note) => (
-            <div
-              key={`${note.label}-${note.tone}`}
-              className={`organize-note organize-note-${issueToneClass(note.tone)}`}
+        <div className="screen-hero-actions">
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={() => onNavigate("staging")}
+          >
+            <FolderTree size={16} />
+            Open Staging
+          </button>
+        </div>
+      </section>
+
+      <SafetyBanner />
+
+      <section className="organize-plan-layout" aria-label="Organization plan review">
+        <form
+          className="panel-card organize-plan-controls"
+          onSubmit={handleGeneratePreview}
+        >
+          <div className="panel-card-heading">
+            <div>
+              <span className="eyebrow">Generate preview</span>
+              <h2>Bounded Library folder scope</h2>
+            </div>
+            <span className="organize-plan-status-chip">Preview only</span>
+          </div>
+
+          <p className="organize-muted">
+            Use a bounded Mods or Tray folder scope for the first visible
+            planning workflow. Leave the path blank to preview the selected root
+            within the item limit.
+          </p>
+
+          <div className="organize-plan-control-grid">
+            <label className="organize-plan-field">
+              <span>Source root</span>
+              <select
+                aria-label="Source root"
+                value={sourceLocation}
+                onChange={(event) =>
+                  setSourceLocation(event.target.value as SourceLocation)
+                }
+              >
+                <option value="mods">Mods</option>
+                <option value="tray">Tray</option>
+              </select>
+            </label>
+
+            <label className="organize-plan-field">
+              <span>Folder path</span>
+              <input
+                aria-label="Folder path"
+                value={folderPath}
+                onChange={(event) => setFolderPath(event.target.value)}
+                placeholder="Example: CAS/Hair"
+              />
+            </label>
+
+            <label className="organize-plan-field">
+              <span>Preview limit</span>
+              <select
+                aria-label="Preview limit"
+                value={limit}
+                onChange={(event) => setLimit(Number(event.target.value))}
+              >
+                <option value={25}>25 items</option>
+                <option value={60}>60 items</option>
+                <option value={100}>100 items</option>
+                <option value={150}>150 items</option>
+                <option value={250}>250 items</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="organize-check-row">
+            <input
+              type="checkbox"
+              checked={recursive}
+              onChange={(event) => setRecursive(event.target.checked)}
+            />
+            <span>Include nested folders</span>
+          </label>
+
+          <div className="organize-next-step-actions">
+            <button
+              type="submit"
+              className="primary-action"
+              disabled={isGenerating}
             >
-              {note.label}
-            </div>
-          ))}
+              {isGenerating ? (
+                <>
+                  <LoaderCircle size={16} className="spin" />
+                  Generating preview
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={16} />
+                  Generate preview
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => onNavigate("library")}
+            >
+              <ListChecks size={16} />
+              Open Library
+            </button>
+          </div>
+
+          <div className="organize-plan-scope-note">
+            <CheckCircle2 size={16} />
+            <span>
+              Current mode: {userView}. Plan items are suggestions only and
+              always return wouldTouchFiles=false.
+            </span>
+          </div>
+        </form>
+
+        <div className="panel-card organize-plan-panel">
+          <PlanResult
+            plan={plan}
+            isGenerating={isGenerating}
+            errorMessage={errorMessage}
+          />
         </div>
-      ) : (
-        <p className="organize-muted">
-          {userView === "beginner"
-            ? "No extra safety checks were needed for this file."
-            : "No validator notes."}
-        </p>
-      ),
-    },
-    ...(userView === "power"
-      ? [
-          {
-            id: "source",
-            label: "Source details",
-            hint: "Where the file came from and how it entered this pass.",
-            children: (
-              <div className="detail-list">
-                <LedgerRow
-                  label="Current root"
-                  value={friendlySourceLocation(suggestion.sourceLocation)}
-                />
-                <LedgerRow label="Rule label" value={suggestion.ruleLabel} />
-                <LedgerRow
-                  label="Confidence"
-                  value={`${Math.round(suggestion.confidence * 100)}%`}
-                />
-              </div>
-            ),
-          },
-        ]
-      : []),
-  ];
-
-  return (
-    <>
-      <div className="detail-header">
-        <div>
-          <p className="eyebrow">{userView === "beginner" ? "Selected file" : "Selected item"}</p>
-          <h2>{suggestion.filename}</h2>
-        </div>
-        <span className={`confidence-badge ${previewStateTone(state)}`}>{stateLabel}</span>
-      </div>
-
-      <DockSectionStack
-        layoutId="organizeInspector"
-        sections={previewInspectorSections}
-        intro={
-          userView === "beginner"
-            ? "Open the parts you need and tuck the rest away while you check the move."
-            : "Reorder or collapse preview sections to suit quick triage or deep validation."
-        }
-      />
-    </>
-  );
-}
-
-function SummaryStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "good" | "low" | "neutral";
-}) {
-  return (
-    <div className={`summary-stat ${tone ? `summary-stat-${tone}` : ""}`}>
-      <span>{label}</span>
-      <strong>{value.toLocaleString()}</strong>
+      </section>
     </div>
   );
-}
-
-function LedgerRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="ledger-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
-}
-
-function filterSuggestions(
-  suggestions: PreviewSuggestion[],
-  filter: PreviewFilter,
-) {
-  if (filter === "all") {
-    return suggestions;
-  }
-
-  return suggestions.filter((item) => previewState(item) === filter);
-}
-
-function filteredSuggestionTotal(
-  preview: OrganizationPreview,
-  filter: PreviewFilter,
-) {
-  if (filter === "all") {
-    return preview.totalConsidered;
-  }
-
-  if (filter === "safe") {
-    return preview.safeCount;
-  }
-
-  if (filter === "review") {
-    return preview.reviewCount;
-  }
-
-  return preview.alignedCount;
-}
-
-function previewState(suggestion: PreviewSuggestion): PreviewState {
-  if (suggestion.reviewRequired) {
-    return "review";
-  }
-
-  if (suggestion.finalAbsolutePath === suggestion.currentPath) {
-    return "aligned";
-  }
-
-  return "safe";
-}
-
-function previewStateTone(state: PreviewState) {
-  if (state === "safe") {
-    return "good";
-  }
-
-  if (state === "review") {
-    return "low";
-  }
-
-  return "neutral";
-}
-
-function previewStateLabel(state: PreviewState, userView: UserView) {
-  if (state === "safe") {
-    return userView === "beginner" ? "Ready now" : "Ready";
-  }
-
-  if (state === "review") {
-    return reviewStateLabel(userView);
-  }
-
-  return userView === "beginner" ? "Already tidy" : "Aligned";
-}
-
-function previewStateHeadline(suggestion: PreviewSuggestion, userView: UserView) {
-  const state = previewState(suggestion);
-
-  if (state === "safe") {
-    return suggestion.corrected
-      ? userView === "beginner"
-        ? "Ready to move after a safety fix"
-        : "Ready to move with validator corrections"
-      : userView === "beginner"
-        ? "Ready to move"
-        : "Safe to move";
-  }
-
-  if (state === "review") {
-    return userView === "beginner"
-      ? "Needs review before moving"
-      : "Held for review";
-  }
-
-  return userView === "beginner" ? "Already in a safe spot" : "Already aligned";
-}
-
-function previewStateDetail(suggestion: PreviewSuggestion, userView: UserView) {
-  const state = previewState(suggestion);
-
-  if (state === "review") {
-    return userView === "beginner"
-      ? "Needs a quick check before it can move."
-      : "Held until the review notes are cleared.";
-  }
-
-  if (state === "aligned") {
-    return userView === "beginner"
-      ? "Already in a safe folder."
-      : "No move is needed in this pass.";
-  }
-
-  return userView === "beginner"
-    ? "Ready for the approved batch."
-    : "Ready for the next approved batch.";
-}
-
-function composePreviewMeta(suggestion: PreviewSuggestion, userView: UserView) {
-  const creator = suggestion.creator ?? unknownCreatorLabel(userView);
-  const type = friendlyTypeLabel(suggestion.kind);
-  return userViewNeedsBundleMeta(suggestion, userView)
-    ? `${creator} · ${type} · ${suggestion.bundleName}`
-    : `${creator} · ${type}`;
-}
-
-function userViewNeedsBundleMeta(suggestion: PreviewSuggestion, userView: UserView) {
-  return userView !== "beginner" && Boolean(suggestion.bundleName);
-}
-
-function cleanPreviewPath(path: string) {
-  return path
-    .replace(/^Mods[\\/]/i, "")
-    .replace(/[\\/]+/g, " > ");
-}
-
-function compactPreviewPath(path: string, userView: UserView) {
-  const cleaned = cleanPreviewPath(path);
-  const parts = cleaned.split(" > ").filter(Boolean);
-  const maxParts = userView === "power" ? 6 : userView === "standard" ? 5 : 4;
-
-  if (parts.length <= maxParts) {
-    return cleaned;
-  }
-
-  return ["...", ...parts.slice(parts.length - maxParts)].join(" > ");
-}
-
-function previewRouteLabel(suggestion: PreviewSuggestion, userView: UserView) {
-  const state = previewState(suggestion);
-
-  if (state === "safe") {
-    return userView === "beginner" ? "Safe folder" : "Validated destination";
-  }
-
-  if (state === "review") {
-    return userView === "beginner" ? "Planned folder" : "Planned destination";
-  }
-
-  return userView === "beginner" ? "Current safe folder" : "Current safe destination";
-}
-
-function previewSupportCopy(
-  suggestion: PreviewSuggestion,
-  userView: UserView,
-  primaryNote?: string,
-) {
-  const state = previewState(suggestion);
-
-  if (state === "review") {
-    return primaryNote ?? "Open this row to see what still needs checking.";
-  }
-
-  if (state === "aligned") {
-    return userView === "beginner"
-      ? "Nothing will move for this row."
-      : "This row stays where it is.";
-  }
-
-  if (suggestion.corrected) {
-    return userView === "beginner"
-      ? "SimSuite adjusted the folder to keep the move safe."
-      : "SimSuite adjusted the route to satisfy safety rules.";
-  }
-
-  if (suggestion.bundleName) {
-    return `Moves together with ${suggestion.bundleName}.`;
-  }
-
-  return userView === "beginner"
-    ? "Uses the current tidy style."
-    : "Uses the selected rule set.";
-}
-
-function getPresetCopy(name: string | null | undefined): PresetCopy {
-  if (!name) {
-    return PRESET_COPY["Minimal Safe"];
-  }
-
-  return PRESET_COPY[name] ?? {
-    title: name,
-    shortLabel: name,
-    description: "Uses the current organization preset.",
-  };
-}
-
-function visiblePresetOptions(
-  presets: RulePreset[],
-  userView: UserView,
-  recommendedPreset?: string | null,
-) {
-  if (userView !== "beginner") {
-    return presets;
-  }
-
-  const allowed = new Set<string>(BEGINNER_PRESET_ORDER);
-  if (recommendedPreset) {
-    allowed.add(recommendedPreset);
-  }
-
-  const beginnerPresets = presets.filter((preset) => allowed.has(preset.name));
-  beginnerPresets.sort((left, right) => {
-    const leftIndex = BEGINNER_PRESET_ORDER.indexOf(
-      left.name as (typeof BEGINNER_PRESET_ORDER)[number],
-    );
-    const rightIndex = BEGINNER_PRESET_ORDER.indexOf(
-      right.name as (typeof BEGINNER_PRESET_ORDER)[number],
-    );
-
-    return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
-  });
-
-  return beginnerPresets;
-}
-
-function describeValidatorNote(note: string): NoteSummary {
-  const map: Record<string, NoteSummary> = {
-    low_confidence_requires_review: {
-      label: "The name or type still looks uncertain.",
-      tone: "review",
-    },
-    "Low confidence classification requires review.": {
-      label: "The name or type still looks uncertain.",
-      tone: "review",
-    },
-    unknown_kind_requires_review: {
-      label: "The file type is still unknown.",
-      tone: "review",
-    },
-    existing_path_collision_detected: {
-      label: "Another file already uses that destination.",
-      tone: "review",
-    },
-    preview_path_collision_detected: {
-      label: "Two files in this pass want the same destination.",
-      tone: "review",
-    },
-    tray_file_will_be_relocated_from_mods: {
-      label: "Tray files were found inside Mods.",
-      tone: "warn",
-    },
-    validator_routed_tray_content_to_tray_root: {
-      label: "Tray files were rerouted back to Tray.",
-      tone: "warn",
-    },
-    "Tray content rerouted to the Tray root.": {
-      label: "Tray files were rerouted back to Tray.",
-      tone: "warn",
-    },
-    validator_flattened_script_depth: {
-      label: "Script mods were flattened to a safe depth.",
-      tone: "warn",
-    },
-    "Script depth corrected to one subfolder.": {
-      label: "Script mods were flattened to a safe depth.",
-      tone: "warn",
-    },
-    validator_limited_package_depth: {
-      label: "A deep folder path was shortened.",
-      tone: "warn",
-    },
-    missing_target_root: {
-      label: "A required root folder is missing from settings.",
-      tone: "review",
-    },
-  };
-
-  return map[note] ?? {
-    label: "SimSuite raised an extra safety check for this file.",
-    tone: "neutral",
-  };
-}
-
-function getPrimaryNoteSummary(notes: string[]) {
-  if (!notes.length) {
-    return null;
-  }
-
-  return describeValidatorNote(notes[0]);
-}
-
-function issueToneClass(tone: string | NoteTone) {
-  if (tone === "review") {
-    return "low";
-  }
-
-  if (tone === "warn") {
-    return "medium";
-  }
-
-  if (tone === "good") {
-    return "good";
-  }
-
-  return "neutral";
-}
-
-function friendlySourceLocation(sourceLocation: string) {
-  if (sourceLocation === "mods") {
-    return "Mods";
-  }
-
-  if (sourceLocation === "tray") {
-    return "Tray";
-  }
-
-  if (sourceLocation === "downloads") {
-    return "Downloads";
-  }
-
-  return sourceLocation;
-}
-
-function toErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return String(error);
 }

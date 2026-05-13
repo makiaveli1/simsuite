@@ -1556,6 +1556,49 @@ async function main() {
     summary.screenshots.push(updatesShot);
     await assertNoRuntimeErrors(driver, summary, "updates-bridge");
 
+    await navigateToScreen(driver, "organize", 30000);
+    summary.organizeHash = await waitForHash(driver, "#organize", 30000);
+    await waitForVisibleElement(driver, ".organize-screen", 30000);
+    await waitForAnyText(
+      driver,
+      ["Generate preview", "No files changed", "Suggested organization plans"],
+      30000,
+    );
+    await clickVisibleButton(driver, "Generate preview", 30000);
+    await waitForAnyText(
+      driver,
+      ["Suggested organization preview", "Why SimSuite suggested this", "No preview items", "Blocked"],
+      60000,
+    );
+    const organizeBody = await getBodyText(driver);
+    summary.organizeBodyHasNoFilesChanged = /no files changed/i.test(organizeBody);
+    summary.organizeBodyHasPlanBoundary =
+      /suggested plan|preview only|review suggested organization plans/i.test(organizeBody);
+    summary.organizeBodyHasPlanDetails =
+      /why simsuite suggested this|source signals|blocked reasons|no preview items|blocked/i.test(organizeBody);
+    summary.organizeContextExcerpt = organizeBody.slice(0, 1800);
+    summary.organizeEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete)\\b/i.test(text));
+    `);
+    if (!summary.organizeBodyHasNoFilesChanged || !summary.organizeBodyHasPlanBoundary) {
+      throw new Error("Organize did not show the preview-only plan boundary.");
+    }
+    if (!summary.organizeBodyHasPlanDetails) {
+      throw new Error("Organize generated a plan without visible review details.");
+    }
+    if (summary.organizeEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Organize exposed enabled file-changing controls: ${summary.organizeEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    const organizeShot = path.join(runDir, "organize-plan-review-ui-v1.png");
+    await takeScreenshot(driver, organizeShot);
+    summary.screenshots.push(organizeShot);
+    await assertNoRuntimeErrors(driver, summary, "organize-plan-review-ui-v1");
+
     await navigateToScreen(driver, "staging", 30000);
     summary.stagingHash = await waitForHash(driver, "#staging", 30000);
     await waitForVisibleElement(driver, ".staging-screen", 30000);

@@ -16,7 +16,7 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow | Yes | Keep top-level as intake/new content. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace; currently has legacy preview/apply concepts that need safety gating before future use. | API/mock/backend organize paths. | Partial | Casual, Seasoned, Creator | Suggested plan target, but current implementation needs audit before apply exposure | Yes | Keep top-level in Seasoned/Creator; simplify Casual later. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with a visible preview-only suggested-plan review surface. | `generate_sorting_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level in Seasoned/Creator; simplify Casual later. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
@@ -125,7 +125,8 @@ Current M3 rules note:
 - `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md` defines the approved evidence levels, destination buckets, do-not-move rules, generator scope, and future UI expectations for Auto Sorting Suggested Plans.
 - `generate_sorting_preview_plan` now builds preview-only `StagingPlan` items for selected Library files or bounded Library folder scopes, not through the legacy Organize apply path.
 - Generated plan items carry source signals, blocked reasons, buckets, confidence labels, current root, and `wouldTouchFiles=false`.
-- Organize plan review UI remains future work.
+- The existing Organize route now shows the first preview-only plan review UI for generated plans.
+- The visible Organize route no longer calls the legacy preview/apply/snapshot APIs.
 - Auto Sorting remains preview-only until the Apply Safety Contract exists.
 
 ### Phase 3 - Fold Creators And Types Into Library Lenses

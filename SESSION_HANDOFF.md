@@ -1,5 +1,47 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Organize Plan Review UI v1)
+
+- **Mode**: code
+- **Focus**: add the first visible preview-only organization plan review UI to the existing Organize route
+
+### Progress Made
+
+1. **Replaced the visible legacy Organize surface**:
+   - `OrganizeScreen` now uses the read-only `generateSortingPreviewPlan` API
+   - removed visible legacy preset, snapshot, apply, and restore controls from the route
+   - kept Organize as the single top-level planning workspace
+
+2. **Added preview-only plan review UI**:
+   - bounded folder scope controls for Mods/Tray, folder path, recursive, and item limit
+   - generated plans render grouped buckets, reasons, caveats, source signals, blocked reasons, and suggested destinations
+   - visible copy keeps “No files changed” and preview-only boundaries
+
+3. **Updated proof coverage and docs**:
+   - desktop proof now opens Organize, generates a preview, checks plan details, and verifies no enabled file-changing controls
+   - trust/navigation/backend docs now record that Organize consumes the preview generator
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`25` files, `96` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Organize screenshot captured at `output/desktop/library-proof/2026-05-13T23-15-26-072Z/organize-plan-review-ui-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Rust commands were not run separately because no Rust files changed; both desktop lanes built the release Tauri app and showed existing Rust warning noise only.
+
+### Known Problems / Gaps
+
+- Organize plan review is still preview-only.
+- Selected Library file scope is supported by the backend but not exposed in this UI yet because Organize has no selected-file context.
+- Apply, file movement, cleanup, quarantine, delete, replacement, and AI decisions remain blocked future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant files.
+2. Recommended next sprint: Staging/Organize consolidation follow-up, still preview-only, or Apply Safety Contract design before any real file-changing workflow.
+
 ## Current Session (May 13, 2026 - Suggested Plan Generator v1)
 
 - **Mode**: code

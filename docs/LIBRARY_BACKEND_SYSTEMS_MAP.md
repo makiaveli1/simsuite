@@ -2,7 +2,7 @@
 
 Date: 2026-05-13
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, and `codex/suggested-plan-generator-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, and `codex/organize-plan-review-ui-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -354,10 +354,11 @@ Future Staging work must not expose the mutating commands until the workflow has
 
 `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md` defines the safe rule foundation for future Auto Sorting Suggested Plans.
 
-Current backend implications:
+Current backend and UI implications:
 
-- No Auto Sorting generator exists yet.
-- The next generator should return preview-only `StagingPlan` items with `wouldTouchFiles=false`.
-- The generator should use Library metadata, scanner evidence, parser warnings, review queue state, duplicate proof, and bundle hints according to their evidence level.
-- The generator should not call legacy apply paths such as `apply_preview_organization`, move-engine apply helpers, Staging commit commands, or cleanup commands.
-- The legacy Organize preview/apply surface still exists and should be treated as separate from the new preview-only generator until the Apply Safety Contract is designed.
+- `generate_sorting_preview_plan` exists and returns preview-only `StagingPlan` items with `wouldTouchFiles=false`.
+- The generator uses Library metadata, scanner evidence, parser warnings, review queue state, duplicate proof, and bundle hints according to their evidence level.
+- The generator does not call legacy apply paths such as `apply_preview_organization`, move-engine apply helpers, Staging commit commands, or cleanup commands.
+- The visible Organize route now consumes `generate_sorting_preview_plan` and renders buckets, reasons, caveats, source signals, and blocked reasons.
+- The visible Organize route no longer calls the legacy preview/apply/snapshot APIs.
+- Legacy backend apply/snapshot commands still exist for older surfaces and must stay unexposed from the new suggested-plan UI until the Apply Safety Contract is designed.
