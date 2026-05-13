@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { StagingScreen } from "./StagingScreen";
 
@@ -36,28 +36,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("uses an in-app confirmation dialog before rejecting staged files", async () => {
+it("shows staged content as preview-only and does not expose file-changing actions", async () => {
   vi.mocked(api.getStagingAreas).mockResolvedValue(stagedSummary);
-  vi.mocked(api.cleanupStagingAreas).mockResolvedValue({
-    deletedCount: 1,
-    freedBytes: 2048,
-    errors: [],
-  });
-  const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
 
   render(<StagingScreen onNavigate={() => {}} userView="standard" />);
 
-  fireEvent.click(await screen.findByRole("button", { name: /^reject$/i }));
+  expect(await screen.findByRole("heading", { name: /staging/i })).toBeInTheDocument();
+  expect(screen.getByText(/Staging is preview-only right now/i)).toBeInTheDocument();
+  expect(screen.getByText(/No files will be changed from this screen yet/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /User confirmation required/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Preview only/i })).toBeDisabled();
 
-  expect(confirmSpy).not.toHaveBeenCalled();
-  expect(await screen.findByRole("dialog", { name: /reject staged files/i })).toBeInTheDocument();
-  expect(api.cleanupStagingAreas).not.toHaveBeenCalled();
-
-  fireEvent.click(screen.getByRole("button", { name: /remove staged files/i }));
+  expect(screen.queryByRole("button", { name: /Commit/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Reject/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
   await waitFor(() => {
-    expect(api.cleanupStagingAreas).toHaveBeenCalledWith([
-      "C:\\Simsuite\\downloads_inbox\\42\\clean",
-    ]);
+    expect(api.getStagingAreas).toHaveBeenCalledTimes(1);
   });
+  expect(api.cleanupStagingAreas).not.toHaveBeenCalled();
+  expect(api.commitStagingArea).not.toHaveBeenCalled();
+  expect(api.commitAllStagingAreas).not.toHaveBeenCalled();
 });
+

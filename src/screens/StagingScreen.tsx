@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import {
-  AlertTriangle,
   Archive,
-  Check,
-  CheckCheck,
   Inbox,
   LoaderCircle,
-  Trash2,
-  X,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "../lib/api";
-import { hoverLift, tapPress } from "../lib/motion";
-import type { Screen, StagingArea, StagingAreasSummary, StagingCommitResult, UserView } from "../lib/types";
+import type {
+  Screen,
+  StagingArea,
+  StagingAreasSummary,
+  UserView,
+} from "../lib/types";
 
 interface StagingScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -21,19 +21,6 @@ interface StagingScreenProps {
 
 interface StagingAreaCardProps {
   area: StagingArea;
-  onCommit: (itemId: string) => void;
-  onReject: (itemId: string, paths: string[]) => void;
-  committing: boolean;
-  rejecting: boolean;
-}
-
-interface RejectRequest {
-  scope: "single" | "all";
-  itemId: string | null;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  paths: string[];
 }
 
 function formatBytes(bytes: number): string {
@@ -44,17 +31,10 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-function StagingAreaCard({
-  area,
-  onCommit,
-  onReject,
-  committing,
-  rejecting,
-}: StagingAreaCardProps) {
+function StagingAreaCard({ area }: StagingAreaCardProps) {
   const isNumeric = /^\d+$/.test(area.itemId);
   const totalFiles = area.subdirectories.reduce((sum, s) => sum + s.fileCount, 0);
   const totalBytes = area.subdirectories.reduce((sum, s) => sum + s.totalBytes, 0);
-  const allPaths = area.subdirectories.map((s) => s.path);
 
   return (
     <m.div
@@ -78,7 +58,7 @@ function StagingAreaCard({
         </div>
         <div className="staging-card-stats">
           <span>{totalFiles} file{totalFiles !== 1 ? "s" : ""}</span>
-          <span className="staging-card-sep">·</span>
+          <span className="staging-card-sep">|</span>
           <span>{formatBytes(totalBytes)}</span>
         </div>
       </div>
@@ -88,42 +68,25 @@ function StagingAreaCard({
           <div key={sub.path} className="staging-sub-row">
             <span className="staging-sub-name">{sub.name}</span>
             <span className="staging-sub-info">
-              {sub.fileCount} file{sub.fileCount !== 1 ? "s" : ""} ·{" "}
+              {sub.fileCount} file{sub.fileCount !== 1 ? "s" : ""} |{" "}
               {formatBytes(sub.totalBytes)}
             </span>
           </div>
         ))}
       </div>
 
-      <div className="staging-card-actions">
-        <m.button
-          className={`staging-btn staging-btn--commit${!isNumeric || committing ? " staging-btn--disabled" : ""}`}
-          onClick={() => isNumeric && onCommit(area.itemId)}
-          disabled={!isNumeric || committing}
-          whileHover={isNumeric && !committing ? hoverLift : undefined}
-          whileTap={isNumeric && !committing ? tapPress : undefined}
+      <div className="staging-card-actions" aria-label="Staging readiness">
+        <button
+          type="button"
+          className="staging-btn staging-btn--disabled"
+          disabled
         >
-          {committing ? (
-            <LoaderCircle size={14} className="spin" />
-          ) : (
-            <Check size={14} />
-          )}
-          {isNumeric ? "Commit to Library" : "Cannot auto-commit"}
-        </m.button>
-        <m.button
-          className={`staging-btn staging-btn--reject${rejecting ? " staging-btn--disabled" : ""}`}
-          onClick={() => onReject(area.itemId, allPaths)}
-          disabled={rejecting}
-          whileHover={!rejecting ? hoverLift : undefined}
-          whileTap={!rejecting ? tapPress : undefined}
-        >
-          {rejecting ? (
-            <LoaderCircle size={14} className="spin" />
-          ) : (
-            <Trash2 size={14} />
-          )}
-          Reject
-        </m.button>
+          <ShieldCheck size={14} />
+          Preview only
+        </button>
+        <span className="staging-sub-info">
+          Review before applying. No files can be changed from this screen yet.
+        </span>
       </div>
     </m.div>
   );
@@ -135,22 +98,16 @@ function EmptyStaging() {
       <Inbox size={48} className="staging-empty-icon" />
       <h3 className="staging-empty-title">No staged content</h3>
       <p className="staging-empty-body">
-        Files that have been extracted or reviewed but not yet committed will
-        appear here.
+        Staging will show preview-only plans here when app-managed downloads
+        are ready for review. No files are changed from this screen.
       </p>
     </div>
   );
 }
 
-export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
+export function StagingScreen(_props: StagingScreenProps) {
   const [summary, setSummary] = useState<StagingAreasSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [committingAll, setCommittingAll] = useState(false);
-  const [rejectingAll, setRejectingAll] = useState(false);
-  const [committingId, setCommittingId] = useState<string | null>(null);
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [result, setResult] = useState<StagingCommitResult | null>(null);
-  const [rejectRequest, setRejectRequest] = useState<RejectRequest | null>(null);
 
   const loadStagingAreas = useCallback(async () => {
     try {
@@ -167,162 +124,6 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
     void loadStagingAreas();
   }, [loadStagingAreas]);
 
-  const handleCommit = async (itemId: string) => {
-    setCommittingId(itemId);
-    try {
-      const res = await api.commitStagingArea(itemId);
-      setResult(res);
-      if (res.committedCount > 0) {
-        await loadStagingAreas();
-      }
-    } catch (err) {
-      console.error("[StagingScreen] commit failed:", err);
-    } finally {
-      setCommittingId(null);
-    }
-  };
-
-  const handleReject = async (itemId: string, paths: string[]) => {
-    setRejectRequest({
-      scope: "single",
-      itemId,
-      title: "Reject staged files",
-      description:
-        userView === "beginner"
-          ? "Remove this staged content from SimSuite's staging area. Your original download stays where it is."
-          : "Remove this staging area and its extracted files from SimSuite's local staging area.",
-      confirmLabel: "Remove staged files",
-      paths,
-    });
-  };
-
-  const handleCommitAll = async () => {
-    setCommittingAll(true);
-    try {
-      const res = await api.commitAllStagingAreas();
-      setResult(res);
-      if (res.committedCount > 0) {
-        await loadStagingAreas();
-      }
-    } catch (err) {
-      console.error("[StagingScreen] commit all failed:", err);
-    } finally {
-      setCommittingAll(false);
-    }
-  };
-
-  const handleRejectAll = async () => {
-    if (!summary || summary.areas.length === 0) return;
-    const allPaths = summary.areas.flatMap((a) =>
-      a.subdirectories.map((s) => s.path),
-    );
-    setRejectRequest({
-      scope: "all",
-      itemId: null,
-      title: "Reject all staged files",
-      description:
-        userView === "beginner"
-          ? `Remove all ${summary.areas.length} staged areas from SimSuite's staging area. Your original downloads stay where they are.`
-          : `Remove all ${summary.areas.length} staging areas and their extracted files from SimSuite's local staging area.`,
-      confirmLabel: "Remove all staged files",
-      paths: allPaths,
-    });
-  };
-
-  const rejectInProgress =
-    rejectingAll || (rejectRequest?.itemId != null && rejectingId === rejectRequest.itemId);
-
-  const closeRejectDialog = () => {
-    if (!rejectInProgress) {
-      setRejectRequest(null);
-    }
-  };
-
-  const confirmRejectRequest = async () => {
-    if (!rejectRequest) return;
-    if (rejectRequest.scope === "all") {
-      setRejectingAll(true);
-    } else {
-      setRejectingId(rejectRequest.itemId);
-    }
-    try {
-      await api.cleanupStagingAreas(rejectRequest.paths);
-      await loadStagingAreas();
-    } catch (err) {
-      console.error("[StagingScreen] reject failed:", err);
-    } finally {
-      setRejectingAll(false);
-      setRejectingId(null);
-      setRejectRequest(null);
-    }
-  };
-
-  const renderRejectDialog = () => {
-    if (!rejectRequest) return null;
-
-    const visiblePaths = rejectRequest.paths.slice(0, 4);
-    const extraPathCount = rejectRequest.paths.length - visiblePaths.length;
-
-    return (
-      <m.div
-        className="staging-confirm-overlay"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.12 }}
-        onClick={closeRejectDialog}
-      >
-        <m.div
-          className="staging-confirm-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="staging-confirm-title"
-          initial={{ opacity: 0, y: 18, scale: 0.99 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 14, scale: 0.99 }}
-          transition={{ duration: 0.14 }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="staging-confirm-header">
-            <AlertTriangle size={18} strokeWidth={2} />
-            <h3 id="staging-confirm-title">{rejectRequest.title}</h3>
-          </div>
-          <p>{rejectRequest.description}</p>
-          <ul className="staging-confirm-paths">
-            {visiblePaths.map((path) => (
-              <li key={path}>
-                <code>{path}</code>
-              </li>
-            ))}
-            {extraPathCount > 0 ? (
-              <li>
-                <code>+{extraPathCount} more</code>
-              </li>
-            ) : null}
-          </ul>
-          <div className="staging-confirm-actions">
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={closeRejectDialog}
-              disabled={rejectInProgress}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="danger-action"
-              onClick={() => void confirmRejectRequest()}
-              disabled={rejectInProgress}
-            >
-              {rejectInProgress ? "Removing..." : rejectRequest.confirmLabel}
-            </button>
-          </div>
-        </m.div>
-      </m.div>
-    );
-  };
-
   if (loading) {
     return (
       <div className="screen-loading">
@@ -338,8 +139,6 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
 
   return (
     <div className="staging-screen">
-      <AnimatePresence>{renderRejectDialog()}</AnimatePresence>
-
       <div className="staging-header">
         <div className="staging-header-left">
           <h2 className="staging-title">
@@ -350,66 +149,34 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
           </h2>
           {areas.length > 0 && (
             <span className="staging-summary">
-              {totalFiles} file{totalFiles !== 1 ? "s" : ""} ·{" "}
+              {totalFiles} file{totalFiles !== 1 ? "s" : ""} |{" "}
               {formatBytes(totalBytes)}
             </span>
           )}
         </div>
 
-        {areas.length > 0 && (
-          <div className="staging-header-actions">
-            <m.button
-              className={`staging-btn staging-btn--commit-all${committingAll ? " staging-btn--disabled" : ""}`}
-              onClick={() => void handleCommitAll()}
-              disabled={committingAll}
-              whileHover={!committingAll ? hoverLift : undefined}
-              whileTap={!committingAll ? tapPress : undefined}
-            >
-              {committingAll ? (
-                <LoaderCircle size={14} className="spin" />
-              ) : (
-                <CheckCheck size={14} />
-              )}
-              Commit all
-            </m.button>
-            <m.button
-              className={`staging-btn staging-btn--reject-all${rejectingAll ? " staging-btn--disabled" : ""}`}
-              onClick={() => void handleRejectAll()}
-              disabled={rejectingAll}
-              whileHover={!rejectingAll ? hoverLift : undefined}
-              whileTap={!rejectingAll ? tapPress : undefined}
-            >
-              {rejectingAll ? (
-                <LoaderCircle size={14} className="spin" />
-              ) : (
-                <Trash2 size={14} />
-              )}
-              Reject all
-            </m.button>
-          </div>
-        )}
+        <div className="staging-header-actions">
+          <button
+            type="button"
+            className="staging-btn staging-btn--disabled"
+            disabled
+          >
+            <ShieldCheck size={14} />
+            User confirmation required
+          </button>
+        </div>
       </div>
 
-      <AnimatePresence mode="wait">
-        {result && (
-          <m.div
-            className={`staging-result staging-result--${result.failedCount > 0 ? "warn" : "ok"}`}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            {result.errors.length > 0
-              ? result.errors[0]
-              : `${result.committedCount} item${result.committedCount !== 1 ? "s" : ""} committed`}
-            <button
-              className="staging-result-close"
-              onClick={() => setResult(null)}
-            >
-              <X size={12} />
-            </button>
-          </m.div>
-        )}
-      </AnimatePresence>
+      <m.div
+        className="staging-result staging-result--warn"
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.14 }}
+      >
+        Staging is preview-only right now. No files will be changed from this
+        screen yet. Future file-changing workflows need preview, user
+        confirmation, backup and restore support, and recoverable errors.
+      </m.div>
 
       {areas.length === 0 ? (
         <EmptyStaging />
@@ -417,14 +184,7 @@ export function StagingScreen({ onNavigate, userView }: StagingScreenProps) {
         <div className="staging-list">
           <AnimatePresence mode="popLayout">
             {areas.map((area) => (
-              <StagingAreaCard
-                key={area.itemId}
-                area={area}
-                onCommit={handleCommit}
-                onReject={handleReject}
-                committing={committingId === area.itemId}
-                rejecting={rejectingId === area.itemId}
-              />
+              <StagingAreaCard key={area.itemId} area={area} />
             ))}
           </AnimatePresence>
         </div>

@@ -1,8 +1,8 @@
 # SimSuite Library Backend Systems Map
 
-Date: 2026-05-12
+Date: 2026-05-13
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, and `codex/library-duplicate-truth-engine-v3-fingerprints`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, and `codex/staging-backend-safety-readiness-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -49,6 +49,9 @@ The normal flow is:
 | `get_duplicate_overview` | implemented | Counts duplicate rows by stored type. |
 | `list_duplicate_pairs` | implemented | Lists exact duplicate, name-match review, and version-review pairs. Exact rows can now explain same file, same package, or same script contents. |
 | `get_review_queue` | implemented | Reads rule-engine review queue data. |
+| `get_staging_areas` | implemented, read-only | Lists app-local staged folders and file counts. Current Staging UI uses this as preview/readiness data only. |
+| `cleanup_staging_areas` | implemented backend command, not exposed by current Staging UI | Deletes selected app-local staging folders under the staging root. Future exposure requires the trust-boundary file-change checklist. |
+| `commit_staging_area` / `commit_all_staging_areas` | implemented backend commands, not exposed by current Staging UI | Can apply move-engine paths for ReadyNow download items. Future exposure requires preview, confirmation, backup/restore, recoverable errors, and proof. |
 | `list_library_watch_items` | implemented | Library watch source overview. |
 | `list_library_watch_setup_items` | implemented | Files needing update source setup. |
 | `list_library_watch_review_items` | implemented | Watch results needing review. |
@@ -61,7 +64,7 @@ The normal flow is:
 
 No command currently proves dependency relationships, missing meshes, safe deletion, safe replacement, official source identity, or automatic update replacement.
 
-Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` before adding sorting, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, or duplicate-handling automation.
+Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` before adding sorting, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, staging apply controls, or duplicate-handling automation.
 
 ## 3. Database Map
 
@@ -311,5 +314,33 @@ Risks:
 | Safe-delete proof/actions | should not do now | Requires exact identity, path context, backup/recovery, and explicit product design. |
 | Duplicate cleanup actions | should not do now | Compare-only for now. |
 | Provider onboarding / CurseForge | future product decision | Requires provider architecture and source trust model. |
-| Staging backend command cleanup | future work if still relevant | Audit after Library backend stabilization. |
+| Staging backend safety/readiness | guarded for v1 | Current Staging route is preview/readiness only and does not expose commit/reject controls. Backend mutating commands still exist and need a future Level 4 safety contract before UI exposure. |
 | AI classification | should not do now | Deterministic signals should be stable first. |
+
+## 15. Staging Readiness Map
+
+Current Staging route behavior:
+
+- Visible in Seasoned and Creator modes.
+- Loads app-local staged folder metadata through `get_staging_areas`.
+- Shows item counts, staged subfolders, byte totals, and preview-only readiness copy.
+- Does not call `commit_staging_area`, `commit_all_staging_areas`, or `cleanup_staging_areas`.
+- Does not expose enabled move, delete, reject, quarantine, or apply controls.
+
+Backend staging commands still exist:
+
+- `get_staging_areas` is read-only.
+- `cleanup_staging_areas` can delete app-local staged extracted folders under `downloads_inbox`.
+- `commit_staging_area` and `commit_all_staging_areas` can call the move engine for ReadyNow standard download items.
+
+Future Staging work must not expose the mutating commands until the workflow has:
+
+- a per-file preview plan,
+- evidence and caveats for each suggested action,
+- user confirmation,
+- backup/restore support,
+- path validation,
+- duplicate destination handling,
+- recoverable error handling,
+- per-file result logging,
+- focused tests and desktop proof.

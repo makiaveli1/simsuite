@@ -1,5 +1,48 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Staging Backend Safety Readiness v1)
+
+- **Mode**: code
+- **Focus**: audit and guard Staging before any Auto Sorting or file-changing workflow
+
+### Progress Made
+
+1. **Audited Staging exposure**:
+   - Staging route is real and visible in Seasoned/Creator modes
+   - `get_staging_areas` is read-only
+   - backend `cleanup_staging_areas`, `commit_staging_area`, and `commit_all_staging_areas` are real file-changing commands
+   - previous Staging UI exposed commit/reject controls and had a test expecting cleanup to run
+
+2. **Made current Staging preview/readiness only**:
+   - Staging now lists staged folders and counts without calling mutating APIs
+   - commit/reject/apply-style controls were removed from the visible route
+   - Field Guide Staging copy now says preview/readiness only
+
+3. **Documented safety boundaries**:
+   - added Staging-specific readiness rules to the trust-boundary doc
+   - updated the backend systems map with current Staging command boundaries
+   - created `simsuite-reports/STAGING_BACKEND_SAFETY_READINESS_V1_REPORT.md`
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit -- StagingScreen trustBoundaryCopy`: passed (`2` files, `3` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run test:unit`: passed (`23` files, `89` tests).
+- `npm run desktop:proof:fixtures`: passed; latest proof folder `output/desktop/library-proof/2026-05-13T00-17-48-883Z`.
+- `npm run desktop:smoke:fixtures`: passed.
+
+### Known Problems / Gaps
+
+- Backend mutating Staging commands still exist for future workflows but are not exposed by the current Staging route.
+- Staging does not yet have a structured per-file preview plan, backup/restore UI contract, or per-file result log.
+- Auto Sorting remains future work and must start as preview-only suggested plans.
+
+### Next Best Step
+
+1. Commit this focused Staging readiness sprint.
+2. Next implementation candidate: Auto Sorting Suggested Plan v1, preview-only and no file movement, if the user wants to continue toward organization workflows.
+
 ## Current Session (May 13, 2026 - Desktop Proof Downloads Query Fix v1)
 
 - **Mode**: code

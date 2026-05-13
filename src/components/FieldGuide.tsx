@@ -489,28 +489,28 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "staging",
       Inbox,
       "Staging",
-      "Review staged files before committing them to your Library.",
+      "Review staged files before any future file-changing workflow.",
       viewCopy(userView, {
-        beginner: "Use this after reviewing downloads but before filing them.",
-        standard: "Use this to batch-commit or reject staged items.",
-        power: "Use this as your pre-Library checkpoint for bulk operations.",
+        beginner: "Use this as a preview-only checkpoint after reviewing downloads.",
+        standard: "Use this to inspect staged items before any future apply step.",
+        power: "Use this as a readiness checkpoint for future suggested plans.",
       }),
-      "Stage files",
-      "Go to Library after staging is clean.",
+      "Preview only",
+      "Go to Library for indexed files.",
       [
         section("What is staging", [
-          "Files extracted from archives land here for review.",
-          "Commit moves them to Library. Reject removes them.",
+          "Files extracted from archives can appear here for review.",
+          "The Staging screen does not change files yet.",
         ]),
-        section("Batch actions", [
-          "Commit all sends everything to Library at once.",
-          "Reject all clears the staging area.",
+        section("Before real actions", [
+          "Future file-changing workflows need preview, user confirmation, backup and restore support, and recoverable errors.",
+          "Manual review is still required before changing anything.",
         ]),
       ],
       [
         { label: "Files", value: "From downloads" },
-        { label: "Leads to", value: "Library" },
-        { label: "Best for", value: "Bulk pre-filing" },
+        { label: "Mode", value: "Preview only" },
+        { label: "Best for", value: "Readiness checks" },
       ],
     ),
   };

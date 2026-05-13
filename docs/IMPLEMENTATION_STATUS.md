@@ -1,5 +1,40 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Staging Backend Safety Readiness v1)
+
+This session audits and guards Staging before any Auto Sorting, file-moving, quarantine, cleanup, or update-replacement workflow is built.
+
+Important changes and findings:
+
+- Staging is a real route and is visible in Seasoned/Creator modes.
+- `get_staging_areas` is read-only and lists app-local staged folders.
+- backend `cleanup_staging_areas`, `commit_staging_area`, and `commit_all_staging_areas` are real file-changing commands and must not be exposed as casual Staging controls.
+- the current Staging screen now shows staged folder counts as preview/readiness information only.
+- the visible route no longer calls commit, commit-all, or cleanup APIs.
+- Field Guide Staging copy now describes preview/readiness behavior instead of batch file actions.
+- trust docs now require a per-file preview plan, user confirmation, backup/restore support, path validation, recoverable errors, per-file result logs, tests, and desktop proof before Staging can apply changes.
+- no files are moved, deleted, disabled, quarantined, replaced, or auto-sorted by this sprint.
+
+Checks run so far:
+
+- `npx tsc --noEmit`
+- `npm run test:unit -- StagingScreen trustBoundaryCopy`
+- `npm run build` (existing Vite chunk-size warning remains)
+- `npm run test:unit` (`23` files, `89` tests)
+- `npm run desktop:proof:fixtures`
+- `npm run desktop:smoke:fixtures`
+
+Desktop/runtime proof:
+
+- proof completed with `DESKTOP_LIBRARY_PROOF_OK`.
+- latest proof folder: `output/desktop/library-proof/2026-05-13T00-17-48-883Z`.
+- smoke passed against the release app.
+- existing Rust unused-code warnings and existing Tauri callback reload warnings remain unchanged.
+
+Recommended next sprint:
+
+- Auto Sorting Suggested Plan v1, preview-only and no file movement, if this sprint finishes green.
+
 ## Current session note (May 13, 2026 - Desktop Proof Downloads Query Fix v1)
 
 This session restored the desktop runtime proof and smoke lanes after the Duplicate Truth Engine v3 fingerprint sprint.

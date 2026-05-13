@@ -1,6 +1,6 @@
 # SimSuite Trust Boundaries and Automation Readiness
 
-Date: 2026-05-12
+Date: 2026-05-13
 
 This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Staging, sorting, and AI prompts should use it before adding automation.
 
@@ -27,7 +27,7 @@ SimSuite should help users understand and plan. It must not invent certainty.
 - Folder truth: real Mods/Tray folder metadata, including empty folders, and real disk paths for Open Folder.
 - Package inspection clues: DBPF metadata, parser warnings, inspection warnings, and selected-file preview hydration when available.
 - Preview availability: indexed embedded/cache preview data, no-preview states, and aggregate preview diagnostics.
-- Tray and script limitations: Tray/script previews and normalized package/script duplicate fingerprints are not fully implemented.
+- Tray and script limitations: Tray/script previews remain future work; scan-time package/script content fingerprints may support exact duplicate proof only when a stored fingerprint exists.
 - Update watch state: saved source, reminder-only source, supported exact checker result, provider-limited source, failed check, or no update source.
 - Review signals: rule-backed or parser-backed reasons that something should remain visible for manual review.
 
@@ -65,6 +65,37 @@ SimSuite must not claim:
 - Update replacement is not allowed until official/provider-safe checks, backup, rollback, and clear user confirmation exist.
 - Safe-delete claims are forbidden until deterministic dependency/resource analysis exists and is tested.
 - Provider work must respect provider/API policy and must not scrape generic pages as update proof.
+
+## Staging-Specific Readiness Rules
+
+Staging is the safety bridge before future organization or file-changing workflows. The currently exposed Staging route must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
+
+Current Staging may:
+
+- list app-local staged folders.
+- show file counts and sizes.
+- explain that no files are changed from the Staging screen yet.
+- describe future requirements for applying changes.
+
+Current Staging must not expose enabled controls that:
+
+- move files into Library.
+- clear, remove, or delete staged folders.
+- quarantine, disable, or replace files.
+- claim a plan is safe.
+- let AI decide a file action.
+
+Before Staging can apply real file changes, it must have:
+
+- a per-file preview plan.
+- evidence and caveats for each suggested action.
+- explicit user confirmation.
+- backup or restore support.
+- path validation for sources and destinations.
+- duplicate destination handling.
+- recoverable error handling.
+- a per-file result log.
+- unit tests and desktop proof for the full workflow.
 
 ## AI Assistance Boundary
 
@@ -117,7 +148,7 @@ Before adding any workflow that moves, disables, replaces, quarantines, deletes,
 | Dependency detection | Research only | Current support-file guidance is not a general dependency graph. |
 | Missing mesh detection | Not allowed yet | Needs deterministic Sims resource proof. |
 | Safe-delete | Not allowed yet | Requires deterministic dependency/resource proof and recovery design. |
-| Staging | Preview/confirmation path | Must remain reversible and explicit. |
+| Staging | Preview/readiness only in the current route | Can list staged folders, but file-changing controls stay disabled until Level 4 safety is implemented and proven. |
 | Quarantine | Not allowed yet | Needs backup, restore, evidence model, and clear user confirmation. |
 
 ## Report Requirements
