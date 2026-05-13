@@ -194,7 +194,7 @@ Known unrelated dirty files remain outside this sprint unless explicitly staged 
 
 ## Commit
 
-Pending at report update time.
+- `a0a72f7` - Add preview-only Staging plan command
 
 ## Final Honest Verdict
 
