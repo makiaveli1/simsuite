@@ -109,7 +109,9 @@ Before Staging can apply real file changes, it must have:
 
 Auto Sorting may start only as a Level 3 suggested plan. It may suggest destinations, groups, review routes, or leave-in-place decisions, but it must keep `wouldTouchFiles=false` until a separate Apply Safety Contract exists.
 
-Future Auto Sorting generator work must use the rules in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`:
+The first generator command, `generate_sorting_preview_plan`, is read-only. It returns preview-only `StagingPlan` data for selected Library files or a bounded Library folder scope. It must not call legacy Organize apply paths, Staging commit/cleanup commands, move-engine apply paths, shell operations, AI, delete, quarantine, or cleanup behavior.
+
+Auto Sorting generator work must use the rules in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`:
 
 - deterministic and evidence-backed signals may suggest buckets with caveats.
 - heuristic signals may support review-only suggestions, but they must not drive strong move suggestions alone.
@@ -117,6 +119,7 @@ Future Auto Sorting generator work must use the rules in `docs/planning/AUTO_SOR
 - parser warnings, inspection failures, weak metadata, unsupported types, and conflicting clues route to review or leave-in-place.
 - filename/version/folder/pack/family hints remain review-only unless backed by stronger evidence.
 - AI must not decide the category, destination, safety, dependency, or update truth.
+- suggested destination paths are preview strings only; SimSuite does not create folders or move files from this generator.
 
 ## AI Assistance Boundary
 

@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Suggested Plan Generator v1)
+
+- **Mode**: code
+- **Focus**: add the first preview-only Auto Sorting suggested-plan generator without Apply, file movement, cleanup, quarantine, delete, or AI decisions
+
+### Progress Made
+
+1. **Added the preview plan model fields**:
+   - extended Rust and TypeScript `StagingPlanItem` with `leave_in_place`, `sourceSignals[]`, `blockedReasons[]`, `bucket`, `confidenceLabel`, and `currentRoot`
+   - kept plan and item `wouldTouchFiles=false`
+
+2. **Added the read-only generator**:
+   - `generate_sorting_preview_plan` supports selected Library file IDs and bounded Mods/Tray folder scopes
+   - exact duplicates, parser warnings, inspection warnings, review queue membership, weak metadata, and unsupported sources route to review or leave-in-place
+   - stronger metadata can preview Script Mods, CAS, Build/Buy, Gameplay, Presets & Sliders, Overrides & Defaults, or Tray buckets with caveats
+   - the generator does not call legacy Organize apply paths, Staging commit/cleanup commands, move-engine apply paths, shell operations, AI, delete, or quarantine behavior
+
+3. **Updated docs and API plumbing**:
+   - added API/mock support for `generateSortingPreviewPlan`
+   - updated trust, navigation, rules, backend-map, status, handoff, and sprint report docs
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`24` files, `91` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: passed.
+- `cargo check`: passed with existing Rust warning noise.
+- `cargo test`: passed (`268` passed, `2` ignored).
+- `cargo build --release`: passed with existing Rust warning noise.
+- `npm run test:rust`: passed (`268` passed, `2` ignored).
+- Desktop/runtime proof was skipped because no visible route behavior changed and Organize plan review UI remains future work.
+
+### Known Problems / Gaps
+
+- Organize plan review UI is not implemented in this sprint.
+- Apply, file movement, cleanup, quarantine, delete, and AI sorting remain blocked future work.
+- The generator uses existing indexed metadata only; real-world suggestion quality still needs fixture/runtime review after UI integration.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Finish validation and commit only sprint-relevant files.
+2. Recommended next sprint: Organize plan review UI, still preview-only and no file movement.
+
 ## Current Session (May 13, 2026 - Auto Sorting Rules Audit v1)
 
 - **Mode**: docs/planning

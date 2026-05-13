@@ -143,6 +143,7 @@ pub fn run() {
             commands::get_downloads_watcher_status,
             commands::get_staging_areas,
             commands::get_staging_preview_plan,
+            commands::generate_sorting_preview_plan,
             commands::cleanup_staging_areas,
             commands::commit_staging_area,
             commands::commit_all_staging_areas,
@@ -223,6 +224,7 @@ mod tests {
         for command in [
             "commands::get_staging_areas",
             "commands::get_staging_preview_plan",
+            "commands::generate_sorting_preview_plan",
             "commands::cleanup_staging_areas",
             "commands::commit_staging_area",
             "commands::commit_all_staging_areas",

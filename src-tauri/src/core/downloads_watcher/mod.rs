@@ -34,7 +34,8 @@ use crate::{
         DownloadsSelectionResponse, DownloadsTimelineEntry, DownloadsWatcherState,
         DownloadsWatcherStatus, GuidedInstallPlan, IgnoreItemsResult, LibrarySettings,
         OrganizationPreview, RejectResult, RejectedItem, SpecialReviewPlan, StagingArea,
-        StagingAreasSummary, StagingPlan, StagingPlanActionKind, StagingPlanEvidenceLevel,
+        StagingAreasSummary, StagingPlan, StagingPlanActionKind, StagingPlanBucket,
+        StagingPlanConfidenceLabel, StagingPlanCurrentRoot, StagingPlanEvidenceLevel,
         StagingPlanItem, StagingPlanSource, StagingPlanStatus, StagingSubDirectory,
         WorkspaceChange, WorkspaceDomain,
     },
@@ -3877,6 +3878,11 @@ pub fn build_staging_preview_plan(app_data_dir: &Path) -> AppResult<StagingPlan>
                     "No files changed. This plan is preview-only.".to_owned(),
                     "Future file changes require user confirmation, backup and restore support, path validation, and recoverable errors.".to_owned(),
                 ],
+                source_signals: vec!["staging_folder_detected".to_owned()],
+                blocked_reasons: vec!["per_file_staging_data_not_available".to_owned()],
+                bucket: StagingPlanBucket::NeedsReview,
+                confidence_label: StagingPlanConfidenceLabel::ReviewOnly,
+                current_root: StagingPlanCurrentRoot::Inbox,
                 would_touch_files: false,
             });
         }

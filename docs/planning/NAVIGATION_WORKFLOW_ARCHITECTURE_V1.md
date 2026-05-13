@@ -123,7 +123,9 @@ Current M2 foundation note:
 Current M3 rules note:
 
 - `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md` defines the approved evidence levels, destination buckets, do-not-move rules, generator scope, and future UI expectations for Auto Sorting Suggested Plans.
-- The next generator should build preview-only `StagingPlan` items, not route through the legacy Organize apply path.
+- `generate_sorting_preview_plan` now builds preview-only `StagingPlan` items for selected Library files or bounded Library folder scopes, not through the legacy Organize apply path.
+- Generated plan items carry source signals, blocked reasons, buckets, confidence labels, current root, and `wouldTouchFiles=false`.
+- Organize plan review UI remains future work.
 - Auto Sorting remains preview-only until the Apply Safety Contract exists.
 
 ### Phase 3 - Fold Creators And Types Into Library Lenses

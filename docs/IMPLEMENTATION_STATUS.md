@@ -1,5 +1,38 @@
 # SimSuite Implementation Status
 
+## Current session note (May 13, 2026 - Suggested Plan Generator v1)
+
+This session adds the first preview-only Auto Sorting suggested-plan generator. It does not move files, expose Apply, add cleanup, add quarantine, add delete, add AI decisions, or change route/sidebar behavior.
+
+Important changes and findings:
+
+- extended `StagingPlanItem` with `leave_in_place`, `sourceSignals[]`, `blockedReasons[]`, `bucket`, `confidenceLabel`, and `currentRoot`.
+- added read-only `generate_sorting_preview_plan`.
+- supported scopes are selected Library file IDs and bounded Mods/Tray folder scopes.
+- exact duplicates, parser warnings, inspection warnings, review queue membership, weak metadata, and unsupported sources route to review or leave-in-place.
+- stronger indexed metadata can produce preview-only bucket suggestions with caveats.
+- every plan and item keeps `wouldTouchFiles=false`.
+- the generator does not call legacy Organize apply paths, Staging commit/cleanup commands, move-engine apply paths, shell operations, AI, delete, or quarantine behavior.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`24` files, `91` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: passed.
+- `cargo check`: passed with existing Rust warning noise.
+- `cargo test`: passed (`268` passed, `2` ignored).
+- `cargo build --release`: passed with existing Rust warning noise.
+- `npm run test:rust`: passed (`268` passed, `2` ignored).
+
+Desktop/runtime proof:
+
+- skipped because no visible route behavior changed; Organize plan review UI remains future work.
+
+Recommended next sprint:
+
+- Organize plan review UI, still preview-only and no file movement.
+
 ## Current session note (May 13, 2026 - Auto Sorting Rules Audit v1)
 
 This session defines the safe rule foundation for future Auto Sorting Suggested Plans. It does not implement the generator, move files, expose Apply, add cleanup, add quarantine, add delete, add AI decisions, or change routes.

@@ -35,6 +35,7 @@ import type {
   DuplicatePair,
   FileDetail,
   GuidedInstallPlan,
+  GenerateSortingPreviewPlanRequest,
   HomeOverview,
   ProblemSignal,
   IgnoreItemsResult,
@@ -192,6 +193,69 @@ const createMockStagingPreviewPlan = (): StagingPlan => ({
         "Folder-level staging data only; no per-file move is suggested.",
         "No files changed. This plan is preview-only.",
       ],
+      sourceSignals: ["staging_folder_detected"],
+      blockedReasons: ["per_file_staging_data_not_available"],
+      bucket: "needs_review",
+      confidenceLabel: "review-only",
+      currentRoot: "inbox",
+      wouldTouchFiles: false,
+    },
+  ],
+});
+
+const createMockSortingPreviewPlan = (): StagingPlan => ({
+  id: "mock-sorting-preview-plan-v1",
+  createdAt: new Date().toISOString(),
+  source: "organize",
+  status: "preview_only",
+  title: "Suggested organization preview",
+  summary:
+    "2 Library files have preview-only organization suggestions. No files changed.",
+  itemCount: 2,
+  wouldTouchFiles: false,
+  caveats: [
+    "No files changed. This generated plan is preview-only.",
+    "Suggested destinations are review aids, not apply-ready file changes.",
+    "Backup and restore support plus user confirmation are required before any future apply workflow.",
+  ],
+  items: [
+    {
+      id: "sorting-file-101",
+      fileId: 101,
+      fileName: "EverydayHair.package",
+      currentPath: `${DEFAULT_MODS_PATH}\\Loose\\EverydayHair.package`,
+      suggestedDestinationPath: `${DEFAULT_MODS_PATH}\\CAS\\EverydayHair.package`,
+      actionKind: "suggest_move",
+      evidenceLevel: "evidence_backed",
+      reason:
+        "Package metadata suggests CAS content, so SimSuite can preview a CAS destination with caveats.",
+      caveats: [
+        "Review before applying. This plan does not move files.",
+        "Filename-only clues are not used as strong move proof.",
+      ],
+      sourceSignals: ["kind:CAS", "source:mods", "configured_root:mods"],
+      blockedReasons: [],
+      bucket: "cas",
+      confidenceLabel: "evidence-backed",
+      currentRoot: "mods",
+      wouldTouchFiles: false,
+    },
+    {
+      id: "sorting-file-102",
+      fileId: 102,
+      fileName: "UnknownThing.package",
+      currentPath: `${DEFAULT_MODS_PATH}\\Loose\\UnknownThing.package`,
+      suggestedDestinationPath: null,
+      actionKind: "leave_in_place",
+      evidenceLevel: "review_only",
+      reason:
+        "SimSuite has limited information here, so this file should stay in place for review.",
+      caveats: ["No files changed. This plan is preview-only."],
+      sourceSignals: ["kind:Unknown", "source:mods"],
+      blockedReasons: ["weak_or_unknown_metadata"],
+      bucket: "unknown_leave_in_place",
+      confidenceLabel: "review-only",
+      currentRoot: "mods",
       wouldTouchFiles: false,
     },
   ],
@@ -6327,6 +6391,8 @@ async function mockInvoke<T>(
       return structuredClone(mockStagingAreasSummary) as T;
     case "get_staging_preview_plan":
       return structuredClone(createMockStagingPreviewPlan()) as T;
+    case "generate_sorting_preview_plan":
+      return structuredClone(createMockSortingPreviewPlan()) as T;
     case "get_app_behavior_settings":
       return structuredClone(mockAppBehaviorSettings) as T;
     case "save_app_behavior_settings": {
@@ -7768,6 +7834,8 @@ export const api = {
   getStagingAreas: () => invoke<StagingAreasSummary>("get_staging_areas"),
   getStagingPreviewPlan: () =>
     invoke<StagingPlan>("get_staging_preview_plan"),
+  generateSortingPreviewPlan: (request: GenerateSortingPreviewPlanRequest) =>
+    invoke<StagingPlan>("generate_sorting_preview_plan", { request }),
   cleanupStagingAreas: (pathsToDelete: string[]) =>
     invoke<CleanupResult>("cleanup_staging_areas", { pathsToDelete }),
   commitStagingArea: (itemId: string) =>

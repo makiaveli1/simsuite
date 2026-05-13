@@ -32,16 +32,16 @@ use crate::{
         CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail,
         DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
         DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
-        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata, GuidedInstallPlan,
-        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
-        LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
-        LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
-        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
-        OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
-        ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
-        ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
-        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
+        LibraryFacets, LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics,
+        LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
+        LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
+        LibraryWatchSetupResponse, OrganizationPreview, RejectResult, RejectedItem,
+        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
+        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult, StagingPlan,
+        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -784,6 +784,21 @@ pub async fn get_staging_preview_plan(state: State<'_, AppState>) -> Result<Stag
     run_blocking_command("get_staging_preview_plan", move || {
         let app_data_dir = state.app_data_dir;
         downloads_watcher::build_staging_preview_plan(&app_data_dir).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn generate_sorting_preview_plan(
+    state: State<'_, AppState>,
+    request: GenerateSortingPreviewPlanRequest,
+) -> Result<StagingPlan, String> {
+    let state = state.inner().clone();
+    run_blocking_command("generate_sorting_preview_plan", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        rule_engine::sorting_plan::generate_sorting_preview_plan(&connection, &settings, request)
+            .map_err(map_error)
     })
     .await
 }
@@ -3499,6 +3514,33 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "preview command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn sorting_preview_plan_command_stays_read_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn generate_sorting_preview_plan")
+            .expect("sorting preview command should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn cleanup_staging_areas")
+            .expect("cleanup command should follow sorting preview command");
+        let command_source = &tail[..end];
+
+        assert!(command_source.contains("sorting_plan::generate_sorting_preview_plan"));
+        for forbidden in [
+            concat!("cleanup_", "staging_areas("),
+            concat!("commit_", "staging_area("),
+            concat!("commit_", "all_staging_areas("),
+            concat!("apply_", "preview_organization"),
+            concat!("apply_", "preview_moves_for_files"),
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "sorting preview command must not call {forbidden}"
             );
         }
     }

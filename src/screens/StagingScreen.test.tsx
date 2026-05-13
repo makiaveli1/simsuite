@@ -58,6 +58,11 @@ const previewPlan = {
       reason:
         "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
       caveats: ["Folder-level staging data only; no per-file move is suggested."],
+      sourceSignals: ["staging_folder_detected"],
+      blockedReasons: ["per_file_staging_data_not_available"],
+      bucket: "needs_review" as const,
+      confidenceLabel: "review-only" as const,
+      currentRoot: "inbox" as const,
       wouldTouchFiles: false as const,
     },
   ],

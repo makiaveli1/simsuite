@@ -148,6 +148,7 @@ pub enum StagingPlanActionKind {
     SuggestMove,
     SuggestGroup,
     SuggestReview,
+    LeaveInPlace,
     NoAction,
 }
 
@@ -158,6 +159,57 @@ pub enum StagingPlanEvidenceLevel {
     EvidenceBacked,
     Heuristic,
     ReviewOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanBucket {
+    ScriptMods,
+    Cas,
+    BuildBuy,
+    Gameplay,
+    PresetsSliders,
+    OverridesDefaults,
+    Tray,
+    NeedsReview,
+    UnknownLeaveInPlace,
+}
+
+impl Default for StagingPlanBucket {
+    fn default() -> Self {
+        Self::NeedsReview
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum StagingPlanConfidenceLabel {
+    Deterministic,
+    EvidenceBacked,
+    Heuristic,
+    ReviewOnly,
+}
+
+impl Default for StagingPlanConfidenceLabel {
+    fn default() -> Self {
+        Self::ReviewOnly
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanCurrentRoot {
+    Mods,
+    Tray,
+    Downloads,
+    Inbox,
+    Unknown,
+}
+
+impl Default for StagingPlanCurrentRoot {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,6 +224,16 @@ pub struct StagingPlanItem {
     pub evidence_level: StagingPlanEvidenceLevel,
     pub reason: String,
     pub caveats: Vec<String>,
+    #[serde(default)]
+    pub source_signals: Vec<String>,
+    #[serde(default)]
+    pub blocked_reasons: Vec<String>,
+    #[serde(default)]
+    pub bucket: StagingPlanBucket,
+    #[serde(default)]
+    pub confidence_label: StagingPlanConfidenceLabel,
+    #[serde(default)]
+    pub current_root: StagingPlanCurrentRoot,
     pub would_touch_files: bool,
 }
 
@@ -188,6 +250,30 @@ pub struct StagingPlan {
     pub would_touch_files: bool,
     pub caveats: Vec<String>,
     pub items: Vec<StagingPlanItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateSortingPreviewPlanRequest {
+    pub scope: GenerateSortingPreviewPlanScope,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GenerateSortingPreviewPlanScope {
+    SelectedFiles {
+        #[serde(default, rename = "fileIds")]
+        file_ids: Vec<i64>,
+    },
+    LibraryFolder {
+        #[serde(rename = "sourceLocation")]
+        source_location: String,
+        #[serde(rename = "folderPath")]
+        folder_path: String,
+        #[serde(default)]
+        recursive: bool,
+        limit: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

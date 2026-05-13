@@ -9,7 +9,14 @@ Source docs:
 - `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`
 - `simsuite-reports/STAGING_PREVIEW_PLAN_FOUNDATION_V1_REPORT.md`
 
-This document defines the safe rule foundation for future Auto Sorting Suggested Plan work. It does not implement a generator, move files, expose Apply, or change app navigation.
+This document defines the safe rule foundation for Auto Sorting Suggested Plan work. The first generator implementation now uses this plan as its rule source; it still does not move files, expose Apply, or change app navigation.
+
+Current implementation note:
+
+- `generate_sorting_preview_plan` produces preview-only `StagingPlan` data for selected Library files or bounded Library folder scopes.
+- `StagingPlanItem` now includes `leave_in_place`, `sourceSignals[]`, `blockedReasons[]`, `bucket`, `confidenceLabel`, and `currentRoot`.
+- Every generated plan and item keeps `wouldTouchFiles=false`.
+- Organize plan review UI and any Apply workflow remain future work.
 
 ## 1. Auto Sorting Product Definition
 

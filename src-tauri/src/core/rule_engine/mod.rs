@@ -14,6 +14,8 @@ use crate::{
     },
 };
 
+pub mod sorting_plan;
+
 #[derive(Debug, Clone)]
 struct PreviewCandidate {
     id: i64,

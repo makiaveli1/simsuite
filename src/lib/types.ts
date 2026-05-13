@@ -145,6 +145,7 @@ export type StagingPlanActionKind =
   | "suggest_move"
   | "suggest_group"
   | "suggest_review"
+  | "leave_in_place"
   | "no_action";
 
 export type StagingPlanEvidenceLevel =
@@ -152,6 +153,30 @@ export type StagingPlanEvidenceLevel =
   | "evidence_backed"
   | "heuristic"
   | "review_only";
+
+export type StagingPlanBucket =
+  | "script_mods"
+  | "cas"
+  | "build_buy"
+  | "gameplay"
+  | "presets_sliders"
+  | "overrides_defaults"
+  | "tray"
+  | "needs_review"
+  | "unknown_leave_in_place";
+
+export type StagingPlanConfidenceLabel =
+  | "deterministic"
+  | "evidence-backed"
+  | "heuristic"
+  | "review-only";
+
+export type StagingPlanCurrentRoot =
+  | "mods"
+  | "tray"
+  | "downloads"
+  | "inbox"
+  | "unknown";
 
 export interface StagingPlanItem {
   id: string;
@@ -163,6 +188,11 @@ export interface StagingPlanItem {
   evidenceLevel: StagingPlanEvidenceLevel;
   reason: string;
   caveats: string[];
+  sourceSignals: string[];
+  blockedReasons: string[];
+  bucket: StagingPlanBucket;
+  confidenceLabel: StagingPlanConfidenceLabel;
+  currentRoot: StagingPlanCurrentRoot;
   wouldTouchFiles: false;
 }
 
@@ -177,6 +207,23 @@ export interface StagingPlan {
   wouldTouchFiles: false;
   caveats: string[];
   items: StagingPlanItem[];
+}
+
+export type GenerateSortingPreviewPlanScope =
+  | {
+      kind: "selected_files";
+      fileIds: number[];
+    }
+  | {
+      kind: "library_folder";
+      sourceLocation: "mods" | "tray";
+      folderPath: string;
+      recursive?: boolean;
+      limit?: number;
+    };
+
+export interface GenerateSortingPreviewPlanRequest {
+  scope: GenerateSortingPreviewPlanScope;
 }
 
 export interface CleanupResult {
