@@ -1,5 +1,46 @@
 # Session Handoff
 
+## Current Session (May 13, 2026 - Auto Sorting Rules Audit v1)
+
+- **Mode**: docs/planning
+- **Focus**: define safe evidence rules for future Auto Sorting Suggested Plans before generator, Apply, or file movement work
+
+### Progress Made
+
+1. **Audited current sorting inputs**:
+   - inspected `StagingPlan`, Library row fields, scanner metadata, package/script inspection, duplicate proof, bundle hints, review queue signals, update/watch states, and current Organize/Move surfaces
+   - confirmed current StagingPlan is preview-only and folder-level
+   - confirmed legacy Organize apply/move paths still exist and should not be used by the next preview-only generator
+
+2. **Created the rules audit**:
+   - added `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`
+   - classified sorting signals by deterministic, evidence-backed, heuristic, review-only, or unsupported evidence
+   - defined buckets, action kinds, do-not-move rules, generator scope, UI expectations, and future test strategy
+
+3. **Updated governing docs**:
+   - linked the new rules audit from the trust-boundary doc
+   - added current M3 notes to the navigation workflow plan
+   - added a backend map note that the future generator should produce preview-only `StagingPlan` items and avoid legacy apply paths
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`23` files, `90` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Desktop/runtime proof was skipped because no runtime route, UI, backend command, or schema behavior changed.
+
+### Known Problems / Gaps
+
+- Auto Sorting generator is not implemented.
+- No route, UI, backend command, schema, or file operation behavior changed in this sprint.
+- Current proposed future action kind includes `leave_in_place`, but the existing `StagingPlan` type does not include that enum value yet.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant docs.
+2. Recommended next sprint: Suggested Plan Generator v1, preview-only and no file movement.
+
 ## Current Session (May 13, 2026 - Staging Preview Plan Foundation v1)
 
 - **Mode**: code

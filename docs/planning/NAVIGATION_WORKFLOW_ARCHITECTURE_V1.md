@@ -120,6 +120,12 @@ Current M2 foundation note:
 - The direct Staging route can show this plan, but it still does not apply, move, delete, clean up, quarantine, or auto-sort files.
 - Per-file organization suggestions remain future Auto Sorting Suggested Plan work.
 
+Current M3 rules note:
+
+- `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md` defines the approved evidence levels, destination buckets, do-not-move rules, generator scope, and future UI expectations for Auto Sorting Suggested Plans.
+- The next generator should build preview-only `StagingPlan` items, not route through the legacy Organize apply path.
+- Auto Sorting remains preview-only until the Apply Safety Contract exists.
+
 ### Phase 3 - Fold Creators And Types Into Library Lenses
 
 - Preserve the existing creator/type browsing value.
