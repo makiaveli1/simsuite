@@ -40,8 +40,8 @@ use crate::{
         OrganizationPreview, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
         ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveLibraryWatchSourceEntry, ScanPhase,
         ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        StagingAreasSummary, StagingCommitResult, WatchListFilter, WatchRefreshSummary,
-        WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -774,6 +774,16 @@ pub async fn get_staging_areas(state: State<'_, AppState>) -> Result<StagingArea
     run_blocking_command("get_staging_areas", move || {
         let app_data_dir = state.app_data_dir;
         downloads_watcher::list_staging_areas(&app_data_dir).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_staging_preview_plan(state: State<'_, AppState>) -> Result<StagingPlan, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_staging_preview_plan", move || {
+        let app_data_dir = state.app_data_dir;
+        downloads_watcher::build_staging_preview_plan(&app_data_dir).map_err(map_error)
     })
     .await
 }
@@ -3465,6 +3475,32 @@ mod tests {
         assert_eq!(query.limit, Some(LIBRARY_TREE_FILE_COMPAT_LIMIT));
         assert_eq!(query.offset, Some(0));
         assert_eq!(query.include_previews, Some(false));
+    }
+
+    #[test]
+    fn staging_preview_plan_command_stays_read_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn get_staging_preview_plan")
+            .expect("preview command should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn cleanup_staging_areas")
+            .expect("cleanup command should follow preview command");
+        let command_source = &tail[..end];
+
+        assert!(command_source.contains("build_staging_preview_plan"));
+        for forbidden in [
+            "cleanup_staging_areas(",
+            "commit_staging_area(",
+            "commit_all_staging_areas(",
+            "apply_preview_moves_for_files",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "preview command must not call {forbidden}"
+            );
+        }
     }
 
     #[test]

@@ -67,6 +67,7 @@ import type {
   CleanupResult,
   StagingAreasSummary,
   StagingCommitResult,
+  StagingPlan,
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
@@ -143,6 +144,58 @@ let mockAppBehaviorSettings: AppBehaviorSettings = {
   silentSpecialModUpdates: null,
   downloadIgnorePatterns: [],
 };
+const mockStagingAreasSummary: StagingAreasSummary = {
+  areas: [
+    {
+      itemId: "42",
+      subdirectories: [
+        {
+          path: "C:\\SimSuite\\downloads_inbox\\42\\clean",
+          name: "clean",
+          fileCount: 2,
+          totalBytes: 2048,
+          createdAt: null,
+        },
+      ],
+    },
+  ],
+  totalBytes: 2048,
+  totalFileCount: 2,
+};
+const createMockStagingPreviewPlan = (): StagingPlan => ({
+  id: "mock-staging-preview-plan-v1",
+  createdAt: new Date().toISOString(),
+  source: "staging",
+  status: "preview_only",
+  title: "Staging preview plan",
+  summary:
+    "1 staged folder can be reviewed as a preview-only plan. No files changed.",
+  itemCount: 1,
+  wouldTouchFiles: false,
+  caveats: [
+    "Current Staging data is folder-level; per-file organization suggestions are future work.",
+    "No files changed. This mock plan is preview-only.",
+    "Backup and restore support plus user confirmation are required before any future apply workflow.",
+  ],
+  items: [
+    {
+      id: "mock-staging-42-1",
+      fileId: null,
+      fileName: "clean",
+      currentPath: "C:\\SimSuite\\downloads_inbox\\42\\clean",
+      suggestedDestinationPath: null,
+      actionKind: "suggest_review",
+      evidenceLevel: "review_only",
+      reason:
+        "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
+      caveats: [
+        "Folder-level staging data only; no per-file move is suggested.",
+        "No files changed. This plan is preview-only.",
+      ],
+      wouldTouchFiles: false,
+    },
+  ],
+});
 const emptyInsights = {
   format: null,
   resourceSummary: [],
@@ -6270,6 +6323,10 @@ async function mockInvoke<T>(
     case "get_downloads_watcher_status":
       syncMockDownloadsWatcherStatus();
       return structuredClone(mockDownloadsWatcherStatus) as T;
+    case "get_staging_areas":
+      return structuredClone(mockStagingAreasSummary) as T;
+    case "get_staging_preview_plan":
+      return structuredClone(createMockStagingPreviewPlan()) as T;
     case "get_app_behavior_settings":
       return structuredClone(mockAppBehaviorSettings) as T;
     case "save_app_behavior_settings": {
@@ -7709,6 +7766,8 @@ export const api = {
   getDownloadsWatcherStatus: () =>
     invoke<DownloadsWatcherStatus>("get_downloads_watcher_status"),
   getStagingAreas: () => invoke<StagingAreasSummary>("get_staging_areas"),
+  getStagingPreviewPlan: () =>
+    invoke<StagingPlan>("get_staging_preview_plan"),
   cleanupStagingAreas: (pathsToDelete: string[]) =>
     invoke<CleanupResult>("cleanup_staging_areas", { pathsToDelete }),
   commitStagingArea: (itemId: string) =>

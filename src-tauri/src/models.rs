@@ -124,6 +124,72 @@ pub struct StagingAreasSummary {
     pub total_file_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanSource {
+    Staging,
+    Library,
+    Inbox,
+    Organize,
+    Manual,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanStatus {
+    PreviewOnly,
+    Blocked,
+    ReadyForReview,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanActionKind {
+    SuggestMove,
+    SuggestGroup,
+    SuggestReview,
+    NoAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingPlanEvidenceLevel {
+    Deterministic,
+    EvidenceBacked,
+    Heuristic,
+    ReviewOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingPlanItem {
+    pub id: String,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub current_path: Option<String>,
+    pub suggested_destination_path: Option<String>,
+    pub action_kind: StagingPlanActionKind,
+    pub evidence_level: StagingPlanEvidenceLevel,
+    pub reason: String,
+    pub caveats: Vec<String>,
+    pub would_touch_files: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagingPlan {
+    pub id: String,
+    pub created_at: String,
+    pub source: StagingPlanSource,
+    pub status: StagingPlanStatus,
+    pub title: String,
+    pub summary: String,
+    pub item_count: usize,
+    pub would_touch_files: bool,
+    pub caveats: Vec<String>,
+    pub items: Vec<StagingPlanItem>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanupResult {

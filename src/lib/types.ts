@@ -129,6 +129,56 @@ export interface StagingAreasSummary {
   totalFileCount: number;
 }
 
+export type StagingPlanSource =
+  | "staging"
+  | "library"
+  | "inbox"
+  | "organize"
+  | "manual";
+
+export type StagingPlanStatus =
+  | "preview_only"
+  | "blocked"
+  | "ready_for_review";
+
+export type StagingPlanActionKind =
+  | "suggest_move"
+  | "suggest_group"
+  | "suggest_review"
+  | "no_action";
+
+export type StagingPlanEvidenceLevel =
+  | "deterministic"
+  | "evidence_backed"
+  | "heuristic"
+  | "review_only";
+
+export interface StagingPlanItem {
+  id: string;
+  fileId: number | null;
+  fileName: string;
+  currentPath: string | null;
+  suggestedDestinationPath: string | null;
+  actionKind: StagingPlanActionKind;
+  evidenceLevel: StagingPlanEvidenceLevel;
+  reason: string;
+  caveats: string[];
+  wouldTouchFiles: false;
+}
+
+export interface StagingPlan {
+  id: string;
+  createdAt: string;
+  source: StagingPlanSource;
+  status: StagingPlanStatus;
+  title: string;
+  summary: string;
+  itemCount: number;
+  wouldTouchFiles: false;
+  caveats: string[];
+  items: StagingPlanItem[];
+}
+
 export interface CleanupResult {
   deletedCount: number;
   freedBytes: number;
