@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Current Session (May 14, 2026 - Organize Pending Plans UX Clarity v1)
+
+- **Mode**: code
+- **Focus**: make Organize `Pending plans` understandable by summarizing internal pending batch data instead of showing raw staging folder noise
+
+### Progress Made
+
+1. **Clarified Pending Plans meaning**:
+   - `Pending plans` now explains that generated organization plans are not saved yet
+   - app-local imported/downloaded batch data is summarized as friendly `Pending batch N` rows
+   - raw internal folder IDs and folder names are hidden behind `Show technical details`
+
+2. **Made the pending data safer to scan**:
+   - added compact totals for pending batches, folder groups, files found, and total size
+   - capped visible batch rows and added a show-more control
+   - added a large-count caution when pending batch data is unusually large
+   - kept next steps focused on `Create preview plan` and `Open Inbox`
+
+3. **Kept the safety boundary intact**:
+   - no Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added
+   - no mutating staging or legacy organize apply APIs are called
+   - direct internal Plan Preview remains safe and uses the clearer summary component
+
+### Verification
+
+- Browser rendered QA against `http://127.0.0.1:1420/#organize`: Pending plans showed friendly batch labels, no raw timestamp-like IDs in primary labels, technical details collapsed by default, no enabled file-changing controls, and the Organize shell scrolled at smaller desktop height.
+- `npm run test:unit -- --run src/screens/OrganizeScreen.test.tsx src/screens/StagingScreen.test.tsx src/trustBoundaryCopy.test.ts`: passed (`3` files, `11` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`27` files, `100` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshots captured in `output/desktop/library-proof/2026-05-14T22-49-49-900Z/`, including `organize-pending-plans-ux-clarity-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+### Known Problems / Gaps
+
+- Pending batch data is still folder-level and not a saved organization-plan persistence model.
+- Imported/downloaded batch review likely belongs more naturally in Inbox later.
+- Apply/file movement remains future work and still needs the safety contract.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant hunks.
+2. Recommended next sprint: Inbox batch review clarity, or Apply Safety Contract design before any real Apply/file movement work starts.
 ## Current Session (May 14, 2026 - Plan Preview / Organize Consolidation v1)
 
 - **Mode**: code
