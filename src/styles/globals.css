@@ -3362,6 +3362,16 @@ h2,
   min-height: 0;
 }
 
+.screen-shell.workbench-screen.organize-screen {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.screen-shell.workbench-screen.organize-screen > :last-child {
+  flex: 0 0 auto;
+}
+
 .screen-title-group {
   display: grid;
   gap: 0.18rem;

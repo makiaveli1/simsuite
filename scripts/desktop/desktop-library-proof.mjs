@@ -1614,6 +1614,41 @@ async function main() {
     if (!summary.organizePendingBodyHasPendingPlans || !summary.organizePendingBodyHasNoFilesChanged) {
       throw new Error("Organize did not show the pending plans preview boundary.");
     }
+    summary.organizePendingScrollCheck = await driver.executeScript(`
+      const screen = document.querySelector(".organize-screen");
+      const pending = document.querySelector(".organize-pending-plan-panel, .pending-plans-preview");
+      if (!screen) {
+        return { found: false };
+      }
+      screen.scrollTop = 0;
+      const style = window.getComputedStyle(screen);
+      const maxScroll = screen.scrollHeight - screen.clientHeight;
+      const needsScroll = maxScroll > 4;
+      screen.scrollTop = Math.max(0, maxScroll);
+      const after = screen.scrollTop;
+      const pendingRect = pending ? pending.getBoundingClientRect() : null;
+      return {
+        found: true,
+        overflowY: style.overflowY,
+        clientHeight: screen.clientHeight,
+        scrollHeight: screen.scrollHeight,
+        maxScroll,
+        needsScroll,
+        after,
+        canScroll: !needsScroll || after > 0,
+        pendingBottom: pendingRect ? pendingRect.bottom : null,
+        viewportHeight: window.innerHeight,
+      };
+    `);
+    if (
+      !summary.organizePendingScrollCheck?.found ||
+      summary.organizePendingScrollCheck.overflowY === "hidden" ||
+      !summary.organizePendingScrollCheck.canScroll
+    ) {
+      throw new Error(
+        `Organize pending plans view was not scrollable: ${JSON.stringify(summary.organizePendingScrollCheck)}`,
+      );
+    }
     const organizeShot = path.join(runDir, "organize-plan-preview-consolidated-v1.png");
     await takeScreenshot(driver, organizeShot);
     summary.screenshots.push(organizeShot);
