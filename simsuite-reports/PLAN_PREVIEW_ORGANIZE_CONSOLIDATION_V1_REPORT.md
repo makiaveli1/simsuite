@@ -145,7 +145,8 @@ Apply Safety Contract design. This should define preview, confirmation, backup/r
 
 ## Commit
 
-Pending.
+- `355fc84` - `Fold Plan Preview into Organize`
+- Follow-up docs record commit is reported in the final Codex response.
 
 ## Final Honest Verdict
 
