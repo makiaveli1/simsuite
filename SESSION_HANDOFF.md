@@ -1,5 +1,48 @@
 # Session Handoff
 
+## Current Session (May 14, 2026 - Plan Preview / Organize Consolidation v1)
+
+- **Mode**: code
+- **Focus**: fold user-facing Plan Preview into Organize as a preview-only Pending Plans tab while keeping the direct internal route safe
+
+### Progress Made
+
+1. **Consolidated the user-facing workflow**:
+   - Organize now uses a compact two-tab workspace: `Create plan` and `Pending plans`
+   - `Create plan` keeps the generated preview plan workflow
+   - `Pending plans` reuses the read-only Plan Preview data from `get_staging_areas` and `get_staging_preview_plan`
+
+2. **Simplified navigation without removing compatibility**:
+   - Plan Preview is no longer shown as a normal top-level sidebar item in Casual, Seasoned, or Creator modes
+   - the direct internal `#staging` route still loads safely
+   - direct Plan Preview copy now points users back to Organize
+
+3. **Kept the safety boundary intact**:
+   - no Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added
+   - no mutating staging or legacy organize apply APIs are called by the new UI
+   - current proof checks were updated to assert no enabled file-changing controls appear
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- Focused unit/trust check passed: `npm run test:unit -- --run src/screens/OrganizeScreen.test.tsx src/screens/StagingScreen.test.tsx src/lib/experienceMode.test.ts src/trustBoundaryCopy.test.ts` (`4` files, `11` tests).
+- `npm run test:unit`: passed (`27` files, `99` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshots captured in `output/desktop/library-proof/2026-05-14T12-03-27-658Z/`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+### Known Problems / Gaps
+
+- Apply/file movement remains future work and still needs the safety contract.
+- Direct internal staging route remains for compatibility; broad internal rename was not attempted.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant hunks.
+2. Recommended next sprint after this: Apply Safety Contract design, not real Apply.
+
 ## Current Session (May 14, 2026 - Plan Preview Rename / Navigation Wording v1)
 
 - **Mode**: code

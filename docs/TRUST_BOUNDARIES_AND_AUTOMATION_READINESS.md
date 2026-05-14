@@ -74,13 +74,13 @@ SimSuite must not claim:
 
 Plan Preview is the user-facing safety bridge before future organization or file-changing workflows. It is currently backed by internal staging names such as `StagingPlan`, `StagingScreen`, `get_staging_areas`, and `get_staging_preview_plan`. Those internal names may remain for code stability, but visible copy should say `Plan Preview`, `Pending Plans`, or `Preview plan`.
 
-The currently exposed Plan Preview route must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
+The normal user-facing Plan Preview experience now lives inside Organize as the `Pending plans` tab. The direct internal Plan Preview route remains available for compatibility, but it must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
 
 Current Plan Preview may:
 
 - list app-local staged folders.
 - show file counts and sizes.
-- explain that no files are changed from the Plan Preview screen yet.
+- explain that no files are changed from Organize, Pending plans, or the direct Plan Preview route yet.
 - describe future requirements for applying changes.
 - return a preview-only `StagingPlan` with `wouldTouchFiles=false`.
 - show folder-level review items with reasons and caveats when per-file organization suggestions do not exist yet.

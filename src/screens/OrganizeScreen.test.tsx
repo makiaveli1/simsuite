@@ -7,6 +7,8 @@ import type { StagingPlan } from "../lib/types";
 vi.mock("../lib/api", () => ({
   api: {
     generateSortingPreviewPlan: vi.fn(),
+    getStagingAreas: vi.fn(),
+    getStagingPreviewPlan: vi.fn(),
     previewOrganization: vi.fn(),
     applyPreviewOrganization: vi.fn(),
     listSnapshots: vi.fn(),
@@ -76,6 +78,61 @@ const previewPlan: StagingPlan = {
   ],
 };
 
+const stagedSummary = {
+  areas: [
+    {
+      itemId: "42",
+      subdirectories: [
+        {
+          path: "C:\\Simsuite\\downloads_inbox\\42\\clean",
+          name: "clean",
+          fileCount: 2,
+          totalBytes: 2048,
+          createdAt: null,
+        },
+      ],
+    },
+  ],
+  totalBytes: 2048,
+  totalFileCount: 2,
+};
+
+const pendingPlan: StagingPlan = {
+  id: "pending-plan-test",
+  createdAt: "2026-05-14T00:00:00.000Z",
+  source: "staging",
+  status: "preview_only",
+  title: "Staging preview plan",
+  summary:
+    "1 staged folder can be reviewed as a preview-only plan. No files changed.",
+  itemCount: 1,
+  wouldTouchFiles: false,
+  caveats: [
+    "Current Staging data is folder-level; per-file organization suggestions are future work.",
+    "No files changed. This command is read-only.",
+  ],
+  items: [
+    {
+      id: "pending-42-1",
+      fileId: null,
+      fileName: "clean",
+      currentPath: "C:\\Simsuite\\downloads_inbox\\42\\clean",
+      suggestedDestinationPath: null,
+      actionKind: "suggest_review",
+      evidenceLevel: "review_only",
+      reason:
+        "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
+      caveats: ["Folder-level plan data only; no per-file move is suggested."],
+      sourceSignals: ["staging_folder_detected"],
+      blockedReasons: ["per_file_staging_data_not_available"],
+      bucket: "needs_review",
+      confidenceLabel: "review-only",
+      currentRoot: "inbox",
+      wouldTouchFiles: false,
+    },
+  ],
+};
+
 function renderOrganize() {
   return render(
     <OrganizeScreen
@@ -108,10 +165,53 @@ it("renders Organize as a preview-only planning workspace", () => {
     }),
   ).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.getByRole("tab", { name: /Create plan/i })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getByRole("tab", { name: /Pending plans/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Generate preview/i })).toBeEnabled();
   expect(screen.getByRole("button", { name: /Open Library/i })).toBeEnabled();
   expect(screen.getByText(/No generated plan yet/i)).toBeInTheDocument();
 
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete/i,
+      ),
+    ]),
+  );
+});
+
+it("shows pending plans inside Organize without exposing file-changing actions", async () => {
+  vi.mocked(api.getStagingAreas).mockResolvedValue(stagedSummary);
+  vi.mocked(api.getStagingPreviewPlan).mockResolvedValue(pendingPlan);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Pending plans/i }));
+
+  await screen.findByText(/same preview-only checkpoint/i);
+  expect(screen.getByRole("tab", { name: /Pending plans/i })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getByText(/same preview-only checkpoint/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Item #42/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/2 files/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/does not include per-file organization suggestions/i)).toBeInTheDocument();
+  expect(screen.queryByText(/Staging preview plan/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Current Staging data/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/staged folder/i)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Preview only/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();
+
+  await waitFor(() => {
+    expect(api.getStagingAreas).toHaveBeenCalledTimes(1);
+    expect(api.getStagingPreviewPlan).toHaveBeenCalledTimes(1);
+  });
+  expect(api.previewOrganization).not.toHaveBeenCalled();
+  expect(api.applyPreviewOrganization).not.toHaveBeenCalled();
   expect(enabledButtonLabels()).not.toEqual(
     expect.arrayContaining([
       expect.stringMatching(

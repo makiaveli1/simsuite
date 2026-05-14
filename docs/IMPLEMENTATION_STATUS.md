@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (May 14, 2026 - Plan Preview / Organize Consolidation v1)
+
+This session folds the user-facing Plan Preview experience into Organize as a preview-only Pending Plans tab. It keeps the direct internal route safe, but removes Plan Preview from normal top-level sidebar navigation.
+
+Important changes and findings:
+
+- Organize now has `Create plan` and `Pending plans` tabs.
+- `Create plan` keeps the existing generated suggested-plan UI.
+- `Pending plans` reuses read-only `get_staging_areas` and `get_staging_preview_plan` data.
+- Plan Preview is hidden from Casual, Seasoned, and Creator primary sidebar profiles.
+- the direct internal `#staging` route still works and points users back to Organize.
+- no Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added.
+
+Checks so far:
+
+- `npx tsc --noEmit`: passed.
+- Focused unit/trust check passed: `npm run test:unit -- --run src/screens/OrganizeScreen.test.tsx src/screens/StagingScreen.test.tsx src/lib/experienceMode.test.ts src/trustBoundaryCopy.test.ts` (`4` files, `11` tests).
+- `npm run test:unit`: passed (`27` files, `99` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshots captured in `output/desktop/library-proof/2026-05-14T12-03-27-658Z/`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+Recommended next sprint:
+
+- Apply Safety Contract design before any real Apply/file movement work starts.
+
 ## Current session note (May 14, 2026 - Plan Preview Rename / Navigation Wording v1)
 
 This session replaces user-facing `Staging` language with `Plan Preview` / `Pending Plans` wording. It keeps the internal route/backend names stable and does not add Apply, file movement, cleanup, delete, quarantine, replacement, or AI decisions.

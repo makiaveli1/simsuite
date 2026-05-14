@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { StagingScreen } from "./StagingScreen";
 
@@ -37,13 +37,13 @@ const previewPlan = {
   createdAt: "2026-05-13T00:00:00.000Z",
   source: "staging" as const,
   status: "preview_only" as const,
-  title: "Plan Preview",
+  title: "Staging preview plan",
   summary:
-    "1 pending plan folder can be reviewed as a preview-only plan. No files changed.",
+    "1 staged folder can be reviewed as a preview-only plan. No files changed.",
   itemCount: 1,
   wouldTouchFiles: false as const,
   caveats: [
-    "Current Plan Preview data is folder-level; per-file organization suggestions are future work.",
+    "Current Staging data is folder-level; per-file organization suggestions are future work.",
     "No files changed. This command is read-only.",
   ],
   items: [
@@ -56,7 +56,7 @@ const previewPlan = {
       actionKind: "suggest_review" as const,
       evidenceLevel: "review_only" as const,
       reason:
-        "SimSuite can see this pending plan folder, but v1 does not include per-file organization suggestions yet.",
+        "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
       caveats: ["Folder-level plan data only; no per-file move is suggested."],
       sourceSignals: ["staging_folder_detected"],
       blockedReasons: ["per_file_staging_data_not_available"],
@@ -76,20 +76,27 @@ afterEach(() => {
 it("shows pending plan content as preview-only and does not expose file-changing actions", async () => {
   vi.mocked(api.getStagingAreas).mockResolvedValue(stagedSummary);
   vi.mocked(api.getStagingPreviewPlan).mockResolvedValue(previewPlan);
+  const onNavigate = vi.fn();
 
-  render(<StagingScreen onNavigate={() => {}} userView="standard" />);
+  render(<StagingScreen onNavigate={onNavigate} userView="standard" />);
 
   expect(await screen.findByRole("heading", { name: /Plan Preview/i })).toBeInTheDocument();
-  expect(screen.getByText(/Plan Preview is preview-only right now/i)).toBeInTheDocument();
-  expect(screen.getByText(/No files will be changed from this screen yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/main workflow now lives in Organize/i)).toBeInTheDocument();
+  expect(screen.getByText(/No files will be changed from this route/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Open Organize/i })).toBeEnabled();
   expect(screen.getByRole("region", { name: /Preview plan/i })).toBeInTheDocument();
   expect(screen.getAllByText(/Plan Preview/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/Manual review needed/i)).toBeInTheDocument();
   expect(screen.getByText(/does not include per-file organization suggestions/i)).toBeInTheDocument();
+  expect(screen.queryByText(/Staging preview plan/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Current Staging data/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/staged folder/i)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /User confirmation required/i })).toBeDisabled();
   expect(screen.getByRole("button", { name: /Preview only/i })).toBeDisabled();
   expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /Open Organize/i }));
+  expect(onNavigate).toHaveBeenCalledWith("organize");
 
   expect(screen.queryByRole("button", { name: /Commit/i })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Reject/i })).not.toBeInTheDocument();

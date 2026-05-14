@@ -1559,9 +1559,16 @@ async function main() {
     await navigateToScreen(driver, "organize", 30000);
     summary.organizeHash = await waitForHash(driver, "#organize", 30000);
     await waitForVisibleElement(driver, ".organize-screen", 30000);
+    summary.sidebarHasTopLevelPlanPreview = await driver.executeScript(`
+      return Array.from(document.querySelectorAll(".nav-stack[aria-label='Primary'] .rail-nav span"))
+        .some((element) => /\\bPlan Preview\\b/i.test(element.textContent || ""));
+    `);
+    if (summary.sidebarHasTopLevelPlanPreview) {
+      throw new Error("Plan Preview is still exposed as a top-level sidebar item.");
+    }
     await waitForAnyText(
       driver,
-      ["Generate preview", "No files changed", "Suggested organization plans"],
+      ["Create plan", "Pending plans", "No files changed"],
       30000,
     );
     await clickVisibleButton(driver, "Generate preview", 30000);
@@ -1573,7 +1580,7 @@ async function main() {
     const organizeBody = await getBodyText(driver);
     summary.organizeBodyHasNoFilesChanged = /no files changed/i.test(organizeBody);
     summary.organizeBodyHasPlanBoundary =
-      /suggested plan|preview only|review suggested organization plans/i.test(organizeBody);
+      /create plan|pending plans|preview only|review suggested organization plans/i.test(organizeBody);
     summary.organizeBodyHasPlanDetails =
       /why simsuite suggested this|source signals|blocked reasons|no preview items|blocked/i.test(organizeBody);
     summary.organizeContextExcerpt = organizeBody.slice(0, 1800);
@@ -1594,10 +1601,23 @@ async function main() {
         `Organize exposed enabled file-changing controls: ${summary.organizeEnabledFileChangingButtons.join(", ")}`,
       );
     }
-    const organizeShot = path.join(runDir, "organize-plan-review-ui-v1.png");
+    await clickVisibleButton(driver, "Pending plans", 30000);
+    await waitForAnyText(
+      driver,
+      ["Pending plans", "Plan Preview", "No pending plans", "Preview plan only"],
+      30000,
+    );
+    const organizePendingBody = await getBodyText(driver);
+    summary.organizePendingBodyHasPendingPlans = /pending plans/i.test(organizePendingBody);
+    summary.organizePendingBodyHasNoFilesChanged = /no files changed/i.test(organizePendingBody);
+    summary.organizePendingContextExcerpt = organizePendingBody.slice(0, 1800);
+    if (!summary.organizePendingBodyHasPendingPlans || !summary.organizePendingBodyHasNoFilesChanged) {
+      throw new Error("Organize did not show the pending plans preview boundary.");
+    }
+    const organizeShot = path.join(runDir, "organize-plan-preview-consolidated-v1.png");
     await takeScreenshot(driver, organizeShot);
     summary.screenshots.push(organizeShot);
-    await assertNoRuntimeErrors(driver, summary, "organize-plan-review-ui-v1");
+    await assertNoRuntimeErrors(driver, summary, "organize-plan-preview-consolidated-v1");
 
     await navigateToScreen(driver, "staging", 30000);
     summary.stagingHash = await waitForHash(driver, "#staging", 30000);
@@ -1620,15 +1640,19 @@ async function main() {
     if (!summary.stagingBodyHasPreviewPlan || !summary.stagingBodyHasNoFilesChanged) {
       throw new Error("Plan Preview did not show the preview-only plan boundary.");
     }
+    summary.stagingBodyExplainsOrganize = /main workflow now lives in organize|open organize/i.test(stagingBody);
+    if (!summary.stagingBodyExplainsOrganize) {
+      throw new Error("Direct Plan Preview route did not explain the Organize consolidation.");
+    }
     if (summary.stagingEnabledFileChangingButtons.length > 0) {
       throw new Error(
         `Plan Preview exposed enabled file-changing controls: ${summary.stagingEnabledFileChangingButtons.join(", ")}`,
       );
     }
-    const stagingShot = path.join(runDir, "plan-preview-rename-v1.png");
+    const stagingShot = path.join(runDir, "plan-preview-direct-route-safe-v1.png");
     await takeScreenshot(driver, stagingShot);
     summary.screenshots.push(stagingShot);
-    await assertNoRuntimeErrors(driver, summary, "plan-preview-rename-v1");
+    await assertNoRuntimeErrors(driver, summary, "plan-preview-direct-route-safe-v1");
 
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1366, 768);
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1440, 900);

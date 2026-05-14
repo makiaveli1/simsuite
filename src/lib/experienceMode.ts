@@ -80,7 +80,6 @@ export const EXPERIENCE_MODE_PROFILES: Record<
       "organize",
       "review",
       "settings",
-      "staging",
     ],
     toolScreens: [],
     defaults: {
@@ -109,7 +108,6 @@ export const EXPERIENCE_MODE_PROFILES: Record<
       "categoryAudit",
       "duplicates",
       "settings",
-      "staging",
     ],
     toolScreens: [],
     defaults: {

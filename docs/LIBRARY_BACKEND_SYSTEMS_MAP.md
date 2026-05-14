@@ -2,7 +2,7 @@
 
 Date: 2026-05-13
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, and `codex/organize-plan-review-ui-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, `codex/organize-plan-review-ui-v1`, `codex/rename-staging-plan-preview-v1`, and `codex/plan-preview-organize-consolidation-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -49,8 +49,8 @@ The normal flow is:
 | `get_duplicate_overview` | implemented | Counts duplicate rows by stored type. |
 | `list_duplicate_pairs` | implemented | Lists exact duplicate, name-match review, and version-review pairs. Exact rows can now explain same file, same package, or same script contents. |
 | `get_review_queue` | implemented | Reads rule-engine review queue data. |
-| `get_staging_areas` | implemented, read-only | Lists app-local staged folders and file counts. The current user-facing Plan Preview UI uses this as preview/readiness data only; internal staging names remain stable. |
-| `get_staging_preview_plan` | implemented, read-only | Returns a preview-only `StagingPlan` from current folder-level staging data with `wouldTouchFiles=false`; it does not call commit, cleanup, or move-engine apply paths. User-facing copy calls this Plan Preview/Pending Plans. |
+| `get_staging_areas` | implemented, read-only | Lists app-local staged folders and file counts. Organize now consumes this as `Pending plans` data; the direct Plan Preview route remains compatibility-only. Internal staging names remain stable. |
+| `get_staging_preview_plan` | implemented, read-only | Returns a preview-only `StagingPlan` from current folder-level staging data with `wouldTouchFiles=false`; it does not call commit, cleanup, or move-engine apply paths. Organize now displays this under `Pending plans`. |
 | `generate_sorting_preview_plan` | implemented, read-only | Returns preview-only organization suggestions for selected Library files or a bounded Mods/Tray folder scope. It uses `StagingPlan` items with buckets, source signals, blocked reasons, confidence labels, and `wouldTouchFiles=false`; it does not call legacy Organize apply paths, Staging commit/cleanup commands, or move-engine apply paths. |
 | `cleanup_staging_areas` | implemented backend command, not exposed by current Staging UI | Deletes selected app-local staging folders under the staging root. Future exposure requires the trust-boundary file-change checklist. |
 | `commit_staging_area` / `commit_all_staging_areas` | implemented backend commands, not exposed by current Staging UI | Can apply move-engine paths for ReadyNow download items. Future exposure requires preview, confirmation, backup/restore, recoverable errors, and proof. |
@@ -321,11 +321,12 @@ Risks:
 
 ## 15. Plan Preview / Internal Staging Readiness Map
 
-Current Plan Preview route behavior:
+Current Plan Preview / Pending Plans behavior:
 
-- Visible in Seasoned and Creator modes.
-- Loads app-local staged folder metadata through `get_staging_areas`.
-- Loads a read-only preview plan through `get_staging_preview_plan`.
+- Normal top-level navigation no longer exposes Plan Preview in Casual, Seasoned, or Creator modes.
+- Organize owns the user-facing `Pending plans` tab and loads app-local staged folder metadata through `get_staging_areas`.
+- Organize and the direct compatibility route load a read-only preview plan through `get_staging_preview_plan`.
+- The direct internal Plan Preview route remains routable and points users back to Organize.
 - Shows item counts, pending plan folders/subfolders, byte totals, and preview-only readiness copy.
 - Shows folder-level review items only; per-file organization suggestions remain future work.
 - Does not call `commit_staging_area`, `commit_all_staging_areas`, or `cleanup_staging_areas`.

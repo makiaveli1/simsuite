@@ -16,13 +16,13 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow | Yes | Keep top-level as intake/new content. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with a visible preview-only suggested-plan review surface. | `generate_sorting_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level in Seasoned/Creator; simplify Casual later. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning and pending plan review. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
 | `duplicates` | Duplicates / Same file? | `DuplicatesScreen` | Duplicate and comparison workbench. | Duplicate backend. | Real | Casual, Seasoned, Creator | Deterministic duplicate proof plus review-only rows | Maybe | Move toward Library/Review comparison workbench; allow Creator top-level until migration. |
 | `settings` | Settings | `SettingsScreen` | Configuration and preferences. | Frontend/backend settings. | Real | Casual, Seasoned, Creator | Informational | Yes | Keep top-level. |
-| `staging` | Plan Preview | `StagingScreen` | User-facing preview/readiness view for pending plans and app-local staged areas. | `get_staging_areas` and `get_staging_preview_plan` read-only commands. | Real but intentionally preview-only | Seasoned, Creator | Suggested plan/readiness only | No long-term | Fold into Organize as preview/plans tab; keep internal route/backend names stable for now. |
+| `staging` | Plan Preview | `StagingScreen` | Direct compatibility route for pending plans and app-local staged areas. The normal user-facing surface now lives inside Organize. | `get_staging_areas` and `get_staging_preview_plan` read-only commands. | Real but intentionally preview-only | Hidden from normal sidebar; direct route remains routable | Suggested plan/readiness only | No | Keep direct route safe for compatibility; do not expose as a normal top-level workflow. |
 
 Notes:
 
@@ -37,8 +37,8 @@ Notes:
 | Home | Quick status and re-entry surface. |
 | Library | The source of truth for indexed Mods/Tray files, folders, filters, details, duplicate evidence, preview state, and review signals. |
 | Inbox | Intake/new content. This is where newly downloaded or incoming files should be checked before they become part of normal Library organization. |
-| Organize | Planning workspace for suggested organization. This is where future preview-only sorting plans should be reviewed. |
-| Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging route; it should not be a separate action engine long-term and should become the plan/review layer inside Organize. |
+| Organize | Planning workspace for suggested organization. It now owns both creating preview plans and reviewing pending plans. |
+| Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging concept; it now appears inside Organize as `Pending plans`, while the direct route remains a safe compatibility surface. |
 | Updates | Trust-first update tracking, reminder-only sources, and supported checker results. |
 | Review | Manual review queue for files that need attention, comparison, or user judgment. |
 | Duplicates | Comparison workbench for deterministic duplicates and review-only name/version rows. It should not imply cleanup. |
@@ -58,7 +58,7 @@ Key distinction:
 | Overlap | Decision | Reason | Migration note |
 | --- | --- | --- | --- |
 | Inbox vs Plan Preview | Keep separate concepts. | Inbox is intake. Plan Preview is proposed change preview. | Future Inbox may send selected items into Organize/Plan Preview plans, but it should not become the plan review surface. |
-| Organize vs Plan Preview | Fold Plan Preview into Organize as a future preview/plans tab. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
+| Organize vs Plan Preview | Folded for v1 as a preview-only `Pending plans` tab inside Organize. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
 | Duplicates vs Library duplicate filter | Make Duplicates a Library/Review comparison workbench; allow Creator-mode top-level until migration. | Library already owns duplicate counts and filters; Duplicates is useful when comparing evidence. | Do not remove until duplicate review flows have an equivalent Library/Review entry. |
 | Creators vs Library creator lens/filter | Fold into Library lens. | Creator browsing is a Library view, not a separate workflow. | Preserve filtering and summaries. |
 | Types vs Library type lens/filter | Fold into Library lens. | Type browsing is a Library view, not a separate workflow. | Preserve type summaries and filters. |
@@ -109,9 +109,10 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 
 ### Phase 2 - Fold Plan Preview Into Organize As Preview-Only
 
-- Add or expose a preview/plans tab under Organize.
-- Keep the direct internal `staging` route safe during transition.
-- Do not expose apply/move/delete/quarantine controls.
+- Implemented for v1 as `Create plan` and `Pending plans` tabs under Organize.
+- The direct internal `staging` route remains safe during transition and points users back to Organize.
+- The normal sidebar no longer exposes Plan Preview as a top-level item.
+- No apply/move/delete/quarantine controls are exposed.
 
 Current M2 foundation note:
 
@@ -133,7 +134,8 @@ Current naming note:
 
 - User-facing `Staging` language has been renamed to `Plan Preview` / `Pending Plans` in the visible route and navigation.
 - Internal code and backend names such as `StagingScreen`, `StagingPlan`, `get_staging_areas`, and `get_staging_preview_plan` remain stable for now.
-- This naming step does not fold Plan Preview into Organize yet and does not add any file-changing workflow.
+- Plan Preview is now folded into Organize as the `Pending plans` tab for normal navigation.
+- The direct internal route remains available for compatibility and does not add any file-changing workflow.
 
 ### Phase 3 - Fold Creators And Types Into Library Lenses
 

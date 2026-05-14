@@ -4,7 +4,6 @@ import { m } from "motion/react";
 import {
   AlertCircle,
   CheckCircle2,
-  FolderTree,
   Info,
   ListChecks,
   LoaderCircle,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
+import { PendingPlansPreview } from "./organize/PendingPlansPreview";
 import type {
   GenerateSortingPreviewPlanRequest,
   Screen,
@@ -34,6 +34,7 @@ interface OrganizeScreenProps {
 }
 
 type SourceLocation = "mods" | "tray";
+type OrganizeTab = "create_plan" | "pending_plans";
 
 const BUCKET_ORDER: StagingPlanBucket[] = [
   "script_mods",
@@ -360,6 +361,7 @@ export function OrganizeScreen({
   onDataChanged: _onDataChanged,
   userView,
 }: OrganizeScreenProps) {
+  const [activeTab, setActiveTab] = useState<OrganizeTab>("create_plan");
   const [sourceLocation, setSourceLocation] = useState<SourceLocation>("mods");
   const [folderPath, setFolderPath] = useState("");
   const [recursive, setRecursive] = useState(true);
@@ -395,7 +397,7 @@ export function OrganizeScreen({
   };
 
   return (
-    <div className="screen-shell workbench organize-screen">
+    <div className="screen-shell workbench workbench-screen organize-screen">
       <section className="screen-hero workbench-hero">
         <div className="screen-hero-copy">
           <span className="eyebrow">Organize</span>
@@ -406,134 +408,183 @@ export function OrganizeScreen({
             change files from this page.
           </p>
         </div>
-        <div className="screen-hero-actions">
-          <button
-            type="button"
-            className="secondary-action"
-            onClick={() => onNavigate("staging")}
-          >
-            <FolderTree size={16} />
-            Open Plan Preview
-          </button>
-        </div>
       </section>
 
       <SafetyBanner />
 
-      <section className="organize-plan-layout" aria-label="Organization plan review">
-        <form
-          className="panel-card organize-plan-controls"
-          onSubmit={handleGeneratePreview}
-        >
-          <div className="panel-card-heading">
-            <div>
-              <span className="eyebrow">Generate preview</span>
-              <h2>Bounded Library folder scope</h2>
-            </div>
-            <span className="organize-plan-status-chip">Preview only</span>
-          </div>
-
-          <p className="organize-muted">
-            Use a bounded Mods or Tray folder scope for the first visible
-            planning workflow. Leave the path blank to preview the selected root
-            within the item limit.
+      <section className="panel-card organize-workspace-tabs">
+        <div className="organize-workspace-tabs-copy">
+          <span className="eyebrow">Planning workspace</span>
+          <p>
+            Create a preview plan, then review pending plans without leaving
+            Organize.
           </p>
-
-          <div className="organize-plan-control-grid">
-            <label className="organize-plan-field">
-              <span>Source root</span>
-              <select
-                aria-label="Source root"
-                value={sourceLocation}
-                onChange={(event) =>
-                  setSourceLocation(event.target.value as SourceLocation)
-                }
-              >
-                <option value="mods">Mods</option>
-                <option value="tray">Tray</option>
-              </select>
-            </label>
-
-            <label className="organize-plan-field">
-              <span>Folder path</span>
-              <input
-                aria-label="Folder path"
-                value={folderPath}
-                onChange={(event) => setFolderPath(event.target.value)}
-                placeholder="Example: CAS/Hair"
-              />
-            </label>
-
-            <label className="organize-plan-field">
-              <span>Preview limit</span>
-              <select
-                aria-label="Preview limit"
-                value={limit}
-                onChange={(event) => setLimit(Number(event.target.value))}
-              >
-                <option value={25}>25 items</option>
-                <option value={60}>60 items</option>
-                <option value={100}>100 items</option>
-                <option value={150}>150 items</option>
-                <option value={250}>250 items</option>
-              </select>
-            </label>
-          </div>
-
-          <label className="organize-check-row">
-            <input
-              type="checkbox"
-              checked={recursive}
-              onChange={(event) => setRecursive(event.target.checked)}
-            />
-            <span>Include nested folders</span>
-          </label>
-
-          <div className="organize-next-step-actions">
-            <button
-              type="submit"
-              className="primary-action"
-              disabled={isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <LoaderCircle size={16} className="spin" />
-                  Generating preview
-                </>
-              ) : (
-                <>
-                  <RefreshCw size={16} />
-                  Generate preview
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => onNavigate("library")}
-            >
-              <ListChecks size={16} />
-              Open Library
-            </button>
-          </div>
-
-          <div className="organize-plan-scope-note">
-            <CheckCircle2 size={16} />
-            <span>
-              Current mode: {userView}. Plan items are suggestions only and
-              always return wouldTouchFiles=false.
-            </span>
-          </div>
-        </form>
-
-        <div className="panel-card organize-plan-panel">
-          <PlanResult
-            plan={plan}
-            isGenerating={isGenerating}
-            errorMessage={errorMessage}
-          />
+        </div>
+        <div
+          className="segmented-control organize-tablist"
+          role="tablist"
+          aria-label="Organize planning sections"
+        >
+          <button
+            id="organize-tab-create-plan"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "create_plan"}
+            aria-controls="organize-panel-create-plan"
+            className={`segment-button ${
+              activeTab === "create_plan" ? "is-active" : ""
+            }`}
+            onClick={() => setActiveTab("create_plan")}
+          >
+            Create plan
+          </button>
+          <button
+            id="organize-tab-pending-plans"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "pending_plans"}
+            aria-controls="organize-panel-pending-plans"
+            className={`segment-button ${
+              activeTab === "pending_plans" ? "is-active" : ""
+            }`}
+            onClick={() => setActiveTab("pending_plans")}
+          >
+            Pending plans
+          </button>
         </div>
       </section>
+
+      {activeTab === "create_plan" ? (
+        <section
+          id="organize-panel-create-plan"
+          role="tabpanel"
+          aria-labelledby="organize-tab-create-plan"
+          className="organize-plan-layout"
+          aria-label="Create preview plan"
+        >
+          <form
+            className="panel-card organize-plan-controls"
+            onSubmit={handleGeneratePreview}
+          >
+            <div className="panel-card-heading">
+              <div>
+                <span className="eyebrow">Create preview plan</span>
+                <h2>Bounded Library folder scope</h2>
+              </div>
+              <span className="organize-plan-status-chip">Preview only</span>
+            </div>
+
+            <p className="organize-muted">
+              Use a bounded Mods or Tray folder scope for the first visible
+              planning workflow. Leave the path blank to preview the selected root
+              within the item limit.
+            </p>
+
+            <div className="organize-plan-control-grid">
+              <label className="organize-plan-field">
+                <span>Source root</span>
+                <select
+                  aria-label="Source root"
+                  value={sourceLocation}
+                  onChange={(event) =>
+                    setSourceLocation(event.target.value as SourceLocation)
+                  }
+                >
+                  <option value="mods">Mods</option>
+                  <option value="tray">Tray</option>
+                </select>
+              </label>
+
+              <label className="organize-plan-field">
+                <span>Folder path</span>
+                <input
+                  aria-label="Folder path"
+                  value={folderPath}
+                  onChange={(event) => setFolderPath(event.target.value)}
+                  placeholder="Example: CAS/Hair"
+                />
+              </label>
+
+              <label className="organize-plan-field">
+                <span>Preview limit</span>
+                <select
+                  aria-label="Preview limit"
+                  value={limit}
+                  onChange={(event) => setLimit(Number(event.target.value))}
+                >
+                  <option value={25}>25 items</option>
+                  <option value={60}>60 items</option>
+                  <option value={100}>100 items</option>
+                  <option value={150}>150 items</option>
+                  <option value={250}>250 items</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="organize-check-row">
+              <input
+                type="checkbox"
+                checked={recursive}
+                onChange={(event) => setRecursive(event.target.checked)}
+              />
+              <span>Include nested folders</span>
+            </label>
+
+            <div className="organize-next-step-actions">
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <>
+                    <LoaderCircle size={16} className="spin" />
+                    Generating preview
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={16} />
+                    Generate preview
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => onNavigate("library")}
+              >
+                <ListChecks size={16} />
+                Open Library
+              </button>
+            </div>
+
+            <div className="organize-plan-scope-note">
+              <CheckCircle2 size={16} />
+              <span>
+                Current mode: {userView}. Plan items are suggestions only and
+                always return wouldTouchFiles=false.
+              </span>
+            </div>
+          </form>
+
+          <div className="panel-card organize-plan-panel">
+            <PlanResult
+              plan={plan}
+              isGenerating={isGenerating}
+              errorMessage={errorMessage}
+            />
+          </div>
+        </section>
+      ) : (
+        <section
+          id="organize-panel-pending-plans"
+          role="tabpanel"
+          aria-labelledby="organize-tab-pending-plans"
+          className="panel-card organize-pending-plan-panel"
+        >
+          <PendingPlansPreview onNavigate={onNavigate} />
+        </section>
+      )}
     </div>
   );
 }
