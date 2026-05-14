@@ -2315,7 +2315,7 @@ function buildDownloadsDialogConfig({
       description:
         userView === "beginner"
           ? "This will remove the files from your Library and put them back in the Downloads queue. You can apply them again later."
-          : "This will move the files from the Library back to the staging area and reset the item to the waiting queue.",
+          : "This will move the files from the Library back to the Downloads queue and reset the item to the waiting queue.",
       confirmLabel: "Yes, move back",
       tone: "warn" as const,
       metrics: [],
@@ -4784,7 +4784,7 @@ function downloadsNextStepDescription(
   if (item.intakeMode === "blocked") {
     return userView === "beginner"
       ? "The files or structure still need review before anything moves, so SimSuite stopped here."
-      : "SimSuite stopped because the staged files or current install shape still need review.";
+      : "SimSuite stopped because the download files or current install shape still need review.";
   }
 
   if (safeCount > 0) {

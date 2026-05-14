@@ -1,5 +1,49 @@
 # Session Handoff
 
+## Current Session (May 14, 2026 - Plan Preview Rename / Navigation Wording v1)
+
+- **Mode**: code
+- **Focus**: replace user-facing `Staging` language with clearer `Plan Preview` / `Pending Plans` wording while keeping internal staging APIs stable
+
+### Progress Made
+
+1. **Renamed visible navigation and route copy**:
+   - sidebar now labels the internal `staging` route as `Plan Preview`
+   - direct Plan Preview route title, empty/loading states, safety banner, and disabled controls now use plan-preview language
+   - Organize now links to `Open Plan Preview`
+
+2. **Kept backend safety stable**:
+   - internal names such as `StagingScreen`, `StagingPlan`, `get_staging_areas`, and `get_staging_preview_plan` remain unchanged
+   - no mutating staging commands were exposed or called
+   - no Apply, move, cleanup, delete, quarantine, replacement, or AI behavior was added
+
+3. **Updated current docs and tests**:
+   - current trust/navigation/backend docs now record Plan Preview as the user-facing name for internal staging
+   - focused tests cover Plan Preview label/helper language and preview-only route behavior
+   - desktop proof selectors were updated to wait for Plan Preview copy
+
+### Verification
+
+- `npx vitest run src/screens/StagingScreen.test.tsx src/screens/OrganizeScreen.test.tsx src/lib/uiLanguage.test.ts src/trustBoundaryCopy.test.ts`: passed (`4` files, `10` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`26` files, `97` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Plan Preview screenshot captured at `output/desktop/library-proof/2026-05-14T01-00-33-794Z/plan-preview-rename-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust commands were not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+### Known Problems / Gaps
+
+- Plan Preview is not folded into Organize yet.
+- Internal staging backend names remain for code stability.
+- Apply/file movement remains future work and still needs the safety contract.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant files.
+2. Recommended next sprint: Plan Preview / Organize consolidation follow-up, still preview-only, or Apply Safety Contract design before any real file-changing workflow.
+
 ## Current Session (May 13, 2026 - Organize Plan Review UI v1)
 
 - **Mode**: code

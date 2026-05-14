@@ -1604,11 +1604,11 @@ async function main() {
     await waitForVisibleElement(driver, ".staging-screen", 30000);
     await waitForAnyText(
       driver,
-      ["Preview plan", "Preview plan only", "No files changed", "Staging is preview-only"],
+      ["Plan Preview", "Pending plans", "Preview plan only", "No files changed"],
       30000,
     );
     const stagingBody = await getBodyText(driver);
-    summary.stagingBodyHasPreviewPlan = /preview plan/i.test(stagingBody);
+    summary.stagingBodyHasPreviewPlan = /plan preview|preview plan/i.test(stagingBody);
     summary.stagingBodyHasNoFilesChanged = /no files (will be )?changed/i.test(stagingBody);
     summary.stagingContextExcerpt = stagingBody.slice(0, 1500);
     summary.stagingEnabledFileChangingButtons = await driver.executeScript(`
@@ -1618,17 +1618,17 @@ async function main() {
         .filter((text) => /commit|cleanup|delete|quarantine|move|apply/i.test(text));
     `);
     if (!summary.stagingBodyHasPreviewPlan || !summary.stagingBodyHasNoFilesChanged) {
-      throw new Error("Staging did not show the preview-only plan boundary.");
+      throw new Error("Plan Preview did not show the preview-only plan boundary.");
     }
     if (summary.stagingEnabledFileChangingButtons.length > 0) {
       throw new Error(
-        `Staging exposed enabled file-changing controls: ${summary.stagingEnabledFileChangingButtons.join(", ")}`,
+        `Plan Preview exposed enabled file-changing controls: ${summary.stagingEnabledFileChangingButtons.join(", ")}`,
       );
     }
-    const stagingShot = path.join(runDir, "08-staging-preview-plan.png");
+    const stagingShot = path.join(runDir, "plan-preview-rename-v1.png");
     await takeScreenshot(driver, stagingShot);
     summary.screenshots.push(stagingShot);
-    await assertNoRuntimeErrors(driver, summary, "staging-preview-plan");
+    await assertNoRuntimeErrors(driver, summary, "plan-preview-rename-v1");
 
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1366, 768);
     await verifyLibraryResponsiveViewport(driver, summary, runDir, 1440, 900);

@@ -34,7 +34,7 @@ describe("trust-boundary user-facing copy", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps the current Staging screen preview-only", () => {
+  it("keeps the current Plan Preview screen preview-only", () => {
     const source = readFileSync(
       join(process.cwd(), "src/screens/StagingScreen.tsx"),
       "utf8",
@@ -43,6 +43,8 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/preview-only/i);
     expect(source).toMatch(/No files will be changed/i);
     expect(source).toMatch(/User confirmation required/i);
+    expect(source).toMatch(/Plan Preview/);
+    expect(source).not.toMatch(/Staging is preview-only|No staged content|Staging will show|Open Staging/i);
     expect(source).not.toMatch(/commitStagingArea|commitAllStagingAreas|cleanupStagingAreas/);
     expect(source).not.toMatch(/Commit to Library|Commit all|Reject all|Reject staged files|Remove staged files/i);
   });

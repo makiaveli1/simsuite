@@ -413,7 +413,7 @@ export function OrganizeScreen({
             onClick={() => onNavigate("staging")}
           >
             <FolderTree size={16} />
-            Open Staging
+            Open Plan Preview
           </button>
         </div>
       </section>

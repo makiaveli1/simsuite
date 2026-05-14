@@ -4,7 +4,7 @@ Date: 2026-05-13
 
 Source roadmap: `docs/planning/simsuite_master_roadmap_linear_plan.md`
 
-This document turns the master roadmap into a route/workflow ownership plan. It does not change app navigation yet. It exists so the next implementation sprints can simplify SimSuite deliberately before Auto Sorting, Staging plans, AI assistance, or file-changing workflows are built.
+This document turns the master roadmap into a route/workflow ownership plan. It exists so implementation sprints can simplify SimSuite deliberately before Auto Sorting, internal StagingPlan work, AI assistance, or file-changing workflows are built.
 
 ## Current Route Inventory
 
@@ -22,13 +22,13 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
 | `duplicates` | Duplicates / Same file? | `DuplicatesScreen` | Duplicate and comparison workbench. | Duplicate backend. | Real | Casual, Seasoned, Creator | Deterministic duplicate proof plus review-only rows | Maybe | Move toward Library/Review comparison workbench; allow Creator top-level until migration. |
 | `settings` | Settings | `SettingsScreen` | Configuration and preferences. | Frontend/backend settings. | Real | Casual, Seasoned, Creator | Informational | Yes | Keep top-level. |
-| `staging` | Staging | `StagingScreen` | Preview/readiness view for app-local staged areas. | `get_staging_areas` read-only command. | Real but intentionally preview-only | Seasoned, Creator | Suggested plan/readiness only | No long-term | Fold into Organize as preview/plans tab. |
+| `staging` | Plan Preview | `StagingScreen` | User-facing preview/readiness view for pending plans and app-local staged areas. | `get_staging_areas` and `get_staging_preview_plan` read-only commands. | Real but intentionally preview-only | Seasoned, Creator | Suggested plan/readiness only | No long-term | Fold into Organize as preview/plans tab; keep internal route/backend names stable for now. |
 
 Notes:
 
 - `Scan` and `Guide` are sidebar actions, not `Screen` route values.
 - Current mode visibility is broader than the recommended future model. This document records the target model only; it does not change route visibility.
-- Staging backend mutating commands still exist from earlier work, but the visible Staging route no longer calls them.
+- Internal staging backend mutating commands still exist from earlier work, but the visible Plan Preview route no longer calls them.
 
 ## Page Purpose Definitions
 
@@ -38,7 +38,7 @@ Notes:
 | Library | The source of truth for indexed Mods/Tray files, folders, filters, details, duplicate evidence, preview state, and review signals. |
 | Inbox | Intake/new content. This is where newly downloaded or incoming files should be checked before they become part of normal Library organization. |
 | Organize | Planning workspace for suggested organization. This is where future preview-only sorting plans should be reviewed. |
-| Staging | Preview of a proposed plan. Staging should not be a separate action engine long-term; it should become the plan/review layer inside Organize. |
+| Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging route; it should not be a separate action engine long-term and should become the plan/review layer inside Organize. |
 | Updates | Trust-first update tracking, reminder-only sources, and supported checker results. |
 | Review | Manual review queue for files that need attention, comparison, or user judgment. |
 | Duplicates | Comparison workbench for deterministic duplicates and review-only name/version rows. It should not imply cleanup. |
@@ -50,15 +50,15 @@ Notes:
 Key distinction:
 
 - Inbox = intake / new content.
-- Staging = preview of a proposed plan.
+- Plan Preview = preview of a proposed plan.
 - Organize = planning workspace for suggested organization.
 
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |
 | --- | --- | --- | --- |
-| Inbox vs Staging | Keep separate concepts. | Inbox is intake. Staging is proposed change preview. | Future Inbox may send selected items into Organize/Staging plans, but it should not become the plan review surface. |
-| Organize vs Staging | Fold Staging into Organize as a future preview/plans tab. | Users should not have to understand a separate Staging page before a proposed organization plan exists. | Keep Staging route safe if directly opened during migration. |
+| Inbox vs Plan Preview | Keep separate concepts. | Inbox is intake. Plan Preview is proposed change preview. | Future Inbox may send selected items into Organize/Plan Preview plans, but it should not become the plan review surface. |
+| Organize vs Plan Preview | Fold Plan Preview into Organize as a future preview/plans tab. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
 | Duplicates vs Library duplicate filter | Make Duplicates a Library/Review comparison workbench; allow Creator-mode top-level until migration. | Library already owns duplicate counts and filters; Duplicates is useful when comparing evidence. | Do not remove until duplicate review flows have an equivalent Library/Review entry. |
 | Creators vs Library creator lens/filter | Fold into Library lens. | Creator browsing is a Library view, not a separate workflow. | Preserve filtering and summaries. |
 | Types vs Library type lens/filter | Fold into Library lens. | Type browsing is a Library view, not a separate workflow. | Preserve type summaries and filters. |
@@ -77,7 +77,7 @@ This is the recommended future model. It is not implemented by this planning spr
 
 What happens to current pages:
 
-- Staging: folds into Organize as preview/plans.
+- Plan Preview: folds into Organize as preview/plans; internal `staging` route/name can remain during migration.
 - Creators: becomes a Library lens/filter.
 - Types: becomes a Library lens/filter.
 - Duplicates: becomes a Library/Review comparison workbench; Creator top-level can remain until migration is proven.
@@ -104,20 +104,20 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 
 - Do not remove routes.
 - Clarify route ownership in docs.
-- Keep Staging preview-only.
+- Keep Plan Preview preview-only.
 - Keep Organize from implying automatic sorting or file changes.
 
-### Phase 2 - Fold Staging Into Organize As Preview-Only
+### Phase 2 - Fold Plan Preview Into Organize As Preview-Only
 
 - Add or expose a preview/plans tab under Organize.
-- Keep the direct Staging route safe during transition.
+- Keep the direct internal `staging` route safe during transition.
 - Do not expose apply/move/delete/quarantine controls.
 
 Current M2 foundation note:
 
 - `StagingPlan` v1 is defined as a preview-only contract with `wouldTouchFiles=false`.
 - `get_staging_preview_plan` is read-only and can describe current app-local staged folders as review items.
-- The direct Staging route can show this plan, but it still does not apply, move, delete, clean up, quarantine, or auto-sort files.
+- The direct Plan Preview route can show this plan, but it still does not apply, move, delete, clean up, quarantine, or auto-sort files.
 - Per-file organization suggestions remain future Auto Sorting Suggested Plan work.
 
 Current M3 rules note:
@@ -128,6 +128,12 @@ Current M3 rules note:
 - The existing Organize route now shows the first preview-only plan review UI for generated plans.
 - The visible Organize route no longer calls the legacy preview/apply/snapshot APIs.
 - Auto Sorting remains preview-only until the Apply Safety Contract exists.
+
+Current naming note:
+
+- User-facing `Staging` language has been renamed to `Plan Preview` / `Pending Plans` in the visible route and navigation.
+- Internal code and backend names such as `StagingScreen`, `StagingPlan`, `get_staging_areas`, and `get_staging_preview_plan` remain stable for now.
+- This naming step does not fold Plan Preview into Organize yet and does not add any file-changing workflow.
 
 ### Phase 3 - Fold Creators And Types Into Library Lenses
 
@@ -149,7 +155,7 @@ Current M3 rules note:
 ## Safety Plan
 
 - No file-changing workflows are added by this planning sprint.
-- Staging remains preview-only.
+- Plan Preview remains preview-only.
 - Organize is not Auto Sorting yet.
 - Auto Sorting must start as a suggested plan only.
 - Any future apply/move action requires preview, explicit user confirmation, backup/restore support, path validation, destination conflict handling, recoverable errors, per-file result logs, tests, and desktop proof.

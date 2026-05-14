@@ -22,7 +22,7 @@ const SCREEN_LABELS: Record<
   duplicates: { default: "Duplicates", beginner: "Same file?" },
   organize: { default: "Organize", beginner: "Tidy Up" },
   review: { default: "Review" },
-  staging: { default: "Staging" },
+  staging: { default: "Plan Preview" },
   settings: { default: "Settings" },
 };
 
@@ -266,7 +266,7 @@ export function simsFlavorLine(
   const lines: Record<typeof key, string> = {
     homeBeginner: "Your SimSuite home lot: folders ready, next steps up front.",
     inboxBeginner: "Fresh downloads land here first, so nothing sneaky reaches your game unchecked.",
-    organizeBeginner: "Think of this as Build/Buy for your Mods folder: safe moves first, messy bits parked for later.",
+    organizeBeginner: "Think of this as Build/Buy for your Mods folder: preview the plan first, then review the messy bits.",
     reviewBeginner: "These files need a quick second look before they join the household.",
     libraryBeginner: "Browse your CC like a calmer catalog instead of a maze of folders.",
     settingsBeginner: "Tune the look and feel without touching your files or save-safe rules.",
@@ -318,9 +318,9 @@ export function screenHelperLine(
       power: "Inspect exact-content duplicates, filename matches, and version reviews with the fuller compare view.",
     },
     organize: {
-      beginner: "Pick a tidy style, check a sample, then let the ready files scoot into place.",
-      standard: "Rule previews, safe counts, and restore points all meet here before any file does the Sims shuffle.",
-      power: "Use the full validator pass, route details, and restore history before you reshuffle the whole household.",
+      beginner: "Generate a preview plan, check the reasons, then decide what still needs review.",
+      standard: "Preview-only organization plans, reasons, and caveats meet here before any future file-changing workflow.",
+      power: "Use the full preview plan details, buckets, source signals, and blocked reasons before any future reshuffle.",
     },
     review: {
       beginner: "These files hit a speed bump. Check why, then decide the safest next stop.",
@@ -328,9 +328,9 @@ export function screenHelperLine(
       power: "Work through the blocked items with fuller reasons, paths, and confidence clues.",
     },
     staging: {
-      beginner: "Review staged files before they go to your Library.",
-      standard: "Commit or reject staged items in batches.",
-      power: "Use the staging desk as a pre-Library checkpoint for bulk operations.",
+      beginner: "Review pending plans before anything changes.",
+      standard: "Use Plan Preview to inspect proposed plans without changing files.",
+      power: "Use Plan Preview as the pending-plan checkpoint for future organization workflows.",
     },
     settings: {
       beginner: "Change the app feel here without touching your files or your safety rules.",

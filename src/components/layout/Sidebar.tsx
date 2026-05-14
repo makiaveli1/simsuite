@@ -44,7 +44,7 @@ const NAV_ITEMS: Array<{
   { id: "organize", label: "Organize", icon: Workflow },
   { id: "review", label: "Review", icon: ShieldAlert },
   { id: "settings", label: "Settings", icon: SlidersHorizontal },
-  { id: "staging", label: "Staging", icon: Inbox },
+  { id: "staging", label: "Plan Preview", icon: Inbox },
 ];
 
 interface SidebarProps {
@@ -213,10 +213,10 @@ export function Sidebar({
         </div>
         <div className="sidebar-footer-row">
           <ShieldCheck size={14} strokeWidth={2} />
-          <span>Validated moves</span>
+          <span>Preview-first workflow</span>
         </div>
         <div className="sidebar-footer-row muted">
-          <span>Undo always via snapshots</span>
+          <span>File changes need approval</span>
         </div>
       </div>
     </aside>

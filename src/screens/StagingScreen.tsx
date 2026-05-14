@@ -51,7 +51,7 @@ function StagingAreaCard({ area }: StagingAreaCardProps) {
         <div className="staging-card-meta">
           <Archive size={16} className="staging-card-icon" />
           <span className="staging-card-item-id">
-            {isNumeric ? `Item #${area.itemId}` : `Uncommitted (${area.itemId})`}
+            {isNumeric ? `Item #${area.itemId}` : `Pending plan (${area.itemId})`}
           </span>
           {!isNumeric && (
             <span className="staging-card-badge staging-card-badge--pending">
@@ -78,7 +78,7 @@ function StagingAreaCard({ area }: StagingAreaCardProps) {
         ))}
       </div>
 
-      <div className="staging-card-actions" aria-label="Staging readiness">
+      <div className="staging-card-actions" aria-label="Plan preview readiness">
         <button
           type="button"
           className="staging-btn staging-btn--disabled"
@@ -99,10 +99,10 @@ function EmptyStaging() {
   return (
     <div className="staging-empty">
       <Inbox size={48} className="staging-empty-icon" />
-      <h3 className="staging-empty-title">No staged content</h3>
+      <h3 className="staging-empty-title">No pending plans</h3>
       <p className="staging-empty-body">
-        Staging will show preview-only plans here when app-managed downloads
-        are ready for review. No files are changed from this screen.
+        Plan Preview will show preview-only plans here when app-managed
+        downloads are ready for review. No files are changed from this screen.
       </p>
     </div>
   );
@@ -121,7 +121,7 @@ function planStatusLabel(plan: StagingPlan): string {
 function actionLabel(item: StagingPlanItem): string {
   switch (item.actionKind) {
     case "suggest_move":
-      return "Suggested move";
+      return "Suggested destination";
     case "suggest_group":
       return "Suggested group";
     case "no_action":
@@ -213,7 +213,8 @@ function StagingPlanPanel({ plan }: StagingPlanPanelProps) {
           <div className="staging-sub-row">
             <span className="staging-sub-name">Plan items</span>
             <span className="staging-sub-info">
-              No preview items yet. Staging needs more plan data before review.
+              No preview items yet. Plan Preview needs more plan data before
+              review.
             </span>
           </div>
         ) : (
@@ -289,7 +290,7 @@ export function StagingScreen(_props: StagingScreenProps) {
     return (
       <div className="screen-loading">
         <LoaderCircle size={24} className="spin" />
-        <span>Loading staging area...</span>
+        <span>Loading plan preview...</span>
       </div>
     );
   }
@@ -303,7 +304,7 @@ export function StagingScreen(_props: StagingScreenProps) {
       <div className="staging-header">
         <div className="staging-header-left">
           <h2 className="staging-title">
-            Staging
+            Plan Preview
             {areas.length > 0 && (
               <span className="staging-count"> ({areas.length})</span>
             )}
@@ -334,8 +335,8 @@ export function StagingScreen(_props: StagingScreenProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.14 }}
       >
-        Staging is preview-only right now. No files will be changed from this
-        screen yet. Future file-changing workflows need preview, user
+        Plan Preview is preview-only right now. No files will be changed from
+        this screen yet. Future file-changing workflows need preview, user
         confirmation, backup and restore support, and recoverable errors.
       </m.div>
 

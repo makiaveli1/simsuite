@@ -2,7 +2,7 @@
 
 Date: 2026-05-13
 
-This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Staging, sorting, and AI prompts should use it before adding automation.
+This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Plan Preview/internal Staging, sorting, and AI prompts should use it before adding automation.
 
 Navigation and workflow simplification planning now lives in `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`. That plan is the source of truth for which pages should stay top-level, become Library lenses, fold into Organize, or move toward Help/Settings.
 
@@ -70,20 +70,22 @@ SimSuite must not claim:
 - Safe-delete claims are forbidden until deterministic dependency/resource analysis exists and is tested.
 - Provider work must respect provider/API policy and must not scrape generic pages as update proof.
 
-## Staging-Specific Readiness Rules
+## Plan Preview / Internal Staging Readiness Rules
 
-Staging is the safety bridge before future organization or file-changing workflows. The currently exposed Staging route must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
+Plan Preview is the user-facing safety bridge before future organization or file-changing workflows. It is currently backed by internal staging names such as `StagingPlan`, `StagingScreen`, `get_staging_areas`, and `get_staging_preview_plan`. Those internal names may remain for code stability, but visible copy should say `Plan Preview`, `Pending Plans`, or `Preview plan`.
 
-Current Staging may:
+The currently exposed Plan Preview route must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
+
+Current Plan Preview may:
 
 - list app-local staged folders.
 - show file counts and sizes.
-- explain that no files are changed from the Staging screen yet.
+- explain that no files are changed from the Plan Preview screen yet.
 - describe future requirements for applying changes.
 - return a preview-only `StagingPlan` with `wouldTouchFiles=false`.
 - show folder-level review items with reasons and caveats when per-file organization suggestions do not exist yet.
 
-Current Staging must not expose enabled controls that:
+Current Plan Preview must not expose enabled controls that:
 
 - move files into Library.
 - clear, remove, or delete staged folders.
@@ -91,9 +93,9 @@ Current Staging must not expose enabled controls that:
 - claim a plan is safe.
 - let AI decide a file action.
 
-`StagingPlan` v1 is a Level 3 suggested-plan contract only. It may describe staged folders and future review needs, but it must not create destinations, claim a move is ready, or imply a plan can be applied until per-file preview, user confirmation, backup/restore, path validation, conflict handling, recoverable errors, and proof exist.
+`StagingPlan` v1 is a Level 3 suggested-plan contract only. It may describe pending folders and future review needs, but it must not create destinations, claim a move is ready, or imply a plan can be applied until per-file preview, user confirmation, backup/restore, path validation, conflict handling, recoverable errors, and proof exist.
 
-Before Staging can apply real file changes, it must have:
+Before Plan Preview/internal Staging can apply real file changes, it must have:
 
 - a per-file preview plan.
 - evidence and caveats for each suggested action.
@@ -166,7 +168,7 @@ Before adding any workflow that moves, disables, replaces, quarantines, deletes,
 
 | Feature | Current readiness | Boundary |
 | --- | --- | --- |
-| Auto sorting | Suggested plan only | Start with previews, staging, and confirmation; no automatic moves. |
+| Auto sorting | Suggested plan only | Start with previews, Plan Preview/internal Staging, and confirmation; no automatic moves. |
 | Mod updating | Review/check workflow only | No automatic download or replacement. |
 | AI-assisted categorization | Suggestion only | AI can suggest; user and deterministic rules decide. |
 | AI-assisted source suggestions | Suggestion only | AI cannot invent official proof. |
@@ -174,7 +176,7 @@ Before adding any workflow that moves, disables, replaces, quarantines, deletes,
 | Dependency detection | Research only | Current support-file guidance is not a general dependency graph. |
 | Missing mesh detection | Not allowed yet | Needs deterministic Sims resource proof. |
 | Safe-delete | Not allowed yet | Requires deterministic dependency/resource proof and recovery design. |
-| Staging | Preview/readiness only in the current route | Can list staged folders, but file-changing controls stay disabled until Level 4 safety is implemented and proven. |
+| Plan Preview / internal Staging | Preview/readiness only in the current route | Can list pending/staged folders, but file-changing controls stay disabled until Level 4 safety is implemented and proven. |
 | Quarantine | Not allowed yet | Needs backup, restore, evidence model, and clear user confirmation. |
 
 ## Report Requirements

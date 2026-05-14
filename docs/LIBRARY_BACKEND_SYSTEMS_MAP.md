@@ -49,8 +49,8 @@ The normal flow is:
 | `get_duplicate_overview` | implemented | Counts duplicate rows by stored type. |
 | `list_duplicate_pairs` | implemented | Lists exact duplicate, name-match review, and version-review pairs. Exact rows can now explain same file, same package, or same script contents. |
 | `get_review_queue` | implemented | Reads rule-engine review queue data. |
-| `get_staging_areas` | implemented, read-only | Lists app-local staged folders and file counts. Current Staging UI uses this as preview/readiness data only. |
-| `get_staging_preview_plan` | implemented, read-only | Returns a preview-only `StagingPlan` from current folder-level staging data with `wouldTouchFiles=false`; it does not call commit, cleanup, or move-engine apply paths. |
+| `get_staging_areas` | implemented, read-only | Lists app-local staged folders and file counts. The current user-facing Plan Preview UI uses this as preview/readiness data only; internal staging names remain stable. |
+| `get_staging_preview_plan` | implemented, read-only | Returns a preview-only `StagingPlan` from current folder-level staging data with `wouldTouchFiles=false`; it does not call commit, cleanup, or move-engine apply paths. User-facing copy calls this Plan Preview/Pending Plans. |
 | `generate_sorting_preview_plan` | implemented, read-only | Returns preview-only organization suggestions for selected Library files or a bounded Mods/Tray folder scope. It uses `StagingPlan` items with buckets, source signals, blocked reasons, confidence labels, and `wouldTouchFiles=false`; it does not call legacy Organize apply paths, Staging commit/cleanup commands, or move-engine apply paths. |
 | `cleanup_staging_areas` | implemented backend command, not exposed by current Staging UI | Deletes selected app-local staging folders under the staging root. Future exposure requires the trust-boundary file-change checklist. |
 | `commit_staging_area` / `commit_all_staging_areas` | implemented backend commands, not exposed by current Staging UI | Can apply move-engine paths for ReadyNow download items. Future exposure requires preview, confirmation, backup/restore, recoverable errors, and proof. |
@@ -316,17 +316,17 @@ Risks:
 | Safe-delete proof/actions | should not do now | Requires exact identity, path context, backup/recovery, and explicit product design. |
 | Duplicate cleanup actions | should not do now | Compare-only for now. |
 | Provider onboarding / CurseForge | future product decision | Requires provider architecture and source trust model. |
-| Staging backend safety/readiness | guarded for v1 | Current Staging route is preview/readiness only and does not expose commit/reject controls. Backend mutating commands still exist and need a future Level 4 safety contract before UI exposure. |
+| Plan Preview / internal Staging safety readiness | guarded for v1 | Current Plan Preview route is preview/readiness only and does not expose commit/reject controls. Backend mutating staging commands still exist and need a future Level 4 safety contract before UI exposure. |
 | AI classification | should not do now | Deterministic signals should be stable first. |
 
-## 15. Staging Readiness Map
+## 15. Plan Preview / Internal Staging Readiness Map
 
-Current Staging route behavior:
+Current Plan Preview route behavior:
 
 - Visible in Seasoned and Creator modes.
 - Loads app-local staged folder metadata through `get_staging_areas`.
 - Loads a read-only preview plan through `get_staging_preview_plan`.
-- Shows item counts, staged subfolders, byte totals, and preview-only readiness copy.
+- Shows item counts, pending plan folders/subfolders, byte totals, and preview-only readiness copy.
 - Shows folder-level review items only; per-file organization suggestions remain future work.
 - Does not call `commit_staging_area`, `commit_all_staging_areas`, or `cleanup_staging_areas`.
 - Does not expose enabled move, delete, reject, quarantine, or apply controls.
@@ -338,7 +338,7 @@ Backend staging commands still exist:
 - `cleanup_staging_areas` can delete app-local staged extracted folders under `downloads_inbox`.
 - `commit_staging_area` and `commit_all_staging_areas` can call the move engine for ReadyNow standard download items.
 
-Future Staging work must not expose the mutating commands until the workflow has:
+Future Plan Preview/internal Staging work must not expose the mutating commands until the workflow has:
 
 - a per-file preview plan,
 - evidence and caveats for each suggested action,
@@ -358,7 +358,7 @@ Current backend and UI implications:
 
 - `generate_sorting_preview_plan` exists and returns preview-only `StagingPlan` items with `wouldTouchFiles=false`.
 - The generator uses Library metadata, scanner evidence, parser warnings, review queue state, duplicate proof, and bundle hints according to their evidence level.
-- The generator does not call legacy apply paths such as `apply_preview_organization`, move-engine apply helpers, Staging commit commands, or cleanup commands.
+- The generator does not call legacy apply paths such as `apply_preview_organization`, move-engine apply helpers, internal Staging commit commands, or cleanup commands.
 - The visible Organize route now consumes `generate_sorting_preview_plan` and renders buckets, reasons, caveats, source signals, and blocked reasons.
 - The visible Organize route no longer calls the legacy preview/apply/snapshot APIs.
 - Legacy backend apply/snapshot commands still exist for older surfaces and must stay unexposed from the new suggested-plan UI until the Apply Safety Contract is designed.

@@ -96,7 +96,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       intro:
         "Every safe action in SimSuite follows the same chain so the app stays predictable on big libraries.",
       purpose: "Use this when you want the big picture before jumping into a screen.",
-      nextStep: "Start on Home, scan the library, then use Inbox, Review, or Tidy Up depending on what you see.",
+      nextStep: "Start on Home, scan the library, then use Inbox, Review, or Organize depending on what you see.",
       status: "Core workflow",
       icon: ListChecks,
       sections: [
@@ -108,9 +108,9 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
             "Parse names and file clues.",
             "Build a rule-based destination idea.",
             "Validate that idea against safety rules.",
-            "Show a preview before any move.",
-            "Wait for your approval.",
-            "Create a restore point, then move only the approved safe files.",
+            "Show a preview before any future file-changing workflow.",
+            "Keep file-changing steps blocked until approval and recovery rules exist.",
+            "Require backup and restore support before any future move.",
           ],
         },
         {
@@ -120,7 +120,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
             "Downloads handles new files and archives before they enter your main library.",
             "Library is the read-only file desk for inspection and learning fixes.",
             "Review holds files that still need a person.",
-            "Tidy Up applies the approved move plan.",
+            "Organize reviews suggested plans without changing files.",
           ],
         },
         {
@@ -128,7 +128,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           tone: "warn",
           items: [
             "It will not move files straight from AI guesses.",
-            "It will not change risky items without a preview and your approval.",
+            "It will not change files without a preview and your approval.",
             "It will not mix Tray content into Mods folders.",
           ],
         },
@@ -154,9 +154,9 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           label: "Always true",
           tone: "accent",
           items: [
-            "Batch moves create restore points first.",
-            "Moves must be reversible.",
-            "Anything uncertain stays visible instead of moving silently.",
+            "Future file changes need backup and restore support first.",
+            "Future file changes must be reversible.",
+            "Anything uncertain stays visible instead of changing silently.",
           ],
         },
         {
@@ -164,7 +164,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
           items: [
             "Script mods never go deeper than one subfolder.",
             "Tray files stay out of Mods.",
-            "Bundle-related files should move together when SimSuite can detect the bundle.",
+            "Bundle-related files should be reviewed together when SimSuite can detect the bundle.",
           ],
         },
         {
@@ -178,7 +178,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         },
       ],
       facts: [
-        { label: "Snapshots", value: "Before batch moves" },
+        { label: "Recovery", value: "Required before future file changes" },
         { label: "Script depth", value: "1 subfolder max" },
         { label: "Tray rule", value: "Never sort into Mods" },
       ],
@@ -194,7 +194,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         power: "Use Home as your control surface for roots, totals, and scan entry.",
       }),
       "Start here",
-      "After a scan, go to Inbox for new downloads, Review for blocked files, or Tidy Up for safe moves.",
+      "After a scan, go to Inbox for new downloads, Review for blocked files, or Organize for preview plans.",
       [
         section("What matters here", [
           "Folder paths must be correct before the rest of the app can help.",
@@ -224,7 +224,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         power: "Use this for density, skin, and layout reset changes while keeping the operational screens focused.",
       }),
       "Personal setup",
-      "After changing these options, jump back to Home, Library, or Tidy Up and keep working.",
+      "After changing these options, jump back to Home, Library, or Organize and keep working.",
       [
         section("What lives here", [
           "View mode changes how much detail the app shows.",
@@ -252,25 +252,25 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       viewCopy(userView, {
         beginner: "Use this like an intake desk for new CC and mod downloads.",
         standard: "Use this to triage direct downloads, unpacked archives, and safe hand-off previews.",
-        power: "Use this as the staging desk before files enter Mods or Tray through the validated pipeline.",
+        power: "Use this as the intake desk before files enter Mods or Tray through the review pipeline.",
       }),
       "New arrivals",
-      "Apply the safe part of a batch, or leave uncertain files in the inbox for another pass.",
+      "Review the supported part of a batch, or leave uncertain files in the inbox for another pass.",
       [
         section("What you can do", [
           "See newly indexed direct downloads and supported archives.",
-          "Preview where safe files would go under the current preset.",
+          "Preview where supported files may go under the current preset.",
           "Ignore a batch if you do not want it in the active intake queue.",
         ]),
         section("What stays blocked", [
           "Review-required files stay in the inbox.",
           "Archive errors stay visible instead of being hidden.",
-          "Moves still wait for approval and create restore points first.",
+          "File-changing steps still need approval and recovery support first.",
         ], "warn"),
       ],
       [
         { label: "Sources", value: "File and archive intake" },
-        { label: "Safe action", value: "Apply safe batch" },
+        { label: "Current action", value: "Review batch" },
         { label: "Not moved yet", value: "Review leftovers" },
       ],
     ),
@@ -331,7 +331,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       ],
       [
         { label: "Focus", value: "Mod updates" },
-        { label: "Safe action", value: "Check for updates" },
+        { label: "Current action", value: "Check for updates" },
         { label: "Not moved", value: "Read-only tracking" },
       ],
     ),
@@ -402,7 +402,7 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "Compare exact duplicates, same-name lookalikes, and likely version pairs.",
       viewCopy(userView, {
         beginner: "Use this to check whether you have the same mod twice before deleting anything elsewhere.",
-        standard: "Use this to compare duplicate paths and identify which copy looks newer or safer.",
+        standard: "Use this to compare duplicate paths and identify which copy needs manual review.",
         power: "Use this to inspect exact, filename, and version matches before future cleanup actions exist.",
       }),
       "Inspect only",
@@ -422,26 +422,26 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       [
         { label: "Current phase", value: "Inspect only" },
         { label: "Best check", value: "Compare both paths" },
-        { label: "Future work", value: "Safe cleanup actions" },
+        { label: "Future work", value: "Cleanup safety design" },
       ],
     ),
     organize: makeScreenTopic(
       "organize",
       Workflow,
-      "Tidy Up",
-      "Preview safe moves, apply approved batches, and roll back with restore points.",
+      "Organize",
+      "Review preview-only organization plans before anything changes.",
       viewCopy(userView, {
-        beginner: "Use this after the library looks right and you want SimSuite to tidy safe files.",
-        standard: "Use presets, preview counts, and restore points to apply only the validated part of the plan.",
-        power: "Use this to inspect rule output, validator corrections, snapshots, and approved move batches.",
+        beginner: "Use this after the library looks right and you want to preview a tidy plan.",
+        standard: "Use preview plans, reasons, and caveats without changing files.",
+        power: "Use this to inspect rule output, source signals, blocked reasons, and suggested destinations.",
       }),
-      "Apply safe moves",
-      "If the preview looks wrong, go fix names, types, or review issues first instead of forcing the batch.",
+      "Preview plans",
+      "If the preview looks wrong, go fix names, types, or review issues first instead of forcing the plan.",
       [
-        section("What moves from here", [
-          "Only validated safe files move.",
+        section("What happens here", [
+          "SimSuite generates preview plans only.",
           "Review-required rows stay out of the batch.",
-          "Snapshots are created before approved moves.",
+          "No files are changed from this screen.",
         ], "accent"),
         section("What can change a path", [
           "The chosen preset builds the first path idea.",
@@ -450,9 +450,9 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
         ]),
       ],
       [
-        { label: "Safe action", value: "Apply safe batch" },
-        { label: "Undo", value: "Restore points" },
-        { label: "Best before move", value: "Check preview rows" },
+        { label: "Current action", value: "Generate preview" },
+        { label: "Blocks", value: "Review" },
+        { label: "Best before future changes", value: "Check preview rows" },
       ],
     ),
     review: makeScreenTopic(
@@ -462,16 +462,16 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
       "Handle files that still need a person because a name, type, or safety rule is not settled yet.",
       viewCopy(userView, {
         beginner: "Use this when SimSuite says a file needs review.",
-        standard: "Use this queue to see why a file was blocked and where it would safely go.",
+        standard: "Use this queue to see why a file was blocked and what evidence SimSuite has.",
         power: "Use this as the hold queue for low confidence, validator conflicts, and path-risk cases.",
       }),
       "Needs review",
-      "Go back to Tidy Up only after the queue is under control.",
+      "Go back to Organize only after the queue is under control.",
       [
         section("Common reasons", [
           "Low-confidence creator or type detection.",
           "Tray content found outside the Tray folder.",
-          "Unsafe script depth or collisions.",
+          "Script placement caution or destination conflicts.",
         ]),
         section("Good next moves", [
           "Use Library for one-file fixes.",
@@ -488,19 +488,19 @@ function buildGuideTopics(userView: UserView): Record<GuideTopicId, GuideTopic> 
     staging: makeScreenTopic(
       "staging",
       Inbox,
-      "Staging",
-      "Review staged files before any future file-changing workflow.",
+      "Plan Preview",
+      "Review pending plans before any future file-changing workflow.",
       viewCopy(userView, {
         beginner: "Use this as a preview-only checkpoint after reviewing downloads.",
-        standard: "Use this to inspect staged items before any future apply step.",
+        standard: "Use this to inspect pending plan items before any future apply step.",
         power: "Use this as a readiness checkpoint for future suggested plans.",
       }),
       "Preview only",
       "Go to Library for indexed files.",
       [
-        section("What is staging", [
-          "Files extracted from archives can appear here for review.",
-          "The Staging screen does not change files yet.",
+        section("What is Plan Preview", [
+          "Pending plans can appear here for review.",
+          "The Plan Preview screen does not change files yet.",
         ]),
         section("Before real actions", [
           "Future file-changing workflows need preview, user confirmation, backup and restore support, and recoverable errors.",

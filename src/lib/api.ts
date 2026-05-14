@@ -168,13 +168,13 @@ const createMockStagingPreviewPlan = (): StagingPlan => ({
   createdAt: new Date().toISOString(),
   source: "staging",
   status: "preview_only",
-  title: "Staging preview plan",
+  title: "Plan Preview",
   summary:
-    "1 staged folder can be reviewed as a preview-only plan. No files changed.",
+    "1 pending plan folder can be reviewed as a preview-only plan. No files changed.",
   itemCount: 1,
   wouldTouchFiles: false,
   caveats: [
-    "Current Staging data is folder-level; per-file organization suggestions are future work.",
+    "Current Plan Preview data is folder-level; per-file organization suggestions are future work.",
     "No files changed. This mock plan is preview-only.",
     "Backup and restore support plus user confirmation are required before any future apply workflow.",
   ],
@@ -188,9 +188,9 @@ const createMockStagingPreviewPlan = (): StagingPlan => ({
       actionKind: "suggest_review",
       evidenceLevel: "review_only",
       reason:
-        "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
+        "SimSuite can see this pending plan folder, but v1 does not include per-file organization suggestions yet.",
       caveats: [
-        "Folder-level staging data only; no per-file move is suggested.",
+        "Folder-level plan data only; no per-file move is suggested.",
         "No files changed. This plan is preview-only.",
       ],
       sourceSignals: ["staging_folder_detected"],
@@ -5556,7 +5556,7 @@ function buildMockReviewPlan(itemId: number): SpecialReviewPlan | null {
         },
       ],
       evidence: [
-        "The download name and staged files match the MC Command Center profile.",
+        "The download name and download files match the MC Command Center profile.",
         "The expected core script file mc_cmd_center.ts4script was found in the new download.",
         "Older MCCC files were found loose in Mods instead of one shallow MCCC folder.",
       ],

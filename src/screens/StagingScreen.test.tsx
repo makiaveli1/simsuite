@@ -37,13 +37,13 @@ const previewPlan = {
   createdAt: "2026-05-13T00:00:00.000Z",
   source: "staging" as const,
   status: "preview_only" as const,
-  title: "Staging preview plan",
+  title: "Plan Preview",
   summary:
-    "1 staged folder can be reviewed as a preview-only plan. No files changed.",
+    "1 pending plan folder can be reviewed as a preview-only plan. No files changed.",
   itemCount: 1,
   wouldTouchFiles: false as const,
   caveats: [
-    "Current Staging data is folder-level; per-file organization suggestions are future work.",
+    "Current Plan Preview data is folder-level; per-file organization suggestions are future work.",
     "No files changed. This command is read-only.",
   ],
   items: [
@@ -56,8 +56,8 @@ const previewPlan = {
       actionKind: "suggest_review" as const,
       evidenceLevel: "review_only" as const,
       reason:
-        "SimSuite can see this staged folder, but v1 does not include per-file organization suggestions yet.",
-      caveats: ["Folder-level staging data only; no per-file move is suggested."],
+        "SimSuite can see this pending plan folder, but v1 does not include per-file organization suggestions yet.",
+      caveats: ["Folder-level plan data only; no per-file move is suggested."],
       sourceSignals: ["staging_folder_detected"],
       blockedReasons: ["per_file_staging_data_not_available"],
       bucket: "needs_review" as const,
@@ -73,17 +73,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("shows staged content as preview-only and does not expose file-changing actions", async () => {
+it("shows pending plan content as preview-only and does not expose file-changing actions", async () => {
   vi.mocked(api.getStagingAreas).mockResolvedValue(stagedSummary);
   vi.mocked(api.getStagingPreviewPlan).mockResolvedValue(previewPlan);
 
   render(<StagingScreen onNavigate={() => {}} userView="standard" />);
 
-  expect(await screen.findByRole("heading", { name: /staging/i })).toBeInTheDocument();
-  expect(screen.getByText(/Staging is preview-only right now/i)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /Plan Preview/i })).toBeInTheDocument();
+  expect(screen.getByText(/Plan Preview is preview-only right now/i)).toBeInTheDocument();
   expect(screen.getByText(/No files will be changed from this screen yet/i)).toBeInTheDocument();
   expect(screen.getByRole("region", { name: /Preview plan/i })).toBeInTheDocument();
-  expect(screen.getByText(/Staging preview plan/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Plan Preview/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/Manual review needed/i)).toBeInTheDocument();
   expect(screen.getByText(/does not include per-file organization suggestions/i)).toBeInTheDocument();
@@ -113,14 +113,14 @@ it("shows a blocked preview plan without exposing file-changing actions", async 
   vi.mocked(api.getStagingPreviewPlan).mockResolvedValue({
     ...previewPlan,
     status: "blocked",
-    summary: "No staged content is available for a preview plan.",
+    summary: "No pending plan content is available for a preview plan.",
     itemCount: 0,
     items: [],
   });
 
   render(<StagingScreen onNavigate={() => {}} userView="standard" />);
 
-  expect((await screen.findAllByText(/No staged content/i)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/No pending plans/i)).length).toBeGreaterThan(0);
   expect(screen.getByText(/Not ready to apply yet/i)).toBeInTheDocument();
   expect(screen.getByText(/No preview items yet/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();

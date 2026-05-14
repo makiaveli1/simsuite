@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (May 14, 2026 - Plan Preview Rename / Navigation Wording v1)
+
+This session replaces user-facing `Staging` language with `Plan Preview` / `Pending Plans` wording. It keeps the internal route/backend names stable and does not add Apply, file movement, cleanup, delete, quarantine, replacement, or AI decisions.
+
+Important changes and findings:
+
+- sidebar now shows `Plan Preview` for the internal `staging` route.
+- the direct Plan Preview route now uses clearer title, loading, empty, safety, and plan copy.
+- Organize now links to `Open Plan Preview` while remaining the generated-plan review workspace.
+- Field Guide and current helper language were softened away from old apply/move-style wording.
+- current trust/navigation/backend docs now state that internal staging names remain, but users should see Plan Preview/Pending Plans.
+
+Checks:
+
+- `npx vitest run src/screens/StagingScreen.test.tsx src/screens/OrganizeScreen.test.tsx src/lib/uiLanguage.test.ts src/trustBoundaryCopy.test.ts`: passed (`4` files, `10` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`26` files, `97` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; Plan Preview screenshot captured at `output/desktop/library-proof/2026-05-14T01-00-33-794Z/plan-preview-rename-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust commands were not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+Recommended next sprint:
+
+- Plan Preview / Organize consolidation follow-up, still preview-only, or Apply Safety Contract design before any real file-changing workflow.
+
 ## Current session note (May 13, 2026 - Organize Plan Review UI v1)
 
 This session adds the first visible review UI for generated organization plans inside the existing Organize route. It does not create a new route, fold Staging into Organize, expose Apply, move files, add cleanup, add quarantine, add delete, add replacement, or add AI decisions.
