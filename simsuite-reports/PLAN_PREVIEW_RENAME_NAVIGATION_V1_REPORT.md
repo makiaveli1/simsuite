@@ -157,7 +157,7 @@ Plan Preview / Organize consolidation follow-up, still preview-only, to decide w
 
 ## Commit
 
-Pending.
+- `bf06285` - `Rename Staging UI to Plan Preview`
 
 ## Final Honest Verdict
 
