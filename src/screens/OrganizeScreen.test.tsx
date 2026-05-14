@@ -81,10 +81,10 @@ const previewPlan: StagingPlan = {
 const stagedSummary = {
   areas: [
     {
-      itemId: "42",
+      itemId: "20260309001415",
       subdirectories: [
         {
-          path: "C:\\Simsuite\\downloads_inbox\\42\\clean",
+          path: "C:\\Simsuite\\downloads_inbox\\20260309001415\\clean",
           name: "clean",
           fileCount: 2,
           totalBytes: 2048,
@@ -95,6 +95,23 @@ const stagedSummary = {
   ],
   totalBytes: 2048,
   totalFileCount: 2,
+};
+
+const manyStagedSummary = {
+  areas: Array.from({ length: 7 }, (_, index) => ({
+    itemId: `2026030900141${index}`,
+    subdirectories: [
+      {
+        path: `C:\\Simsuite\\downloads_inbox\\2026030900141${index}\\batch-${index}`,
+        name: `batch-${index}`,
+        fileCount: 1,
+        totalBytes: 1024,
+        createdAt: null,
+      },
+    ],
+  })),
+  totalBytes: 7 * 1024,
+  totalFileCount: 7,
 };
 
 const pendingPlan: StagingPlan = {
@@ -190,21 +207,28 @@ it("shows pending plans inside Organize without exposing file-changing actions",
 
   fireEvent.click(screen.getByRole("tab", { name: /Pending plans/i }));
 
-  await screen.findByText(/same preview-only checkpoint/i);
+  await screen.findByText(/Generated organization plans are not saved yet/i);
   expect(screen.getByRole("tab", { name: /Pending plans/i })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  expect(screen.getByText(/same preview-only checkpoint/i)).toBeInTheDocument();
+  expect(screen.getByText(/Generated organization plans are not saved yet/i)).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/Item #42/i)).toBeInTheDocument();
-  expect(screen.getAllByText(/2 files/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/does not include per-file organization suggestions/i)).toBeInTheDocument();
+  expect(screen.getByText(/Pending batch 1/i)).toBeInTheDocument();
+  expect(screen.getByText(/not a saved organization plan yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/Pending data is folder-level/i)).toBeInTheDocument();
+  expect(screen.getByText(/Open Inbox/i)).toBeInTheDocument();
+  expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Files found/i).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/20260309001415/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^clean$/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/Staging preview plan/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/Current Staging data/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/staged folder/i)).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Preview only/i })).toBeDisabled();
-  expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /Show technical details/i }));
+  expect(screen.getByText(/Internal folder ID/i)).toBeInTheDocument();
+  expect(screen.getByText(/20260309001415/i)).toBeInTheDocument();
+  expect(screen.getByText(/^clean$/i)).toBeInTheDocument();
 
   await waitFor(() => {
     expect(api.getStagingAreas).toHaveBeenCalledTimes(1);
@@ -219,6 +243,27 @@ it("shows pending plans inside Organize without exposing file-changing actions",
       ),
     ]),
   );
+});
+
+it("caps pending batch rows before showing technical details", async () => {
+  vi.mocked(api.getStagingAreas).mockResolvedValue(manyStagedSummary);
+  vi.mocked(api.getStagingPreviewPlan).mockResolvedValue({
+    ...pendingPlan,
+    itemCount: 7,
+    items: [],
+  });
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Pending plans/i }));
+
+  expect(await screen.findByText(/Pending batch 1/i)).toBeInTheDocument();
+  expect(screen.getByText(/Pending batch 5/i)).toBeInTheDocument();
+  expect(screen.queryByText(/Pending batch 6/i)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Show 2 more batches/i })).toBeInTheDocument();
+  expect(screen.queryByText(/20260309001410/i)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /Show 2 more batches/i }));
+  expect(screen.getByText(/Pending batch 7/i)).toBeInTheDocument();
 });
 
 it("generates and renders grouped preview plan details", async () => {

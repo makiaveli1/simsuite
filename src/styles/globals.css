@@ -6667,7 +6667,7 @@ h2,
 
 .pending-plans-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.44rem;
   min-width: 0;
 }
@@ -6694,6 +6694,249 @@ h2,
   text-transform: uppercase;
 }
 
+.pending-plans-safety-strip,
+.pending-plans-note,
+.pending-plans-meaning-panel,
+.pending-batches-section,
+.pending-batch-row {
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.pending-plans-safety-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.58rem 0.68rem;
+  background: color-mix(in srgb, var(--surface-3) 86%, var(--accent-soft));
+  color: var(--text-soft);
+  line-height: 1.42;
+}
+
+.pending-plans-safety-strip svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.pending-plans-safety-strip strong {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.pending-plans-note {
+  padding: 0.58rem 0.68rem;
+  background: var(--surface-3);
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.pending-plans-note--warn {
+  border-color: color-mix(in srgb, var(--amber) 38%, var(--line));
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface-2));
+}
+
+.pending-plans-meaning-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.68rem;
+  min-width: 0;
+  padding: 0.78rem;
+  background: var(--surface-2);
+}
+
+.pending-plans-meaning-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.42rem;
+  background: var(--surface-4);
+  color: var(--text-soft);
+}
+
+.pending-plans-meaning-heading,
+.pending-batches-heading,
+.pending-batch-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.pending-plans-meaning-heading h3,
+.pending-batches-heading h3,
+.pending-batch-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.pending-plans-meaning-panel p,
+.pending-batches-heading p,
+.pending-batch-heading p,
+.pending-batch-next span {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.pending-plans-meaning-list {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.05rem;
+  color: var(--text-soft);
+  line-height: 1.42;
+}
+
+.pending-batches-section {
+  display: grid;
+  gap: 0.68rem;
+  min-width: 0;
+  padding: 0.78rem;
+  background: var(--surface-2);
+}
+
+.pending-batches-heading > div:first-child {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.pending-plans-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.pending-batch-list {
+  display: grid;
+  gap: 0.52rem;
+  min-width: 0;
+}
+
+.pending-batch-row {
+  display: grid;
+  gap: 0.62rem;
+  min-width: 0;
+  padding: 0.68rem;
+  background: var(--surface-3);
+}
+
+.pending-batch-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.48rem;
+  min-width: 0;
+}
+
+.pending-batch-heading svg {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+  color: var(--text-soft);
+}
+
+.pending-batch-heading > div {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.pending-batch-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.pending-batch-metrics span {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.pending-batch-metrics strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums lining-nums;
+  overflow-wrap: anywhere;
+}
+
+.pending-batch-metrics small {
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pending-batch-next {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.18fr) minmax(0, 1fr);
+  gap: 0.58rem;
+  min-width: 0;
+  padding-top: 0.1rem;
+}
+
+.pending-batch-next strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.pending-batch-technical {
+  display: grid;
+  gap: 0.34rem;
+  min-width: 0;
+  padding: 0.58rem;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--surface-4) 86%, transparent);
+}
+
+.pending-batch-technical div {
+  display: grid;
+  grid-template-columns: minmax(122px, 0.22fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.52rem;
+  min-width: 0;
+}
+
+.pending-batch-technical strong,
+.pending-batch-technical span {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.pending-batch-technical code {
+  min-width: 0;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pending-batch-technical p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.pending-batches-toggle {
+  justify-self: start;
+}
+
+.pending-plans-empty {
+  align-items: start;
+  text-align: left;
+}
 .pending-plans-preview .staging-card-header {
   align-items: flex-start;
 }
@@ -10235,6 +10478,30 @@ h2,
     grid-template-columns: 1fr;
   }
 
+  .pending-plans-safety-strip,
+  .pending-plans-meaning-heading,
+  .pending-batches-heading,
+  .pending-batch-main {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pending-plans-actions {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .pending-plans-actions .primary-action,
+  .pending-plans-actions .secondary-action {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .pending-batch-metrics,
+  .pending-batch-next,
+  .pending-batch-technical div {
+    grid-template-columns: 1fr;
+  }
   .pending-plans-preview .staging-sub-row {
     grid-template-columns: 1fr;
     gap: 0.18rem;

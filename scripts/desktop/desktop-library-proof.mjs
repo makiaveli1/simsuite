@@ -1604,15 +1604,39 @@ async function main() {
     await clickVisibleButton(driver, "Pending plans", 30000);
     await waitForAnyText(
       driver,
-      ["Pending plans", "Plan Preview", "No pending plans", "Preview plan only"],
+      ["Pending plans", "Pending batches", "No saved organization plans yet", "No files changed"],
       30000,
     );
     const organizePendingBody = await getBodyText(driver);
     summary.organizePendingBodyHasPendingPlans = /pending plans/i.test(organizePendingBody);
     summary.organizePendingBodyHasNoFilesChanged = /no files changed/i.test(organizePendingBody);
+    summary.organizePendingBodyExplainsMeaning =
+      /generated organization plans are not saved yet|pending batches|no saved organization plans yet/i.test(
+        organizePendingBody,
+      );
+    summary.organizePendingTechnicalDetailsVisibleByDefault = /internal folder id/i.test(
+      organizePendingBody,
+    );
+    summary.organizePendingPrimaryLabelsHaveRawIds = await driver.executeScript(`
+      return Array.from(document.querySelectorAll(
+        ".pending-batch-heading h3, .pending-plans-header h2, .pending-batches-heading h3"
+      ))
+        .map((element) => element.textContent || "")
+        .some((text) => /\\b\\d{8,}\\b/.test(text));
+    `);
     summary.organizePendingContextExcerpt = organizePendingBody.slice(0, 1800);
-    if (!summary.organizePendingBodyHasPendingPlans || !summary.organizePendingBodyHasNoFilesChanged) {
+    if (
+      !summary.organizePendingBodyHasPendingPlans ||
+      !summary.organizePendingBodyHasNoFilesChanged ||
+      !summary.organizePendingBodyExplainsMeaning
+    ) {
       throw new Error("Organize did not show the pending plans preview boundary.");
+    }
+    if (summary.organizePendingTechnicalDetailsVisibleByDefault) {
+      throw new Error("Organize showed internal pending-plan technical details by default.");
+    }
+    if (summary.organizePendingPrimaryLabelsHaveRawIds) {
+      throw new Error("Organize used raw internal IDs as primary pending-plan labels.");
     }
     summary.organizePendingScrollCheck = await driver.executeScript(`
       const screen = document.querySelector(".organize-screen");
@@ -1649,7 +1673,7 @@ async function main() {
         `Organize pending plans view was not scrollable: ${JSON.stringify(summary.organizePendingScrollCheck)}`,
       );
     }
-    const organizeShot = path.join(runDir, "organize-plan-preview-consolidated-v1.png");
+    const organizeShot = path.join(runDir, "organize-pending-plans-ux-clarity-v1.png");
     await takeScreenshot(driver, organizeShot);
     summary.screenshots.push(organizeShot);
     await assertNoRuntimeErrors(driver, summary, "organize-plan-preview-consolidated-v1");

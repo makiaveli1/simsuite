@@ -16,13 +16,13 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow | Yes | Keep top-level as intake/new content. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning and pending plan review. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. `Pending plans` now summarizes internal pending batch data with friendly labels instead of exposing raw folder IDs as plan names. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning and pending plan review. Move downloaded/imported batch review toward Inbox later if the intake workflow becomes the better owner. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
 | `duplicates` | Duplicates / Same file? | `DuplicatesScreen` | Duplicate and comparison workbench. | Duplicate backend. | Real | Casual, Seasoned, Creator | Deterministic duplicate proof plus review-only rows | Maybe | Move toward Library/Review comparison workbench; allow Creator top-level until migration. |
 | `settings` | Settings | `SettingsScreen` | Configuration and preferences. | Frontend/backend settings. | Real | Casual, Seasoned, Creator | Informational | Yes | Keep top-level. |
-| `staging` | Plan Preview | `StagingScreen` | Direct compatibility route for pending plans and app-local staged areas. The normal user-facing surface now lives inside Organize. | `get_staging_areas` and `get_staging_preview_plan` read-only commands. | Real but intentionally preview-only | Hidden from normal sidebar; direct route remains routable | Suggested plan/readiness only | No | Keep direct route safe for compatibility; do not expose as a normal top-level workflow. |
+| `staging` | Plan Preview | `StagingScreen` | Direct compatibility route for pending plans and app-local staged areas. The normal user-facing surface now lives inside Organize, and raw technical IDs are hidden unless technical details are opened. | `get_staging_areas` and `get_staging_preview_plan` read-only commands. | Real but intentionally preview-only | Hidden from normal sidebar; direct route remains routable | Suggested plan/readiness only | No | Keep direct route safe for compatibility; do not expose as a normal top-level workflow. |
 
 Notes:
 
@@ -113,6 +113,8 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 - The direct internal `staging` route remains safe during transition and points users back to Organize.
 - The normal sidebar no longer exposes Plan Preview as a top-level item.
 - No apply/move/delete/quarantine controls are exposed.
+- Pending batch data is summarized with friendly labels; raw internal folder IDs are hidden behind technical details.
+- Generated organization plans are not saved yet, so `Pending plans` is currently a review summary for imported/downloaded batches rather than a saved-plan list.
 
 Current M2 foundation note:
 

@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (May 14, 2026 - Organize Pending Plans UX Clarity v1)
+
+This session makes Organize `Pending plans` clearer by treating internal folder-level pending batch data as a compact review summary instead of a list of technical plan rows. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.
+
+Important changes and findings:
+
+- `Pending plans` now says generated organization plans are not saved yet and explains that the tab currently summarizes imported/downloaded batches when they exist.
+- raw internal staging folder IDs and folder names are hidden by default behind `Show technical details`.
+- pending batches use friendly labels such as `Pending batch 1`.
+- visible batch rows are capped with `Show more` / `Show fewer`.
+- next steps are preview-only: `Create preview plan` and `Open Inbox`.
+- direct internal Plan Preview route remains safe and uses the clearer Pending Plans summary.
+
+Checks:
+
+- Browser rendered QA against `http://127.0.0.1:1420/#organize`: passed for readable Pending plans, hidden technical details by default, no raw timestamp-like primary labels, no enabled file-changing controls, and scrollable Organize shell at smaller desktop height.
+- `npm run test:unit -- --run src/screens/OrganizeScreen.test.tsx src/screens/StagingScreen.test.tsx src/trustBoundaryCopy.test.ts`: passed (`3` files, `11` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`27` files, `100` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshot captured at `output/desktop/library-proof/2026-05-14T22-49-49-900Z/organize-pending-plans-ux-clarity-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+Recommended next sprint:
+
+- Inbox batch review clarity, because imported/downloaded batches are intake data. Apply Safety Contract design remains required before any real Apply/file movement workflow.
 ## Current session note (May 14, 2026 - Plan Preview / Organize Consolidation v1)
 
 This session folds the user-facing Plan Preview experience into Organize as a preview-only Pending Plans tab. It keeps the direct internal route safe, but removes Plan Preview from normal top-level sidebar navigation.

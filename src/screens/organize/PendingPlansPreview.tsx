@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, m } from "motion/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { m } from "motion/react";
 import {
-  Archive,
   ArrowRight,
+  Eye,
+  EyeOff,
   Inbox,
+  Layers3,
   ListChecks,
   LoaderCircle,
   ShieldCheck,
@@ -14,44 +16,59 @@ import type {
   StagingArea,
   StagingAreasSummary,
   StagingPlan,
-  StagingPlanItem,
 } from "../../lib/types";
 
 interface PendingPlansPreviewProps {
   onNavigate?: (screen: Screen) => void;
+  onCreatePlan?: () => void;
   showOrganizeLink?: boolean;
 }
 
-interface StagingAreaCardProps {
+interface PendingBatchRowProps {
   area: StagingArea;
+  batchIndex: number;
+  showTechnicalDetails: boolean;
 }
 
-interface StagingPlanPanelProps {
+interface PendingPlanSummaryPanelProps {
   plan: StagingPlan | null;
 }
+
+const VISIBLE_BATCH_LIMIT = 5;
+const TECHNICAL_FOLDER_LIMIT = 5;
+const LARGE_PENDING_FILE_COUNT = 10_000;
+const LARGE_PENDING_BYTES = 50 * 1024 * 1024 * 1024;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function pluralize(value: number, singular: string, plural = `${singular}s`) {
+  return `${formatNumber(value)} ${value === 1 ? singular : plural}`;
 }
 
 function userFacingPlanText(value: string): string {
   return value
     .replace(/\bStaging preview plan\b/gi, "Plan Preview")
-    .replace(/\bCurrent Staging data\b/g, "Current Plan Preview data")
-    .replace(/\bstaged folders\b/gi, "pending folders")
-    .replace(/\bstaged folder\b/gi, "pending folder")
-    .replace(/\bstaged data\b/gi, "pending plan data")
+    .replace(/\bCurrent Staging data\b/gi, "Current pending batch data")
+    .replace(/\bstaged folders\b/gi, "pending batch folders")
+    .replace(/\bstaged folder\b/gi, "pending batch folder")
+    .replace(/\bstaged data\b/gi, "pending batch data")
+    .replace(/\bFolder-level staging data\b/gi, "Folder-level pending batch data")
     .replace(/\bStaging\b/g, "Plan Preview")
-    .replace(/\bstaging\b/g, "Plan Preview");
+    .replace(/\bstaging\b/g, "pending batch");
 }
 
-function StagingAreaCard({ area }: StagingAreaCardProps) {
-  const isNumeric = /^\d+$/.test(area.itemId);
-  const totalFiles = area.subdirectories.reduce(
+function summarizeArea(area: StagingArea) {
+  const fileCount = area.subdirectories.reduce(
     (sum, subdirectory) => sum + subdirectory.fileCount,
     0,
   );
@@ -60,76 +77,11 @@ function StagingAreaCard({ area }: StagingAreaCardProps) {
     0,
   );
 
-  return (
-    <m.div
-      className="staging-card"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.15 }}
-    >
-      <div className="staging-card-header">
-        <div className="staging-card-meta">
-          <Archive size={16} className="staging-card-icon" />
-          <span className="staging-card-item-id">
-            {isNumeric ? `Item #${area.itemId}` : `Pending plan (${area.itemId})`}
-          </span>
-          {!isNumeric && (
-            <span className="staging-card-badge staging-card-badge--pending">
-              Pending
-            </span>
-          )}
-        </div>
-        <div className="staging-card-stats">
-          <span>
-            {totalFiles} file{totalFiles !== 1 ? "s" : ""}
-          </span>
-          <span className="staging-card-sep">|</span>
-          <span>{formatBytes(totalBytes)}</span>
-        </div>
-      </div>
-
-      <div className="staging-card-subs">
-        {area.subdirectories.map((subdirectory) => (
-          <div key={subdirectory.path} className="staging-sub-row">
-            <span className="staging-sub-name">{subdirectory.name}</span>
-            <span className="staging-sub-info">
-              {subdirectory.fileCount} file
-              {subdirectory.fileCount !== 1 ? "s" : ""} |{" "}
-              {formatBytes(subdirectory.totalBytes)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="staging-card-actions" aria-label="Plan preview readiness">
-        <button
-          type="button"
-          className="staging-btn staging-btn--disabled"
-          disabled
-        >
-          <ShieldCheck size={14} />
-          Preview only
-        </button>
-        <span className="staging-sub-info">
-          Review before applying. No files can be changed from this view yet.
-        </span>
-      </div>
-    </m.div>
-  );
-}
-
-function EmptyPendingPlans() {
-  return (
-    <div className="staging-empty">
-      <Inbox size={48} className="staging-empty-icon" />
-      <h3 className="staging-empty-title">No pending plans</h3>
-      <p className="staging-empty-body">
-        Pending plans will appear here when SimSuite has preview-only plan data
-        to review. No files are changed from this section.
-      </p>
-    </div>
-  );
+  return {
+    fileCount,
+    totalBytes,
+    folderCount: area.subdirectories.length,
+  };
 }
 
 function planStatusLabel(plan: StagingPlan): string {
@@ -138,153 +90,176 @@ function planStatusLabel(plan: StagingPlan): string {
   return "Preview only";
 }
 
-function actionLabel(item: StagingPlanItem): string {
-  switch (item.actionKind) {
-    case "suggest_move":
-      return "Suggested destination";
-    case "suggest_group":
-      return "Suggested group";
-    case "leave_in_place":
-      return "Leave in place";
-    case "no_action":
-      return "No action";
-    case "suggest_review":
-    default:
-      return "Review item";
-  }
+function dedupeText(values: string[]): string[] {
+  return [...new Set(values.map(userFacingPlanText).filter(Boolean))];
 }
 
-function evidenceLabel(item: StagingPlanItem): string {
-  switch (item.evidenceLevel) {
-    case "deterministic":
-      return "Deterministic fact";
-    case "evidence_backed":
-      return "Evidence-backed cue";
-    case "heuristic":
-      return "Heuristic hint";
-    case "review_only":
-    default:
-      return "Manual review needed";
-  }
+function EmptyPendingPlans({ onCreatePlan }: { onCreatePlan: () => void }) {
+  return (
+    <div className="staging-empty pending-plans-empty">
+      <Inbox size={42} className="staging-empty-icon" />
+      <h3 className="staging-empty-title">No saved organization plans yet</h3>
+      <p className="staging-empty-body">
+        Generated plans are not saved yet. Downloaded or imported batches waiting
+        for review can be handled from Inbox, and new organization suggestions
+        can be created from the Create plan tab.
+      </p>
+      <div className="pending-plans-actions">
+        <button type="button" className="primary-action" onClick={onCreatePlan}>
+          <ListChecks size={16} />
+          Create preview plan
+        </button>
+      </div>
+    </div>
+  );
 }
 
-function StagingPlanPanel({ plan }: StagingPlanPanelProps) {
+function PendingPlanSummaryPanel({ plan }: PendingPlanSummaryPanelProps) {
   if (!plan) {
     return (
-      <m.section
-        className="staging-card"
-        aria-label="Preview plan"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.15 }}
-      >
-        <div className="staging-card-header">
-          <div className="staging-card-meta">
-            <ListChecks size={16} className="staging-card-icon" />
-            <span className="staging-card-item-id">Preview plan</span>
-            <span className="staging-card-badge staging-card-badge--pending">
-              Not ready to apply yet
-            </span>
-          </div>
+      <section className="pending-plans-meaning-panel" aria-label="Preview plan status">
+        <div className="pending-plans-meaning-icon">
+          <ListChecks size={18} />
         </div>
-        <div className="staging-card-actions" aria-label="Preview plan safety">
-          <ShieldCheck size={14} />
-          <span className="staging-sub-info">
-            Preview plan could not be loaded. No files changed.
-          </span>
+        <div>
+          <h3>Preview plan status</h3>
+          <p>
+            SimSuite could not load the pending preview summary. No files
+            changed.
+          </p>
         </div>
-      </m.section>
+      </section>
     );
   }
 
+  const caveats = dedupeText(plan.caveats).filter(
+    (caveat) => !/per-file organization suggestions are future work/i.test(caveat),
+  );
+
   return (
-    <m.section
-      className="staging-card"
-      aria-label="Preview plan"
-      initial={{ opacity: 0, y: 8 }}
+    <section className="pending-plans-meaning-panel" aria-label="Preview plan status">
+      <div className="pending-plans-meaning-icon">
+        <ListChecks size={18} />
+      </div>
+      <div>
+        <div className="pending-plans-meaning-heading">
+          <h3>Pending data is folder-level</h3>
+          <span className="organize-plan-status-chip">{planStatusLabel(plan)}</span>
+        </div>
+        <p>
+          {plan.items.length > 0
+            ? "SimSuite can see imported/downloaded batch folders, but these are not saved organization plans and do not contain per-file destination suggestions yet."
+            : userFacingPlanText(plan.summary)}
+        </p>
+        <ul className="pending-plans-meaning-list">
+          <li>No files changed.</li>
+          <li>
+            Folder-level batch data is summarized once here instead of repeated
+            as review rows.
+          </li>
+          {caveats.slice(0, 2).map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function PendingBatchRow({
+  area,
+  batchIndex,
+  showTechnicalDetails,
+}: PendingBatchRowProps) {
+  const summary = summarizeArea(area);
+  const visibleTechnicalFolders = area.subdirectories.slice(0, TECHNICAL_FOLDER_LIMIT);
+  const hiddenTechnicalFolders = Math.max(
+    0,
+    area.subdirectories.length - visibleTechnicalFolders.length,
+  );
+
+  return (
+    <m.article
+      className="pending-batch-row"
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.15 }}
+      transition={{ duration: 0.14 }}
     >
-      <div className="staging-card-header">
-        <div className="staging-card-meta">
-          <ListChecks size={16} className="staging-card-icon" />
-          <span className="staging-card-item-id">
-            {userFacingPlanText(plan.title)}
-          </span>
-          <span className="staging-card-badge staging-card-badge--pending">
-            {planStatusLabel(plan)}
-          </span>
-        </div>
-        <div className="staging-card-stats">
-          <span>
-            {plan.itemCount} plan item{plan.itemCount !== 1 ? "s" : ""}
-          </span>
-          <span className="staging-card-sep">|</span>
-          <span>No files changed</span>
-        </div>
-      </div>
-
-      <div className="staging-card-subs">
-        <div className="staging-sub-row">
-          <span className="staging-sub-name">Summary</span>
-          <span className="staging-sub-info">
-            {userFacingPlanText(plan.summary)}
-          </span>
-        </div>
-        {plan.caveats.map((caveat) => (
-          <div key={caveat} className="staging-sub-row">
-            <span className="staging-sub-name">Caveat</span>
-            <span className="staging-sub-info">
-              {userFacingPlanText(caveat)}
-            </span>
+      <div className="pending-batch-main">
+        <div className="pending-batch-heading">
+          <Layers3 size={16} />
+          <div>
+            <h3>Pending batch {batchIndex + 1}</h3>
+            <p>
+              Imported or downloaded content waiting for review. This is not a
+              saved organization plan yet.
+            </p>
           </div>
-        ))}
-        {plan.items.length === 0 ? (
-          <div className="staging-sub-row">
-            <span className="staging-sub-name">Plan items</span>
-            <span className="staging-sub-info">
-              No preview items yet. SimSuite needs more plan data before
-              review.
-            </span>
-          </div>
-        ) : (
-          plan.items.map((item) => (
-            <div key={item.id} className="staging-sub-row">
-              <span className="staging-sub-name">{item.fileName}</span>
-              <span className="staging-sub-info">
-                {actionLabel(item)} | {evidenceLabel(item)} |{" "}
-                {userFacingPlanText(item.reason)}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="staging-card-actions" aria-label="Preview plan safety">
-        <button
-          type="button"
-          className="staging-btn staging-btn--disabled"
-          disabled
-        >
-          <ShieldCheck size={14} />
-          Preview plan only
-        </button>
-        <span className="staging-sub-info">
-          Review before applying. Backup and restore support are still required.
+        </div>
+        <span className="staging-card-badge staging-card-badge--pending">
+          Preview only
         </span>
       </div>
-    </m.section>
+
+      <div className="pending-batch-metrics" aria-label={`Pending batch ${batchIndex + 1} summary`}>
+        <span>
+          <strong>{formatNumber(summary.folderCount)}</strong>
+          <small>Folder group{summary.folderCount !== 1 ? "s" : ""}</small>
+        </span>
+        <span>
+          <strong>{formatNumber(summary.fileCount)}</strong>
+          <small>File{summary.fileCount !== 1 ? "s" : ""} found</small>
+        </span>
+        <span>
+          <strong>{formatBytes(summary.totalBytes)}</strong>
+          <small>Total size</small>
+        </span>
+      </div>
+
+      <div className="pending-batch-next">
+        <strong>Next step</strong>
+        <span>
+          Review this batch in Inbox, or create a bounded preview plan from
+          Library files when you want organization suggestions.
+        </span>
+      </div>
+
+      {showTechnicalDetails ? (
+        <div className="pending-batch-technical" aria-label={`Pending batch ${batchIndex + 1} technical details`}>
+          <div>
+            <strong>Internal folder ID</strong>
+            <code>{area.itemId}</code>
+          </div>
+          {visibleTechnicalFolders.map((subdirectory, index) => (
+            <div key={subdirectory.path}>
+              <strong>Internal folder {index + 1}</strong>
+              <code>{subdirectory.name}</code>
+              <span>
+                {pluralize(subdirectory.fileCount, "file")} |{" "}
+                {formatBytes(subdirectory.totalBytes)}
+              </span>
+            </div>
+          ))}
+          {hiddenTechnicalFolders > 0 ? (
+            <p>{pluralize(hiddenTechnicalFolders, "technical folder")} hidden.</p>
+          ) : null}
+        </div>
+      ) : null}
+    </m.article>
   );
 }
 
 export function PendingPlansPreview({
   onNavigate,
+  onCreatePlan,
   showOrganizeLink = false,
 }: PendingPlansPreviewProps) {
   const [summary, setSummary] = useState<StagingAreasSummary | null>(null);
   const [plan, setPlan] = useState<StagingPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
+  const [showAllBatches, setShowAllBatches] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const loadPendingPlans = useCallback(async () => {
     setLoading(true);
@@ -301,9 +276,9 @@ export function PendingPlansPreview({
       setSummary(areasResult.value);
     } else {
       setSummary(null);
-      nextErrors.push("Pending plan folders could not be loaded.");
+      nextErrors.push("Pending batch data could not be loaded.");
       console.error(
-        "[PendingPlansPreview] failed to load pending plan folders:",
+        "[PendingPlansPreview] failed to load pending batch data:",
         areasResult.reason,
       );
     }
@@ -312,9 +287,9 @@ export function PendingPlansPreview({
       setPlan(planResult.value);
     } else {
       setPlan(null);
-      nextErrors.push("Preview plan summary could not be loaded.");
+      nextErrors.push("Preview summary could not be loaded.");
       console.error(
-        "[PendingPlansPreview] failed to load preview plan:",
+        "[PendingPlansPreview] failed to load preview summary:",
         planResult.reason,
       );
     }
@@ -330,6 +305,24 @@ export function PendingPlansPreview({
   const areas = summary?.areas ?? [];
   const totalFiles = summary?.totalFileCount ?? 0;
   const totalBytes = summary?.totalBytes ?? 0;
+  const totalFolderGroups = useMemo(
+    () =>
+      areas.reduce((sum, area) => sum + area.subdirectories.length, 0),
+      [areas],
+  );
+  const visibleAreas = showAllBatches ? areas : areas.slice(0, VISIBLE_BATCH_LIMIT);
+  const hiddenBatchCount = Math.max(0, areas.length - visibleAreas.length);
+  const hasPendingBatches = areas.length > 0;
+  const hasLargeCounts =
+    totalFiles >= LARGE_PENDING_FILE_COUNT || totalBytes >= LARGE_PENDING_BYTES;
+
+  const handleCreatePlan = () => {
+    if (onCreatePlan) {
+      onCreatePlan();
+      return;
+    }
+    onNavigate?.("organize");
+  };
 
   if (loading) {
     return (
@@ -348,8 +341,9 @@ export function PendingPlansPreview({
           <span className="eyebrow">Plan Preview</span>
           <h2>Pending plans</h2>
           <p>
-            Review proposed plans before anything changes. This is the same
-            preview-only checkpoint, now inside Organize.
+            Review proposed plans before anything changes. Generated organization
+            plans are not saved yet, so this tab currently summarizes pending
+            imported/downloaded batches when they exist.
           </p>
         </div>
         {showOrganizeLink && onNavigate ? (
@@ -364,8 +358,13 @@ export function PendingPlansPreview({
         ) : null}
       </div>
 
-      <div className="staging-result staging-result--warn">
-        Preview only. No files changed. Review before applying.
+      <div className="pending-plans-safety-strip" aria-label="Pending plans safety">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          This area is preview-only. SimSuite is not moving, deleting, or
+          changing files from Pending plans.
+        </span>
       </div>
 
       {loadErrors.length > 0 ? (
@@ -374,15 +373,19 @@ export function PendingPlansPreview({
         </div>
       ) : null}
 
-      {areas.length > 0 ? (
-        <div className="pending-plans-stats" aria-label="Pending plan totals">
+      {hasPendingBatches ? (
+        <div className="pending-plans-stats" aria-label="Pending batch totals">
           <span>
-            <strong>{areas.length}</strong>
-            <small>Pending plan{areas.length !== 1 ? "s" : ""}</small>
+            <strong>{formatNumber(areas.length)}</strong>
+            <small>Pending batch{areas.length !== 1 ? "es" : ""}</small>
           </span>
           <span>
-            <strong>{totalFiles}</strong>
-            <small>File{totalFiles !== 1 ? "s" : ""}</small>
+            <strong>{formatNumber(totalFolderGroups)}</strong>
+            <small>Folder group{totalFolderGroups !== 1 ? "s" : ""}</small>
+          </span>
+          <span>
+            <strong>{formatNumber(totalFiles)}</strong>
+            <small>File{totalFiles !== 1 ? "s" : ""} found</small>
           </span>
           <span>
             <strong>{formatBytes(totalBytes)}</strong>
@@ -391,18 +394,81 @@ export function PendingPlansPreview({
         </div>
       ) : null}
 
-      <StagingPlanPanel plan={plan} />
-
-      {areas.length === 0 ? (
-        <EmptyPendingPlans />
-      ) : (
-        <div className="staging-list">
-          <AnimatePresence mode="popLayout">
-            {areas.map((area) => (
-              <StagingAreaCard key={area.itemId} area={area} />
-            ))}
-          </AnimatePresence>
+      {hasLargeCounts ? (
+        <div className="pending-plans-note pending-plans-note--warn">
+          This count comes from current pending batch data. Review before
+          trusting it.
         </div>
+      ) : null}
+
+      <PendingPlanSummaryPanel plan={plan} />
+
+      {hasPendingBatches ? (
+        <section className="pending-batches-section" aria-label="Pending batches">
+          <div className="pending-batches-heading">
+            <div>
+              <h3>Pending batches</h3>
+              <p>
+                These are app-local imported/downloaded batches, not saved
+                organization plans. Raw internal IDs are hidden unless you open
+                technical details.
+              </p>
+            </div>
+            <div className="pending-plans-actions">
+              <button type="button" className="primary-action" onClick={handleCreatePlan}>
+                <ListChecks size={16} />
+                Create preview plan
+              </button>
+              {onNavigate ? (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => onNavigate("downloads")}
+                >
+                  <Inbox size={16} />
+                  Open Inbox
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowTechnicalDetails((value) => !value)}
+              >
+                {showTechnicalDetails ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showTechnicalDetails
+                  ? "Hide technical details"
+                  : "Show technical details"}
+              </button>
+            </div>
+          </div>
+
+          <div className="pending-batch-list">
+            {visibleAreas.map((area, index) => (
+              <PendingBatchRow
+                key={area.itemId}
+                area={area}
+                batchIndex={index}
+                showTechnicalDetails={showTechnicalDetails}
+              />
+            ))}
+          </div>
+
+          {hiddenBatchCount > 0 || showAllBatches ? (
+            <button
+              type="button"
+              className="secondary-action pending-batches-toggle"
+              onClick={() => setShowAllBatches((value) => !value)}
+            >
+              {showAllBatches
+                ? "Show fewer batches"
+                : `Show ${formatNumber(hiddenBatchCount)} more batch${
+                    hiddenBatchCount !== 1 ? "es" : ""
+                  }`}
+            </button>
+          ) : null}
+        </section>
+      ) : (
+        <EmptyPendingPlans onCreatePlan={handleCreatePlan} />
       )}
     </section>
   );

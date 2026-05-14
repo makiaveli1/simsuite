@@ -80,6 +80,8 @@ Current Plan Preview may:
 
 - list app-local staged folders.
 - show file counts and sizes.
+- summarize internal pending batch data with friendly labels instead of exposing raw staging folder IDs as primary plan names.
+- reveal internal IDs only as technical details.
 - explain that no files are changed from Organize, Pending plans, or the direct Plan Preview route yet.
 - describe future requirements for applying changes.
 - return a preview-only `StagingPlan` with `wouldTouchFiles=false`.
@@ -94,6 +96,8 @@ Current Plan Preview must not expose enabled controls that:
 - let AI decide a file action.
 
 `StagingPlan` v1 is a Level 3 suggested-plan contract only. It may describe pending folders and future review needs, but it must not create destinations, claim a move is ready, or imply a plan can be applied until per-file preview, user confirmation, backup/restore, path validation, conflict handling, recoverable errors, and proof exist.
+
+Current `Pending plans` copy should also be honest that generated organization plans are not saved yet. Imported/downloaded app-local batches may be summarized there for now, but they remain review/intake data and should not be presented as completed or apply-ready organization plans.
 
 Before Plan Preview/internal Staging can apply real file changes, it must have:
 

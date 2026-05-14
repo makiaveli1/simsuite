@@ -16,10 +16,10 @@ vi.mock("../lib/api", () => ({
 const stagedSummary = {
   areas: [
     {
-      itemId: "42",
+      itemId: "20260309001415",
       subdirectories: [
         {
-          path: "C:\\Simsuite\\downloads_inbox\\42\\clean",
+          path: "C:\\Simsuite\\downloads_inbox\\20260309001415\\clean",
           name: "clean",
           fileCount: 2,
           totalBytes: 2048,
@@ -87,14 +87,18 @@ it("shows pending plan content as preview-only and does not expose file-changing
   expect(screen.getByRole("region", { name: /Preview plan/i })).toBeInTheDocument();
   expect(screen.getAllByText(/Plan Preview/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/Manual review needed/i)).toBeInTheDocument();
-  expect(screen.getByText(/does not include per-file organization suggestions/i)).toBeInTheDocument();
+  expect(screen.getByText(/Pending data is folder-level/i)).toBeInTheDocument();
+  expect(screen.getByText(/Pending batch 1/i)).toBeInTheDocument();
+  expect(screen.getByText(/not a saved organization plan yet/i)).toBeInTheDocument();
+  expect(screen.queryByText(/20260309001415/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^clean$/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/Staging preview plan/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/Current Staging data/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/staged folder/i)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /User confirmation required/i })).toBeDisabled();
-  expect(screen.getByRole("button", { name: /Preview only/i })).toBeDisabled();
-  expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /Show technical details/i }));
+  expect(screen.getByText(/Internal folder ID/i)).toBeInTheDocument();
+  expect(screen.getByText(/20260309001415/i)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Open Organize/i }));
   expect(onNavigate).toHaveBeenCalledWith("organize");
 
@@ -127,10 +131,10 @@ it("shows a blocked preview plan without exposing file-changing actions", async 
 
   render(<StagingScreen onNavigate={() => {}} userView="standard" />);
 
-  expect((await screen.findAllByText(/No pending plans/i)).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/No saved organization plans yet/i)).toBeInTheDocument();
   expect(screen.getByText(/Not ready to apply yet/i)).toBeInTheDocument();
-  expect(screen.getByText(/No preview items yet/i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Preview plan only/i })).toBeDisabled();
+  expect(screen.getByText(/No saved organization plans yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/Generated plans are not saved yet/i)).toBeInTheDocument();
 
   expect(api.cleanupStagingAreas).not.toHaveBeenCalled();
   expect(api.commitStagingArea).not.toHaveBeenCalled();

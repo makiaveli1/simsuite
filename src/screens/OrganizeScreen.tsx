@@ -416,8 +416,8 @@ export function OrganizeScreen({
         <div className="organize-workspace-tabs-copy">
           <span className="eyebrow">Planning workspace</span>
           <p>
-            Create a preview plan, then review pending plans without leaving
-            Organize.
+            Create a new preview suggestion from your Library, or review pending
+            batch work without leaving Organize.
           </p>
         </div>
         <div
@@ -582,7 +582,10 @@ export function OrganizeScreen({
           aria-labelledby="organize-tab-pending-plans"
           className="panel-card organize-pending-plan-panel"
         >
-          <PendingPlansPreview onNavigate={onNavigate} />
+          <PendingPlansPreview
+            onNavigate={onNavigate}
+            onCreatePlan={() => setActiveTab("create_plan")}
+          />
         </section>
       )}
     </div>
