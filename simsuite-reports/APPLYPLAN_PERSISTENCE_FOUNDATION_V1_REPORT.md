@@ -159,7 +159,19 @@ Desktop proof and smoke were skipped because no visible route behavior changed.
 
 ## Linear updates
 
-Pending until commit/push/PR are complete.
+Linear search through the natural-language research tool failed with a connector
+runtime error, so no duplicate issue was created. Known related issues were
+updated directly:
+
+- `VEL-31`: commented with implementation summary, validation, branch, commit,
+  report, and PR.
+- `VEL-18`: commented as related backup/restore work; result/restore execution
+  remains future work.
+- `VEL-19`: commented as related dry-run/apply split work; this sprint stays
+  persistence-only.
+- `VEL-20`: commented that confirmed Apply remains blocked by builder,
+  validation, backup/restore, conflict handling, confirmation, result logs, and
+  proof.
 
 Expected updates:
 
@@ -194,7 +206,9 @@ Known unrelated dirty files were left alone and must remain unstaged unless they
 
 ## Commit
 
-Pending.
+- Implementation commit: `39f194539f876c5700757175c2b6c9577fa404d1`
+- Branch pushed: `codex/applyplan-persistence-foundation-v1`
+- Draft PR: `https://github.com/makiaveli1/simsuite/pull/14`
 
 ## Final honest verdict
 
