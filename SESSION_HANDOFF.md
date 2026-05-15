@@ -1,5 +1,44 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Apply Safety Contract Design v1)
+
+- **Mode**: code
+- **Focus**: define the safety contract required before any future Apply/file-changing workflow is exposed
+
+### Progress Made
+
+1. **Defined the Apply contract**:
+   - added `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`
+   - documented future Apply scope, not-allowed behavior, proposed ApplyPlan shapes, required flow, path validation, backup/restore, conflict handling, UI rules, tests, and phased rollout
+
+2. **Audited current file-changing paths**:
+   - documented internal mutating commands such as legacy organization apply, Downloads/Inbox apply, guided apply, staging commit/cleanup, reject/restore, snapshot restore, and move-engine helpers
+   - confirmed current visible Inbox, Organize, Pending Plans, and Plan Preview workflows remain review/preview-only
+
+3. **Updated current-state docs**:
+   - linked the Apply contract from trust, navigation, and backend map docs
+   - no Rust, schema, API, visible route behavior, Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `104` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Existing backend file-changing commands are still registered internally.
+- ApplyPlan persistence does not exist yet.
+- Backup/restore behavior exists only as partial prior-art primitives, not as a finished visible Apply contract.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Comment on Linear `VEL-18` and `VEL-19`.
+2. Commit only sprint-relevant hunks.
+3. Recommended next sprint: ApplyPlan persistence audit or ApplyPlan builder design. Do not build real Apply yet.
+
 ## Current Session (May 15, 2026 - Inbox Batch Review Clarity v1)
 
 - **Mode**: code

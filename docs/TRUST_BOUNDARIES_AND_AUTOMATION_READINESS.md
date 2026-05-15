@@ -8,6 +8,8 @@ Navigation and workflow simplification planning now lives in `docs/planning/NAVI
 
 Auto Sorting rules planning now lives in `docs/planning/AUTO_SORTING_RULES_AUDIT_V1.md`. That audit is the source of truth for which evidence signals may drive preview-only organization suggestions.
 
+Apply safety planning now lives in `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`. That contract is the source of truth for what must exist before SimSuite can expose any future file-changing Apply workflow.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.
@@ -69,6 +71,26 @@ SimSuite must not claim:
 - Update replacement is not allowed until official/provider-safe checks, backup, rollback, and clear user confirmation exist.
 - Safe-delete claims are forbidden until deterministic dependency/resource analysis exists and is tested.
 - Provider work must respect provider/API policy and must not scrape generic pages as update proof.
+
+## Apply Safety Contract Rules
+
+Apply is not ready. SimSuite may show preview plans today, but it must not expose a real file-changing Apply workflow until the contract in `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` is implemented and proven.
+
+Before any future Apply can touch files, SimSuite must have:
+
+- an exact per-file preview.
+- explicit user confirmation.
+- backup or restore behavior.
+- validated source and destination paths.
+- destination conflict handling.
+- blocked/review-only item filtering.
+- recoverable error handling.
+- a per-file result log.
+- tests and desktop proof for the full workflow.
+
+Future Apply must not delete, quarantine, replace, auto-update, apply AI-only suggestions, apply review-only suggestions, apply weak heuristic suggestions, or claim that a file is safe to move/delete/replace.
+
+Existing backend mutating commands remain internal implementation history until a future ApplyPlan flow can safely replace or wrap them.
 
 ## Plan Preview / Internal Staging Readiness Rules
 

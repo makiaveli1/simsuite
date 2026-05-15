@@ -53,6 +53,7 @@ The normal flow is:
 | `get_staging_preview_plan` | implemented, read-only | Returns a preview-only `StagingPlan` from current folder-level staging data with `wouldTouchFiles=false`; it does not call commit, cleanup, or move-engine apply paths. Organize displays this as a folder-level pending-data note, not as saved organization-plan rows. |
 | `generate_sorting_preview_plan` | implemented, read-only | Returns preview-only organization suggestions for selected Library files or a bounded Mods/Tray folder scope. It uses `StagingPlan` items with buckets, source signals, blocked reasons, confidence labels, and `wouldTouchFiles=false`; it does not call legacy Organize apply paths, Staging commit/cleanup commands, or move-engine apply paths. |
 | Downloads/Inbox intake commands | implemented, mixed read/write internally | Current visible Inbox copy treats downloaded/imported batches as review-only intake data and blocks file-changing controls. The underlying Downloads backend still has mutation paths for future or legacy workflows, so visible exposure must continue to follow the trust-boundary safety contract. |
+| Apply/file-changing command family | implemented internally, blocked from current visible workflows | `apply_preview_organization`, `apply_download_item(s)`, `apply_guided_download_item`, `apply_special_review_fix`, mutating `apply_review_plan_action` branches, `restore_snapshot`, `undo_applied_item`, `reject_download_item(s)`, `restore_rejected_item`, and move-engine helpers can change files or app-local staged files. `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` defines the future gate before any normal UI exposure. |
 | `cleanup_staging_areas` | implemented backend command, not exposed by current Staging UI | Deletes selected app-local staging folders under the staging root. Future exposure requires the trust-boundary file-change checklist. |
 | `commit_staging_area` / `commit_all_staging_areas` | implemented backend commands, not exposed by current Staging UI | Can apply move-engine paths for ReadyNow download items. Future exposure requires preview, confirmation, backup/restore, recoverable errors, and proof. |
 | `list_library_watch_items` | implemented | Library watch source overview. |
@@ -67,7 +68,7 @@ The normal flow is:
 
 No command currently proves dependency relationships, missing meshes, safe deletion, safe replacement, official source identity, or automatic update replacement.
 
-Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` before adding sorting, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, staging apply controls, or duplicate-handling automation.
+Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` and `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` before adding sorting apply, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, staging apply controls, or duplicate-handling automation.
 
 ## 3. Database Map
 

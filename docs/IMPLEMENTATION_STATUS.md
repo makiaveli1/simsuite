@@ -1,5 +1,28 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Apply Safety Contract Design v1)
+
+This session defines the safety contract required before SimSuite can expose any future Apply/file-changing workflow. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.
+
+Important changes and findings:
+
+- added `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` as the source-of-truth Apply contract.
+- documented future Apply requirements: exact preview, explicit confirmation, backup/restore, path validation, conflict handling, recoverable errors, per-file result logs, tests, and proof.
+- audited existing internal mutating commands including legacy organization apply, Downloads/Inbox apply, guided/special apply, staging commit/cleanup, reject/restore, snapshot restore, and move-engine helpers.
+- current visible Inbox, Organize, Pending Plans, and Plan Preview remain review/preview-only.
+- existing backend mutation paths remain internal and are not ready for normal UI exposure.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `104` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- ApplyPlan persistence audit or ApplyPlan builder design. Do not build real Apply yet.
+
 ## Current session note (May 15, 2026 - Inbox Batch Review Clarity v1)
 
 This session makes Inbox the clear owner for downloaded/imported batch review. Organize remains the generated preview-plan workspace. This does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.
