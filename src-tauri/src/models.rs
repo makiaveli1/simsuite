@@ -252,6 +252,157 @@ pub struct StagingPlan {
     pub items: Vec<StagingPlanItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedApplyPlanStatus {
+    Draft,
+    PreviewOnlySource,
+    Blocked,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedApplyPlanItemStatus {
+    PreviewOnly,
+    Blocked,
+    ReviewOnly,
+    DraftCandidate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanSignal {
+    pub id: i64,
+    pub apply_plan_item_id: i64,
+    pub signal_kind: String,
+    pub signal_label: String,
+    pub signal_value: Option<String>,
+    pub evidence_level: Option<String>,
+    pub source_system: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanBlocker {
+    pub id: i64,
+    pub apply_plan_item_id: i64,
+    pub blocker_kind: String,
+    pub reason_code: String,
+    pub message: String,
+    pub source_system: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanItem {
+    pub id: i64,
+    pub apply_plan_id: i64,
+    pub source_item_id: Option<String>,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub current_path: String,
+    pub current_root: String,
+    pub destination_path: Option<String>,
+    pub destination_root: Option<String>,
+    pub action_kind: String,
+    pub evidence_level: String,
+    pub bucket: Option<String>,
+    pub confidence_label: Option<String>,
+    pub item_status: PersistedApplyPlanItemStatus,
+    pub blocked: bool,
+    pub review_only: bool,
+    pub validation_status: Option<String>,
+    pub conflict_status: Option<String>,
+    pub path_privacy_level: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub signals: Vec<PersistedApplyPlanSignal>,
+    pub blockers: Vec<PersistedApplyPlanBlocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlan {
+    pub id: i64,
+    pub source_staging_plan_id: Option<String>,
+    pub source_plan_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub status: PersistedApplyPlanStatus,
+    pub would_touch_files: bool,
+    pub confirmation_required: bool,
+    pub backup_required: bool,
+    pub restore_available: bool,
+    pub total_items: i64,
+    pub applyable_items: i64,
+    pub blocked_items: i64,
+    pub review_only_items: i64,
+    pub caveats: Vec<String>,
+    pub source_scope: Option<serde_json::Value>,
+    pub scan_session_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub items: Vec<PersistedApplyPlanItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanListItem {
+    pub id: i64,
+    pub source_staging_plan_id: Option<String>,
+    pub source_plan_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub status: PersistedApplyPlanStatus,
+    pub would_touch_files: bool,
+    pub confirmation_required: bool,
+    pub backup_required: bool,
+    pub restore_available: bool,
+    pub total_items: i64,
+    pub applyable_items: i64,
+    pub blocked_items: i64,
+    pub review_only_items: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveApplyPlanPreviewRequest {
+    pub source_plan: StagingPlan,
+    #[serde(default)]
+    pub source_plan_kind: Option<String>,
+    #[serde(default)]
+    pub source_scope: Option<serde_json::Value>,
+    #[serde(default)]
+    pub scan_session_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveApplyPlanPreviewResult {
+    pub plan_id: i64,
+    pub plan: ApplyPlanListItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSavedApplyPlansRequest {
+    pub include_cancelled: Option<bool>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteDraftApplyPlanResult {
+    pub plan_id: i64,
+    pub cancelled: bool,
+    pub status: PersistedApplyPlanStatus,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateSortingPreviewPlanRequest {

@@ -66,9 +66,20 @@ import type {
   ScanStatus,
   ScanSummary,
   CleanupResult,
+  ApplyPlanListItem,
+  DeleteDraftApplyPlanResult,
+  ListSavedApplyPlansRequest,
+  PersistedApplyPlan,
+  PersistedApplyPlanBlocker,
+  PersistedApplyPlanItem,
+  PersistedApplyPlanItemStatus,
+  PersistedApplyPlanSignal,
+  SaveApplyPlanPreviewRequest,
+  SaveApplyPlanPreviewResult,
   StagingAreasSummary,
   StagingCommitResult,
   StagingPlan,
+  StagingPlanItem,
   SpecialModDecision,
   SpecialReviewPlan,
   SnapshotSummary,
@@ -260,6 +271,227 @@ const createMockSortingPreviewPlan = (): StagingPlan => ({
     },
   ],
 });
+
+let mockNextApplyPlanId = 1;
+let mockNextApplyPlanItemId = 1;
+let mockNextApplyPlanSignalId = 1;
+let mockNextApplyPlanBlockerId = 1;
+let mockSavedApplyPlans: PersistedApplyPlan[] = [];
+
+const applyPlanSummaryFromMock = (
+  plan: PersistedApplyPlan,
+): ApplyPlanListItem => ({
+  id: plan.id,
+  sourceStagingPlanId: plan.sourceStagingPlanId,
+  sourcePlanKind: plan.sourcePlanKind,
+  title: plan.title,
+  summary: plan.summary,
+  status: plan.status,
+  wouldTouchFiles: plan.wouldTouchFiles,
+  confirmationRequired: plan.confirmationRequired,
+  backupRequired: plan.backupRequired,
+  restoreAvailable: plan.restoreAvailable,
+  totalItems: plan.totalItems,
+  applyableItems: plan.applyableItems,
+  blockedItems: plan.blockedItems,
+  reviewOnlyItems: plan.reviewOnlyItems,
+  createdAt: plan.createdAt,
+  updatedAt: plan.updatedAt,
+});
+
+const isMockReviewOnlyItem = (item: StagingPlanItem) =>
+  item.evidenceLevel === "review_only" ||
+  item.confidenceLabel === "review-only" ||
+  item.actionKind === "suggest_review" ||
+  item.actionKind === "leave_in_place" ||
+  item.actionKind === "no_action";
+
+const mockDestinationRoot = (
+  bucket: StagingPlanItem["bucket"],
+): string | null => {
+  switch (bucket) {
+    case "script_mods":
+    case "cas":
+    case "build_buy":
+    case "gameplay":
+    case "presets_sliders":
+    case "overrides_defaults":
+      return "mods";
+    case "tray":
+      return "tray";
+    default:
+      return null;
+  }
+};
+
+const buildMockPersistedApplyPlan = (
+  request: SaveApplyPlanPreviewRequest,
+): PersistedApplyPlan => {
+  const sourcePlan = request.sourcePlan;
+
+  if (sourcePlan.wouldTouchFiles) {
+    throw new Error("ApplyPlan preview persistence only accepts preview-only source plans.");
+  }
+
+  if (sourcePlan.items.some((item) => item.wouldTouchFiles)) {
+    throw new Error("ApplyPlan preview persistence only accepts preview-only source items.");
+  }
+
+  const createdAt = new Date().toISOString();
+  const sourcePlanBlocked = sourcePlan.status === "blocked";
+  let blockedItems = 0;
+  let reviewOnlyItems = 0;
+
+  const items: PersistedApplyPlanItem[] = sourcePlan.items.map((item) => {
+    const itemId = mockNextApplyPlanItemId++;
+    const sourceBlocked =
+      sourcePlanBlocked || item.blockedReasons.length > 0 || !item.currentPath;
+    const reviewOnly = isMockReviewOnlyItem(item);
+    let itemStatus: PersistedApplyPlanItemStatus = "preview_only";
+
+    if (sourceBlocked) {
+      itemStatus = "blocked";
+      blockedItems += 1;
+    } else if (reviewOnly) {
+      itemStatus = "review_only";
+      reviewOnlyItems += 1;
+    } else if (
+      (item.actionKind === "suggest_move" || item.actionKind === "suggest_group") &&
+      item.suggestedDestinationPath
+    ) {
+      itemStatus = "draft_candidate";
+    }
+
+    const signals: PersistedApplyPlanSignal[] = item.sourceSignals.map((signal) => ({
+      id: mockNextApplyPlanSignalId++,
+      applyPlanItemId: itemId,
+      signalKind: "source_signal",
+      signalLabel: signal,
+      signalValue: signal,
+      evidenceLevel: item.evidenceLevel,
+      sourceSystem: "staging_plan",
+      createdAt,
+    }));
+
+    const blockers: PersistedApplyPlanBlocker[] = item.blockedReasons.map(
+      (reason) => ({
+        id: mockNextApplyPlanBlockerId++,
+        applyPlanItemId: itemId,
+        blockerKind: "blocked_reason",
+        reasonCode: reason,
+        message: reason,
+        sourceSystem: "staging_plan",
+        createdAt,
+      }),
+    );
+
+    if (!item.currentPath) {
+      blockers.push({
+        id: mockNextApplyPlanBlockerId++,
+        applyPlanItemId: itemId,
+        blockerKind: "validation",
+        reasonCode: "missing_current_path",
+        message: "Current path is missing, so this preview item cannot become an apply candidate.",
+        sourceSystem: "apply_plan_persistence",
+        createdAt,
+      });
+    }
+
+    if (sourcePlanBlocked && item.blockedReasons.length === 0) {
+      blockers.push({
+        id: mockNextApplyPlanBlockerId++,
+        applyPlanItemId: itemId,
+        blockerKind: "source_plan",
+        reasonCode: "source_plan_blocked",
+        message: "The source preview plan is blocked.",
+        sourceSystem: "staging_plan",
+        createdAt,
+      });
+    }
+
+    if (reviewOnly) {
+      blockers.push({
+        id: mockNextApplyPlanBlockerId++,
+        applyPlanItemId: itemId,
+        blockerKind: "review_only",
+        reasonCode: "review_only_evidence",
+        message: "Review-only preview items are stored for audit but are not applyable.",
+        sourceSystem: "apply_plan_persistence",
+        createdAt,
+      });
+    }
+
+    return {
+      id: itemId,
+      applyPlanId: 0,
+      sourceItemId: item.id,
+      fileId: item.fileId,
+      fileName: item.fileName,
+      currentPath: item.currentPath,
+      currentRoot: item.currentRoot,
+      destinationPath: item.suggestedDestinationPath,
+      destinationRoot: item.suggestedDestinationPath
+        ? mockDestinationRoot(item.bucket)
+        : null,
+      actionKind: item.actionKind,
+      evidenceLevel: item.evidenceLevel,
+      bucket: item.bucket,
+      confidenceLabel: item.confidenceLabel,
+      itemStatus,
+      blocked: itemStatus === "blocked",
+      reviewOnly: itemStatus === "review_only",
+      validationStatus: null,
+      conflictStatus: null,
+      pathPrivacyLevel: "local_full_path_required",
+      createdAt,
+      updatedAt: createdAt,
+      signals,
+      blockers,
+    };
+  });
+
+  const planId = mockNextApplyPlanId++;
+  const status: PersistedApplyPlan["status"] =
+    sourcePlanBlocked || blockedItems > 0 ? "blocked" : "preview_only_source";
+  const plan: PersistedApplyPlan = {
+    id: planId,
+    sourceStagingPlanId: sourcePlan.id,
+    sourcePlanKind: request.sourcePlanKind ?? sourcePlan.source,
+    title: sourcePlan.title,
+    summary: sourcePlan.summary,
+    status,
+    wouldTouchFiles: false,
+    confirmationRequired: true,
+    backupRequired: true,
+    restoreAvailable: false,
+    totalItems: sourcePlan.items.length,
+    applyableItems: 0,
+    blockedItems,
+    reviewOnlyItems,
+    caveats: sourcePlan.caveats,
+    sourceScope: request.sourceScope ?? null,
+    scanSessionId: request.scanSessionId ?? null,
+    createdAt,
+    updatedAt: createdAt,
+    items: [],
+  };
+
+  plan.items = items.map((item) => ({
+    ...item,
+    applyPlanId: planId,
+    signals: item.signals.map((signal) => ({
+      ...signal,
+      applyPlanItemId: item.id,
+    })),
+    blockers: item.blockers.map((blocker) => ({
+      ...blocker,
+      applyPlanItemId: item.id,
+    })),
+  }));
+
+  return plan;
+};
+
 const emptyInsights = {
   format: null,
   resourceSummary: [],
@@ -6393,6 +6625,57 @@ async function mockInvoke<T>(
       return structuredClone(createMockStagingPreviewPlan()) as T;
     case "generate_sorting_preview_plan":
       return structuredClone(createMockSortingPreviewPlan()) as T;
+    case "save_apply_plan_preview": {
+      const request = payload?.request as SaveApplyPlanPreviewRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan preview save request.");
+      }
+      const plan = buildMockPersistedApplyPlan(request);
+      mockSavedApplyPlans = [plan, ...mockSavedApplyPlans];
+      return {
+        planId: plan.id,
+        plan: applyPlanSummaryFromMock(plan),
+      } as SaveApplyPlanPreviewResult as T;
+    }
+    case "list_saved_apply_plans": {
+      const request = payload?.request as ListSavedApplyPlansRequest | undefined;
+      const includeCancelled = request?.includeCancelled ?? false;
+      const rawLimit = request?.limit ?? 50;
+      const limit = Math.min(Math.max(rawLimit, 1), 200);
+      const plans = mockSavedApplyPlans
+        .filter((plan) => includeCancelled || plan.status !== "cancelled")
+        .slice(0, limit)
+        .map(applyPlanSummaryFromMock);
+      return structuredClone(plans) as T;
+    }
+    case "get_apply_plan": {
+      const planId = payload?.planId as number | undefined;
+      const plan = mockSavedApplyPlans.find((candidate) => candidate.id === planId) ?? null;
+      return structuredClone(plan) as T;
+    }
+    case "delete_draft_apply_plan": {
+      const planId = payload?.planId as number | undefined;
+      const index = mockSavedApplyPlans.findIndex((candidate) => candidate.id === planId);
+      if (index < 0 || !planId) {
+        throw new Error("Saved preview plan was not found.");
+      }
+      const updatedAt = new Date().toISOString();
+      const plan = {
+        ...mockSavedApplyPlans[index],
+        status: "cancelled" as const,
+        updatedAt,
+      };
+      mockSavedApplyPlans = [
+        ...mockSavedApplyPlans.slice(0, index),
+        plan,
+        ...mockSavedApplyPlans.slice(index + 1),
+      ];
+      return {
+        planId,
+        cancelled: true,
+        status: "cancelled",
+      } as DeleteDraftApplyPlanResult as T;
+    }
     case "get_app_behavior_settings":
       return structuredClone(mockAppBehaviorSettings) as T;
     case "save_app_behavior_settings": {
@@ -7836,6 +8119,14 @@ export const api = {
     invoke<StagingPlan>("get_staging_preview_plan"),
   generateSortingPreviewPlan: (request: GenerateSortingPreviewPlanRequest) =>
     invoke<StagingPlan>("generate_sorting_preview_plan", { request }),
+  saveApplyPlanPreview: (request: SaveApplyPlanPreviewRequest) =>
+    invoke<SaveApplyPlanPreviewResult>("save_apply_plan_preview", { request }),
+  listSavedApplyPlans: (request?: ListSavedApplyPlansRequest) =>
+    invoke<ApplyPlanListItem[]>("list_saved_apply_plans", { request }),
+  getApplyPlan: (planId: number) =>
+    invoke<PersistedApplyPlan | null>("get_apply_plan", { planId }),
+  deleteDraftApplyPlan: (planId: number) =>
+    invoke<DeleteDraftApplyPlanResult>("delete_draft_apply_plan", { planId }),
   cleanupStagingAreas: (pathsToDelete: string[]) =>
     invoke<CleanupResult>("cleanup_staging_areas", { pathsToDelete }),
   commitStagingArea: (itemId: string) =>

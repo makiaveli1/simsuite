@@ -9,6 +9,9 @@ use crate::{
     seed::{SeedCreator, SeedPack},
 };
 
+const APPLY_PLAN_PERSISTENCE_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0003_applyplan_persistence_foundation.sql");
+
 #[derive(Debug, Clone)]
 pub struct UserCategoryOverride {
     pub match_path: String,
@@ -65,6 +68,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         connection.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
             params![2_i64, "add_rejected_at"],
+        )?;
+    }
+
+    let v3_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 3",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v3_exists.is_none() {
+        ensure_apply_plan_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![3_i64, "applyplan_persistence_foundation"],
         )?;
     }
 
@@ -1031,7 +1049,13 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "duplicates",
         "CREATE INDEX IF NOT EXISTS idx_duplicates_file_id_b ON duplicates (file_id_b);",
     )?;
+    ensure_apply_plan_schema(connection)?;
 
+    Ok(())
+}
+
+fn ensure_apply_plan_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(APPLY_PLAN_PERSISTENCE_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -1288,6 +1312,54 @@ mod tests {
             settings.downloads_path,
             Some("C:/Downloads/Test".to_owned())
         );
+    }
+
+    #[test]
+    fn initialize_creates_apply_plan_persistence_foundation_tables() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        for table_name in [
+            "apply_plans",
+            "apply_plan_items",
+            "apply_plan_item_signals",
+            "apply_plan_item_blockers",
+        ] {
+            assert!(
+                table_exists(&connection, table_name).expect("table lookup"),
+                "missing table {table_name}"
+            );
+        }
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 3 AND name = 'applyplan_persistence_foundation'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+
+        for index_name in [
+            "idx_apply_plans_status_created_at",
+            "idx_apply_plans_source_staging_plan_id",
+            "idx_apply_plan_items_plan_id",
+            "idx_apply_plan_items_file_id",
+            "idx_apply_plan_items_status",
+            "idx_apply_plan_item_signals_item_id",
+            "idx_apply_plan_item_signals_kind",
+            "idx_apply_plan_item_blockers_item_id",
+            "idx_apply_plan_item_blockers_reason_code",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                    params![index_name],
+                    |row| row.get(0),
+                )
+                .expect("index lookup");
+            assert_eq!(count, 1, "missing index {index_name}");
+        }
     }
 
     #[test]

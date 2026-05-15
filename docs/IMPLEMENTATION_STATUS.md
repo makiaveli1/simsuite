@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - ApplyPlan Persistence Foundation v1)
+
+This session implements the first DB-only/read-only ApplyPlan persistence
+foundation. SimSuite can now save, list, view, and soft-cancel draft preview
+ApplyPlan records without changing files.
+
+Important changes and findings:
+
+- added migration `database/migrations/0003_applyplan_persistence_foundation.sql`
+  with `apply_plans`, `apply_plan_items`, `apply_plan_item_signals`, and
+  `apply_plan_item_blockers`.
+- added schema repair for the ApplyPlan persistence tables and indexes.
+- added Rust models plus `core::apply_plan_persistence` for DB-only preview
+  persistence.
+- added Tauri commands: `save_apply_plan_preview`,
+  `list_saved_apply_plans`, `get_apply_plan`, and
+  `delete_draft_apply_plan`.
+- added TypeScript API types/wrappers and mock persistence.
+- kept result logs and restore entries out of scope.
+- no real Apply, file movement, cleanup, delete, quarantine, replacement,
+  auto-sort execution, AI decision, or visible Apply UI was added.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `107` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`277` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`277` passed, `2` ignored).
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- Read-only ApplyPlan builder from `StagingPlan` or saved-plan UI review. Do
+  not build real Apply yet.
+
 ## Current session note (May 15, 2026 - ApplyPlan Persistence Audit v1)
 
 This session designs future ApplyPlan persistence and result-log storage before

@@ -1,5 +1,60 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - ApplyPlan Persistence Foundation v1)
+
+- **Mode**: code
+- **Focus**: implement the first DB-only/read-only ApplyPlan persistence
+  foundation for draft/preview saved plans
+
+### Progress Made
+
+1. **Added persistence storage**:
+   - added migration `database/migrations/0003_applyplan_persistence_foundation.sql`
+   - added DB-only tables for `apply_plans`, `apply_plan_items`,
+     `apply_plan_item_signals`, and `apply_plan_item_blockers`
+   - updated schema repair so existing databases can create these tables
+     without destructive changes
+
+2. **Added backend/API foundation**:
+   - added `src-tauri/src/core/apply_plan_persistence.rs`
+   - added persisted ApplyPlan Rust models and Tauri commands to save, list,
+     view, and soft-cancel draft preview records
+   - added TypeScript types, API wrappers, and mock in-memory persistence
+
+3. **Kept the trust boundary intact**:
+   - no real Apply, file movement, cleanup, delete, quarantine, replacement,
+     auto-sort execution, AI decision, result execution log, restore execution
+     table, or visible Apply UI was added
+   - saved v1 records keep `wouldTouchFiles=false` and `applyableItems=0`
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `107` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`277` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`277` passed, `2` ignored).
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Saved-plan UI is not implemented yet.
+- `apply_plan_results` and `apply_plan_restore_entries` remain future work.
+- Future Apply still requires validation, confirmation, backup/restore,
+  conflict handling, recoverable errors, result logs, and proof.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Update Linear/GitHub and commit only sprint-relevant files.
+2. Recommended next sprint: read-only ApplyPlan builder from `StagingPlan` or
+   saved-plan UI review. Do not build real Apply yet.
+
 ## Current Session (May 15, 2026 - ApplyPlan Persistence Audit v1)
 
 - **Mode**: code

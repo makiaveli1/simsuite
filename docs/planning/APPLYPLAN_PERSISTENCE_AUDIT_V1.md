@@ -11,6 +11,13 @@ Real Apply is not implemented. No files changed. This document does not add a
 SQLite migration, Tauri command, UI, file movement, cleanup, delete,
 quarantine, replacement, auto-sort, or AI decision.
 
+Current implementation note: the follow-up sprint
+`codex/applyplan-persistence-foundation-v1` implemented the first DB-only
+foundation from this audit. SimSuite now has runtime storage for draft/preview
+ApplyPlan records, items, source-signal snapshots, and blocker snapshots. That
+foundation still does not implement real Apply, file movement, result logs,
+restore entries, or visible saved-plan UI.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
@@ -95,7 +102,10 @@ Persisted data must distinguish three things clearly:
 
 ## 5. Proposed Future Schema
 
-This schema is design-only. No migration is added in this sprint.
+Audit-time decision: this schema was design-only and no migration was added in
+the audit sprint. Follow-up status: `codex/applyplan-persistence-foundation-v1`
+implemented the first four foundation tables and deferred result/restore
+tables.
 
 ### `apply_plans`
 
@@ -395,10 +405,12 @@ Path validation remains required before any future Apply:
 
 ## 9. Migration Recommendation
 
-Decision: no migration in this sprint.
+Audit-time decision: no migration in the audit sprint.
 
-The proposed tables should be introduced later when the first read-only
-ApplyPlan builder or persistence command lands.
+Follow-up status: the DB-only ApplyPlan persistence foundation now has a
+runtime migration and `ensure_schema` repair for draft/preview storage only.
+Result-log and restore-entry tables should still wait for a later
+backup/result-log sprint.
 
 Future implementation should include:
 
@@ -414,7 +426,7 @@ file and `src-tauri/src/database/mod.rs`.
 
 ## 10. API And Command Recommendation
 
-Future commands to design later, not implement now:
+Audit-time command recommendation:
 
 | Command | Classification | File movement allowed? | Notes |
 | --- | --- | --- | --- |
@@ -424,6 +436,11 @@ Future commands to design later, not implement now:
 | `delete_draft_apply_plan` | State-changing DB-only | No | Deletes or cancels a draft that has never applied files. |
 | `validate_apply_plan` | Read-only by default | No | May return validation/conflict results without saving. Saving validation output must be an explicit DB-only design. |
 | `build_apply_plan_from_staging_plan` | Read-only draft or state-changing DB-only | No | Converts a reviewed `StagingPlan` snapshot into an ApplyPlan draft, while preserving blockers and review-only exclusions. |
+
+Follow-up status: `save_apply_plan_preview`, `list_saved_apply_plans`,
+`get_apply_plan`, and `delete_draft_apply_plan` now exist as DB-only/read-only
+foundation commands. `validate_apply_plan` and
+`build_apply_plan_from_staging_plan` remain future work.
 
 All future commands must avoid:
 
@@ -476,9 +493,10 @@ Desktop proof is required only when visible workflow behavior changes.
 
 Decisions:
 
-- No runtime migration in this sprint.
-- No ApplyPlan runtime command in this sprint.
-- No UI in this sprint.
+- Audit sprint decision: no runtime migration, command, or UI was added then.
+- Follow-up foundation decision: add DB-only draft/preview persistence commands
+  and tables, with no file movement and no visible UI.
+- Result-log, restore-entry, saved-plan UI, and real Apply work remain blocked.
 - Future ApplyPlan persistence must reuse `StagingPlan`, Library file identity,
   scanner/indexed paths, duplicate/review/update context, Inbox intake context,
   and Apply Safety Contract rules.

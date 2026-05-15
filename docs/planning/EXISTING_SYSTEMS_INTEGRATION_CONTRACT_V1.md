@@ -30,6 +30,11 @@ contract to future saved plans, blockers, evidence snapshots, validation and
 conflict results, backup/restore references, and result logs. It is design-only:
 no migration, runtime command, UI, or real Apply workflow exists yet.
 
+Current implementation note: the DB-only ApplyPlan persistence foundation now
+implements draft/preview storage for saved plan snapshots, items, signals, and
+blockers. It reuses `StagingPlan` evidence and remains persistence-only. Result
+logs, restore entries, visible saved-plan UI, and real Apply remain future work.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

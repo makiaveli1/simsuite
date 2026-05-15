@@ -1,4 +1,5 @@
 pub mod ai_classifier;
+pub mod apply_plan_persistence;
 pub mod bundle_detector;
 pub mod category_audit;
 pub mod content_versions;

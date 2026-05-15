@@ -55,8 +55,9 @@ Key distinction:
 
 Future ApplyPlan persistence planning now lives in
 `docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md`. Saved plan and result-log
-storage is design-only today: Organize can create and review preview plans, but
-it does not save ApplyPlan records or expose file-changing Apply behavior.
+storage design lives there. The first DB-only ApplyPlan persistence foundation
+now exists for draft/preview records, but no visible saved-plan UI or
+file-changing Apply behavior exists yet.
 
 ## Overlap Audit
 

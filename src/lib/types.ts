@@ -209,6 +209,130 @@ export interface StagingPlan {
   items: StagingPlanItem[];
 }
 
+export type PersistedApplyPlanStatus =
+  | "draft"
+  | "preview_only_source"
+  | "blocked"
+  | "cancelled";
+
+export type PersistedApplyPlanItemStatus =
+  | "preview_only"
+  | "blocked"
+  | "review_only"
+  | "draft_candidate";
+
+export interface PersistedApplyPlanSignal {
+  id: number;
+  applyPlanItemId: number;
+  signalKind: string;
+  signalLabel: string;
+  signalValue: string;
+  evidenceLevel: string | null;
+  sourceSystem: string | null;
+  createdAt: string;
+}
+
+export interface PersistedApplyPlanBlocker {
+  id: number;
+  applyPlanItemId: number;
+  blockerKind: string;
+  reasonCode: string;
+  message: string;
+  sourceSystem: string | null;
+  createdAt: string;
+}
+
+export interface PersistedApplyPlanItem {
+  id: number;
+  applyPlanId: number;
+  sourceItemId: string | null;
+  fileId: number | null;
+  fileName: string;
+  currentPath: string | null;
+  currentRoot: string | null;
+  destinationPath: string | null;
+  destinationRoot: string | null;
+  actionKind: string;
+  evidenceLevel: string;
+  bucket: string | null;
+  confidenceLabel: string | null;
+  itemStatus: PersistedApplyPlanItemStatus;
+  blocked: boolean;
+  reviewOnly: boolean;
+  validationStatus: string | null;
+  conflictStatus: string | null;
+  pathPrivacyLevel: string;
+  createdAt: string;
+  updatedAt: string;
+  signals: PersistedApplyPlanSignal[];
+  blockers: PersistedApplyPlanBlocker[];
+}
+
+export interface PersistedApplyPlan {
+  id: number;
+  sourceStagingPlanId: string | null;
+  sourcePlanKind: string;
+  title: string;
+  summary: string;
+  status: PersistedApplyPlanStatus;
+  wouldTouchFiles: boolean;
+  confirmationRequired: boolean;
+  backupRequired: boolean;
+  restoreAvailable: boolean;
+  totalItems: number;
+  applyableItems: number;
+  blockedItems: number;
+  reviewOnlyItems: number;
+  caveats: string[];
+  sourceScope: Record<string, unknown> | null;
+  scanSessionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PersistedApplyPlanItem[];
+}
+
+export interface ApplyPlanListItem {
+  id: number;
+  sourceStagingPlanId: string | null;
+  sourcePlanKind: string;
+  title: string;
+  summary: string;
+  status: PersistedApplyPlanStatus;
+  wouldTouchFiles: boolean;
+  confirmationRequired: boolean;
+  backupRequired: boolean;
+  restoreAvailable: boolean;
+  totalItems: number;
+  applyableItems: number;
+  blockedItems: number;
+  reviewOnlyItems: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveApplyPlanPreviewRequest {
+  sourcePlan: StagingPlan;
+  sourcePlanKind?: string | null;
+  sourceScope?: Record<string, unknown> | null;
+  scanSessionId?: number | null;
+}
+
+export interface SaveApplyPlanPreviewResult {
+  planId: number;
+  plan: ApplyPlanListItem;
+}
+
+export interface ListSavedApplyPlansRequest {
+  includeCancelled?: boolean | null;
+  limit?: number | null;
+}
+
+export interface DeleteDraftApplyPlanResult {
+  planId: number;
+  cancelled: boolean;
+  status: PersistedApplyPlanStatus;
+}
+
 export type GenerateSortingPreviewPlanScope =
   | {
       kind: "selected_files";
