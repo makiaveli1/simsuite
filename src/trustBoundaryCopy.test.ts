@@ -10,6 +10,7 @@ const userFacingClaimSurfaces = [
   "src/screens/DuplicatesScreen.tsx",
   "src/screens/UpdatesScreen.tsx",
   "src/screens/OrganizeScreen.tsx",
+  "src/screens/organize/SavedPlansReview.tsx",
   "src/screens/StagingScreen.tsx",
   "src/screens/library/actionPreflight.tsx",
   "src/screens/library/LibraryCollectionTable.tsx",
@@ -146,5 +147,19 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/No Apply was added/);
     expect(source).toMatch(/does not create folders/);
     expect(source).toMatch(/does not[\s\S]*persist validation state/i);
+  });
+
+  it("documents Organize validation preview UI as review-only", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/ORGANIZE_VALIDATION_PREVIEW_UI_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Validation preview/i);
+    expect(source).toMatch(/previewApplyPlanValidation/);
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/canProceedToConfirmation=false/);
+    expect(source).toMatch(/No Apply/i);
+    expect(source).toMatch(/does not move files/i);
   });
 });

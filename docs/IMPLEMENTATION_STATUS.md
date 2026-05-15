@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (May 16, 2026 - Organize Validation Preview UI v1)
+
+This session adds the first visible validation/conflict preview UI inside
+Organize `Saved plans`. It calls the existing read-only
+`previewApplyPlanValidation` API for selected saved draft records and does not
+add Apply, file movement, folder creation, cleanup, delete, quarantine,
+replacement, auto-sort execution, AI decisions, validation persistence, result
+logs, restore entries, or confirmation.
+
+Important changes and findings:
+
+- saved plan details now show a `Validation preview` section.
+- `Check saved plan` calls the backend-owned validation preview API.
+- the UI shows summary counts for blocked, review-only, conflict, stale,
+  missing-source, destination-conflict, and backup-required items.
+- item rows show friendly validation/conflict labels, reasons, and required
+  next steps.
+- `No files changed` and `Future confirmation blocked` remain visible.
+- `valid_preview_only` is explained as preview-only and not Apply-ready.
+- desktop proof was updated to capture
+  `organize-validation-preview-ui-v1.png`.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `118` tests).
+- `npm run build`: passed with the existing Vite chunk-size warning.
+- `npm run desktop:proof:fixtures`: passed and captured
+  `organize-validation-preview-ui-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed.
+- Separate Rust validation was not required because no Rust/backend files were
+  changed; desktop proof/smoke rebuilt the Tauri release binary with existing
+  warning noise.
+
+Recommended next sprint:
+
+- Validation preview UX polish or backup/restore/result-log design. Do not
+  start real Apply yet.
+
 ## Current session note (May 15, 2026 - Read-only ApplyPlan Validation Preview v1)
 
 This session implements the first read-only validation/conflict preview command

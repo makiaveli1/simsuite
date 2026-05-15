@@ -46,6 +46,13 @@ evidence, returns validation/conflict preview results, and keeps
 `canProceedToConfirmation=false`. It does not persist validation state, create
 folders or backups, expose Apply, or change files.
 
+Current implementation note: Organize `Saved plans` now exposes the first
+visible validation/conflict preview UI for saved draft records. It calls
+`previewApplyPlanValidation`, shows blockers, conflicts, caveats, and summary
+counts, and keeps `canProceedToConfirmation=false` visible as `Future
+confirmation blocked`. It does not add Apply, persist validation state, or
+change files.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

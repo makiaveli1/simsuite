@@ -58,6 +58,12 @@ snapshots, blocker/signal rows, Library file identity/current paths, and
 configured Mods/Tray roots. It does not reparse packages, rescan folders,
 reimplement duplicate truth, or create frontend-owned validation state.
 
+Current implementation note: Organize `Saved plans` now reuses
+`previewApplyPlanValidation` to display validation/conflict previews for saved
+draft records. The UI does not create a parallel validation store, does not run
+frontend-owned validation from raw plan data, and does not expose file-changing
+actions.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

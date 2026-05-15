@@ -1661,12 +1661,15 @@ async function main() {
       /saved as draft preview plan|draft preview plans/i.test(organizeBody);
     summary.organizeSavedPlanCancelVisible =
       /cancel draft|this only cancels the saved draft record/i.test(organizeBody);
+    summary.organizeValidationPreviewVisible = /validation preview|check saved plan/i.test(
+      organizeBody,
+    );
     summary.organizeContextExcerpt = organizeBody.slice(0, 1800);
     summary.organizeEnabledFileChangingButtons = await driver.executeScript(`
       return Array.from(document.querySelectorAll("button"))
         .filter((button) => !button.disabled)
         .map((button) => button.textContent || "")
-        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete)\\b/i.test(text));
+        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation)\\b/i.test(text));
     `);
     if (
       !summary.organizeCreateBodyHasSavePreview ||
@@ -1682,11 +1685,63 @@ async function main() {
     if (!summary.organizeSavedPlanCancelVisible) {
       throw new Error("Organize saved-plan review did not expose safe draft cancellation wording.");
     }
+    if (!summary.organizeValidationPreviewVisible) {
+      throw new Error("Organize saved-plan details did not expose validation preview controls.");
+    }
     if (summary.organizeEnabledFileChangingButtons.length > 0) {
       throw new Error(
         `Organize exposed enabled file-changing controls: ${summary.organizeEnabledFileChangingButtons.join(", ")}`,
       );
     }
+    await clickVisibleButton(driver, "Check saved plan", 30000);
+    await waitForAnyText(
+      driver,
+      [
+        "Validation caveats",
+        "No current blocker found, but still preview-only",
+        "Destination exists",
+        "Missing source",
+      ],
+      60000,
+    );
+    const organizeValidationBody = await getBodyText(driver);
+    summary.organizeValidationBodyHasPreview = /validation preview/i.test(
+      organizeValidationBody,
+    );
+    summary.organizeValidationBodyHasSummary =
+      /blocked|needs review|conflicts|stale paths|missing files|backup required/i.test(
+        organizeValidationBody,
+      );
+    summary.organizeValidationBodyHasNoFilesChanged = /no files changed/i.test(
+      organizeValidationBody,
+    );
+    summary.organizeValidationBodyBlocksConfirmation =
+      /future confirmation blocked|apply is still not available/i.test(
+        organizeValidationBody,
+      );
+    summary.organizeValidationContextExcerpt = organizeValidationBody.slice(0, 2000);
+    summary.organizeValidationEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation)\\b/i.test(text));
+    `);
+    if (
+      !summary.organizeValidationBodyHasPreview ||
+      !summary.organizeValidationBodyHasSummary ||
+      !summary.organizeValidationBodyHasNoFilesChanged ||
+      !summary.organizeValidationBodyBlocksConfirmation
+    ) {
+      throw new Error("Organize validation preview did not show the review-only validation boundary.");
+    }
+    if (summary.organizeValidationEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Organize validation preview exposed enabled file-changing controls: ${summary.organizeValidationEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    const validationShot = path.join(runDir, "organize-validation-preview-ui-v1.png");
+    await takeScreenshot(driver, validationShot);
+    summary.screenshots.push(validationShot);
     const savedPlanShot = path.join(runDir, "organize-saved-plan-ui-review-v1.png");
     await takeScreenshot(driver, savedPlanShot);
     summary.screenshots.push(savedPlanShot);
