@@ -133,6 +133,12 @@ Current M3 rules note:
 - The visible Organize route no longer calls the legacy preview/apply/snapshot APIs.
 - Auto Sorting remains preview-only until the Apply Safety Contract exists.
 
+Current M4 safety-contract note:
+
+- `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` defines what must be true before any future Apply workflow can change files.
+- Inbox, Organize, Pending Plans, and the direct Plan Preview route remain review/preview-only until Apply has exact per-file preview, confirmation, backup/restore, path validation, conflict handling, recoverable errors, per-file result logs, tests, and proof.
+- Existing internal mutating commands remain implementation history and are not normal user-facing workflows.
+
 Current naming note:
 
 - User-facing `Staging` language has been renamed to `Plan Preview` / `Pending Plans` in the visible route and navigation.
@@ -163,7 +169,7 @@ Current naming note:
 - Plan Preview remains preview-only.
 - Organize is not Auto Sorting yet.
 - Auto Sorting must start as a suggested plan only.
-- Any future apply/move action requires preview, explicit user confirmation, backup/restore support, path validation, destination conflict handling, recoverable errors, per-file result logs, tests, and desktop proof.
+- Any future apply/move action requires the Apply Safety Contract: preview, explicit user confirmation, backup/restore support, path validation, destination conflict handling, recoverable errors, per-file result logs, tests, and desktop proof.
 - AI may explain or suggest, but it must not decide broken/safe/delete/dependency/update truth.
 
 ## Linear Issue Plan

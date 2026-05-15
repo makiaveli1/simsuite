@@ -73,4 +73,19 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/No files changed/i);
     expect(source).not.toMatch(/<button[^>]*>\s*Apply|<button[^>]*>\s*Reject/i);
   });
+
+  it("documents Apply as blocked until the safety contract exists", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/APPLY_SAFETY_CONTRACT_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Apply is not implemented/i);
+    expect(source).toMatch(/explicitly confirmed/i);
+    expect(source).toMatch(/backup or restore/i);
+    expect(source).toMatch(/per-file result log/i);
+    expect(source).toMatch(/Future Apply must not:[\s\S]*delete files/i);
+    expect(source).toMatch(/Future Apply must not:[\s\S]*quarantine files/i);
+    expect(source).toMatch(/Future Apply must not:[\s\S]*AI-only suggestions/i);
+  });
 });
