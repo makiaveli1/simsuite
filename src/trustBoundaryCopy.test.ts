@@ -88,4 +88,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Future Apply must not:[\s\S]*quarantine files/i);
     expect(source).toMatch(/Future Apply must not:[\s\S]*AI-only suggestions/i);
   });
+
+  it("documents the existing systems integration contract", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Existing systems reused/);
+    expect(source).toMatch(/New data or logic added/);
+    expect(source).toMatch(/Do not reimplement duplicate truth/);
+    expect(source).toMatch(/Do not parse `?\.package`? files in UI render paths/);
+    expect(source).toMatch(/StagingPlan/);
+    expect(source).toMatch(/ApplyPlan/);
+  });
 });

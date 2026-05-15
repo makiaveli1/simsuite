@@ -10,6 +10,8 @@ Auto Sorting rules planning now lives in `docs/planning/AUTO_SORTING_RULES_AUDIT
 
 Apply safety planning now lives in `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`. That contract is the source of truth for what must exist before SimSuite can expose any future file-changing Apply workflow.
 
+Existing-systems integration planning now lives in `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`. That contract is the source of truth for how future systems must reuse scanner, file-inspector, Library, duplicate, update, review, Inbox, Organize, preview-plan, and safety evidence before adding new logic.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.
@@ -91,6 +93,22 @@ Before any future Apply can touch files, SimSuite must have:
 Future Apply must not delete, quarantine, replace, auto-update, apply AI-only suggestions, apply review-only suggestions, apply weak heuristic suggestions, or claim that a file is safe to move/delete/replace.
 
 Existing backend mutating commands remain internal implementation history until a future ApplyPlan flow can safely replace or wrap them.
+
+## Existing Systems Integration Rules
+
+Future SimSuite systems must start from existing indexed evidence and typed API boundaries before adding new parsing, metadata, classification, or decision logic.
+
+Current integration rules:
+
+- use scanner/indexer rows for file identity, source roots, hashes, file size/date, and real folder metadata.
+- use file inspector output for package, script, Tray, parser-warning, inspection-warning, thumbnail, and content-fingerprint evidence.
+- use the Library index and file detail APIs for row, folder, detail, preview, duplicate, update, and review evidence.
+- use the duplicate detector for duplicate truth; name/version/same-pack/same-folder cues stay review context.
+- use Updates/watch systems for source state; do not create separate provider or official-source truth.
+- use Inbox for downloaded/imported intake review, Organize for preview organization planning, and `StagingPlan` for preview-only suggested plans.
+- use the future `ApplyPlan` contract, not direct UI actions, before any confirmed file-changing workflow.
+
+Future reports for trust-sensitive systems must include `### Existing systems reused` and `### New data or logic added` so new logic cannot quietly bypass the existing evidence model.
 
 ## Plan Preview / Internal Staging Readiness Rules
 

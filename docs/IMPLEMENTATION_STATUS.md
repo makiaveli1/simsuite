@@ -1,5 +1,28 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Existing Systems Integration Contract v1)
+
+This session defines the durable integration contract requiring future SimSuite systems to reuse existing scanner, file-inspector, Library, duplicate, update, review, Inbox, Organize, preview-plan, and safety evidence before adding new parsing, metadata, classification, or decision logic. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.
+
+Important changes and findings:
+
+- added `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md` as the source-of-truth integration contract.
+- mapped existing evidence sources: file identity, hashes, package/script fingerprints, folder metadata, Library APIs, duplicate proof, update/watch state, review signals, Inbox intake state, `StagingPlan`, sorting preview plans, and future `ApplyPlan`.
+- documented ownership boundaries for scanner, file inspector, Library index, duplicate detector, bundle detector, Updates/watch, Review, Inbox, Organize, Plan Preview/Pending Plans, and future ApplyPlan work.
+- added anti-duplication rules such as no `.package` parsing in UI render paths, no duplicate truth outside duplicate detector, and no direct UI file-action logic without ApplyPlan.
+- added future final-report requirements for `### Existing systems reused` and `### New data or logic added`.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `105` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- ApplyPlan persistence audit or ApplyPlan builder design. Do not build real Apply yet.
+
 ## Current session note (May 15, 2026 - Apply Safety Contract Design v1)
 
 This session defines the safety contract required before SimSuite can expose any future Apply/file-changing workflow. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.

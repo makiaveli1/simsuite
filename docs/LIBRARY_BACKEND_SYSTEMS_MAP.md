@@ -2,7 +2,7 @@
 
 Date: 2026-05-13
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, `codex/organize-plan-review-ui-v1`, `codex/rename-staging-plan-preview-v1`, `codex/plan-preview-organize-consolidation-v1`, `codex/organize-pending-plans-ux-clarity-v1`, and `codex/inbox-batch-review-clarity-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, `codex/organize-plan-review-ui-v1`, `codex/rename-staging-plan-preview-v1`, `codex/plan-preview-organize-consolidation-v1`, `codex/organize-pending-plans-ux-clarity-v1`, `codex/inbox-batch-review-clarity-v1`, `codex/apply-safety-contract-design-v1`, and `codex/existing-systems-integration-contract-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -68,7 +68,9 @@ The normal flow is:
 
 No command currently proves dependency relationships, missing meshes, safe deletion, safe replacement, official source identity, or automatic update replacement.
 
-Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` and `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` before adding sorting apply, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, staging apply controls, or duplicate-handling automation.
+Trust-sensitive future work should follow `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`, `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`, and `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md` before adding sorting apply, update replacement, AI-assisted decisions, cleanup, quarantine, move/disable/delete, provider/source, staging apply controls, or duplicate-handling automation.
+
+The integration contract is the durable guardrail for future systems: reuse scanner/indexer facts, file inspector output, Library APIs, duplicate detector truth, Updates/watch state, Review signals, Inbox intake state, Organize preview plans, and `StagingPlan` before adding new data paths. If a new system needs new data or logic, its final report must explain the existing systems reused and why the new logic was necessary.
 
 ## 3. Database Map
 
