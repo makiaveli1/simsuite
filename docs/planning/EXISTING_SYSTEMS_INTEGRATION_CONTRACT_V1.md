@@ -40,6 +40,12 @@ existing sorting preview generator and ApplyPlan persistence foundation to save
 draft preview records. It does not introduce a second classifier, reparse
 files, or expose file-changing actions.
 
+Current implementation note: the first saved-plan review UI now lives inside
+Organize. It reuses `build_apply_plan_from_staging_plan`,
+`list_saved_apply_plans`, `get_apply_plan`, and `delete_draft_apply_plan`
+instead of creating a frontend-only saved-plan store or a second preview model.
+It remains review-only and does not expose file-changing actions.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
@@ -93,9 +99,10 @@ files, or expose file-changing actions.
 - Review owns manual review queue signals and review reasons.
 - Inbox owns new/downloaded/imported intake review before content becomes part
   of normal Library or Organize planning.
-- Organize owns preview organization planning and generated suggested plans.
-- Plan Preview/Pending Plans owns preview/pending work only and must stay
-  preview-only.
+- Organize owns preview organization planning, generated suggested plans, saved
+  draft preview plan review, and batch handoff notes.
+- Plan Preview/Pending Plans owns compatibility preview/pending work only and
+  must stay preview-only.
 - ApplyPlan is future work and is the only allowed confirmed file-changing
   contract after safety validation, backup/restore, path checks, confirmation,
   and result logging exist.

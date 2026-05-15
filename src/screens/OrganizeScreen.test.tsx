@@ -2,11 +2,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { OrganizeScreen } from "./OrganizeScreen";
-import type { StagingPlan } from "../lib/types";
+import type { ApplyPlanListItem, PersistedApplyPlan, StagingPlan } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
     generateSortingPreviewPlan: vi.fn(),
+    buildApplyPlanFromStagingPlan: vi.fn(),
+    saveApplyPlanPreview: vi.fn(),
+    listSavedApplyPlans: vi.fn(),
+    getApplyPlan: vi.fn(),
+    deleteDraftApplyPlan: vi.fn(),
     getStagingAreas: vi.fn(),
     getStagingPreviewPlan: vi.fn(),
     previewOrganization: vi.fn(),
@@ -95,6 +100,130 @@ const stagedSummary = {
   ],
   totalBytes: 2048,
   totalFileCount: 2,
+};
+
+const savedPlanSummary: ApplyPlanListItem = {
+  id: 701,
+  sourceStagingPlanId: "organize-preview-plan-test",
+  sourcePlanKind: "sorting_preview",
+  title: "Suggested organization preview",
+  summary:
+    "2 Library files have preview-only organization suggestions. No files changed.",
+  status: "draft",
+  wouldTouchFiles: false,
+  confirmationRequired: true,
+  backupRequired: true,
+  restoreAvailable: false,
+  totalItems: 2,
+  applyableItems: 0,
+  blockedItems: 1,
+  reviewOnlyItems: 1,
+  createdAt: "2026-05-15T10:00:00.000Z",
+  updatedAt: "2026-05-15T10:00:00.000Z",
+};
+
+const savedPlanDetails: PersistedApplyPlan = {
+  ...savedPlanSummary,
+  caveats: [
+    "No files changed. This saved plan is a draft preview record.",
+    "Future validation is required before any file-changing workflow exists.",
+  ],
+  sourceScope: {
+    kind: "library_folder",
+    sourceLocation: "mods",
+    folderPath: "CAS/Hair",
+    recursive: true,
+    limit: 60,
+  },
+  scanSessionId: null,
+  items: [
+    {
+      id: 9001,
+      applyPlanId: 701,
+      sourceItemId: "sorting-file-101",
+      fileId: 101,
+      fileName:
+        "VeryLongCreatorName_With_A_Long_CAS_Hair_File_Name_That_Should_Remain_Visible.package",
+      currentPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\VeryLongCreatorName_With_A_Long_CAS_Hair_File_Name_That_Should_Remain_Visible.package",
+      currentRoot: "mods",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\VeryLongCreatorName_With_A_Long_CAS_Hair_File_Name_That_Should_Remain_Visible.package",
+      destinationRoot: "mods",
+      actionKind: "suggest_move",
+      evidenceLevel: "evidence_backed",
+      bucket: "cas",
+      confidenceLabel: "evidence-backed",
+      itemStatus: "draft_candidate",
+      blocked: false,
+      reviewOnly: false,
+      validationStatus: null,
+      conflictStatus: null,
+      pathPrivacyLevel: "local_full_path_required",
+      createdAt: "2026-05-15T10:00:00.000Z",
+      updatedAt: "2026-05-15T10:00:00.000Z",
+      signals: [
+        {
+          id: 9101,
+          applyPlanItemId: 9001,
+          signalKind: "source_signal",
+          signalLabel: "kind:CAS",
+          signalValue: "kind:CAS",
+          evidenceLevel: "evidence_backed",
+          sourceSystem: "staging_plan",
+          createdAt: "2026-05-15T10:00:00.000Z",
+        },
+      ],
+      blockers: [],
+    },
+    {
+      id: 9002,
+      applyPlanId: 701,
+      sourceItemId: "sorting-file-102",
+      fileId: 102,
+      fileName: "UnknownThing.package",
+      currentPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\UnknownThing.package",
+      currentRoot: "mods",
+      destinationPath: null,
+      destinationRoot: null,
+      actionKind: "leave_in_place",
+      evidenceLevel: "review_only",
+      bucket: "unknown_leave_in_place",
+      confidenceLabel: "review-only",
+      itemStatus: "blocked",
+      blocked: true,
+      reviewOnly: true,
+      validationStatus: null,
+      conflictStatus: null,
+      pathPrivacyLevel: "local_full_path_required",
+      createdAt: "2026-05-15T10:00:00.000Z",
+      updatedAt: "2026-05-15T10:00:00.000Z",
+      signals: [
+        {
+          id: 9102,
+          applyPlanItemId: 9002,
+          signalKind: "source_signal",
+          signalLabel: "kind:Unknown",
+          signalValue: "kind:Unknown",
+          evidenceLevel: "review_only",
+          sourceSystem: "staging_plan",
+          createdAt: "2026-05-15T10:00:00.000Z",
+        },
+      ],
+      blockers: [
+        {
+          id: 9202,
+          applyPlanItemId: 9002,
+          blockerKind: "blocked_reason",
+          reasonCode: "weak_or_unknown_metadata",
+          message: "weak_or_unknown_metadata",
+          sourceSystem: "staging_plan",
+          createdAt: "2026-05-15T10:00:00.000Z",
+        },
+      ],
+    },
+  ],
 };
 
 const manyStagedSummary = {
@@ -186,8 +315,10 @@ it("renders Organize as a preview-only planning workspace", () => {
     "aria-selected",
     "true",
   );
-  expect(screen.getByRole("tab", { name: /Pending plans/i })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: /Saved plans/i })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: /Pending batches/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Generate preview/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /Saved plans/i })).toBeEnabled();
   expect(screen.getByRole("button", { name: /Open Library/i })).toBeEnabled();
   expect(screen.getByText(/No generated plan yet/i)).toBeInTheDocument();
 
@@ -205,14 +336,14 @@ it("shows pending plans inside Organize without exposing file-changing actions",
   vi.mocked(api.getStagingPreviewPlan).mockResolvedValue(pendingPlan);
   renderOrganize();
 
-  fireEvent.click(screen.getByRole("tab", { name: /Pending plans/i }));
+  fireEvent.click(screen.getByRole("tab", { name: /Pending batches/i }));
 
-  await screen.findByText(/Generated organization plans are not saved yet/i);
-  expect(screen.getByRole("tab", { name: /Pending plans/i })).toHaveAttribute(
+  await screen.findByText(/Imported and downloaded batches are summarized here/i);
+  expect(screen.getByRole("tab", { name: /Pending batches/i })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  expect(screen.getByText(/Generated organization plans are not saved yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/Saved organization drafts live in Saved plans/i)).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/Pending batch 1/i)).toBeInTheDocument();
   expect(screen.getByText(/not a saved organization plan yet/i)).toBeInTheDocument();
@@ -255,7 +386,7 @@ it("caps pending batch rows before showing technical details", async () => {
   });
   renderOrganize();
 
-  fireEvent.click(screen.getByRole("tab", { name: /Pending plans/i }));
+  fireEvent.click(screen.getByRole("tab", { name: /Pending batches/i }));
 
   expect(await screen.findByText(/Pending batch 1/i)).toBeInTheDocument();
   expect(screen.getByText(/Pending batch 5/i)).toBeInTheDocument();
@@ -289,6 +420,7 @@ it("generates and renders grouped preview plan details", async () => {
   });
 
   expect(await screen.findByText(/Suggested organization preview/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Save preview plan/i })).toBeEnabled();
   expect(screen.getByRole("region", { name: /CAS suggestions/i })).toBeInTheDocument();
   expect(
     screen.getByRole("region", { name: /Unknown \/ Leave in place suggestions/i }),
@@ -325,6 +457,118 @@ it("shows a blocked state when the generator has no plan items", async () => {
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
 
   expect(api.applyPreviewOrganization).not.toHaveBeenCalled();
+});
+
+it("saves a generated preview plan through the backend-owned builder", async () => {
+  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewPlan);
+  vi.mocked(api.buildApplyPlanFromStagingPlan).mockResolvedValue({
+    planId: savedPlanSummary.id,
+    plan: savedPlanSummary,
+  });
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.change(screen.getByLabelText(/Folder path/i), {
+    target: { value: "CAS/Hair" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Generate preview/i }));
+
+  expect(await screen.findByText(/Suggested organization preview/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Save preview plan/i }));
+
+  await waitFor(() => {
+    expect(api.buildApplyPlanFromStagingPlan).toHaveBeenCalledWith({
+      previewRequest: {
+        scope: {
+          kind: "library_folder",
+          sourceLocation: "mods",
+          folderPath: "CAS/Hair",
+          recursive: true,
+          limit: 60,
+        },
+      },
+      sourcePlanKind: "sorting_preview",
+    });
+  });
+
+  expect(api.saveApplyPlanPreview).not.toHaveBeenCalled();
+  expect(await screen.findByText(/Saved as draft preview plan/i)).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: /Saved plans/i })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/Draft preview plans/i)).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/Plan details/i)).toBeInTheDocument();
+  expect(screen.getByText(/kind:CAS/i)).toBeInTheDocument();
+  expect(screen.getByText(/weak_or_unknown_metadata/i)).toBeInTheDocument();
+});
+
+it("lists saved draft plans without dumping paths, opens details, and cancels drafts safely", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.deleteDraftApplyPlan).mockResolvedValue({
+    planId: savedPlanSummary.id,
+    cancelled: true,
+    status: "cancelled",
+  });
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+
+  expect(await screen.findByText(/Draft preview plans/i)).toBeInTheDocument();
+  expect(screen.getByText(/Suggested organization preview/i)).toBeInTheDocument();
+  expect(screen.queryByText(/C:\\Users\\Player/i)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /Review details/i }));
+
+  expect(await screen.findByText(/Plan details/i)).toBeInTheDocument();
+  expect(screen.getByText(/Source scope/i)).toBeInTheDocument();
+  expect(screen.getByText(/kind:CAS/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Blockers/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/weak_or_unknown_metadata/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Technical details/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+
+  fireEvent.click(screen.getByRole("button", { name: /^Cancel draft$/i }));
+  expect(
+    screen.getByText(/This only cancels the saved draft record/i),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/It does not touch files/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Confirm cancel draft/i }));
+
+  await waitFor(() => {
+    expect(api.deleteDraftApplyPlan).toHaveBeenCalledWith(savedPlanSummary.id);
+  });
+  expect(await screen.findByText(/Draft cancelled/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply/i,
+      ),
+    ]),
+  );
+});
+
+it("shows saved-plan empty and error states as preview-only", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValueOnce([]);
+  const { unmount } = renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+
+  expect(await screen.findByText(/No saved preview plans yet/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  unmount();
+
+  vi.mocked(api.listSavedApplyPlans).mockRejectedValueOnce(new Error("list failed"));
+  renderOrganize();
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+
+  expect(await screen.findByText(/list failed/i)).toBeInTheDocument();
+  expect(screen.getByText(/No saved preview plans yet/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
 });
 
 it("shows an error state when preview generation fails", async () => {

@@ -132,10 +132,10 @@ it("shows a blocked preview plan without exposing file-changing actions", async 
 
   render(<StagingScreen onNavigate={() => {}} userView="standard" />);
 
-  expect(await screen.findByText(/No saved organization plans yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/No pending batches found/i)).toBeInTheDocument();
   expect(screen.getByText(/Not ready to apply yet/i)).toBeInTheDocument();
-  expect(screen.getByText(/No saved organization plans yet/i)).toBeInTheDocument();
-  expect(screen.getByText(/Generated plans are not saved yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/No pending batches found/i)).toBeInTheDocument();
+  expect(screen.getByText(/Saved draft preview plans now live in Saved plans/i)).toBeInTheDocument();
 
   expect(api.cleanupStagingAreas).not.toHaveBeenCalled();
   expect(api.commitStagingArea).not.toHaveBeenCalled();

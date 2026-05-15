@@ -56,10 +56,12 @@ describe("trust-boundary user-facing copy", () => {
     );
 
     expect(source).toMatch(/generateSortingPreviewPlan/);
+    expect(source).toMatch(/buildApplyPlanFromStagingPlan/);
     expect(source).toMatch(/No files changed/i);
     expect(source).toMatch(/Preview only/i);
+    expect(source).not.toMatch(/saveApplyPlanPreview/);
     expect(source).not.toMatch(/previewOrganization|applyPreviewOrganization|listSnapshots|restoreSnapshot|listRulePresets/);
-    expect(source).not.toMatch(/Safe to move|Safe move|Ready to move|Auto-sort now|Sort automatically/i);
+    expect(source).not.toMatch(/Safe to move|Safe move|Ready to move|Ready to apply|Auto-sort now|Sort automatically/i);
   });
 
   it("keeps the current Inbox screen intake/review-only", () => {

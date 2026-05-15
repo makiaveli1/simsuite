@@ -16,7 +16,7 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content and imported/downloaded batches before Library or Organize planning. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow; current visible UI is review-only | Yes | Keep top-level as intake/new content. Do not expose Apply/move/delete-style actions until the future safety contract exists. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. `Pending plans` now hands imported/downloaded batch review back to Inbox instead of acting like the detailed batch review owner. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning. Inbox owns detailed imported/downloaded batch review. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan`, `Saved plans`, and `Pending batches` preview-only tabs. Saved plans review draft preview records; Pending batches hands imported/downloaded batch review back to Inbox. | `generate_sorting_preview_plan`, `build_apply_plan_from_staging_plan`, `list_saved_apply_plans`, `get_apply_plan`, `delete_draft_apply_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; DB-only draft records; no file-changing action | Yes | Keep top-level as the owner of organization planning and saved draft preview review. Inbox owns detailed imported/downloaded batch review. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
@@ -37,8 +37,8 @@ Notes:
 | Home | Quick status and re-entry surface. |
 | Library | The source of truth for indexed Mods/Tray files, folders, filters, details, duplicate evidence, preview state, and review signals. |
 | Inbox | Intake/new content. This is where newly downloaded or imported batches should be checked before they become part of normal Library or Organize planning. |
-| Organize | Planning workspace for suggested organization. It now owns both creating preview plans and reviewing pending plans. |
-| Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging concept; it now appears inside Organize as `Pending plans`, while the direct route remains a safe compatibility surface. |
+| Organize | Planning workspace for suggested organization. It now owns creating preview plans, reviewing saved draft preview plans, and showing pending batch handoff notes. |
+| Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging concept; saved preview records now appear inside Organize as `Saved plans`, pending imported/downloaded batches appear as `Pending batches`, and the direct route remains a safe compatibility surface. |
 | Updates | Trust-first update tracking, reminder-only sources, and supported checker results. |
 | Review | Manual review queue for files that need attention, comparison, or user judgment. |
 | Duplicates | Comparison workbench for deterministic duplicates and review-only name/version rows. It should not imply cleanup. |
@@ -60,16 +60,16 @@ now exists for draft/preview records, but no visible saved-plan UI or
 file-changing Apply behavior exists yet.
 
 The first backend-owned ApplyPlan builder now exists as a DB-only backend/API
-path. It can generate a sorting preview plan and save a draft ApplyPlan
-snapshot for future review, but Organize does not expose saved-plan UI or any
-file-changing Apply behavior yet.
+path. Organize now exposes the first saved-plan review UI on top of that
+foundation: users can save generated preview plans as draft records, list them,
+open details, and cancel drafts. No file-changing Apply behavior exists yet.
 
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |
 | --- | --- | --- | --- |
 | Inbox vs Plan Preview | Keep separate concepts. | Inbox is intake. Plan Preview is proposed change preview. Current imported/downloaded batch data belongs more naturally in Inbox. | Inbox may send selected items into Organize preview plans later, but Inbox should own detailed downloaded/imported batch review. |
-| Organize vs Plan Preview | Folded for v1 as a preview-only `Pending plans` tab inside Organize. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
+| Organize vs Plan Preview | Folded for v1 into Organize as `Create plan`, `Saved plans`, and `Pending batches`. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
 | Duplicates vs Library duplicate filter | Make Duplicates a Library/Review comparison workbench; allow Creator-mode top-level until migration. | Library already owns duplicate counts and filters; Duplicates is useful when comparing evidence. | Do not remove until duplicate review flows have an equivalent Library/Review entry. |
 | Creators vs Library creator lens/filter | Fold into Library lens. | Creator browsing is a Library view, not a separate workflow. | Preserve filtering and summaries. |
 | Types vs Library type lens/filter | Fold into Library lens. | Type browsing is a Library view, not a separate workflow. | Preserve type summaries and filters. |
@@ -88,7 +88,8 @@ This is the recommended future model. It is not implemented by this planning spr
 
 What happens to current pages:
 
-- Plan Preview: folds into Organize as preview/plans; internal `staging` route/name can remain during migration.
+- Plan Preview: folds into Organize as saved preview plans plus pending batch
+  handoff notes; internal `staging` route/name can remain during migration.
 - Creators: becomes a Library lens/filter.
 - Types: becomes a Library lens/filter.
 - Duplicates: becomes a Library/Review comparison workbench; Creator top-level can remain until migration is proven.
@@ -120,13 +121,14 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 
 ### Phase 2 - Fold Plan Preview Into Organize As Preview-Only
 
-- Implemented for v1 as `Create plan` and `Pending plans` tabs under Organize.
+- Implemented first as `Create plan` and `Pending plans` tabs under Organize,
+  then expanded to `Create plan`, `Saved plans`, and `Pending batches`.
 - The direct internal `staging` route remains safe during transition and points users back to Organize.
 - The normal sidebar no longer exposes Plan Preview as a top-level item.
 - No apply/move/delete/quarantine controls are exposed.
 - Pending batch data is summarized with friendly labels; raw internal folder IDs are hidden behind technical details.
-- Generated organization plans are not saved yet, so `Pending plans` is currently a review summary for imported/downloaded batches rather than a saved-plan list.
-- Inbox now owns detailed imported/downloaded batch review. Organize `Pending plans` should hand batch inspection back to Inbox and stay focused on preview plan work.
+- Generated organization plans can now be saved as draft preview records through the backend-owned ApplyPlan builder and viewed in `Saved plans`.
+- Inbox now owns detailed imported/downloaded batch review. Organize `Pending batches` should hand batch inspection back to Inbox and stay focused on preview plan work.
 
 Current M2 foundation note:
 
@@ -160,7 +162,8 @@ Current naming note:
 
 - User-facing `Staging` language has been renamed to `Plan Preview` / `Pending Plans` in the visible route and navigation.
 - Internal code and backend names such as `StagingScreen`, `StagingPlan`, `get_staging_areas`, and `get_staging_preview_plan` remain stable for now.
-- Plan Preview is now folded into Organize as the `Pending plans` tab for normal navigation.
+- Plan Preview is now folded into Organize as saved draft preview plans plus a
+  pending-batch handoff area for normal navigation.
 - The direct internal route remains available for compatibility and does not add any file-changing workflow.
 
 ### Phase 3 - Fold Creators And Types Into Library Lenses

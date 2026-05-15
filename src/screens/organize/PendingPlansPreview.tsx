@@ -98,11 +98,11 @@ function EmptyPendingPlans({ onCreatePlan }: { onCreatePlan: () => void }) {
   return (
     <div className="staging-empty pending-plans-empty">
       <Inbox size={42} className="staging-empty-icon" />
-      <h3 className="staging-empty-title">No saved organization plans yet</h3>
+      <h3 className="staging-empty-title">No pending batches found</h3>
       <p className="staging-empty-body">
-        Generated plans are not saved yet. Downloaded or imported batches waiting
-        for review belong in Inbox, and new organization suggestions can be
-        created from the Create plan tab.
+        Saved draft preview plans now live in Saved plans. Downloaded or imported
+        batches waiting for review belong in Inbox, and new organization
+        suggestions can be created from the Create plan tab.
       </p>
       <div className="pending-plans-actions">
         <button type="button" className="primary-action" onClick={onCreatePlan}>
@@ -329,23 +329,22 @@ export function PendingPlansPreview({
     return (
       <section className="organize-plan-empty" aria-live="polite">
         <LoaderCircle size={24} className="spin" />
-        <h3>Loading pending plans</h3>
-        <p>SimSuite is checking preview-only plan data. No files changed.</p>
+        <h3>Loading pending batches</h3>
+        <p>SimSuite is checking preview-only batch data. No files changed.</p>
       </section>
     );
   }
 
   return (
-    <section className="pending-plans-preview" aria-label="Pending plans">
+    <section className="pending-plans-preview" aria-label="Pending batches">
       <div className="pending-plans-header">
         <div>
-          <span className="eyebrow">Plan Preview</span>
-          <h2>Pending plans</h2>
+          <span className="eyebrow">Inbox handoff</span>
+          <h2>Pending batches</h2>
           <p>
-            Review proposed plans before anything changes. Generated organization
-            plans are not saved yet, so this tab currently summarizes pending
-            imported/downloaded batches when they exist. Inbox is the natural
-            place to review those batches.
+            Imported and downloaded batches are summarized here only as a
+            preview-only handoff. Saved organization drafts live in Saved plans,
+            and Inbox is the natural place to review batch details.
           </p>
         </div>
         {showOrganizeLink && onNavigate ? (
@@ -360,12 +359,12 @@ export function PendingPlansPreview({
         ) : null}
       </div>
 
-      <div className="pending-plans-safety-strip" aria-label="Pending plans safety">
+      <div className="pending-plans-safety-strip" aria-label="Pending batches safety">
         <ShieldCheck size={16} />
         <strong>No files changed</strong>
         <span>
           This area is preview-only. SimSuite is not moving, deleting, or
-          changing files from Pending plans.
+          changing files from Pending batches.
         </span>
       </div>
 

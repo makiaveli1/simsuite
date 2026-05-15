@@ -21,6 +21,11 @@ preview path. It builds a draft ApplyPlan from the existing read-only sorting
 preview generator and persistence foundation. It does not expose Apply, move
 files, create result logs, or provide restore execution.
 
+The first visible saved-plan review UI now exists inside Organize. Users can
+save a generated preview plan as a draft, review saved plan evidence/blockers,
+and cancel draft records. This is still preview-only: saving and cancelling
+drafts do not touch Mods, Tray, Downloads, or Inbox files.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.
@@ -125,7 +130,11 @@ Future reports for trust-sensitive systems must include `### Existing systems re
 
 Plan Preview is the user-facing safety bridge before future organization or file-changing workflows. It is currently backed by internal staging names such as `StagingPlan`, `StagingScreen`, `get_staging_areas`, and `get_staging_preview_plan`. Those internal names may remain for code stability, but visible copy should say `Plan Preview`, `Pending Plans`, or `Preview plan`.
 
-The normal user-facing Plan Preview experience now lives inside Organize as the `Pending plans` tab. The direct internal Plan Preview route remains available for compatibility, but it must stay preview/readiness only unless a future sprint deliberately adds a Level 4 workflow with the full safety contract.
+The normal user-facing Plan Preview experience now lives inside Organize as
+saved draft preview plans plus a pending-batch handoff area. The direct
+internal Plan Preview route remains available for compatibility, but it must
+stay preview/readiness only unless a future sprint deliberately adds a Level 4
+workflow with the full safety contract.
 
 Current Plan Preview may:
 
@@ -133,7 +142,8 @@ Current Plan Preview may:
 - show file counts and sizes.
 - summarize internal pending batch data with friendly labels instead of exposing raw staging folder IDs as primary plan names.
 - reveal internal IDs only as technical details.
-- explain that no files are changed from Organize, Pending plans, or the direct Plan Preview route yet.
+- explain that no files are changed from Organize, Saved plans, Pending
+  batches, or the direct Plan Preview route yet.
 - describe future requirements for applying changes.
 - return a preview-only `StagingPlan` with `wouldTouchFiles=false`.
 - show folder-level review items with reasons and caveats when per-file organization suggestions do not exist yet.
@@ -148,7 +158,10 @@ Current Plan Preview must not expose enabled controls that:
 
 `StagingPlan` v1 is a Level 3 suggested-plan contract only. It may describe pending folders and future review needs, but it must not create destinations, claim a move is ready, or imply a plan can be applied until per-file preview, user confirmation, backup/restore, path validation, conflict handling, recoverable errors, and proof exist.
 
-Current `Pending plans` copy should also be honest that generated organization plans are not saved yet. Imported/downloaded app-local batches may be summarized there for now, but they remain review/intake data and should not be presented as completed or apply-ready organization plans.
+Current Organize copy should distinguish saved draft preview plans from
+imported/downloaded app-local batches. Saved plans are draft preview records.
+Pending batches remain review/intake data and should not be presented as
+completed or file-changing organization plans.
 
 Detailed imported/downloaded batch review belongs in Inbox. Organize may link to Inbox for batch review, but it should not duplicate a full intake workflow or imply those batches are saved organization plans.
 
