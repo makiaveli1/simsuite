@@ -143,8 +143,14 @@ cover Organize saved-plan validation states and no file-changing controls.
 
 ## Linear updates
 
-Pending final delivery. Relevant issues should include the validation/conflict
-preview issue plus `VEL-18`, `VEL-19`, `VEL-20`, and `VEL-31` where available.
+- `VEL-31`: updated with branch, commit, draft PR, report path, safety boundary,
+  and validation results.
+- `VEL-18`: updated as backup/restore-related context; real backup/restore and
+  Apply remain blocked.
+- `VEL-19`: updated as dry-run/apply split context; validation preview is
+  response-only.
+- `VEL-20`: updated as confirmed Apply prototype context; real Apply remains
+  blocked.
 
 ## Recommended next sprint
 
@@ -174,8 +180,11 @@ unstaged unless they contain sprint-relevant hunks:
 
 ## Commit
 
-Pending final validation.
+- Implementation commit: `e0ecab2` -
+  `Add read-only ApplyPlan validation preview`.
+- Branch: `codex/read-only-applyplan-validation-preview-v1`.
+- Draft PR: `https://github.com/makiaveli1/simsuite/pull/18`.
 
 ## Final honest verdict
 
-Pending final validation.
+Verified: Read-only ApplyPlan Validation Preview v1 is working for the tested paths.
