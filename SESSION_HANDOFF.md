@@ -50,9 +50,12 @@
 
 ### Next Best Step
 
-1. Update Linear/GitHub, commit only sprint-relevant files, push the branch, and
-   open a draft PR.
-2. Recommended next sprint: saved-plan UI review in Organize, still with no
+1. Delivery: implementation commit `c6b0726`, branch
+   `codex/applyplan-builder-from-stagingplan-v1`, draft PR
+   `https://github.com/makiaveli1/simsuite/pull/15`.
+2. Linear: `VEL-31`, `VEL-18`, `VEL-19`, and `VEL-20` were updated directly
+   after Linear search returned a runtime tool error.
+3. Recommended next sprint: saved-plan UI review in Organize, still with no
    real Apply.
 
 ## Current Session (May 15, 2026 - ApplyPlan Persistence Foundation v1)

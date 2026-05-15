@@ -151,11 +151,21 @@ visible route behavior change.
 ## What could not be verified
 
 - Desktop/runtime proof was not run because no visible route behavior changed.
-- Linear updates, commit, push, and PR details are recorded after delivery.
+- Linear natural-language search could not be completed because the connector
+  returned a runtime `tool not found` error. Known related issues were updated
+  directly instead.
 
 ## Linear updates
 
-Pending delivery update.
+- `VEL-31`: commented with implementation summary, validation, branch, commit,
+  report, and PR.
+- `VEL-18`: commented as related backup/restore work; result/restore execution
+  remains future work.
+- `VEL-19`: commented as related dry-run/apply split work; builder remains
+  preview/persistence-only.
+- `VEL-20`: commented that confirmed Apply remains blocked by validation,
+  confirmation, backup/restore, result logs, and proof.
+- No duplicate issue was created.
 
 ## Recommended next sprint
 
@@ -184,7 +194,9 @@ contain this sprint's new top-note hunks:
 
 ## Commit
 
-Pending.
+- Implementation commit: `c6b0726`
+- Branch pushed: `codex/applyplan-builder-from-stagingplan-v1`
+- Draft PR: `https://github.com/makiaveli1/simsuite/pull/15`
 
 ## Final honest verdict
 

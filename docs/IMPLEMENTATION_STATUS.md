@@ -32,6 +32,14 @@ Checks:
 - `npm run test:rust`: passed (`279` passed, `2` ignored).
 - Desktop proof/smoke were skipped because no visible route behavior changed.
 
+Delivery:
+
+- implementation commit `c6b0726`.
+- branch `codex/applyplan-builder-from-stagingplan-v1`.
+- draft PR `https://github.com/makiaveli1/simsuite/pull/15`.
+- Linear issues `VEL-31`, `VEL-18`, `VEL-19`, and `VEL-20` were updated
+  directly after Linear search returned a runtime tool error.
+
 Recommended next sprint:
 
 - Saved-plan UI review in Organize, still with no real Apply.
