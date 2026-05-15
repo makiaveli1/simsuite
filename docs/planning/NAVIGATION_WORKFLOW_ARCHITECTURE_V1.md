@@ -139,6 +139,12 @@ Current M4 safety-contract note:
 - Inbox, Organize, Pending Plans, and the direct Plan Preview route remain review/preview-only until Apply has exact per-file preview, confirmation, backup/restore, path validation, conflict handling, recoverable errors, per-file result logs, tests, and proof.
 - Existing internal mutating commands remain implementation history and are not normal user-facing workflows.
 
+Current integration-contract note:
+
+- `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md` defines how future SimSuite systems must reuse existing scanner, file-inspector, Library, duplicate, update, review, Inbox, Organize, preview-plan, and safety evidence.
+- New navigation or workflow surfaces should not create parallel parsing, duplicate, update-source, folder, review, AI, or file-action truth when an existing backend system already owns that evidence.
+- Future implementation reports for trust-sensitive systems should name the existing systems reused and explain any new data or logic added.
+
 Current naming note:
 
 - User-facing `Staging` language has been renamed to `Plan Preview` / `Pending Plans` in the visible route and navigation.

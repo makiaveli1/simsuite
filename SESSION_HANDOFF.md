@@ -1,5 +1,41 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Existing Systems Integration Contract v1)
+
+- **Mode**: code
+- **Focus**: define the durable contract requiring future SimSuite systems to reuse existing scanner, inspector, Library, duplicate, update, review, Inbox, Organize, preview-plan, and safety evidence before adding new logic
+
+### Progress Made
+
+1. **Defined the integration contract**:
+   - added `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
+   - documented evidence inventory, system ownership, anti-duplication rules, future feature integration requirements, report requirements, and testing/proof expectations
+
+2. **Linked current source-of-truth docs**:
+   - connected the integration contract from trust, navigation, backend map, and Apply safety docs
+   - added a lightweight guard test so the required contract phrases stay present
+
+3. **Kept this sprint docs/test-only**:
+   - no Rust, schema, API, visible route behavior, Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `105` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- The contract is a guardrail for future work; it does not enforce architecture mechanically beyond the lightweight doc guard.
+- Existing backend file-changing commands remain internal and unexposed.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant hunks.
+2. Recommended next sprint: ApplyPlan persistence audit or ApplyPlan builder design. Do not build real Apply yet.
+
 ## Current Session (May 15, 2026 - Apply Safety Contract Design v1)
 
 - **Mode**: code

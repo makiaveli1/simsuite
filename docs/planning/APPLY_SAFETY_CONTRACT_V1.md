@@ -232,7 +232,26 @@ Future desktop proof must show:
 - restore behavior where supported.
 - no enabled delete, quarantine, cleanup, or replacement workflow.
 
-## 11. Future Implementation Phases
+## 11. Existing Systems Required Before Apply
+
+Future Apply work must follow `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`.
+
+An ApplyPlan must reuse existing SimSuite evidence before adding any new logic:
+
+- `StagingPlan` or sorting preview plan items for the reviewed source plan.
+- Library file identity, source roots, current paths, size/date, and indexed hash or fingerprint evidence where available.
+- duplicate detector truth for exact duplicate blockers or duplicate-review context.
+- review queue, parser warning, inspection warning, and weak-metadata signals as blockers or caveats.
+- Updates/watch state as review context only, not replacement proof.
+- scanner-owned folder metadata and configured Mods/Tray roots for path validation.
+- Inbox intake state only when the source content is a reviewed app-local intake batch.
+
+ApplyPlan work must not create new unreviewed file lists, duplicate proof,
+folder truth, update-source truth, or direct UI move actions. If a future Apply
+sprint needs new data, its final report must explain the existing systems
+reused and why the new data or logic was necessary.
+
+## 12. Future Implementation Phases
 
 Phase A - Apply Safety Contract Design
 
