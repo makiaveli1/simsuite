@@ -151,6 +151,7 @@ Current M4 safety-contract note:
 - `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` defines what must be true before any future Apply workflow can change files.
 - Inbox, Organize, Pending Plans, and the direct Plan Preview route remain review/preview-only until Apply has exact per-file preview, confirmation, backup/restore, path validation, conflict handling, recoverable errors, per-file result logs, tests, and proof.
 - Existing internal mutating commands remain implementation history and are not normal user-facing workflows.
+- `docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md` defines the next safety gate for saved draft plans: future validation must explain stale sources, missing roots, unsafe destinations, destination conflicts, review-only blockers, and backup/restore requirements before any confirmation work can be considered. No validation command or Apply UI exists yet.
 
 Current integration-contract note:
 

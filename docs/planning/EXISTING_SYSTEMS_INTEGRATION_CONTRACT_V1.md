@@ -46,6 +46,12 @@ Organize. It reuses `build_apply_plan_from_staging_plan`,
 instead of creating a frontend-only saved-plan store or a second preview model.
 It remains review-only and does not expose file-changing actions.
 
+Current planning note: validation/conflict preview design now lives in
+`docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`. Future validation must reuse
+saved ApplyPlan snapshots, Library identity/current paths, scanner-owned roots,
+duplicate/review/update context, blocker/signal snapshots, and the Apply Safety
+Contract before adding any new validation logic.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

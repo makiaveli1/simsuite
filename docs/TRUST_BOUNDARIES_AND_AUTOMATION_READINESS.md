@@ -26,6 +26,13 @@ save a generated preview plan as a draft, review saved plan evidence/blockers,
 and cancel draft records. This is still preview-only: saving and cancelling
 drafts do not touch Mods, Tray, Downloads, or Inbox files.
 
+Validation/conflict preview planning now lives in
+`docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`. That design defines future
+readiness checks for saved draft plans, including stale sources, missing roots,
+unsafe destinations, destination conflicts, review-only blockers, and
+backup/restore requirements. It does not implement Apply, move files, create
+folders, or change user data.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

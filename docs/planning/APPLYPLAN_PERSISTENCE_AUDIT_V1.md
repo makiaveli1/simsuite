@@ -33,6 +33,12 @@ uses the existing DB-only builder and persistence commands and still does not
 implement real Apply, file movement, result logs, restore entries, or
 validation/conflict execution.
 
+Current planning note: validation/conflict preview design now lives in
+`docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`. That design defines the
+future statuses, checks, command shape, and UI expectations needed before saved
+draft plans can ever be considered for confirmation. It does not add runtime
+validation, conflict checks, result logs, restore entries, or real Apply.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
