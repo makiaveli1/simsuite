@@ -52,6 +52,12 @@ saved ApplyPlan snapshots, Library identity/current paths, scanner-owned roots,
 duplicate/review/update context, blocker/signal snapshots, and the Apply Safety
 Contract before adding any new validation logic.
 
+Current implementation note: `preview_apply_plan_validation` now implements the
+first read-only validation preview using saved ApplyPlan records, item
+snapshots, blocker/signal rows, Library file identity/current paths, and
+configured Mods/Tray roots. It does not reparse packages, rescan folders,
+reimplement duplicate truth, or create frontend-owned validation state.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

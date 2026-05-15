@@ -6,8 +6,14 @@ This document defines the future validation and conflict-preview layer for
 saved draft organization plans.
 
 It does not implement Apply. No files changed. This document does not add a
-SQLite migration, Tauri command, UI, file movement, folder creation, cleanup,
-delete, quarantine, replacement, auto-sort execution, or AI decision.
+SQLite migration, UI, file movement, folder creation, cleanup, delete,
+quarantine, replacement, auto-sort execution, or AI decision.
+
+Current implementation note: `preview_apply_plan_validation` now exists as a
+read-only backend/API command. It returns response-only validation/conflict
+preview data for saved draft ApplyPlans, keeps
+`canProceedToConfirmation=false`, does not persist validation status, does not
+create folders or backups, and does not change user files.
 
 ## 1. Purpose
 
@@ -46,11 +52,12 @@ Current saved draft plans can be created and reviewed from Organize.
 
 Missing today:
 
-- no validation preview command.
-- no conflict preview command.
+- `preview_apply_plan_validation` now provides a read-only validation/conflict
+  response for saved draft records.
 - no backup/restore result model for ApplyPlan.
 - no result log.
 - no real Apply.
+- no visible validation preview UI yet.
 
 No future Apply can proceed until validation/conflict preview exists, is proven,
 and is followed by confirmation, backup/restore, recoverable errors, result
@@ -216,11 +223,12 @@ proof. The first read-only command should not mark plans as ready.
 
 ## 9. Future Command Design
 
-Recommended next command:
+Implemented first command:
 
 ### `preview_apply_plan_validation`
 
-- Read-only response first.
+- Read-only response first; implemented in
+  `src-tauri/src/core/apply_plan_validation.rs`.
 - Accepts a saved draft plan id.
 - Loads saved ApplyPlan data.
 - Compares saved item snapshots with current Library/settings evidence.
@@ -244,12 +252,12 @@ Future optional command after the read-only preview UX is proven.
 - Must not create Apply-ready records.
 - Must not set executor states.
 
-Recommended v1 implementation sequence:
+Updated implementation sequence:
 
-1. Build `preview_apply_plan_validation` as read-only response only.
-2. Prove output with unit tests and fixture data.
-3. Add Organize validation preview UI with no Apply button.
-4. Consider persisted validation statuses only after UX and semantics are
+1. Keep `preview_apply_plan_validation` response-only and covered by backend
+   and TypeScript tests.
+2. Add Organize validation preview UI with no Apply button.
+3. Consider persisted validation statuses only after UX and semantics are
    stable.
 
 ## 10. UI Recommendation

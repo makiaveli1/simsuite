@@ -38,6 +38,12 @@ destinations, destination conflicts, review-only blockers, and backup/restore
 requirements before any future confirmation work. It does not implement Apply
 or change files.
 
+Current implementation note: the first `preview_apply_plan_validation` command
+now exists as a response-only readiness preview for saved draft records. It
+reports blockers and conflicts, always returns `canProceedToConfirmation=false`,
+does not persist validation state in v1, and does not move, copy, delete,
+create folders, create backups, or expose Apply.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

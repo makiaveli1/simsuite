@@ -66,7 +66,11 @@ import type {
   ScanStatus,
   ScanSummary,
   CleanupResult,
+  ApplyPlanConflictStatus,
   ApplyPlanListItem,
+  ApplyPlanValidationItem,
+  ApplyPlanValidationPreview,
+  ApplyPlanValidationStatus,
   BuildApplyPlanFromStagingPlanRequest,
   DeleteDraftApplyPlanResult,
   ListSavedApplyPlansRequest,
@@ -75,6 +79,7 @@ import type {
   PersistedApplyPlanItem,
   PersistedApplyPlanItemStatus,
   PersistedApplyPlanSignal,
+  PreviewApplyPlanValidationRequest,
   SaveApplyPlanPreviewRequest,
   SaveApplyPlanPreviewResult,
   StagingAreasSummary,
@@ -491,6 +496,156 @@ const buildMockPersistedApplyPlan = (
   }));
 
   return plan;
+};
+
+const mockStatusFromSavedItem = (
+  item: PersistedApplyPlanItem,
+): {
+  validationStatus: ApplyPlanValidationStatus;
+  conflictStatus: ApplyPlanConflictStatus;
+  reasons: string[];
+  requiredNextSteps: string[];
+} => {
+  const reasons: string[] = [];
+  const requiredNextSteps: string[] = [];
+  const duplicateBlocker = item.blockers.find((blocker) =>
+    `${blocker.blockerKind} ${blocker.reasonCode} ${blocker.message}`
+      .toLowerCase()
+      .includes("duplicate"),
+  );
+
+  if (duplicateBlocker) {
+    return {
+      validationStatus: "duplicate_review_blocked",
+      conflictStatus: "unsupported",
+      reasons: ["Duplicate-related evidence still requires manual review."],
+      requiredNextSteps: ["Review duplicate evidence before future validation."],
+    };
+  }
+
+  if (item.blocked || item.itemStatus === "blocked") {
+    reasons.push(
+      ...item.blockers.map((blocker) => `${blocker.reasonCode}: ${blocker.message}`),
+    );
+    if (reasons.length === 0) {
+      reasons.push("Saved draft item is blocked.");
+    }
+    requiredNextSteps.push("Resolve the blocker before future validation.");
+    return {
+      validationStatus: "blocked",
+      conflictStatus: "not_checked",
+      reasons,
+      requiredNextSteps,
+    };
+  }
+
+  if (item.reviewOnly || item.itemStatus === "review_only") {
+    reasons.push("Saved draft item is review-only.");
+    requiredNextSteps.push("Review this item manually before future validation.");
+    return {
+      validationStatus: "review_only_blocked",
+      conflictStatus: "not_checked",
+      reasons,
+      requiredNextSteps,
+    };
+  }
+
+  if (!item.fileId || !item.currentPath) {
+    reasons.push("No current Library file identity is available for this item.");
+    requiredNextSteps.push("Regenerate the preview from current Library data.");
+    return {
+      validationStatus: "missing_source",
+      conflictStatus: "source_missing",
+      reasons,
+      requiredNextSteps,
+    };
+  }
+
+  if (!item.destinationPath || !item.destinationRoot) {
+    reasons.push("No saved destination preview path/root is available.");
+    requiredNextSteps.push("Regenerate the preview with a destination suggestion.");
+    return {
+      validationStatus: "missing_destination_root",
+      conflictStatus: "unsupported",
+      reasons,
+      requiredNextSteps,
+    };
+  }
+
+  reasons.push("No current validation blocker was found in the mock preview.");
+  requiredNextSteps.push(
+    "Backup/restore and confirmation work must exist before this could go further.",
+  );
+  return {
+    validationStatus: "valid_preview_only",
+    conflictStatus: "none",
+    reasons,
+    requiredNextSteps,
+  };
+};
+
+const buildMockApplyPlanValidationPreview = (
+  request: PreviewApplyPlanValidationRequest,
+): ApplyPlanValidationPreview => {
+  const plan = mockSavedApplyPlans.find((candidate) => candidate.id === request.planId);
+  if (!plan) {
+    throw new Error("Saved preview plan was not found.");
+  }
+
+  const items: ApplyPlanValidationItem[] = plan.items.map((item) => {
+    const validation = mockStatusFromSavedItem(item);
+    return {
+      itemId: item.id,
+      fileId: item.fileId,
+      fileName: item.fileName,
+      validationStatus: validation.validationStatus,
+      conflictStatus: validation.conflictStatus,
+      blocked: item.blocked || validation.validationStatus !== "valid_preview_only",
+      reviewOnly: item.reviewOnly || validation.validationStatus === "review_only_blocked",
+      canApplyLater: false,
+      reasons: validation.reasons,
+      requiredNextSteps: validation.requiredNextSteps,
+    };
+  });
+
+  const backupBlockedItems = plan.backupRequired && !plan.restoreAvailable ? items.length : 0;
+  const caveats = [
+    ...plan.caveats,
+    "No files changed. This validation preview is read-only.",
+    "Backup/restore is required before any future confirmation; Apply is not ready yet.",
+  ];
+  const blockedItems = items.filter(
+    (item) => item.validationStatus !== "valid_preview_only",
+  ).length;
+  const conflictItems = items.filter(
+    (item) => item.conflictStatus !== "none" && item.conflictStatus !== "not_checked",
+  ).length;
+
+  return {
+    planId: plan.id,
+    status:
+      plan.status === "cancelled" || blockedItems > 0 || conflictItems > 0 || backupBlockedItems > 0
+        ? "blocked"
+        : "valid_preview_only",
+    canProceedToConfirmation: false,
+    checkedAt: new Date().toISOString(),
+    summary: {
+      totalItems: items.length,
+      blockedItems,
+      reviewOnlyItems: items.filter((item) => item.reviewOnly).length,
+      conflictItems,
+      staleItems: items.filter((item) => item.validationStatus === "stale_source").length,
+      missingSourceItems: items.filter(
+        (item) => item.validationStatus === "missing_source",
+      ).length,
+      destinationConflictItems: items.filter(
+        (item) => item.validationStatus === "destination_exists",
+      ).length,
+      backupBlockedItems,
+    },
+    caveats,
+    items,
+  };
 };
 
 const emptyInsights = {
@@ -6674,6 +6829,13 @@ async function mockInvoke<T>(
       const plan = mockSavedApplyPlans.find((candidate) => candidate.id === planId) ?? null;
       return structuredClone(plan) as T;
     }
+    case "preview_apply_plan_validation": {
+      const request = payload?.request as PreviewApplyPlanValidationRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan validation preview request.");
+      }
+      return structuredClone(buildMockApplyPlanValidationPreview(request)) as T;
+    }
     case "delete_draft_apply_plan": {
       const planId = payload?.planId as number | undefined;
       const index = mockSavedApplyPlans.findIndex((candidate) => candidate.id === planId);
@@ -8148,6 +8310,8 @@ export const api = {
     invoke<ApplyPlanListItem[]>("list_saved_apply_plans", { request }),
   getApplyPlan: (planId: number) =>
     invoke<PersistedApplyPlan | null>("get_apply_plan", { planId }),
+  previewApplyPlanValidation: (request: PreviewApplyPlanValidationRequest) =>
+    invoke<ApplyPlanValidationPreview>("preview_apply_plan_validation", { request }),
   deleteDraftApplyPlan: (planId: number) =>
     invoke<DeleteDraftApplyPlanResult>("delete_draft_apply_plan", { planId }),
   cleanupStagingAreas: (pathsToDelete: string[]) =>

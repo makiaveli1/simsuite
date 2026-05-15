@@ -64,6 +64,12 @@ path. Organize now exposes the first saved-plan review UI on top of that
 foundation: users can save generated preview plans as draft records, list them,
 open details, and cancel drafts. No file-changing Apply behavior exists yet.
 
+The first read-only ApplyPlan validation preview command now exists behind the
+API. It can inspect saved draft records for stale sources, missing files,
+unsafe destinations, destination conflicts, review-only blockers, and
+backup/restore requirements while keeping `canProceedToConfirmation=false`.
+No visible validation UI or Apply workflow exists yet.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

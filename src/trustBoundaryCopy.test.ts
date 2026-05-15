@@ -133,4 +133,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/must not:[\s\S]*move files/i);
     expect(source).toMatch(/must not:[\s\S]*create folders/i);
   });
+
+  it("documents read-only ApplyPlan validation preview without making Apply ready", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/READ_ONLY_APPLYPLAN_VALIDATION_PREVIEW_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/preview_apply_plan_validation/);
+    expect(source).toMatch(/canProceedToConfirmation=false/);
+    expect(source).toMatch(/No files are moved or changed/);
+    expect(source).toMatch(/No Apply was added/);
+    expect(source).toMatch(/does not create folders/);
+    expect(source).toMatch(/does not[\s\S]*persist validation state/i);
+  });
 });

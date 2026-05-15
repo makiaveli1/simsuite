@@ -148,6 +148,7 @@ pub fn run() {
             commands::build_apply_plan_from_staging_plan,
             commands::list_saved_apply_plans,
             commands::get_apply_plan,
+            commands::preview_apply_plan_validation,
             commands::delete_draft_apply_plan,
             commands::cleanup_staging_areas,
             commands::commit_staging_area,
@@ -280,6 +281,7 @@ mod tests {
             "commands::save_apply_plan_preview",
             "commands::list_saved_apply_plans",
             "commands::get_apply_plan",
+            "commands::preview_apply_plan_validation",
             "commands::delete_draft_apply_plan",
         ] {
             assert!(
