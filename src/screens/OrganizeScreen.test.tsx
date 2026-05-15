@@ -218,6 +218,7 @@ it("shows pending plans inside Organize without exposing file-changing actions",
   expect(screen.getByText(/not a saved organization plan yet/i)).toBeInTheDocument();
   expect(screen.getByText(/Pending data is folder-level/i)).toBeInTheDocument();
   expect(screen.getByText(/Open Inbox/i)).toBeInTheDocument();
+  expect(screen.getByText(/Inbox owns their detailed review/i)).toBeInTheDocument();
   expect(screen.getAllByText("2").length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Files found/i).length).toBeGreaterThan(0);
   expect(screen.queryByText(/20260309001415/i)).not.toBeInTheDocument();

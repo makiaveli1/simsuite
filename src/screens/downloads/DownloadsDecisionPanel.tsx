@@ -10,12 +10,12 @@ import type { UserView } from "../../lib/types";
 import type { DownloadQueueLane } from "../../lib/guidedFlowStorage";
 
 const LANE_MEANINGS: Record<DownloadQueueLane, string> = {
-  ready_now: "This is safe and ready to add to your game",
-  waiting_on_you: "Something needs your attention before this can be added",
-  special_setup: "This needs a few extra steps first",
-  blocked: "This was stopped — check the warning if you want to add it",
-  done: "This has already been added or set aside",
-  rejected: "This was rejected and moved to SimSuite_Rejected",
+  ready_now: "This has enough local information for review",
+  waiting_on_you: "Something needs your attention before any future action",
+  special_setup: "This needs a few extra review steps first",
+  blocked: "This was stopped for manual review",
+  done: "This has already been reviewed or handled",
+  rejected: "This was set aside from the active intake queue",
 };
 
 export interface DownloadsDecisionSignal {
@@ -44,14 +44,15 @@ interface DownloadsDecisionPanelProps {
   primaryActionLabel?: string | null;
   primaryActionDisabled?: boolean;
   onPrimaryAction?: () => void;
-  secondaryActionLabel: string;
+  secondaryActionLabel?: string | null;
   secondaryActionDisabled?: boolean;
-  onSecondaryAction: () => void;
+  onSecondaryAction?: () => void;
   onOpenProof: () => void;
   proofSummary: string;
   idleNote?: string | null;
   onSnooze?: (durationSeconds: number) => void;
   snoozeDisabled?: boolean;
+  fileActionsBlocked?: boolean;
 }
 
 export function DownloadsDecisionPanel({
@@ -75,7 +76,13 @@ export function DownloadsDecisionPanel({
   idleNote,
   onSnooze,
   snoozeDisabled,
+  fileActionsBlocked = false,
 }: DownloadsDecisionPanelProps) {
+  const showPrimaryAction =
+    !fileActionsBlocked && Boolean(primaryActionLabel && onPrimaryAction);
+  const showSecondaryAction =
+    !fileActionsBlocked && Boolean(secondaryActionLabel && onSecondaryAction);
+
   return (
     <div className="downloads-decision-panel">
       <m.div
@@ -110,11 +117,8 @@ export function DownloadsDecisionPanel({
             {laneLabel}: {LANE_MEANINGS[resolvedLane]}
           </p>
           <p className="downloads-casual-lane-explainer-body">
-            Action available:{" "}
-            <strong>
-              {primaryActionLabel}
-            </strong>{" "}
-            — tap to move this to your game
+            Action status: <strong>Preview only</strong>. Review the details
+            here before creating a plan in Organize.
           </p>
         </div>
       )}
@@ -149,7 +153,7 @@ export function DownloadsDecisionPanel({
             transition={downloadsSelectionTransition}
           >
             <p className="eyebrow">
-              {userView === "beginner" ? "Safe next step" : "Next move"}
+              {userView === "beginner" ? "Review step" : "Next review step"}
             </p>
             <strong className="downloads-next-step-title">
               {nextStepTitle ?? "Pick a batch to continue"}
@@ -162,7 +166,17 @@ export function DownloadsDecisionPanel({
         </AnimatePresence>
 
         <div className="downloads-next-step-actions">
-          {primaryActionLabel && onPrimaryAction ? (
+          {fileActionsBlocked ? (
+            <div className="downloads-action-blocked-note" role="note">
+              <strong>Not ready to apply yet</strong>
+              <span>
+                Inbox is review-only in this workflow. Create a preview plan in
+                Organize before any future file-changing step is designed.
+              </span>
+            </div>
+          ) : null}
+
+          {showPrimaryAction ? (
             <m.button
               type="button"
               className="primary-action"
@@ -176,16 +190,18 @@ export function DownloadsDecisionPanel({
             </m.button>
           ) : null}
 
-          <m.button
-            type="button"
-            className="secondary-action"
-            onClick={onSecondaryAction}
-            disabled={secondaryActionDisabled}
-            whileHover={secondaryActionDisabled ? undefined : hoverLift}
-            whileTap={secondaryActionDisabled ? undefined : tapPress}
-          >
-            {secondaryActionLabel}
-          </m.button>
+          {showSecondaryAction ? (
+            <m.button
+              type="button"
+              className="secondary-action"
+              onClick={onSecondaryAction}
+              disabled={secondaryActionDisabled}
+              whileHover={secondaryActionDisabled ? undefined : hoverLift}
+              whileTap={secondaryActionDisabled ? undefined : tapPress}
+            >
+              {secondaryActionLabel}
+            </m.button>
+          ) : null}
 
           {onSnooze ? (
             <SnoozePickerWrapper
@@ -312,7 +328,7 @@ function SnoozePickerWrapper({ onSnooze, disabled }: SnoozePickerWrapperProps) {
                 <option value="days">days</option>
               </select>
               <button
-                className="snooze-apply-btn"
+                className="snooze-confirm-btn"
                 disabled={!customValue || Number(customValue) <= 0}
                 onClick={() => {
                   const n = Number(customValue);
@@ -322,7 +338,7 @@ function SnoozePickerWrapper({ onSnooze, disabled }: SnoozePickerWrapperProps) {
                   }
                 }}
               >
-                Apply
+                Set reminder
               </button>
             </div>
           </m.div>
@@ -331,4 +347,3 @@ function SnoozePickerWrapper({ onSnooze, disabled }: SnoozePickerWrapperProps) {
     </div>
   );
 }
-

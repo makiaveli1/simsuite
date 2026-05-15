@@ -62,7 +62,7 @@ export function DownloadsRail({
       <div className="workbench-header">
         <div>
           <p className="eyebrow">Workspace</p>
-          <h1 className="downloads-rail-title">Downloads</h1>
+          <h1 className="downloads-rail-title">Inbox</h1>
           <p className="downloads-rail-copy">{screenHelperLine("downloads", userView)}</p>
         </div>
         <span className="confidence-badge neutral">{watcherLabel}</span>
@@ -83,8 +83,8 @@ export function DownloadsRail({
       </div>
 
       <div className="downloads-rail-section">
-        <div className="section-label">Queue lanes</div>
-        <div className="downloads-lane-picker" role="list" aria-label="Downloads lanes">
+        <div className="section-label">Review lanes</div>
+        <div className="downloads-lane-picker" role="list" aria-label="Inbox review lanes">
           {DOWNLOADS_LANE_SUMMARY_ORDER.map((lane) => {
             const isActive = lane === activeLane;
             return (
@@ -115,7 +115,7 @@ export function DownloadsRail({
         <div className="section-label">Search</div>
         <div className="downloads-rail-card downloads-rail-search-card">
           <label className="field">
-            <span className="sr-only">Search downloads</span>
+            <span className="sr-only">Search inbox</span>
             <div className="downloads-search-input">
               <Search size={14} strokeWidth={2} />
               <input
@@ -137,9 +137,9 @@ export function DownloadsRail({
                 <option value="ready">Ready</option>
                 <option value="partial">Partial</option>
                 <option value="needs_review">Needs review</option>
-                <option value="applied">Applied</option>
+                <option value="applied">Reviewed</option>
                 <option value="error">Error</option>
-                <option value="ignored">Ignored</option>
+                <option value="ignored">Set aside</option>
               </select>
             </label>
           ) : null}
@@ -196,9 +196,9 @@ export function DownloadsRail({
                       <option value="ready">Ready</option>
                       <option value="partial">Partial</option>
                       <option value="needs_review">Needs review</option>
-                      <option value="applied">Applied</option>
+                      <option value="applied">Reviewed</option>
                       <option value="error">Error</option>
-                      <option value="ignored">Ignored</option>
+                      <option value="ignored">Set aside</option>
                     </select>
                   </label>
 
@@ -241,7 +241,10 @@ export function DownloadsRail({
       <div className="downloads-rail-section downloads-rail-section-muted">
         <div className="downloads-rail-tip">
           <FolderSearch size={14} strokeWidth={2} />
-          <span>New downloads stay here until SimSuite is confident they are safe.</span>
+          <span>
+            New downloads and imported batches stay here for review before they
+            become Library or Organize work.
+          </span>
         </div>
       </div>
     </div>

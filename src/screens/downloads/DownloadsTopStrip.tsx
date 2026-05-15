@@ -32,9 +32,9 @@ const STATUS_FILTER_LABELS: Record<string, { label: string; tone: string }> = {
   ready:       { label: "Ready",       tone: "is-good"   },
   partial:     { label: "Partial",     tone: ""          },
   needs_review:{ label: "Needs review",tone: "is-warn"   },
-  applied:     { label: "Applied",     tone: "is-good"   },
+  applied:     { label: "Reviewed",    tone: "is-good"   },
   error:       { label: "Error",       tone: "is-danger" },
-  ignored:     { label: "Ignored",     tone: ""          },
+  ignored:     { label: "Set aside",   tone: ""          },
 };
 
 export function DownloadsTopStrip({
@@ -81,7 +81,7 @@ export function DownloadsTopStrip({
               onClick={onRequestUndo}
               disabled={isUndoing}
             >
-              {isUndoing ? "Moving..." : "Undo"}
+              {isUndoing ? "Reviewing..." : "Review previous action"}
             </button>
           )}
         </div>
@@ -122,7 +122,7 @@ export function DownloadsTopStrip({
                 {totalItems === 1 ? "item" : "items"}
               </span>
               <span className="health-chip">
-                {readyCount.toLocaleString()} ready
+                {readyCount.toLocaleString()} ready for review
               </span>
               <span className={`health-chip${waitingCount > 0 ? " is-warn" : ""}`}>
                 {waitingCount.toLocaleString()} needs review

@@ -82,6 +82,7 @@ it("shows pending plan content as preview-only and does not expose file-changing
 
   expect(await screen.findByRole("heading", { name: /Plan Preview/i })).toBeInTheDocument();
   expect(screen.getByText(/main workflow now lives in Organize/i)).toBeInTheDocument();
+  expect(screen.getByText(/Use Inbox to review downloaded or imported batches/i)).toBeInTheDocument();
   expect(screen.getByText(/No files will be changed from this route/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Open Organize/i })).toBeEnabled();
   expect(screen.getByRole("region", { name: /Preview plan/i })).toBeInTheDocument();

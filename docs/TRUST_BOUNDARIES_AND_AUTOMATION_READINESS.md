@@ -99,6 +99,8 @@ Current Plan Preview must not expose enabled controls that:
 
 Current `Pending plans` copy should also be honest that generated organization plans are not saved yet. Imported/downloaded app-local batches may be summarized there for now, but they remain review/intake data and should not be presented as completed or apply-ready organization plans.
 
+Detailed imported/downloaded batch review belongs in Inbox. Organize may link to Inbox for batch review, but it should not duplicate a full intake workflow or imply those batches are saved organization plans.
+
 Before Plan Preview/internal Staging can apply real file changes, it must have:
 
 - a per-file preview plan.
@@ -128,6 +130,20 @@ Auto Sorting generator work must use the rules in `docs/planning/AUTO_SORTING_RU
 - filename/version/folder/pack/family hints remain review-only unless backed by stronger evidence.
 - AI must not decide the category, destination, safety, dependency, or update truth.
 - suggested destination paths are preview strings only; SimSuite does not create folders or move files from this generator.
+
+## Inbox Intake Review Rules
+
+Inbox is the user-facing intake area for new downloads and imported batches. It may explain what arrived, show review lanes, show local evidence, and route users toward Library or Organize planning.
+
+Current visible Inbox behavior must stay review-only:
+
+- show `No files changed` or equivalent safety copy.
+- avoid primary raw internal IDs as batch names.
+- show technical details only as secondary/collapsed information when possible.
+- provide safe next steps such as `Create preview plan`, `Open Organize`, and `Open Library`.
+- avoid enabled Apply, Reject, move, cleanup, delete, quarantine, commit, or fix controls until a future safety contract exists.
+
+Existing Downloads backend mutation commands and handlers are not removed by the current UI clarity work, but they must remain unexposed or blocked in the visible workflow until preview, confirmation, backup/restore, recoverable errors, and proof exist.
 
 ## AI Assistance Boundary
 

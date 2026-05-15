@@ -46,12 +46,12 @@ const LANE_ACCENTS: Record<string, string> = {
 };
 
 const LANE_LABELS: Record<string, string> = {
-  ready_now: "Ready Now",
+  ready_now: "Ready for Review",
   waiting_on_you: "Waiting on You",
   special_setup: "Special Setup",
   blocked: "Needs Review",
-  done: "Done",
-  rejected: "Rejected",
+  done: "Reviewed",
+  rejected: "Set Aside",
 };
 
 const LANE_ICONS: Record<string, ReactNode> = {
@@ -65,28 +65,28 @@ const LANE_ICONS: Record<string, ReactNode> = {
 
 const BANNER_CONTENT: Record<string, { title: string; body: string }> = {
   ready_now: {
-    title: "Safe and ready to go",
-    body: "These files passed the safety check. Add them to your game whenever you're ready.",
+    title: "Ready for review",
+    body: "These batches have enough local information to inspect. No files are changed from this view.",
   },
   waiting_on_you: {
     title: "Needs your input",
-    body: "Something about these needs your attention. Click one to get started.",
+    body: "Something about these needs your attention. Select one to inspect the intake details.",
   },
   special_setup: {
     title: "Has special setup steps",
-    body: "These need a few extra steps before they can work. SimSuite will walk you through it.",
+    body: "These need extra review steps before any future setup workflow can be considered.",
   },
   blocked: {
-    title: "Held for safety",
-    body: "SimSuite stopped these to protect your game. Check the warning, then decide.",
+    title: "Held for review",
+    body: "SimSuite stopped here because the local evidence is incomplete or unclear.",
   },
   done: {
-    title: "Already handled",
-    body: "These are already added or set aside. Click one to undo and move it somewhere else.",
+    title: "Already reviewed",
+    body: "These batches were handled earlier and stay here for reference.",
   },
   rejected: {
-    title: "Moved to Reject folder",
-    body: "These items were moved to SimSuite_Rejected for review. You can restore them from there.",
+    title: "Set aside",
+    body: "These batches are outside the active intake queue and remain visible for review.",
   },
 };
 
@@ -290,7 +290,7 @@ export function DownloadsQueuePanel({
               </div>
             ) : (
               <StatePanel
-                eyebrow="Downloads lane"
+                eyebrow="Inbox lane"
                 title={`Nothing is in ${downloadsLaneLabel(lane, userView).toLowerCase()} right now`}
                 body={downloadsLaneHint(lane, userView)}
                 icon={Inbox}
@@ -300,11 +300,11 @@ export function DownloadsQueuePanel({
             )
           ) : (
             <StatePanel
-              eyebrow="Downloads inbox"
+              eyebrow="Inbox"
               title={
                 userView === "beginner"
                   ? "No inbox items match this view"
-                  : "No download items match the current filter"
+                  : "No inbox items match the current filter"
               }
               body={
                 userView === "beginner"

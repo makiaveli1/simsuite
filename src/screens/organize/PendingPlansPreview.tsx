@@ -101,8 +101,8 @@ function EmptyPendingPlans({ onCreatePlan }: { onCreatePlan: () => void }) {
       <h3 className="staging-empty-title">No saved organization plans yet</h3>
       <p className="staging-empty-body">
         Generated plans are not saved yet. Downloaded or imported batches waiting
-        for review can be handled from Inbox, and new organization suggestions
-        can be created from the Create plan tab.
+        for review belong in Inbox, and new organization suggestions can be
+        created from the Create plan tab.
       </p>
       <div className="pending-plans-actions">
         <button type="button" className="primary-action" onClick={onCreatePlan}>
@@ -157,6 +157,7 @@ function PendingPlanSummaryPanel({ plan }: PendingPlanSummaryPanelProps) {
             Folder-level batch data is summarized once here instead of repeated
             as review rows.
           </li>
+          <li>Imported/downloaded batch details belong in Inbox.</li>
           {caveats.slice(0, 2).map((caveat) => (
             <li key={caveat}>{caveat}</li>
           ))}
@@ -218,9 +219,9 @@ function PendingBatchRow({
 
       <div className="pending-batch-next">
         <strong>Next step</strong>
-        <span>
-          Review this batch in Inbox, or create a bounded preview plan from
-          Library files when you want organization suggestions.
+          <span>
+          Review this batch in Inbox. Use Organize when you want a bounded
+          preview plan from Library files.
         </span>
       </div>
 
@@ -343,7 +344,8 @@ export function PendingPlansPreview({
           <p>
             Review proposed plans before anything changes. Generated organization
             plans are not saved yet, so this tab currently summarizes pending
-            imported/downloaded batches when they exist.
+            imported/downloaded batches when they exist. Inbox is the natural
+            place to review those batches.
           </p>
         </div>
         {showOrganizeLink && onNavigate ? (
@@ -410,8 +412,8 @@ export function PendingPlansPreview({
               <h3>Pending batches</h3>
               <p>
                 These are app-local imported/downloaded batches, not saved
-                organization plans. Raw internal IDs are hidden unless you open
-                technical details.
+                organization plans. Inbox owns their detailed review; raw
+                internal IDs are hidden unless you open technical details.
               </p>
             </div>
             <div className="pending-plans-actions">

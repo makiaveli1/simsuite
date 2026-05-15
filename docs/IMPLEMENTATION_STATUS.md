@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Inbox Batch Review Clarity v1)
+
+This session makes Inbox the clear owner for downloaded/imported batch review. Organize remains the generated preview-plan workspace. This does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.
+
+Important changes and findings:
+
+- visible Downloads copy now presents the screen as `Inbox`.
+- Inbox explains that new downloads and imported batches are reviewed before they become part of Library or Organize planning.
+- Inbox shows persistent `No files changed` safety copy.
+- visible Apply/Reject-style controls were replaced with a review-only safety note and safe next steps.
+- friendly labels are used for raw/internal-looking intake names in primary queue rows.
+- Organize Pending Plans now points imported/downloaded batch review back to Inbox.
+- direct Plan Preview copy points users to Inbox for batch review and Organize for preview plan creation.
+
+Checks so far:
+
+- Focused Inbox/Organize/Plan Preview/trust tests passed (`7` files, `20` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `103` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+
+Desktop/runtime proof:
+
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshot captured at `output/desktop/library-proof/2026-05-15T12-17-08-372Z/inbox-batch-review-clarity-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+Recommended next sprint:
+
+- Apply Safety Contract design, or saved organization-plan persistence audit. Do not build real Apply yet.
+
 ## Current session note (May 14, 2026 - Organize Pending Plans UX Clarity v1)
 
 This session makes Organize `Pending plans` clearer by treating internal folder-level pending batch data as a compact review summary instead of a list of technical plan rows. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.

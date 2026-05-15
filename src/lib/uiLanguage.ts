@@ -288,9 +288,9 @@ export function screenHelperLine(
       power: "Roots, counts, and jump points stay here so the deeper work screens can stay lean.",
     },
     downloads: {
-      beginner: "Fresh downloads land here first, so nothing sneaks into your game like an uninvited townie.",
-      standard: "Inbox is the plumbob checkpoint before anything reaches Mods or Tray.",
-      power: "Staged batches, guided installs, and blocked oddballs all queue here first.",
+      beginner: "Review new downloads and imported batches before they become normal Library work.",
+      standard: "Inbox owns new and imported content before it moves into Library or Organize planning.",
+      power: "Imported batches, guided review, and blocked oddballs queue here before planning work starts.",
     },
     library: {
       beginner: "Pick a file, check the basics, then save the right Creator or Type once.",

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   capRowBadges,
+  downloadsLaneHint,
+  downloadsLaneLabel,
   fallbackDownloadsLane,
   pickInitialDownloadsLane,
   viewModeDownloadsFlags,
@@ -48,5 +50,14 @@ describe("viewModeDownloadsFlags", () => {
     expect(viewModeDownloadsFlags("beginner").showAdvancedFiltersByDefault).toBe(
       false,
     );
+  });
+});
+
+describe("downloads lane copy", () => {
+  it("uses review-first Inbox language", () => {
+    expect(downloadsLaneLabel("ready_now", "standard")).toBe("Ready for review");
+    expect(downloadsLaneHint("ready_now", "standard")).toMatch(/inspect/i);
+    expect(downloadsLaneHint("ready_now", "standard")).not.toMatch(/safe|move/i);
+    expect(downloadsLaneLabel("rejected", "standard")).toBe("Set aside");
   });
 });

@@ -7279,9 +7279,131 @@ h2,
 }
 
 .downloads-shell {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
   height: 100%;
+}
+
+.inbox-intake-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(180px, 0.72fr) auto;
+  gap: 0.62rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 48%, var(--line));
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.032), transparent 54%),
+    color-mix(in srgb, var(--surface) 92%, black);
+}
+
+.inbox-intake-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.inbox-intake-copy h2 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.18;
+}
+
+.inbox-intake-copy p {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  line-height: 1.42;
+}
+
+.inbox-intake-safety {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.16rem 0.42rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.48rem 0.56rem;
+  border: 1px solid color-mix(in srgb, var(--mint-line) 48%, var(--line));
+  background: color-mix(in srgb, var(--mint-soft) 45%, transparent);
+}
+
+.inbox-intake-safety svg {
+  color: var(--tone-good);
+  grid-row: span 2;
+}
+
+.inbox-intake-safety strong {
+  font-size: 0.78rem;
+}
+
+.inbox-intake-safety span {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  line-height: 1.32;
+}
+
+.inbox-intake-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(5.3rem, 1fr));
+  gap: 0.34rem;
+  min-width: 0;
+}
+
+.inbox-intake-metrics span {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.42rem 0.48rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.inbox-intake-metrics strong {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.inbox-intake-metrics small {
+  color: var(--text-soft);
+  font-size: 0.64rem;
+  line-height: 1.2;
+}
+
+.inbox-intake-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.42rem;
+}
+
+.inbox-intake-actions .primary-action,
+.inbox-intake-actions .secondary-action {
+  min-height: 34px;
+  padding: 0.42rem 0.58rem;
+  font-size: 0.75rem;
+}
+
+.inbox-intake-technical {
+  grid-column: 1 / -1;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.inbox-intake-technical summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.inbox-intake-technical div {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 0.45rem;
+  padding-top: 0.32rem;
+}
+
+.inbox-intake-technical code {
+  overflow-wrap: anywhere;
 }
 
 /* When the batch action bar is visible, push the queue dock content up
@@ -8551,6 +8673,23 @@ h2,
   align-items: center;
 }
 
+.downloads-action-blocked-note {
+  display: grid;
+  gap: 0.12rem;
+  min-width: min(100%, 16rem);
+  padding: 0.48rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--warning-line) 42%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 38%, transparent);
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.36;
+}
+
+.downloads-action-blocked-note strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
 .downloads-next-step-actions .primary-action,
 .downloads-next-step-actions .secondary-action,
 .downloads-next-step-actions .snooze-action {
@@ -8668,7 +8807,7 @@ h2,
   cursor: pointer;
 }
 
-.snooze-apply-btn {
+.snooze-confirm-btn {
   flex: 1;
   padding: 7px 10px;
   border-radius: 6px;
@@ -8681,11 +8820,11 @@ h2,
   transition: opacity 0.12s;
 }
 
-.snooze-apply-btn:hover:not(:disabled) {
+.snooze-confirm-btn:hover:not(:disabled) {
   opacity: 0.85;
 }
 
-.snooze-apply-btn:disabled {
+.snooze-confirm-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -9670,6 +9809,15 @@ h2,
   .downloads-layout {
     grid-template-columns: 1fr;
   }
+
+  .inbox-intake-summary {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .inbox-intake-actions {
+    justify-content: flex-start;
+  }
 }
 
 .audit-group-meta {
@@ -10566,6 +10714,16 @@ h2,
   .organize-layout,
   .audit-layout {
     grid-template-columns: 1fr;
+  }
+
+  .inbox-intake-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inbox-intake-actions .primary-action,
+  .inbox-intake-actions .secondary-action {
+    width: 100%;
+    justify-content: center;
   }
 
   .downloads-workbench {
