@@ -31,6 +31,13 @@ the backend-owned builder, list saved drafts, show item evidence/blockers, and
 cancel drafts. Saving or cancelling a draft does not move, copy, delete,
 replace, clean up, quarantine, or change user files.
 
+Current planning note: validation/conflict preview design now lives in
+`docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`. The design defines how
+future saved drafts must be checked for stale sources, missing roots, unsafe
+destinations, destination conflicts, review-only blockers, and backup/restore
+requirements before any future confirmation work. It does not implement Apply
+or change files.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

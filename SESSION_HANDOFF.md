@@ -1,5 +1,58 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Validation & Conflict Preview Design v1)
+
+- **Mode**: code
+- **Focus**: design the future validation/conflict-preview layer for saved
+  draft organization plans without adding Apply or file-changing behavior
+
+### Progress Made
+
+1. **Created the validation/conflict preview contract**:
+   - added `docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`
+   - defined future validation statuses such as `not_validated`,
+     `stale_source`, `missing_source`, `unsafe_destination`,
+     `destination_exists`, `review_only_blocked`, and `backup_required`
+   - defined future conflict statuses such as `not_checked`, `none`,
+     `same_name_conflict`, `case_conflict`, `folder_missing`,
+     `path_too_long`, and `cross_root_blocked`
+
+2. **Kept the trust boundary intact**:
+   - no Apply button, file movement, copy, folder creation, delete, cleanup,
+     quarantine, replacement, auto-sort execution, AI decision, runtime
+     command, migration, API wrapper, or visible route behavior was added
+   - future validation keeps `canProceedToConfirmation=false`
+   - recommended next command is read-only `preview_apply_plan_validation`
+
+3. **Updated guardrails and docs**:
+   - added `simsuite-reports/VALIDATION_CONFLICT_PREVIEW_DESIGN_V1_REPORT.md`
+   - updated trust, navigation, backend map, Apply safety, ApplyPlan
+     persistence, and integration-contract docs
+   - extended `src/trustBoundaryCopy.test.ts` to guard the new design doc
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `112` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Rust validation was skipped because no Rust/backend files changed.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- `preview_apply_plan_validation` is not implemented yet.
+- Result logs, restore entries, validation persistence, confirmation, and real
+  file movement remain future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Implement the read-only `preview_apply_plan_validation` command v1, still
+   with no real Apply.
+
 ## Current Session (May 15, 2026 - Saved Plan UI Review v1)
 
 - **Mode**: code

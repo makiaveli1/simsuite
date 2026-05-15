@@ -117,4 +117,20 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Existing systems reused/);
     expect(source).toMatch(/No files changed/);
   });
+
+  it("documents validation conflict preview as no-file-change design work", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/does not implement Apply/i);
+    expect(source).toMatch(/Validation preview/);
+    expect(source).toMatch(/Conflict preview/);
+    expect(source).toMatch(/preview_apply_plan_validation/);
+    expect(source).toMatch(/canProceedToConfirmation:\s*false/);
+    expect(source).toMatch(/must not:[\s\S]*move files/i);
+    expect(source).toMatch(/must not:[\s\S]*create folders/i);
+  });
 });

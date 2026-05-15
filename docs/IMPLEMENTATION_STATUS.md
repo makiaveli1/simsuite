@@ -1,5 +1,44 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Validation & Conflict Preview Design v1)
+
+This session designs the future validation/conflict-preview layer for saved
+draft organization plans before any possible user-confirmed Apply workflow.
+
+Important changes and findings:
+
+- added `docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md` as the source of
+  truth for future validation/conflict preview.
+- defined validation statuses including `not_validated`,
+  `valid_preview_only`, `stale_source`, `missing_source`,
+  `missing_destination_root`, `unsafe_destination`, `destination_exists`,
+  `unsupported_cross_root`, `review_only_blocked`,
+  `duplicate_review_blocked`, `backup_required`, and `error`.
+- defined conflict statuses including `not_checked`, `none`,
+  `destination_exists`, `same_name_conflict`, `case_conflict`,
+  `folder_missing`, `permission_unknown`, `source_missing`,
+  `path_too_long`, `cross_root_blocked`, and `unsupported`.
+- recommended `preview_apply_plan_validation` as the next read-only command
+  sprint and deferred `refresh_apply_plan_validation`.
+- added a lightweight trust-boundary doc guard for the validation design.
+- no runtime command, migration, API wrapper, visible UI behavior, Apply, file
+  movement, folder creation, cleanup, delete, quarantine, replacement,
+  auto-sort execution, or AI decision was added.
+
+Checks passed:
+
+- `npx tsc --noEmit`
+- `npm run test:unit` (`28` files, `112` tests)
+- `npm run build` with the existing Vite chunk-size warning
+
+Important remaining gap:
+
+- `preview_apply_plan_validation` is not implemented yet.
+- real Apply, validation persistence, confirmation, result logs, restore
+  entries, and file movement remain blocked.
+- Rust validation and desktop proof were skipped because this sprint changed
+  docs/tests only and did not alter visible route behavior.
+
 ## Current session note (May 15, 2026 - Saved Plan UI Review v1)
 
 This session adds the first visible saved draft preview plan review experience
