@@ -413,6 +413,94 @@ pub struct DeleteDraftApplyPlanResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PreviewApplyPlanValidationRequest {
+    pub plan_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanValidationPreviewStatus {
+    NotValidated,
+    ValidPreviewOnly,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanValidationStatus {
+    NotValidated,
+    ValidPreviewOnly,
+    Blocked,
+    StaleSource,
+    MissingSource,
+    MissingDestinationRoot,
+    UnsafeDestination,
+    DestinationExists,
+    UnsupportedCrossRoot,
+    ReviewOnlyBlocked,
+    DuplicateReviewBlocked,
+    BackupRequired,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanConflictStatus {
+    NotChecked,
+    None,
+    DestinationExists,
+    SameNameConflict,
+    CaseConflict,
+    FolderMissing,
+    PermissionUnknown,
+    SourceMissing,
+    PathTooLong,
+    CrossRootBlocked,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanValidationSummary {
+    pub total_items: i64,
+    pub blocked_items: i64,
+    pub review_only_items: i64,
+    pub conflict_items: i64,
+    pub stale_items: i64,
+    pub missing_source_items: i64,
+    pub destination_conflict_items: i64,
+    pub backup_blocked_items: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanValidationItem {
+    pub item_id: i64,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub validation_status: ApplyPlanValidationStatus,
+    pub conflict_status: ApplyPlanConflictStatus,
+    pub blocked: bool,
+    pub review_only: bool,
+    pub can_apply_later: bool,
+    pub reasons: Vec<String>,
+    pub required_next_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanValidationPreview {
+    pub plan_id: i64,
+    pub status: ApplyPlanValidationPreviewStatus,
+    pub can_proceed_to_confirmation: bool,
+    pub checked_at: String,
+    pub summary: ApplyPlanValidationSummary,
+    pub caveats: Vec<String>,
+    pub items: Vec<ApplyPlanValidationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateSortingPreviewPlanRequest {
     pub scope: GenerateSortingPreviewPlanScope,
 }

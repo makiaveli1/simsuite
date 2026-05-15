@@ -338,6 +338,77 @@ export interface DeleteDraftApplyPlanResult {
   status: PersistedApplyPlanStatus;
 }
 
+export interface PreviewApplyPlanValidationRequest {
+  planId: number;
+}
+
+export type ApplyPlanValidationPreviewStatus =
+  | "not_validated"
+  | "valid_preview_only"
+  | "blocked";
+
+export type ApplyPlanValidationStatus =
+  | "not_validated"
+  | "valid_preview_only"
+  | "blocked"
+  | "stale_source"
+  | "missing_source"
+  | "missing_destination_root"
+  | "unsafe_destination"
+  | "destination_exists"
+  | "unsupported_cross_root"
+  | "review_only_blocked"
+  | "duplicate_review_blocked"
+  | "backup_required"
+  | "error";
+
+export type ApplyPlanConflictStatus =
+  | "not_checked"
+  | "none"
+  | "destination_exists"
+  | "same_name_conflict"
+  | "case_conflict"
+  | "folder_missing"
+  | "permission_unknown"
+  | "source_missing"
+  | "path_too_long"
+  | "cross_root_blocked"
+  | "unsupported";
+
+export interface ApplyPlanValidationSummary {
+  totalItems: number;
+  blockedItems: number;
+  reviewOnlyItems: number;
+  conflictItems: number;
+  staleItems: number;
+  missingSourceItems: number;
+  destinationConflictItems: number;
+  backupBlockedItems: number;
+}
+
+export interface ApplyPlanValidationItem {
+  itemId: number;
+  fileId: number | null;
+  fileName: string;
+  validationStatus: ApplyPlanValidationStatus;
+  conflictStatus: ApplyPlanConflictStatus;
+  blocked: boolean;
+  reviewOnly: boolean;
+  canApplyLater: false;
+  reasons: string[];
+  requiredNextSteps: string[];
+}
+
+export interface ApplyPlanValidationPreview {
+  planId: number;
+  status: ApplyPlanValidationPreviewStatus;
+  canProceedToConfirmation: false;
+  checkedAt: string;
+  summary: ApplyPlanValidationSummary;
+  caveats: string[];
+  items: ApplyPlanValidationItem[];
+}
+
 export type GenerateSortingPreviewPlanScope =
   | {
       kind: "selected_files";

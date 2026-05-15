@@ -18,19 +18,20 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        apply_plan_persistence, bundle_detector, category_audit, content_versions, creator_audit,
-        downloads_watcher, duplicate_detector, install_profile_engine, library_index, move_engine,
-        rule_engine, scanner, snapshot_manager, watch_polling,
+        apply_plan_persistence, apply_plan_validation, bundle_detector, category_audit,
+        content_versions, creator_audit, downloads_watcher, duplicate_detector,
+        install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
+        watch_polling,
     },
     database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPreviewResult,
-        ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
-        BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile, CategoryAuditQuery,
-        CategoryAuditResponse, CleanupResult, CreatorAuditFile, CreatorAuditQuery,
-        CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
+        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPlanValidationPreview,
+        ApplyPreviewResult, ApplyReviewPlanActionResult, ApplySpecialReviewFixResult,
+        BatchApplyResult, BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile,
+        CategoryAuditQuery, CategoryAuditResponse, CleanupResult, CreatorAuditFile,
+        CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
@@ -39,12 +40,12 @@ use crate::{
         LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
         LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
         LibraryWatchSetupResponse, ListSavedApplyPlansRequest, OrganizationPreview,
-        PersistedApplyPlan, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
-        ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveApplyPlanPreviewRequest,
-        SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState,
-        ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan, StagingAreasSummary,
-        StagingCommitResult, StagingPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
-        WorkspaceChange, WorkspaceDomain,
+        PersistedApplyPlan, PreviewApplyPlanValidationRequest, RejectResult, RejectedItem,
+        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry,
+        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -861,6 +862,21 @@ pub async fn get_apply_plan(
     run_blocking_command("get_apply_plan", move || {
         let connection = state.connection().map_err(map_error)?;
         apply_plan_persistence::get_apply_plan(&connection, plan_id).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_apply_plan_validation(
+    state: State<'_, AppState>,
+    request: PreviewApplyPlanValidationRequest,
+) -> Result<ApplyPlanValidationPreview, String> {
+    let state = state.inner().clone();
+    run_blocking_command("preview_apply_plan_validation", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        apply_plan_validation::preview_apply_plan_validation(&connection, &settings, request)
+            .map_err(map_error)
     })
     .await
 }
@@ -3637,6 +3653,7 @@ mod tests {
             "apply_plan_persistence::list_saved_apply_plans",
             "apply_plan_persistence::get_apply_plan",
             "apply_plan_persistence::delete_draft_apply_plan",
+            "apply_plan_validation::preview_apply_plan_validation",
         ] {
             assert!(
                 command_source.contains(expected),
@@ -3711,6 +3728,47 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "ApplyPlan builder command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_plan_validation_preview_command_stays_read_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn preview_apply_plan_validation")
+            .expect("ApplyPlan validation preview command should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn delete_draft_apply_plan")
+            .expect("delete draft command should follow validation preview command");
+        let command_source = &tail[..end];
+
+        assert!(command_source.contains("apply_plan_validation::preview_apply_plan_validation"));
+
+        for forbidden in [
+            concat!("cleanup_", "staging_areas("),
+            concat!("commit_", "staging_area("),
+            concat!("commit_", "all_staging_areas("),
+            concat!("apply_", "preview_organization"),
+            concat!("apply_", "preview_moves"),
+            concat!("apply_", "download_item"),
+            concat!("apply_", "download_items"),
+            concat!("apply_", "guided_download_item"),
+            concat!("apply_", "special_review_fix"),
+            concat!("apply_", "review_plan_action"),
+            concat!("reject_", "download_item"),
+            concat!("reject_", "download_items"),
+            concat!("restore_", "rejected_item"),
+            concat!("undo_", "applied_item"),
+            concat!("restore_", "snapshot"),
+            "move_engine::",
+            "std::fs",
+            "File::",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "ApplyPlan validation preview command must not call {forbidden}"
             );
         }
     }

@@ -1,5 +1,47 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Read-only ApplyPlan Validation Preview v1)
+
+This session implements the first read-only validation/conflict preview command
+for saved draft ApplyPlans. It does not add real Apply, file movement, folder
+creation, cleanup, delete, quarantine, replacement, auto-sort execution, AI
+decisions, result logs, restore entries, validation persistence, or visible UI
+behavior.
+
+Important changes and findings:
+
+- added `preview_apply_plan_validation`.
+- added Rust and TypeScript validation preview contracts.
+- added backend validation logic that reuses saved ApplyPlan records, item
+  snapshots, blockers/signals, current Library file rows, and configured
+  Mods/Tray roots.
+- v1 detects blocked and review-only items, duplicate-review blockers, missing
+  Library rows, stale source paths, missing destination roots, unsafe
+  destinations, unsupported cross-root movement, and destination conflicts.
+- validation responses always keep `canProceedToConfirmation=false`; item
+  responses keep `canApplyLater=false`.
+- validation statuses are response-only in v1 and are not persisted into
+  `apply_plan_items.validation_status` or `conflict_status`.
+- no visible route behavior changed.
+
+Checks:
+
+- Focused Rust validation tests passed.
+- Focused TypeScript API tests passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `114` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`291` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`291` passed, `2` ignored).
+- Desktop proof/smoke skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- Validation preview UI in Organize `Saved plans`, still with no real Apply.
+
 ## Current session note (May 15, 2026 - Validation & Conflict Preview Design v1)
 
 This session designs the future validation/conflict-preview layer for saved

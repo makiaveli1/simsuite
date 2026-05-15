@@ -1,5 +1,66 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Read-only ApplyPlan Validation Preview v1)
+
+- **Mode**: code
+- **Focus**: implement the first response-only validation/conflict preview
+  command for saved draft ApplyPlans without adding Apply or file-changing
+  behavior
+
+### Progress Made
+
+1. **Added read-only validation preview**:
+   - added `preview_apply_plan_validation`
+   - added Rust/TypeScript validation preview models
+   - added backend validation logic in `src-tauri/src/core/apply_plan_validation.rs`
+   - the command loads saved ApplyPlan records and compares item snapshots
+     against current Library file rows and configured roots
+
+2. **Covered v1 blockers and conflicts**:
+   - reports blocked/review-only/duplicate-review items
+   - reports missing Library rows, stale indexed source paths, missing
+     destination roots, unsafe destinations, unsupported cross-root movement,
+     and destination conflicts
+   - adds backup/restore-required caveats
+   - always keeps `canProceedToConfirmation=false` and item
+     `canApplyLater=false`
+
+3. **Kept the trust boundary intact**:
+   - no Apply button, file movement, copy, folder creation, delete, cleanup,
+     quarantine, replacement, auto-sort execution, AI decision, result log,
+     restore entry, or visible route behavior was added
+   - validation status is response-only in v1 and is not persisted to
+     `apply_plan_items`
+
+### Verification
+
+- Focused Rust validation tests passed.
+- Focused TypeScript API tests passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `114` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`291` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`291` passed, `2` ignored).
+- Desktop proof/smoke skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Validation preview UI in Organize is not implemented yet.
+- Result logs, restore entries, persisted validation state, confirmation, and
+  real file movement remain future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Add validation preview UI inside Organize `Saved plans`, still with no
+   real Apply.
+
 ## Current Session (May 15, 2026 - Validation & Conflict Preview Design v1)
 
 - **Mode**: code

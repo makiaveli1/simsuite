@@ -39,6 +39,13 @@ future statuses, checks, command shape, and UI expectations needed before saved
 draft plans can ever be considered for confirmation. It does not add runtime
 validation, conflict checks, result logs, restore entries, or real Apply.
 
+Current implementation note: `codex/read-only-applyplan-validation-preview-v1`
+adds the first read-only `preview_apply_plan_validation` command. It loads
+saved draft records, compares item snapshots to current Library/settings
+evidence, returns validation/conflict preview results, and keeps
+`canProceedToConfirmation=false`. It does not persist validation state, create
+folders or backups, expose Apply, or change files.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

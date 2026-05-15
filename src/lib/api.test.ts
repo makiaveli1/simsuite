@@ -55,6 +55,36 @@ describe("ApplyPlan preview persistence API", () => {
     expect(plan?.items.some((item) => item.blockers.length > 0)).toBe(true);
   });
 
+  it("returns a read-only validation preview for saved draft ApplyPlans in the mock API", async () => {
+    const saved = await api.buildApplyPlanFromStagingPlan({
+      previewRequest: {
+        scope: {
+          kind: "selected_files",
+          fileIds: [101, 102],
+        },
+      },
+    });
+
+    const preview = await api.previewApplyPlanValidation({
+      planId: saved.planId,
+    });
+
+    expect(preview.planId).toBe(saved.planId);
+    expect(preview.canProceedToConfirmation).toBe(false);
+    expect(preview.caveats.join(" ")).toMatch(/No files changed/i);
+    expect(preview.caveats.join(" ")).toMatch(/Backup\/restore/i);
+    expect(preview.summary.totalItems).toBeGreaterThan(0);
+    expect(preview.summary.backupBlockedItems).toBe(preview.summary.totalItems);
+    expect(preview.items.every((item) => item.canApplyLater === false)).toBe(true);
+    expect(
+      preview.items.some(
+        (item) =>
+          item.validationStatus === "blocked" ||
+          item.validationStatus === "review_only_blocked",
+      ),
+    ).toBe(true);
+  });
+
   it("saves, lists, reads, and soft-cancels preview-only plans in the mock API", async () => {
     const sourcePlan = await api.generateSortingPreviewPlan({
       scope: {
