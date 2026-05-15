@@ -41,7 +41,7 @@ describe("trust-boundary user-facing copy", () => {
     );
 
     expect(source).toMatch(/preview-only/i);
-    expect(source).toMatch(/No files will be changed/i);
+    expect(source).toMatch(/No files\s+will be changed/i);
     expect(source).toMatch(/User confirmation required/i);
     expect(source).toMatch(/Plan Preview/);
     expect(source).not.toMatch(/Staging is preview-only|No staged content|Staging will show|Open Staging/i);
@@ -60,5 +60,17 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Preview only/i);
     expect(source).not.toMatch(/previewOrganization|applyPreviewOrganization|listSnapshots|restoreSnapshot|listRulePresets/);
     expect(source).not.toMatch(/Safe to move|Safe move|Ready to move|Auto-sort now|Sort automatically/i);
+  });
+
+  it("keeps the current Inbox screen intake/review-only", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/screens/DownloadsScreen.tsx"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/INBOX_FILE_ACTIONS_BLOCKED = true/);
+    expect(source).toMatch(/Inbox is review-only/i);
+    expect(source).toMatch(/No files changed/i);
+    expect(source).not.toMatch(/<button[^>]*>\s*Apply|<button[^>]*>\s*Reject/i);
   });
 });

@@ -31,6 +31,10 @@ it("shows compact lane counts and hides advanced filters in casual mode", () => 
     />,
   );
 
-  expect(screen.getByRole("button", { name: /ready now/i })).toBeVisible();
+  expect(screen.getByRole("heading", { name: /Inbox/i })).toBeVisible();
+  expect(
+    screen.getByText(/new downloads and imported batches stay here for review/i),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: /ready for review/i })).toBeVisible();
   expect(screen.queryByRole("button", { name: /more filters/i })).not.toBeInTheDocument();
 });

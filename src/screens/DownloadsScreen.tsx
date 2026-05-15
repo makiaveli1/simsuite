@@ -86,6 +86,7 @@ import {
 } from "./downloads/DownloadsQueuePanel";
 import { DownloadsSetupDialog } from "./downloads/DownloadsSetupDialog";
 import { DownloadsTopStrip } from "./downloads/DownloadsTopStrip";
+import { InboxIntakeSummary } from "./downloads/InboxIntakeSummary";
 import {
   reviewActionButtonLabel,
   reviewActionCardTitle,
@@ -136,6 +137,7 @@ type DownloadsDialogRequest =
 const AUTO_RECHECK_NOTE_PREFIX = "Rechecked with newer SimSuite rules";
 const DEFAULT_DOWNLOADS_PRESET = "Category First";
 const WORKSPACE_RELOAD_GRACE_MS = 1200;
+const INBOX_FILE_ACTIONS_BLOCKED = true;
 const downloadsScreenCache: DownloadsScreenCache = {
   refreshVersion: -1,
   watcherStatus: null,
@@ -867,6 +869,13 @@ export function DownloadsScreen({
     action: ReviewPlanAction,
     skipApproval = false,
   ) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage(
+        "Inbox is review-only right now. Create a preview plan in Organize before any future file-changing step.",
+      );
+      return;
+    }
+
     if (!selectedItem) {
       return;
     }
@@ -921,6 +930,13 @@ export function DownloadsScreen({
   }
 
   async function handleApply(skipConfirm = false) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage(
+        "Inbox is review-only right now. No files changed. Create a preview plan in Organize instead.",
+      );
+      return;
+    }
+
     if (!selectedItem) {
       return;
     }
@@ -1000,6 +1016,13 @@ export function DownloadsScreen({
   }
 
   async function handleReject(skipConfirm = false) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage(
+        "Inbox is review-only right now. No files changed.",
+      );
+      return;
+    }
+
     if (!selectedItem) {
       return;
     }
@@ -1031,7 +1054,9 @@ export function DownloadsScreen({
     setErrorMessage(null);
     try {
       await api.snoozeDownloadItem(selectedItem.id, durationSeconds);
-      setStatusMessage(`${selectedItem.displayName} snoozed. It will reappear later.`);
+      setStatusMessage(
+        `${selectedItemDisplayName ?? selectedItem.displayName} snoozed. It will reappear later.`,
+      );
       onDataChanged();
       await reloadInboxAfterMutation();
     } catch (error) {
@@ -1040,6 +1065,13 @@ export function DownloadsScreen({
   }
 
   async function handleBatchApply(skipConfirm = false) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage(
+        "Inbox is review-only right now. Create a preview plan in Organize before any future file-changing step.",
+      );
+      return;
+    }
+
     if (batchSelectedIds.size === 0) return;
     if (!skipConfirm) {
       setPendingDialog({ kind: "batch_apply", count: batchSelectedIds.size });
@@ -1070,6 +1102,11 @@ export function DownloadsScreen({
   }
 
   async function handleBatchReject(skipConfirm = false) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage("Inbox is review-only right now. No files changed.");
+      return;
+    }
+
     if (batchSelectedIds.size === 0) return;
     if (!skipConfirm) {
       setPendingDialog({ kind: "batch_reject", count: batchSelectedIds.size });
@@ -1099,6 +1136,13 @@ export function DownloadsScreen({
   }
 
   function handlePrimaryAction() {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage(
+        "Inbox is review-only right now. Use Organize to create a preview plan.",
+      );
+      return;
+    }
+
     if (!selectedResolvedItem) {
       return;
     }
@@ -1132,6 +1176,12 @@ export function DownloadsScreen({
   }
 
   async function handleConfirmDialog() {
+    if (INBOX_FILE_ACTIONS_BLOCKED && pendingDialog) {
+      setPendingDialog(null);
+      setStatusMessage("Inbox is review-only right now. No files changed.");
+      return;
+    }
+
     if (!pendingDialog) {
       return;
     }
@@ -1164,6 +1214,11 @@ export function DownloadsScreen({
   }
 
   async function handleUndo(itemId: number, displayName: string) {
+    if (INBOX_FILE_ACTIONS_BLOCKED) {
+      setStatusMessage("Inbox is review-only right now. No files changed.");
+      return;
+    }
+
     setIsUndoing(true);
     setStatusMessage(null);
     setErrorMessage(null);
@@ -1210,7 +1265,7 @@ export function DownloadsScreen({
         ? selectedReviewPlan?.reviewFiles.length ?? selectedResolvedItem?.reviewFileCount ?? 0
       : selectedPreview?.reviewCount ?? selectedResolvedItem?.reviewFileCount ?? 0;
   const unchangedCount = alignedCount(selectedPreview);
-  const activeQueueRows: DownloadsQueueRowModel[] = activeLaneItems.map((item) => {
+  const activeQueueRows: DownloadsQueueRowModel[] = activeLaneItems.map((item, index) => {
     const primaryBadge = primaryInboxStateBadge(item, userView);
     const rawBadges = [
       findAutoRecheckNote(item.notes)
@@ -1244,7 +1299,7 @@ export function DownloadsScreen({
 
     return {
       id: item.id,
-      title: item.displayName,
+      title: friendlyInboxDisplayName(item, index),
       creatorName: item.creatorName,
       meta: `${item.sourceKind === "archive" ? "Archive" : "Direct file"} · ${item.detectedFileCount.toLocaleString()} file(s)${
         userView === "power" && item.archiveFormat
@@ -1268,6 +1323,15 @@ export function DownloadsScreen({
           : undefined,
     };
   });
+  const selectedItemIndex = selectedItem
+    ? activeLaneItems.findIndex((item) => item.id === selectedItem.id)
+    : -1;
+  const selectedItemDisplayName = selectedItem
+    ? friendlyInboxDisplayName(
+        selectedItem,
+        selectedItemIndex >= 0 ? selectedItemIndex : 0,
+      )
+    : null;
   const batchCanvasPreviewItems = previewSuggestions.length
     ? previewSuggestions.slice(0, 4).map((item) => item.filename)
     : selectedFiles.slice(0, 4).map((file) => file.filename);
@@ -1311,9 +1375,10 @@ export function DownloadsScreen({
         : selectedItem.intakeMode
       : undefined;
   const canApply =
-    effectiveSelectedIntakeMode === "guided"
+    !INBOX_FILE_ACTIONS_BLOCKED &&
+    (effectiveSelectedIntakeMode === "guided"
       ? guidedActionReady
-      : effectiveSelectedIntakeMode === "standard" && safeCount > 0;
+      : effectiveSelectedIntakeMode === "standard" && safeCount > 0);
   const showPrimaryAction =
     Boolean(selectedResolvedItem) &&
     !incomingOlder &&
@@ -1540,7 +1605,7 @@ export function DownloadsScreen({
         case "a":
         case "A": {
           event.preventDefault();
-          if (selectedItem) {
+          if (selectedItem && !INBOX_FILE_ACTIONS_BLOCKED) {
             void handleApply();
           }
           break;
@@ -1548,7 +1613,7 @@ export function DownloadsScreen({
         case "i":
         case "I": {
           event.preventDefault();
-          if (selectedItem) {
+          if (selectedItem && !INBOX_FILE_ACTIONS_BLOCKED) {
             void handleReject();
           }
           break;
@@ -1624,27 +1689,19 @@ export function DownloadsScreen({
         statusFilter={statusFilter}
         onClearFilter={statusFilter ? () => setStatusFilter("") : undefined}
         progress={progress}
-        undoableApply={undoableApply}
-        onRequestUndo={() => {
-          if (undoableApply) {
-            setPendingDialog({
-              kind: "undo",
-              itemId: undoableApply.itemId,
-              displayName: undoableApply.displayName,
-            });
-          }
-        }}
-        isUndoing={isUndoing}
+        undoableApply={INBOX_FILE_ACTIONS_BLOCKED ? null : undoableApply}
+        onRequestUndo={undefined}
+        isUndoing={false}
       />
 
       {showWatcherBootstrap ? (
         <StatePanel
-          eyebrow="Downloads inbox"
-          title="Checking your Downloads inbox..."
+          eyebrow="Inbox"
+          title="Checking your Inbox..."
           body={
             userView === "beginner"
-              ? "SimSuite is checking your Downloads folder and lining up the latest items."
-              : "SimSuite is checking the watcher state and loading the latest inbox queue."
+              ? "SimSuite is checking new downloads and imported batches."
+              : "SimSuite is checking the watcher state and loading the latest intake queue."
           }
           icon={LoaderCircle}
           tone="info"
@@ -1663,16 +1720,16 @@ export function DownloadsScreen({
         />
       ) : showWatcherSetup ? (
         <StatePanel
-          eyebrow="Downloads folder"
+          eyebrow="Inbox folder"
           title={
             userView === "beginner"
-              ? "Choose a Downloads folder first"
-              : "Downloads watcher is not configured"
+              ? "Choose an Inbox folder first"
+              : "Inbox watcher is not configured"
           }
           body={
             userView === "beginner"
-              ? "Set one inbox folder on Home so SimSuite can check new files safely before they touch your game."
-              : "Point SimSuite at a Downloads inbox before using archive intake, guided setup, or safe hand-off previews."
+              ? "Set one inbox folder on Home so SimSuite can review new files before they become Library or Organize work."
+              : "Point SimSuite at an Inbox folder before using archive intake, guided setup, or preview planning."
           }
           icon={FolderSearch}
           tone="warn"
@@ -1688,9 +1745,27 @@ export function DownloadsScreen({
           meta={["No watcher path", "Nothing moves from this screen automatically"]}
         />
       ) : (
+        <>
+        <InboxIntakeSummary
+          userView={userView}
+          totalItems={statusFilter ? (inbox?.items.length ?? 0) : (overview?.totalItems ?? 0)}
+          readyCount={overview?.readyNowItems ?? overview?.readyItems ?? 0}
+          reviewCount={
+            (overview?.waitingOnYouItems ?? overview?.needsReviewItems ?? 0) +
+            (overview?.specialSetupItems ?? 0)
+          }
+          blockedCount={overview?.blockedItems ?? overview?.errorItems ?? 0}
+          watchedPath={activeWatcherStatus.watchedPath}
+          lastCheckLabel={
+            activeWatcherStatus.lastRunAt
+              ? `Last check ${formatDate(activeWatcherStatus.lastRunAt)}`
+              : "Watcher ready"
+          }
+          onNavigate={onNavigate}
+        />
         <Workbench threePanel className="downloads-workbench">
           <WorkbenchRail
-            ariaLabel="Downloads controls"
+            ariaLabel="Inbox controls"
             className="downloads-rail-shell"
             noBorder
           >
@@ -1831,7 +1906,7 @@ export function DownloadsScreen({
                 <DownloadsBatchCanvas
                   lane={resolvedActiveLane}
                   userView={userView}
-                  selectionTitle={selectedItem?.displayName ?? null}
+                  selectionTitle={selectedItemDisplayName}
                   summary={batchCanvasSummary}
                   safeCount={safeCount}
                   reviewCount={reviewCount}
@@ -1851,7 +1926,7 @@ export function DownloadsScreen({
                       <StatePanel
                         eyebrow="Preview"
                         title="Loading batch details"
-                        body="SimSuite is checking the selected download and preparing the safest next step."
+                        body="SimSuite is checking the selected download and preparing review details."
                         icon={LoaderCircle}
                         tone="info"
                         compact
@@ -1868,6 +1943,7 @@ export function DownloadsScreen({
                             reviewActions={reviewActions}
                             onResolveAction={handleReviewAction}
                             isApplying={isApplying}
+                            fileActionsBlocked={INBOX_FILE_ACTIONS_BLOCKED}
                           />
                         ) : (
                         <GuidedPreviewPanel plan={selectedGuidedPlan} userView={userView} />
@@ -1894,6 +1970,7 @@ export function DownloadsScreen({
                           reviewActions={reviewActions}
                           onResolveAction={handleReviewAction}
                           isApplying={isApplying}
+                          fileActionsBlocked={INBOX_FILE_ACTIONS_BLOCKED}
                         />
                       ) : (
                         <StatePanel
@@ -1933,34 +2010,17 @@ export function DownloadsScreen({
                     {/* Seasoned: action footer — proof shortcut + Creator approve/reject */}
                     {selectedItem && (
                       <div className="preview-action-footer">
-                        {userView === "power" ? (
-                          <>
-                            <button
-                              type="button"
-                              className="primary-action preview-action-btn"
-                              disabled={primaryActionDisabled}
-                              onClick={showPrimaryAction ? handlePrimaryAction : undefined}
-                            >
-                              {applyLabel ?? "Apply"}
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary-action preview-action-btn"
-                              disabled={isRejecting}
-                              onClick={() => setPendingDialog({ kind: "reject" })}
-                            >
-                              Reject
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="secondary-action proof-expand-trigger"
-                            onClick={() => setProofSheetOpen(true)}
-                          >
-                            View full proof sheet →
-                          </button>
-                        )}
+                        <div className="downloads-action-blocked-note">
+                          <strong>Preview only</strong>
+                          <span>No files changed. Use Organize to create a preview plan.</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary-action proof-expand-trigger"
+                          onClick={() => setProofSheetOpen(true)}
+                        >
+                          View full proof sheet →
+                        </button>
                       </div>
                     )}
                   </AnimatePresence>
@@ -1988,7 +2048,7 @@ export function DownloadsScreen({
               {selectedItem ? (
                 <DownloadsDecisionPanel
                   userView={userView}
-                  title={selectedItem.displayName}
+                  title={selectedItemDisplayName ?? selectedItem.displayName}
                   summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
                   laneLabel={decisionLaneLabel}
                   resolvedLane={decisionResolvedLane}
@@ -1999,12 +2059,13 @@ export function DownloadsScreen({
                   primaryActionLabel={showPrimaryAction ? applyLabel : null}
                   primaryActionDisabled={primaryActionDisabled}
                   onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
-                  secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
-                  secondaryActionDisabled={isRejecting}
-                  onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
+                  secondaryActionLabel={null}
+                  secondaryActionDisabled
+                  onSecondaryAction={undefined}
                   onOpenProof={() => setProofSheetOpen(true)}
                   proofSummary={proofSummary}
                   onSnooze={handleSnooze}
+                  fileActionsBlocked={INBOX_FILE_ACTIONS_BLOCKED}
                   idleNote={
                     !showPrimaryAction
                       ? downloadsInspectorIdleNote(
@@ -2025,7 +2086,7 @@ export function DownloadsScreen({
                   title="Select an inbox item to inspect"
                   body="The inspector shows intake mode, evidence, and the file set for the selected batch."
                   icon={Download}
-                  meta={["Approval first", "Snapshots happen before moves"]}
+                  meta={["Review first", "No files changed"]}
                 />
               )}
             </WorkbenchInspector>
@@ -2048,7 +2109,7 @@ export function DownloadsScreen({
                   <div className="downloads-casual-drawer-title-group">
                     <p className="eyebrow">Inbox item</p>
                     <h2 className="downloads-casual-drawer-title">
-                      {selectedItem.displayName}
+                      {selectedItemDisplayName ?? selectedItem.displayName}
                     </h2>
                   </div>
                   <button
@@ -2064,7 +2125,7 @@ export function DownloadsScreen({
                 <div className="downloads-casual-drawer-content">
                   <DownloadsDecisionPanel
                     userView={userView}
-                    title={selectedItem.displayName}
+                    title={selectedItemDisplayName ?? selectedItem.displayName}
                     summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
                     laneLabel={decisionLaneLabel}
                     resolvedLane={decisionResolvedLane}
@@ -2075,12 +2136,13 @@ export function DownloadsScreen({
                     primaryActionLabel={showPrimaryAction ? applyLabel : null}
                     primaryActionDisabled={primaryActionDisabled}
                     onPrimaryAction={showPrimaryAction ? handlePrimaryAction : undefined}
-                    secondaryActionLabel={isRejecting ? "Rejecting..." : "Reject"}
-                    secondaryActionDisabled={isRejecting}
-                    onSecondaryAction={() => setPendingDialog({ kind: "reject" })}
+                    secondaryActionLabel={null}
+                    secondaryActionDisabled
+                    onSecondaryAction={undefined}
                     onOpenProof={() => setProofSheetOpen(true)}
                     proofSummary={proofSummary}
                     onSnooze={handleSnooze}
+                    fileActionsBlocked={INBOX_FILE_ACTIONS_BLOCKED}
                     idleNote={
                       !showPrimaryAction
                         ? downloadsInspectorIdleNote(
@@ -2115,13 +2177,14 @@ export function DownloadsScreen({
             )}
           </AnimatePresence>
         </Workbench>
+        </>
       )}
 
       {selectedItem ? (
         <DownloadsProofSheet
           open={proofSheetOpen}
           onClose={() => setProofSheetOpen(false)}
-          title={selectedItem.displayName}
+          title={selectedItemDisplayName ?? selectedItem.displayName}
           summary={selectedItem.queueSummary ?? fallbackQueueSummary(selectedItem)}
           laneLabel={decisionLaneLabel}
           badges={decisionBadges}
@@ -2153,18 +2216,16 @@ export function DownloadsScreen({
           <button
             type="button"
             className="primary-action"
-            onClick={() => void handleBatchApply()}
-            disabled={isApplying}
+            onClick={() => onNavigate("organize")}
           >
-            {isApplying ? "Applying..." : `Apply ${batchSelectedIds.size}`}
+            Create preview plan
           </button>
           <button
             type="button"
             className="secondary-action"
-            onClick={() => void handleBatchReject()}
-            disabled={isRejecting}
+            onClick={() => onNavigate("library")}
           >
-            {isRejecting ? "Rejecting..." : "Reject"}
+            Open Library
           </button>
           <button
             type="button"
@@ -2533,8 +2594,8 @@ function StandardPreviewPanel({
         <div className="downloads-preview-summary-topline">
           <strong>
             {userView === "beginner"
-              ? "What will head into your Mods folder"
-              : "Validated hand-off preview"}
+              ? "What SimSuite can inspect"
+              : "Intake review preview"}
           </strong>
           <button
             type="button"
@@ -2554,9 +2615,9 @@ function StandardPreviewPanel({
           {sampleCountLabel(visibleSuggestions.length, suggestions.length, showingAll)}
         </span>
         <div className="downloads-preview-summary-grid">
-          <SummaryStat label="Safe" value={safeCount} tone="good" />
+          <SummaryStat label="Ready" value={safeCount} tone="good" />
           <SummaryStat label="Needs review" value={reviewCount} tone="low" />
-          <SummaryStat label="Already fine" value={unchangedCount} tone="neutral" />
+          <SummaryStat label="Already reviewed" value={unchangedCount} tone="neutral" />
         </div>
       </div>
 
@@ -2584,18 +2645,18 @@ function StandardPreviewPanel({
               </div>
               <div className="downloads-preview-route">
                 <div className="section-label">
-                  {userView === "beginner" ? "Safe folder" : "Safe route"}
+                  {userView === "beginner" ? "Suggested folder" : "Preview route"}
                 </div>
                 <code>{formatPreviewPath(item.finalRelativePath, userView)}</code>
                 <strong className="downloads-preview-route-headline">
                   {state === "safe"
                     ? userView === "beginner"
-                      ? "Ready to scoot into place"
-                      : "Ready for the safe hand-off"
+                      ? "Ready for review"
+                      : "Ready for review"
                     : state === "aligned"
                       ? userView === "beginner"
-                        ? "Already tucked away safely"
-                        : "Already in a safe spot"
+                        ? "Already in place"
+                        : "Already aligned"
                       : "Held for review"}
                 </strong>
                 {item.validatorNotes.length ? (
@@ -2605,8 +2666,8 @@ function StandardPreviewPanel({
                 ) : state === "safe" ? (
                   <span className="downloads-preview-route-note">
                     {userView === "beginner"
-                      ? "Only the ready part of this batch will move."
-                      : "This row can move in the approved batch."}
+                      ? "No files changed from this preview."
+                      : "This row is preview information only."}
                   </span>
                 ) : null}
               </div>
@@ -2634,7 +2695,7 @@ function GuidedPreviewPanel({
   const detailTabs: DownloadsStageTab[] = [
     {
       id: "plan",
-      label: userView === "beginner" ? "What moves" : "Plan",
+      label: userView === "beginner" ? "Plan items" : "Plan",
       count:
         plan.installFiles.length +
         plan.replaceFiles.length +
@@ -2643,7 +2704,7 @@ function GuidedPreviewPanel({
         <div className="downloads-stage-tab-panel-stack">
           <div className="downloads-guided-columns">
             <GuidedListCard
-              title={userView === "beginner" ? "What will move" : "Install files"}
+              title={userView === "beginner" ? "Incoming files" : "Incoming files"}
               badge={plan.installFiles.length.toString()}
               tone="good"
               files={plan.installFiles}
@@ -2651,7 +2712,7 @@ function GuidedPreviewPanel({
               showPaths={userView === "power"}
             />
             <GuidedListCard
-              title={userView === "beginner" ? "What will be replaced" : "Replace files"}
+              title={userView === "beginner" ? "Replacement candidates" : "Replacement candidates"}
               badge={plan.replaceFiles.length.toString()}
               tone="medium"
               files={plan.replaceFiles}
@@ -2796,7 +2857,7 @@ function GuidedPreviewPanel({
             <h3>{plan.profileName}</h3>
           </div>
           <span className={`confidence-badge ${plan.applyReady ? "good" : "medium"}`}>
-            {plan.applyReady ? "Ready to install" : "Needs review"}
+            {plan.applyReady ? "Ready for review" : "Needs review"}
           </span>
         </div>
         <p>{plan.explanation}</p>
@@ -2845,6 +2906,7 @@ function SpecialReviewPanel({
   reviewActions,
   onResolveAction,
   isApplying,
+  fileActionsBlocked = false,
 }: {
   item: DownloadsInboxItem;
   reviewPlan: SpecialReviewPlan;
@@ -2853,6 +2915,7 @@ function SpecialReviewPanel({
   reviewActions: ReviewPlanAction[];
   onResolveAction: (action: ReviewPlanAction) => Promise<void>;
   isApplying: boolean;
+  fileActionsBlocked?: boolean;
 }) {
   const modeEyebrow =
     item.intakeMode === "guided"
@@ -3121,15 +3184,22 @@ function SpecialReviewPanel({
                   : "SimSuite will preview the older setup repair first so the update can continue after approval."}
               </span>
             </div>
-            <button
-              type="button"
-              className="primary-action downloads-review-action-cta"
-              onClick={() => void onResolveAction(repairAction)}
-              disabled={isApplying}
-            >
-              <Workflow size={14} strokeWidth={2} />
-              {reviewActionButtonLabel(repairAction, userView, isApplying)}
-            </button>
+            {fileActionsBlocked ? (
+              <div className="downloads-action-blocked-note">
+                <strong>Not ready to apply yet</strong>
+                <span>No files changed. Review this batch in Inbox first.</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="primary-action downloads-review-action-cta"
+                onClick={() => void onResolveAction(repairAction)}
+                disabled={isApplying}
+              >
+                <Workflow size={14} strokeWidth={2} />
+                {reviewActionButtonLabel(repairAction, userView, isApplying)}
+              </button>
+            )}
           </div>
           <div className="summary-matrix">
             <SummaryStat
@@ -3196,8 +3266,8 @@ function SpecialReviewPanel({
           <div className="downloads-guided-card-header">
             <strong>
               {userView === "beginner"
-                ? "What SimSuite can do now"
-                : "Safe next action"}
+                ? "What needs review next"
+                : "Review-only next step"}
             </strong>
             <span className="ghost-chip">{secondaryActions.length}</span>
           </div>
@@ -3211,15 +3281,22 @@ function SpecialReviewPanel({
                   <strong>{reviewActionCardTitle(action)}</strong>
                   <span>{reviewActionDescription(action)}</span>
                 </div>
-                <button
-                  type="button"
-                  className="primary-action downloads-review-action-cta"
-                  onClick={() => void onResolveAction(action)}
-                  disabled={isApplying}
-                >
-                  <Workflow size={14} strokeWidth={2} />
-                  {reviewActionButtonLabel(action, userView, isApplying)}
-                </button>
+                {fileActionsBlocked ? (
+                  <div className="downloads-action-blocked-note">
+                    <strong>Preview only</strong>
+                    <span>No files changed from Inbox review.</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary-action downloads-review-action-cta"
+                    onClick={() => void onResolveAction(action)}
+                    disabled={isApplying}
+                  >
+                    <Workflow size={14} strokeWidth={2} />
+                    {reviewActionButtonLabel(action, userView, isApplying)}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -4278,31 +4355,49 @@ function fallbackQueueSummary(item: DownloadsInboxItem) {
           : "SimSuite recognized a supported special mod and has a guided next step ready.";
       }
       if (item.existingInstallDetected) {
-        return "SimSuite found an older special setup and is still checking the safest update path.";
+        return "SimSuite found an older special setup and is still checking the review path.";
       }
-      return "SimSuite recognized a supported special mod and is checking the safest next step.";
+      return "SimSuite recognized a supported special mod and is checking the next review step.";
     case "waiting_on_you":
       if (item.missingDependencies.length) {
-        return `Waiting on ${item.missingDependencies[0]} before anything moves.`;
+        return `Waiting on ${item.missingDependencies[0]} before this batch can continue.`;
       }
-      return "This batch needs one more choice from you before it can move.";
+      return "This batch needs one more choice from you before it can continue.";
     case "blocked":
-      return item.errorMessage ?? "SimSuite stopped this batch to avoid a risky move.";
+      return item.errorMessage ?? "SimSuite stopped this batch for manual review.";
     case "done":
       return item.appliedFileCount > 0
-        ? "This batch already handed off its safe files."
+        ? "This batch was already handled by an earlier review."
         : "This batch is hidden from the active Inbox.";
     default:
       return item.reviewFileCount > 0
-        ? "Safe files are ready, and the unsure ones will stay behind for review."
-        : "This batch is ready for a safe hand-off.";
+        ? "Some files are ready for review, and unsure ones stay visible."
+        : "This batch is ready for review.";
   }
+}
+
+function looksLikeInternalInboxLabel(value: string) {
+  const trimmed = value.trim();
+  return (
+    /^\d{8,}$/.test(trimmed) ||
+    /^downloads[_\s-]?inbox$/i.test(trimmed) ||
+    /^staging[_\s-]?area$/i.test(trimmed)
+  );
+}
+
+function friendlyInboxDisplayName(item: DownloadsInboxItem, index: number) {
+  if (!looksLikeInternalInboxLabel(item.displayName)) {
+    return item.displayName;
+  }
+
+  const label = item.sourceKind === "archive" ? "Downloaded batch" : "Imported batch";
+  return `${label} ${index + 1}`;
 }
 
 function queueLaneLabel(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
-      return userView === "beginner" ? "Ready now" : "Ready now";
+      return userView === "beginner" ? "Ready for review" : "Ready for review";
     case "special_setup":
       return "Special setup";
     case "waiting_on_you":
@@ -4310,7 +4405,7 @@ function queueLaneLabel(lane: DownloadQueueLane, userView: UserView) {
     case "blocked":
       return "Blocked";
     case "done":
-      return userView === "beginner" ? "Done" : "Done";
+      return userView === "beginner" ? "Reviewed" : "Reviewed";
     default:
       return "Inbox";
   }
@@ -4320,8 +4415,8 @@ function queueLaneHint(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
       return userView === "beginner"
-        ? "Safe files can move from here."
-        : "Normal batches ready for a safe hand-off.";
+        ? "These batches have enough information to inspect."
+        : "Batches with enough local evidence to inspect before future planning.";
     case "special_setup":
       return userView === "beginner"
         ? "Supported mods with their own install rules."
@@ -4332,12 +4427,12 @@ function queueLaneHint(lane: DownloadQueueLane, userView: UserView) {
         : "Support files, missing files, or a small decision are still in the way.";
     case "blocked":
       return userView === "beginner"
-        ? "SimSuite stopped these to stay safe."
-        : "Unsafe or incomplete items that cannot move yet.";
+        ? "SimSuite stopped here for manual review."
+        : "Incomplete or unclear items that stay in review.";
     case "done":
       return userView === "beginner"
-        ? "Already handled or tucked away."
-        : "Applied or hidden batches.";
+        ? "Already reviewed or handled earlier."
+        : "Batches already marked as handled by earlier review.";
     default:
       return "";
   }
@@ -4586,6 +4681,12 @@ function downloadsNextStepTitle(
   safeCount: number,
   userView: UserView,
 ) {
+  if (INBOX_FILE_ACTIONS_BLOCKED) {
+    return userView === "beginner"
+      ? "Review this inbox batch"
+      : "Review imported batch details";
+  }
+
   if (reviewAction?.kind === "repair_special") {
     return userView === "beginner"
       ? "Preview old setup repair"
@@ -4707,6 +4808,12 @@ function downloadsNextStepDescription(
   safeCount: number,
   userView: UserView,
 ) {
+  if (INBOX_FILE_ACTIONS_BLOCKED) {
+    return userView === "beginner"
+      ? "Use Inbox to understand what arrived. No files changed here; create a preview plan in Organize when you want organization suggestions."
+      : "Inbox owns downloaded/imported batch review. This surface is preview-only in the current workflow; use Organize for generated organization plans.";
+  }
+
   if (reviewAction?.kind === "repair_special") {
     return userView === "beginner"
       ? "SimSuite can move the older files out of the way, keep your settings, and then continue the update."
@@ -4920,7 +5027,7 @@ function previewStateTone(state: "safe" | "review" | "aligned") {
 
 function previewStateLabel(state: "safe" | "review" | "aligned") {
   if (state === "safe") {
-    return "Safe";
+    return "Ready";
   }
 
   if (state === "review") {
@@ -5108,7 +5215,7 @@ function friendlyItemStatus(status: string) {
   }
 
   if (status === "applied") {
-    return "Applied";
+    return "Reviewed";
   }
 
   if (status === "error") {
@@ -5116,7 +5223,7 @@ function friendlyItemStatus(status: string) {
   }
 
   if (status === "ignored") {
-    return "Rejected";
+    return "Set aside";
   }
 
   return "Ready";

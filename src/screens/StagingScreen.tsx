@@ -46,9 +46,10 @@ export function StagingScreen({ onNavigate }: StagingScreenProps) {
         transition={{ duration: 0.14 }}
       >
         Plan Preview is still preview-only, but the main workflow now lives in
-        Organize. No files will be changed from this route. Future file-changing
-        workflows need preview, user confirmation, backup and restore support,
-        and recoverable errors.
+        Organize. Use Inbox to review downloaded or imported batches. No files
+        will be changed from this route. Future file-changing workflows need
+        preview, user confirmation, backup and restore support, and recoverable
+        errors.
       </m.div>
 
       <PendingPlansPreview onNavigate={onNavigate} />

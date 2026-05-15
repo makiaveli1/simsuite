@@ -569,7 +569,7 @@ async function waitForQueueItem(driver, partialText, timeoutMs = 90000) {
 
 async function clickDownloadsLane(driver, laneLabel, timeoutMs = 30000) {
   const locator = By.xpath(
-    `//div[@aria-label='Downloads lanes']//button[.//span[contains(normalize-space(.), ${xpathString(laneLabel)})]]`,
+    `//div[@aria-label='Inbox review lanes' or @aria-label='Downloads lanes']//button[.//span[contains(normalize-space(.), ${xpathString(laneLabel)})]]`,
   );
   await driver.wait(until.elementLocated(locator), timeoutMs);
   const button = await driver.findElement(locator);
@@ -666,9 +666,9 @@ async function verifySameVersionItem(driver, partialText) {
       ],
       30000,
     );
-    await waitForAnyText(driver, ["Ready to install", "SPECIAL SETUP"], 30000);
-    await waitForAnyText(driver, ["MOVE", "REPLACE", "KEEP"], 30000);
-    await waitForAnyText(driver, ["View full proof sheet", "KEEP THE STAGE CALM"], 30000);
+    await waitForAnyText(driver, ["Not ready to apply yet", "SPECIAL SETUP", "No files changed"], 30000);
+    await waitForAnyText(driver, ["Preview only", "Review step", "No files changed"], 30000);
+    await waitForAnyText(driver, ["No files changed", "Not ready to apply yet"], 30000);
   } catch (error) {
     await dumpBodyText(driver, `same-version-failure-${partialText}`);
     throw error;
@@ -870,9 +870,9 @@ async function run() {
     await waitForAnyText(
       driver,
       [
-        "Downloads Inbox",
-        "Checking your Downloads inbox...",
-        "Inbox is the plumbob checkpoint before anything reaches Mods or Tray.",
+        "Review new downloads and imported batches",
+        "Checking your Inbox...",
+        "Inbox is the intake area before content becomes part of Library or Organize planning.",
       ],
       60000,
     );
@@ -880,12 +880,12 @@ async function run() {
     await waitForQueueItem(driver, fixtureSpecialItem, 90000);
 
     await clickSpecialQueueItem(driver);
-    await waitForAnyText(driver, ["Ready to install", "SPECIAL SETUP"], 30000);
-    await waitForAnyText(driver, ["MOVE", "REPLACE", "KEEP"], 30000);
-    await waitForAnyText(driver, ["Existing install", "Family", "Dependency"], 30000);
-    await waitForAnyText(driver, ["View full proof sheet", "KEEP THE STAGE CALM"], 30000);
+    await waitForAnyText(driver, ["Not ready to apply yet", "SPECIAL SETUP", "No files changed"], 30000);
+    await waitForAnyText(driver, ["Preview only", "Review step", "No files changed"], 30000);
+    await waitForAnyText(driver, ["No files changed", "Review this batch", "Not ready to apply yet"], 30000);
+    await waitForAnyText(driver, ["No files changed", "Not ready to apply yet"], 30000);
 
-    await clickDownloadsLane(driver, "Done");
+    await clickDownloadsLane(driver, "Reviewed");
     for (const item of [
       fixtureXmlSameItem,
       fixtureS4clSameItem,

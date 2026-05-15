@@ -13,10 +13,10 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `home` | Home | `HomeScreen` | Landing/status surface. | Frontend state and app summaries. | Real, with unrelated local changes currently dirty. | Casual, Seasoned, Creator | Informational | Yes | Keep top-level. |
 | Sidebar action | Scan | `Sidebar` action using `onScan` | Starts Library scan workflow. | Tauri/backend scan command path. | Real action | Casual, Seasoned, Creator | User-confirmed action | Yes, as action | Keep as primary action, not a page. |
 | Sidebar action | Guide | `FieldGuide` drawer | Help/reference content. | Frontend guide content. | Real action | Casual, Seasoned, Creator | Informational | No | Move toward Help/Settings later. |
-| `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow | Yes | Keep top-level as intake/new content. |
+| `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content and imported/downloaded batches before Library or Organize planning. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow; current visible UI is review-only | Yes | Keep top-level as intake/new content. Do not expose Apply/move/delete-style actions until the future safety contract exists. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. `Pending plans` now summarizes internal pending batch data with friendly labels instead of exposing raw folder IDs as plan names. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning and pending plan review. Move downloaded/imported batch review toward Inbox later if the intake workflow becomes the better owner. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan` and `Pending plans` preview-only tabs. `Pending plans` now hands imported/downloaded batch review back to Inbox instead of acting like the detailed batch review owner. | `generate_sorting_preview_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; no file-changing action | Yes | Keep top-level as the owner of organization planning. Inbox owns detailed imported/downloaded batch review. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
@@ -36,7 +36,7 @@ Notes:
 | --- | --- |
 | Home | Quick status and re-entry surface. |
 | Library | The source of truth for indexed Mods/Tray files, folders, filters, details, duplicate evidence, preview state, and review signals. |
-| Inbox | Intake/new content. This is where newly downloaded or incoming files should be checked before they become part of normal Library organization. |
+| Inbox | Intake/new content. This is where newly downloaded or imported batches should be checked before they become part of normal Library or Organize planning. |
 | Organize | Planning workspace for suggested organization. It now owns both creating preview plans and reviewing pending plans. |
 | Plan Preview | Preview of a proposed plan. This is the user-facing name for the current internal Staging concept; it now appears inside Organize as `Pending plans`, while the direct route remains a safe compatibility surface. |
 | Updates | Trust-first update tracking, reminder-only sources, and supported checker results. |
@@ -57,7 +57,7 @@ Key distinction:
 
 | Overlap | Decision | Reason | Migration note |
 | --- | --- | --- | --- |
-| Inbox vs Plan Preview | Keep separate concepts. | Inbox is intake. Plan Preview is proposed change preview. | Future Inbox may send selected items into Organize/Plan Preview plans, but it should not become the plan review surface. |
+| Inbox vs Plan Preview | Keep separate concepts. | Inbox is intake. Plan Preview is proposed change preview. Current imported/downloaded batch data belongs more naturally in Inbox. | Inbox may send selected items into Organize preview plans later, but Inbox should own detailed downloaded/imported batch review. |
 | Organize vs Plan Preview | Folded for v1 as a preview-only `Pending plans` tab inside Organize. | Users should not have to understand a separate technical Staging page before a proposed organization plan exists. | Keep the internal `staging` route safe if directly opened during migration. |
 | Duplicates vs Library duplicate filter | Make Duplicates a Library/Review comparison workbench; allow Creator-mode top-level until migration. | Library already owns duplicate counts and filters; Duplicates is useful when comparing evidence. | Do not remove until duplicate review flows have an equivalent Library/Review entry. |
 | Creators vs Library creator lens/filter | Fold into Library lens. | Creator browsing is a Library view, not a separate workflow. | Preserve filtering and summaries. |
@@ -115,6 +115,7 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 - No apply/move/delete/quarantine controls are exposed.
 - Pending batch data is summarized with friendly labels; raw internal folder IDs are hidden behind technical details.
 - Generated organization plans are not saved yet, so `Pending plans` is currently a review summary for imported/downloaded batches rather than a saved-plan list.
+- Inbox now owns detailed imported/downloaded batch review. Organize `Pending plans` should hand batch inspection back to Inbox and stay focused on preview plan work.
 
 Current M2 foundation note:
 

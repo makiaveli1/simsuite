@@ -94,7 +94,7 @@ function buildBatchStats({
     ? (previewCount === 1 ? "File shown" : "Files shown")
     : "Preview";
   const allStats = [
-    { label: "Safe", value: safeCount, tone: "good" },
+    { label: "Ready", value: safeCount, tone: "good" },
     { label: userView === "beginner" ? "Needs care" : "Review", value: reviewCount, tone: "warn" },
     { label: userView === "beginner" ? "Already set" : "Already fine", value: unchangedCount, tone: "neutral" },
     { label: filesShownLabel, value: previewCount, tone: "muted" },
@@ -118,7 +118,7 @@ function buildBatchStats({
 function batchCanvasEyebrow(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
-      return userView === "beginner" ? "Safe hand-off" : "Ready now";
+      return userView === "beginner" ? "Ready for review" : "Inbox review";
     case "special_setup":
       return "Special setup";
     case "waiting_on_you":
@@ -126,7 +126,7 @@ function batchCanvasEyebrow(lane: DownloadQueueLane, userView: UserView) {
     case "blocked":
       return "Blocked";
     case "done":
-      return "Done";
+      return "Reviewed";
     default:
       return "Batch";
   }
@@ -136,8 +136,8 @@ function batchCanvasTitle(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
       return userView === "beginner"
-        ? "What can move safely now"
-        : "Safe hand-off preview";
+        ? "What is ready to inspect"
+        : "Ready-for-review preview";
     case "special_setup":
       return userView === "beginner"
         ? "How this setup should continue"
@@ -152,8 +152,8 @@ function batchCanvasTitle(lane: DownloadQueueLane, userView: UserView) {
         : "This batch is still blocked";
     case "done":
       return userView === "beginner"
-        ? "What already happened"
-        : "Completion story";
+        ? "What was already reviewed"
+        : "Review history";
     default:
       return "Selected batch";
   }

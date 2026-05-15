@@ -1,5 +1,48 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Inbox Batch Review Clarity v1)
+
+- **Mode**: code
+- **Focus**: make Inbox the clear owner for downloaded/imported batch review while keeping Organize focused on preview organization plans
+
+### Progress Made
+
+1. **Clarified Inbox ownership**:
+   - visible Downloads wording now presents the page as `Inbox`
+   - Inbox explains that new downloads and imported batches are reviewed before Library or Organize planning
+   - raw/internal-looking item names are transformed into friendlier intake labels in the visible queue
+
+2. **Blocked visible file-changing controls**:
+   - added a review-only safety guard for current Inbox file-action handlers
+   - replaced visible Apply/Reject-style decision controls with `Not ready to apply yet` / `Preview only` copy
+   - added safe next steps: `Create preview plan`, `Open Organize`, and `Open Library`
+
+3. **Clarified handoff to Organize**:
+   - Organize Pending Plans now says imported/downloaded batch details belong in Inbox
+   - direct Plan Preview copy points users to Inbox for batch review and Organize for preview plan creation
+   - no backend, schema, Rust, Apply, move, cleanup, delete, quarantine, replacement, auto-sort, or AI behavior was added
+
+### Verification
+
+- Focused Inbox/Organize/Plan Preview/trust tests passed (`7` files, `20` tests).
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `103` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed with `DESKTOP_LIBRARY_PROOF_OK`; screenshots captured in `output/desktop/library-proof/2026-05-15T12-17-08-372Z/`, including `inbox-batch-review-clarity-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed with `Desktop smoke passed`.
+- Separate Rust validation was not run because no Rust files changed; desktop proof/smoke built the release app and showed existing Rust warning noise only.
+
+### Known Problems / Gaps
+
+- Existing backend file-changing Downloads/staging commands still exist internally; this sprint blocks them from the current visible Inbox workflow rather than removing them.
+- Saved organization-plan persistence does not exist yet.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`, `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older status/handoff hunks.
+
+### Next Best Step
+
+1. Commit only sprint-relevant hunks.
+2. Recommended next sprint: Apply Safety Contract design, or saved organization-plan persistence audit before any real Apply/file movement work starts.
+
 ## Current Session (May 14, 2026 - Organize Pending Plans UX Clarity v1)
 
 - **Mode**: code

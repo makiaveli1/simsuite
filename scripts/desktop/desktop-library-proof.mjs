@@ -1556,6 +1556,54 @@ async function main() {
     summary.screenshots.push(updatesShot);
     await assertNoRuntimeErrors(driver, summary, "updates-bridge");
 
+    await navigateToScreen(driver, "downloads", 30000);
+    summary.inboxHash = await waitForHash(driver, "#downloads", 30000);
+    await waitForVisibleElement(driver, ".downloads-shell", 30000);
+    await waitForAnyText(
+      driver,
+      ["Review new downloads and imported batches", "No files changed", "Inbox"],
+      30000,
+    );
+    const inboxBody = await getBodyText(driver);
+    summary.inboxBodyHasIntakePurpose =
+      /review new downloads and imported batches|inbox is the intake area/i.test(inboxBody);
+    summary.inboxBodyHasNoFilesChanged = /no files changed/i.test(inboxBody);
+    summary.inboxBodyHandsOffToOrganize =
+      /create preview plan|open organize/i.test(inboxBody);
+    summary.inboxPrimaryLabelsHaveRawIds = await driver.executeScript(`
+      return Array.from(document.querySelectorAll(
+        ".downloads-rail-title, .inbox-intake-copy h2, .downloads-item-main > strong"
+      ))
+        .map((element) => element.textContent || "")
+        .some((text) => /^\\s*\\d{8,}\\s*$/.test(text));
+    `);
+    summary.inboxEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /\\b(apply|commit|move files|clean up|cleanup|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|reject)\\b/i.test(text));
+    `);
+    summary.inboxContextExcerpt = inboxBody.slice(0, 1800);
+    if (
+      !summary.inboxBodyHasIntakePurpose ||
+      !summary.inboxBodyHasNoFilesChanged ||
+      !summary.inboxBodyHandsOffToOrganize
+    ) {
+      throw new Error("Inbox did not show the intake review boundary.");
+    }
+    if (summary.inboxPrimaryLabelsHaveRawIds) {
+      throw new Error("Inbox used a raw internal ID as a primary batch label.");
+    }
+    if (summary.inboxEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Inbox exposed enabled file-changing controls: ${summary.inboxEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    const inboxShot = path.join(runDir, "inbox-batch-review-clarity-v1.png");
+    await takeScreenshot(driver, inboxShot);
+    summary.screenshots.push(inboxShot);
+    await assertNoRuntimeErrors(driver, summary, "inbox-batch-review-clarity-v1");
+
     await navigateToScreen(driver, "organize", 30000);
     summary.organizeHash = await waitForHash(driver, "#organize", 30000);
     await waitForVisibleElement(driver, ".organize-screen", 30000);

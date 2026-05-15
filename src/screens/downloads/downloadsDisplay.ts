@@ -51,7 +51,7 @@ export function viewModeDownloadsFlags(userView: UserView) {
 export function downloadsLaneLabel(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
-      return "Ready now";
+      return "Ready for review";
     case "special_setup":
       return "Special setup";
     case "waiting_on_you":
@@ -59,9 +59,9 @@ export function downloadsLaneLabel(lane: DownloadQueueLane, userView: UserView) 
     case "blocked":
       return "Blocked";
     case "done":
-      return "Done";
+      return "Reviewed";
     case "rejected":
-      return "Rejected";
+      return "Set aside";
     default:
       return "Inbox";
   }
@@ -71,28 +71,28 @@ export function downloadsLaneHint(lane: DownloadQueueLane, userView: UserView) {
   switch (lane) {
     case "ready_now":
       return userView === "beginner"
-        ? "Safe files can move from here."
-        : "Normal batches ready for a safe hand-off.";
+        ? "These batches have enough information for review."
+        : "Batches with enough local evidence to inspect before any future action.";
     case "special_setup":
       return userView === "beginner"
         ? "Supported mods with their own install rules."
-        : "Supported special mods that need the guided install path.";
+        : "Supported special mods that need extra setup review.";
     case "waiting_on_you":
       return userView === "beginner"
         ? "These need one more choice from you first."
-        : "Dependencies, missing files, or a small decision are still in the way.";
+        : "One more user choice or local review step is still in the way.";
     case "blocked":
       return userView === "beginner"
-        ? "SimSuite stopped these to stay safe."
-        : "Unsafe or incomplete items that cannot move yet.";
+        ? "SimSuite stopped here for manual review."
+        : "Incomplete or unclear intake items that stay in review.";
     case "done":
       return userView === "beginner"
-        ? "Already handled or tucked away."
-        : "Applied or hidden batches.";
+        ? "Already reviewed or handled earlier."
+        : "Batches already marked as handled by earlier review.";
     case "rejected":
       return userView === "beginner"
-        ? "Moved to Reject folder for review."
-        : "Moved to SimSuite_Rejected for review.";
+        ? "Set aside from the active intake queue."
+        : "Batches set aside from the active intake queue.";
     default:
       return "";
   }
