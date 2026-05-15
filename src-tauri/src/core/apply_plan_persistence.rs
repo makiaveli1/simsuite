@@ -4,17 +4,45 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::{
     error::{AppError, AppResult},
     models::{
-        ApplyPlanListItem, DeleteDraftApplyPlanResult, ListSavedApplyPlansRequest,
-        PersistedApplyPlan, PersistedApplyPlanBlocker, PersistedApplyPlanItem,
-        PersistedApplyPlanItemStatus, PersistedApplyPlanSignal, PersistedApplyPlanStatus,
-        SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, StagingPlan,
-        StagingPlanActionKind, StagingPlanBucket, StagingPlanConfidenceLabel,
+        ApplyPlanListItem, BuildApplyPlanFromStagingPlanRequest, DeleteDraftApplyPlanResult,
+        LibrarySettings, ListSavedApplyPlansRequest, PersistedApplyPlan, PersistedApplyPlanBlocker,
+        PersistedApplyPlanItem, PersistedApplyPlanItemStatus, PersistedApplyPlanSignal,
+        PersistedApplyPlanStatus, SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult,
+        StagingPlan, StagingPlanActionKind, StagingPlanBucket, StagingPlanConfidenceLabel,
         StagingPlanEvidenceLevel, StagingPlanStatus,
     },
 };
 
 const PATH_PRIVACY_LEVEL: &str = "local_full_path_required";
 const SOURCE_SYSTEM: &str = "staging_plan";
+const SORTING_PREVIEW_SOURCE_KIND: &str = "sorting_preview";
+
+pub fn build_apply_plan_from_staging_plan(
+    connection: &mut Connection,
+    settings: &LibrarySettings,
+    request: BuildApplyPlanFromStagingPlanRequest,
+) -> AppResult<SaveApplyPlanPreviewResult> {
+    let source_scope = serde_json::to_value(&request.preview_request.scope)?;
+    let source_plan_kind = request
+        .source_plan_kind
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| SORTING_PREVIEW_SOURCE_KIND.to_owned());
+    let source_plan = crate::core::rule_engine::sorting_plan::generate_sorting_preview_plan(
+        connection,
+        settings,
+        request.preview_request,
+    )?;
+
+    save_apply_plan_preview(
+        connection,
+        SaveApplyPlanPreviewRequest {
+            source_plan,
+            source_plan_kind: Some(source_plan_kind),
+            source_scope: Some(source_scope),
+            scan_session_id: None,
+        },
+    )
+}
 
 pub fn save_apply_plan_preview(
     connection: &mut Connection,
@@ -780,8 +808,8 @@ mod tests {
     use crate::{
         database,
         models::{
-            GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanScope, LibrarySettings,
-            StagingPlanActionKind,
+            BuildApplyPlanFromStagingPlanRequest, GenerateSortingPreviewPlanRequest,
+            GenerateSortingPreviewPlanScope, LibrarySettings, StagingPlanActionKind,
         },
     };
 
@@ -822,6 +850,17 @@ mod tests {
             },
         )
         .expect("preview plan")
+    }
+
+    fn sample_builder_request() -> BuildApplyPlanFromStagingPlanRequest {
+        BuildApplyPlanFromStagingPlanRequest {
+            preview_request: GenerateSortingPreviewPlanRequest {
+                scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                    file_ids: vec![1, 2],
+                },
+            },
+            source_plan_kind: None,
+        }
     }
 
     #[test]
@@ -984,5 +1023,69 @@ mod tests {
             .items
             .iter()
             .any(|item| item.item_status == PersistedApplyPlanItemStatus::DraftCandidate));
+    }
+
+    #[test]
+    fn builder_generates_and_saves_draft_apply_plan_from_sorting_preview() {
+        let mut connection = memory_connection();
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Sims/Mods".to_owned()),
+            tray_path: Some("C:/Sims/Tray".to_owned()),
+            ..Default::default()
+        };
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, size, modified_at, hash, kind, subtype,
+                    confidence, safety_notes, parser_warnings, source_location, relative_depth
+                ) VALUES
+                ('C:/Sims/Mods/hair.package', 'hair.package', 'package', 1, '2026-01-01', 'h1', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 1),
+                ('C:/Sims/Mods/unknown.package', 'unknown.package', 'package', 1, '2026-01-01', 'h2', 'Unknown', NULL, 0.10, '[]', '[\"parser_warning\"]', 'mods', 1)",
+                [],
+            )
+            .expect("files");
+
+        let result = build_apply_plan_from_staging_plan(
+            &mut connection,
+            &settings,
+            sample_builder_request(),
+        )
+        .expect("build saved draft");
+
+        assert!(result.plan_id > 0);
+        assert_eq!(result.plan.source_plan_kind, "sorting_preview");
+        assert_eq!(result.plan.would_touch_files, false);
+        assert_eq!(result.plan.applyable_items, 0);
+        assert_eq!(result.plan.total_items, 2);
+
+        let summaries = list_saved_apply_plans(&connection, ListSavedApplyPlansRequest::default())
+            .expect("list");
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, result.plan_id);
+
+        let saved = get_apply_plan(&connection, result.plan_id)
+            .expect("get")
+            .expect("saved");
+        assert_eq!(
+            saved
+                .source_scope
+                .as_ref()
+                .and_then(|scope| scope.get("kind"))
+                .and_then(|value| value.as_str()),
+            Some("selected_files")
+        );
+        assert!(saved
+            .caveats
+            .iter()
+            .any(|caveat| caveat.contains("No files changed")));
+        assert!(saved.items.iter().all(|item| !item.signals.is_empty()));
+        assert!(saved
+            .items
+            .iter()
+            .all(|item| !item.blocked || !item.blockers.is_empty()));
+        assert!(saved
+            .items
+            .iter()
+            .any(|item| item.item_status == PersistedApplyPlanItemStatus::Blocked));
     }
 }

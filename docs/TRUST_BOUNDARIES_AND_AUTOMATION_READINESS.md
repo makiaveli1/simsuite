@@ -16,6 +16,11 @@ ApplyPlan persistence planning now lives in `docs/planning/APPLYPLAN_PERSISTENCE
 
 The first ApplyPlan persistence foundation is now implemented as DB-only draft/preview storage. It can save, list, view, and soft-cancel preview snapshots, but it does not expose Apply, move files, create result logs, or provide restore execution.
 
+The first backend-owned ApplyPlan builder is now implemented as a DB-only
+preview path. It builds a draft ApplyPlan from the existing read-only sorting
+preview generator and persistence foundation. It does not expose Apply, move
+files, create result logs, or provide restore execution.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

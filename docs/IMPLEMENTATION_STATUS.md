@@ -1,5 +1,49 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - ApplyPlan Builder From StagingPlan v1)
+
+This session adds a backend-owned, DB-only builder that turns a read-only
+sorting preview request into a saved draft ApplyPlan snapshot. It does not add
+real Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort
+execution, AI decisions, result logs, restore entries, or visible Apply UI.
+
+Important changes and findings:
+
+- added `BuildApplyPlanFromStagingPlanRequest`.
+- added backend builder logic and Tauri command
+  `build_apply_plan_from_staging_plan`.
+- builder reuses `generate_sorting_preview_plan` and existing ApplyPlan
+  persistence instead of accepting arbitrary frontend item arrays.
+- builder saves draft/preview records only, with `wouldTouchFiles=false` and
+  `applyableItems=0`.
+- added TypeScript API/mock support through `buildApplyPlanFromStagingPlan`.
+- added Rust and TypeScript tests for builder behavior and command guardrails.
+
+Checks:
+
+- Focused builder checks passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `108` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`279` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`279` passed, `2` ignored).
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+Delivery:
+
+- implementation commit `c6b0726`.
+- branch `codex/applyplan-builder-from-stagingplan-v1`.
+- draft PR `https://github.com/makiaveli1/simsuite/pull/15`.
+- Linear issues `VEL-31`, `VEL-18`, `VEL-19`, and `VEL-20` were updated
+  directly after Linear search returned a runtime tool error.
+
+Recommended next sprint:
+
+- Saved-plan UI review in Organize, still with no real Apply.
+
 ## Current session note (May 15, 2026 - ApplyPlan Persistence Foundation v1)
 
 This session implements the first DB-only/read-only ApplyPlan persistence

@@ -67,6 +67,7 @@ import type {
   ScanSummary,
   CleanupResult,
   ApplyPlanListItem,
+  BuildApplyPlanFromStagingPlanRequest,
   DeleteDraftApplyPlanResult,
   ListSavedApplyPlansRequest,
   PersistedApplyPlan,
@@ -6625,6 +6626,26 @@ async function mockInvoke<T>(
       return structuredClone(createMockStagingPreviewPlan()) as T;
     case "generate_sorting_preview_plan":
       return structuredClone(createMockSortingPreviewPlan()) as T;
+    case "build_apply_plan_from_staging_plan": {
+      const request = payload?.request as
+        | BuildApplyPlanFromStagingPlanRequest
+        | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan builder request.");
+      }
+      const sourcePlan = createMockSortingPreviewPlan();
+      const plan = buildMockPersistedApplyPlan({
+        sourcePlan,
+        sourcePlanKind: request.sourcePlanKind ?? "sorting_preview",
+        sourceScope: request.previewRequest.scope as unknown as Record<string, unknown>,
+        scanSessionId: null,
+      });
+      mockSavedApplyPlans = [plan, ...mockSavedApplyPlans];
+      return {
+        planId: plan.id,
+        plan: applyPlanSummaryFromMock(plan),
+      } as SaveApplyPlanPreviewResult as T;
+    }
     case "save_apply_plan_preview": {
       const request = payload?.request as SaveApplyPlanPreviewRequest | undefined;
       if (!request) {
@@ -8121,6 +8142,8 @@ export const api = {
     invoke<StagingPlan>("generate_sorting_preview_plan", { request }),
   saveApplyPlanPreview: (request: SaveApplyPlanPreviewRequest) =>
     invoke<SaveApplyPlanPreviewResult>("save_apply_plan_preview", { request }),
+  buildApplyPlanFromStagingPlan: (request: BuildApplyPlanFromStagingPlanRequest) =>
+    invoke<SaveApplyPlanPreviewResult>("build_apply_plan_from_staging_plan", { request }),
   listSavedApplyPlans: (request?: ListSavedApplyPlansRequest) =>
     invoke<ApplyPlanListItem[]>("list_saved_apply_plans", { request }),
   getApplyPlan: (planId: number) =>
