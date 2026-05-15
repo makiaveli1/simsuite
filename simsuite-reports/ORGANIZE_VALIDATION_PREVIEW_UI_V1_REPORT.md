@@ -192,7 +192,12 @@ confirmation remain intentionally unimplemented.
 
 ## Linear updates
 
-Pending final Linear delivery comment after commit/PR.
+- `VEL-31`: updated with branch, commit, draft PR, report path, validation
+  results, and safety boundary.
+- `VEL-17`: updated as related Organize saved-plan UI context.
+- `VEL-18`: updated as backup/restore safety context.
+- `VEL-19`: updated as dry-run/apply split context.
+- `VEL-20`: updated as confirmed Apply prototype blocker context.
 
 ## Recommended next sprint
 
@@ -223,7 +228,10 @@ unstaged unless they contain sprint-relevant hunks:
 
 ## Commit
 
-Pending final commit.
+- Implementation commit: `0ca7412` -
+  `Show saved plan validation preview in Organize`.
+- Branch: `codex/organize-validation-preview-ui-v1`.
+- Draft PR: `https://github.com/makiaveli1/simsuite/pull/19`.
 
 ## Final honest verdict
 
