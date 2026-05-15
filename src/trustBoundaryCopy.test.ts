@@ -102,4 +102,17 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/StagingPlan/);
     expect(source).toMatch(/ApplyPlan/);
   });
+
+  it("documents the ApplyPlan persistence audit without implementing real Apply", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Real Apply is not implemented/i);
+    expect(source).toMatch(/Existing Systems Integration Contract/);
+    expect(source).toMatch(/Apply Safety Contract/);
+    expect(source).toMatch(/Existing systems reused/);
+    expect(source).toMatch(/No files changed/);
+  });
 });

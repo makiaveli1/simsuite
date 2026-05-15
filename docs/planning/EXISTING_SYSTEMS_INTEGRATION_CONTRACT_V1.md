@@ -24,6 +24,12 @@ systems before introducing new metadata, parsing, or decision logic.
 If a sprint adds new data or logic, it must explain why the existing systems
 were not enough.
 
+ApplyPlan persistence planning now lives in
+`docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md`. That audit applies this
+contract to future saved plans, blockers, evidence snapshots, validation and
+conflict results, backup/restore references, and result logs. It is design-only:
+no migration, runtime command, UI, or real Apply workflow exists yet.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
