@@ -144,6 +144,10 @@ pub fn run() {
             commands::get_staging_areas,
             commands::get_staging_preview_plan,
             commands::generate_sorting_preview_plan,
+            commands::save_apply_plan_preview,
+            commands::list_saved_apply_plans,
+            commands::get_apply_plan,
+            commands::delete_draft_apply_plan,
             commands::cleanup_staging_areas,
             commands::commit_staging_area,
             commands::commit_all_staging_areas,
@@ -256,5 +260,30 @@ mod tests {
             handler_source.contains("commands::get_library_preview_diagnostics"),
             "missing Tauri command registration for get_library_preview_diagnostics"
         );
+    }
+
+    #[test]
+    fn apply_plan_persistence_commands_are_registered_with_tauri() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        for command in [
+            "commands::save_apply_plan_preview",
+            "commands::list_saved_apply_plans",
+            "commands::get_apply_plan",
+            "commands::delete_draft_apply_plan",
+        ] {
+            assert!(
+                handler_source.contains(command),
+                "missing Tauri command registration for {command}"
+            );
+        }
     }
 }

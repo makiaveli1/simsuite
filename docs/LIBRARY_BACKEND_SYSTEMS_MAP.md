@@ -2,7 +2,7 @@
 
 Date: 2026-05-13
 
-This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, `codex/organize-plan-review-ui-v1`, `codex/rename-staging-plan-preview-v1`, `codex/plan-preview-organize-consolidation-v1`, `codex/organize-pending-plans-ux-clarity-v1`, `codex/inbox-batch-review-clarity-v1`, `codex/apply-safety-contract-design-v1`, `codex/existing-systems-integration-contract-v1`, and `codex/applyplan-persistence-audit-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
+This map is based on current repo inspection, originally created on `codex/library-backend-map-duplicates-v1` and refreshed on `codex/library-duplicate-truth-engine-v2`, `codex/library-duplicate-truth-guardrails-v21`, `codex/library-backend-performance-folder-query-v1`, `codex/library-true-empty-folder-metadata-v1`, `codex/library-thumbnail-preview-pipeline-v1`, `codex/library-large-scale-backend-stress-v1`, `codex/trust-boundaries-automation-readiness-v1`, `codex/library-duplicate-truth-engine-v3-fingerprints`, `codex/staging-backend-safety-readiness-v1`, `codex/staging-preview-plan-foundation-v1`, `codex/auto-sorting-rules-audit-v1`, `codex/suggested-plan-generator-v1`, `codex/organize-plan-review-ui-v1`, `codex/rename-staging-plan-preview-v1`, `codex/plan-preview-organize-consolidation-v1`, `codex/organize-pending-plans-ux-clarity-v1`, `codex/inbox-batch-review-clarity-v1`, `codex/apply-safety-contract-design-v1`, `codex/existing-systems-integration-contract-v1`, `codex/applyplan-persistence-audit-v1`, and `codex/applyplan-persistence-foundation-v1`. It describes what the Library backend does today, where the current truth boundaries are, and where the backend is partial or missing.
 
 ## 1. Backend Architecture Overview
 
@@ -18,6 +18,7 @@ The Library backend is a Rust/Tauri backend over SQLite.
 - Bundle/same-pack grouping lives in `src-tauri/src/core/bundle_detector/mod.rs`.
 - Update/watch source logic lives in `src-tauri/src/core/content_versions/mod.rs` and `src-tauri/src/core/watch_polling/mod.rs`.
 - Review queue and organization preview logic live in `src-tauri/src/core/rule_engine/mod.rs`.
+- DB-only ApplyPlan draft/preview persistence lives in `src-tauri/src/core/apply_plan_persistence.rs`.
 - Frontend API wrappers and mock fallback data live in `src/lib/api.ts` and `src/lib/types.ts`.
 
 The normal flow is:
@@ -54,7 +55,7 @@ The normal flow is:
 | `generate_sorting_preview_plan` | implemented, read-only | Returns preview-only organization suggestions for selected Library files or a bounded Mods/Tray folder scope. It uses `StagingPlan` items with buckets, source signals, blocked reasons, confidence labels, and `wouldTouchFiles=false`; it does not call legacy Organize apply paths, Staging commit/cleanup commands, or move-engine apply paths. |
 | Downloads/Inbox intake commands | implemented, mixed read/write internally | Current visible Inbox copy treats downloaded/imported batches as review-only intake data and blocks file-changing controls. The underlying Downloads backend still has mutation paths for future or legacy workflows, so visible exposure must continue to follow the trust-boundary safety contract. |
 | Apply/file-changing command family | implemented internally, blocked from current visible workflows | `apply_preview_organization`, `apply_download_item(s)`, `apply_guided_download_item`, `apply_special_review_fix`, mutating `apply_review_plan_action` branches, `restore_snapshot`, `undo_applied_item`, `reject_download_item(s)`, `restore_rejected_item`, and move-engine helpers can change files or app-local staged files. `docs/planning/APPLY_SAFETY_CONTRACT_V1.md` defines the future gate before any normal UI exposure. |
-| ApplyPlan persistence | not implemented; design-only | `docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md` defines future tables and data contracts for saved reviewed plans, blocked items, evidence snapshots, validation/conflict results, backup/restore references, and result logs. No migration, command, UI, or real Apply exists yet. |
+| ApplyPlan persistence | implemented, DB-only/read-only foundation | `save_apply_plan_preview`, `list_saved_apply_plans`, `get_apply_plan`, and `delete_draft_apply_plan` save/list/read/soft-cancel draft preview records only. They persist `StagingPlan` snapshots, items, signals, and blockers with `would_touch_files=0` and `applyable_items=0`. No result/restore tables, UI, or real Apply exists yet. |
 | `cleanup_staging_areas` | implemented backend command, not exposed by current Staging UI | Deletes selected app-local staging folders under the staging root. Future exposure requires the trust-boundary file-change checklist. |
 | `commit_staging_area` / `commit_all_staging_areas` | implemented backend commands, not exposed by current Staging UI | Can apply move-engine paths for ReadyNow download items. Future exposure requires preview, confirmation, backup/restore, recoverable errors, and proof. |
 | `list_library_watch_items` | implemented | Library watch source overview. |
@@ -88,6 +89,10 @@ Important Library tables:
 | `content_watch_sources` / `content_watch_results` | Update/source watch configuration and last results. | Updates/watch commands. | Library update cues, Updates route. | Provider checks are limited; no official-source claim. |
 | `scan_sessions` | Scan summary history. | Scanner. | Home/Library status. | Mostly summary state. |
 | `snapshots` / `snapshot_items` | Snapshot/restore support. | Snapshot manager. | Restore flows. | Not duplicate cleanup proof. |
+| `apply_plans` | Saved draft/preview ApplyPlan records. | DB-only ApplyPlan persistence commands. | Future saved-plan UI and ApplyPlan builder work. | Persistence only; not an Apply executor. |
+| `apply_plan_items` | Saved item snapshots for preview candidates, blocked items, and review-only items. | DB-only ApplyPlan persistence commands. | Future validation/build views. | `file_id` is a soft reference; saved snapshots must be revalidated before any future file action. |
+| `apply_plan_item_signals` | Normalized source-signal/evidence snapshots. | DB-only ApplyPlan persistence commands. | Future evidence review and audit logs. | Signals explain suggestions; they do not prove safety. |
+| `apply_plan_item_blockers` | Normalized blocked/review-only/validation/source-plan reasons. | DB-only ApplyPlan persistence commands. | Future blocker review and validation. | Blockers must remain visible and cannot be silently applied. |
 | `app_settings` / `seed_meta` | Settings and seed metadata. | Database/settings code. | App setup and seeded taxonomy. | Schema mirror is partly stale compared with `ensure_schema`. |
 
 Important indexes:
@@ -98,6 +103,7 @@ Important indexes:
 - `idx_duplicates_duplicate_type`, `idx_duplicates_file_id_a`, `idx_duplicates_file_id_b`.
 - `idx_review_queue_created_at`, `idx_review_queue_file_id`.
 - `idx_content_watch_sources_kind`, `idx_content_watch_sources_anchor_file_id`, `idx_content_watch_results_status`.
+- `idx_apply_plans_status_created_at`, `idx_apply_plans_source_staging_plan_id`, `idx_apply_plan_items_plan_id`, `idx_apply_plan_items_file_id`, `idx_apply_plan_items_status`, `idx_apply_plan_item_signals_item_id`, `idx_apply_plan_item_signals_kind`, `idx_apply_plan_item_blockers_item_id`, `idx_apply_plan_item_blockers_reason`.
 
 `database/migrations/0001_initial.sql` is closer to current state than `database/schema/simsuite-v1.sql`. The schema mirror is stale and should not be treated as the full current schema.
 

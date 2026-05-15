@@ -18,30 +18,32 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
-        duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
-        scanner, snapshot_manager, watch_polling,
+        apply_plan_persistence, bundle_detector, category_audit, content_versions, creator_audit,
+        downloads_watcher, duplicate_detector, install_profile_engine, library_index, move_engine,
+        rule_engine, scanner, snapshot_manager, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPreviewResult, ApplyReviewPlanActionResult,
-        ApplySpecialReviewFixResult, BatchApplyResult, CategoryAuditFile, CategoryAuditQuery,
-        CategoryAuditResponse, CleanupResult, CreatorAuditFile, CreatorAuditQuery,
-        CreatorAuditResponse, DetectedLibraryPaths, DownloadInboxDetail,
-        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
-        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
-        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPreviewResult,
+        ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
+        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CleanupResult,
+        CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult,
+        DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
+        DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
+        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics,
         LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
         LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
-        LibraryWatchSetupResponse, OrganizationPreview, RejectResult, RejectedItem,
-        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult, StagingPlan,
-        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        LibraryWatchSetupResponse, ListSavedApplyPlansRequest, OrganizationPreview,
+        PersistedApplyPlan, RejectResult, RejectedItem, RestoreSnapshotResult, ReviewPlanAction,
+        ReviewPlanActionKind, ReviewQueueItem, RulePreset, SaveApplyPlanPreviewRequest,
+        SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState,
+        ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan, StagingAreasSummary,
+        StagingCommitResult, StagingPlan, WatchListFilter, WatchRefreshSummary, WatchSourceKind,
+        WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -799,6 +801,59 @@ pub async fn generate_sorting_preview_plan(
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
         rule_engine::sorting_plan::generate_sorting_preview_plan(&connection, &settings, request)
             .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn save_apply_plan_preview(
+    state: State<'_, AppState>,
+    request: SaveApplyPlanPreviewRequest,
+) -> Result<SaveApplyPlanPreviewResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("save_apply_plan_preview", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        apply_plan_persistence::save_apply_plan_preview(&mut connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_saved_apply_plans(
+    state: State<'_, AppState>,
+    request: Option<ListSavedApplyPlansRequest>,
+) -> Result<Vec<ApplyPlanListItem>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_saved_apply_plans", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_persistence::list_saved_apply_plans(&connection, request.unwrap_or_default())
+            .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_apply_plan(
+    state: State<'_, AppState>,
+    plan_id: i64,
+) -> Result<Option<PersistedApplyPlan>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_apply_plan", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_persistence::get_apply_plan(&connection, plan_id).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_draft_apply_plan(
+    state: State<'_, AppState>,
+    plan_id: i64,
+) -> Result<DeleteDraftApplyPlanResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("delete_draft_apply_plan", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        apply_plan_persistence::delete_draft_apply_plan(&mut connection, plan_id).map_err(map_error)
     })
     .await
 }
@@ -3541,6 +3596,57 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "sorting preview command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_plan_persistence_commands_stay_db_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn save_apply_plan_preview")
+            .expect("ApplyPlan save command should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn cleanup_staging_areas")
+            .expect("cleanup command should follow ApplyPlan persistence commands");
+        let command_source = &tail[..end];
+
+        for expected in [
+            "apply_plan_persistence::save_apply_plan_preview",
+            "apply_plan_persistence::list_saved_apply_plans",
+            "apply_plan_persistence::get_apply_plan",
+            "apply_plan_persistence::delete_draft_apply_plan",
+        ] {
+            assert!(
+                command_source.contains(expected),
+                "ApplyPlan persistence command block should call {expected}"
+            );
+        }
+
+        for forbidden in [
+            concat!("cleanup_", "staging_areas("),
+            concat!("commit_", "staging_area("),
+            concat!("commit_", "all_staging_areas("),
+            concat!("apply_", "preview_organization"),
+            concat!("apply_", "preview_moves"),
+            concat!("apply_", "download_item"),
+            concat!("apply_", "download_items"),
+            concat!("apply_", "guided_download_item"),
+            concat!("apply_", "special_review_fix"),
+            concat!("apply_", "review_plan_action"),
+            concat!("reject_", "download_item"),
+            concat!("reject_", "download_items"),
+            concat!("restore_", "rejected_item"),
+            concat!("undo_", "applied_item"),
+            concat!("restore_", "snapshot"),
+            "move_engine::",
+            "std::fs",
+            "File::",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "ApplyPlan persistence commands must not call {forbidden}"
             );
         }
     }

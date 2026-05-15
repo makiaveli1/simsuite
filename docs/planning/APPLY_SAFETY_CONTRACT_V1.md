@@ -15,6 +15,11 @@ snapshots, validation/conflict results, backup/restore references, and per-file
 result logs should be stored. It does not add a migration, command, UI, or real
 Apply workflow.
 
+Current implementation note: the first DB-only ApplyPlan persistence foundation
+now exists for draft/preview records. It can save, list, view, and soft-cancel
+preview snapshots, but it still does not expose Apply, move files, create result
+logs, or provide restore execution.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a
