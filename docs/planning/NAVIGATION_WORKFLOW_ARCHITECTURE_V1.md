@@ -59,6 +59,11 @@ storage design lives there. The first DB-only ApplyPlan persistence foundation
 now exists for draft/preview records, but no visible saved-plan UI or
 file-changing Apply behavior exists yet.
 
+The first backend-owned ApplyPlan builder now exists as a DB-only backend/API
+path. It can generate a sorting preview plan and save a draft ApplyPlan
+snapshot for future review, but Organize does not expose saved-plan UI or any
+file-changing Apply behavior yet.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

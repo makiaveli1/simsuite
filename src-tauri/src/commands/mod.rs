@@ -28,9 +28,10 @@ use crate::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
         ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPreviewResult,
         ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
-        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CleanupResult,
-        CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult,
-        DetectedLibraryPaths, DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
+        BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile, CategoryAuditQuery,
+        CategoryAuditResponse, CleanupResult, CreatorAuditFile, CreatorAuditQuery,
+        CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
+        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
@@ -814,6 +815,25 @@ pub async fn save_apply_plan_preview(
     run_blocking_command("save_apply_plan_preview", move || {
         let mut connection = state.connection().map_err(map_error)?;
         apply_plan_persistence::save_apply_plan_preview(&mut connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn build_apply_plan_from_staging_plan(
+    state: State<'_, AppState>,
+    request: BuildApplyPlanFromStagingPlanRequest,
+) -> Result<SaveApplyPlanPreviewResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("build_apply_plan_from_staging_plan", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        apply_plan_persistence::build_apply_plan_from_staging_plan(
+            &mut connection,
+            &settings,
+            request,
+        )
+        .map_err(map_error)
     })
     .await
 }
@@ -3647,6 +3667,50 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "ApplyPlan persistence commands must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_plan_builder_command_stays_backend_owned_and_db_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn build_apply_plan_from_staging_plan")
+            .expect("ApplyPlan builder command should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn cleanup_staging_areas")
+            .expect("cleanup command should follow ApplyPlan builder command");
+        let command_source = &tail[..end];
+
+        assert!(
+            command_source.contains("apply_plan_persistence::build_apply_plan_from_staging_plan")
+        );
+        assert!(!command_source.contains("SaveApplyPlanPreviewRequest"));
+
+        for forbidden in [
+            concat!("cleanup_", "staging_areas("),
+            concat!("commit_", "staging_area("),
+            concat!("commit_", "all_staging_areas("),
+            concat!("apply_", "preview_organization"),
+            concat!("apply_", "preview_moves"),
+            concat!("apply_", "download_item"),
+            concat!("apply_", "download_items"),
+            concat!("apply_", "guided_download_item"),
+            concat!("apply_", "special_review_fix"),
+            concat!("apply_", "review_plan_action"),
+            concat!("reject_", "download_item"),
+            concat!("reject_", "download_items"),
+            concat!("restore_", "rejected_item"),
+            concat!("undo_", "applied_item"),
+            concat!("restore_", "snapshot"),
+            "move_engine::",
+            "std::fs",
+            "File::",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "ApplyPlan builder command must not call {forbidden}"
             );
         }
     }

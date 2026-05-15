@@ -1,5 +1,60 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - ApplyPlan Builder From StagingPlan v1)
+
+- **Mode**: code
+- **Focus**: add a backend-owned, DB-only builder that turns a read-only
+  sorting preview request into a saved draft ApplyPlan snapshot
+
+### Progress Made
+
+1. **Added backend-owned builder path**:
+   - added `BuildApplyPlanFromStagingPlanRequest`
+   - added `build_apply_plan_from_staging_plan` backend logic and Tauri command
+   - reused `generate_sorting_preview_plan` and existing ApplyPlan persistence
+
+2. **Kept the trust boundary intact**:
+   - builder saves draft/preview records only
+   - saved builder records keep `wouldTouchFiles=false` and `applyableItems=0`
+   - no real Apply, file movement, cleanup, delete, quarantine, replacement,
+     auto-sort execution, AI decision, result log, restore table, or visible UI
+     was added
+
+3. **Added API/test coverage**:
+   - added TypeScript API and mock support for
+     `buildApplyPlanFromStagingPlan`
+   - added Rust and TypeScript tests for builder behavior, command
+     registration, and command source guardrails
+
+### Verification
+
+- Focused builder checks passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `108` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `cargo fmt`: completed.
+- `cargo check`: passed with existing warning noise.
+- `cargo test`: passed (`279` passed, `2` ignored).
+- `cargo build --release`: passed with existing warning noise.
+- `npm run test:rust`: passed (`279` passed, `2` ignored).
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Saved-plan UI is not implemented yet.
+- Validation/conflict checks, result logs, restore entries, and real Apply
+  remain future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Update Linear/GitHub, commit only sprint-relevant files, push the branch, and
+   open a draft PR.
+2. Recommended next sprint: saved-plan UI review in Organize, still with no
+   real Apply.
+
 ## Current Session (May 15, 2026 - ApplyPlan Persistence Foundation v1)
 
 - **Mode**: code

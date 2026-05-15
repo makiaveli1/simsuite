@@ -145,6 +145,7 @@ pub fn run() {
             commands::get_staging_preview_plan,
             commands::generate_sorting_preview_plan,
             commands::save_apply_plan_preview,
+            commands::build_apply_plan_from_staging_plan,
             commands::list_saved_apply_plans,
             commands::get_apply_plan,
             commands::delete_draft_apply_plan,
@@ -275,6 +276,7 @@ mod tests {
         let handler_source = &handler_source[..handler_end];
 
         for command in [
+            "commands::build_apply_plan_from_staging_plan",
             "commands::save_apply_plan_preview",
             "commands::list_saved_apply_plans",
             "commands::get_apply_plan",

@@ -20,6 +20,11 @@ now exists for draft/preview records. It can save, list, view, and soft-cancel
 preview snapshots, but it still does not expose Apply, move files, create result
 logs, or provide restore execution.
 
+Current implementation note: the first backend-owned ApplyPlan builder now
+exists. It builds a saved draft ApplyPlan from the existing read-only sorting
+preview generator and persistence foundation. It still does not expose Apply,
+move files, create result logs, or provide restore execution.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

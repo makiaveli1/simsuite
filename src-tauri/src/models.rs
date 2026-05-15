@@ -388,6 +388,14 @@ pub struct SaveApplyPlanPreviewResult {
     pub plan: ApplyPlanListItem,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildApplyPlanFromStagingPlanRequest {
+    pub preview_request: GenerateSortingPreviewPlanRequest,
+    #[serde(default)]
+    pub source_plan_kind: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSavedApplyPlansRequest {

@@ -31,6 +31,30 @@ describe("sorting preview plan API", () => {
 });
 
 describe("ApplyPlan preview persistence API", () => {
+  it("builds a saved draft ApplyPlan from a backend-owned preview request in the mock API", async () => {
+    const saved = await api.buildApplyPlanFromStagingPlan({
+      previewRequest: {
+        scope: {
+          kind: "selected_files",
+          fileIds: [101, 102],
+        },
+      },
+    });
+
+    expect(saved.planId).toBeGreaterThan(0);
+    expect(saved.plan.sourcePlanKind).toBe("sorting_preview");
+    expect(saved.plan.wouldTouchFiles).toBe(false);
+    expect(saved.plan.applyableItems).toBe(0);
+
+    const plan = await api.getApplyPlan(saved.planId);
+    expect(plan).not.toBeNull();
+    expect(plan?.sourceScope?.kind).toBe("selected_files");
+    expect(plan?.caveats.join(" ")).toMatch(/No files changed/i);
+    expect(plan?.items.length).toBeGreaterThan(0);
+    expect(plan?.items.every((item) => item.signals.length > 0)).toBe(true);
+    expect(plan?.items.some((item) => item.blockers.length > 0)).toBe(true);
+  });
+
   it("saves, lists, reads, and soft-cancels preview-only plans in the mock API", async () => {
     const sourcePlan = await api.generateSortingPreviewPlan({
       scope: {

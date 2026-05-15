@@ -322,6 +322,11 @@ export interface SaveApplyPlanPreviewResult {
   plan: ApplyPlanListItem;
 }
 
+export interface BuildApplyPlanFromStagingPlanRequest {
+  previewRequest: GenerateSortingPreviewPlanRequest;
+  sourcePlanKind?: string | null;
+}
+
 export interface ListSavedApplyPlansRequest {
   includeCancelled?: boolean | null;
   limit?: number | null;

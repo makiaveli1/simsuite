@@ -18,6 +18,13 @@ ApplyPlan records, items, source-signal snapshots, and blocker snapshots. That
 foundation still does not implement real Apply, file movement, result logs,
 restore entries, or visible saved-plan UI.
 
+Current implementation note: the follow-up builder sprint
+`codex/applyplan-builder-from-stagingplan-v1` added a backend-owned DB-only path
+that generates a read-only sorting preview plan and saves it as a draft
+ApplyPlan snapshot. It still does not implement real Apply, file movement,
+result logs, restore entries, validation/conflict execution, or visible
+saved-plan UI.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
@@ -439,8 +446,9 @@ Audit-time command recommendation:
 
 Follow-up status: `save_apply_plan_preview`, `list_saved_apply_plans`,
 `get_apply_plan`, and `delete_draft_apply_plan` now exist as DB-only/read-only
-foundation commands. `validate_apply_plan` and
-`build_apply_plan_from_staging_plan` remain future work.
+foundation commands. `build_apply_plan_from_staging_plan` now exists as a
+backend-owned DB-only builder that generates a sorting preview plan and saves a
+draft ApplyPlan snapshot. `validate_apply_plan` remains future work.
 
 All future commands must avoid:
 
@@ -506,8 +514,8 @@ Decisions:
 
 Recommended next implementation step:
 
-- read-only ApplyPlan persistence foundation, or
-- ApplyPlan builder design.
+- saved-plan UI review, or
+- read-only validation/conflict design.
 
 Still blocked:
 

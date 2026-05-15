@@ -35,6 +35,11 @@ implements draft/preview storage for saved plan snapshots, items, signals, and
 blockers. It reuses `StagingPlan` evidence and remains persistence-only. Result
 logs, restore entries, visible saved-plan UI, and real Apply remain future work.
 
+Current implementation note: the backend-owned ApplyPlan builder now reuses the
+existing sorting preview generator and ApplyPlan persistence foundation to save
+draft preview records. It does not introduce a second classifier, reparse
+files, or expose file-changing actions.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
