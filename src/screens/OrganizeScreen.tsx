@@ -4,16 +4,19 @@ import { m } from "motion/react";
 import {
   AlertCircle,
   CheckCircle2,
+  FileCheck2,
   Info,
   ListChecks,
   LoaderCircle,
   RefreshCw,
+  Save,
   ShieldCheck,
   Workflow,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { PendingPlansPreview } from "./organize/PendingPlansPreview";
+import { SavedPlansReview } from "./organize/SavedPlansReview";
 import type {
   GenerateSortingPreviewPlanRequest,
   Screen,
@@ -34,7 +37,7 @@ interface OrganizeScreenProps {
 }
 
 type SourceLocation = "mods" | "tray";
-type OrganizeTab = "create_plan" | "pending_plans";
+type OrganizeTab = "create_plan" | "saved_plans" | "pending_batches";
 
 const BUCKET_ORDER: StagingPlanBucket[] = [
   "script_mods",
@@ -231,9 +234,21 @@ interface PlanResultProps {
   plan: StagingPlan | null;
   isGenerating: boolean;
   errorMessage: string | null;
+  canSavePlan: boolean;
+  isSavingPlan: boolean;
+  saveErrorMessage: string | null;
+  onSavePreviewPlan: () => void;
 }
 
-function PlanResult({ plan, isGenerating, errorMessage }: PlanResultProps) {
+function PlanResult({
+  plan,
+  isGenerating,
+  errorMessage,
+  canSavePlan,
+  isSavingPlan,
+  saveErrorMessage,
+  onSavePreviewPlan,
+}: PlanResultProps) {
   const groupedItems = useMemo(
     () => groupItemsByBucket(plan?.items ?? []),
     [plan],
@@ -296,6 +311,43 @@ function PlanResult({ plan, isGenerating, errorMessage }: PlanResultProps) {
           </span>
         </div>
       </div>
+
+      <div className="pending-plans-safety-strip" aria-label="Save preview plan safety">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          Save this as a draft preview record for later review. Saving does not
+          move, delete, replace, or change files.
+        </span>
+      </div>
+
+      <div className="organize-next-step-actions">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={!canSavePlan || isSavingPlan}
+          onClick={onSavePreviewPlan}
+        >
+          {isSavingPlan ? (
+            <>
+              <LoaderCircle size={16} className="spin" />
+              Saving preview
+            </>
+          ) : (
+            <>
+              <Save size={16} />
+              Save preview plan
+            </>
+          )}
+        </button>
+      </div>
+
+      {saveErrorMessage ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>{saveErrorMessage} No files changed.</span>
+        </div>
+      ) : null}
 
       {plan.caveats.length > 0 && (
         <div className="organize-plan-detail-block">
@@ -367,13 +419,22 @@ export function OrganizeScreen({
   const [recursive, setRecursive] = useState(true);
   const [limit, setLimit] = useState(60);
   const [plan, setPlan] = useState<StagingPlan | null>(null);
+  const [lastPreviewRequest, setLastPreviewRequest] =
+    useState<GenerateSortingPreviewPlanRequest | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
+  const [savedPlansRefreshVersion, setSavedPlansRefreshVersion] = useState(0);
+  const [selectedSavedPlanId, setSelectedSavedPlanId] = useState<number | null>(null);
 
   const handleGeneratePreview = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsGenerating(true);
     setErrorMessage(null);
+    setSaveErrorMessage(null);
+    setSaveStatusMessage(null);
 
     const request: GenerateSortingPreviewPlanRequest = {
       scope: {
@@ -388,11 +449,39 @@ export function OrganizeScreen({
     try {
       const nextPlan = await api.generateSortingPreviewPlan(request);
       setPlan(nextPlan);
+      setLastPreviewRequest(request);
     } catch (error) {
       setPlan(null);
+      setLastPreviewRequest(null);
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleSavePreviewPlan = async () => {
+    if (!plan || !lastPreviewRequest) {
+      setSaveErrorMessage("Generate a preview plan before saving a draft.");
+      return;
+    }
+
+    setIsSavingPlan(true);
+    setSaveErrorMessage(null);
+    setSaveStatusMessage(null);
+
+    try {
+      const saved = await api.buildApplyPlanFromStagingPlan({
+        previewRequest: lastPreviewRequest,
+        sourcePlanKind: "sorting_preview",
+      });
+      setSelectedSavedPlanId(saved.planId);
+      setSavedPlansRefreshVersion((value) => value + 1);
+      setSaveStatusMessage("Saved as draft preview plan. No files changed.");
+      setActiveTab("saved_plans");
+    } catch (error) {
+      setSaveErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSavingPlan(false);
     }
   };
 
@@ -416,8 +505,9 @@ export function OrganizeScreen({
         <div className="organize-workspace-tabs-copy">
           <span className="eyebrow">Planning workspace</span>
           <p>
-            Create a new preview suggestion from your Library, or review pending
-            batch work without leaving Organize.
+            Create a new preview suggestion from your Library, review saved
+            draft plans, or check pending batch handoff notes without leaving
+            Organize.
           </p>
         </div>
         <div
@@ -439,17 +529,30 @@ export function OrganizeScreen({
             Create plan
           </button>
           <button
+            id="organize-tab-saved-plans"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "saved_plans"}
+            aria-controls="organize-panel-saved-plans"
+            className={`segment-button ${
+              activeTab === "saved_plans" ? "is-active" : ""
+            }`}
+            onClick={() => setActiveTab("saved_plans")}
+          >
+            Saved plans
+          </button>
+          <button
             id="organize-tab-pending-plans"
             type="button"
             role="tab"
-            aria-selected={activeTab === "pending_plans"}
-            aria-controls="organize-panel-pending-plans"
+            aria-selected={activeTab === "pending_batches"}
+            aria-controls="organize-panel-pending-batches"
             className={`segment-button ${
-              activeTab === "pending_plans" ? "is-active" : ""
+              activeTab === "pending_batches" ? "is-active" : ""
             }`}
-            onClick={() => setActiveTab("pending_plans")}
+            onClick={() => setActiveTab("pending_batches")}
           >
-            Pending plans
+            Pending batches
           </button>
         </div>
       </section>
@@ -551,6 +654,14 @@ export function OrganizeScreen({
               <button
                 type="button"
                 className="secondary-action"
+                onClick={() => setActiveTab("saved_plans")}
+              >
+                <FileCheck2 size={16} />
+                Saved plans
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
                 onClick={() => onNavigate("library")}
               >
                 <ListChecks size={16} />
@@ -572,12 +683,30 @@ export function OrganizeScreen({
               plan={plan}
               isGenerating={isGenerating}
               errorMessage={errorMessage}
+              canSavePlan={Boolean(plan && lastPreviewRequest)}
+              isSavingPlan={isSavingPlan}
+              saveErrorMessage={saveErrorMessage}
+              onSavePreviewPlan={handleSavePreviewPlan}
             />
           </div>
         </section>
+      ) : activeTab === "saved_plans" ? (
+        <section
+          id="organize-panel-saved-plans"
+          role="tabpanel"
+          aria-labelledby="organize-tab-saved-plans"
+          className="organize-saved-plans-panel"
+        >
+          <SavedPlansReview
+            refreshVersion={savedPlansRefreshVersion}
+            selectedPlanId={selectedSavedPlanId}
+            statusMessage={saveStatusMessage}
+            onCreatePlan={() => setActiveTab("create_plan")}
+          />
+        </section>
       ) : (
         <section
-          id="organize-panel-pending-plans"
+          id="organize-panel-pending-batches"
           role="tabpanel"
           aria-labelledby="organize-tab-pending-plans"
           className="panel-card organize-pending-plan-panel"

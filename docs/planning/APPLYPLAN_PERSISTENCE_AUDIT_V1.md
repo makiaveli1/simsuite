@@ -25,6 +25,14 @@ ApplyPlan snapshot. It still does not implement real Apply, file movement,
 result logs, restore entries, validation/conflict execution, or visible
 saved-plan UI.
 
+Current implementation note: the saved-plan UI review sprint
+`codex/saved-plan-ui-review-v1` adds the first visible Organize review surface
+for saved draft preview records. Users can save a generated preview plan, list
+saved drafts, inspect details/evidence/blockers, and cancel drafts. This UI
+uses the existing DB-only builder and persistence commands and still does not
+implement real Apply, file movement, result logs, restore entries, or
+validation/conflict execution.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
@@ -462,11 +470,13 @@ All future commands must avoid:
 
 No UI is added in this sprint.
 
-Future UI should keep ownership simple:
+Current UI ownership now keeps the first saved-plan review surface in Organize:
 
 - Organize `Create plan`: generate preview-only organization suggestions.
-- Organize `Pending plans`: show pending preview work and saved-plan state.
-- Future `Saved plans`: list saved drafts and blocked plans.
+- Organize `Saved plans`: list saved draft preview records, load details,
+  display evidence/blockers/caveats, and cancel drafts without touching files.
+- Organize `Pending batches`: summarize imported/downloaded batch handoff state
+  and point detailed intake review back to Inbox.
 - Future `Ready for confirmation`: show exact source/destination changes,
   backup/restore status, excluded blocked/review-only items, and explicit
   confirmation.

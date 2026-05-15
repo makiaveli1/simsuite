@@ -1,5 +1,43 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - Saved Plan UI Review v1)
+
+This session adds the first visible saved draft preview plan review experience
+inside Organize. Users can generate a preview organization plan, save it as a
+draft through the backend-owned builder path, list saved drafts, inspect
+evidence/blockers/caveats, and cancel draft records. It does not add real
+Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort
+execution, AI decisions, result logs, restore entries, or a visible Apply
+button.
+
+Important changes and findings:
+
+- Organize tabs are now `Create plan`, `Saved plans`, and `Pending batches`.
+- `Create plan` stores the latest preview request and uses
+  `buildApplyPlanFromStagingPlan` for `Save preview plan`.
+- `Saved plans` lists draft preview summaries without dumping item paths.
+- saved plan details show caveats, source scope, evidence/confidence, source
+  signals, blockers, shortened paths, and collapsed technical details.
+- `Cancel draft` uses inline confirmation and explains that files are not
+  touched.
+- `Pending batches` remains the imported/downloaded batch handoff area and
+  points detailed batch review back to Inbox.
+
+Checks:
+
+- Focused Organize/Staging/trust tests passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `111` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed.
+- `npm run desktop:smoke:fixtures`: passed.
+- Rust validation was skipped because no Rust/backend code changed.
+
+Recommended next sprint:
+
+- Validation/conflict preview design for saved draft plans, still with no real
+  Apply.
+
 ## Current session note (May 15, 2026 - ApplyPlan Builder From StagingPlan v1)
 
 This session adds a backend-owned, DB-only builder that turns a read-only

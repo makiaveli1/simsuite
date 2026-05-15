@@ -25,6 +25,12 @@ exists. It builds a saved draft ApplyPlan from the existing read-only sorting
 preview generator and persistence foundation. It still does not expose Apply,
 move files, create result logs, or provide restore execution.
 
+Current implementation note: Organize now has a visible `Saved plans` review
+surface for draft preview records. It can save a generated preview plan through
+the backend-owned builder, list saved drafts, show item evidence/blockers, and
+cancel drafts. Saving or cancelling a draft does not move, copy, delete,
+replace, clean up, quarantine, or change user files.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

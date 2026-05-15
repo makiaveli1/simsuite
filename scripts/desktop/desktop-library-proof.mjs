@@ -86,6 +86,18 @@ async function waitForAnyText(driver, texts, timeoutMs = 30000) {
   throw new Error(`Timed out waiting for any of: ${texts.join(", ")}`);
 }
 
+async function waitForBodyMatch(driver, pattern, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const body = await getBodyText(driver);
+    if (pattern.test(body)) {
+      return body;
+    }
+    await sleep(driver, 250);
+  }
+  throw new Error(`Timed out waiting for body text matching ${pattern}`);
+}
+
 async function waitForHash(driver, expectedHash, timeoutMs = 30000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -1545,7 +1557,11 @@ async function main() {
     summary.updatesHash = await waitForHash(driver, "#updates", 30000);
     await waitForVisibleElement(driver, ".updates-workbench", 30000);
     await waitForAnyText(driver, ["Updates", "Needs source", "No update source"], 30000);
-    const updatesBody = await getBodyText(driver);
+    const updatesBody = await waitForBodyMatch(
+      driver,
+      /mc_cmd_center|mc cmd center|mccc/i,
+      30000,
+    );
     summary.updatesBodyHasMccc = /mc_cmd_center|mc cmd center|mccc/i.test(updatesBody);
     summary.updatesContextExcerpt = updatesBody.slice(0, 1500);
     if (!summary.updatesBodyHasMccc) {
@@ -1616,7 +1632,7 @@ async function main() {
     }
     await waitForAnyText(
       driver,
-      ["Create plan", "Pending plans", "No files changed"],
+      ["Create plan", "Saved plans", "Pending batches", "No files changed"],
       30000,
     );
     await clickVisibleButton(driver, "Generate preview", 30000);
@@ -1625,12 +1641,26 @@ async function main() {
       ["Suggested organization preview", "Why SimSuite suggested this", "No preview items", "Blocked"],
       60000,
     );
+    await waitForAnyText(driver, ["Save preview plan", "No files changed"], 30000);
+    const organizeCreateBody = await getBodyText(driver);
+    summary.organizeCreateBodyHasSavePreview =
+      /save preview plan/i.test(organizeCreateBody);
+    await clickVisibleButton(driver, "Save preview plan", 30000);
+    await waitForAnyText(
+      driver,
+      ["Saved as draft preview plan", "Saved plans", "Draft preview plans", "Plan details"],
+      60000,
+    );
     const organizeBody = await getBodyText(driver);
     summary.organizeBodyHasNoFilesChanged = /no files changed/i.test(organizeBody);
     summary.organizeBodyHasPlanBoundary =
-      /create plan|pending plans|preview only|review suggested organization plans/i.test(organizeBody);
+      /create plan|saved plans|pending batches|preview only|review suggested organization plans/i.test(organizeBody);
     summary.organizeBodyHasPlanDetails =
-      /why simsuite suggested this|source signals|blocked reasons|no preview items|blocked/i.test(organizeBody);
+      /plan details|source signals|blockers|no preview items|blocked/i.test(organizeBody);
+    summary.organizeSavedPlanCreated =
+      /saved as draft preview plan|draft preview plans/i.test(organizeBody);
+    summary.organizeSavedPlanCancelVisible =
+      /cancel draft|this only cancels the saved draft record/i.test(organizeBody);
     summary.organizeContextExcerpt = organizeBody.slice(0, 1800);
     summary.organizeEnabledFileChangingButtons = await driver.executeScript(`
       return Array.from(document.querySelectorAll("button"))
@@ -1638,28 +1668,39 @@ async function main() {
         .map((button) => button.textContent || "")
         .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete)\\b/i.test(text));
     `);
-    if (!summary.organizeBodyHasNoFilesChanged || !summary.organizeBodyHasPlanBoundary) {
+    if (
+      !summary.organizeCreateBodyHasSavePreview ||
+      !summary.organizeBodyHasNoFilesChanged ||
+      !summary.organizeBodyHasPlanBoundary ||
+      !summary.organizeSavedPlanCreated
+    ) {
       throw new Error("Organize did not show the preview-only plan boundary.");
     }
     if (!summary.organizeBodyHasPlanDetails) {
       throw new Error("Organize generated a plan without visible review details.");
+    }
+    if (!summary.organizeSavedPlanCancelVisible) {
+      throw new Error("Organize saved-plan review did not expose safe draft cancellation wording.");
     }
     if (summary.organizeEnabledFileChangingButtons.length > 0) {
       throw new Error(
         `Organize exposed enabled file-changing controls: ${summary.organizeEnabledFileChangingButtons.join(", ")}`,
       );
     }
-    await clickVisibleButton(driver, "Pending plans", 30000);
+    const savedPlanShot = path.join(runDir, "organize-saved-plan-ui-review-v1.png");
+    await takeScreenshot(driver, savedPlanShot);
+    summary.screenshots.push(savedPlanShot);
+    await clickVisibleButton(driver, "Pending batches", 30000);
     await waitForAnyText(
       driver,
-      ["Pending plans", "Pending batches", "No saved organization plans yet", "No files changed"],
+      ["Pending batches", "No pending batches found", "No files changed"],
       30000,
     );
     const organizePendingBody = await getBodyText(driver);
-    summary.organizePendingBodyHasPendingPlans = /pending plans/i.test(organizePendingBody);
+    summary.organizePendingBodyHasPendingPlans = /pending batches/i.test(organizePendingBody);
     summary.organizePendingBodyHasNoFilesChanged = /no files changed/i.test(organizePendingBody);
     summary.organizePendingBodyExplainsMeaning =
-      /generated organization plans are not saved yet|pending batches|no saved organization plans yet/i.test(
+      /saved organization drafts live in saved plans|pending batches|no pending batches found|inbox is the natural place/i.test(
         organizePendingBody,
       );
     summary.organizePendingTechnicalDetailsVisibleByDefault = /internal folder id/i.test(
@@ -1721,7 +1762,7 @@ async function main() {
         `Organize pending plans view was not scrollable: ${JSON.stringify(summary.organizePendingScrollCheck)}`,
       );
     }
-    const organizeShot = path.join(runDir, "organize-pending-plans-ux-clarity-v1.png");
+    const organizeShot = path.join(runDir, "organize-pending-batches-handoff-v1.png");
     await takeScreenshot(driver, organizeShot);
     summary.screenshots.push(organizeShot);
     await assertNoRuntimeErrors(driver, summary, "organize-plan-preview-consolidated-v1");

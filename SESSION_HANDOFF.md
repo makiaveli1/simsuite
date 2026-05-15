@@ -1,5 +1,61 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - Saved Plan UI Review v1)
+
+- **Mode**: code
+- **Focus**: add visible saved draft preview plan review inside Organize
+  without adding real Apply or any file-changing workflow
+
+### Progress Made
+
+1. **Added saved-plan review inside Organize**:
+   - Organize tabs are now `Create plan`, `Saved plans`, and
+     `Pending batches`
+   - generated previews can be saved through the backend-owned
+     `buildApplyPlanFromStagingPlan` path
+   - saved draft plans can be listed, opened for details, and cancelled as
+     draft records
+
+2. **Kept batch intake separate from saved plans**:
+   - imported/downloaded batch summaries stay under `Pending batches`
+   - saved organization drafts live under `Saved plans`
+   - Inbox remains the natural owner for detailed batch review
+
+3. **Kept the trust boundary intact**:
+   - no Apply button, file movement, copy, cleanup, delete, quarantine,
+     replacement, auto-sort execution, or AI decision was added
+   - saved-plan UI repeats `No files changed`
+   - canceling a draft only cancels the saved draft record
+
+### Verification
+
+- Focused Organize/Staging/trust tests passed.
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `111` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- `npm run desktop:proof:fixtures`: passed.
+- `npm run desktop:smoke:fixtures`: passed.
+- Proof screenshot:
+  `output/desktop/library-proof/2026-05-15T17-40-09-265Z/organize-saved-plan-ui-review-v1.png`.
+- Rust validation was skipped because no Rust/backend code changed.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Validation/conflict preview, result logs, restore entries, and real file
+  movement remain future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Delivery: commit `Show saved preview plans in Organize`, push branch
+   `codex/saved-plan-ui-review-v1`, and open a draft PR against
+   `codex/applyplan-builder-from-stagingplan-v1`.
+2. Recommended next sprint: validation/conflict preview design for saved draft
+   plans, still with no real Apply.
+
 ## Current Session (May 15, 2026 - ApplyPlan Builder From StagingPlan v1)
 
 - **Mode**: code
