@@ -1,5 +1,61 @@
 # Session Handoff
 
+## Current Session (May 16, 2026 - Organize Validation Preview UI v1)
+
+- **Mode**: code
+- **Focus**: add the first visible read-only validation/conflict preview UI
+  inside Organize `Saved plans`
+
+### Progress Made
+
+1. **Added validation preview UI in saved plan details**:
+   - selected saved draft plans now show a `Validation preview` section
+   - `Check saved plan` calls the backend-owned `previewApplyPlanValidation`
+     API
+   - the UI shows validation summary counts, caveats, item-level reasons,
+     required next steps, and friendly validation/conflict labels
+
+2. **Kept the safety boundary visible**:
+   - `No files changed` remains visible before and after validation
+   - `Future confirmation blocked` is shown for validation results
+   - `valid_preview_only` is explained as preview-only, not Apply-ready
+   - no Apply, move, delete, cleanup, quarantine, replacement, auto-sort, or
+     confirmation control was added
+
+3. **Updated proof/docs/tests**:
+   - Organize tests now cover validation preview success, error, and
+     valid-preview-only wording
+   - desktop proof now checks the validation preview flow and captures
+     `organize-validation-preview-ui-v1.png`
+   - planning/status/trust docs now record that validation preview UI exists
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `118` tests).
+- `npm run build`: passed with the existing Vite chunk-size warning.
+- `npm run desktop:proof:fixtures`: passed and captured
+  `organize-validation-preview-ui-v1.png`.
+- `npm run desktop:smoke:fixtures`: passed.
+- Separate Rust validation was not required because no Rust/backend files were
+  changed; desktop proof/smoke rebuilt the Tauri release binary with existing
+  warning noise.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Validation state is still response-only and is not persisted.
+- Result logs, restore entries, confirmation, backup/restore execution, and
+  real file movement remain future work.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Next sprint should polish validation preview UX or continue backup/restore
+   design. Do not start real Apply yet.
+
 ## Current Session (May 15, 2026 - Read-only ApplyPlan Validation Preview v1)
 
 - **Mode**: code

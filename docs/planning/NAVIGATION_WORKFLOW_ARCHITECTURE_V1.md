@@ -16,7 +16,7 @@ This document turns the master roadmap into a route/workflow ownership plan. It 
 | `downloads` | Inbox | `DownloadsScreen` | Intake and review for new/downloaded content and imported/downloaded batches before Library or Organize planning. | Downloads/inbox backend and fixture data. | Real/partial | Casual, Seasoned, Creator | Review workflow; current visible UI is review-only | Yes | Keep top-level as intake/new content. Do not expose Apply/move/delete-style actions until the future safety contract exists. |
 | `library` | Library / My CC | `LibraryScreen` | Main indexed Mods/Tray browser, filters, folders, duplicates, details. | Library backend and SQLite. | Real | Casual, Seasoned, Creator | Informational to evidence-backed | Yes | Keep top-level as primary work surface. |
 | `updates` | Updates | `UpdatesScreen` | Update source tracking and trust-first checks/reminders. | Updates/content version backend. | Real/partial | Casual, Seasoned, Creator | Evidence-backed/review-only | Yes | Keep top-level. |
-| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan`, `Saved plans`, and `Pending batches` preview-only tabs. Saved plans review draft preview records; Pending batches hands imported/downloaded batch review back to Inbox. | `generate_sorting_preview_plan`, `build_apply_plan_from_staging_plan`, `list_saved_apply_plans`, `get_apply_plan`, `delete_draft_apply_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan only; DB-only draft records; no file-changing action | Yes | Keep top-level as the owner of organization planning and saved draft preview review. Inbox owns detailed imported/downloaded batch review. |
+| `organize` | Organize / Tidy Up | `OrganizeScreen` | Organization planning workspace with visible `Create plan`, `Saved plans`, and `Pending batches` preview-only tabs. Saved plans review draft preview records and can show read-only validation/conflict previews; Pending batches hands imported/downloaded batch review back to Inbox. | `generate_sorting_preview_plan`, `build_apply_plan_from_staging_plan`, `list_saved_apply_plans`, `get_apply_plan`, `preview_apply_plan_validation`, `delete_draft_apply_plan`, `get_staging_areas`, and `get_staging_preview_plan` through typed API/mock data. | Real preview-only v1 | Casual, Seasoned, Creator | Suggested plan and validation preview only; DB-only draft records; no file-changing action | Yes | Keep top-level as the owner of organization planning and saved draft preview review. Inbox owns detailed imported/downloaded batch review. |
 | `review` | Review / Needs | `ReviewScreen` | Manual review queue and review workflow. | App data/API. | Real/partial | Casual, Seasoned, Creator | Review-only | Yes | Keep top-level for now. |
 | `creatorAudit` | Creators | `CreatorAuditScreen` | Creator-focused browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library creator lens. |
 | `categoryAudit` | Types | `CategoryAuditScreen` | Type/content-kind browsing/audit lens. | Library/metadata. | Partial/real lens | Casual, Seasoned, Creator | Informational/review-only | No long-term | Fold into Library type lens. |
@@ -68,7 +68,8 @@ The first read-only ApplyPlan validation preview command now exists behind the
 API. It can inspect saved draft records for stale sources, missing files,
 unsafe destinations, destination conflicts, review-only blockers, and
 backup/restore requirements while keeping `canProceedToConfirmation=false`.
-No visible validation UI or Apply workflow exists yet.
+Organize `Saved plans` now has a visible validation preview review section. No
+Apply workflow exists yet.
 
 ## Overlap Audit
 
@@ -134,6 +135,9 @@ Creator mode may keep Duplicates as a top-level item until duplicate comparison 
 - No apply/move/delete/quarantine controls are exposed.
 - Pending batch data is summarized with friendly labels; raw internal folder IDs are hidden behind technical details.
 - Generated organization plans can now be saved as draft preview records through the backend-owned ApplyPlan builder and viewed in `Saved plans`.
+- Saved draft plans can now show read-only validation/conflict preview results
+  through `preview_apply_plan_validation`; `canProceedToConfirmation=false`
+  remains the visible boundary.
 - Inbox now owns detailed imported/downloaded batch review. Organize `Pending batches` should hand batch inspection back to Inbox and stay focused on preview plan work.
 
 Current M2 foundation note:

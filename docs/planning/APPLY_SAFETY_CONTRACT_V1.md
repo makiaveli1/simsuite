@@ -44,6 +44,11 @@ reports blockers and conflicts, always returns `canProceedToConfirmation=false`,
 does not persist validation state in v1, and does not move, copy, delete,
 create folders, create backups, or expose Apply.
 
+Current implementation note: Organize `Saved plans` now shows validation
+preview results from the read-only backend command. The UI explains `No files
+changed`, shows friendly blocker/conflict labels, and keeps future confirmation
+blocked. It does not expose Apply or any file-changing control.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

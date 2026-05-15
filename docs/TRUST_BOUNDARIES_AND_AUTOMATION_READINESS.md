@@ -39,6 +39,11 @@ readiness blockers with `canProceedToConfirmation=false`. It is response-only in
 v1: no validation status is persisted, no folders or backups are created, and
 no user files are changed.
 
+The first visible validation preview UI now exists inside Organize `Saved
+plans`. It calls the read-only validation command, shows blocker/conflict
+counts and item reasons, and keeps `No files changed` plus `Future confirmation
+blocked` visible. It does not expose Apply or file-changing controls.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

@@ -15,6 +15,13 @@ preview data for saved draft ApplyPlans, keeps
 `canProceedToConfirmation=false`, does not persist validation status, does not
 create folders or backups, and does not change user files.
 
+Current implementation note: Organize `Saved plans` now shows a visible
+`Validation preview` section for selected saved drafts. The UI calls the
+read-only `previewApplyPlanValidation` API, displays summary counts, caveats,
+friendly item-level validation/conflict labels, and `Future confirmation
+blocked`. It does not persist validation state, expose Apply, create folders,
+or change files.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview
@@ -57,7 +64,8 @@ Missing today:
 - no backup/restore result model for ApplyPlan.
 - no result log.
 - no real Apply.
-- no visible validation preview UI yet.
+- Organize `Saved plans` now has a visible validation preview review section
+  that calls `preview_apply_plan_validation`.
 
 No future Apply can proceed until validation/conflict preview exists, is proven,
 and is followed by confirmation, backup/restore, recoverable errors, result
@@ -256,14 +264,19 @@ Updated implementation sequence:
 
 1. Keep `preview_apply_plan_validation` response-only and covered by backend
    and TypeScript tests.
-2. Add Organize validation preview UI with no Apply button.
+2. Keep Organize validation preview UI as review-only with no Apply button.
 3. Consider persisted validation statuses only after UX and semantics are
    stable.
 
 ## 10. UI Recommendation
 
-Future Organize `Saved plans` should show validation as a review layer, not as
-an Apply workflow.
+Implemented first UI:
+
+Organize `Saved plans` now shows validation as a review layer, not as an Apply
+workflow. The selected saved draft detail view includes `Validation preview`,
+`Check saved plan`, summary counts, caveats, item-level validation/conflict
+labels, reasons, required next steps, `No files changed`, and `Future
+confirmation blocked`.
 
 Recommended UI copy:
 
@@ -276,7 +289,7 @@ Recommended UI copy:
 - `Review-only`
 - `Blocked`
 
-Future UI should show:
+The UI should show:
 
 - plan-level validation summary.
 - counts for blocked, review-only, stale, missing-source, and conflict items.
@@ -322,16 +335,15 @@ and keeps the no-file-change boundary explicit.
 
 Next sprint:
 
-Read-only validation preview command v1.
+Validation preview UX polish or backup/restore/result-log design.
 
-Scope for that sprint:
+Potential UX polish scope:
 
-- implement `preview_apply_plan_validation`.
-- load saved draft ApplyPlan records.
-- compare against Library/settings evidence.
-- return validation/conflict preview results.
+- tighten validation result grouping.
+- add filtering by blocked, review-only, conflict, stale, and missing-source
+  states.
+- keep full paths collapsed by default.
 - keep `canProceedToConfirmation=false`.
-- add backend and TypeScript tests.
 - no Apply, file movement, folder creation, backup creation, result logs, or
   restore entries.
 
@@ -339,7 +351,9 @@ Scope for that sprint:
 
 Decisions:
 
-- No runtime validation command in this design sprint.
+- The read-only validation command exists.
+- Organize now displays validation/conflict preview results for saved drafts.
+- The UI remains review-only and does not expose Apply.
 - No migration in this design sprint.
 - No TypeScript/Rust runtime enum placeholders in this design sprint.
 - Use existing nullable `validation_status` and `conflict_status` columns later

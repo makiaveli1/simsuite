@@ -2,7 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { OrganizeScreen } from "./OrganizeScreen";
-import type { ApplyPlanListItem, PersistedApplyPlan, StagingPlan } from "../lib/types";
+import type {
+  ApplyPlanListItem,
+  ApplyPlanValidationPreview,
+  PersistedApplyPlan,
+  StagingPlan,
+} from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -11,6 +16,7 @@ vi.mock("../lib/api", () => ({
     saveApplyPlanPreview: vi.fn(),
     listSavedApplyPlans: vi.fn(),
     getApplyPlan: vi.fn(),
+    previewApplyPlanValidation: vi.fn(),
     deleteDraftApplyPlan: vi.fn(),
     getStagingAreas: vi.fn(),
     getStagingPreviewPlan: vi.fn(),
@@ -222,6 +228,54 @@ const savedPlanDetails: PersistedApplyPlan = {
           createdAt: "2026-05-15T10:00:00.000Z",
         },
       ],
+    },
+  ],
+};
+
+const validationPreview: ApplyPlanValidationPreview = {
+  planId: 701,
+  status: "blocked",
+  canProceedToConfirmation: false,
+  checkedAt: "2026-05-15T11:00:00.000Z",
+  summary: {
+    totalItems: 2,
+    blockedItems: 1,
+    reviewOnlyItems: 1,
+    conflictItems: 1,
+    staleItems: 0,
+    missingSourceItems: 0,
+    destinationConflictItems: 1,
+    backupBlockedItems: 2,
+  },
+  caveats: [
+    "No files changed. This validation preview is read-only.",
+    "Backup/restore is required before any future confirmation.",
+  ],
+  items: [
+    {
+      itemId: 9001,
+      fileId: 101,
+      fileName:
+        "VeryLongCreatorName_With_A_Long_CAS_Hair_File_Name_That_Should_Remain_Visible.package",
+      validationStatus: "destination_exists",
+      conflictStatus: "destination_exists",
+      blocked: true,
+      reviewOnly: false,
+      canApplyLater: false,
+      reasons: ["A file already exists at the suggested destination."],
+      requiredNextSteps: ["Choose a different destination in a future review step."],
+    },
+    {
+      itemId: 9002,
+      fileId: 102,
+      fileName: "UnknownThing.package",
+      validationStatus: "review_only_blocked",
+      conflictStatus: "not_checked",
+      blocked: true,
+      reviewOnly: true,
+      canApplyLater: false,
+      reasons: ["Saved draft item is review-only."],
+      requiredNextSteps: ["Review this item manually before future validation."],
     },
   ],
 };
@@ -550,6 +604,104 @@ it("lists saved draft plans without dumping paths, opens details, and cancels dr
       ),
     ]),
   );
+});
+
+it("shows validation preview details through the backend-owned preview API", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.previewApplyPlanValidation).mockResolvedValue(validationPreview);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+
+  expect(await screen.findByText(/Draft preview plans/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Review details/i }));
+
+  expect(await screen.findByText(/Plan details/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Validation preview/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Needs validation/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Check saved plan/i }));
+
+  await waitFor(() => {
+    expect(api.previewApplyPlanValidation).toHaveBeenCalledWith({
+      planId: savedPlanSummary.id,
+    });
+  });
+
+  expect((await screen.findAllByText(/Future confirmation blocked/i)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Destination exists/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Review-only/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/No files changed. This validation preview is read-only./i)).toBeInTheDocument();
+  expect(screen.getByText(/Backup\/restore is required/i)).toBeInTheDocument();
+  expect(screen.getByText(/A file already exists at the suggested destination/i)).toBeInTheDocument();
+  expect(screen.getByText(/Review this item manually before future validation/i)).toBeInTheDocument();
+  expect(screen.getByText(/Backup required/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/Ready to apply/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Can apply/i)).not.toBeInTheDocument();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
+});
+
+it("explains valid preview-only validation without implying Apply readiness", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.previewApplyPlanValidation).mockResolvedValue({
+    ...validationPreview,
+    status: "valid_preview_only",
+    summary: {
+      ...validationPreview.summary,
+      blockedItems: 0,
+      reviewOnlyItems: 0,
+      conflictItems: 0,
+      destinationConflictItems: 0,
+      backupBlockedItems: 0,
+    },
+    items: [
+      {
+        ...validationPreview.items[0],
+        validationStatus: "valid_preview_only",
+        conflictStatus: "none",
+        blocked: false,
+        reviewOnly: false,
+        reasons: ["No current validation blocker was found in this preview."],
+      },
+    ],
+  });
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Check saved plan/i }));
+
+  expect(
+    await screen.findByText(/No current blocker found, but still preview-only/i),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/Apply is still not available/i)).toBeInTheDocument();
+  expect(screen.queryByText(/Ready to apply/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Safe to move/i)).not.toBeInTheDocument();
+});
+
+it("shows validation preview errors safely", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.previewApplyPlanValidation).mockRejectedValue(
+    new Error("validation unavailable"),
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Check saved plan/i }));
+
+  expect(await screen.findByText(/Could not load validation preview/i)).toBeInTheDocument();
+  expect(screen.getByText(/validation unavailable/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
 });
 
 it("shows saved-plan empty and error states as preview-only", async () => {
