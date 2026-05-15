@@ -1,5 +1,41 @@
 # SimSuite Implementation Status
 
+## Current session note (May 15, 2026 - ApplyPlan Persistence Audit v1)
+
+This session designs future ApplyPlan persistence and result-log storage before
+any real Apply/file-changing workflow exists. It does not add Apply, file
+movement, cleanup, delete, quarantine, replacement, auto-sort, AI decisions,
+runtime commands, UI, Rust code, or a SQLite migration.
+
+Important changes and findings:
+
+- added `docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md` as the source-of-truth
+  persistence design.
+- proposed future design-only tables: `apply_plans`, `apply_plan_items`,
+  `apply_plan_item_signals`, `apply_plan_item_blockers`, `apply_plan_results`,
+  and `apply_plan_restore_entries`.
+- decided no migration should land until a read-only ApplyPlan builder or
+  persistence command is implemented.
+- documented that future ApplyPlan persistence must reuse `StagingPlan`,
+  Library file identity, scanner/indexed paths, duplicate detector truth,
+  review queue context, update/watch context, Inbox intake state, snapshot
+  prior art, the Apply Safety Contract, and the Existing Systems Integration
+  Contract.
+- added a lightweight doc guard in the trust-boundary test.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `106` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Rust validation was skipped because no Rust/backend files changed.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- Read-only ApplyPlan persistence foundation or ApplyPlan builder design. Do
+  not build real Apply yet.
+
 ## Current session note (May 15, 2026 - Existing Systems Integration Contract v1)
 
 This session defines the durable integration contract requiring future SimSuite systems to reuse existing scanner, file-inspector, Library, duplicate, update, review, Inbox, Organize, preview-plan, and safety evidence before adding new parsing, metadata, classification, or decision logic. It does not add Apply, file movement, cleanup, delete, quarantine, replacement, auto-sort, or AI decisions.

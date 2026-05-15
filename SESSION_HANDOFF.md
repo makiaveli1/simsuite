@@ -1,5 +1,53 @@
 # Session Handoff
 
+## Current Session (May 15, 2026 - ApplyPlan Persistence Audit v1)
+
+- **Mode**: code
+- **Focus**: design future ApplyPlan persistence and result-log storage before
+  any real Apply/file-changing workflow exists
+
+### Progress Made
+
+1. **Designed ApplyPlan persistence**:
+   - added `docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md`
+   - documented future saved plan data, blocked items, evidence snapshots,
+     validation/conflict results, backup/restore references, result logs, and
+     restore entries
+
+2. **Kept the sprint design-only**:
+   - no SQLite migration, Tauri command, UI, Rust code, real Apply, file
+     movement, cleanup, delete, quarantine, replacement, auto-sort, or AI
+     behavior was added
+
+3. **Linked current source-of-truth docs**:
+   - connected the ApplyPlan persistence audit from Apply safety, existing
+     systems integration, trust, navigation, and backend map docs
+   - added a lightweight doc guard so the audit remains present and explicit
+     that real Apply is not implemented
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `106` tests).
+- `npm run build`: passed; existing Vite chunk-size warning remains.
+- Rust validation was skipped because no Rust/backend files changed.
+- Desktop proof/smoke were skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- ApplyPlan persistence is not implemented yet.
+- The proposed schema is design-only; no runtime database table exists.
+- Existing backend file-changing commands remain internal and unexposed.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Run TypeScript, unit, and build validation.
+2. Recommended next sprint: read-only ApplyPlan persistence foundation or
+   ApplyPlan builder design. Do not build real Apply yet.
+
 ## Current Session (May 15, 2026 - Existing Systems Integration Contract v1)
 
 - **Mode**: code

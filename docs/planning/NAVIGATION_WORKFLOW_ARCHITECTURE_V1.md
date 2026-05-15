@@ -53,6 +53,11 @@ Key distinction:
 - Plan Preview = preview of a proposed plan.
 - Organize = planning workspace for suggested organization.
 
+Future ApplyPlan persistence planning now lives in
+`docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md`. Saved plan and result-log
+storage is design-only today: Organize can create and review preview plans, but
+it does not save ApplyPlan records or expose file-changing Apply behavior.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

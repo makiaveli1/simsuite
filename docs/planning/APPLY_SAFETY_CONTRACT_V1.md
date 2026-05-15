@@ -8,6 +8,13 @@ Apply workflow that changes real user files.
 Apply is not implemented by this document. This is a safety contract for future
 work.
 
+ApplyPlan persistence planning now lives in
+`docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md`. That audit is the
+source-of-truth design for how future reviewed plans, blocked items, evidence
+snapshots, validation/conflict results, backup/restore references, and per-file
+result logs should be stored. It does not add a migration, command, UI, or real
+Apply workflow.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a
