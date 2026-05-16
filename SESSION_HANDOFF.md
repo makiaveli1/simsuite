@@ -1,5 +1,57 @@
 # Session Handoff
 
+## Current Session (May 16, 2026 - Backup / Restore / Result Log Design v1)
+
+- **Mode**: code
+- **Focus**: design the future recovery contract for ApplyPlan backup,
+  restore maps, and per-file result logs before any real Apply exists
+
+### Progress Made
+
+1. **Added backup/restore/result-log source of truth**:
+   - created `docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`
+   - documented copy-backup-first as the recommended future v1 strategy
+   - documented why journal-only restore is too weak for first visible Apply
+   - kept `apply_plan_runs`, `apply_plan_results`, and
+     `apply_plan_restore_entries` as design-only future tables
+
+2. **Audited existing prior art**:
+   - mapped `snapshot_manager`, `snapshots`, `snapshot_items`,
+     `move_engine::restore_snapshot`, rollback helpers, preflight helpers,
+     file hashing, DB path update helpers, and Downloads reject/restore/apply
+     paths
+   - classified them as prior art, not a finished ApplyPlan recovery contract
+
+3. **Kept the safety boundary explicit**:
+   - no migration, command, API wrapper, UI, backup execution, restore
+     execution, result-log persistence, or Apply workflow was added
+   - no files changed
+   - future Apply remains blocked until preview, validation, confirmation,
+     backup/restore, result logs, recoverable errors, tests, and proof exist
+
+### Verification
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `119` tests).
+- `npm run build`: passed with the existing Vite chunk-size warning.
+- Rust validation was skipped because no Rust/backend files changed.
+- Desktop proof/smoke was skipped because no visible route behavior changed.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Backup execution is still not implemented.
+- Restore execution is still not implemented.
+- Result-log tables are still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Next sprint should be DB-only result/restore schema foundation or a
+   fixture-only backup prototype design. Do not start real Apply yet.
+
 ## Current Session (May 16, 2026 - Organize Validation Preview UI v1)
 
 - **Mode**: code

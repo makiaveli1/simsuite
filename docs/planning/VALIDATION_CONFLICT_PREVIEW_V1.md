@@ -22,6 +22,12 @@ friendly item-level validation/conflict labels, and `Future confirmation
 blocked`. It does not persist validation state, expose Apply, create folders,
 or change files.
 
+Current planning note: backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. Validation preview can
+continue to report `backup_required`, but future confirmation stays blocked
+until copy-backup-first recovery, restore maps, and per-file result logs are
+implemented and proven.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

@@ -64,6 +64,12 @@ draft records. The UI does not create a parallel validation store, does not run
 frontend-owned validation from raw plan data, and does not expose file-changing
 actions.
 
+Current planning note: backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. Future recovery work
+must reuse saved ApplyPlan records, item snapshots, validation preview output,
+Library identity, scanner roots, snapshot/restore prior art, and the Apply
+Safety Contract before adding any file-changing executor logic.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
