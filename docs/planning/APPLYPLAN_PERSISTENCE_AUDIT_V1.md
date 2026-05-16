@@ -53,6 +53,12 @@ counts, and keeps `canProceedToConfirmation=false` visible as `Future
 confirmation blocked`. It does not add Apply, persist validation state, or
 change files.
 
+Current planning note: backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. That design refines the
+future `apply_plan_runs`, `apply_plan_results`, and
+`apply_plan_restore_entries` approach and recommends copy-backup-first recovery
+for a future v1. It does not implement those tables or real Apply.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

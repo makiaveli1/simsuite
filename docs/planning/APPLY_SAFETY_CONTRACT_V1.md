@@ -49,6 +49,12 @@ preview results from the read-only backend command. The UI explains `No files
 changed`, shows friendly blocker/conflict labels, and keeps future confirmation
 blocked. It does not expose Apply or any file-changing control.
 
+Current planning note: backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. The design recommends a
+future copy-backup-first recovery model with explicit restore maps and per-file
+result logs. It does not add migrations, commands, backup execution, restore
+execution, Apply UI, or file-changing behavior.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

@@ -44,6 +44,12 @@ plans`. It calls the read-only validation command, shows blocker/conflict
 counts and item reasons, and keeps `No files changed` plus `Future confirmation
 blocked` visible. It does not expose Apply or file-changing controls.
 
+Backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. It recommends a future
+copy-backup-first recovery model with explicit restore maps and per-file result
+logs, but it does not implement Apply, backup execution, restore execution, or
+any file-changing workflow.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

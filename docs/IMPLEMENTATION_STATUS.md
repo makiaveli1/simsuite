@@ -1,5 +1,37 @@
 # SimSuite Implementation Status
 
+## Current session note (May 16, 2026 - Backup / Restore / Result Log Design v1)
+
+This session designs the future backup, restore, and result-log contract for
+ApplyPlan work. It does not add Apply, file movement, file copying, folder
+creation, cleanup, delete, quarantine, replacement, auto-sort execution, AI
+decisions, runtime backup, runtime restore, result-log persistence, or visible
+UI behavior.
+
+Important changes and findings:
+
+- added `docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`.
+- recommended future copy-backup-first recovery plus explicit restore maps and
+  per-file result logs.
+- documented future design-only `apply_plan_runs`, `apply_plan_results`, and
+  `apply_plan_restore_entries` tables.
+- mapped existing snapshot/restore/move/download prior art and confirmed it is
+  not enough for a visible ApplyPlan recovery contract by itself.
+- added a lightweight trust-boundary doc guard for the new design.
+
+Checks:
+
+- `npx tsc --noEmit`: passed.
+- `npm run test:unit`: passed (`28` files, `119` tests).
+- `npm run build`: passed with the existing Vite chunk-size warning.
+- Rust validation was skipped because no Rust/backend files changed.
+- Desktop proof/smoke was skipped because no visible route behavior changed.
+
+Recommended next sprint:
+
+- DB-only result/restore schema foundation or a fixture-only backup prototype
+  design. Do not start real Apply yet.
+
 ## Current session note (May 16, 2026 - Organize Validation Preview UI v1)
 
 This session adds the first visible validation/conflict preview UI inside

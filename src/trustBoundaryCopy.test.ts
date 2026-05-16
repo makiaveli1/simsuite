@@ -162,4 +162,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/No Apply/i);
     expect(source).toMatch(/does not move files/i);
   });
+
+  it("documents the backup restore result-log design without making Apply ready", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/Apply is not ready/);
+    expect(source).toMatch(/result log/i);
+    expect(source).toMatch(/restore map/i);
+    expect(source).toMatch(/backup required/i);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });

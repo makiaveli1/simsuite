@@ -71,6 +71,11 @@ backup/restore requirements while keeping `canProceedToConfirmation=false`.
 Organize `Saved plans` now has a visible validation preview review section. No
 Apply workflow exists yet.
 
+Backup/restore/result-log design now lives in
+`docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md`. It defines the future
+recovery contract for ApplyPlan runs, result logs, and restore maps, but no
+route exposes backup, restore, Apply, or file-changing controls.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |
