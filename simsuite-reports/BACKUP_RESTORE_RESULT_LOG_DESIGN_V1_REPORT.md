@@ -167,12 +167,10 @@ confirmation, and fixture recovery behavior remain intentionally unimplemented.
 
 ## Linear updates
 
-Planned tracking:
-
-- `VEL-18`: primary backup/restore design issue.
-- `VEL-19`: related dry-run/apply split context.
-- `VEL-20`: related confirmed Apply prototype blocker.
-- `VEL-31`: ApplyPlan persistence context.
+- `VEL-18`: updated as the primary backup/restore design issue.
+- `VEL-19`: updated as related dry-run/apply split context.
+- `VEL-20`: updated as confirmed Apply prototype blocker context.
+- `VEL-31`: updated as ApplyPlan persistence context.
 
 ## Recommended next sprint
 
@@ -204,8 +202,11 @@ unstaged unless they contain sprint-relevant hunks:
 
 ## Commit
 
-The final commit hash is recorded in the final handoff after the branch is
-committed.
+- Design commit: `c2497ca` -
+  `Design backup restore result log contract`.
+- Delivery commit: recorded in the final handoff after this report update.
+- Branch: `codex/backup-restore-result-log-design-v1`.
+- Draft PR: `https://github.com/makiaveli1/simsuite/pull/20`.
 
 ## Final honest verdict
 
