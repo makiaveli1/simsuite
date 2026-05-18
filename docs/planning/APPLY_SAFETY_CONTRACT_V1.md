@@ -55,6 +55,13 @@ future copy-backup-first recovery model with explicit restore maps and per-file
 result logs. It does not add migrations, commands, backup execution, restore
 execution, Apply UI, or file-changing behavior.
 
+Current implementation note: the DB-only result/restore schema foundation now
+exists. `apply_plan_runs`, `apply_plan_results`, and
+`apply_plan_restore_entries` can store future run, result-log, and restore-map
+metadata only. They do not execute backup, restore, Apply, file movement, file
+copying, folder creation, deletion, cleanup, quarantine, replacement, or AI
+decisions.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 18, 2026 - DB-only Result / Restore Schema Foundation v1)
+
+This session implements the first DB-only foundation for future ApplyPlan run
+metadata, per-file result logs, and restore-map entries. It does not add real
+Apply, backup execution, restore execution, file movement, file copying, folder
+creation, deletion, cleanup, quarantine, replacement, auto-sort execution, AI
+decisions, or visible UI behavior.
+
+Important changes and findings:
+
+- added migration `database/migrations/0004_applyplan_result_restore_foundation.sql`.
+- added `apply_plan_runs`, `apply_plan_results`, and
+  `apply_plan_restore_entries` as DB-only metadata tables.
+- added schema repair for existing databases.
+- added Rust models and `src-tauri/src/core/apply_plan_results.rs`.
+- added DB-only Tauri commands for creating/listing/getting future run logs,
+  result logs, and restore entries.
+- added TypeScript API/mock support for those DB-only commands.
+- v1 commands reject statuses that imply files were applied or restored.
+- no visible route behavior changed.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/RESULT_RESTORE_SCHEMA_FOUNDATION_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Fixture-only backup prototype design or DB-only result/restore review UI.
+  Do not start real Apply yet.
+
 ## Current session note (May 16, 2026 - Backup / Restore / Result Log Design v1)
 
 This session designs the future backup, restore, and result-log contract for

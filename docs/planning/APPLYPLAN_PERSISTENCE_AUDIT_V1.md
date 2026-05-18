@@ -59,6 +59,13 @@ future `apply_plan_runs`, `apply_plan_results`, and
 `apply_plan_restore_entries` approach and recommends copy-backup-first recovery
 for a future v1. It does not implement those tables or real Apply.
 
+Current implementation note: `codex/result-restore-schema-foundation-v1` adds
+the DB-only foundation for `apply_plan_runs`, `apply_plan_results`, and
+`apply_plan_restore_entries`. The new records are future run/result/restore
+metadata only. They do not execute Apply, backup, restore, file movement, file
+copying, folder creation, deletion, cleanup, quarantine, replacement, or AI
+decisions.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

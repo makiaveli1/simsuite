@@ -1,5 +1,54 @@
 # Session Handoff
 
+## Current Session (May 18, 2026 - DB-only Result / Restore Schema Foundation v1)
+
+- **Mode**: code
+- **Focus**: add DB-only storage and helper/API contracts for future ApplyPlan
+  run logs, per-file result logs, and restore-map entries
+
+### Progress Made
+
+1. **Added result/restore schema foundation**:
+   - added `database/migrations/0004_applyplan_result_restore_foundation.sql`
+   - added `apply_plan_runs`, `apply_plan_results`, and
+     `apply_plan_restore_entries`
+   - added non-destructive `ensure_schema` repair for those tables and indexes
+
+2. **Added DB-only backend/API contracts**:
+   - added Rust models for run/result/restore metadata
+   - added `src-tauri/src/core/apply_plan_results.rs`
+   - added DB-only Tauri commands for creating and reading run logs, result
+     logs, and restore entries
+   - added TypeScript types, API wrappers, and mock persistence
+
+3. **Kept the safety boundary explicit**:
+   - v1 rejects statuses that claim files were applied or restored
+   - no backup execution, restore execution, real Apply, file movement, file
+     copying, folder creation, cleanup, delete, quarantine, replacement,
+     auto-sort execution, or AI decision was added
+   - no visible UI behavior changed
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/RESULT_RESTORE_SCHEMA_FOUNDATION_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Backup execution is still not implemented.
+- Restore execution is still not implemented.
+- Confirmation workflow is still not implemented.
+- Result/restore UI is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Next sprint should be fixture-only backup prototype design or DB-only
+   result/restore review UI. Do not start real Apply yet.
+
 ## Current Session (May 16, 2026 - Backup / Restore / Result Log Design v1)
 
 - **Mode**: code

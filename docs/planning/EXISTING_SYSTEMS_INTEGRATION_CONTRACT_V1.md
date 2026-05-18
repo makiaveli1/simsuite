@@ -70,6 +70,12 @@ must reuse saved ApplyPlan records, item snapshots, validation preview output,
 Library identity, scanner roots, snapshot/restore prior art, and the Apply
 Safety Contract before adding any file-changing executor logic.
 
+Current implementation note: the DB-only result/restore schema foundation now
+reuses saved ApplyPlan records and items as parents for future
+`apply_plan_runs`, `apply_plan_results`, and `apply_plan_restore_entries`. It
+adds metadata storage only and does not create a second plan model, execute
+backup/restore, or expose file-changing actions.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
