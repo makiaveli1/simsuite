@@ -38,6 +38,11 @@ copy-backup-first behavior with temporary test files and records safe
 result/restore metadata. It remains outside validation UI, does not persist
 Apply readiness, and does not change user files.
 
+Current implementation note: a fixture-only restore prototype now verifies
+restore-copy behavior from recorded backup references to temporary fixture
+targets and records safe result/restore metadata. It remains outside validation
+UI, does not persist Apply or Restore readiness, and does not change user files.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

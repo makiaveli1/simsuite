@@ -72,6 +72,12 @@ then records safe `pending_log` / `design_only` metadata. It does not expose
 commands or UI, does not touch user files, and does not make Apply or Restore
 ready.
 
+Current implementation note: `codex/fixture-only-restore-prototype-v1` extends
+that private prototype with restore-copy proof from recorded backup references
+to temporary fixture targets only. It records only safe `pending_log`,
+`failed_before_change`, and `design_only` metadata, does not expose commands or
+UI, does not touch user files, and does not make Apply or Restore ready.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`
