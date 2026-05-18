@@ -81,6 +81,11 @@ result/restore metadata helpers to prove copy-backup-first behavior on
 temporary test files only. It adds no command, no UI, no new classifier, and no
 user-file workflow.
 
+Current implementation note: the fixture-only restore prototype now reuses the
+same metadata helpers and recorded restore-map rows to prove scoped restore-copy
+behavior on temporary test files only. It adds no command, no UI, no new
+classifier, and no user-file workflow.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

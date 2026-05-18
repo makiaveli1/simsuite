@@ -1,5 +1,53 @@
 # Session Handoff
 
+## Current Session (May 18, 2026 - Fixture-Only Restore Prototype v1)
+
+- **Mode**: code
+- **Focus**: prove restore-copy mechanics from recorded backup references to
+  temporary fixture targets only, while keeping real Apply and Restore blocked
+
+### Progress Made
+
+1. **Extended the private fixture prototype**:
+   - added fixture-only restore request/result types in
+     `src-tauri/src/core/apply_plan_backup_prototype.rs`
+   - restores only temporary test files inside a supplied fixture root
+   - verifies restored size and SHA-256 hash against the backup
+   - leaves backup files unchanged and refuses restore-target overwrites
+
+2. **Reused result/restore metadata foundation**:
+   - successful fixture restores record safe `pending_log` result rows
+   - successful fixture restores record `design_only` restore-map rows
+   - safe pre-copy restore failures record `failed_before_change`
+   - no `applied`, `restored`, `moved`, or `copied` status is recorded
+
+3. **Kept the safety boundary explicit**:
+   - no Tauri command, TypeScript API, or visible UI was added
+   - no real Apply, real Restore, user-file backup execution, user-file restore
+     execution, file movement, user-file copying, deletion, cleanup,
+     quarantine, replacement, auto-sort execution, or AI decision was added
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/FIXTURE_ONLY_RESTORE_PROTOTYPE_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Confirmation workflow is still not implemented.
+- Result/restore UI is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Next sprint should be fixture-only backup + restore integration proof or
+   result/restore review UI. Do not start real Apply yet.
+
 ## Current Session (May 18, 2026 - Fixture-Only Backup Prototype v1)
 
 - **Mode**: code
