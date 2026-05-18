@@ -56,6 +56,11 @@ not execute Apply, backup, restore, file movement, file copying, folder
 creation, deletion, cleanup, quarantine, replacement, auto-sort execution, or
 AI decisions.
 
+The fixture-only backup prototype now exists as backend test/prototype code.
+It copies and verifies temporary test files only, records safe result/restore
+metadata, and remains hidden from UI and Tauri commands. It does not change
+user files and does not make Apply or Restore ready.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

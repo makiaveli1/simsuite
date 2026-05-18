@@ -18,6 +18,13 @@ Those records are metadata/log foundation rows only. They do not execute Apply,
 backup, restore, file movement, file copying, folder creation, deletion,
 cleanup, quarantine, replacement, auto-sort execution, or AI decisions.
 
+Current implementation note: the follow-up
+`codex/fixture-only-backup-prototype-v1` sprint adds a private backend
+prototype for copy-backup-first behavior against temporary test files only. It
+verifies size and SHA-256 hash, records safe DB result/restore metadata, and
+does not expose a command, UI, real Apply, user-file backup execution, restore
+execution, movement, deletion, cleanup, quarantine, replacement, or AI decision.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
@@ -42,7 +49,9 @@ Current SimSuite state:
 - real Apply does not exist.
 - DB-only result-log foundation tables now exist.
 - DB-only restore-entry foundation tables now exist.
-- backup execution does not exist.
+- fixture-only backup prototype tests now exist for temporary files only.
+- user-file backup execution does not exist.
+- restore execution does not exist.
 - confirmation workflow does not exist.
 - existing snapshot and restore code is prior art only.
 
@@ -433,6 +442,8 @@ Phase C - backend fixture backup prototype:
   temporary files.
 - Keep it hidden from UI.
 - No real user Library files.
+- Current implementation note: this phase now has a private backend helper and
+  tests. It is not a user-facing backup feature.
 
 Phase D - apply dry-run with result-log preview:
 

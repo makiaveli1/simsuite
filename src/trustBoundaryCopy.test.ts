@@ -191,4 +191,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/No files are moved, copied, created, deleted/i);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents the fixture-only backup prototype without making Apply ready", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/FIXTURE_ONLY_BACKUP_PROTOTYPE_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Fixture-only backup prototype/i);
+    expect(source).toMatch(/temporary test files only/i);
+    expect(source).toMatch(/No user files changed/i);
+    expect(source).toMatch(/Apply is not ready yet/i);
+    expect(source).toMatch(/Restore execution remains future/i);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });
