@@ -120,7 +120,11 @@ intentionally unimplemented.
 
 ## Linear updates
 
-To be completed after validation and commit.
+- Created and completed `VEL-32` (`Build fixture-only restore prototype`) for
+  this focused backend fixture proof.
+- Commented on `VEL-18`, `VEL-19`, `VEL-20`, and `VEL-31` with the safety
+  boundary, validation results, and draft PR link.
+- No real Apply or Restore issues were closed.
 
 ## Recommended next sprint
 
@@ -152,7 +156,9 @@ outside the implementation:
 
 ## Commit
 
-To be completed after validation.
+- Branch: `codex/fixture-only-restore-prototype-v1`
+- Implementation commit: `ae436e4` (`Prototype fixture-only ApplyPlan restores`)
+- Draft PR: https://github.com/makiaveli1/simsuite/pull/23
 
 ## Final honest verdict
 
