@@ -124,8 +124,10 @@ Desktop proof was not run because there were no visible UI changes.
 
 ## Linear updates
 
-To be completed after commit/push so the issue comments can include final
-delivery metadata.
+- Updated primary issue `VEL-18` with branch, commit, PR, validation, and
+  safety boundary.
+- Added related delivery comments on `VEL-19`, `VEL-20`, and `VEL-31`.
+- No real Apply/prototype issue was closed.
 
 ## Recommended next sprint
 
@@ -157,7 +159,10 @@ outside the implementation:
 
 ## Commit
 
-To be completed after validation.
+- Implementation commit: `d24bf109ccaca156da71a804412c2871d71d5d0a`
+  (`Add DB-only result restore schema foundation`).
+- Branch pushed: `codex/result-restore-schema-foundation-v1`.
+- Draft PR: https://github.com/makiaveli1/simsuite/pull/21
 
 ## Final honest verdict
 
