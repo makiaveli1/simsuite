@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (May 18, 2026 - Fixture-Only Backup Prototype v1)
+
+- **Mode**: code
+- **Focus**: prove copy-backup-first mechanics against temporary fixture files
+  only, while keeping real Apply and Restore blocked
+
+### Progress Made
+
+1. **Added a private backend fixture backup prototype**:
+   - added `src-tauri/src/core/apply_plan_backup_prototype.rs`
+   - copies only temporary test files inside a supplied fixture root
+   - verifies backup size and SHA-256 hash
+   - leaves source files unchanged
+
+2. **Reused result/restore metadata foundation**:
+   - successful fixture backups record safe `pending_log` result rows
+   - successful fixture backups record `design_only` restore-map rows
+   - failed pre-change fixture checks record `failed_before_change`
+   - no `applied`, `restored`, `moved`, or `copied` status is recorded
+
+3. **Kept the safety boundary explicit**:
+   - no Tauri command, TypeScript API, or visible UI was added
+   - no real Apply, user-file backup execution, restore execution, file
+     movement, user-file copying, deletion, cleanup, quarantine, replacement,
+     auto-sort execution, or AI decision was added
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/FIXTURE_ONLY_BACKUP_PROTOTYPE_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Restore execution is still not implemented.
+- User-file backup execution is still not implemented.
+- Confirmation workflow is still not implemented.
+- Result/restore UI is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Next sprint should be fixture-only restore prototype or result/restore
+   review UI. Do not start real Apply yet.
+
 ## Current Session (May 18, 2026 - DB-only Result / Restore Schema Foundation v1)
 
 - **Mode**: code

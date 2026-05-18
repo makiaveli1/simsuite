@@ -81,6 +81,10 @@ commands for future ApplyPlan run logs, per-file result logs, and restore-map
 entries. Organize does not expose those controls yet, and no route exposes
 backup, restore, Apply, or file-changing behavior.
 
+The fixture-only backup prototype now exists as private backend test/prototype
+code. No route exposes it, and Organize still has no backup, restore, Apply, or
+file-changing controls.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

@@ -66,6 +66,12 @@ metadata only. They do not execute Apply, backup, restore, file movement, file
 copying, folder creation, deletion, cleanup, quarantine, replacement, or AI
 decisions.
 
+Current implementation note: `codex/fixture-only-backup-prototype-v1` adds a
+private backend prototype that copies and verifies temporary test files only,
+then records safe `pending_log` / `design_only` metadata. It does not expose
+commands or UI, does not touch user files, and does not make Apply or Restore
+ready.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

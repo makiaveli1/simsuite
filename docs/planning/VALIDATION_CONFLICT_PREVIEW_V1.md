@@ -33,6 +33,11 @@ exist for future ApplyPlan work. Validation preview remains response-only and
 still returns `canProceedToConfirmation=false`; the new result/restore records
 do not execute backup, restore, Apply, or any file-changing workflow.
 
+Current implementation note: a fixture-only backup prototype now verifies
+copy-backup-first behavior with temporary test files and records safe
+result/restore metadata. It remains outside validation UI, does not persist
+Apply readiness, and does not change user files.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

@@ -62,6 +62,12 @@ metadata only. They do not execute backup, restore, Apply, file movement, file
 copying, folder creation, deletion, cleanup, quarantine, replacement, or AI
 decisions.
 
+Current implementation note: the fixture-only backup prototype now proves
+copy-backup-first mechanics against temporary test files only. It verifies a
+backup copy and records safe result/restore metadata, but it is not user-facing
+and does not execute real Apply, user-file backup, restore, movement, deletion,
+cleanup, quarantine, replacement, or AI decisions.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

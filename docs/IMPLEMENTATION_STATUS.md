@@ -1,5 +1,34 @@
 # SimSuite Implementation Status
 
+## Current session note (May 18, 2026 - Fixture-Only Backup Prototype v1)
+
+This session adds a backend-only fixture backup prototype for future
+copy-backup-first ApplyPlan recovery work. It copies and verifies temporary test
+files only. It does not add real Apply, Restore, user-file backup execution,
+file movement, user-file copying, folder creation outside temp fixtures,
+deletion, cleanup, quarantine, replacement, auto-sort execution, AI decisions,
+or visible UI behavior.
+
+Important changes and findings:
+
+- added `src-tauri/src/core/apply_plan_backup_prototype.rs`.
+- added strict temp-fixture path boundary checks.
+- backup prototype verifies source/backup size and SHA-256 hash.
+- successful fixture backups record safe `pending_log` result rows.
+- successful fixture backups record `design_only` restore-map rows.
+- missing fixture sources record `failed_before_change`.
+- no Tauri command, TypeScript API, or visible UI was added.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/FIXTURE_ONLY_BACKUP_PROTOTYPE_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Fixture-only restore prototype or result/restore review UI. Do not start real
+  Apply yet.
+
 ## Current session note (May 18, 2026 - DB-only Result / Restore Schema Foundation v1)
 
 This session implements the first DB-only foundation for future ApplyPlan run

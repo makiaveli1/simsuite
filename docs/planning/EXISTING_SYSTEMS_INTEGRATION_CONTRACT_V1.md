@@ -76,6 +76,11 @@ reuses saved ApplyPlan records and items as parents for future
 adds metadata storage only and does not create a second plan model, execute
 backup/restore, or expose file-changing actions.
 
+Current implementation note: the fixture-only backup prototype now reuses the
+result/restore metadata helpers to prove copy-backup-first behavior on
+temporary test files only. It adds no command, no UI, no new classifier, and no
+user-file workflow.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |
