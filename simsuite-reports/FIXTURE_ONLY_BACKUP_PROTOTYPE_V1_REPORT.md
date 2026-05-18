@@ -115,7 +115,9 @@ unimplemented.
 
 ## Linear updates
 
-To be completed after validation and commit.
+- Updated `VEL-18` as the primary backup/restore design issue.
+- Added related comments on `VEL-19`, `VEL-20`, and `VEL-31`.
+- Did not close real Apply issues and did not claim Apply or Restore is ready.
 
 ## Recommended next sprint
 
@@ -147,7 +149,9 @@ outside the implementation:
 
 ## Commit
 
-To be completed after validation.
+- Implementation commit: `817cf55` (`Prototype fixture-only ApplyPlan backups`)
+- Branch: `codex/fixture-only-backup-prototype-v1`
+- Draft PR: <https://github.com/makiaveli1/simsuite/pull/22>
 
 ## Final honest verdict
 
