@@ -132,3 +132,102 @@ describe("ApplyPlan preview persistence API", () => {
     );
   });
 });
+
+describe("ApplyPlan result and restore foundation API", () => {
+  it("creates, lists, and reads DB-only run logs in the mock API", async () => {
+    const saved = await api.buildApplyPlanFromStagingPlan({
+      previewRequest: {
+        scope: {
+          kind: "selected_files",
+          fileIds: [101, 102],
+        },
+      },
+    });
+
+    const run = await api.createApplyPlanRunLog({
+      applyPlanId: saved.planId,
+      summary: "DB-only result log foundation. No files changed.",
+    });
+
+    expect(run.id).toBeGreaterThan(0);
+    expect(run.applyPlanId).toBe(saved.planId);
+    expect(run.status).toBe("draft_log");
+    expect(run.backupStrategy).toBe("copy_backup_first");
+    expect(run.appliedItems).toBe(0);
+    expect(run.restoredItems).toBe(0);
+
+    const runs = await api.listApplyPlanRunLogs({ applyPlanId: saved.planId });
+    expect(runs.some((candidate) => candidate.id === run.id)).toBe(true);
+
+    const detail = await api.getApplyPlanRunLog(run.id);
+    expect(detail?.run.id).toBe(run.id);
+    expect(detail?.results).toEqual([]);
+    expect(detail?.restoreEntries).toEqual([]);
+  });
+
+  it("records non-executed result and restore rows while rejecting execution statuses", async () => {
+    const saved = await api.buildApplyPlanFromStagingPlan({
+      previewRequest: {
+        scope: {
+          kind: "selected_files",
+          fileIds: [101, 102],
+        },
+      },
+    });
+    const plan = await api.getApplyPlan(saved.planId);
+    const itemId = plan?.items[0]?.id ?? null;
+    const run = await api.createApplyPlanRunLog({
+      applyPlanId: saved.planId,
+      backupStrategy: "design_only",
+      summary: "DB-only result log foundation.",
+    });
+
+    const result = await api.recordApplyPlanResultLog({
+      applyPlanRunId: run.id,
+      applyPlanItemId: itemId,
+      operationKind: "future_move_preview",
+      resultStatus: "blocked",
+      userSummary: "Blocked before any file-changing workflow.",
+    });
+    expect(result.resultStatus).toBe("blocked");
+    expect(result.applyPlanId).toBe(saved.planId);
+
+    await expect(
+      api.recordApplyPlanResultLog({
+        applyPlanRunId: run.id,
+        operationKind: "future_move_preview",
+        resultStatus: "applied",
+        userSummary: "This should not be accepted.",
+      }),
+    ).rejects.toThrow(/applied/);
+
+    const entry = await api.recordApplyPlanRestoreEntry({
+      applyPlanRunId: run.id,
+      applyPlanResultId: result.id,
+      applyPlanItemId: itemId,
+      originalSourcePath: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Sample.package",
+      operationKind: "future_move_preview",
+      operationResultStatus: "blocked",
+      restoreStatus: "design_only",
+    });
+    expect(entry.restoreStatus).toBe("design_only");
+    expect(entry.applyPlanResultId).toBe(result.id);
+
+    await expect(
+      api.recordApplyPlanRestoreEntry({
+        applyPlanRunId: run.id,
+        originalSourcePath: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Sample.package",
+        operationKind: "future_move_preview",
+        operationResultStatus: "blocked",
+        restoreStatus: "restored",
+      }),
+    ).rejects.toThrow(/restored/);
+
+    const results = await api.listApplyPlanResultLogs({ applyPlanRunId: run.id });
+    const restoreEntries = await api.listApplyPlanRestoreEntries({
+      applyPlanRunId: run.id,
+    });
+    expect(results.some((candidate) => candidate.id === result.id)).toBe(true);
+    expect(restoreEntries.some((candidate) => candidate.id === entry.id)).toBe(true);
+  });
+});

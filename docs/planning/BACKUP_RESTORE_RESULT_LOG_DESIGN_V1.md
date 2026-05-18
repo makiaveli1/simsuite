@@ -10,6 +10,14 @@ migration, runtime command, UI, file movement, file copy, folder creation,
 cleanup, delete, quarantine, replacement, auto-sort execution, restore action,
 backup execution, or AI decision.
 
+Current implementation note: the follow-up
+`codex/result-restore-schema-foundation-v1` sprint adds the DB-only schema,
+models, helper logic, commands, and TypeScript API/mock support for
+`apply_plan_runs`, `apply_plan_results`, and `apply_plan_restore_entries`.
+Those records are metadata/log foundation rows only. They do not execute Apply,
+backup, restore, file movement, file copying, folder creation, deletion,
+cleanup, quarantine, replacement, auto-sort execution, or AI decisions.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
@@ -32,8 +40,8 @@ Current SimSuite state:
 - Organize can run read-only validation/conflict preview.
 - validation preview keeps `canProceedToConfirmation=false`.
 - real Apply does not exist.
-- result logs do not exist.
-- restore entries do not exist.
+- DB-only result-log foundation tables now exist.
+- DB-only restore-entry foundation tables now exist.
 - backup execution does not exist.
 - confirmation workflow does not exist.
 - existing snapshot and restore code is prior art only.
@@ -193,7 +201,9 @@ The result log must clearly distinguish:
 
 ## 8. Future Schema Design
 
-These tables are design-only. Do not implement them in this sprint.
+These tables started as design-only and now have a DB-only foundation in
+`database/migrations/0004_applyplan_result_restore_foundation.sql`. The
+foundation stores metadata only and still does not prove files can move safely.
 
 ### `apply_plan_runs`
 

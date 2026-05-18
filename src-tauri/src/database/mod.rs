@@ -11,6 +11,8 @@ use crate::{
 
 const APPLY_PLAN_PERSISTENCE_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0003_applyplan_persistence_foundation.sql");
+const APPLY_PLAN_RESULT_RESTORE_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0004_applyplan_result_restore_foundation.sql");
 
 #[derive(Debug, Clone)]
 pub struct UserCategoryOverride {
@@ -83,6 +85,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         connection.execute(
             "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
             params![3_i64, "applyplan_persistence_foundation"],
+        )?;
+    }
+
+    let v4_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 4",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v4_exists.is_none() {
+        ensure_apply_plan_result_restore_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![4_i64, "applyplan_result_restore_foundation"],
         )?;
     }
 
@@ -1050,12 +1067,18 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
         "CREATE INDEX IF NOT EXISTS idx_duplicates_file_id_b ON duplicates (file_id_b);",
     )?;
     ensure_apply_plan_schema(connection)?;
+    ensure_apply_plan_result_restore_schema(connection)?;
 
     Ok(())
 }
 
 fn ensure_apply_plan_schema(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(APPLY_PLAN_PERSISTENCE_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn ensure_apply_plan_result_restore_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(APPLY_PLAN_RESULT_RESTORE_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -1359,6 +1382,100 @@ mod tests {
                 )
                 .expect("index lookup");
             assert_eq!(count, 1, "missing index {index_name}");
+        }
+    }
+
+    #[test]
+    fn initialize_creates_apply_plan_result_restore_foundation_tables() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        for table_name in [
+            "apply_plan_runs",
+            "apply_plan_results",
+            "apply_plan_restore_entries",
+        ] {
+            assert!(
+                table_exists(&connection, table_name).expect("table lookup"),
+                "missing table {table_name}"
+            );
+        }
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 4 AND name = 'applyplan_result_restore_foundation'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+
+        for index_name in [
+            "idx_apply_plan_runs_plan_id",
+            "idx_apply_plan_runs_status_created_at",
+            "idx_apply_plan_results_run_id",
+            "idx_apply_plan_results_plan_item_id",
+            "idx_apply_plan_results_status",
+            "idx_apply_plan_restore_entries_run_id",
+            "idx_apply_plan_restore_entries_result_id",
+            "idx_apply_plan_restore_entries_item_id",
+            "idx_apply_plan_restore_entries_status",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                    params![index_name],
+                    |row| row.get(0),
+                )
+                .expect("index lookup");
+            assert_eq!(count, 1, "missing index {index_name}");
+        }
+    }
+
+    #[test]
+    fn ensure_schema_repairs_apply_plan_result_restore_foundation_tables() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "DROP TABLE IF EXISTS apply_plan_restore_entries;
+                 DROP TABLE IF EXISTS apply_plan_results;
+                 DROP TABLE IF EXISTS apply_plan_runs;",
+            )
+            .expect("drop result restore tables");
+
+        ensure_schema(&connection).expect("repair schema");
+
+        for table_name in [
+            "apply_plan_runs",
+            "apply_plan_results",
+            "apply_plan_restore_entries",
+        ] {
+            assert!(
+                table_exists(&connection, table_name).expect("table lookup"),
+                "missing repaired table {table_name}"
+            );
+        }
+
+        for index_name in [
+            "idx_apply_plan_runs_plan_id",
+            "idx_apply_plan_runs_status_created_at",
+            "idx_apply_plan_results_run_id",
+            "idx_apply_plan_results_plan_item_id",
+            "idx_apply_plan_results_status",
+            "idx_apply_plan_restore_entries_run_id",
+            "idx_apply_plan_restore_entries_result_id",
+            "idx_apply_plan_restore_entries_item_id",
+            "idx_apply_plan_restore_entries_status",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                    params![index_name],
+                    |row| row.get(0),
+                )
+                .expect("index lookup");
+            assert_eq!(count, 1, "missing repaired index {index_name}");
         }
     }
 

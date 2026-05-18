@@ -499,6 +499,195 @@ pub struct ApplyPlanValidationPreview {
     pub items: Vec<ApplyPlanValidationItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanRunLogStatus {
+    DraftLog,
+    Blocked,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanResultLogStatus {
+    PendingLog,
+    Skipped,
+    Blocked,
+    FailedBeforeChange,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanRestoreEntryStatus {
+    NotAvailable,
+    DesignOnly,
+    NotRestored,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanRun {
+    pub id: i64,
+    pub apply_plan_id: i64,
+    pub status: ApplyPlanRunLogStatus,
+    pub backup_strategy: String,
+    pub confirmation_token: Option<String>,
+    pub confirmed_at: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub total_items: i64,
+    pub skipped_items: i64,
+    pub applied_items: i64,
+    pub failed_items: i64,
+    pub restored_items: i64,
+    pub summary: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanResult {
+    pub id: i64,
+    pub apply_plan_run_id: i64,
+    pub apply_plan_id: i64,
+    pub apply_plan_item_id: Option<i64>,
+    pub operation_kind: String,
+    pub result_status: ApplyPlanResultLogStatus,
+    pub source_path_at_execution: Option<String>,
+    pub destination_path_at_execution: Option<String>,
+    pub backup_path: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub user_summary: String,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedApplyPlanRestoreEntry {
+    pub id: i64,
+    pub apply_plan_run_id: i64,
+    pub apply_plan_result_id: Option<i64>,
+    pub apply_plan_id: i64,
+    pub apply_plan_item_id: Option<i64>,
+    pub original_source_path: String,
+    pub destination_path_at_execution: Option<String>,
+    pub backup_path: Option<String>,
+    pub file_hash_before: Option<String>,
+    pub file_size_before: Option<i64>,
+    pub operation_kind: String,
+    pub operation_result_status: ApplyPlanResultLogStatus,
+    pub restore_status: ApplyPlanRestoreEntryStatus,
+    pub restore_error_code: Option<String>,
+    pub restore_error_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub restored_at: Option<String>,
+    pub failed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateApplyPlanRunLogRequest {
+    pub apply_plan_id: i64,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub backup_strategy: Option<String>,
+    #[serde(default)]
+    pub confirmation_token: Option<String>,
+    #[serde(default)]
+    pub total_items: Option<i64>,
+    #[serde(default)]
+    pub skipped_items: Option<i64>,
+    #[serde(default)]
+    pub failed_items: Option<i64>,
+    #[serde(default)]
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ListApplyPlanRunLogsRequest {
+    #[serde(default)]
+    pub apply_plan_id: Option<i64>,
+    #[serde(default)]
+    pub include_cancelled: Option<bool>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanRunLogDetail {
+    pub run: PersistedApplyPlanRun,
+    pub results: Vec<PersistedApplyPlanResult>,
+    pub restore_entries: Vec<PersistedApplyPlanRestoreEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordApplyPlanResultLogRequest {
+    pub apply_plan_run_id: i64,
+    #[serde(default)]
+    pub apply_plan_item_id: Option<i64>,
+    pub operation_kind: String,
+    pub result_status: String,
+    #[serde(default)]
+    pub source_path_at_execution: Option<String>,
+    #[serde(default)]
+    pub destination_path_at_execution: Option<String>,
+    #[serde(default)]
+    pub backup_path: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    #[serde(default)]
+    pub error_message: Option<String>,
+    pub user_summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListApplyPlanResultLogsRequest {
+    pub apply_plan_run_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordApplyPlanRestoreEntryRequest {
+    pub apply_plan_run_id: i64,
+    #[serde(default)]
+    pub apply_plan_result_id: Option<i64>,
+    #[serde(default)]
+    pub apply_plan_item_id: Option<i64>,
+    pub original_source_path: String,
+    #[serde(default)]
+    pub destination_path_at_execution: Option<String>,
+    #[serde(default)]
+    pub backup_path: Option<String>,
+    #[serde(default)]
+    pub file_hash_before: Option<String>,
+    #[serde(default)]
+    pub file_size_before: Option<i64>,
+    pub operation_kind: String,
+    pub operation_result_status: String,
+    pub restore_status: String,
+    #[serde(default)]
+    pub restore_error_code: Option<String>,
+    #[serde(default)]
+    pub restore_error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListApplyPlanRestoreEntriesRequest {
+    pub apply_plan_run_id: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateSortingPreviewPlanRequest {

@@ -1,5 +1,6 @@
 pub mod ai_classifier;
 pub mod apply_plan_persistence;
+pub mod apply_plan_results;
 pub mod apply_plan_validation;
 pub mod bundle_detector;
 pub mod category_audit;

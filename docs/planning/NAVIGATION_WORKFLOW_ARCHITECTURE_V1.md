@@ -76,6 +76,11 @@ Backup/restore/result-log design now lives in
 recovery contract for ApplyPlan runs, result logs, and restore maps, but no
 route exposes backup, restore, Apply, or file-changing controls.
 
+The DB-only result/restore schema foundation now exists behind backend/API
+commands for future ApplyPlan run logs, per-file result logs, and restore-map
+entries. Organize does not expose those controls yet, and no route exposes
+backup, restore, Apply, or file-changing behavior.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

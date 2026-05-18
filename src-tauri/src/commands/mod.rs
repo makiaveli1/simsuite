@@ -18,8 +18,8 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        apply_plan_persistence, apply_plan_validation, bundle_detector, category_audit,
-        content_versions, creator_audit, downloads_watcher, duplicate_detector,
+        apply_plan_persistence, apply_plan_results, apply_plan_validation, bundle_detector,
+        category_audit, content_versions, creator_audit, downloads_watcher, duplicate_detector,
         install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
         watch_polling,
     },
@@ -27,25 +27,29 @@ use crate::{
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPlanValidationPreview,
-        ApplyPreviewResult, ApplyReviewPlanActionResult, ApplySpecialReviewFixResult,
-        BatchApplyResult, BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile,
-        CategoryAuditQuery, CategoryAuditResponse, CleanupResult, CreatorAuditFile,
-        CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
-        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
-        DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
-        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPlanRunLogDetail,
+        ApplyPlanValidationPreview, ApplyPreviewResult, ApplyReviewPlanActionResult,
+        ApplySpecialReviewFixResult, BatchApplyResult, BuildApplyPlanFromStagingPlanRequest,
+        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CleanupResult,
+        CreateApplyPlanRunLogRequest, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
+        DeleteDraftApplyPlanResult, DetectedLibraryPaths, DownloadInboxDetail,
+        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
+        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
+        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics,
         LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
         LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
-        LibraryWatchSetupResponse, ListSavedApplyPlansRequest, OrganizationPreview,
-        PersistedApplyPlan, PreviewApplyPlanValidationRequest, RejectResult, RejectedItem,
-        RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
-        SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry,
-        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
-        StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
-        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        LibraryWatchSetupResponse, ListApplyPlanRestoreEntriesRequest,
+        ListApplyPlanResultLogsRequest, ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest,
+        OrganizationPreview, PersistedApplyPlan, PersistedApplyPlanRestoreEntry,
+        PersistedApplyPlanResult, PersistedApplyPlanRun, PreviewApplyPlanValidationRequest,
+        RecordApplyPlanRestoreEntryRequest, RecordApplyPlanResultLogRequest, RejectResult,
+        RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
+        ReviewQueueItem, RulePreset, SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult,
+        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
+        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult, StagingPlan,
+        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -877,6 +881,98 @@ pub async fn preview_apply_plan_validation(
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
         apply_plan_validation::preview_apply_plan_validation(&connection, &settings, request)
             .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_apply_plan_run_log(
+    state: State<'_, AppState>,
+    request: CreateApplyPlanRunLogRequest,
+) -> Result<PersistedApplyPlanRun, String> {
+    let state = state.inner().clone();
+    run_blocking_command("create_apply_plan_run_log", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::create_apply_plan_run_log(&connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_apply_plan_run_logs(
+    state: State<'_, AppState>,
+    request: Option<ListApplyPlanRunLogsRequest>,
+) -> Result<Vec<PersistedApplyPlanRun>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_apply_plan_run_logs", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::list_apply_plan_run_logs(&connection, request.unwrap_or_default())
+            .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_apply_plan_run_log(
+    state: State<'_, AppState>,
+    run_id: i64,
+) -> Result<Option<ApplyPlanRunLogDetail>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("get_apply_plan_run_log", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::get_apply_plan_run_log(&connection, run_id).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn record_apply_plan_result_log(
+    state: State<'_, AppState>,
+    request: RecordApplyPlanResultLogRequest,
+) -> Result<PersistedApplyPlanResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("record_apply_plan_result_log", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::record_apply_plan_result_log(&connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_apply_plan_result_logs(
+    state: State<'_, AppState>,
+    request: ListApplyPlanResultLogsRequest,
+) -> Result<Vec<PersistedApplyPlanResult>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_apply_plan_result_logs", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::list_apply_plan_result_logs(&connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn record_apply_plan_restore_entry(
+    state: State<'_, AppState>,
+    request: RecordApplyPlanRestoreEntryRequest,
+) -> Result<PersistedApplyPlanRestoreEntry, String> {
+    let state = state.inner().clone();
+    run_blocking_command("record_apply_plan_restore_entry", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::record_apply_plan_restore_entry(&connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_apply_plan_restore_entries(
+    state: State<'_, AppState>,
+    request: ListApplyPlanRestoreEntriesRequest,
+) -> Result<Vec<PersistedApplyPlanRestoreEntry>, String> {
+    let state = state.inner().clone();
+    run_blocking_command("list_apply_plan_restore_entries", move || {
+        let connection = state.connection().map_err(map_error)?;
+        apply_plan_results::list_apply_plan_restore_entries(&connection, request).map_err(map_error)
     })
     .await
 }
@@ -3769,6 +3865,60 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "ApplyPlan validation preview command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_plan_result_restore_commands_stay_db_only() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub async fn create_apply_plan_run_log")
+            .expect("ApplyPlan result/restore commands should exist");
+        let tail = &source[start..];
+        let end = tail
+            .find("#[tauri::command]\npub async fn delete_draft_apply_plan")
+            .expect("delete draft command should follow ApplyPlan result/restore commands");
+        let command_source = &tail[..end];
+
+        for expected in [
+            "apply_plan_results::create_apply_plan_run_log",
+            "apply_plan_results::list_apply_plan_run_logs",
+            "apply_plan_results::get_apply_plan_run_log",
+            "apply_plan_results::record_apply_plan_result_log",
+            "apply_plan_results::list_apply_plan_result_logs",
+            "apply_plan_results::record_apply_plan_restore_entry",
+            "apply_plan_results::list_apply_plan_restore_entries",
+        ] {
+            assert!(
+                command_source.contains(expected),
+                "ApplyPlan result/restore command block should call {expected}"
+            );
+        }
+
+        for forbidden in [
+            concat!("cleanup_", "staging_areas("),
+            concat!("commit_", "staging_area("),
+            concat!("commit_", "all_staging_areas("),
+            concat!("apply_", "preview_organization"),
+            concat!("apply_", "preview_moves"),
+            concat!("apply_", "download_item"),
+            concat!("apply_", "download_items"),
+            concat!("apply_", "guided_download_item"),
+            concat!("apply_", "special_review_fix"),
+            concat!("apply_", "review_plan_action"),
+            concat!("reject_", "download_item"),
+            concat!("reject_", "download_items"),
+            concat!("restore_", "rejected_item"),
+            concat!("undo_", "applied_item"),
+            concat!("restore_", "snapshot"),
+            "move_engine::",
+            "std::fs",
+            "File::",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "ApplyPlan result/restore commands must not call {forbidden}"
             );
         }
     }

@@ -409,6 +409,142 @@ export interface ApplyPlanValidationPreview {
   items: ApplyPlanValidationItem[];
 }
 
+export type ApplyPlanRunLogStatus =
+  | "draft_log"
+  | "blocked"
+  | "cancelled";
+
+export type ApplyPlanResultLogStatus =
+  | "pending_log"
+  | "skipped"
+  | "blocked"
+  | "failed_before_change";
+
+export type ApplyPlanRestoreEntryStatus =
+  | "not_available"
+  | "design_only"
+  | "not_restored";
+
+export interface PersistedApplyPlanRun {
+  id: number;
+  applyPlanId: number;
+  status: ApplyPlanRunLogStatus;
+  backupStrategy: string;
+  confirmationToken: string | null;
+  confirmedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  totalItems: number;
+  skippedItems: number;
+  appliedItems: number;
+  failedItems: number;
+  restoredItems: number;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersistedApplyPlanResult {
+  id: number;
+  applyPlanRunId: number;
+  applyPlanId: number;
+  applyPlanItemId: number | null;
+  operationKind: string;
+  resultStatus: ApplyPlanResultLogStatus;
+  sourcePathAtExecution: string | null;
+  destinationPathAtExecution: string | null;
+  backupPath: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  userSummary: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersistedApplyPlanRestoreEntry {
+  id: number;
+  applyPlanRunId: number;
+  applyPlanResultId: number | null;
+  applyPlanId: number;
+  applyPlanItemId: number | null;
+  originalSourcePath: string;
+  destinationPathAtExecution: string | null;
+  backupPath: string | null;
+  fileHashBefore: string | null;
+  fileSizeBefore: number | null;
+  operationKind: string;
+  operationResultStatus: ApplyPlanResultLogStatus;
+  restoreStatus: ApplyPlanRestoreEntryStatus;
+  restoreErrorCode: string | null;
+  restoreErrorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  restoredAt: string | null;
+  failedAt: string | null;
+}
+
+export interface CreateApplyPlanRunLogRequest {
+  applyPlanId: number;
+  status?: string | null;
+  backupStrategy?: string | null;
+  confirmationToken?: string | null;
+  totalItems?: number | null;
+  skippedItems?: number | null;
+  failedItems?: number | null;
+  summary?: string | null;
+}
+
+export interface ListApplyPlanRunLogsRequest {
+  applyPlanId?: number | null;
+  includeCancelled?: boolean | null;
+  limit?: number | null;
+}
+
+export interface ApplyPlanRunLogDetail {
+  run: PersistedApplyPlanRun;
+  results: PersistedApplyPlanResult[];
+  restoreEntries: PersistedApplyPlanRestoreEntry[];
+}
+
+export interface RecordApplyPlanResultLogRequest {
+  applyPlanRunId: number;
+  applyPlanItemId?: number | null;
+  operationKind: string;
+  resultStatus: string;
+  sourcePathAtExecution?: string | null;
+  destinationPathAtExecution?: string | null;
+  backupPath?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  userSummary: string;
+}
+
+export interface ListApplyPlanResultLogsRequest {
+  applyPlanRunId: number;
+}
+
+export interface RecordApplyPlanRestoreEntryRequest {
+  applyPlanRunId: number;
+  applyPlanResultId?: number | null;
+  applyPlanItemId?: number | null;
+  originalSourcePath: string;
+  destinationPathAtExecution?: string | null;
+  backupPath?: string | null;
+  fileHashBefore?: string | null;
+  fileSizeBefore?: number | null;
+  operationKind: string;
+  operationResultStatus: string;
+  restoreStatus: string;
+  restoreErrorCode?: string | null;
+  restoreErrorMessage?: string | null;
+}
+
+export interface ListApplyPlanRestoreEntriesRequest {
+  applyPlanRunId: number;
+}
+
 export type GenerateSortingPreviewPlanScope =
   | {
       kind: "selected_files";

@@ -176,4 +176,19 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/backup required/i);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents the result restore schema foundation as DB-only", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/RESULT_RESTORE_SCHEMA_FOUNDATION_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/DB-only/i);
+    expect(source).toMatch(/No Apply/i);
+    expect(source).toMatch(/does not execute Apply/i);
+    expect(source).toMatch(/does not execute backup/i);
+    expect(source).toMatch(/does not execute restore/i);
+    expect(source).toMatch(/No files are moved, copied, created, deleted/i);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });

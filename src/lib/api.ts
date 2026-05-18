@@ -68,18 +68,31 @@ import type {
   CleanupResult,
   ApplyPlanConflictStatus,
   ApplyPlanListItem,
+  ApplyPlanRunLogDetail,
+  ApplyPlanRunLogStatus,
+  ApplyPlanResultLogStatus,
+  ApplyPlanRestoreEntryStatus,
   ApplyPlanValidationItem,
   ApplyPlanValidationPreview,
   ApplyPlanValidationStatus,
   BuildApplyPlanFromStagingPlanRequest,
+  CreateApplyPlanRunLogRequest,
   DeleteDraftApplyPlanResult,
+  ListApplyPlanRestoreEntriesRequest,
+  ListApplyPlanResultLogsRequest,
+  ListApplyPlanRunLogsRequest,
   ListSavedApplyPlansRequest,
   PersistedApplyPlan,
   PersistedApplyPlanBlocker,
   PersistedApplyPlanItem,
   PersistedApplyPlanItemStatus,
+  PersistedApplyPlanRestoreEntry,
+  PersistedApplyPlanResult,
+  PersistedApplyPlanRun,
   PersistedApplyPlanSignal,
   PreviewApplyPlanValidationRequest,
+  RecordApplyPlanRestoreEntryRequest,
+  RecordApplyPlanResultLogRequest,
   SaveApplyPlanPreviewRequest,
   SaveApplyPlanPreviewResult,
   StagingAreasSummary,
@@ -283,6 +296,266 @@ let mockNextApplyPlanItemId = 1;
 let mockNextApplyPlanSignalId = 1;
 let mockNextApplyPlanBlockerId = 1;
 let mockSavedApplyPlans: PersistedApplyPlan[] = [];
+let mockNextApplyPlanRunId = 1;
+let mockNextApplyPlanResultId = 1;
+let mockNextApplyPlanRestoreEntryId = 1;
+let mockApplyPlanRuns: PersistedApplyPlanRun[] = [];
+let mockApplyPlanResults: PersistedApplyPlanResult[] = [];
+let mockApplyPlanRestoreEntries: PersistedApplyPlanRestoreEntry[] = [];
+
+const mockRunStatuses = new Set<ApplyPlanRunLogStatus>([
+  "draft_log",
+  "blocked",
+  "cancelled",
+]);
+const mockResultStatuses = new Set<ApplyPlanResultLogStatus>([
+  "pending_log",
+  "skipped",
+  "blocked",
+  "failed_before_change",
+]);
+const mockRestoreStatuses = new Set<ApplyPlanRestoreEntryStatus>([
+  "not_available",
+  "design_only",
+  "not_restored",
+]);
+
+const trimmedOrNull = (value?: string | null): string | null => {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const requireTrimmedMock = (value: string, fieldName: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${fieldName} is required.`);
+  }
+  return trimmed;
+};
+
+const mockRunStatus = (value?: string | null): ApplyPlanRunLogStatus => {
+  const status = (value ?? "draft_log") as ApplyPlanRunLogStatus;
+  if (!mockRunStatuses.has(status)) {
+    throw new Error(`Unsupported DB-only ApplyPlan run status for v1: ${value}`);
+  }
+  return status;
+};
+
+const mockResultStatus = (value: string): ApplyPlanResultLogStatus => {
+  const status = value as ApplyPlanResultLogStatus;
+  if (!mockResultStatuses.has(status)) {
+    throw new Error(`Unsupported DB-only ApplyPlan result status for v1: ${value}`);
+  }
+  return status;
+};
+
+const mockRestoreStatus = (value: string): ApplyPlanRestoreEntryStatus => {
+  const status = value as ApplyPlanRestoreEntryStatus;
+  if (!mockRestoreStatuses.has(status)) {
+    throw new Error(`Unsupported DB-only ApplyPlan restore status for v1: ${value}`);
+  }
+  return status;
+};
+
+const mockBackupStrategy = (value?: string | null): string => {
+  const strategy = value?.trim() || "copy_backup_first";
+  if (strategy !== "copy_backup_first" && strategy !== "design_only") {
+    throw new Error(`Unsupported DB-only ApplyPlan backup strategy for v1: ${strategy}`);
+  }
+  return strategy;
+};
+
+const mockSavedPlanById = (planId: number): PersistedApplyPlan => {
+  const plan = mockSavedApplyPlans.find((candidate) => candidate.id === planId);
+  if (!plan) {
+    throw new Error(`Saved ApplyPlan ${planId} was not found.`);
+  }
+  return plan;
+};
+
+const mockRunById = (runId: number): PersistedApplyPlanRun => {
+  const run = mockApplyPlanRuns.find((candidate) => candidate.id === runId);
+  if (!run) {
+    throw new Error(`ApplyPlan run log ${runId} was not found.`);
+  }
+  return run;
+};
+
+const ensureMockItemBelongsToPlan = (
+  itemId: number | null | undefined,
+  planId: number,
+) => {
+  if (itemId == null) {
+    return;
+  }
+  const plan = mockSavedPlanById(planId);
+  if (!plan.items.some((item) => item.id === itemId)) {
+    throw new Error("ApplyPlan item does not belong to the referenced saved plan.");
+  }
+};
+
+const createMockApplyPlanRunLog = (
+  request: CreateApplyPlanRunLogRequest,
+): PersistedApplyPlanRun => {
+  const plan = mockSavedPlanById(request.applyPlanId);
+  if (plan.status === "cancelled") {
+    throw new Error("Cannot create a result-log foundation row for a cancelled ApplyPlan.");
+  }
+  const status = mockRunStatus(request.status);
+  const backupStrategy = mockBackupStrategy(request.backupStrategy);
+  const now = new Date().toISOString();
+  const totalItems = request.totalItems ?? plan.totalItems;
+  const skippedItems = request.skippedItems ?? 0;
+  const failedItems = request.failedItems ?? 0;
+  for (const [field, value] of [
+    ["totalItems", totalItems],
+    ["skippedItems", skippedItems],
+    ["failedItems", failedItems],
+  ] as const) {
+    if (value < 0) {
+      throw new Error(`${field} must be zero or greater.`);
+    }
+  }
+
+  const run: PersistedApplyPlanRun = {
+    id: mockNextApplyPlanRunId++,
+    applyPlanId: plan.id,
+    status,
+    backupStrategy,
+    confirmationToken: trimmedOrNull(request.confirmationToken),
+    confirmedAt: null,
+    startedAt: null,
+    finishedAt: null,
+    totalItems,
+    skippedItems,
+    appliedItems: 0,
+    failedItems,
+    restoredItems: 0,
+    summary: trimmedOrNull(request.summary),
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockApplyPlanRuns = [run, ...mockApplyPlanRuns];
+  return structuredClone(run);
+};
+
+const listMockApplyPlanRunLogs = (
+  request?: ListApplyPlanRunLogsRequest | null,
+): PersistedApplyPlanRun[] => {
+  const includeCancelled = request?.includeCancelled ?? false;
+  const rawLimit = request?.limit ?? 50;
+  const limit = Math.min(Math.max(rawLimit, 1), 200);
+  return structuredClone(
+    mockApplyPlanRuns
+      .filter((run) => !request?.applyPlanId || run.applyPlanId === request.applyPlanId)
+      .filter((run) => includeCancelled || run.status !== "cancelled")
+      .slice(0, limit),
+  );
+};
+
+const getMockApplyPlanRunLog = (runId: number): ApplyPlanRunLogDetail | null => {
+  const run = mockApplyPlanRuns.find((candidate) => candidate.id === runId);
+  if (!run) {
+    return null;
+  }
+  return structuredClone({
+    run,
+    results: mockApplyPlanResults.filter((result) => result.applyPlanRunId === runId),
+    restoreEntries: mockApplyPlanRestoreEntries.filter(
+      (entry) => entry.applyPlanRunId === runId,
+    ),
+  });
+};
+
+const recordMockApplyPlanResultLog = (
+  request: RecordApplyPlanResultLogRequest,
+): PersistedApplyPlanResult => {
+  const run = mockRunById(request.applyPlanRunId);
+  if (run.status === "cancelled") {
+    throw new Error("Cannot record result-log rows for a cancelled ApplyPlan run log.");
+  }
+  ensureMockItemBelongsToPlan(request.applyPlanItemId, run.applyPlanId);
+  const resultStatus = mockResultStatus(request.resultStatus);
+  const now = new Date().toISOString();
+  const result: PersistedApplyPlanResult = {
+    id: mockNextApplyPlanResultId++,
+    applyPlanRunId: run.id,
+    applyPlanId: run.applyPlanId,
+    applyPlanItemId: request.applyPlanItemId ?? null,
+    operationKind: requireTrimmedMock(request.operationKind, "operationKind"),
+    resultStatus,
+    sourcePathAtExecution: trimmedOrNull(request.sourcePathAtExecution),
+    destinationPathAtExecution: trimmedOrNull(request.destinationPathAtExecution),
+    backupPath: trimmedOrNull(request.backupPath),
+    errorCode: trimmedOrNull(request.errorCode),
+    errorMessage: trimmedOrNull(request.errorMessage),
+    userSummary: requireTrimmedMock(request.userSummary, "userSummary"),
+    startedAt: null,
+    finishedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockApplyPlanResults = [...mockApplyPlanResults, result];
+  return structuredClone(result);
+};
+
+const recordMockApplyPlanRestoreEntry = (
+  request: RecordApplyPlanRestoreEntryRequest,
+): PersistedApplyPlanRestoreEntry => {
+  const run = mockRunById(request.applyPlanRunId);
+  if (run.status === "cancelled") {
+    throw new Error("Cannot record restore-map rows for a cancelled ApplyPlan run log.");
+  }
+  const result = request.applyPlanResultId
+    ? mockApplyPlanResults.find((candidate) => candidate.id === request.applyPlanResultId)
+    : null;
+  if (request.applyPlanResultId && !result) {
+    throw new Error(`ApplyPlan result log ${request.applyPlanResultId} was not found.`);
+  }
+  if (result && result.applyPlanRunId !== run.id) {
+    throw new Error("Result log belongs to a different ApplyPlan run.");
+  }
+  const itemId = request.applyPlanItemId ?? result?.applyPlanItemId ?? null;
+  if (
+    request.applyPlanItemId != null &&
+    result?.applyPlanItemId != null &&
+    request.applyPlanItemId !== result.applyPlanItemId
+  ) {
+    throw new Error("Restore entry item does not match the referenced result log.");
+  }
+  ensureMockItemBelongsToPlan(itemId, run.applyPlanId);
+  const fileSizeBefore = request.fileSizeBefore ?? null;
+  if (fileSizeBefore != null && fileSizeBefore < 0) {
+    throw new Error("fileSizeBefore must be zero or greater when provided.");
+  }
+  const now = new Date().toISOString();
+  const entry: PersistedApplyPlanRestoreEntry = {
+    id: mockNextApplyPlanRestoreEntryId++,
+    applyPlanRunId: run.id,
+    applyPlanResultId: request.applyPlanResultId ?? null,
+    applyPlanId: run.applyPlanId,
+    applyPlanItemId: itemId,
+    originalSourcePath: requireTrimmedMock(
+      request.originalSourcePath,
+      "originalSourcePath",
+    ),
+    destinationPathAtExecution: trimmedOrNull(request.destinationPathAtExecution),
+    backupPath: trimmedOrNull(request.backupPath),
+    fileHashBefore: trimmedOrNull(request.fileHashBefore),
+    fileSizeBefore,
+    operationKind: requireTrimmedMock(request.operationKind, "operationKind"),
+    operationResultStatus: mockResultStatus(request.operationResultStatus),
+    restoreStatus: mockRestoreStatus(request.restoreStatus),
+    restoreErrorCode: trimmedOrNull(request.restoreErrorCode),
+    restoreErrorMessage: trimmedOrNull(request.restoreErrorMessage),
+    createdAt: now,
+    updatedAt: now,
+    restoredAt: null,
+    failedAt: null,
+  };
+  mockApplyPlanRestoreEntries = [...mockApplyPlanRestoreEntries, entry];
+  return structuredClone(entry);
+};
 
 const applyPlanSummaryFromMock = (
   plan: PersistedApplyPlan,
@@ -6836,6 +7109,61 @@ async function mockInvoke<T>(
       }
       return structuredClone(buildMockApplyPlanValidationPreview(request)) as T;
     }
+    case "create_apply_plan_run_log": {
+      const request = payload?.request as CreateApplyPlanRunLogRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan run log request.");
+      }
+      return createMockApplyPlanRunLog(request) as T;
+    }
+    case "list_apply_plan_run_logs": {
+      const request = payload?.request as ListApplyPlanRunLogsRequest | undefined;
+      return listMockApplyPlanRunLogs(request) as T;
+    }
+    case "get_apply_plan_run_log": {
+      const runId = payload?.runId as number | undefined;
+      return structuredClone(runId ? getMockApplyPlanRunLog(runId) : null) as T;
+    }
+    case "record_apply_plan_result_log": {
+      const request = payload?.request as RecordApplyPlanResultLogRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan result log request.");
+      }
+      return recordMockApplyPlanResultLog(request) as T;
+    }
+    case "list_apply_plan_result_logs": {
+      const request = payload?.request as ListApplyPlanResultLogsRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan result log list request.");
+      }
+      return structuredClone(
+        mockApplyPlanResults.filter(
+          (result) => result.applyPlanRunId === request.applyPlanRunId,
+        ),
+      ) as T;
+    }
+    case "record_apply_plan_restore_entry": {
+      const request = payload?.request as
+        | RecordApplyPlanRestoreEntryRequest
+        | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan restore entry request.");
+      }
+      return recordMockApplyPlanRestoreEntry(request) as T;
+    }
+    case "list_apply_plan_restore_entries": {
+      const request = payload?.request as
+        | ListApplyPlanRestoreEntriesRequest
+        | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan restore entry list request.");
+      }
+      return structuredClone(
+        mockApplyPlanRestoreEntries.filter(
+          (entry) => entry.applyPlanRunId === request.applyPlanRunId,
+        ),
+      ) as T;
+    }
     case "delete_draft_apply_plan": {
       const planId = payload?.planId as number | undefined;
       const index = mockSavedApplyPlans.findIndex((candidate) => candidate.id === planId);
@@ -8312,6 +8640,20 @@ export const api = {
     invoke<PersistedApplyPlan | null>("get_apply_plan", { planId }),
   previewApplyPlanValidation: (request: PreviewApplyPlanValidationRequest) =>
     invoke<ApplyPlanValidationPreview>("preview_apply_plan_validation", { request }),
+  createApplyPlanRunLog: (request: CreateApplyPlanRunLogRequest) =>
+    invoke<PersistedApplyPlanRun>("create_apply_plan_run_log", { request }),
+  listApplyPlanRunLogs: (request?: ListApplyPlanRunLogsRequest) =>
+    invoke<PersistedApplyPlanRun[]>("list_apply_plan_run_logs", { request }),
+  getApplyPlanRunLog: (runId: number) =>
+    invoke<ApplyPlanRunLogDetail | null>("get_apply_plan_run_log", { runId }),
+  recordApplyPlanResultLog: (request: RecordApplyPlanResultLogRequest) =>
+    invoke<PersistedApplyPlanResult>("record_apply_plan_result_log", { request }),
+  listApplyPlanResultLogs: (request: ListApplyPlanResultLogsRequest) =>
+    invoke<PersistedApplyPlanResult[]>("list_apply_plan_result_logs", { request }),
+  recordApplyPlanRestoreEntry: (request: RecordApplyPlanRestoreEntryRequest) =>
+    invoke<PersistedApplyPlanRestoreEntry>("record_apply_plan_restore_entry", { request }),
+  listApplyPlanRestoreEntries: (request: ListApplyPlanRestoreEntriesRequest) =>
+    invoke<PersistedApplyPlanRestoreEntry[]>("list_apply_plan_restore_entries", { request }),
   deleteDraftApplyPlan: (planId: number) =>
     invoke<DeleteDraftApplyPlanResult>("delete_draft_apply_plan", { planId }),
   cleanupStagingAreas: (pathsToDelete: string[]) =>

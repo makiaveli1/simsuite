@@ -28,6 +28,11 @@ continue to report `backup_required`, but future confirmation stays blocked
 until copy-backup-first recovery, restore maps, and per-file result logs are
 implemented and proven.
 
+Current implementation note: DB-only run/result/restore metadata tables now
+exist for future ApplyPlan work. Validation preview remains response-only and
+still returns `canProceedToConfirmation=false`; the new result/restore records
+do not execute backup, restore, Apply, or any file-changing workflow.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview
