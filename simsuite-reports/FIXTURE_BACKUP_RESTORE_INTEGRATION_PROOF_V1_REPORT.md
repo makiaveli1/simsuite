@@ -124,7 +124,11 @@ intentionally unimplemented.
 
 ## Linear updates
 
-Pending final delivery updates.
+- Created and completed `VEL-33` (`Prove fixture-only backup and restore
+  integration`) for this focused backend proof.
+- Commented on `VEL-18`, `VEL-19`, `VEL-20`, `VEL-31`, and `VEL-32` with the
+  safety boundary, validation results, and draft PR link.
+- No real Apply or Restore issues were closed.
 
 ## Recommended next sprint
 
@@ -156,7 +160,9 @@ outside the implementation:
 
 ## Commit
 
-Pending final commit and PR details.
+- Branch: `codex/fixture-backup-restore-integration-proof-v1`
+- Implementation commit: `dc8f7be` (`Prove fixture-only backup restore integration`)
+- Draft PR: https://github.com/makiaveli1/simsuite/pull/24
 
 ## Final honest verdict
 
