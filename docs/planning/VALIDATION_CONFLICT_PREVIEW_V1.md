@@ -43,6 +43,11 @@ restore-copy behavior from recorded backup references to temporary fixture
 targets and records safe result/restore metadata. It remains outside validation
 UI, does not persist Apply or Restore readiness, and does not change user files.
 
+Current implementation note: a fixture-only backup + restore integration proof
+now verifies the private backup and restore prototypes together with temporary
+test files only. It remains outside validation UI, does not persist Apply or
+Restore readiness, and does not change user files.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview
