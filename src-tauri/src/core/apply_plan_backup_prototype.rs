@@ -816,6 +816,253 @@ mod tests {
         )
     }
 
+    struct VerifiedRecoveryChain {
+        _temp: TempDir,
+        plan_id: i64,
+        item_id: i64,
+        run_id: i64,
+        source_path: PathBuf,
+        backup_path: PathBuf,
+        restore_target_path: PathBuf,
+        backup_result_id: i64,
+        backup_restore_entry_id: i64,
+        restore_result_id: i64,
+        restore_entry_id: i64,
+        source_hash: String,
+        backup_hash: String,
+        restored_hash: String,
+    }
+
+    fn run_verified_backup_restore_chain(
+        connection: &Connection,
+        source_bytes: &[u8],
+    ) -> VerifiedRecoveryChain {
+        let plan_id = insert_saved_plan(connection);
+        let item_id = insert_plan_item(connection, plan_id);
+        let run_id = create_run(connection, plan_id);
+        let temp = tempdir().expect("tempdir");
+        let fixture_root = temp.path();
+        let source_dir = fixture_root.join("source");
+        let backup_root = fixture_root.join("backup");
+        let restore_dir = fixture_root.join("restored");
+        fs::create_dir_all(&source_dir).expect("source dir");
+        fs::create_dir_all(&backup_root).expect("backup dir");
+        fs::create_dir_all(&restore_dir).expect("restore dir");
+        let source_path = source_dir.join("sample.package");
+        let restore_target_path = restore_dir.join("sample.package");
+        fs::write(&source_path, source_bytes).expect("source fixture");
+        let source_hash = hash_file(&source_path).expect("source hash");
+
+        let backup_outcome = run_fixture_backup_prototype(
+            connection,
+            request(
+                plan_id,
+                Some(item_id),
+                run_id,
+                fixture_root,
+                &source_path,
+                &backup_root,
+            ),
+        )
+        .expect("fixture backup");
+        let FixtureBackupPrototypeOutcome::Verified(backup_success) = backup_outcome else {
+            panic!("expected verified backup");
+        };
+        assert!(backup_success.backup_verified);
+        assert_eq!(backup_success.source_hash, source_hash);
+        assert_eq!(backup_success.source_hash, backup_success.backup_hash);
+        assert_eq!(
+            fs::read(&source_path).expect("source after backup"),
+            source_bytes
+        );
+        assert_eq!(
+            fs::read(&backup_success.backup_path).expect("backup after backup"),
+            source_bytes
+        );
+
+        let results_after_backup = list_apply_plan_result_logs(
+            connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: run_id,
+            },
+        )
+        .expect("backup results");
+        assert_eq!(results_after_backup.len(), 1);
+        assert_eq!(results_after_backup[0].id, backup_success.result_log_id);
+        assert_eq!(
+            results_after_backup[0].result_status,
+            ApplyPlanResultLogStatus::PendingLog
+        );
+        assert_eq!(results_after_backup[0].apply_plan_id, plan_id);
+        assert_eq!(results_after_backup[0].apply_plan_item_id, Some(item_id));
+
+        let entries_after_backup = list_apply_plan_restore_entries(
+            connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: run_id,
+            },
+        )
+        .expect("backup restore entries");
+        assert_eq!(entries_after_backup.len(), 1);
+        assert_eq!(entries_after_backup[0].id, backup_success.restore_entry_id);
+        assert_eq!(
+            entries_after_backup[0].restore_status,
+            ApplyPlanRestoreEntryStatus::DesignOnly
+        );
+        assert_eq!(
+            entries_after_backup[0].operation_result_status,
+            ApplyPlanResultLogStatus::PendingLog
+        );
+        assert_eq!(entries_after_backup[0].apply_plan_id, plan_id);
+        assert_eq!(entries_after_backup[0].apply_plan_item_id, Some(item_id));
+        assert_eq!(
+            entries_after_backup[0].apply_plan_result_id,
+            Some(backup_success.result_log_id)
+        );
+
+        let backup_bytes_before_restore =
+            fs::read(&backup_success.backup_path).expect("backup before restore");
+        let restore_outcome = run_fixture_restore_prototype(
+            connection,
+            restore_request(
+                plan_id,
+                Some(item_id),
+                run_id,
+                Some(backup_success.result_log_id),
+                Some(backup_success.restore_entry_id),
+                fixture_root,
+                &backup_success.backup_path,
+                &restore_target_path,
+            ),
+        )
+        .expect("fixture restore");
+        let FixtureRestorePrototypeOutcome::Verified(restore_success) = restore_outcome else {
+            panic!("expected verified restore");
+        };
+        assert!(restore_success.restore_verified);
+        assert_eq!(
+            restore_success.source_restore_entry_id,
+            backup_success.restore_entry_id
+        );
+        assert_eq!(
+            fs::read(&backup_success.backup_path).expect("backup after restore"),
+            backup_bytes_before_restore
+        );
+        assert_eq!(
+            fs::read(&restore_target_path).expect("restored target"),
+            backup_bytes_before_restore
+        );
+        assert_eq!(restore_success.backup_hash, restore_success.restored_hash);
+        assert_eq!(restore_success.backup_hash, backup_success.backup_hash);
+
+        let results_after_restore = list_apply_plan_result_logs(
+            connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: run_id,
+            },
+        )
+        .expect("restore results");
+        assert_eq!(results_after_restore.len(), 2);
+        let restore_result = results_after_restore
+            .iter()
+            .find(|result| result.id == restore_success.result_log_id)
+            .expect("restore result");
+        assert_eq!(
+            restore_result.result_status,
+            ApplyPlanResultLogStatus::PendingLog
+        );
+        assert_eq!(restore_result.apply_plan_id, plan_id);
+        assert_eq!(restore_result.apply_plan_item_id, Some(item_id));
+
+        let entries_after_restore = list_apply_plan_restore_entries(
+            connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: run_id,
+            },
+        )
+        .expect("restore entries");
+        assert_eq!(entries_after_restore.len(), 2);
+        let restore_entry = entries_after_restore
+            .iter()
+            .find(|entry| entry.id == restore_success.restore_entry_id)
+            .expect("restore proof entry");
+        assert_eq!(
+            restore_entry.restore_status,
+            ApplyPlanRestoreEntryStatus::DesignOnly
+        );
+        assert_eq!(
+            restore_entry.operation_result_status,
+            ApplyPlanResultLogStatus::PendingLog
+        );
+        assert_eq!(restore_entry.apply_plan_id, plan_id);
+        assert_eq!(restore_entry.apply_plan_item_id, Some(item_id));
+        assert_eq!(
+            restore_entry.apply_plan_result_id,
+            Some(restore_success.result_log_id)
+        );
+
+        VerifiedRecoveryChain {
+            _temp: temp,
+            plan_id,
+            item_id,
+            run_id,
+            source_path,
+            backup_path: backup_success.backup_path,
+            restore_target_path,
+            backup_result_id: backup_success.result_log_id,
+            backup_restore_entry_id: backup_success.restore_entry_id,
+            restore_result_id: restore_success.result_log_id,
+            restore_entry_id: restore_success.restore_entry_id,
+            source_hash,
+            backup_hash: backup_success.backup_hash,
+            restored_hash: restore_success.restored_hash,
+        }
+    }
+
+    fn assert_no_unsafe_fixture_statuses(connection: &Connection) {
+        let result_statuses: Vec<String> = connection
+            .prepare("SELECT result_status FROM apply_plan_results")
+            .expect("prepare result statuses")
+            .query_map([], |row| row.get(0))
+            .expect("query result statuses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect result statuses");
+        for forbidden in [
+            "applied",
+            "restored",
+            "moved",
+            "copied",
+            "restore_complete",
+            "apply_complete",
+        ] {
+            assert!(
+                !result_statuses.iter().any(|status| status == forbidden),
+                "fixture proof must not record result status {forbidden}"
+            );
+        }
+
+        let restore_statuses: Vec<String> = connection
+            .prepare("SELECT restore_status FROM apply_plan_restore_entries")
+            .expect("prepare restore statuses")
+            .query_map([], |row| row.get(0))
+            .expect("query restore statuses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect restore statuses");
+        for forbidden in [
+            "applied",
+            "restored",
+            "moved",
+            "copied",
+            "restore_complete",
+            "apply_complete",
+        ] {
+            assert!(
+                !restore_statuses.iter().any(|status| status == forbidden),
+                "fixture proof must not record restore status {forbidden}"
+            );
+        }
+    }
+
     #[test]
     fn fixture_backup_copies_verifies_and_records_metadata() {
         let connection = memory_connection();
@@ -1228,6 +1475,225 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("collect restore");
         assert!(!restore_statuses.iter().any(|status| status == "restored"));
+    }
+
+    #[test]
+    fn full_fixture_backup_restore_chain_verifies_files_and_metadata() {
+        let connection = memory_connection();
+        let source_bytes = b"fixture integration package bytes";
+
+        let chain = run_verified_backup_restore_chain(&connection, source_bytes);
+
+        let fixture_root = fs::canonicalize(chain._temp.path()).expect("fixture root");
+        let canonical_source = fs::canonicalize(&chain.source_path).expect("canonical source");
+        assert!(canonical_source.starts_with(fixture_root));
+        assert!(chain.source_path.exists());
+        assert!(chain.backup_path.exists());
+        assert!(chain.restore_target_path.exists());
+        assert_eq!(fs::read(&chain.source_path).expect("source"), source_bytes);
+        assert_eq!(fs::read(&chain.backup_path).expect("backup"), source_bytes);
+        assert_eq!(
+            fs::read(&chain.restore_target_path).expect("restored"),
+            source_bytes
+        );
+        assert_eq!(chain.source_hash, chain.backup_hash);
+        assert_eq!(chain.backup_hash, chain.restored_hash);
+        assert_ne!(chain.backup_result_id, chain.restore_result_id);
+        assert_ne!(chain.backup_restore_entry_id, chain.restore_entry_id);
+
+        let results = list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: chain.run_id,
+            },
+        )
+        .expect("results");
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|result| {
+            result.apply_plan_id == chain.plan_id
+                && result.apply_plan_item_id == Some(chain.item_id)
+                && result.apply_plan_run_id == chain.run_id
+                && result.result_status == ApplyPlanResultLogStatus::PendingLog
+        }));
+
+        let entries = list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: chain.run_id,
+            },
+        )
+        .expect("restore entries");
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|entry| {
+            entry.apply_plan_id == chain.plan_id
+                && entry.apply_plan_item_id == Some(chain.item_id)
+                && entry.apply_plan_run_id == chain.run_id
+                && entry.restore_status == ApplyPlanRestoreEntryStatus::DesignOnly
+                && entry.operation_result_status == ApplyPlanResultLogStatus::PendingLog
+        }));
+        assert_no_unsafe_fixture_statuses(&connection);
+    }
+
+    #[test]
+    fn fixture_recovery_chain_rejects_mismatched_run_plan_item_or_result_scope() {
+        let connection = memory_connection();
+        let chain = run_verified_backup_restore_chain(&connection, b"fixture scope bytes");
+        let restore_parent = chain
+            .restore_target_path
+            .parent()
+            .expect("restore parent")
+            .to_path_buf();
+        let result_count_before = list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: chain.run_id,
+            },
+        )
+        .expect("results before")
+        .len();
+        let entry_count_before = list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: chain.run_id,
+            },
+        )
+        .expect("entries before")
+        .len();
+
+        let wrong_plan_id = insert_saved_plan(&connection);
+        let wrong_plan_error = run_fixture_restore_prototype(
+            &connection,
+            restore_request(
+                wrong_plan_id,
+                Some(chain.item_id),
+                chain.run_id,
+                Some(chain.backup_result_id),
+                Some(chain.backup_restore_entry_id),
+                chain._temp.path(),
+                &chain.backup_path,
+                &restore_parent.join("wrong-plan.package"),
+            ),
+        )
+        .expect_err("wrong plan rejected");
+        assert!(wrong_plan_error.to_string().contains("ApplyPlan"));
+
+        let wrong_run_id = create_run(&connection, chain.plan_id);
+        let wrong_run_error = run_fixture_restore_prototype(
+            &connection,
+            restore_request(
+                chain.plan_id,
+                Some(chain.item_id),
+                wrong_run_id,
+                Some(chain.backup_result_id),
+                Some(chain.backup_restore_entry_id),
+                chain._temp.path(),
+                &chain.backup_path,
+                &restore_parent.join("wrong-run.package"),
+            ),
+        )
+        .expect_err("wrong run rejected");
+        assert!(wrong_run_error.to_string().contains("this run"));
+
+        let wrong_item_error = run_fixture_restore_prototype(
+            &connection,
+            restore_request(
+                chain.plan_id,
+                None,
+                chain.run_id,
+                Some(chain.backup_result_id),
+                Some(chain.backup_restore_entry_id),
+                chain._temp.path(),
+                &chain.backup_path,
+                &restore_parent.join("wrong-item.package"),
+            ),
+        )
+        .expect_err("wrong item rejected");
+        assert!(wrong_item_error.to_string().contains("item"));
+
+        let wrong_result_error = run_fixture_restore_prototype(
+            &connection,
+            restore_request(
+                chain.plan_id,
+                Some(chain.item_id),
+                chain.run_id,
+                Some(chain.backup_result_id + 100_000),
+                Some(chain.backup_restore_entry_id),
+                chain._temp.path(),
+                &chain.backup_path,
+                &restore_parent.join("wrong-result.package"),
+            ),
+        )
+        .expect_err("wrong result rejected");
+        assert!(wrong_result_error.to_string().contains("result"));
+
+        assert_eq!(
+            list_apply_plan_result_logs(
+                &connection,
+                ListApplyPlanResultLogsRequest {
+                    apply_plan_run_id: chain.run_id,
+                },
+            )
+            .expect("results after")
+            .len(),
+            result_count_before
+        );
+        assert_eq!(
+            list_apply_plan_restore_entries(
+                &connection,
+                ListApplyPlanRestoreEntriesRequest {
+                    apply_plan_run_id: chain.run_id,
+                },
+            )
+            .expect("entries after")
+            .len(),
+            entry_count_before
+        );
+        assert_no_unsafe_fixture_statuses(&connection);
+    }
+
+    #[test]
+    fn fixture_recovery_chain_refuses_restore_overwrite_after_verified_backup() {
+        let connection = memory_connection();
+        let (
+            temp,
+            plan_id,
+            item_id,
+            run_id,
+            _source_path,
+            backup_path,
+            backup_result_id,
+            backup_restore_entry_id,
+        ) = verified_backup_fixture(&connection, b"backup content");
+        let restore_dir = temp.path().join("restored");
+        fs::create_dir_all(&restore_dir).expect("restore dir");
+        let restore_target_path = restore_dir.join("sample.package");
+        fs::write(&restore_target_path, b"existing target").expect("existing target");
+
+        let outcome = run_fixture_restore_prototype(
+            &connection,
+            restore_request(
+                plan_id,
+                Some(item_id),
+                run_id,
+                Some(backup_result_id),
+                Some(backup_restore_entry_id),
+                temp.path(),
+                &backup_path,
+                &restore_target_path,
+            ),
+        )
+        .expect("overwrite refusal outcome");
+
+        let FixtureRestorePrototypeOutcome::FailedBeforeChange(failure) = outcome else {
+            panic!("expected failed-before-change outcome");
+        };
+        assert_eq!(failure.error_code, "restore_target_exists");
+        assert!(!failure.restore_created);
+        assert_eq!(
+            fs::read(&restore_target_path).expect("restore target"),
+            b"existing target"
+        );
+        assert_no_unsafe_fixture_statuses(&connection);
     }
 
     #[test]
@@ -1767,6 +2233,7 @@ mod tests {
         assert!(!commands_source.contains("fixture_backup_prototype"));
         assert!(!commands_source.contains("run_fixture_restore_prototype"));
         assert!(!commands_source.contains("fixture_restore_prototype"));
+        assert!(!commands_source.contains("fixture_backup_restore_integration"));
     }
 
     #[test]

@@ -78,6 +78,14 @@ to temporary fixture targets only. It records only safe `pending_log`,
 `failed_before_change`, and `design_only` metadata, does not expose commands or
 UI, does not touch user files, and does not make Apply or Restore ready.
 
+Current implementation note:
+`codex/fixture-backup-restore-integration-proof-v1` proves the private backup
+and restore prototypes together as one temporary-file recovery chain. It
+verifies backup and restore copies, proves restore-map scope against one
+run/plan/item/result context, records only safe metadata, does not expose
+commands or UI, does not touch user files, and does not make Apply or Restore
+ready.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

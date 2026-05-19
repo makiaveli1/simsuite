@@ -33,6 +33,14 @@ records safe DB metadata, and does not expose a command, UI, real Apply, user
 Restore, user-file backup/restore execution, movement, deletion, cleanup,
 quarantine, replacement, or AI decision.
 
+Current implementation note: the follow-up
+`codex/fixture-backup-restore-integration-proof-v1` sprint proves the private
+fixture backup and restore prototypes together as one temporary-file recovery
+chain. It verifies backup and restore copies, checks one-run restore-map scope,
+records only safe DB metadata, and still does not expose a command, UI, real
+Apply, user Restore, user-file backup/restore execution, movement, deletion,
+cleanup, quarantine, replacement, or AI decision.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
@@ -59,6 +67,8 @@ Current SimSuite state:
 - DB-only restore-entry foundation tables now exist.
 - fixture-only backup prototype tests now exist for temporary files only.
 - fixture-only restore prototype tests now exist for temporary files only.
+- fixture-only backup + restore integration proof tests now exist for temporary
+  files only.
 - user-file backup execution does not exist.
 - user-file restore execution does not exist.
 - confirmation workflow does not exist.

@@ -1,5 +1,51 @@
 # Session Handoff
 
+## Current Session (May 19, 2026 - Fixture Backup + Restore Integration Proof v1)
+
+- **Mode**: code
+- **Focus**: prove the private fixture-only backup and restore prototypes work
+  together as one temporary-file recovery chain
+
+### Progress Made
+
+1. **Added integrated recovery proof tests**:
+   - exercised backup then restore against temporary fixture files only
+   - verified source, backup, and restored bytes plus SHA-256 hashes
+   - verified source and backup files remain unchanged
+
+2. **Verified scoped recovery metadata**:
+   - backup and restore attempts record safe `pending_log` result rows
+   - restore-map entries remain `design_only`
+   - mismatched run, plan, item, or result scope is rejected
+   - overwrite attempts are refused without changing target bytes
+
+3. **Kept the safety boundary explicit**:
+   - no Tauri command, TypeScript API, route, or visible UI was added
+   - no real Apply, real Restore, user-file backup execution, user-file restore
+     execution, movement, deletion, cleanup, quarantine, replacement,
+     auto-sort execution, or AI decision was added
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/FIXTURE_BACKUP_RESTORE_INTEGRATION_PROOF_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Confirmation workflow is still not implemented.
+- Result/restore UI is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Result/restore review UI or another fixture-only recovery proof. Do not
+   start real Apply yet.
+
 ## Current Session (May 18, 2026 - Fixture-Only Restore Prototype v1)
 
 - **Mode**: code

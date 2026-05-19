@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 19, 2026 - Fixture Backup + Restore Integration Proof v1)
+
+This session adds a backend-only integration proof for future ApplyPlan
+recovery work. It runs the existing fixture backup and fixture restore
+prototypes together against temporary test files only. It does not add real
+Apply, real Restore, user-file backup execution, user-file restore execution,
+file movement in real user folders, user-file copying, folder creation outside
+temp fixtures, deletion, cleanup, quarantine, replacement, auto-sort execution,
+AI decisions, or visible UI behavior.
+
+Important changes and findings:
+
+- extended tests in `src-tauri/src/core/apply_plan_backup_prototype.rs`.
+- proved temporary source -> verified backup -> recorded restore map ->
+  verified restore target as one chain.
+- verified source and backup files remain unchanged.
+- verified result rows use safe `pending_log` status.
+- verified restore-map rows use safe `design_only` status.
+- rejected mismatched run, plan, item, or result restore scope.
+- no Tauri command, TypeScript API, or visible UI was added.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/FIXTURE_BACKUP_RESTORE_INTEGRATION_PROOF_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Result/restore review UI or another fixture-only recovery proof. Do not start
+  real Apply yet.
+
 ## Current session note (May 18, 2026 - Fixture-Only Restore Prototype v1)
 
 This session adds a backend-only fixture restore prototype for future ApplyPlan

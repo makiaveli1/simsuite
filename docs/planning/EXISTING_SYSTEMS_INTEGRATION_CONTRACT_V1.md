@@ -86,6 +86,11 @@ same metadata helpers and recorded restore-map rows to prove scoped restore-copy
 behavior on temporary test files only. It adds no command, no UI, no new
 classifier, and no user-file workflow.
 
+Current implementation note: the fixture-only backup + restore integration
+proof now reuses the private backup prototype, private restore prototype, and
+DB-only result/restore metadata helpers in one temporary-file recovery chain.
+It adds no command, no UI, no new classifier, and no user-file workflow.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

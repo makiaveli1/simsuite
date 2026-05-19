@@ -89,6 +89,10 @@ The fixture-only restore prototype now exists in the same private backend
 test/prototype module. No route exposes it, and Organize still has no backup,
 restore, Apply, or file-changing controls.
 
+The fixture-only backup + restore integration proof now exists in the private
+backend test/prototype module. It has no route, command, or API exposure, and
+Organize still has no backup, restore, Apply, or file-changing controls.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |
