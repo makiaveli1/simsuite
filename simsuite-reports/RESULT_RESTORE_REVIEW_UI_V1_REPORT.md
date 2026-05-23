@@ -147,7 +147,7 @@ outside the implementation:
 
 ## Commit
 
-Pending final commit.
+Implementation commit: `c032584 - Show read-only recovery history in Organize`.
 
 ## Final honest verdict
 
