@@ -91,6 +91,12 @@ proof now reuses the private backup prototype, private restore prototype, and
 DB-only result/restore metadata helpers in one temporary-file recovery chain.
 It adds no command, no UI, no new classifier, and no user-file workflow.
 
+Current implementation note: Organize `Saved plans` now reuses the DB-only
+result/restore list APIs to show read-only `Recovery history` metadata. It does
+not create a frontend-only result log store, does not create restore maps in
+the UI, does not call fixture proof helpers, and does not expose file-changing
+actions.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

@@ -73,6 +73,12 @@ against temporary test files only, verifies backup and restored copies, records
 safe result/restore metadata, and remains hidden from UI and Tauri commands. It
 does not change user files and does not make Apply or Restore ready.
 
+Organize `Saved plans` now shows read-only `Recovery history` metadata from
+existing DB-only run logs, result logs, and restore-map records. It keeps `No
+files changed`, `Apply is not ready yet`, and `Restore is not ready yet`
+visible. It does not create result logs, create restore entries, run backup,
+run restore, expose fixture proof helpers, or change user files.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

@@ -41,6 +41,12 @@ records only safe DB metadata, and still does not expose a command, UI, real
 Apply, user Restore, user-file backup/restore execution, movement, deletion,
 cleanup, quarantine, replacement, or AI decision.
 
+Current implementation note: Organize `Saved plans` now includes a read-only
+`Recovery history` section for existing DB-only ApplyPlan run logs, result
+logs, and restore-map records. It only displays metadata, does not create
+records, does not run backup or restore, does not expose fixture proof helpers,
+and does not make Apply or Restore ready.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
@@ -69,6 +75,7 @@ Current SimSuite state:
 - fixture-only restore prototype tests now exist for temporary files only.
 - fixture-only backup + restore integration proof tests now exist for temporary
   files only.
+- Organize can show read-only Recovery history metadata for saved plans.
 - user-file backup execution does not exist.
 - user-file restore execution does not exist.
 - confirmation workflow does not exist.

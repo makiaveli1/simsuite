@@ -1,5 +1,35 @@
 # SimSuite Implementation Status
 
+## Current session note (May 23, 2026 - Result / Restore Review UI v1)
+
+This session adds a read-only Recovery history section to Organize saved plan
+details. It displays existing DB-only ApplyPlan run logs, result logs, and
+restore-map records. It does not add real Apply, real Restore, backup
+execution, restore execution, fixture proof exposure, file movement, file
+copying, folder creation, deletion, cleanup, quarantine, replacement,
+auto-sort execution, AI decisions, or user-facing recovery controls.
+
+Important changes and findings:
+
+- reused existing `listApplyPlanRunLogs`, `listApplyPlanResultLogs`, and
+  `listApplyPlanRestoreEntries` API wrappers.
+- kept create/record result and restore APIs out of the UI.
+- added empty, loading, error, result-log, and restore-map read-only states.
+- kept `No files changed`, `Apply is not ready yet`, and `Restore is not ready
+  yet` visible.
+- updated desktop proof to check the Recovery history section and capture
+  `organize-recovery-history-ui-v1.png`.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/RESULT_RESTORE_REVIEW_UI_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Recovery history UX polish, dry-run Apply design, or confirmation design. Do
+  not start real Apply yet.
+
 ## Current session note (May 19, 2026 - Fixture Backup + Restore Integration Proof v1)
 
 This session adds a backend-only integration proof for future ApplyPlan

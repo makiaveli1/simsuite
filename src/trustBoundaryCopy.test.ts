@@ -219,4 +219,19 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Restore is not ready yet/i);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents the read-only recovery history UI without making Apply or Restore ready", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/RESULT_RESTORE_REVIEW_UI_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Recovery history/i);
+    expect(source).toMatch(/Result log/i);
+    expect(source).toMatch(/Restore map/i);
+    expect(source).toMatch(/No files changed/i);
+    expect(source).toMatch(/Apply is not ready yet/i);
+    expect(source).toMatch(/Restore is not ready yet/i);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });

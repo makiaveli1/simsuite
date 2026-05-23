@@ -82,6 +82,12 @@ run/plan/item/result context, records only safe DB metadata, and still does not
 execute real Apply, user-file backup, user-file Restore, movement, deletion,
 cleanup, quarantine, replacement, or AI decisions.
 
+Current implementation note: Organize `Saved plans` now shows read-only
+`Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and
+restore-map records. It keeps `No files changed`, `Apply is not ready yet`, and
+`Restore is not ready yet` visible. It does not expose Apply, Restore, backup
+execution, restore execution, fixture proof helpers, or file-changing controls.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

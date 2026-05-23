@@ -48,6 +48,12 @@ now verifies the private backup and restore prototypes together with temporary
 test files only. It remains outside validation UI, does not persist Apply or
 Restore readiness, and does not change user files.
 
+Current implementation note: Organize `Saved plans` now also shows read-only
+`Recovery history` metadata for existing DB-only run logs, result logs, and
+restore-map records. This does not change validation semantics:
+`canProceedToConfirmation=false` remains the safe boundary, Apply is not ready
+yet, and Restore is not ready yet.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

@@ -1,5 +1,51 @@
 # Session Handoff
 
+## Current Session (May 23, 2026 - Result / Restore Review UI v1)
+
+- **Mode**: code
+- **Focus**: show read-only recovery metadata in Organize saved plan details
+  without adding Apply, Restore, backup execution, or fixture helper exposure
+
+### Progress Made
+
+1. **Added Recovery history UI**:
+   - displays existing run logs, result logs, and restore-map records
+   - shows empty states when no Apply run metadata exists
+   - keeps full paths behind `Technical details`
+
+2. **Reused existing DB-only APIs**:
+   - calls `listApplyPlanRunLogs`, `listApplyPlanResultLogs`, and
+     `listApplyPlanRestoreEntries`
+   - does not call create/record result or restore APIs
+   - does not call fixture backup/restore helpers
+
+3. **Kept the safety boundary explicit**:
+   - visible copy says `No files changed`, `Apply is not ready yet`, and
+     `Restore is not ready yet`
+   - no visible Apply, Restore, Backup, move, delete, cleanup, quarantine,
+     replacement, or auto-sort execution controls were added
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/RESULT_RESTORE_REVIEW_UI_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Confirmation workflow is still not implemented.
+- Result/restore records are review-only metadata.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, unrelated Home/global CSS hunks in
+  `src/styles/globals.css`, plus older unrelated status/handoff hunks.
+
+### Next Best Step
+
+1. Recovery history UX polish, dry-run Apply design, or confirmation design. Do
+   not start real Apply yet.
+
 ## Current Session (May 19, 2026 - Fixture Backup + Restore Integration Proof v1)
 
 - **Mode**: code
