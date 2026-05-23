@@ -86,6 +86,12 @@ run/plan/item/result context, records only safe metadata, does not expose
 commands or UI, does not touch user files, and does not make Apply or Restore
 ready.
 
+Current implementation note: `codex/result-restore-review-ui-v1` exposes the
+first read-only Organize `Recovery history` UI for existing DB-only run,
+result, and restore-map records. It reuses result/restore list APIs only. It
+does not create records, run backup, run restore, expose fixture helpers,
+execute Apply, or change files.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

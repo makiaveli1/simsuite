@@ -1659,17 +1659,20 @@ async function main() {
       /plan details|source signals|blockers|no preview items|blocked/i.test(organizeBody);
     summary.organizeSavedPlanCreated =
       /saved as draft preview plan|draft preview plans/i.test(organizeBody);
-    summary.organizeSavedPlanCancelVisible =
-      /cancel draft|this only cancels the saved draft record/i.test(organizeBody);
-    summary.organizeValidationPreviewVisible = /validation preview|check saved plan/i.test(
-      organizeBody,
-    );
+    summary.organizeSavedPlanCancelVisible = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .some((button) => /cancel draft/i.test(button.textContent || ""));
+    `);
+    summary.organizeValidationPreviewVisible = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("section, button"))
+        .some((element) => /validation preview|check saved plan/i.test(element.textContent || ""));
+    `);
     summary.organizeContextExcerpt = organizeBody.slice(0, 1800);
     summary.organizeEnabledFileChangingButtons = await driver.executeScript(`
       return Array.from(document.querySelectorAll("button"))
         .filter((button) => !button.disabled)
         .map((button) => button.textContent || "")
-        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation)\\b/i.test(text));
+        .filter((text) => /\\b(apply|restore|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation|run backup|run restore|undo changes)\\b/i.test(text));
     `);
     if (
       !summary.organizeCreateBodyHasSavePreview ||
@@ -1704,6 +1707,8 @@ async function main() {
       ],
       60000,
     );
+    await waitForAnyText(driver, ["Recovery history"], 30000);
+    await waitForAnyText(driver, ["No result logs yet", "Run logs"], 30000);
     const organizeValidationBody = await getBodyText(driver);
     summary.organizeValidationBodyHasPreview = /validation preview/i.test(
       organizeValidationBody,
@@ -1724,7 +1729,7 @@ async function main() {
       return Array.from(document.querySelectorAll("button"))
         .filter((button) => !button.disabled)
         .map((button) => button.textContent || "")
-        .filter((text) => /\\b(apply|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation)\\b/i.test(text));
+        .filter((text) => /\\b(apply|restore|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation|run backup|run restore|undo changes)\\b/i.test(text));
     `);
     if (
       !summary.organizeValidationBodyHasPreview ||
@@ -1742,6 +1747,57 @@ async function main() {
     const validationShot = path.join(runDir, "organize-validation-preview-ui-v1.png");
     await takeScreenshot(driver, validationShot);
     summary.screenshots.push(validationShot);
+    summary.organizeRecoveryHistoryVisible =
+      /recovery history|result log|restore map/i.test(organizeValidationBody);
+    summary.organizeRecoveryHistoryHasNoFilesChanged = /no files changed/i.test(
+      organizeValidationBody,
+    );
+    summary.organizeRecoveryHistoryBlocksApply = /apply is not ready yet/i.test(
+      organizeValidationBody,
+    );
+    summary.organizeRecoveryHistoryBlocksRestore = /restore is not ready yet/i.test(
+      organizeValidationBody,
+    );
+    summary.organizeRecoveryHistoryHasEmptyState =
+      /no result logs yet|no apply run has happened|no restore entries yet|restore is not available/i.test(
+        organizeValidationBody,
+      );
+    summary.organizeRecoveryHistoryHasRows =
+      /run logs|result log \d+|restore map record|pending log|design-only/i.test(
+        organizeValidationBody,
+      );
+    summary.organizeRecoveryEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /\\b(apply|restore|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation|run backup|run restore|undo changes)\\b/i.test(text));
+    `);
+    if (
+      !summary.organizeRecoveryHistoryVisible ||
+      !summary.organizeRecoveryHistoryHasNoFilesChanged ||
+      !summary.organizeRecoveryHistoryBlocksApply ||
+      !summary.organizeRecoveryHistoryBlocksRestore ||
+      (!summary.organizeRecoveryHistoryHasEmptyState &&
+        !summary.organizeRecoveryHistoryHasRows)
+    ) {
+      throw new Error("Organize recovery history did not show the read-only recovery boundary.");
+    }
+    if (summary.organizeRecoveryEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Organize recovery history exposed enabled file-changing controls: ${summary.organizeRecoveryEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    await driver.executeScript(`
+      const recoverySection = Array.from(document.querySelectorAll("section"))
+        .find((element) => /Recovery history/i.test(element.textContent || ""));
+      if (recoverySection) {
+        recoverySection.scrollIntoView({ block: "center", inline: "nearest" });
+      }
+    `);
+    await sleep(driver, 500);
+    const recoveryHistoryShot = path.join(runDir, "organize-recovery-history-ui-v1.png");
+    await takeScreenshot(driver, recoveryHistoryShot);
+    summary.screenshots.push(recoveryHistoryShot);
     const savedPlanShot = path.join(runDir, "organize-saved-plan-ui-review-v1.png");
     await takeScreenshot(driver, savedPlanShot);
     summary.screenshots.push(savedPlanShot);

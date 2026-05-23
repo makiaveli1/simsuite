@@ -14,6 +14,9 @@ import { api } from "../../lib/api";
 import type {
   ApplyPlanListItem,
   ApplyPlanConflictStatus,
+  ApplyPlanRestoreEntryStatus,
+  ApplyPlanResultLogStatus,
+  ApplyPlanRunLogStatus,
   ApplyPlanValidationItem,
   ApplyPlanValidationPreview,
   ApplyPlanValidationPreviewStatus,
@@ -21,6 +24,9 @@ import type {
   PersistedApplyPlan,
   PersistedApplyPlanBlocker,
   PersistedApplyPlanItem,
+  PersistedApplyPlanRestoreEntry,
+  PersistedApplyPlanResult,
+  PersistedApplyPlanRun,
   PersistedApplyPlanSignal,
   PersistedApplyPlanStatus,
 } from "../../lib/types";
@@ -80,6 +86,25 @@ const PLAN_VALIDATION_LABELS: Record<ApplyPlanValidationPreviewStatus, string> =
   not_validated: "Needs validation",
   valid_preview_only: "No current blocker found, but still preview-only",
   blocked: "Blocked",
+};
+
+const RUN_LOG_STATUS_LABELS: Record<ApplyPlanRunLogStatus, string> = {
+  draft_log: "Draft log",
+  blocked: "Blocked",
+  cancelled: "Cancelled",
+};
+
+const RESULT_LOG_STATUS_LABELS: Record<ApplyPlanResultLogStatus, string> = {
+  pending_log: "Pending log",
+  skipped: "Skipped",
+  blocked: "Blocked",
+  failed_before_change: "Failed before change",
+};
+
+const RESTORE_ENTRY_STATUS_LABELS: Record<ApplyPlanRestoreEntryStatus, string> = {
+  not_available: "Not available",
+  design_only: "Design-only",
+  not_restored: "Not restored",
 };
 
 function formatDateTime(value: string): string {
@@ -169,6 +194,22 @@ function formatConflictStatus(status: ApplyPlanConflictStatus): string {
 
 function formatPlanValidationStatus(status: ApplyPlanValidationPreviewStatus): string {
   return PLAN_VALIDATION_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatRunLogStatus(status: ApplyPlanRunLogStatus): string {
+  return RUN_LOG_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatResultLogStatus(status: ApplyPlanResultLogStatus): string {
+  return RESULT_LOG_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatRestoreEntryStatus(status: ApplyPlanRestoreEntryStatus): string {
+  return RESTORE_ENTRY_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatOperationKind(operationKind: string): string {
+  return operationKind.replace(/_/g, " ");
 }
 
 function SavedPlanSummaryRow({
@@ -548,6 +589,379 @@ function ValidationPreviewSection({
   );
 }
 
+function RecoveryRunCard({
+  run,
+  selected,
+  onSelect,
+}: {
+  run: PersistedApplyPlanRun;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <article className="validation-preview-item" aria-label={`Result log run ${run.id}`}>
+      <div className="validation-preview-item-header">
+        <div className="organize-plan-item-title">
+          <span>Result log {run.id}</span>
+          <small>Read-only metadata</small>
+        </div>
+        <div className="organize-plan-status-row" aria-label="Recovery run labels">
+          <span className="organize-plan-status-chip">
+            {formatRunLogStatus(run.status)}
+          </span>
+          <span className="organize-plan-status-chip">{run.backupStrategy}</span>
+          <button
+            type="button"
+            className={selected ? "primary-action" : "secondary-action"}
+            aria-pressed={selected}
+            onClick={onSelect}
+          >
+            <ListChecks size={16} />
+            View run log
+          </button>
+        </div>
+      </div>
+
+      <div className="validation-preview-grid" aria-label={`Run ${run.id} recorded counts`}>
+        <span>
+          <strong>{run.totalItems}</strong>
+          <small>Total recorded count</small>
+        </span>
+        <span>
+          <strong>{run.skippedItems}</strong>
+          <small>Skipped recorded count</small>
+        </span>
+        <span>
+          <strong>{run.appliedItems}</strong>
+          <small>Applied recorded count</small>
+        </span>
+        <span>
+          <strong>{run.failedItems}</strong>
+          <small>Failed recorded count</small>
+        </span>
+        <span>
+          <strong>{run.restoredItems}</strong>
+          <small>Restored recorded count</small>
+        </span>
+        <span>
+          <strong>{formatDateTime(run.createdAt)}</strong>
+          <small>Created</small>
+        </span>
+      </div>
+
+      {run.summary ? <p className="validation-preview-note">{run.summary}</p> : null}
+    </article>
+  );
+}
+
+function ResultLogCard({ result }: { result: PersistedApplyPlanResult }) {
+  return (
+    <article className="validation-preview-item" aria-label={`Result log ${result.id}`}>
+      <div className="validation-preview-item-header">
+        <div className="organize-plan-item-title">
+          <span>{formatOperationKind(result.operationKind)}</span>
+          <small>Result log</small>
+        </div>
+        <div className="organize-plan-status-row" aria-label="Result log labels">
+          <span className="organize-plan-status-chip">
+            {formatResultLogStatus(result.resultStatus)}
+          </span>
+          <span className="organize-plan-status-chip">
+            {formatDateTime(result.createdAt)}
+          </span>
+        </div>
+      </div>
+
+      <p className="validation-preview-note">{result.userSummary}</p>
+
+      {result.errorCode || result.errorMessage ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            {result.errorCode ? `${result.errorCode}: ` : ""}
+            {result.errorMessage ?? "No additional error message."}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="organize-plan-path-grid">
+        <div className="organize-plan-path-card">
+          <span>Source at record time</span>
+          <code title={result.sourcePathAtExecution ?? undefined}>
+            {shortenPath(result.sourcePathAtExecution)}
+          </code>
+        </div>
+        <div className="organize-plan-path-card">
+          <span>Destination at record time</span>
+          <code title={result.destinationPathAtExecution ?? undefined}>
+            {shortenPath(result.destinationPathAtExecution)}
+          </code>
+        </div>
+      </div>
+
+      <details>
+        <summary>Technical details</summary>
+        <div className="pending-batch-technical">
+          <div>
+            <strong>Result id</strong>
+            <code>{result.id}</code>
+          </div>
+          <div>
+            <strong>Run id</strong>
+            <code>{result.applyPlanRunId}</code>
+          </div>
+          <div>
+            <strong>Plan item id</strong>
+            <code>{result.applyPlanItemId ?? "No item id"}</code>
+          </div>
+          <div>
+            <strong>Source path at record time</strong>
+            <code>{result.sourcePathAtExecution ?? "Path unavailable"}</code>
+          </div>
+          <div>
+            <strong>Destination path at record time</strong>
+            <code>{result.destinationPathAtExecution ?? "Path unavailable"}</code>
+          </div>
+          <div>
+            <strong>Backup path</strong>
+            <code>{result.backupPath ?? "No backup path recorded"}</code>
+          </div>
+        </div>
+      </details>
+    </article>
+  );
+}
+
+function RestoreEntryCard({ entry }: { entry: PersistedApplyPlanRestoreEntry }) {
+  return (
+    <article className="validation-preview-item" aria-label={`Restore map ${entry.id}`}>
+      <div className="validation-preview-item-header">
+        <div className="organize-plan-item-title">
+          <span>Restore map record</span>
+          <small>{formatOperationKind(entry.operationKind)}</small>
+        </div>
+        <div className="organize-plan-status-row" aria-label="Restore map labels">
+          <span className="organize-plan-status-chip">
+            {formatRestoreEntryStatus(entry.restoreStatus)}
+          </span>
+          <span className="organize-plan-status-chip">
+            {formatResultLogStatus(entry.operationResultStatus)}
+          </span>
+        </div>
+      </div>
+
+      {entry.restoreErrorCode || entry.restoreErrorMessage ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            {entry.restoreErrorCode ? `${entry.restoreErrorCode}: ` : ""}
+            {entry.restoreErrorMessage ?? "No additional restore-map message."}
+          </span>
+        </div>
+      ) : (
+        <p className="validation-preview-note">
+          This restore-map record is metadata only. Restore is not ready yet.
+        </p>
+      )}
+
+      <div className="organize-plan-path-grid">
+        <div className="organize-plan-path-card">
+          <span>Original source</span>
+          <code title={entry.originalSourcePath}>
+            {shortenPath(entry.originalSourcePath)}
+          </code>
+        </div>
+        <div className="organize-plan-path-card">
+          <span>Destination at record time</span>
+          <code title={entry.destinationPathAtExecution ?? undefined}>
+            {shortenPath(entry.destinationPathAtExecution)}
+          </code>
+        </div>
+      </div>
+
+      <details>
+        <summary>Technical details</summary>
+        <div className="pending-batch-technical">
+          <div>
+            <strong>Restore entry id</strong>
+            <code>{entry.id}</code>
+          </div>
+          <div>
+            <strong>Run id</strong>
+            <code>{entry.applyPlanRunId}</code>
+          </div>
+          <div>
+            <strong>Result id</strong>
+            <code>{entry.applyPlanResultId ?? "No result id"}</code>
+          </div>
+          <div>
+            <strong>Plan item id</strong>
+            <code>{entry.applyPlanItemId ?? "No item id"}</code>
+          </div>
+          <div>
+            <strong>Original source path</strong>
+            <code>{entry.originalSourcePath}</code>
+          </div>
+          <div>
+            <strong>Destination path at record time</strong>
+            <code>{entry.destinationPathAtExecution ?? "Path unavailable"}</code>
+          </div>
+          <div>
+            <strong>Backup path</strong>
+            <code>{entry.backupPath ?? "No backup path recorded"}</code>
+          </div>
+        </div>
+      </details>
+    </article>
+  );
+}
+
+function RecoveryHistorySection({
+  runs,
+  selectedRunId,
+  results,
+  restoreEntries,
+  loading,
+  error,
+  onSelectRun,
+}: {
+  runs: PersistedApplyPlanRun[];
+  selectedRunId: number | null;
+  results: PersistedApplyPlanResult[];
+  restoreEntries: PersistedApplyPlanRestoreEntry[];
+  loading: boolean;
+  error: string | null;
+  onSelectRun: (runId: number) => void;
+}) {
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+
+  return (
+    <section className="validation-preview-panel" aria-label="Recovery history">
+      <div className="validation-preview-header">
+        <div>
+          <div className="eyebrow">Recovery history</div>
+          <h4>Result log and restore map</h4>
+          <p>
+            Review result logs and restore-map records for this saved draft.
+            No files changed.
+          </p>
+        </div>
+      </div>
+
+      <div className="validation-preview-safety-strip">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          Recovery history is read-only. Apply is not ready yet. Restore is not
+          ready yet.
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="validation-preview-empty" aria-live="polite">
+          <LoaderCircle size={20} className="spin" />
+          <div>
+            <strong>Loading recovery history</strong>
+            <span>SimSuite is reading saved metadata only. No files changed.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            Could not load recovery history: {error}. No files changed.
+          </span>
+        </div>
+      ) : null}
+
+      {!loading && !error && runs.length === 0 ? (
+        <div className="validation-preview-results">
+          <div className="validation-preview-empty">
+            <Info size={20} />
+            <div>
+              <strong>No result logs yet.</strong>
+              <span>No Apply run has happened for this saved draft.</span>
+            </div>
+          </div>
+          <div className="validation-preview-empty">
+            <Info size={20} />
+            <div>
+              <strong>No restore entries yet.</strong>
+              <span>
+                Restore is not available because no user-file Apply run exists.
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!loading && !error && runs.length > 0 ? (
+        <div className="validation-preview-results">
+          <div className="organize-plan-detail-block">
+            <h4>Run logs</h4>
+            <div className="validation-preview-item-list">
+              {runs.map((run) => (
+                <RecoveryRunCard
+                  key={run.id}
+                  run={run}
+                  selected={run.id === selectedRunId}
+                  onSelect={() => onSelectRun(run.id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {selectedRun ? (
+            <div className="validation-preview-status-row">
+              <span className="organize-plan-status-chip">
+                Viewing result log {selectedRun.id}
+              </span>
+              <span className="organize-plan-status-chip">Read-only</span>
+              <span className="organize-plan-tag organize-plan-tag--blocked">
+                Apply is not ready yet
+              </span>
+              <span className="organize-plan-tag organize-plan-tag--blocked">
+                Restore is not ready yet
+              </span>
+            </div>
+          ) : null}
+
+          <div className="organize-plan-detail-block">
+            <h4>Result log</h4>
+            {results.length === 0 ? (
+              <p>No result logs yet for this run. No files changed.</p>
+            ) : (
+              <div className="validation-preview-item-list">
+                {results.map((result) => (
+                  <ResultLogCard key={result.id} result={result} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="organize-plan-detail-block">
+            <h4>Restore map</h4>
+            {restoreEntries.length === 0 ? (
+              <p>
+                No restore entries yet for this run. Restore is not available
+                because no user-file Apply run exists.
+              </p>
+            ) : (
+              <div className="validation-preview-item-list">
+                {restoreEntries.map((entry) => (
+                  <RestoreEntryCard key={entry.id} entry={entry} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SavedPlanDetails({
   plan,
   loading,
@@ -555,9 +969,16 @@ function SavedPlanDetails({
   validationPreview,
   validationLoading,
   validationError,
+  recoveryRuns,
+  selectedRecoveryRunId,
+  recoveryResults,
+  recoveryRestoreEntries,
+  recoveryLoading,
+  recoveryError,
   confirmingCancel,
   cancelling,
   onCheckValidation,
+  onSelectRecoveryRun,
   onCancelDraft,
   onConfirmCancel,
   onKeepDraft,
@@ -568,9 +989,16 @@ function SavedPlanDetails({
   validationPreview: ApplyPlanValidationPreview | null;
   validationLoading: boolean;
   validationError: string | null;
+  recoveryRuns: PersistedApplyPlanRun[];
+  selectedRecoveryRunId: number | null;
+  recoveryResults: PersistedApplyPlanResult[];
+  recoveryRestoreEntries: PersistedApplyPlanRestoreEntry[];
+  recoveryLoading: boolean;
+  recoveryError: string | null;
   confirmingCancel: boolean;
   cancelling: boolean;
   onCheckValidation: (planId: number) => void;
+  onSelectRecoveryRun: (runId: number) => void;
   onCancelDraft: () => void;
   onConfirmCancel: () => void;
   onKeepDraft: () => void;
@@ -679,14 +1107,6 @@ function SavedPlanDetails({
         </div>
       ) : null}
 
-      <ValidationPreviewSection
-        planId={plan.id}
-        preview={validationPreview}
-        loading={validationLoading}
-        error={validationError}
-        onCheck={onCheckValidation}
-      />
-
       <div className="pending-plans-actions">
         <button type="button" className="secondary-action" onClick={onCancelDraft}>
           <ArchiveX size={16} />
@@ -727,6 +1147,24 @@ function SavedPlanDetails({
           </button>
         </div>
       ) : null}
+
+      <ValidationPreviewSection
+        planId={plan.id}
+        preview={validationPreview}
+        loading={validationLoading}
+        error={validationError}
+        onCheck={onCheckValidation}
+      />
+
+      <RecoveryHistorySection
+        runs={recoveryRuns}
+        selectedRunId={selectedRecoveryRunId}
+        results={recoveryResults}
+        restoreEntries={recoveryRestoreEntries}
+        loading={recoveryLoading}
+        error={recoveryError}
+        onSelectRun={onSelectRecoveryRun}
+      />
 
       {groupedItems.length === 0 ? (
         <section className="organize-plan-empty">
@@ -776,6 +1214,18 @@ export function SavedPlansReview({
     useState<ApplyPlanValidationPreview | null>(null);
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [recoveryRuns, setRecoveryRuns] = useState<PersistedApplyPlanRun[]>([]);
+  const [selectedRecoveryRunId, setSelectedRecoveryRunId] = useState<number | null>(
+    null,
+  );
+  const [recoveryResults, setRecoveryResults] = useState<PersistedApplyPlanResult[]>(
+    [],
+  );
+  const [recoveryRestoreEntries, setRecoveryRestoreEntries] = useState<
+    PersistedApplyPlanRestoreEntry[]
+  >([]);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [localStatusMessage, setLocalStatusMessage] = useState<string | null>(null);
@@ -811,6 +1261,12 @@ export function SavedPlansReview({
       setValidationPreview(null);
       setValidationError(null);
       setValidationLoading(false);
+      setRecoveryRuns([]);
+      setSelectedRecoveryRunId(null);
+      setRecoveryResults([]);
+      setRecoveryRestoreEntries([]);
+      setRecoveryError(null);
+      setRecoveryLoading(false);
       setConfirmingCancel(false);
       return;
     }
@@ -822,6 +1278,11 @@ export function SavedPlansReview({
       setValidationPreview(null);
       setValidationError(null);
       setValidationLoading(false);
+      setRecoveryRuns([]);
+      setSelectedRecoveryRunId(null);
+      setRecoveryResults([]);
+      setRecoveryRestoreEntries([]);
+      setRecoveryError(null);
       setConfirmingCancel(false);
       try {
         const plan = await api.getApplyPlan(selectedPlanId);
@@ -850,6 +1311,62 @@ export function SavedPlansReview({
     };
   }, [selectedPlanId]);
 
+  useEffect(() => {
+    if (selectedPlanId === null) {
+      return;
+    }
+
+    let cancelled = false;
+    const loadRecoveryHistory = async () => {
+      setRecoveryLoading(true);
+      setRecoveryError(null);
+      try {
+        const runs =
+          (await api.listApplyPlanRunLogs({
+            applyPlanId: selectedPlanId,
+            limit: 20,
+          })) ?? [];
+        if (cancelled) return;
+
+        setRecoveryRuns(runs);
+        const nextRunId = runs[0]?.id ?? null;
+        setSelectedRecoveryRunId(nextRunId);
+
+        if (nextRunId === null) {
+          setRecoveryResults([]);
+          setRecoveryRestoreEntries([]);
+          return;
+        }
+
+        const [results, restoreEntries] = await Promise.all([
+          api.listApplyPlanResultLogs({ applyPlanRunId: nextRunId }),
+          api.listApplyPlanRestoreEntries({ applyPlanRunId: nextRunId }),
+        ]);
+
+        if (cancelled) return;
+        setRecoveryResults(results ?? []);
+        setRecoveryRestoreEntries(restoreEntries ?? []);
+      } catch (error) {
+        if (!cancelled) {
+          setRecoveryRuns([]);
+          setSelectedRecoveryRunId(null);
+          setRecoveryResults([]);
+          setRecoveryRestoreEntries([]);
+          setRecoveryError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setRecoveryLoading(false);
+        }
+      }
+    };
+
+    void loadRecoveryHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPlanId]);
+
   const handleCheckValidation = async (planId: number) => {
     setValidationLoading(true);
     setValidationError(null);
@@ -864,6 +1381,26 @@ export function SavedPlansReview({
     }
   };
 
+  const handleSelectRecoveryRun = async (runId: number) => {
+    setSelectedRecoveryRunId(runId);
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      const [results, restoreEntries] = await Promise.all([
+        api.listApplyPlanResultLogs({ applyPlanRunId: runId }),
+        api.listApplyPlanRestoreEntries({ applyPlanRunId: runId }),
+      ]);
+      setRecoveryResults(results ?? []);
+      setRecoveryRestoreEntries(restoreEntries ?? []);
+    } catch (error) {
+      setRecoveryResults([]);
+      setRecoveryRestoreEntries([]);
+      setRecoveryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
   const handleCancelDraft = async () => {
     if (!selectedPlanId) return;
     setCancelling(true);
@@ -873,6 +1410,12 @@ export function SavedPlansReview({
       setLocalStatusMessage("Draft cancelled. No files changed.");
       setSelectedPlanId(null);
       setSelectedPlan(null);
+      setRecoveryRuns([]);
+      setSelectedRecoveryRunId(null);
+      setRecoveryResults([]);
+      setRecoveryRestoreEntries([]);
+      setRecoveryError(null);
+      setRecoveryLoading(false);
       setConfirmingCancel(false);
       await loadSavedPlans();
     } catch (error) {
@@ -980,9 +1523,16 @@ export function SavedPlansReview({
               validationPreview={validationPreview}
               validationLoading={validationLoading}
               validationError={validationError}
+              recoveryRuns={recoveryRuns}
+              selectedRecoveryRunId={selectedRecoveryRunId}
+              recoveryResults={recoveryResults}
+              recoveryRestoreEntries={recoveryRestoreEntries}
+              recoveryLoading={recoveryLoading}
+              recoveryError={recoveryError}
               confirmingCancel={confirmingCancel}
               cancelling={cancelling}
               onCheckValidation={handleCheckValidation}
+              onSelectRecoveryRun={handleSelectRecoveryRun}
               onCancelDraft={() => setConfirmingCancel(true)}
               onConfirmCancel={handleCancelDraft}
               onKeepDraft={() => setConfirmingCancel(false)}

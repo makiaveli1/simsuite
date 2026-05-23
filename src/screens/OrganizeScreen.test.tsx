@@ -1,9 +1,12 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { OrganizeScreen } from "./OrganizeScreen";
 import type {
   ApplyPlanListItem,
+  PersistedApplyPlanRestoreEntry,
+  PersistedApplyPlanResult,
+  PersistedApplyPlanRun,
   ApplyPlanValidationPreview,
   PersistedApplyPlan,
   StagingPlan,
@@ -17,6 +20,13 @@ vi.mock("../lib/api", () => ({
     listSavedApplyPlans: vi.fn(),
     getApplyPlan: vi.fn(),
     previewApplyPlanValidation: vi.fn(),
+    createApplyPlanRunLog: vi.fn(),
+    listApplyPlanRunLogs: vi.fn(),
+    getApplyPlanRunLog: vi.fn(),
+    recordApplyPlanResultLog: vi.fn(),
+    listApplyPlanResultLogs: vi.fn(),
+    recordApplyPlanRestoreEntry: vi.fn(),
+    listApplyPlanRestoreEntries: vi.fn(),
     deleteDraftApplyPlan: vi.fn(),
     getStagingAreas: vi.fn(),
     getStagingPreviewPlan: vi.fn(),
@@ -280,6 +290,72 @@ const validationPreview: ApplyPlanValidationPreview = {
   ],
 };
 
+const recoveryRunLog: PersistedApplyPlanRun = {
+  id: 3001,
+  applyPlanId: 701,
+  status: "draft_log",
+  backupStrategy: "copy_backup_first",
+  confirmationToken: null,
+  confirmedAt: null,
+  startedAt: null,
+  finishedAt: null,
+  totalItems: 2,
+  skippedItems: 1,
+  appliedItems: 0,
+  failedItems: 1,
+  restoredItems: 0,
+  summary: "DB-only recovery history. No files changed.",
+  createdAt: "2026-05-17T10:00:00.000Z",
+  updatedAt: "2026-05-17T10:05:00.000Z",
+};
+
+const recoveryResultLog: PersistedApplyPlanResult = {
+  id: 4001,
+  applyPlanRunId: 3001,
+  applyPlanId: 701,
+  applyPlanItemId: 9001,
+  operationKind: "future_move_preview",
+  resultStatus: "pending_log",
+  sourcePathAtExecution:
+    "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\ResultHair.package",
+  destinationPathAtExecution:
+    "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\ResultHair.package",
+  backupPath:
+    "C:\\Users\\Player\\AppData\\Local\\SimSuite\\ApplyPlanBackups\\run-3001\\ResultHair.package",
+  errorCode: null,
+  errorMessage: null,
+  userSummary: "Fixture proof metadata only. No files changed.",
+  startedAt: null,
+  finishedAt: null,
+  createdAt: "2026-05-17T10:01:00.000Z",
+  updatedAt: "2026-05-17T10:01:00.000Z",
+};
+
+const recoveryRestoreEntry: PersistedApplyPlanRestoreEntry = {
+  id: 5001,
+  applyPlanRunId: 3001,
+  applyPlanResultId: 4001,
+  applyPlanId: 701,
+  applyPlanItemId: 9001,
+  originalSourcePath:
+    "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\ResultHair.package",
+  destinationPathAtExecution:
+    "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\ResultHair.package",
+  backupPath:
+    "C:\\Users\\Player\\AppData\\Local\\SimSuite\\ApplyPlanBackups\\run-3001\\ResultHair.package",
+  fileHashBefore: "abc123",
+  fileSizeBefore: 128,
+  operationKind: "future_move_preview",
+  operationResultStatus: "pending_log",
+  restoreStatus: "design_only",
+  restoreErrorCode: null,
+  restoreErrorMessage: null,
+  createdAt: "2026-05-17T10:02:00.000Z",
+  updatedAt: "2026-05-17T10:02:00.000Z",
+  restoredAt: null,
+  failedAt: null,
+};
+
 const manyStagedSummary = {
   areas: Array.from({ length: 7 }, (_, index) => ({
     itemId: `2026030900141${index}`,
@@ -350,6 +426,12 @@ function enabledButtonLabels() {
     .filter((button) => !(button as HTMLButtonElement).disabled)
     .map((button) => button.textContent ?? "");
 }
+
+beforeEach(() => {
+  vi.mocked(api.listApplyPlanRunLogs).mockResolvedValue([]);
+  vi.mocked(api.listApplyPlanResultLogs).mockResolvedValue([]);
+  vi.mocked(api.listApplyPlanRestoreEntries).mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
@@ -702,6 +784,90 @@ it("shows validation preview errors safely", async () => {
   expect(await screen.findByText(/Could not load validation preview/i)).toBeInTheDocument();
   expect(screen.getByText(/validation unavailable/i)).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+});
+
+it("shows read-only recovery history empty states for saved plans", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+
+  expect((await screen.findAllByText(/Recovery history/i)).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Result log and restore map/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Apply is not ready yet/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Restore is not ready yet/i).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/No result logs yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/No Apply run has happened/i)).toBeInTheDocument();
+  expect(screen.getByText(/No restore entries yet/i)).toBeInTheDocument();
+  expect(screen.getByText(/Restore is not available/i)).toBeInTheDocument();
+
+  await waitFor(() => {
+    expect(api.listApplyPlanRunLogs).toHaveBeenCalledWith({
+      applyPlanId: savedPlanSummary.id,
+      limit: 20,
+    });
+  });
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|restore now|run backup|run restore|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
+});
+
+it("shows read-only result logs and restore-map records with safe labels", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.listApplyPlanRunLogs).mockResolvedValue([recoveryRunLog]);
+  vi.mocked(api.listApplyPlanResultLogs).mockResolvedValue([recoveryResultLog]);
+  vi.mocked(api.listApplyPlanRestoreEntries).mockResolvedValue([
+    recoveryRestoreEntry,
+  ]);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+
+  expect((await screen.findAllByText(/Result log 3001/i)).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Read-only metadata/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Pending log/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Design-only/i)).toBeInTheDocument();
+  expect(screen.getByText(/Restore map record/i)).toBeInTheDocument();
+  expect(screen.getByText(/Fixture proof metadata only/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Technical details/i).length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByTitle(recoveryResultLog.sourcePathAtExecution ?? "")[0],
+  ).toHaveTextContent(/\.\.\.\\Mods\\Loose\\ResultHair\.package/i);
+  expect(screen.queryByText(/Ready to apply/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Restore now/i })).not.toBeInTheDocument();
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+});
+
+it("shows recovery history load errors safely", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.listApplyPlanRunLogs).mockRejectedValue(
+    new Error("history unavailable"),
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+
+  expect(await screen.findByText(/Could not load recovery history/i)).toBeInTheDocument();
+  expect(screen.getByText(/history unavailable/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
 });
 
 it("shows saved-plan empty and error states as preview-only", async () => {
