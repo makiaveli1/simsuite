@@ -92,6 +92,13 @@ result, and restore-map records. It reuses result/restore list APIs only. It
 does not create records, run backup, run restore, expose fixture helpers,
 execute Apply, or change files.
 
+Current planning note: dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. It defines how a future
+response-only dry-run preview should classify saved draft items as blocked,
+skipped, requiring review, requiring backup, requiring confirmation, or only
+candidate after future safety gates. It does not add runtime persistence,
+commands, UI, confirmation, Apply, Restore, or file-changing behavior.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

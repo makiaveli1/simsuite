@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 24, 2026 - Dry-run Apply Design v1)
+
+This session adds a source-of-truth design for the future dry-run Apply layer.
+Dry-run Apply is a read-only rehearsal that should later explain what a saved
+draft would attempt, what would be skipped, what remains blocked, and what
+safety gates are still missing. It does not add real Apply, real Restore,
+confirmation, a runtime command, API wrapper, migration, UI, backup execution,
+restore execution, fixture helper exposure, file movement, file copying, folder
+creation, deletion, cleanup, quarantine, replacement, auto-sort execution, or
+AI decisions.
+
+Important changes and findings:
+
+- added `docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`.
+- added `simsuite-reports/DRY_RUN_APPLY_DESIGN_V1_REPORT.md`.
+- documented future statuses including `would_skip`,
+  `would_require_backup`, `would_require_confirmation`, and
+  `candidate_after_future_safety_gates`.
+- recommended future read-only `preview_apply_plan_dry_run` command v1.
+- extended the trust-boundary guard to cover the dry-run design doc.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/DRY_RUN_APPLY_DESIGN_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Implement the read-only `preview_apply_plan_dry_run` command v1. Still no
+  real Apply.
+
 ## Current session note (May 23, 2026 - Result / Restore Review UI v1)
 
 This session adds a read-only Recovery history section to Organize saved plan

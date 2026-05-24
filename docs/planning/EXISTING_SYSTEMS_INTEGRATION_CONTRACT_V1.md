@@ -97,6 +97,13 @@ not create a frontend-only result log store, does not create restore maps in
 the UI, does not call fixture proof helpers, and does not expose file-changing
 actions.
 
+Current planning note: dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. Future dry-run work must reuse
+saved ApplyPlan records, validation preview output, result/restore schema,
+recovery history context, Library identity, scanner roots, and the Apply Safety
+Contract. It must not create a frontend-owned dry-run store or duplicate
+validation, duplicate, update, or recovery truth.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

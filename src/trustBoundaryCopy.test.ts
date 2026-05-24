@@ -234,4 +234,18 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Restore is not ready yet/i);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents dry-run Apply design as read-only rehearsal work", () => {
+    const source = readFileSync(
+      join(process.cwd(), "docs/planning/DRY_RUN_APPLY_DESIGN_V1.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Dry-run Apply is a read-only rehearsal/);
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/Apply is not ready yet/i);
+    expect(source).toMatch(/canProceedToApply/);
+    expect(source).toMatch(/canProceedToConfirmation/);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });
