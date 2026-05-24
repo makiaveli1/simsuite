@@ -53,6 +53,12 @@ restore-map, and result-log support are required before future Apply, but it
 must not create backups, restore entries, result rows, confirmation tokens, or
 file-changing work.
 
+Current implementation note: `preview_apply_plan_dry_run` now exists as a
+backend/API-only read-only command. It can list `Backup required`, `Restore map
+required`, and `Result log required` as future safety steps, but it creates no
+backup, result-log row, restore-entry row, confirmation token, folder, or file
+change.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened

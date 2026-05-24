@@ -60,6 +60,12 @@ preview output before classifying future item behavior, and it must keep
 `canProceedToApply=false` and `canProceedToConfirmation=false` until later
 confirmation, backup/restore execution, result logging, and proof exist.
 
+Current implementation note: `preview_apply_plan_dry_run` now exists and calls
+the read-only validation preview before classifying saved draft items. Dry-run
+does not replace validation, does not persist validation or dry-run state, does
+not create result/restore metadata, and still keeps `canProceedToApply=false`
+and `canProceedToConfirmation=false`.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

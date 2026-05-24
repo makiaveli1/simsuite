@@ -104,6 +104,12 @@ recovery history context, Library identity, scanner roots, and the Apply Safety
 Contract. It must not create a frontend-owned dry-run store or duplicate
 validation, duplicate, update, or recovery truth.
 
+Current implementation note: `preview_apply_plan_dry_run` now implements the
+first backend/API-only dry-run command. It reuses saved ApplyPlan records,
+saved items, blockers/signals, validation preview output, and safety-contract
+wording. It does not create a frontend-owned dry-run store, write result or
+restore rows, expose fixture helpers, or call file-changing systems.
+
 ## 2. Existing Evidence Inventory
 
 | Evidence / data | Source system | Where stored or returned | Current reliability level | Current consumers | Future consumers | Do not duplicate rule | Trust boundary |

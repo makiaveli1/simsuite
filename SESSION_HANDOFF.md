@@ -1,5 +1,56 @@
 # Session Handoff
 
+## Current Session (May 24, 2026 - Read-only Dry-run Apply Command v1)
+
+- **Mode**: code
+- **Focus**: implement backend/API-only `preview_apply_plan_dry_run` without
+  adding Apply, Restore, confirmation, backup execution, result-log writes,
+  restore-entry writes, fixture helper exposure, UI, or file-changing behavior
+
+### Progress Made
+
+1. **Added the read-only dry-run command**:
+   - `preview_apply_plan_dry_run` loads saved draft ApplyPlan records
+   - reuses `preview_apply_plan_validation` before classifying items
+   - returns `canProceedToApply=false`, `canProceedToConfirmation=false`, and
+     item `canApply=false`
+
+2. **Added backend/API support only**:
+   - added Rust dry-run models and classifier
+   - registered the Tauri command
+   - added TypeScript types, API wrapper, and mock support
+   - no visible UI changed
+
+3. **Kept the safety boundary explicit**:
+   - no DB rows are written by dry-run
+   - no result logs, restore entries, backups, folders, Apply, Restore,
+     confirmation, fixture helpers, movement, copying, deletion, cleanup,
+     quarantine, replacement, auto-sort execution, or AI decision was added
+
+### Verification
+
+- Initial focused checks passed:
+  - `cargo test apply_plan_dry_run -- --nocapture`
+  - `npx tsc --noEmit`
+- Full validation results are recorded in
+  `simsuite-reports/READ_ONLY_DRY_RUN_APPLY_COMMAND_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- Confirmation workflow is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Dry-run UI is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older unrelated
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Add a read-only dry-run preview UI inside Organize saved plan details, or
+   design confirmation. Still no real Apply.
+
 ## Current Session (May 24, 2026 - Dry-run Apply Design v1)
 
 - **Mode**: code

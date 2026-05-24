@@ -409,6 +409,66 @@ export interface ApplyPlanValidationPreview {
   items: ApplyPlanValidationItem[];
 }
 
+export interface PreviewApplyPlanDryRunRequest {
+  planId: number;
+}
+
+export type ApplyPlanDryRunPreviewStatus =
+  | "not_run"
+  | "blocked"
+  | "preview_only"
+  | "error";
+
+export type ApplyPlanDryRunItemStatus =
+  | "blocked"
+  | "would_skip"
+  | "would_require_review"
+  | "would_require_backup"
+  | "would_require_confirmation"
+  | "would_require_destination_review"
+  | "candidate_after_future_safety_gates"
+  | "error";
+
+export type ApplyPlanDryRunActionPreview =
+  | "would_move_later"
+  | "would_skip"
+  | "no_action";
+
+export interface ApplyPlanDryRunSummary {
+  totalItems: number;
+  candidateItems: number;
+  skippedItems: number;
+  blockedItems: number;
+  reviewOnlyItems: number;
+  conflictItems: number;
+  backupRequiredItems: number;
+}
+
+export interface ApplyPlanDryRunItem {
+  itemId: number;
+  fileId: number | null;
+  fileName: string;
+  dryRunStatus: ApplyPlanDryRunItemStatus;
+  actionPreview: ApplyPlanDryRunActionPreview;
+  sourcePath: string | null;
+  destinationPath: string | null;
+  reasons: string[];
+  blockers: string[];
+  requiredBeforeApply: string[];
+  canApply: false;
+}
+
+export interface ApplyPlanDryRunPreview {
+  planId: number;
+  status: ApplyPlanDryRunPreviewStatus;
+  canProceedToApply: false;
+  canProceedToConfirmation: false;
+  checkedAt: string;
+  summary: ApplyPlanDryRunSummary;
+  caveats: string[];
+  items: ApplyPlanDryRunItem[];
+}
+
 export type ApplyPlanRunLogStatus =
   | "draft_log"
   | "blocked"

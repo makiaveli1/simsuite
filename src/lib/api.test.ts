@@ -85,6 +85,46 @@ describe("ApplyPlan preview persistence API", () => {
     ).toBe(true);
   });
 
+  it("returns a read-only dry-run preview without making Apply or confirmation available", async () => {
+    const saved = await api.buildApplyPlanFromStagingPlan({
+      previewRequest: {
+        scope: {
+          kind: "selected_files",
+          fileIds: [101, 102],
+        },
+      },
+    });
+
+    const preview = await api.previewApplyPlanDryRun({
+      planId: saved.planId,
+    });
+
+    expect(preview.planId).toBe(saved.planId);
+    expect(preview.canProceedToApply).toBe(false);
+    expect(preview.canProceedToConfirmation).toBe(false);
+    expect(preview.caveats.join(" ")).toMatch(/No files changed/i);
+    expect(preview.caveats.join(" ")).toMatch(/Apply is not ready yet/i);
+    expect(preview.caveats.join(" ")).toMatch(/Restore is not ready yet/i);
+    expect(preview.summary.totalItems).toBeGreaterThan(0);
+    expect(preview.summary.backupRequiredItems).toBeGreaterThan(0);
+    expect(preview.items.every((item) => item.canApply === false)).toBe(true);
+    expect(
+      preview.items.some(
+        (item) =>
+          item.dryRunStatus === "blocked" ||
+          item.dryRunStatus === "would_require_review",
+      ),
+    ).toBe(true);
+    expect(
+      preview.items.every(
+        (item) => item.dryRunStatus !== "candidate_after_future_safety_gates",
+      ),
+    ).toBe(true);
+
+    const runLogs = await api.listApplyPlanRunLogs({ applyPlanId: saved.planId });
+    expect(runLogs).toEqual([]);
+  });
+
   it("saves, lists, reads, and soft-cancels preview-only plans in the mock API", async () => {
     const sourcePlan = await api.generateSortingPreviewPlan({
       scope: {

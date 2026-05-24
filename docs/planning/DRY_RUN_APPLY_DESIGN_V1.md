@@ -5,11 +5,13 @@ Date: 2026-05-24
 Dry-run Apply is a read-only rehearsal. It explains what SimSuite would try
 later, what it would skip, and why Apply is still not allowed.
 
-No files changed. Apply is not ready yet. Restore is not ready yet. This design
-does not add a runtime command, API wrapper, migration, UI, confirmation
-workflow, Apply, Restore, backup execution, restore execution, file movement,
-file copying, folder creation, cleanup, delete, quarantine, replacement,
-auto-sort execution, fixture helper exposure, or AI decision.
+No files changed. Apply is not ready yet. Restore is not ready yet. The first
+backend/API-only `preview_apply_plan_dry_run` command now exists and remains
+read-only. It does not add a migration, UI, confirmation workflow, Apply,
+Restore, backup execution, restore execution, DB writes, result-log creation,
+restore-entry creation, file movement, file copying, folder creation, cleanup,
+delete, quarantine, replacement, auto-sort execution, fixture helper exposure,
+or AI decision.
 
 ## 1. Purpose
 
@@ -36,6 +38,11 @@ Current SimSuite state:
 - Organize can create, list, inspect, validate, and cancel saved drafts.
 - validation preview exists and remains read-only.
 - validation preview keeps `canProceedToConfirmation=false`.
+- `preview_apply_plan_dry_run` exists as a backend/API-only read-only command.
+- dry-run v1 returns `canProceedToApply=false` and
+  `canProceedToConfirmation=false`.
+- dry-run v1 writes no DB rows and creates no result logs, restore entries,
+  backups, folders, or file changes.
 - recovery history exists and remains read-only.
 - recovery history displays existing DB-only run, result, and restore-map
   metadata.
@@ -161,9 +168,9 @@ type ApplyPlanDryRunItem = {
 `candidate_after_future_safety_gates` must never be displayed as ready, safe,
 approved, or Apply-ready.
 
-## 7. Future Command Design
+## 7. Implemented Command v1
 
-Recommended future command:
+Implemented first command:
 
 ```text
 preview_apply_plan_dry_run
@@ -183,7 +190,7 @@ Output:
 type PreviewApplyPlanDryRunResponse = ApplyPlanDryRunPreview;
 ```
 
-The command should be:
+The command is:
 
 - read-only.
 - response-only in v1.
@@ -191,6 +198,8 @@ The command should be:
 - based on saved ApplyPlan records and validation preview output.
 - covered by tests proving `canProceedToApply=false`.
 - covered by tests proving `canProceedToConfirmation=false`.
+- covered by tests proving item `canApply=false`.
+- covered by tests proving no result-log or restore-entry rows are created.
 
 The command must not:
 
@@ -203,6 +212,8 @@ The command must not:
 - call Apply.
 - call confirmation.
 - call fixture backup or restore helpers.
+
+Future UI remains separate work.
 
 ## 8. Relationship to Validation Preview
 
@@ -289,12 +300,12 @@ Future implementation tests must prove:
 
 Phase A - dry-run design:
 
-- current sprint.
+- completed before the command sprint.
 - docs and guard test only.
 
 Phase B - read-only dry-run command:
 
-- backend/API only.
+- implemented as backend/API only.
 - no UI.
 - no DB writes in v1.
 - no Apply or confirmation.
