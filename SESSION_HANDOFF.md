@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Current Session (May 24, 2026 - Dry-run Apply Design v1)
+
+- **Mode**: code
+- **Focus**: design the future read-only dry-run Apply layer before any
+  confirmation, Apply, Restore, backup execution, or file-changing workflow
+
+### Progress Made
+
+1. **Added dry-run Apply source-of-truth design**:
+   - defines dry-run Apply as a read-only rehearsal
+   - documents future dry-run statuses, item model, command shape, and UI
+     recommendation
+   - keeps `canProceedToApply=false` and `canProceedToConfirmation=false`
+     as future v1 requirements
+
+2. **Kept existing systems as the base**:
+   - reuses saved ApplyPlan records, item snapshots, signals, blockers,
+     validation preview output, result/restore schema, recovery history, and
+     Apply safety contracts
+   - does not create a parallel dry-run store or frontend-owned validation
+
+3. **Kept the safety boundary explicit**:
+   - no runtime command, API wrapper, migration, UI, confirmation workflow,
+     Apply, Restore, backup execution, restore execution, fixture helper
+     exposure, or file-changing behavior was added
+
+### Verification
+
+- Validation results are recorded in
+  `simsuite-reports/DRY_RUN_APPLY_DESIGN_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- Read-only dry-run command is not implemented yet.
+- Confirmation workflow is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older unrelated
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Implement the read-only `preview_apply_plan_dry_run` command v1. Still no
+   real Apply.
+
 ## Current Session (May 23, 2026 - Result / Restore Review UI v1)
 
 - **Mode**: code

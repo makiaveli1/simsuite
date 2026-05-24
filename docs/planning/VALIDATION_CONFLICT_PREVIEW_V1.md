@@ -54,6 +54,12 @@ restore-map records. This does not change validation semantics:
 `canProceedToConfirmation=false` remains the safe boundary, Apply is not ready
 yet, and Restore is not ready yet.
 
+Current planning note: dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. Dry-run must depend on validation
+preview output before classifying future item behavior, and it must keep
+`canProceedToApply=false` and `canProceedToConfirmation=false` until later
+confirmation, backup/restore execution, result logging, and proof exist.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

@@ -99,6 +99,12 @@ and restore-map records for a saved draft. It does not call create/record APIs,
 does not expose fixture proof helpers, and still has no backup, restore, Apply,
 or file-changing controls.
 
+Dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. It recommends a future read-only
+dry-run preview near saved-plan validation and recovery history, but this
+planning sprint adds no route, command, API, confirmation workflow, Apply,
+Restore, backup, or file-changing control.
+
 ## Overlap Audit
 
 | Overlap | Decision | Reason | Migration note |

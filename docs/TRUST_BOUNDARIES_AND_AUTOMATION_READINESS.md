@@ -79,6 +79,12 @@ files changed`, `Apply is not ready yet`, and `Restore is not ready yet`
 visible. It does not create result logs, create restore entries, run backup,
 run restore, expose fixture proof helpers, or change user files.
 
+Dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. It defines a future read-only
+rehearsal layer only. It does not add Apply, Restore, confirmation, backup
+execution, restore execution, result-log writes, restore-map writes, fixture
+helper exposure, or file-changing controls.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

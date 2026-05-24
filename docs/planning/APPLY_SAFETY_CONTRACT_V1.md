@@ -88,6 +88,13 @@ restore-map records. It keeps `No files changed`, `Apply is not ready yet`, and
 `Restore is not ready yet` visible. It does not expose Apply, Restore, backup
 execution, restore execution, fixture proof helpers, or file-changing controls.
 
+Current planning note: dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. It defines a future read-only
+rehearsal layer that explains what a saved draft would attempt later, what
+would be skipped, and which safety gates are still missing. It does not add a
+command, API, UI, confirmation workflow, Apply, Restore, backup execution,
+restore execution, fixture helper exposure, or file-changing behavior.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

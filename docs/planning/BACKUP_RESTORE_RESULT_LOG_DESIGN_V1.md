@@ -47,6 +47,12 @@ logs, and restore-map records. It only displays metadata, does not create
 records, does not run backup or restore, does not expose fixture proof helpers,
 and does not make Apply or Restore ready.
 
+Current planning note: dry-run Apply design now lives in
+`docs/planning/DRY_RUN_APPLY_DESIGN_V1.md`. Dry-run can mention that backup,
+restore-map, and result-log support are required before future Apply, but it
+must not create backups, restore entries, result rows, confirmation tokens, or
+file-changing work.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
