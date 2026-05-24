@@ -499,6 +499,83 @@ pub struct ApplyPlanValidationPreview {
     pub items: Vec<ApplyPlanValidationItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewApplyPlanDryRunRequest {
+    pub plan_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanDryRunPreviewStatus {
+    NotRun,
+    Blocked,
+    PreviewOnly,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanDryRunItemStatus {
+    Blocked,
+    WouldSkip,
+    WouldRequireReview,
+    WouldRequireBackup,
+    WouldRequireConfirmation,
+    WouldRequireDestinationReview,
+    CandidateAfterFutureSafetyGates,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanDryRunActionPreview {
+    WouldMoveLater,
+    WouldSkip,
+    NoAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanDryRunSummary {
+    pub total_items: i64,
+    pub candidate_items: i64,
+    pub skipped_items: i64,
+    pub blocked_items: i64,
+    pub review_only_items: i64,
+    pub conflict_items: i64,
+    pub backup_required_items: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanDryRunItem {
+    pub item_id: i64,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub dry_run_status: ApplyPlanDryRunItemStatus,
+    pub action_preview: ApplyPlanDryRunActionPreview,
+    pub source_path: Option<String>,
+    pub destination_path: Option<String>,
+    pub reasons: Vec<String>,
+    pub blockers: Vec<String>,
+    pub required_before_apply: Vec<String>,
+    pub can_apply: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanDryRunPreview {
+    pub plan_id: i64,
+    pub status: ApplyPlanDryRunPreviewStatus,
+    pub can_proceed_to_apply: bool,
+    pub can_proceed_to_confirmation: bool,
+    pub checked_at: String,
+    pub summary: ApplyPlanDryRunSummary,
+    pub caveats: Vec<String>,
+    pub items: Vec<ApplyPlanDryRunItem>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanRunLogStatus {

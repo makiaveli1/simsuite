@@ -99,6 +99,14 @@ skipped, requiring review, requiring backup, requiring confirmation, or only
 candidate after future safety gates. It does not add runtime persistence,
 commands, UI, confirmation, Apply, Restore, or file-changing behavior.
 
+Current implementation note: `codex/read-only-dry-run-apply-command-v1` adds
+the first read-only `preview_apply_plan_dry_run` command and TypeScript API/mock
+wrapper. The command loads saved draft ApplyPlan records, depends on validation
+preview output, and classifies items without writing dry-run state, result-log
+rows, restore-map rows, backups, folders, or file changes. It always returns
+`canProceedToApply=false`, `canProceedToConfirmation=false`, and item
+`canApply=false`.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

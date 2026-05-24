@@ -248,4 +248,21 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/canProceedToConfirmation/);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents read-only dry-run Apply command without making Apply ready", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/READ_ONLY_DRY_RUN_APPLY_COMMAND_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/preview_apply_plan_dry_run/);
+    expect(source).toMatch(/No Apply/);
+    expect(source).toMatch(/No Restore/);
+    expect(source).toMatch(/No file movement/);
+    expect(source).toMatch(/No result-log writes from dry-run/);
+    expect(source).toMatch(/No restore-entry writes from dry-run/);
+    expect(source).toMatch(/canProceedToApply=false/);
+    expect(source).toMatch(/canProceedToConfirmation=false/);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });

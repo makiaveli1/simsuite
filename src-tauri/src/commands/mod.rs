@@ -18,24 +18,24 @@ use tauri::{AppHandle, Emitter, State};
 use crate::{
     app_state::AppState,
     core::{
-        apply_plan_persistence, apply_plan_results, apply_plan_validation, bundle_detector,
-        category_audit, content_versions, creator_audit, downloads_watcher, duplicate_detector,
-        install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
-        watch_polling,
+        apply_plan_dry_run, apply_plan_persistence, apply_plan_results, apply_plan_validation,
+        bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
+        duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
+        scanner, snapshot_manager, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPlanListItem, ApplyPlanRunLogDetail,
-        ApplyPlanValidationPreview, ApplyPreviewResult, ApplyReviewPlanActionResult,
-        ApplySpecialReviewFixResult, BatchApplyResult, BuildApplyPlanFromStagingPlanRequest,
-        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CleanupResult,
-        CreateApplyPlanRunLogRequest, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
-        DeleteDraftApplyPlanResult, DetectedLibraryPaths, DownloadInboxDetail,
-        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
-        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
-        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        ApplyGuidedDownloadResult, ApplyPlanDryRunPreview, ApplyPlanListItem,
+        ApplyPlanRunLogDetail, ApplyPlanValidationPreview, ApplyPreviewResult,
+        ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
+        BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile, CategoryAuditQuery,
+        CategoryAuditResponse, CleanupResult, CreateApplyPlanRunLogRequest, CreatorAuditFile,
+        CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
+        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
+        DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
+        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics,
         LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
@@ -43,13 +43,14 @@ use crate::{
         LibraryWatchSetupResponse, ListApplyPlanRestoreEntriesRequest,
         ListApplyPlanResultLogsRequest, ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest,
         OrganizationPreview, PersistedApplyPlan, PersistedApplyPlanRestoreEntry,
-        PersistedApplyPlanResult, PersistedApplyPlanRun, PreviewApplyPlanValidationRequest,
-        RecordApplyPlanRestoreEntryRequest, RecordApplyPlanResultLogRequest, RejectResult,
-        RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
-        ReviewQueueItem, RulePreset, SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult,
-        SaveLibraryWatchSourceEntry, ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary,
-        SnapshotSummary, SpecialReviewPlan, StagingAreasSummary, StagingCommitResult, StagingPlan,
-        WatchListFilter, WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
+        PersistedApplyPlanResult, PersistedApplyPlanRun, PreviewApplyPlanDryRunRequest,
+        PreviewApplyPlanValidationRequest, RecordApplyPlanRestoreEntryRequest,
+        RecordApplyPlanResultLogRequest, RejectResult, RejectedItem, RestoreSnapshotResult,
+        ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry,
+        ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
+        StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
+        WatchRefreshSummary, WatchSourceKind, WorkspaceChange, WorkspaceDomain,
     },
     sync_tray_visibility,
 };
@@ -880,6 +881,21 @@ pub async fn preview_apply_plan_validation(
         let connection = state.connection().map_err(map_error)?;
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
         apply_plan_validation::preview_apply_plan_validation(&connection, &settings, request)
+            .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_apply_plan_dry_run(
+    state: State<'_, AppState>,
+    request: PreviewApplyPlanDryRunRequest,
+) -> Result<ApplyPlanDryRunPreview, String> {
+    let state = state.inner().clone();
+    run_blocking_command("preview_apply_plan_dry_run", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        apply_plan_dry_run::preview_apply_plan_dry_run(&connection, &settings, request)
             .map_err(map_error)
     })
     .await

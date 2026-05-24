@@ -95,6 +95,13 @@ would be skipped, and which safety gates are still missing. It does not add a
 command, API, UI, confirmation workflow, Apply, Restore, backup execution,
 restore execution, fixture helper exposure, or file-changing behavior.
 
+Current implementation note: `preview_apply_plan_dry_run` now exists as a
+backend/API-only read-only command. It reuses saved ApplyPlan records and the
+validation preview, returns `canProceedToApply=false` and
+`canProceedToConfirmation=false`, writes no DB rows, creates no result logs or
+restore entries, creates no backups or folders, and does not move, copy,
+delete, clean up, quarantine, replace, or auto-sort files.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

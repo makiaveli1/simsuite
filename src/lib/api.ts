@@ -67,6 +67,10 @@ import type {
   ScanSummary,
   CleanupResult,
   ApplyPlanConflictStatus,
+  ApplyPlanDryRunActionPreview,
+  ApplyPlanDryRunItem,
+  ApplyPlanDryRunItemStatus,
+  ApplyPlanDryRunPreview,
   ApplyPlanListItem,
   ApplyPlanRunLogDetail,
   ApplyPlanRunLogStatus,
@@ -90,6 +94,7 @@ import type {
   PersistedApplyPlanResult,
   PersistedApplyPlanRun,
   PersistedApplyPlanSignal,
+  PreviewApplyPlanDryRunRequest,
   PreviewApplyPlanValidationRequest,
   RecordApplyPlanRestoreEntryRequest,
   RecordApplyPlanResultLogRequest,
@@ -917,6 +922,214 @@ const buildMockApplyPlanValidationPreview = (
       backupBlockedItems,
     },
     caveats,
+    items,
+  };
+};
+
+const dryRunRequiredSteps = [
+  "Validation proof required",
+  "Backup required",
+  "Restore map required",
+  "Result log required",
+  "Explicit confirmation required",
+  "Apply executor proof required",
+];
+
+const hasMockDestinationConflict = (status: ApplyPlanConflictStatus): boolean =>
+  [
+    "destination_exists",
+    "same_name_conflict",
+    "case_conflict",
+    "folder_missing",
+    "permission_unknown",
+    "path_too_long",
+    "cross_root_blocked",
+    "unsupported",
+  ].includes(status);
+
+const mockDryRunClassification = (
+  plan: PersistedApplyPlan,
+  validation: ApplyPlanValidationItem,
+): {
+  dryRunStatus: ApplyPlanDryRunItemStatus;
+  actionPreview: ApplyPlanDryRunActionPreview;
+  reason: string;
+} => {
+  if (plan.status === "cancelled") {
+    return {
+      dryRunStatus: "blocked",
+      actionPreview: "no_action",
+      reason: "Cancelled draft records are blocked before any future dry-run action.",
+    };
+  }
+
+  switch (validation.validationStatus) {
+    case "blocked":
+      return {
+        dryRunStatus: "blocked",
+        actionPreview: "no_action",
+        reason: "Saved blockers remain blocked in dry-run.",
+      };
+    case "review_only_blocked":
+    case "duplicate_review_blocked":
+      return {
+        dryRunStatus: "would_require_review",
+        actionPreview: "would_skip",
+        reason:
+          "Manual review is required before this item can be discussed for future Apply.",
+      };
+    case "missing_source":
+    case "stale_source":
+      return {
+        dryRunStatus: "would_skip",
+        actionPreview: "would_skip",
+        reason:
+          "The saved source evidence is missing or stale, so dry-run would skip this item.",
+      };
+    case "missing_destination_root":
+    case "unsafe_destination":
+    case "destination_exists":
+    case "unsupported_cross_root":
+      return {
+        dryRunStatus: "would_require_destination_review",
+        actionPreview: "would_skip",
+        reason:
+          "Destination evidence requires review before any future file-changing workflow.",
+      };
+    case "backup_required":
+      return {
+        dryRunStatus: "would_require_backup",
+        actionPreview: "no_action",
+        reason: "Backup and restore-map proof are required before any future Apply.",
+      };
+    case "error":
+      return {
+        dryRunStatus: "error",
+        actionPreview: "no_action",
+        reason: "Validation returned an error for this item.",
+      };
+    case "not_validated":
+      return {
+        dryRunStatus: "would_skip",
+        actionPreview: "would_skip",
+        reason: "This item has not been validated for dry-run classification.",
+      };
+    case "valid_preview_only":
+      if (hasMockDestinationConflict(validation.conflictStatus)) {
+        return {
+          dryRunStatus: "would_require_destination_review",
+          actionPreview: "would_skip",
+          reason:
+            "Destination conflict evidence requires review before any future Apply.",
+        };
+      }
+      if (plan.backupRequired && !plan.restoreAvailable) {
+        return {
+          dryRunStatus: "would_require_backup",
+          actionPreview: "no_action",
+          reason:
+            "No current validation blocker was found, but backup, restore map, result log, confirmation, and executor proof are still required.",
+        };
+      }
+      return {
+        dryRunStatus: "candidate_after_future_safety_gates",
+        actionPreview: "would_move_later",
+        reason: "This item is only a candidate after future safety gates.",
+      };
+  }
+};
+
+const buildMockApplyPlanDryRunPreview = (
+  request: PreviewApplyPlanDryRunRequest,
+): ApplyPlanDryRunPreview => {
+  const plan = mockSavedApplyPlans.find((candidate) => candidate.id === request.planId);
+  if (!plan) {
+    throw new Error("Saved preview plan was not found.");
+  }
+
+  const validation = buildMockApplyPlanValidationPreview({ planId: request.planId });
+  const items: ApplyPlanDryRunItem[] = validation.items.map((validationItem) => {
+    const savedItem = plan.items.find((item) => item.id === validationItem.itemId);
+    const classification = mockDryRunClassification(plan, validationItem);
+    const blockers =
+      savedItem?.blockers.map((blocker) => `${blocker.reasonCode}: ${blocker.message}`) ??
+      [];
+    const requiredBeforeApply = [
+      ...validationItem.requiredNextSteps,
+      ...dryRunRequiredSteps.filter(
+        (step) => !validationItem.requiredNextSteps.includes(step),
+      ),
+    ];
+    const reasons = [...validationItem.reasons];
+    if (!reasons.includes(classification.reason)) {
+      reasons.push(classification.reason);
+    }
+
+    return {
+      itemId: validationItem.itemId,
+      fileId: validationItem.fileId,
+      fileName: validationItem.fileName,
+      dryRunStatus: classification.dryRunStatus,
+      actionPreview: classification.actionPreview,
+      sourcePath: savedItem?.currentPath?.trim() ? savedItem.currentPath : null,
+      destinationPath: savedItem?.destinationPath?.trim()
+        ? savedItem.destinationPath
+        : null,
+      reasons,
+      blockers,
+      requiredBeforeApply,
+      canApply: false,
+    };
+  });
+
+  const summary = {
+    totalItems: items.length,
+    candidateItems: items.filter(
+      (item) => item.dryRunStatus === "candidate_after_future_safety_gates",
+    ).length,
+    skippedItems: items.filter((item) =>
+      [
+        "blocked",
+        "would_skip",
+        "would_require_review",
+        "would_require_destination_review",
+        "error",
+      ].includes(item.dryRunStatus),
+    ).length,
+    blockedItems: items.filter((item) => item.dryRunStatus === "blocked").length,
+    reviewOnlyItems: items.filter(
+      (item) => item.dryRunStatus === "would_require_review",
+    ).length,
+    conflictItems: items.filter(
+      (item) => item.dryRunStatus === "would_require_destination_review",
+    ).length,
+    backupRequiredItems: items.filter(
+      (item) => item.dryRunStatus === "would_require_backup",
+    ).length,
+  };
+
+  return {
+    planId: plan.id,
+    status:
+      plan.status === "cancelled" ||
+      items.length === 0 ||
+      summary.blockedItems > 0 ||
+      summary.skippedItems > 0 ||
+      summary.reviewOnlyItems > 0 ||
+      summary.conflictItems > 0 ||
+      summary.backupRequiredItems > 0
+        ? "blocked"
+        : "preview_only",
+    canProceedToApply: false,
+    canProceedToConfirmation: false,
+    checkedAt: validation.checkedAt,
+    summary,
+    caveats: [
+      ...validation.caveats,
+      "No files changed. This dry-run preview is read-only.",
+      "Dry-run preview is not Apply or confirmation; Apply is not ready yet.",
+      "Restore is not ready yet. Future Apply still requires backup, restore map, result log, confirmation, and executor proof.",
+    ],
     items,
   };
 };
@@ -7109,6 +7322,13 @@ async function mockInvoke<T>(
       }
       return structuredClone(buildMockApplyPlanValidationPreview(request)) as T;
     }
+    case "preview_apply_plan_dry_run": {
+      const request = payload?.request as PreviewApplyPlanDryRunRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan dry-run preview request.");
+      }
+      return structuredClone(buildMockApplyPlanDryRunPreview(request)) as T;
+    }
     case "create_apply_plan_run_log": {
       const request = payload?.request as CreateApplyPlanRunLogRequest | undefined;
       if (!request) {
@@ -8640,6 +8860,8 @@ export const api = {
     invoke<PersistedApplyPlan | null>("get_apply_plan", { planId }),
   previewApplyPlanValidation: (request: PreviewApplyPlanValidationRequest) =>
     invoke<ApplyPlanValidationPreview>("preview_apply_plan_validation", { request }),
+  previewApplyPlanDryRun: (request: PreviewApplyPlanDryRunRequest) =>
+    invoke<ApplyPlanDryRunPreview>("preview_apply_plan_dry_run", { request }),
   createApplyPlanRunLog: (request: CreateApplyPlanRunLogRequest) =>
     invoke<PersistedApplyPlanRun>("create_apply_plan_run_log", { request }),
   listApplyPlanRunLogs: (request?: ListApplyPlanRunLogsRequest) =>

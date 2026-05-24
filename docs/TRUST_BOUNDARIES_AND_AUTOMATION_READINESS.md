@@ -85,6 +85,13 @@ rehearsal layer only. It does not add Apply, Restore, confirmation, backup
 execution, restore execution, result-log writes, restore-map writes, fixture
 helper exposure, or file-changing controls.
 
+The first read-only dry-run command now exists as `preview_apply_plan_dry_run`.
+It is backend/API-only, depends on saved ApplyPlan records and validation
+preview output, and returns `canProceedToApply=false` plus
+`canProceedToConfirmation=false`. It writes no DB rows, creates no result logs
+or restore entries, creates no backups or folders, exposes no fixture helpers,
+and changes no files.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

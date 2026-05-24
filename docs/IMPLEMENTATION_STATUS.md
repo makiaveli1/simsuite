@@ -1,5 +1,39 @@
 # SimSuite Implementation Status
 
+## Current session note (May 24, 2026 - Read-only Dry-run Apply Command v1)
+
+This session implements the first backend/API-only
+`preview_apply_plan_dry_run` command. It is a read-only classifier for saved
+draft ApplyPlans. It depends on the existing validation preview, explains how
+items would be blocked, skipped, reviewed, destination-reviewed, or held behind
+future backup/restore/result-log/confirmation gates, and still returns
+`canProceedToApply=false`, `canProceedToConfirmation=false`, and item
+`canApply=false`.
+
+Important changes and findings:
+
+- added Rust dry-run request/response models.
+- added `src-tauri/src/core/apply_plan_dry_run.rs`.
+- registered `preview_apply_plan_dry_run` as a Tauri command.
+- added TypeScript dry-run types, API wrapper, and mock support.
+- added tests proving false progression flags, safe item classification, no
+  result-log writes, no restore-entry writes, and no fixture/move/apply helper
+  calls from dry-run source.
+- no migration, visible UI, confirmation workflow, Apply, Restore, backup
+  execution, restore execution, fixture helper exposure, file movement, file
+  copying, folder creation, deletion, cleanup, quarantine, replacement,
+  auto-sort execution, or AI decision was added.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/READ_ONLY_DRY_RUN_APPLY_COMMAND_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Add a read-only dry-run preview UI inside Organize saved plan details, or
+  design confirmation. Still no real Apply.
+
 ## Current session note (May 24, 2026 - Dry-run Apply Design v1)
 
 This session adds a source-of-truth design for the future dry-run Apply layer.
