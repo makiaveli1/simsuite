@@ -151,7 +151,7 @@ outside the implementation:
 
 ## Commit
 
-Pending.
+Implementation commit: `ef9680b - Design dry-run Apply layer`.
 
 ## Final honest verdict
 
