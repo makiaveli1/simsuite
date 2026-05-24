@@ -118,12 +118,17 @@ Linear updated:
 - Related comments added to `VEL-18`, `VEL-20`, `VEL-31`, `VEL-32`,
   `VEL-33`, and `VEL-34`.
 
-Branch/PR are pending.
+Branch pushed:
+
+- `codex/read-only-dry-run-apply-command-v1`
+
+Draft PR:
+
+- https://github.com/makiaveli1/simsuite/pull/27
 
 ## What could not be verified yet
 
-No desktop UI behavior was verified because none changed. Push and PR creation
-are pending.
+No desktop UI behavior was verified because none changed.
 
 ## Recommended next sprint
 
@@ -157,7 +162,10 @@ unstaged unless a top current-state note was updated:
 
 ## Commit
 
-Pending.
+- Implementation commit: `78005da` -
+  `Implement read-only dry-run Apply preview`.
+- Delivery-report update commit is recorded in Git history after this report
+  update.
 
 ## Final honest verdict
 
