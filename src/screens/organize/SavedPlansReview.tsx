@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArchiveX,
@@ -14,6 +14,11 @@ import { api } from "../../lib/api";
 import type {
   ApplyPlanListItem,
   ApplyPlanConflictStatus,
+  ApplyPlanDryRunActionPreview,
+  ApplyPlanDryRunItem,
+  ApplyPlanDryRunItemStatus,
+  ApplyPlanDryRunPreview,
+  ApplyPlanDryRunPreviewStatus,
   ApplyPlanRestoreEntryStatus,
   ApplyPlanResultLogStatus,
   ApplyPlanRunLogStatus,
@@ -87,6 +92,47 @@ const PLAN_VALIDATION_LABELS: Record<ApplyPlanValidationPreviewStatus, string> =
   valid_preview_only: "No current blocker found, but still preview-only",
   blocked: "Blocked",
 };
+
+const DRY_RUN_PREVIEW_STATUS_LABELS: Record<ApplyPlanDryRunPreviewStatus, string> = {
+  not_run: "Not run",
+  blocked: "Blocked",
+  preview_only: "Preview only",
+  error: "Could not preview",
+};
+
+const DRY_RUN_ITEM_STATUS_LABELS: Record<ApplyPlanDryRunItemStatus, string> = {
+  blocked: "Blocked",
+  would_skip: "Would be skipped",
+  would_require_review: "Manual review needed",
+  would_require_backup: "Backup required",
+  would_require_confirmation: "Future confirmation blocked",
+  would_require_destination_review: "Needs destination review",
+  candidate_after_future_safety_gates: "Candidate after future safety gates",
+  error: "Could not preview",
+};
+
+const DRY_RUN_ACTION_LABELS: Record<ApplyPlanDryRunActionPreview, string> = {
+  would_move_later: "Would be considered only after future safety gates",
+  would_skip: "Would be skipped",
+  no_action: "No action",
+};
+
+const DRY_RUN_ITEM_GROUPS: Array<{
+  status: ApplyPlanDryRunItemStatus;
+  label: string;
+}> = [
+  { status: "would_skip", label: "Would be skipped" },
+  { status: "blocked", label: "Blocked" },
+  { status: "would_require_review", label: "Needs review" },
+  { status: "would_require_destination_review", label: "Needs destination review" },
+  { status: "would_require_backup", label: "Backup required" },
+  { status: "would_require_confirmation", label: "Future confirmation blocked" },
+  {
+    status: "candidate_after_future_safety_gates",
+    label: "Candidate after future safety gates",
+  },
+  { status: "error", label: "Errors / could not preview" },
+];
 
 const RUN_LOG_STATUS_LABELS: Record<ApplyPlanRunLogStatus, string> = {
   draft_log: "Draft log",
@@ -194,6 +240,18 @@ function formatConflictStatus(status: ApplyPlanConflictStatus): string {
 
 function formatPlanValidationStatus(status: ApplyPlanValidationPreviewStatus): string {
   return PLAN_VALIDATION_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatDryRunPreviewStatus(status: ApplyPlanDryRunPreviewStatus): string {
+  return DRY_RUN_PREVIEW_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatDryRunItemStatus(status: ApplyPlanDryRunItemStatus): string {
+  return DRY_RUN_ITEM_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatDryRunActionPreview(action: ApplyPlanDryRunActionPreview): string {
+  return DRY_RUN_ACTION_LABELS[action] ?? action.replace(/_/g, " ");
 }
 
 function formatRunLogStatus(status: ApplyPlanRunLogStatus): string {
@@ -589,6 +647,353 @@ function ValidationPreviewSection({
   );
 }
 
+function DryRunSummaryGrid({ preview }: { preview: ApplyPlanDryRunPreview }) {
+  return (
+    <div className="validation-preview-grid" aria-label="Dry-run summary counts">
+      <span>
+        <strong>{preview.summary.totalItems}</strong>
+        <small>Total items</small>
+      </span>
+      <span>
+        <strong>{preview.summary.candidateItems}</strong>
+        <small>Candidates after future safety gates</small>
+      </span>
+      <span>
+        <strong>{preview.summary.skippedItems}</strong>
+        <small>Skipped items</small>
+      </span>
+      <span>
+        <strong>{preview.summary.blockedItems}</strong>
+        <small>Blocked items</small>
+      </span>
+      <span>
+        <strong>{preview.summary.reviewOnlyItems}</strong>
+        <small>Review needed</small>
+      </span>
+      <span>
+        <strong>{preview.summary.conflictItems}</strong>
+        <small>Destination review</small>
+      </span>
+      <span>
+        <strong>{preview.summary.backupRequiredItems}</strong>
+        <small>Backup required</small>
+      </span>
+    </div>
+  );
+}
+
+function DryRunItemCard({ item }: { item: ApplyPlanDryRunItem }) {
+  return (
+    <article className="validation-preview-item" aria-label={`${item.fileName} dry-run result`}>
+      <div className="validation-preview-item-header">
+        <div className="organize-plan-item-title">
+          <span>{item.fileName}</span>
+          <small>{formatDryRunActionPreview(item.actionPreview)}</small>
+        </div>
+        <div className="organize-plan-status-row" aria-label="Dry-run item labels">
+          <span className="organize-plan-status-chip">
+            {formatDryRunItemStatus(item.dryRunStatus)}
+          </span>
+          <span className="organize-plan-tag organize-plan-tag--blocked">
+            canApply=false
+          </span>
+        </div>
+      </div>
+
+      <div className="organize-plan-path-grid">
+        <div className="organize-plan-path-card">
+          <span>Source path</span>
+          <code title={item.sourcePath ?? undefined}>
+            {shortenPath(item.sourcePath)}
+          </code>
+        </div>
+        <div className="organize-plan-path-card">
+          <span>Destination preview</span>
+          <code title={item.destinationPath ?? undefined}>
+            {shortenPath(item.destinationPath)}
+          </code>
+        </div>
+      </div>
+
+      <div className="validation-preview-reasons">
+        <div>
+          <h5>Reasons</h5>
+          {item.reasons.length > 0 ? (
+            <ul>
+              {item.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>SimSuite has limited information here.</p>
+          )}
+        </div>
+        <div>
+          <h5>Blockers</h5>
+          {item.blockers.length > 0 ? (
+            <ul>
+              {item.blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No dry-run blocker was returned for this item.</p>
+          )}
+        </div>
+        <div>
+          <h5>Still required before any future Apply</h5>
+          {item.requiredBeforeApply.length > 0 ? (
+            <ul>
+              {item.requiredBeforeApply.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>Future confirmation remains blocked.</p>
+          )}
+        </div>
+      </div>
+
+      <details>
+        <summary>Technical details</summary>
+        <div className="pending-batch-technical">
+          <div>
+            <strong>Item id</strong>
+            <code>{item.itemId}</code>
+          </div>
+          <div>
+            <strong>File id</strong>
+            <code>{item.fileId ?? "No file id"}</code>
+          </div>
+          <div>
+            <strong>Dry-run status</strong>
+            <code>{item.dryRunStatus}</code>
+          </div>
+          <div>
+            <strong>Action preview</strong>
+            <code>{item.actionPreview}</code>
+          </div>
+          <div>
+            <strong>canApply</strong>
+            <code>{String(item.canApply)}</code>
+          </div>
+          <div>
+            <strong>Source path</strong>
+            <code>{item.sourcePath ?? "Path unavailable"}</code>
+          </div>
+          <div>
+            <strong>Destination path</strong>
+            <code>{item.destinationPath ?? "Path unavailable"}</code>
+          </div>
+        </div>
+      </details>
+    </article>
+  );
+}
+
+function DryRunPreviewSection({
+  planId,
+  preview,
+  loading,
+  error,
+  onPreview,
+}: {
+  planId: number;
+  preview: ApplyPlanDryRunPreview | null;
+  loading: boolean;
+  error: string | null;
+  onPreview: (planId: number) => void;
+}) {
+  const groupedItems = DRY_RUN_ITEM_GROUPS.map((group) => ({
+    ...group,
+    items: preview?.items.filter((item) => item.dryRunStatus === group.status) ?? [],
+  })).filter((group) => group.items.length > 0);
+  const buttonLabel = preview ? "Refresh dry-run preview" : "Preview dry-run";
+
+  return (
+    <section className="validation-preview-panel" aria-label="Dry-run preview">
+      <div className="validation-preview-header">
+        <div>
+          <div className="eyebrow">Dry-run preview</div>
+          <h4>Future Apply classification</h4>
+          <p>
+            This preview explains how SimSuite would classify saved-plan items
+            for a future Apply flow. It cannot change files.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary-action"
+          disabled={loading}
+          onClick={() => onPreview(planId)}
+        >
+          {loading ? (
+            <>
+              <LoaderCircle size={16} className="spin" />
+              Checking dry-run preview
+            </>
+          ) : (
+            <>
+              <ListChecks size={16} />
+              {buttonLabel}
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="validation-preview-safety-strip">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          Apply is not ready yet. Future confirmation blocked. Dry-run preview
+          writes no result logs and creates no restore-map records.
+        </span>
+      </div>
+
+      <p className="validation-preview-note">
+        Validation checks paths, roots, conflicts, and blockers. Dry-run
+        explains how this saved draft would be classified after those read-only
+        checks. Dry-run does not create recovery history records.
+      </p>
+
+      {!preview && !loading && !error ? (
+        <div className="validation-preview-empty">
+          <Info size={20} />
+          <div>
+            <strong>Preview only</strong>
+            <span>
+              Run a dry-run preview to see how this saved draft would be
+              classified. No files changed.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="validation-preview-empty" aria-live="polite">
+          <LoaderCircle size={20} className="spin" />
+          <div>
+            <strong>Checking dry-run preview...</strong>
+            <span>SimSuite is reading saved metadata only. No files changed.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            Dry-run preview could not be loaded: {error}. No files changed.
+          </span>
+        </div>
+      ) : null}
+
+      {preview ? (
+        <div className="validation-preview-results">
+          <div className="validation-preview-status-row">
+            <span className="organize-plan-status-chip">
+              {formatDryRunPreviewStatus(preview.status)}
+            </span>
+            <span className="organize-plan-tag organize-plan-tag--blocked">
+              Apply is not ready yet
+            </span>
+            <span className="organize-plan-tag organize-plan-tag--blocked">
+              Future confirmation blocked
+            </span>
+            <span className="organize-plan-status-chip">
+              Checked {formatDateTime(preview.checkedAt)}
+            </span>
+          </div>
+
+          <div className="validation-preview-empty">
+            <ShieldCheck size={20} />
+            <div>
+              <strong>Apply remains unavailable.</strong>
+              <span>
+                Future confirmation remains blocked. canProceedToApply=false;
+                canProceedToConfirmation=false.
+              </span>
+            </div>
+          </div>
+
+          <DryRunSummaryGrid preview={preview} />
+
+          {preview.caveats.length > 0 ? (
+            <div className="organize-plan-detail-block">
+              <h4>Dry-run caveats</h4>
+              <ul className="organize-plan-caveats">
+                {preview.caveats.map((caveat) => (
+                  <li key={caveat}>{caveat}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="organize-plan-detail-block">
+            <h4>Still required before any future Apply</h4>
+            <ul className="organize-plan-caveats">
+              <li>Validation proof required.</li>
+              <li>Backup required.</li>
+              <li>Restore map required.</li>
+              <li>Result log required.</li>
+              <li>Explicit confirmation required.</li>
+              <li>Apply executor proof required.</li>
+            </ul>
+          </div>
+
+          {groupedItems.length > 0 ? (
+            <div className="validation-preview-item-list">
+              {groupedItems.map((group) => (
+                <section
+                  key={group.status}
+                  className="organize-plan-detail-block"
+                  aria-label={`${group.label} dry-run items`}
+                >
+                  <div className="organize-plan-bucket-heading">
+                    <h4>{group.label}</h4>
+                    <span>{formatCount(group.items.length, "item")}</span>
+                  </div>
+                  <div className="validation-preview-item-list">
+                    {group.items.map((item) => (
+                      <DryRunItemCard key={item.itemId} item={item} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="validation-preview-empty">
+              <Info size={20} />
+              <div>
+                <strong>No dry-run item rows returned.</strong>
+                <span>No files changed.</span>
+              </div>
+            </div>
+          )}
+
+          <details>
+            <summary>Technical details</summary>
+            <div className="pending-batch-technical">
+              <div>
+                <strong>Plan id</strong>
+                <code>{preview.planId}</code>
+              </div>
+              <div>
+                <strong>canProceedToApply</strong>
+                <code>{String(preview.canProceedToApply)}</code>
+              </div>
+              <div>
+                <strong>canProceedToConfirmation</strong>
+                <code>{String(preview.canProceedToConfirmation)}</code>
+              </div>
+            </div>
+          </details>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function RecoveryRunCard({
   run,
   selected,
@@ -969,6 +1374,9 @@ function SavedPlanDetails({
   validationPreview,
   validationLoading,
   validationError,
+  dryRunPreview,
+  dryRunLoading,
+  dryRunError,
   recoveryRuns,
   selectedRecoveryRunId,
   recoveryResults,
@@ -978,6 +1386,7 @@ function SavedPlanDetails({
   confirmingCancel,
   cancelling,
   onCheckValidation,
+  onPreviewDryRun,
   onSelectRecoveryRun,
   onCancelDraft,
   onConfirmCancel,
@@ -989,6 +1398,9 @@ function SavedPlanDetails({
   validationPreview: ApplyPlanValidationPreview | null;
   validationLoading: boolean;
   validationError: string | null;
+  dryRunPreview: ApplyPlanDryRunPreview | null;
+  dryRunLoading: boolean;
+  dryRunError: string | null;
   recoveryRuns: PersistedApplyPlanRun[];
   selectedRecoveryRunId: number | null;
   recoveryResults: PersistedApplyPlanResult[];
@@ -998,6 +1410,7 @@ function SavedPlanDetails({
   confirmingCancel: boolean;
   cancelling: boolean;
   onCheckValidation: (planId: number) => void;
+  onPreviewDryRun: (planId: number) => void;
   onSelectRecoveryRun: (runId: number) => void;
   onCancelDraft: () => void;
   onConfirmCancel: () => void;
@@ -1156,6 +1569,14 @@ function SavedPlanDetails({
         onCheck={onCheckValidation}
       />
 
+      <DryRunPreviewSection
+        planId={plan.id}
+        preview={dryRunPreview}
+        loading={dryRunLoading}
+        error={dryRunError}
+        onPreview={onPreviewDryRun}
+      />
+
       <RecoveryHistorySection
         runs={recoveryRuns}
         selectedRunId={selectedRecoveryRunId}
@@ -1214,6 +1635,10 @@ export function SavedPlansReview({
     useState<ApplyPlanValidationPreview | null>(null);
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [dryRunPreview, setDryRunPreview] =
+    useState<ApplyPlanDryRunPreview | null>(null);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [dryRunError, setDryRunError] = useState<string | null>(null);
   const [recoveryRuns, setRecoveryRuns] = useState<PersistedApplyPlanRun[]>([]);
   const [selectedRecoveryRunId, setSelectedRecoveryRunId] = useState<number | null>(
     null,
@@ -1229,6 +1654,8 @@ export function SavedPlansReview({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [localStatusMessage, setLocalStatusMessage] = useState<string | null>(null);
+  const selectedPlanIdRef = useRef<number | null>(selectedPlanId);
+  selectedPlanIdRef.current = selectedPlanId;
 
   const loadSavedPlans = useCallback(async () => {
     setLoadingList(true);
@@ -1261,6 +1688,9 @@ export function SavedPlansReview({
       setValidationPreview(null);
       setValidationError(null);
       setValidationLoading(false);
+      setDryRunPreview(null);
+      setDryRunError(null);
+      setDryRunLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -1278,6 +1708,9 @@ export function SavedPlansReview({
       setValidationPreview(null);
       setValidationError(null);
       setValidationLoading(false);
+      setDryRunPreview(null);
+      setDryRunError(null);
+      setDryRunLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -1289,6 +1722,9 @@ export function SavedPlansReview({
         if (cancelled) return;
         if (!plan) {
           setSelectedPlan(null);
+          setDryRunPreview(null);
+          setDryRunError(null);
+          setDryRunLoading(false);
           setDetailError("Saved preview plan was not found.");
           return;
         }
@@ -1381,6 +1817,25 @@ export function SavedPlansReview({
     }
   };
 
+  const handlePreviewDryRun = async (planId: number) => {
+    setDryRunLoading(true);
+    setDryRunError(null);
+    setDryRunPreview(null);
+    try {
+      const preview = await api.previewApplyPlanDryRun({ planId });
+      if (selectedPlanIdRef.current !== planId) return;
+      setDryRunPreview(preview);
+    } catch (error) {
+      if (selectedPlanIdRef.current !== planId) return;
+      setDryRunPreview(null);
+      setDryRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (selectedPlanIdRef.current === planId) {
+        setDryRunLoading(false);
+      }
+    }
+  };
+
   const handleSelectRecoveryRun = async (runId: number) => {
     setSelectedRecoveryRunId(runId);
     setRecoveryLoading(true);
@@ -1410,6 +1865,9 @@ export function SavedPlansReview({
       setLocalStatusMessage("Draft cancelled. No files changed.");
       setSelectedPlanId(null);
       setSelectedPlan(null);
+      setDryRunPreview(null);
+      setDryRunError(null);
+      setDryRunLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -1523,6 +1981,9 @@ export function SavedPlansReview({
               validationPreview={validationPreview}
               validationLoading={validationLoading}
               validationError={validationError}
+              dryRunPreview={dryRunPreview}
+              dryRunLoading={dryRunLoading}
+              dryRunError={dryRunError}
               recoveryRuns={recoveryRuns}
               selectedRecoveryRunId={selectedRecoveryRunId}
               recoveryResults={recoveryResults}
@@ -1532,6 +1993,7 @@ export function SavedPlansReview({
               confirmingCancel={confirmingCancel}
               cancelling={cancelling}
               onCheckValidation={handleCheckValidation}
+              onPreviewDryRun={handlePreviewDryRun}
               onSelectRecoveryRun={handleSelectRecoveryRun}
               onCancelDraft={() => setConfirmingCancel(true)}
               onConfirmCancel={handleCancelDraft}

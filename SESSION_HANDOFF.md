@@ -1,5 +1,59 @@
 # Session Handoff
 
+## Current Session (May 25, 2026 - Organize Dry-run Preview UI v1)
+
+- **Mode**: code
+- **Focus**: add a read-only `Dry-run preview` section inside Organize saved
+  plan details without adding Apply, Restore, confirmation, backup execution,
+  restore execution, result-log writes, restore-entry writes, or file-changing
+  behavior
+
+### Progress Made
+
+1. **Added read-only dry-run UI**:
+   - saved plan details now show `Dry-run preview` near validation preview and
+     Recovery history
+   - the section calls existing `previewApplyPlanDryRun` only when the user
+     clicks the preview control
+   - dry-run state is cleared on selected-plan changes so stale results do not
+     remain visible
+
+2. **Displayed cautious classification output**:
+   - shows `No files changed`, `Apply is not ready yet`, and `Future
+     confirmation blocked`
+   - groups items by skipped, blocked, review-needed, destination-review,
+     backup-required, candidate-after-future-safety-gates, and error states
+   - keeps path details behind existing `Technical details`
+
+3. **Kept the safety boundary explicit**:
+   - no backend/schema change
+   - no Apply, Restore, Backup, confirmation, fixture helper exposure, result
+     or restore writes, folder creation, copying, movement, cleanup, deletion,
+     quarantine, replacement, auto-sort execution, or AI decision
+
+### Verification
+
+- Initial focused checks passed:
+  - `npx tsc --noEmit`
+  - `npx vitest run src/screens/OrganizeScreen.test.tsx`
+- Full validation results are recorded in
+  `simsuite-reports/ORGANIZE_DRY_RUN_PREVIEW_UI_V1_REPORT.md`.
+
+### Known Problems / Gaps
+
+- Real Apply is still not implemented.
+- Real Restore is still not implemented.
+- Confirmation workflow is still not implemented.
+- User-file backup/restore execution is still not implemented.
+- Existing unrelated dirty files remain outside this sprint: `.cocoindex_code/*`,
+  `src/screens/HomeScreen.tsx`, `src/styles/globals.css`, plus older unrelated
+  status/handoff hunks.
+
+### Next Best Step
+
+1. Dry-run UI polish, confirmation design, or another read-only safety gate.
+   Still no real Apply or Restore.
+
 ## Current Session (May 24, 2026 - Read-only Dry-run Apply Command v1)
 
 - **Mode**: code

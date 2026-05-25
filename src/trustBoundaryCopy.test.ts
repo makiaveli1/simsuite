@@ -265,4 +265,19 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/canProceedToConfirmation=false/);
     expect(source).toMatch(/Existing systems reused/);
   });
+
+  it("documents Organize dry-run preview UI without adding Apply or Restore", () => {
+    const source = readFileSync(
+      join(process.cwd(), "simsuite-reports/ORGANIZE_DRY_RUN_PREVIEW_UI_V1_REPORT.md"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/Dry-run preview/i);
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/Apply is not ready yet/i);
+    expect(source).toMatch(/Future confirmation blocked/i);
+    expect(source).toMatch(/No result-log writes from dry-run UI/i);
+    expect(source).toMatch(/No restore-entry writes from dry-run UI/i);
+    expect(source).toMatch(/Existing systems reused/);
+  });
 });

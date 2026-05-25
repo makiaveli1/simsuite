@@ -66,6 +66,12 @@ does not replace validation, does not persist validation or dry-run state, does
 not create result/restore metadata, and still keeps `canProceedToApply=false`
 and `canProceedToConfirmation=false`.
 
+Current implementation note: Organize `Saved plans` now shows a read-only
+`Dry-run preview` section next to validation and recovery history. The UI keeps
+validation preview separate, calls only `previewApplyPlanDryRun`, displays
+`No files changed`, and still treats `canProceedToApply=false` and
+`canProceedToConfirmation=false` as the boundary.
+
 ## 1. Purpose
 
 Validation/conflict preview is the safety gate between a saved draft preview

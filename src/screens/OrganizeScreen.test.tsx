@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../lib/api";
 import { OrganizeScreen } from "./OrganizeScreen";
 import type {
   ApplyPlanListItem,
+  ApplyPlanDryRunPreview,
   PersistedApplyPlanRestoreEntry,
   PersistedApplyPlanResult,
   PersistedApplyPlanRun,
@@ -20,6 +21,7 @@ vi.mock("../lib/api", () => ({
     listSavedApplyPlans: vi.fn(),
     getApplyPlan: vi.fn(),
     previewApplyPlanValidation: vi.fn(),
+    previewApplyPlanDryRun: vi.fn(),
     createApplyPlanRunLog: vi.fn(),
     listApplyPlanRunLogs: vi.fn(),
     getApplyPlanRunLog: vi.fn(),
@@ -290,6 +292,109 @@ const validationPreview: ApplyPlanValidationPreview = {
   ],
 };
 
+const dryRunPreview: ApplyPlanDryRunPreview = {
+  planId: 701,
+  status: "blocked",
+  canProceedToApply: false,
+  canProceedToConfirmation: false,
+  checkedAt: "2026-05-15T11:05:00.000Z",
+  summary: {
+    totalItems: 5,
+    candidateItems: 1,
+    skippedItems: 3,
+    blockedItems: 1,
+    reviewOnlyItems: 1,
+    conflictItems: 1,
+    backupRequiredItems: 1,
+  },
+  caveats: [
+    "No files changed. This dry-run preview is read-only.",
+    "Apply is not ready yet.",
+    "Future confirmation blocked.",
+  ],
+  items: [
+    {
+      itemId: 9001,
+      fileId: 101,
+      fileName: "CandidateHair.package",
+      dryRunStatus: "candidate_after_future_safety_gates",
+      actionPreview: "would_move_later",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\CandidateHair.package",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\CandidateHair.package",
+      reasons: ["No current dry-run blocker was returned for this item."],
+      blockers: [],
+      requiredBeforeApply: [
+        "Validation proof required",
+        "Backup required",
+        "Restore map required",
+        "Result log required",
+        "Explicit confirmation required",
+        "Apply executor proof required",
+      ],
+      canApply: false,
+    },
+    {
+      itemId: 9002,
+      fileId: 102,
+      fileName: "UnknownThing.package",
+      dryRunStatus: "would_require_review",
+      actionPreview: "would_skip",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\UnknownThing.package",
+      destinationPath: null,
+      reasons: ["Manual review needed before this item can be discussed further."],
+      blockers: ["weak_or_unknown_metadata"],
+      requiredBeforeApply: ["Manual review needed", "Validation proof required"],
+      canApply: false,
+    },
+    {
+      itemId: 9003,
+      fileId: 103,
+      fileName: "NeedsBackup.package",
+      dryRunStatus: "would_require_backup",
+      actionPreview: "no_action",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\NeedsBackup.package",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\NeedsBackup.package",
+      reasons: ["Backup required before any future file-changing workflow."],
+      blockers: ["backup_required"],
+      requiredBeforeApply: ["Backup required", "Restore map required"],
+      canApply: false,
+    },
+    {
+      itemId: 9004,
+      fileId: 104,
+      fileName: "DestinationConflict.package",
+      dryRunStatus: "would_require_destination_review",
+      actionPreview: "would_skip",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\DestinationConflict.package",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\DestinationConflict.package",
+      reasons: ["Destination needs review before this item can continue."],
+      blockers: ["destination_exists"],
+      requiredBeforeApply: ["Choose a different destination in a future review step"],
+      canApply: false,
+    },
+    {
+      itemId: 9005,
+      fileId: null,
+      fileName: "MissingSource.package",
+      dryRunStatus: "would_skip",
+      actionPreview: "would_skip",
+      sourcePath: null,
+      destinationPath: null,
+      reasons: ["Saved source evidence is missing."],
+      blockers: ["missing_source"],
+      requiredBeforeApply: ["Validation proof required"],
+      canApply: false,
+    },
+  ],
+};
+
 const recoveryRunLog: PersistedApplyPlanRun = {
   id: 3001,
   applyPlanId: 701,
@@ -431,6 +536,7 @@ beforeEach(() => {
   vi.mocked(api.listApplyPlanRunLogs).mockResolvedValue([]);
   vi.mocked(api.listApplyPlanResultLogs).mockResolvedValue([]);
   vi.mocked(api.listApplyPlanRestoreEntries).mockResolvedValue([]);
+  vi.mocked(api.previewApplyPlanDryRun).mockResolvedValue(dryRunPreview);
 });
 
 afterEach(() => {
@@ -784,6 +890,131 @@ it("shows validation preview errors safely", async () => {
   expect(await screen.findByText(/Could not load validation preview/i)).toBeInTheDocument();
   expect(screen.getByText(/validation unavailable/i)).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+});
+
+it("shows read-only dry-run preview classifications for saved plans", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+
+  expect((await screen.findAllByText(/Dry-run preview/i)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Run a dry-run preview/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Preview dry-run/i }));
+
+  await waitFor(() => {
+    expect(api.previewApplyPlanDryRun).toHaveBeenCalledWith({
+      planId: savedPlanSummary.id,
+    });
+  });
+
+  expect((await screen.findAllByText(/Apply is not ready yet/i)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Future confirmation blocked/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Candidate after future safety gates/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Backup required/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Needs review/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Needs destination review/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Would be skipped/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Would be considered only after future safety gates/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Still required before any future Apply/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/canProceedToApply=false/i)).toBeInTheDocument();
+  expect(screen.getByText(/canProceedToConfirmation=false/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/canApply=false/i).length).toBeGreaterThan(0);
+
+  const bodyText = document.body.textContent ?? "";
+  expect(bodyText).not.toMatch(/ready to apply|safe to move|confirmed safe|approved/i);
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|restore now|run backup|run restore|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
+});
+
+it("shows dry-run loading and error states without changing files", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  let resolveDryRun: (preview: ApplyPlanDryRunPreview) => void = () => {};
+  vi.mocked(api.previewApplyPlanDryRun).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveDryRun = resolve;
+    }),
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Preview dry-run/i }));
+
+  expect((await screen.findAllByText(/Checking dry-run preview/i)).length).toBeGreaterThan(0);
+
+  await act(async () => {
+    resolveDryRun(dryRunPreview);
+  });
+
+  expect((await screen.findAllByText(/CandidateHair\.package/i)).length).toBeGreaterThan(0);
+
+  vi.mocked(api.previewApplyPlanDryRun).mockRejectedValueOnce(
+    new Error("dry-run unavailable"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Refresh dry-run preview/i }));
+
+  expect(await screen.findByText(/Dry-run preview could not be loaded/i)).toBeInTheDocument();
+  expect(screen.getByText(/dry-run unavailable/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/CandidateHair\.package/i)).toHaveLength(0);
+});
+
+it("clears dry-run preview results when switching saved plans", async () => {
+  const secondPlanSummary: ApplyPlanListItem = {
+    ...savedPlanSummary,
+    id: 702,
+    title: "Second saved dry-run draft",
+    sourceStagingPlanId: "second-preview-plan-test",
+  };
+  const secondPlanDetails: PersistedApplyPlan = {
+    ...savedPlanDetails,
+    id: 702,
+    title: "Second saved dry-run draft",
+    sourceStagingPlanId: "second-preview-plan-test",
+    items: [
+      {
+        ...savedPlanDetails.items[0],
+        id: 9301,
+        applyPlanId: 702,
+        fileName: "SecondPlan.package",
+        sourceItemId: "second-plan-item",
+      },
+    ],
+  };
+
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([
+    savedPlanSummary,
+    secondPlanSummary,
+  ]);
+  vi.mocked(api.getApplyPlan).mockImplementation(async (planId) =>
+    planId === secondPlanSummary.id ? secondPlanDetails : savedPlanDetails,
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  const reviewButtons = await screen.findAllByRole("button", { name: /Review details/i });
+  fireEvent.click(reviewButtons[0]);
+  fireEvent.click(await screen.findByRole("button", { name: /Preview dry-run/i }));
+
+  expect((await screen.findAllByText(/CandidateHair\.package/i)).length).toBeGreaterThan(0);
+  fireEvent.click(await screen.findByRole("button", { name: /^Review details$/i }));
+
+  expect(await screen.findByText(/Second saved dry-run draft/i)).toBeInTheDocument();
+  expect(screen.queryAllByText(/CandidateHair\.package/i)).toHaveLength(0);
+  expect(screen.getByText(/Run a dry-run preview/i)).toBeInTheDocument();
 });
 
 it("shows read-only recovery history empty states for saved plans", async () => {

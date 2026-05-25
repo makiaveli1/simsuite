@@ -1747,6 +1747,67 @@ async function main() {
     const validationShot = path.join(runDir, "organize-validation-preview-ui-v1.png");
     await takeScreenshot(driver, validationShot);
     summary.screenshots.push(validationShot);
+
+    await waitForAnyText(driver, ["Dry-run preview"], 30000);
+    await clickVisibleButton(driver, "Preview dry-run", 30000);
+    await waitForAnyText(
+      driver,
+      [
+        "Apply is not ready yet",
+        "Future confirmation blocked",
+        "Candidate after future safety gates",
+        "Backup required",
+      ],
+      60000,
+    );
+    const organizeDryRunBody = await getBodyText(driver);
+    summary.organizeDryRunPreviewVisible = /dry-run preview/i.test(
+      organizeDryRunBody,
+    );
+    summary.organizeDryRunHasNoFilesChanged = /no files changed/i.test(
+      organizeDryRunBody,
+    );
+    summary.organizeDryRunBlocksApply = /apply is not ready yet/i.test(
+      organizeDryRunBody,
+    );
+    summary.organizeDryRunBlocksConfirmation =
+      /future confirmation blocked/i.test(organizeDryRunBody);
+    summary.organizeDryRunHasClassifications =
+      /would be skipped|blocked|needs review|backup required|candidate after future safety gates/i.test(
+        organizeDryRunBody,
+      );
+    summary.organizeDryRunEnabledFileChangingButtons = await driver.executeScript(`
+      return Array.from(document.querySelectorAll("button"))
+        .filter((button) => !button.disabled)
+        .map((button) => button.textContent || "")
+        .filter((text) => /\\b(apply|restore|commit|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation|run backup|run restore|undo changes)\\b/i.test(text));
+    `);
+    if (
+      !summary.organizeDryRunPreviewVisible ||
+      !summary.organizeDryRunHasNoFilesChanged ||
+      !summary.organizeDryRunBlocksApply ||
+      !summary.organizeDryRunBlocksConfirmation ||
+      !summary.organizeDryRunHasClassifications
+    ) {
+      throw new Error("Organize dry-run preview did not show the read-only dry-run boundary.");
+    }
+    if (summary.organizeDryRunEnabledFileChangingButtons.length > 0) {
+      throw new Error(
+        `Organize dry-run preview exposed enabled file-changing controls: ${summary.organizeDryRunEnabledFileChangingButtons.join(", ")}`,
+      );
+    }
+    await driver.executeScript(`
+      const dryRunSection = Array.from(document.querySelectorAll("section"))
+        .find((element) => /Dry-run preview/i.test(element.textContent || ""));
+      if (dryRunSection) {
+        dryRunSection.scrollIntoView({ block: "center", inline: "nearest" });
+      }
+    `);
+    await sleep(driver, 500);
+    const dryRunShot = path.join(runDir, "organize-dry-run-preview-ui-v1.png");
+    await takeScreenshot(driver, dryRunShot);
+    summary.screenshots.push(dryRunShot);
+
     summary.organizeRecoveryHistoryVisible =
       /recovery history|result log|restore map/i.test(organizeValidationBody);
     summary.organizeRecoveryHistoryHasNoFilesChanged = /no files changed/i.test(

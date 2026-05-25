@@ -1,5 +1,36 @@
 # SimSuite Implementation Status
 
+## Current session note (May 25, 2026 - Organize Dry-run Preview UI v1)
+
+This session adds the first read-only `Dry-run preview` UI inside Organize
+saved plan details. It calls the existing `previewApplyPlanDryRun` API only
+from the user-triggered preview control and displays saved-plan item
+classifications without adding Apply, Restore, confirmation, backup execution,
+restore execution, result-log writes, restore-entry writes, file movement, file
+copying, folder creation, deletion, cleanup, quarantine, replacement,
+auto-sort execution, or AI decisions.
+
+Important changes and findings:
+
+- added dry-run-only UI state to saved plan details.
+- added grouped read-only dry-run item classifications.
+- kept validation preview and Recovery history as separate sections.
+- kept full paths behind existing technical-details patterns.
+- updated desktop proof to check the dry-run preview section and capture
+  `organize-dry-run-preview-ui-v1.png`.
+- no backend, schema, Tauri command, fixture helper, or file-changing behavior
+  was added.
+
+Checks:
+
+- Validation results are recorded in
+  `simsuite-reports/ORGANIZE_DRY_RUN_PREVIEW_UI_V1_REPORT.md`.
+
+Recommended next sprint:
+
+- Dry-run UI polish, confirmation design, or another read-only safety gate.
+  Still no real Apply or real Restore.
+
 ## Current session note (May 24, 2026 - Read-only Dry-run Apply Command v1)
 
 This session implements the first backend/API-only

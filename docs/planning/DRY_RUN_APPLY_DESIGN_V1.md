@@ -43,6 +43,11 @@ Current SimSuite state:
   `canProceedToConfirmation=false`.
 - dry-run v1 writes no DB rows and creates no result logs, restore entries,
   backups, folders, or file changes.
+- Organize `Saved plans` now includes a read-only `Dry-run preview` UI for
+  selected saved drafts. It calls `previewApplyPlanDryRun` only from the
+  user-triggered preview control, displays cautious classification groups, and
+  does not create dry-run state, result logs, restore entries, backups,
+  folders, Apply, Restore, or confirmation.
 - recovery history exists and remains read-only.
 - recovery history displays existing DB-only run, result, and restore-map
   metadata.

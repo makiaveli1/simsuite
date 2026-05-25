@@ -92,6 +92,14 @@ preview output, and returns `canProceedToApply=false` plus
 or restore entries, creates no backups or folders, exposes no fixture helpers,
 and changes no files.
 
+Organize `Saved plans` now has a read-only `Dry-run preview` UI for selected
+saved drafts. It calls `previewApplyPlanDryRun`, shows cautious item
+classification groups, keeps `No files changed`, `Apply is not ready yet`, and
+`Future confirmation blocked` visible, and does not expose Apply, Restore,
+Backup, confirmation, fixture proof helpers, result-log writes,
+restore-entry writes, backup execution, restore execution, or file-changing
+controls.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

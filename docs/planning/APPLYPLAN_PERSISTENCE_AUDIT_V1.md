@@ -107,6 +107,13 @@ rows, restore-map rows, backups, folders, or file changes. It always returns
 `canProceedToApply=false`, `canProceedToConfirmation=false`, and item
 `canApply=false`.
 
+Current implementation note: `codex/organize-dry-run-preview-ui-v1` adds a
+read-only Organize `Dry-run preview` section for saved draft details. It calls
+the existing `previewApplyPlanDryRun` API, displays classification groups and
+missing safety requirements, writes no dry-run state, creates no result logs or
+restore-map records, and exposes no Apply, Restore, Backup, confirmation, or
+file-changing control.
+
 This audit follows:
 
 - `docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md`

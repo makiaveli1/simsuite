@@ -102,6 +102,13 @@ validation preview, returns `canProceedToApply=false` and
 restore entries, creates no backups or folders, and does not move, copy,
 delete, clean up, quarantine, replace, or auto-sort files.
 
+Current implementation note: Organize `Saved plans` now shows a read-only
+`Dry-run preview` section for selected saved drafts. It calls
+`previewApplyPlanDryRun`, groups item classifications with cautious wording,
+keeps `No files changed`, `Apply is not ready yet`, and `Future confirmation
+blocked` visible, and exposes no Apply, Restore, Backup, confirmation,
+file-changing, result-log write, or restore-entry write control.
+
 ## 1. Why Apply Needs A Contract
 
 Sims 4 Mods and Tray folders are user-owned data. A bad file tool can break a

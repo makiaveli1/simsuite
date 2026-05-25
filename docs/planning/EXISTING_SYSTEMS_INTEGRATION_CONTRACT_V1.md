@@ -108,7 +108,14 @@ Current implementation note: `preview_apply_plan_dry_run` now implements the
 first backend/API-only dry-run command. It reuses saved ApplyPlan records,
 saved items, blockers/signals, validation preview output, and safety-contract
 wording. It does not create a frontend-owned dry-run store, write result or
-restore rows, expose fixture helpers, or call file-changing systems.
+restore metadata, create backups, create folders, expose fixture helpers, or
+change files.
+
+Current implementation note: Organize `Saved plans` now reuses
+`previewApplyPlanDryRun` to show read-only `Dry-run preview` classifications
+for selected saved drafts. The UI does not duplicate validation truth, does not
+call create/record result or restore APIs, does not expose fixture proof
+helpers, and does not expose file-changing actions.
 
 ## 2. Existing Evidence Inventory
 

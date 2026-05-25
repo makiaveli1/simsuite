@@ -59,6 +59,11 @@ required`, and `Result log required` as future safety steps, but it creates no
 backup, result-log row, restore-entry row, confirmation token, folder, or file
 change.
 
+Current implementation note: Organize `Saved plans` now shows a read-only
+`Dry-run preview` UI that can display those future recovery requirements for a
+selected saved draft. It does not create recovery history records, result logs,
+restore-map records, backups, folders, Apply, Restore, or confirmation.
+
 ## 1. Purpose
 
 Before SimSuite ever changes files, it must know how to record what happened
@@ -88,6 +93,7 @@ Current SimSuite state:
 - fixture-only backup + restore integration proof tests now exist for temporary
   files only.
 - Organize can show read-only Recovery history metadata for saved plans.
+- Organize can show read-only Dry-run preview classifications for saved plans.
 - user-file backup execution does not exist.
 - user-file restore execution does not exist.
 - confirmation workflow does not exist.
