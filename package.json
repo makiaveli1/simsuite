@@ -12,7 +12,6 @@
         "tauri": "tauri",
         "tauri:dev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-tauri-dev.ps1",
         "tauri:build": "tauri build",
-        "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
         "desktop:driver": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-webdriver.ps1",
         "desktop:driver:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
         "desktop:smoke": "node scripts/desktop/desktop-smoke.mjs",
@@ -20,8 +19,9 @@
         "desktop:smoke:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1",
         "desktop:smoke:apply:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
         "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
-        "test:unit": "vitest run",
-        "test:library:stress": "cargo test --manifest-path src-tauri/Cargo.toml large_ -- --ignored --nocapture"
+        "test:unit": "node scripts/test/run-vitest.mjs",
+        "test:rust": "node scripts/test/run-rust-tests.mjs",
+        "test:library:stress": "node scripts/test/run-rust-tests.mjs large_ -- --ignored --nocapture"
     },
     "dependencies": {
         "@rollup/rollup-linux-x64-gnu": "^4.60.2",

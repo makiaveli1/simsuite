@@ -25,6 +25,28 @@ npm run desktop:proof:fixtures -- --SkipBuild
 
 If you want it to rebuild the desktop binary first, omit `--SkipBuild`.
 
+## Baseline validation lane
+
+Run this before claiming a branch is ready for review:
+
+```bash
+npx tsc --noEmit
+npm run test:unit
+npm run build
+npm run test:rust
+```
+
+`npm run test:unit` uses `scripts/test/run-vitest.mjs`, which forces `NODE_ENV=test`. This is intentional: some agent shells inherit `NODE_ENV=production`, and React/Vitest can fail for environment reasons instead of product reasons.
+
+`npm run test:rust` uses `scripts/test/run-rust-tests.mjs`. From WSL it deliberately runs Cargo through Windows PowerShell so Rust path semantics match the Windows Tauri desktop target. From non-WSL Unix it falls back to local Cargo.
+
+For narrow checks, pass the test target through the wrapper:
+
+```bash
+npm run test:unit -- src/screens/OrganizeScreen.test.tsx
+npm run test:rust -- core::scanner::tests::scan_empty_roots
+```
+
 ## What it does
 
 `desktop:proof:fixtures` runs a Windows-side PowerShell wrapper that:
