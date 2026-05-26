@@ -181,13 +181,12 @@ Do not add:
 - login scraping
 - brittle unofficial mirrors as truth sources
 
-## Required Docs To Update
+## Required docs to update
 
 After meaningful onboarding work, update:
 
-- [SESSION_HANDOFF.md](/C:/Users/likwi/OneDrive/Desktop/PROJS/SimSort/SESSION_HANDOFF.md)
-- [IMPLEMENTATION_STATUS.md](/C:/Users/likwi/OneDrive/Desktop/PROJS/SimSort/docs/IMPLEMENTATION_STATUS.md)
-- [ARCHITECTURE.md](/C:/Users/likwi/OneDrive/Desktop/PROJS/SimSort/docs/ARCHITECTURE.md) when behavior or structure changed
+- `docs/IMPLEMENTATION_STATUS.md` for durable product state and validation notes.
+- `docs/ARCHITECTURE.md` when behavior or structure changed.
 
 ## Quick Checklist
 

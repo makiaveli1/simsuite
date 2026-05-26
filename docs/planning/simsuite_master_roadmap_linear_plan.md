@@ -1272,12 +1272,11 @@ Area: docs
 
 Steps:
 
-1. Inspect `SESSION_HANDOFF.md`.
-2. Inspect `IMPLEMENTATION_STATUS.md`.
-3. Inspect backend map.
-4. Inspect trust doc.
-5. Identify stale or duplicate notes.
-6. Recommend cleanup plan.
+1. Inspect `docs/IMPLEMENTATION_STATUS.md`.
+2. Inspect backend map.
+3. Inspect trust doc.
+4. Identify stale or duplicate notes.
+5. Recommend cleanup plan.
 
 Acceptance:
 

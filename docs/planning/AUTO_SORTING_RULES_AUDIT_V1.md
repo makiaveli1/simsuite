@@ -7,7 +7,7 @@ Source docs:
 - `docs/planning/simsuite_master_roadmap_linear_plan.md`
 - `docs/planning/NAVIGATION_WORKFLOW_ARCHITECTURE_V1.md`
 - `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`
-- `simsuite-reports/STAGING_PREVIEW_PLAN_FOUNDATION_V1_REPORT.md`
+- `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`
 
 This document defines the safe rule foundation for Auto Sorting Suggested Plan work. The first generator implementation now uses this plan as its rule source; it still does not move files, expose Apply, or change app navigation.
 

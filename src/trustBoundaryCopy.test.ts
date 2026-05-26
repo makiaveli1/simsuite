@@ -21,10 +21,14 @@ const userFacingClaimSurfaces = [
 const forbiddenTrustClaims =
   /auto[-\s]?fix|auto[-\s]?quarantine|quarantine|safe to delete|safe to replace|confirmed safe|AI verified|missing mesh|missing dependency|confirmed duplicate|duplicate candidate|possible duplicate|definitely outdated|definitely latest|official source found|remove this one|delete duplicate/i;
 
+function readRepoFile(relativePath: string) {
+  return readFileSync(join(process.cwd(), relativePath), "utf8");
+}
+
 describe("trust-boundary user-facing copy", () => {
   it("does not expose forbidden automation or proof claims in current trust-sensitive surfaces", () => {
     const offenders = userFacingClaimSurfaces.flatMap((relativePath) => {
-      const source = readFileSync(join(process.cwd(), relativePath), "utf8");
+      const source = readRepoFile(relativePath);
       return source
         .split(/\r?\n/)
         .map((line, index) => ({ line, lineNumber: index + 1, relativePath }))
@@ -36,10 +40,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("keeps the current Plan Preview screen preview-only", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/screens/StagingScreen.tsx"),
-      "utf8",
-    );
+    const source = readRepoFile("src/screens/StagingScreen.tsx");
 
     expect(source).toMatch(/preview-only/i);
     expect(source).toMatch(/No files\s+will be changed/i);
@@ -51,10 +52,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("keeps the current Organize screen preview-only", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/screens/OrganizeScreen.tsx"),
-      "utf8",
-    );
+    const source = readRepoFile("src/screens/OrganizeScreen.tsx");
 
     expect(source).toMatch(/generateSortingPreviewPlan/);
     expect(source).toMatch(/buildApplyPlanFromStagingPlan/);
@@ -66,10 +64,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("keeps the current Inbox screen intake/review-only", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/screens/DownloadsScreen.tsx"),
-      "utf8",
-    );
+    const source = readRepoFile("src/screens/DownloadsScreen.tsx");
 
     expect(source).toMatch(/INBOX_FILE_ACTIONS_BLOCKED = true/);
     expect(source).toMatch(/Inbox is review-only/i);
@@ -78,10 +73,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("documents Apply as blocked until the safety contract exists", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/APPLY_SAFETY_CONTRACT_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/APPLY_SAFETY_CONTRACT_V1.md");
 
     expect(source).toMatch(/Apply is not implemented/i);
     expect(source).toMatch(/explicitly confirmed/i);
@@ -93,10 +85,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("documents the existing systems integration contract", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/EXISTING_SYSTEMS_INTEGRATION_CONTRACT_V1.md");
 
     expect(source).toMatch(/Existing systems reused/);
     expect(source).toMatch(/New data or logic added/);
@@ -107,10 +96,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("documents the ApplyPlan persistence audit without implementing real Apply", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/APPLYPLAN_PERSISTENCE_AUDIT_V1.md");
 
     expect(source).toMatch(/Real Apply is not implemented/i);
     expect(source).toMatch(/Existing Systems Integration Contract/);
@@ -120,10 +106,7 @@ describe("trust-boundary user-facing copy", () => {
   });
 
   it("documents validation conflict preview as no-file-change design work", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md");
 
     expect(source).toMatch(/No files changed/);
     expect(source).toMatch(/does not implement Apply/i);
@@ -135,39 +118,8 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/must not:[\s\S]*create folders/i);
   });
 
-  it("documents read-only ApplyPlan validation preview without making Apply ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/READ_ONLY_APPLYPLAN_VALIDATION_PREVIEW_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/preview_apply_plan_validation/);
-    expect(source).toMatch(/canProceedToConfirmation=false/);
-    expect(source).toMatch(/No files are moved or changed/);
-    expect(source).toMatch(/No Apply was added/);
-    expect(source).toMatch(/does not create folders/);
-    expect(source).toMatch(/does not[\s\S]*persist validation state/i);
-  });
-
-  it("documents Organize validation preview UI as review-only", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/ORGANIZE_VALIDATION_PREVIEW_UI_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/Validation preview/i);
-    expect(source).toMatch(/previewApplyPlanValidation/);
-    expect(source).toMatch(/No files changed/);
-    expect(source).toMatch(/canProceedToConfirmation=false/);
-    expect(source).toMatch(/No Apply/i);
-    expect(source).toMatch(/does not move files/i);
-  });
-
   it("documents the backup restore result-log design without making Apply ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/BACKUP_RESTORE_RESULT_LOG_DESIGN_V1.md");
 
     expect(source).toMatch(/No files changed/);
     expect(source).toMatch(/Apply is not ready/);
@@ -177,69 +129,8 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Existing systems reused/);
   });
 
-  it("documents the result restore schema foundation as DB-only", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/RESULT_RESTORE_SCHEMA_FOUNDATION_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/DB-only/i);
-    expect(source).toMatch(/No Apply/i);
-    expect(source).toMatch(/does not execute Apply/i);
-    expect(source).toMatch(/does not execute backup/i);
-    expect(source).toMatch(/does not execute restore/i);
-    expect(source).toMatch(/No files are moved, copied, created, deleted/i);
-    expect(source).toMatch(/Existing systems reused/);
-  });
-
-  it("documents the fixture-only backup prototype without making Apply ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/FIXTURE_ONLY_BACKUP_PROTOTYPE_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/Fixture-only backup prototype/i);
-    expect(source).toMatch(/temporary test files only/i);
-    expect(source).toMatch(/No user files changed/i);
-    expect(source).toMatch(/Apply is not ready yet/i);
-    expect(source).toMatch(/Restore execution remains future/i);
-    expect(source).toMatch(/Existing systems reused/);
-  });
-
-  it("documents the fixture-only restore prototype without making Restore ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/FIXTURE_ONLY_RESTORE_PROTOTYPE_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/Fixture-only restore prototype/i);
-    expect(source).toMatch(/temporary test files only/i);
-    expect(source).toMatch(/No user files changed/i);
-    expect(source).toMatch(/Apply is not ready yet/i);
-    expect(source).toMatch(/Restore is not ready yet/i);
-    expect(source).toMatch(/Existing systems reused/);
-  });
-
-  it("documents the read-only recovery history UI without making Apply or Restore ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/RESULT_RESTORE_REVIEW_UI_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/Recovery history/i);
-    expect(source).toMatch(/Result log/i);
-    expect(source).toMatch(/Restore map/i);
-    expect(source).toMatch(/No files changed/i);
-    expect(source).toMatch(/Apply is not ready yet/i);
-    expect(source).toMatch(/Restore is not ready yet/i);
-    expect(source).toMatch(/Existing systems reused/);
-  });
-
   it("documents dry-run Apply design as read-only rehearsal work", () => {
-    const source = readFileSync(
-      join(process.cwd(), "docs/planning/DRY_RUN_APPLY_DESIGN_V1.md"),
-      "utf8",
-    );
+    const source = readRepoFile("docs/planning/DRY_RUN_APPLY_DESIGN_V1.md");
 
     expect(source).toMatch(/Dry-run Apply is a read-only rehearsal/);
     expect(source).toMatch(/No files changed/);
@@ -249,35 +140,12 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Existing systems reused/);
   });
 
-  it("documents read-only dry-run Apply command without making Apply ready", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/READ_ONLY_DRY_RUN_APPLY_COMMAND_V1_REPORT.md"),
-      "utf8",
-    );
+  it("keeps the consolidated command-surface audit explicit about blocked execution", () => {
+    const source = readRepoFile("docs/COMMAND_SURFACE_APPLY_SAFETY_AUDIT_V1_REPORT.md");
 
-    expect(source).toMatch(/preview_apply_plan_dry_run/);
-    expect(source).toMatch(/No Apply/);
-    expect(source).toMatch(/No Restore/);
-    expect(source).toMatch(/No file movement/);
-    expect(source).toMatch(/No result-log writes from dry-run/);
-    expect(source).toMatch(/No restore-entry writes from dry-run/);
-    expect(source).toMatch(/canProceedToApply=false/);
-    expect(source).toMatch(/canProceedToConfirmation=false/);
-    expect(source).toMatch(/Existing systems reused/);
-  });
-
-  it("documents Organize dry-run preview UI without adding Apply or Restore", () => {
-    const source = readFileSync(
-      join(process.cwd(), "simsuite-reports/ORGANIZE_DRY_RUN_PREVIEW_UI_V1_REPORT.md"),
-      "utf8",
-    );
-
-    expect(source).toMatch(/Dry-run preview/i);
-    expect(source).toMatch(/No files changed/);
-    expect(source).toMatch(/Apply is not ready yet/i);
-    expect(source).toMatch(/Future confirmation blocked/i);
-    expect(source).toMatch(/No result-log writes from dry-run UI/i);
-    expect(source).toMatch(/No restore-entry writes from dry-run UI/i);
-    expect(source).toMatch(/Existing systems reused/);
+    expect(source).toMatch(/UI gating is not a backend safety boundary/);
+    expect(source).toMatch(/backend-issued confirmation token/);
+    expect(source).toMatch(/canonical root checks/);
+    expect(source).toMatch(/does not enable Apply, Restore, backup execution/i);
   });
 });
