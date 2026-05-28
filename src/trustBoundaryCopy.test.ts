@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const userFacingClaimSurfaces = [
   "src/components/FieldGuide.tsx",
+  "src/screens/HomeScreen.tsx",
   "src/screens/DownloadsScreen.tsx",
   "src/screens/downloads/ConflictEvidenceDisplay.tsx",
   "src/screens/LibraryScreen.tsx",
@@ -55,7 +56,7 @@ describe("trust-boundary user-facing copy", () => {
     const source = readRepoFile("src/screens/OrganizeScreen.tsx");
 
     expect(source).toMatch(/generateSortingPreviewPlan/);
-    expect(source).toMatch(/buildApplyPlanFromStagingPlan/);
+    expect(source).toMatch(/saveApplyPlanFromPreviewSnapshot/);
     expect(source).toMatch(/No files changed/i);
     expect(source).toMatch(/Preview only/i);
     expect(source).not.toMatch(/saveApplyPlanPreview/);
@@ -140,6 +141,24 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/Existing systems reused/);
   });
 
+  it("documents Confirmation Design V1 as read-only custom-folder and cross-system contract", () => {
+    const source = readRepoFile("docs/planning/CONFIRMATION_DESIGN_V1.md");
+
+    expect(source).toMatch(/Confirmation Design V1/);
+    expect(source).toMatch(/No files changed/);
+    expect(source).toMatch(/confirmation token is not issued/i);
+    expect(source).toMatch(/custom folder configurations/i);
+    expect(source).toMatch(/folder configuration snapshot/i);
+    expect(source).toMatch(/cross-system context/i);
+    expect(source).toMatch(/Library/);
+    expect(source).toMatch(/Inbox/);
+    expect(source).toMatch(/Updates/);
+    expect(source).toMatch(/Duplicates/);
+    expect(source).toMatch(/Creator and Category Audit/);
+    expect(source).toMatch(/must not:[\s\S]*move files/i);
+    expect(source).toMatch(/must not:[\s\S]*create folders/i);
+  });
+
   it("keeps the consolidated command-surface audit explicit about blocked execution", () => {
     const source = readRepoFile("docs/COMMAND_SURFACE_APPLY_SAFETY_AUDIT_V1_REPORT.md");
 
@@ -147,5 +166,7 @@ describe("trust-boundary user-facing copy", () => {
     expect(source).toMatch(/backend-issued confirmation token/);
     expect(source).toMatch(/canonical root checks/);
     expect(source).toMatch(/does not enable Apply, Restore, backup execution/i);
+    expect(source).toMatch(/Backend Command Gating V1/);
+    expect(source).toMatch(/fail closed/i);
   });
 });

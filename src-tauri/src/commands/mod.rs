@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::{
     app_state::AppState,
+    command_gate::{assert_command_allowed, CommandCapability},
     core::{
         apply_plan_dry_run, apply_plan_persistence, apply_plan_results, apply_plan_validation,
         bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
@@ -36,17 +37,18 @@ use crate::{
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
-        GenerateSortingPreviewPlanRequest, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
-        LibraryFacets, LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics,
-        LibraryQuery, LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
-        LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
-        LibraryWatchSetupResponse, ListApplyPlanRestoreEntriesRequest,
-        ListApplyPlanResultLogsRequest, ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest,
-        OrganizationPreview, PersistedApplyPlan, PersistedApplyPlanRestoreEntry,
-        PersistedApplyPlanResult, PersistedApplyPlanRun, PreviewApplyPlanDryRunRequest,
-        PreviewApplyPlanValidationRequest, RecordApplyPlanRestoreEntryRequest,
-        RecordApplyPlanResultLogRequest, RejectResult, RejectedItem, RestoreSnapshotResult,
-        ReviewPlanAction, ReviewPlanActionKind, ReviewQueueItem, RulePreset,
+        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
+        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
+        LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
+        LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
+        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
+        ListApplyPlanRestoreEntriesRequest, ListApplyPlanResultLogsRequest,
+        ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest, OrganizationPreview,
+        PersistedApplyPlan, PersistedApplyPlanRestoreEntry, PersistedApplyPlanResult,
+        PersistedApplyPlanRun, PreviewApplyPlanDryRunRequest, PreviewApplyPlanValidationRequest,
+        RecordApplyPlanRestoreEntryRequest, RecordApplyPlanResultLogRequest, RejectResult,
+        RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
+        ReviewQueueItem, RulePreset, SaveApplyPlanFromPreviewSnapshotRequest,
         SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, SaveLibraryWatchSourceEntry,
         ScanPhase, ScanRuntimeState, ScanStatus, ScanSummary, SnapshotSummary, SpecialReviewPlan,
         StagingAreasSummary, StagingCommitResult, StagingPlan, WatchListFilter,
@@ -801,13 +803,17 @@ pub async fn get_staging_preview_plan(state: State<'_, AppState>) -> Result<Stag
 pub async fn generate_sorting_preview_plan(
     state: State<'_, AppState>,
     request: GenerateSortingPreviewPlanRequest,
-) -> Result<StagingPlan, String> {
+) -> Result<GenerateSortingPreviewPlanResult, String> {
     let state = state.inner().clone();
     run_blocking_command("generate_sorting_preview_plan", move || {
-        let connection = state.connection().map_err(map_error)?;
+        let mut connection = state.connection().map_err(map_error)?;
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
-        rule_engine::sorting_plan::generate_sorting_preview_plan(&connection, &settings, request)
-            .map_err(map_error)
+        apply_plan_persistence::generate_sorting_preview_snapshot(
+            &mut connection,
+            &settings,
+            request,
+        )
+        .map_err(map_error)
     })
     .await
 }
@@ -821,6 +827,20 @@ pub async fn save_apply_plan_preview(
     run_blocking_command("save_apply_plan_preview", move || {
         let mut connection = state.connection().map_err(map_error)?;
         apply_plan_persistence::save_apply_plan_preview(&mut connection, request).map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn save_apply_plan_from_preview_snapshot(
+    state: State<'_, AppState>,
+    request: SaveApplyPlanFromPreviewSnapshotRequest,
+) -> Result<SaveApplyPlanPreviewResult, String> {
+    let state = state.inner().clone();
+    run_blocking_command("save_apply_plan_from_preview_snapshot", move || {
+        let mut connection = state.connection().map_err(map_error)?;
+        apply_plan_persistence::save_apply_plan_from_preview_snapshot(&mut connection, request)
+            .map_err(map_error)
     })
     .await
 }
@@ -906,6 +926,10 @@ pub async fn create_apply_plan_run_log(
     state: State<'_, AppState>,
     request: CreateApplyPlanRunLogRequest,
 ) -> Result<PersistedApplyPlanRun, String> {
+    assert_command_allowed(
+        "create_apply_plan_run_log",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("create_apply_plan_run_log", move || {
         let connection = state.connection().map_err(map_error)?;
@@ -946,6 +970,10 @@ pub async fn record_apply_plan_result_log(
     state: State<'_, AppState>,
     request: RecordApplyPlanResultLogRequest,
 ) -> Result<PersistedApplyPlanResult, String> {
+    assert_command_allowed(
+        "record_apply_plan_result_log",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("record_apply_plan_result_log", move || {
         let connection = state.connection().map_err(map_error)?;
@@ -972,6 +1000,10 @@ pub async fn record_apply_plan_restore_entry(
     state: State<'_, AppState>,
     request: RecordApplyPlanRestoreEntryRequest,
 ) -> Result<PersistedApplyPlanRestoreEntry, String> {
+    assert_command_allowed(
+        "record_apply_plan_restore_entry",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("record_apply_plan_restore_entry", move || {
         let connection = state.connection().map_err(map_error)?;
@@ -1011,6 +1043,7 @@ pub async fn cleanup_staging_areas(
     state: State<'_, AppState>,
     paths_to_delete: Vec<String>,
 ) -> Result<CleanupResult, String> {
+    assert_command_allowed("cleanup_staging_areas", CommandCapability::BlockedExternal)?;
     let state = state.inner().clone();
     run_blocking_command("cleanup_staging_areas", move || {
         let app_data_dir = state.app_data_dir;
@@ -1025,6 +1058,7 @@ pub async fn commit_staging_area(
     item_id: String,
     state: State<'_, AppState>,
 ) -> Result<StagingCommitResult, String> {
+    assert_command_allowed("commit_staging_area", CommandCapability::BlockedExternal)?;
     let state = state.inner().clone();
     run_blocking_command("commit_staging_area", move || {
         let app_data_dir = state.app_data_dir.clone();
@@ -1144,6 +1178,10 @@ pub async fn commit_all_staging_areas(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<StagingCommitResult, String> {
+    assert_command_allowed(
+        "commit_all_staging_areas",
+        CommandCapability::BlockedExternal,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("commit_all_staging_areas", move || {
         let app_data_dir = state.app_data_dir.clone();
@@ -1616,6 +1654,10 @@ pub fn apply_preview_organization(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyPreviewResult, String> {
+    assert_command_allowed(
+        "apply_preview_organization",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let mut connection = state.connection().map_err(map_error)?;
     let settings = database::get_library_settings(&connection).map_err(map_error)?;
     let result = move_engine::apply_preview_moves(
@@ -1650,6 +1692,7 @@ pub fn restore_snapshot(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<RestoreSnapshotResult, String> {
+    assert_command_allowed("restore_snapshot", CommandCapability::FutureExecutorOnly)?;
     let mut connection = state.connection().map_err(map_error)?;
     let seed_pack = state.seed_pack();
     let result = move_engine::restore_snapshot(&mut connection, &seed_pack, snapshot_id, approved)
@@ -1679,6 +1722,7 @@ pub async fn apply_download_item(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyPreviewResult, String> {
+    assert_command_allowed("apply_download_item", CommandCapability::FutureExecutorOnly)?;
     let state = state.inner().clone();
     run_blocking_command("apply_download_item", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -1745,6 +1789,7 @@ pub async fn undo_applied_item(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    assert_command_allowed("undo_applied_item", CommandCapability::FutureExecutorOnly)?;
     let state = state.inner().clone();
     run_blocking_command("undo_applied_item", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -1907,6 +1952,10 @@ pub async fn apply_guided_download_item(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyGuidedDownloadResult, String> {
+    assert_command_allowed(
+        "apply_guided_download_item",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("apply_guided_download_item", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -1973,6 +2022,10 @@ pub async fn apply_special_review_fix(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplySpecialReviewFixResult, String> {
+    assert_command_allowed(
+        "apply_special_review_fix",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("apply_special_review_fix", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -2032,6 +2085,10 @@ pub async fn apply_review_plan_action(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<ApplyReviewPlanActionResult, String> {
+    assert_command_allowed(
+        "apply_review_plan_action",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("apply_review_plan_action", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -2490,6 +2547,10 @@ pub async fn apply_download_items(
     approved: bool,
     state: State<'_, AppState>,
 ) -> Result<BatchApplyResult, String> {
+    assert_command_allowed(
+        "apply_download_items",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     run_blocking_command("apply_download_items", move || {
         let mut connection = state.connection().map_err(map_error)?;
@@ -2657,6 +2718,7 @@ pub async fn reject_download_item(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<RejectResult, String> {
+    assert_command_allowed("reject_download_item", CommandCapability::BlockedExternal)?;
     let state = state.inner().clone();
     let app_data_dir = state.app_data_dir.clone();
     run_blocking_command("reject_download_item", move || {
@@ -2726,6 +2788,10 @@ pub async fn restore_rejected_item(
     item_id: i64,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    assert_command_allowed(
+        "restore_rejected_item",
+        CommandCapability::FutureExecutorOnly,
+    )?;
     let state = state.inner().clone();
     let app_data_dir = state.app_data_dir.clone();
     run_blocking_command("restore_rejected_item", move || {
@@ -2755,6 +2821,7 @@ pub async fn reject_download_items(
     item_ids: Vec<i64>,
     state: State<'_, AppState>,
 ) -> Result<IgnoreItemsResult, String> {
+    assert_command_allowed("reject_download_items", CommandCapability::BlockedExternal)?;
     let state = state.inner().clone();
     let app_data_dir = state.app_data_dir.clone();
     run_blocking_command("reject_download_items", move || {
@@ -3733,7 +3800,9 @@ mod tests {
             .expect("cleanup command should follow sorting preview command");
         let command_source = &tail[..end];
 
-        assert!(command_source.contains("sorting_plan::generate_sorting_preview_plan"));
+        assert!(
+            command_source.contains("apply_plan_persistence::generate_sorting_preview_snapshot")
+        );
         for forbidden in [
             concat!("cleanup_", "staging_areas("),
             concat!("commit_", "staging_area("),
@@ -3881,6 +3950,137 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "ApplyPlan validation preview command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_gate_blocks_external_apply_plan_result_writes_by_default() {
+        use crate::command_gate::{assert_command_allowed, CommandCapability};
+
+        for command_name in [
+            "create_apply_plan_run_log",
+            "record_apply_plan_result_log",
+            "record_apply_plan_restore_entry",
+        ] {
+            let error = assert_command_allowed(command_name, CommandCapability::FutureExecutorOnly)
+                .expect_err("externally callable ApplyPlan result writes must fail closed");
+            assert!(error.contains(command_name));
+            assert!(error.contains("future executor-only"));
+            assert!(error.contains("Backend Command Gating V1"));
+        }
+    }
+
+    #[test]
+    fn command_gate_allows_current_safe_apply_plan_review_commands() {
+        use crate::command_gate::{assert_command_allowed, CommandCapability};
+
+        for command_name in [
+            "generate_sorting_preview_plan",
+            "list_saved_apply_plans",
+            "get_apply_plan",
+            "preview_apply_plan_validation",
+            "preview_apply_plan_dry_run",
+            "list_apply_plan_run_logs",
+            "get_apply_plan_run_log",
+            "list_apply_plan_result_logs",
+            "list_apply_plan_restore_entries",
+        ] {
+            assert_command_allowed(command_name, CommandCapability::ReadOnly)
+                .expect("read-only ApplyPlan review commands should stay callable");
+        }
+
+        for command_name in [
+            "save_apply_plan_preview",
+            "build_apply_plan_from_staging_plan",
+        ] {
+            assert_command_allowed(command_name, CommandCapability::PreviewDraftWrite)
+                .expect("preview/draft DB writes should stay callable");
+        }
+    }
+
+    #[test]
+    fn command_source_gates_risky_external_commands_before_work_with_expected_capability() {
+        let source = include_str!("mod.rs");
+        for (command_name, expected_capability) in [
+            (
+                "create_apply_plan_run_log",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "record_apply_plan_result_log",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "record_apply_plan_restore_entry",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "cleanup_staging_areas",
+                "CommandCapability::BlockedExternal",
+            ),
+            ("commit_staging_area", "CommandCapability::BlockedExternal"),
+            (
+                "commit_all_staging_areas",
+                "CommandCapability::BlockedExternal",
+            ),
+            (
+                "apply_preview_organization",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            ("restore_snapshot", "CommandCapability::FutureExecutorOnly"),
+            (
+                "apply_download_item",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            ("undo_applied_item", "CommandCapability::FutureExecutorOnly"),
+            (
+                "apply_guided_download_item",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "apply_special_review_fix",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "apply_review_plan_action",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "apply_download_items",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            ("reject_download_item", "CommandCapability::BlockedExternal"),
+            (
+                "restore_rejected_item",
+                "CommandCapability::FutureExecutorOnly",
+            ),
+            (
+                "reject_download_items",
+                "CommandCapability::BlockedExternal",
+            ),
+        ] {
+            let start = source
+                .find(&format!("fn {command_name}"))
+                .or_else(|| source.find(&format!("async fn {command_name}")))
+                .expect("risky command should exist");
+            let command_tail = &source[start..];
+            let end = command_tail
+                .find("run_blocking_command")
+                .unwrap_or(500)
+                .min(500);
+            let command_head = &command_tail[..end];
+            assert!(
+                command_head.contains("assert_command_allowed"),
+                "{command_name} must pass Backend Command Gating V1 before doing work"
+            );
+            assert!(
+                command_head.contains(&format!("\"{command_name}\"")),
+                "{command_name} gate must bind the exact command name"
+            );
+            assert!(
+                command_head.contains(expected_capability),
+                "{command_name} must be gated as {expected_capability}"
             );
         }
     }

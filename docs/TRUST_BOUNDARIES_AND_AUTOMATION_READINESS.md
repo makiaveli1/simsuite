@@ -100,6 +100,23 @@ Backup, confirmation, fixture proof helpers, result-log writes,
 restore-entry writes, backup execution, restore execution, or file-changing
 controls.
 
+Backend Command Gating V1 now blocks externally callable legacy file-changing
+commands and client-forged ApplyPlan run/result/restore writes at the Tauri
+command boundary. Current safe preview/review commands still work, but staging
+commit/cleanup, legacy Organize apply, Downloads apply/reject/restore, special
+repair/install, snapshot restore, and direct result/restore log writers fail
+closed before doing work. This is a backend guardrail only; it does not make
+Apply, Restore, backup execution, confirmation tokens, or result logs ready.
+
+Plan Hash / Provenance V1 now records backend-owned immutable SHA-256 preview
+identity for newly saved ApplyPlans. The hash binds saved preview content,
+source scope, folder configuration, context trail, item/source/destination
+snapshots, signals, blockers, source file snapshots, and rule/seed/settings
+version evidence. Validation blocks future confirmation if the hash is missing
+or mismatched. This is identity/provenance only; it does not authorize Apply,
+Restore, backup execution, confirmation tokens, result logs, restore logs,
+folder creation, or file mutation.
+
 ## Why This Exists
 
 Sims 4 players have good reason to distrust tools that claim they can automatically fix, quarantine, remove, or update mods without real Sims file-format evidence. SimSuite must stay clear about what it knows, what it only suspects, and what needs manual review.

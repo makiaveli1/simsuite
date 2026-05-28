@@ -178,6 +178,30 @@ export type StagingPlanCurrentRoot =
   | "inbox"
   | "unknown";
 
+export type ApplyPlanFolderConfigMode = "default" | "custom";
+
+export type ApplyPlanCreatorFolderMode = "off" | "when_available";
+
+export type ApplyPlanCategoryFolderMode = "bucket_only" | "bucket_and_category";
+
+export interface ApplyPlanFolderConfig {
+  mode: ApplyPlanFolderConfigMode;
+  label: string;
+  bucketFolders: Partial<Record<StagingPlanBucket, string>>;
+  creatorFolderMode: ApplyPlanCreatorFolderMode;
+  categoryFolderMode: ApplyPlanCategoryFolderMode;
+  maxDepth: number | null;
+  exclusionPatterns: string[];
+}
+
+export interface ApplyPlanContextSignal {
+  sourceSystem: string;
+  signalKind: string;
+  label: string;
+  value: string | null;
+  strength: "blocking" | "evidence" | "routing" | "read_only";
+}
+
 export interface StagingPlanItem {
   id: string;
   fileId: number | null;
@@ -226,7 +250,7 @@ export interface PersistedApplyPlanSignal {
   applyPlanItemId: number;
   signalKind: string;
   signalLabel: string;
-  signalValue: string;
+  signalValue: string | null;
   evidenceLevel: string | null;
   sourceSystem: string | null;
   createdAt: string;
@@ -285,6 +309,14 @@ export interface PersistedApplyPlan {
   reviewOnlyItems: number;
   caveats: string[];
   sourceScope: Record<string, unknown> | null;
+  folderConfig: ApplyPlanFolderConfig | null;
+  contextTrail: ApplyPlanContextSignal[];
+  planHash: string | null;
+  planHashVersion: string;
+  planHashAlgorithm: string;
+  planHashCreatedAt: string | null;
+  previewSnapshotId: number | null;
+  previewSnapshotHash: string | null;
   scanSessionId: number | null;
   createdAt: string;
   updatedAt: string;
@@ -306,6 +338,12 @@ export interface ApplyPlanListItem {
   applyableItems: number;
   blockedItems: number;
   reviewOnlyItems: number;
+  planHash: string | null;
+  planHashVersion: string;
+  planHashAlgorithm: string;
+  planHashCreatedAt: string | null;
+  previewSnapshotId: number | null;
+  previewSnapshotHash: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -314,6 +352,8 @@ export interface SaveApplyPlanPreviewRequest {
   sourcePlan: StagingPlan;
   sourcePlanKind?: string | null;
   sourceScope?: Record<string, unknown> | null;
+  folderConfig?: ApplyPlanFolderConfig | null;
+  contextTrail?: ApplyPlanContextSignal[] | null;
   scanSessionId?: number | null;
 }
 
@@ -322,9 +362,25 @@ export interface SaveApplyPlanPreviewResult {
   plan: ApplyPlanListItem;
 }
 
+export interface GenerateSortingPreviewPlanResult {
+  plan: StagingPlan;
+  previewSnapshotId: number;
+  previewSnapshotHash: string;
+  previewSnapshotHashVersion: string;
+  previewSnapshotHashAlgorithm: string;
+  previewSnapshotCreatedAt: string;
+}
+
+export interface SaveApplyPlanFromPreviewSnapshotRequest {
+  previewSnapshotId: number;
+  previewSnapshotHash: string;
+}
+
 export interface BuildApplyPlanFromStagingPlanRequest {
   previewRequest: GenerateSortingPreviewPlanRequest;
   sourcePlanKind?: string | null;
+  folderConfig?: ApplyPlanFolderConfig | null;
+  contextTrail?: ApplyPlanContextSignal[] | null;
 }
 
 export interface ListSavedApplyPlansRequest {
@@ -401,6 +457,8 @@ export interface ApplyPlanValidationItem {
 
 export interface ApplyPlanValidationPreview {
   planId: number;
+  planHash: string | null;
+  sourcePlanKind: string;
   status: ApplyPlanValidationPreviewStatus;
   canProceedToConfirmation: false;
   checkedAt: string;
@@ -620,6 +678,8 @@ export type GenerateSortingPreviewPlanScope =
 
 export interface GenerateSortingPreviewPlanRequest {
   scope: GenerateSortingPreviewPlanScope;
+  folderConfig?: ApplyPlanFolderConfig | null;
+  contextTrail?: ApplyPlanContextSignal[] | null;
 }
 
 export interface CleanupResult {

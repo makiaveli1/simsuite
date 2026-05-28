@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error Validation wrappers are Node ESM scripts outside the TS app bundle.
-import { buildVitestInvocation } from "../../scripts/test/run-vitest.mjs";
+import { buildVitestInvocation, chunkTestFiles, shouldRunVitestInBatches } from "../../scripts/test/run-vitest.mjs";
 // @ts-expect-error Validation wrappers are Node ESM scripts outside the TS app bundle.
 import { buildRustTestInvocation } from "../../scripts/test/run-rust-tests.mjs";
 
@@ -16,6 +16,27 @@ describe("validation script wrappers", () => {
     expect(invocation.args).toEqual(["vitest", "run", "src/trustBoundaryCopy.test.ts", "--runInBand"]);
     expect(invocation.env.NODE_ENV).toBe("test");
     expect(invocation.env.SIMSUITE_FLAG).toBe("kept");
+  });
+
+  it("batches full Vitest runs so WSL/OneDrive worker startup limits do not sink precommit", () => {
+    expect(shouldRunVitestInBatches({ passthroughArgs: [], env: {} })).toBe(true);
+    expect(
+      shouldRunVitestInBatches({
+        passthroughArgs: [],
+        env: { SIMSUITE_VITEST_BATCHED: "0" },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunVitestInBatches({
+        passthroughArgs: ["src/trustBoundaryCopy.test.ts"],
+        env: {},
+      }),
+    ).toBe(false);
+
+    expect(chunkTestFiles(["a.test.ts", "b.test.ts", "c.test.ts", "d.test.ts"], 3)).toEqual([
+      ["a.test.ts", "b.test.ts", "c.test.ts"],
+      ["d.test.ts"],
+    ]);
   });
 
   it("uses the Windows PowerShell Rust lane from WSL so cargo path semantics match the desktop target", () => {

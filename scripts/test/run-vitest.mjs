@@ -1,11 +1,60 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+const DEFAULT_BATCH_SIZE = 3;
+const TEST_FILE_PATTERN = /\.test\.(ts|tsx)$/;
+
 function executableForNpx(platform = process.platform) {
   return platform === "win32" ? "npx.cmd" : "npx";
+}
+
+function normalizePathForVitest(filePath) {
+  return filePath.split(path.sep).join("/");
+}
+
+export function discoverVitestTestFiles({ root = process.cwd(), sourceDir = "src" } = {}) {
+  const sourceRoot = path.resolve(root, sourceDir);
+  const discovered = [];
+
+  function walk(directory) {
+    if (!fs.existsSync(directory)) {
+      return;
+    }
+
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(entryPath);
+        continue;
+      }
+
+      if (entry.isFile() && TEST_FILE_PATTERN.test(entry.name)) {
+        discovered.push(normalizePathForVitest(path.relative(root, entryPath)));
+      }
+    }
+  }
+
+  walk(sourceRoot);
+  return discovered.sort();
+}
+
+export function chunkTestFiles(files, batchSize = DEFAULT_BATCH_SIZE) {
+  const normalizedBatchSize = Number.isInteger(batchSize) && batchSize > 0 ? batchSize : DEFAULT_BATCH_SIZE;
+  const chunks = [];
+
+  for (let index = 0; index < files.length; index += normalizedBatchSize) {
+    chunks.push(files.slice(index, index + normalizedBatchSize));
+  }
+
+  return chunks;
+}
+
+export function shouldRunVitestInBatches({ passthroughArgs, env = process.env } = {}) {
+  return passthroughArgs.length === 0 && env.SIMSUITE_VITEST_BATCHED !== "0";
 }
 
 export function buildVitestInvocation({
@@ -22,12 +71,12 @@ export function buildVitestInvocation({
       ...env,
       NODE_ENV: "test",
     },
+    passthroughArgs,
   };
 }
 
-export function run(argv = process.argv) {
-  const invocation = buildVitestInvocation({ argv });
-  const result = spawnSync(invocation.command, invocation.args, {
+function runVitest(invocation, args) {
+  const result = spawnSync(invocation.command, args, {
     env: invocation.env,
     stdio: "inherit",
     shell: false,
@@ -38,6 +87,33 @@ export function run(argv = process.argv) {
   }
 
   return result.status ?? 1;
+}
+
+export function run(argv = process.argv) {
+  const invocation = buildVitestInvocation({ argv });
+
+  if (!shouldRunVitestInBatches({ passthroughArgs: invocation.passthroughArgs, env: invocation.env })) {
+    return runVitest(invocation, invocation.args);
+  }
+
+  const testFiles = discoverVitestTestFiles();
+  if (testFiles.length === 0) {
+    return runVitest(invocation, invocation.args);
+  }
+
+  const configuredBatchSize = Number.parseInt(invocation.env.SIMSUITE_VITEST_BATCH_SIZE ?? "", 10);
+  const batches = chunkTestFiles(testFiles, configuredBatchSize);
+
+  for (const [index, batch] of batches.entries()) {
+    console.log(`\n[run-vitest] batch ${index + 1}/${batches.length}: ${batch.join(" ")}`);
+    const batchPool = invocation.env.SIMSUITE_VITEST_BATCH_POOL ?? "forks";
+    const status = runVitest(invocation, ["vitest", "run", "--pool", batchPool, ...batch]);
+    if (status !== 0) {
+      return status;
+    }
+  }
+
+  return 0;
 }
 
 function main() {

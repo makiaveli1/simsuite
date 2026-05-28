@@ -123,6 +123,19 @@ Before any external release, also audit:
 - Large command modules that mix read-only, metadata, filesystem, network, and process side effects.
 - README claims that imply Apply/Restore are user-ready before they really are.
 
+## Backend Command Gating V1 update
+
+As of the current branch state, the audit's immediate backend-gating recommendation has been implemented at the Tauri command boundary.
+
+Current disposition:
+
+- safe preview/review commands remain callable;
+- preview/draft DB writes remain callable for saved ApplyPlan review;
+- `create_apply_plan_run_log`, `record_apply_plan_result_log`, and `record_apply_plan_restore_entry` fail closed as future executor-only commands;
+- legacy file-changing commands such as staging commit/cleanup, legacy Organize apply, Downloads apply/reject/restore, special repair/install, and snapshot restore fail closed before doing work.
+
+This still does not enable Apply, Restore, backup execution, result-log writes, restore-entry writes, file movement, file copying, folder creation, deletion, cleanup, quarantine, replacement, or AI decisions. The gate only prevents current webview invocation from bypassing preview-only product flows.
+
 ## Sprint status
 
-This report is documentation and guardrail work only. It does not enable Apply, Restore, backup execution, result-log writes, restore-entry writes, file movement, file copying, folder creation, deletion, or AI decisions.
+This report is documentation plus Backend Command Gating V1 guardrail work. It does not enable Apply, Restore, backup execution, file movement, file copying, folder creation, deletion, cleanup, quarantine, replacement, or AI decisions.

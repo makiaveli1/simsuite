@@ -262,6 +262,96 @@ export function HomeScreen({
     [`${totalWatchCount} watched`, (overview?.exactUpdateItems ?? 0) > 0 || (overview?.watchSetupItems ?? 0) > 0 ? "warn" : "neutral"],
   ] as const;
 
+  const libraryConfigured = sourceCount >= 2;
+  const reviewQueueCount =
+    (overview?.downloadsCount ?? 0) +
+    (overview?.reviewCount ?? 0) +
+    (overview?.duplicatesCount ?? 0) +
+    totalWatchCount;
+  const safetyRows = [
+    [
+      libraryConfigured ? "Library configured" : "Library not configured",
+      `${sourceCount}/3 folders ready`,
+      libraryConfigured
+        ? "Scans have enough roots to build a useful picture."
+        : "Choose folders first so the rest of the app knows where to look.",
+      libraryConfigured ? "good" : "warn",
+    ],
+    [
+      "Last scan",
+      formatTimestamp(overview?.lastScanAt),
+      overview?.scanNeedsRefresh
+        ? "Refresh before treating old facts as current."
+        : "Current enough for review and preview work.",
+      overview?.scanNeedsRefresh ? "warn" : "good",
+    ],
+    [
+      "Review queues",
+      reviewQueueCount.toLocaleString(),
+      "Inbox, Review, Duplicates, and Updates are where human checks happen before organizing.",
+      reviewQueueCount > 0 ? "warn" : "good",
+    ],
+    [
+      "Preview-only status",
+      "No files changed",
+      "Organize can save draft previews; Apply, backup, and Restore stay blocked.",
+      "neutral",
+    ],
+  ] as const;
+  const blockedActionRows = [
+    ["Apply not ready yet", "Draft previews are identity/provenance records, not permission to move files."],
+    ["Restore not ready yet", "Restore needs a backend run log and restore map before any button appears."],
+    ["Preview only", "No files changed from Home, Inbox, or Organize preview screens."],
+  ] as const;
+  const evidenceRows = [
+    ["Exact match", "Backend facts that match directly, such as stable hashes or stored metadata."],
+    ["Evidence-backed cue", "Strong signals that can guide review but still avoid mutation promises."],
+    ["Heuristic hint", "Useful weak clues, never treated as proof by themselves."],
+    ["Manual review needed", "The app is telling you a human decision is still required."],
+    ["Not supported yet", "Real Apply, Restore, and file-changing workflows are intentionally blocked."],
+  ] as const;
+  const journeySteps: Array<{
+    label: string;
+    note: string;
+    actionLabel: string;
+    onSelect: () => void | Promise<void>;
+    disabled?: boolean;
+  }> = [
+    {
+      label: "Scan Library",
+      note: canScan
+        ? "Refresh the facts SimSuite uses before review and preview work."
+        : "Choose folders first so the scan has a safe scope.",
+      actionLabel: canScan ? "Scan Library" : "Choose folders",
+      onSelect: canScan ? onScan : () => onNavigate("settings"),
+      disabled: canScan && isScanning,
+    },
+    {
+      label: "Review Inbox",
+      note: "Check new downloads before they become part of your library story.",
+      actionLabel: "Review Inbox",
+      onSelect: () => onNavigate("downloads"),
+    },
+    {
+      label: "Check Duplicates",
+      note: "Compare evidence without removal, deletion, or replacement claims.",
+      actionLabel: "Check Duplicates",
+      onSelect: () => onNavigate("duplicates"),
+    },
+    {
+      label: "Review Updates",
+      note: "Separate stronger update leads from reminders and pages that need caution.",
+      actionLabel: "Review Updates",
+      onSelect: () => onNavigate("updates"),
+    },
+    {
+      label: "Create Organization Preview",
+      note: "Generate a preview-only draft plan after the review queues make sense.",
+      actionLabel: "Create Organization Preview",
+      onSelect: () => onNavigate("organize"),
+    },
+  ];
+
   return (
     <div className={`screen-shell home-hub-screen home-hub-view-${userView}`}>
       <div className="home-hub-shell">
@@ -403,6 +493,73 @@ export function HomeScreen({
                 <strong>{metric.value}</strong>
                 <small>{metric.note}</small>
               </div>
+            ))}
+          </div>
+        </m.section>
+
+        <m.section className="panel-card home-phase0-guide" {...stagedListItem(2)}>
+          <div className="panel-heading home-phase0-guide-heading">
+            <div>
+              <span className="section-label">
+                <ShieldCheck size={14} strokeWidth={2} />
+                Start here
+              </span>
+              <h2>Scan, review, then create a preview</h2>
+              <p className="workspace-toolbar-copy">
+                Home now shows what SimSuite knows, what it only suspects, and what stays blocked before any file-changing workflow exists.
+              </p>
+            </div>
+            <span className="ghost-chip">Preview only</span>
+          </div>
+
+          <div className="home-phase0-grid">
+            <div className="home-journey-card-stack" aria-label="SimSuite journey">
+              {journeySteps.map((step, index) => (
+                <button
+                  key={step.label}
+                  type="button"
+                  className="home-journey-card"
+                  onClick={() => void step.onSelect()}
+                  disabled={step.disabled}
+                >
+                  <span className="home-journey-step">{index + 1}</span>
+                  <span className="home-journey-copy">
+                    <strong>{step.label}</strong>
+                    <small>{step.note}</small>
+                  </span>
+                  <span className="ghost-chip home-journey-action">{step.actionLabel}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="home-status-card" aria-label="Home safety and status">
+              <div className="home-status-card-heading">
+                <strong>What SimSuite knows</strong>
+                <span>Safety/status panel</span>
+              </div>
+              <div className="home-fact-list">
+                {safetyRows.map(([label, value, note, tone]) => (
+                  <HomeStatusRow key={label} label={label} value={value} note={note} tone={tone} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="home-evidence-strip" aria-label="Evidence labels">
+            {evidenceRows.map(([label, note]) => (
+              <span key={label} className="home-evidence-pill" title={note}>
+                <strong>{label}</strong>
+                <small>{note}</small>
+              </span>
+            ))}
+          </div>
+
+          <div className="home-blocked-actions" aria-label="Locked future actions">
+            {blockedActionRows.map(([label, note]) => (
+              <span key={label} className="home-blocked-action">
+                <strong>{label}</strong>
+                <small>{note}</small>
+              </span>
             ))}
           </div>
         </m.section>
@@ -766,7 +923,7 @@ function HomeModuleCard({
       {...stagedListItem(index)}
     >
       <div className="panel-heading home-module-heading">
-        <div>
+        <div style={{ display: "grid", gap: "0.32rem" }}>
           <span className="section-label">{icon}{label}</span>
           <h2>{title}</h2>
         </div>
@@ -821,6 +978,28 @@ function HomeFactRow({ label, value }: { label: string; value: string }) {
     <div className="home-fact-row">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function HomeStatusRow({
+  label,
+  value,
+  note,
+  tone,
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone: string;
+}) {
+  return (
+    <div className={`home-status-row home-status-row-${tone}`}>
+      <div className="home-status-row-copy">
+        <strong>{label}</strong>
+        <span>{note}</span>
+      </div>
+      <span className="ghost-chip home-value-chip">{value}</span>
     </div>
   );
 }

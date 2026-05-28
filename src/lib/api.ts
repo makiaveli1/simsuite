@@ -36,6 +36,7 @@ import type {
   FileDetail,
   GuidedInstallPlan,
   GenerateSortingPreviewPlanRequest,
+  GenerateSortingPreviewPlanResult,
   HomeOverview,
   ProblemSignal,
   IgnoreItemsResult,
@@ -98,6 +99,7 @@ import type {
   PreviewApplyPlanValidationRequest,
   RecordApplyPlanRestoreEntryRequest,
   RecordApplyPlanResultLogRequest,
+  SaveApplyPlanFromPreviewSnapshotRequest,
   SaveApplyPlanPreviewRequest,
   SaveApplyPlanPreviewResult,
   StagingAreasSummary,
@@ -297,10 +299,17 @@ const createMockSortingPreviewPlan = (): StagingPlan => ({
 });
 
 let mockNextApplyPlanId = 1;
+let mockNextPreviewSnapshotId = 1;
 let mockNextApplyPlanItemId = 1;
 let mockNextApplyPlanSignalId = 1;
 let mockNextApplyPlanBlockerId = 1;
 let mockSavedApplyPlans: PersistedApplyPlan[] = [];
+let mockPreviewSnapshots = new Map<
+  number,
+  GenerateSortingPreviewPlanResult & {
+    request: GenerateSortingPreviewPlanRequest;
+  }
+>();
 let mockNextApplyPlanRunId = 1;
 let mockNextApplyPlanResultId = 1;
 let mockNextApplyPlanRestoreEntryId = 1;
@@ -579,6 +588,12 @@ const applyPlanSummaryFromMock = (
   applyableItems: plan.applyableItems,
   blockedItems: plan.blockedItems,
   reviewOnlyItems: plan.reviewOnlyItems,
+  planHash: plan.planHash,
+  planHashVersion: plan.planHashVersion,
+  planHashAlgorithm: plan.planHashAlgorithm,
+  planHashCreatedAt: plan.planHashCreatedAt,
+  previewSnapshotId: plan.previewSnapshotId,
+  previewSnapshotHash: plan.previewSnapshotHash,
   createdAt: plan.createdAt,
   updatedAt: plan.updatedAt,
 });
@@ -608,8 +623,62 @@ const mockDestinationRoot = (
   }
 };
 
+const stableMockStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableMockStringify).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => typeof entry !== "undefined")
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableMockStringify(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const deterministicMockPlanHash = (value: unknown): string => {
+  const input = stableMockStringify(value);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0").repeat(8).slice(0, 64);
+};
+
+const createMockSortingPreviewResult = (
+  request: GenerateSortingPreviewPlanRequest,
+): GenerateSortingPreviewPlanResult => {
+  const plan = createMockSortingPreviewPlan();
+  const createdAt = new Date().toISOString();
+  const previewSnapshotId = mockNextPreviewSnapshotId++;
+  const previewSnapshotHash = deterministicMockPlanHash({
+    version: "apply_plan_preview_snapshot_v2",
+    sourcePlanKind: "backend_generated_sorting_preview",
+    request,
+    plan,
+  });
+  const result: GenerateSortingPreviewPlanResult = {
+    plan,
+    previewSnapshotId,
+    previewSnapshotHash,
+    previewSnapshotHashVersion: "apply_plan_preview_snapshot_v2",
+    previewSnapshotHashAlgorithm: "sha256",
+    previewSnapshotCreatedAt: createdAt,
+  };
+  mockPreviewSnapshots.set(previewSnapshotId, {
+    ...structuredClone(result),
+    request: structuredClone(request),
+  });
+  return result;
+};
+
 const buildMockPersistedApplyPlan = (
-  request: SaveApplyPlanPreviewRequest,
+  request: SaveApplyPlanPreviewRequest & {
+    previewSnapshotId?: number | null;
+    previewSnapshotHash?: string | null;
+  },
 ): PersistedApplyPlan => {
   const sourcePlan = request.sourcePlan;
 
@@ -735,12 +804,30 @@ const buildMockPersistedApplyPlan = (
   });
 
   const planId = mockNextApplyPlanId++;
+  const sourcePlanKind = request.sourcePlanKind ?? "client_supplied_preview";
+  const mockPlanHash = deterministicMockPlanHash({
+    sourcePlanKind,
+    sourceScope: request.sourceScope ?? null,
+    folderConfig: request.folderConfig ?? null,
+    contextTrail: request.contextTrail ?? [],
+    items: sourcePlan.items.map((item) => ({
+      fileName: item.fileName,
+      currentPath: item.currentPath,
+      suggestedDestinationPath: item.suggestedDestinationPath,
+      actionKind: item.actionKind,
+      evidenceLevel: item.evidenceLevel,
+      bucket: item.bucket,
+      confidenceLabel: item.confidenceLabel,
+      blockedReasons: item.blockedReasons,
+      sourceSignals: item.sourceSignals,
+    })),
+  });
   const status: PersistedApplyPlan["status"] =
     sourcePlanBlocked || blockedItems > 0 ? "blocked" : "preview_only_source";
   const plan: PersistedApplyPlan = {
     id: planId,
     sourceStagingPlanId: sourcePlan.id,
-    sourcePlanKind: request.sourcePlanKind ?? sourcePlan.source,
+    sourcePlanKind,
     title: sourcePlan.title,
     summary: sourcePlan.summary,
     status,
@@ -754,6 +841,14 @@ const buildMockPersistedApplyPlan = (
     reviewOnlyItems,
     caveats: sourcePlan.caveats,
     sourceScope: request.sourceScope ?? null,
+    folderConfig: request.folderConfig ?? null,
+    contextTrail: request.contextTrail ?? [],
+    planHash: mockPlanHash,
+    planHashVersion: "apply_plan_hash_v1",
+    planHashAlgorithm: "sha256",
+    planHashCreatedAt: createdAt,
+    previewSnapshotId: request.previewSnapshotId ?? null,
+    previewSnapshotHash: request.previewSnapshotHash ?? null,
     scanSessionId: request.scanSessionId ?? null,
     createdAt,
     updatedAt: createdAt,
@@ -887,10 +982,16 @@ const buildMockApplyPlanValidationPreview = (
   });
 
   const backupBlockedItems = plan.backupRequired && !plan.restoreAvailable ? items.length : 0;
+  const backendGenerated = plan.sourcePlanKind === "backend_generated_sorting_preview";
   const caveats = [
     ...plan.caveats,
     "No files changed. This validation preview is read-only.",
     "Backup/restore is required before any future confirmation; Apply is not ready yet.",
+    ...(backendGenerated
+      ? []
+      : [
+          "Client-supplied or legacy ApplyPlan previews are review/audit-only and cannot proceed to future confirmation. Regenerate from a backend-generated sorting preview.",
+        ]),
   ];
   const blockedItems = items.filter(
     (item) => item.validationStatus !== "valid_preview_only",
@@ -901,8 +1002,10 @@ const buildMockApplyPlanValidationPreview = (
 
   return {
     planId: plan.id,
+    planHash: plan.planHash,
+    sourcePlanKind: plan.sourcePlanKind,
     status:
-      plan.status === "cancelled" || blockedItems > 0 || conflictItems > 0 || backupBlockedItems > 0
+      plan.status === "cancelled" || !backendGenerated || blockedItems > 0 || conflictItems > 0 || backupBlockedItems > 0
         ? "blocked"
         : "valid_preview_only",
     canProceedToConfirmation: false,
@@ -7265,8 +7368,41 @@ async function mockInvoke<T>(
       return structuredClone(mockStagingAreasSummary) as T;
     case "get_staging_preview_plan":
       return structuredClone(createMockStagingPreviewPlan()) as T;
-    case "generate_sorting_preview_plan":
-      return structuredClone(createMockSortingPreviewPlan()) as T;
+    case "generate_sorting_preview_plan": {
+      const request = payload?.request as GenerateSortingPreviewPlanRequest | undefined;
+      if (!request) {
+        throw new Error("Missing sorting preview generation request.");
+      }
+      return structuredClone(createMockSortingPreviewResult(request)) as T;
+    }
+    case "save_apply_plan_from_preview_snapshot": {
+      const request = payload?.request as
+        | SaveApplyPlanFromPreviewSnapshotRequest
+        | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan preview snapshot save request.");
+      }
+      const snapshot = mockPreviewSnapshots.get(request.previewSnapshotId);
+      if (!snapshot || snapshot.previewSnapshotHash !== request.previewSnapshotHash) {
+        throw new Error("Preview snapshot was not found or no longer matches.");
+      }
+      const plan = buildMockPersistedApplyPlan({
+        sourcePlan: snapshot.plan,
+        sourcePlanKind: "backend_generated_sorting_preview",
+        sourceScope: snapshot.request.scope as unknown as Record<string, unknown>,
+        folderConfig: snapshot.request.folderConfig ?? null,
+        contextTrail: snapshot.request.contextTrail ?? [],
+        scanSessionId: null,
+        previewSnapshotId: snapshot.previewSnapshotId,
+        previewSnapshotHash: snapshot.previewSnapshotHash,
+      });
+      mockPreviewSnapshots.delete(request.previewSnapshotId);
+      mockSavedApplyPlans = [plan, ...mockSavedApplyPlans];
+      return {
+        planId: plan.id,
+        plan: applyPlanSummaryFromMock(plan),
+      } as SaveApplyPlanPreviewResult as T;
+    }
     case "build_apply_plan_from_staging_plan": {
       const request = payload?.request as
         | BuildApplyPlanFromStagingPlanRequest
@@ -7277,8 +7413,10 @@ async function mockInvoke<T>(
       const sourcePlan = createMockSortingPreviewPlan();
       const plan = buildMockPersistedApplyPlan({
         sourcePlan,
-        sourcePlanKind: request.sourcePlanKind ?? "sorting_preview",
+        sourcePlanKind: "backend_generated_sorting_preview",
         sourceScope: request.previewRequest.scope as unknown as Record<string, unknown>,
+        folderConfig: request.folderConfig ?? request.previewRequest.folderConfig ?? null,
+        contextTrail: request.contextTrail ?? [],
         scanSessionId: null,
       });
       mockSavedApplyPlans = [plan, ...mockSavedApplyPlans];
@@ -7292,7 +7430,10 @@ async function mockInvoke<T>(
       if (!request) {
         throw new Error("Missing ApplyPlan preview save request.");
       }
-      const plan = buildMockPersistedApplyPlan(request);
+      const plan = buildMockPersistedApplyPlan({
+        ...request,
+        sourcePlanKind: "client_supplied_preview",
+      });
       mockSavedApplyPlans = [plan, ...mockSavedApplyPlans];
       return {
         planId: plan.id,
@@ -8849,7 +8990,9 @@ export const api = {
   getStagingPreviewPlan: () =>
     invoke<StagingPlan>("get_staging_preview_plan"),
   generateSortingPreviewPlan: (request: GenerateSortingPreviewPlanRequest) =>
-    invoke<StagingPlan>("generate_sorting_preview_plan", { request }),
+    invoke<GenerateSortingPreviewPlanResult>("generate_sorting_preview_plan", { request }),
+  saveApplyPlanFromPreviewSnapshot: (request: SaveApplyPlanFromPreviewSnapshotRequest) =>
+    invoke<SaveApplyPlanPreviewResult>("save_apply_plan_from_preview_snapshot", { request }),
   saveApplyPlanPreview: (request: SaveApplyPlanPreviewRequest) =>
     invoke<SaveApplyPlanPreviewResult>("save_apply_plan_preview", { request }),
   buildApplyPlanFromStagingPlan: (request: BuildApplyPlanFromStagingPlanRequest) =>

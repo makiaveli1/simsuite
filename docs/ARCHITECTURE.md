@@ -33,17 +33,17 @@ Planned placeholders still present:
 
 ## Active safety pipeline
 
-The current organization flow follows the product safety chain:
+The current Organize/ApplyPlan flow is intentionally bounded to preview and review:
 
 1. scanner
 2. parser
 3. rule engine
-4. validator
-5. preview
-6. user approval
-7. move engine
+4. validation preview
+5. dry-run preview
+6. saved-plan review / disabled confirmation design
+7. immutable plan hash / provenance check
 
-Snapshots are created before approved batch moves, and rollback is exposed through snapshot restore.
+The current externally callable flow stops there. User approval does not unlock a move engine path today, and snapshot restore is not externally available from current UI flows. Legacy file-changing Tauri commands are gated fail-closed until a future executor has plan hashes, confirmation tokens, fresh validation, backup/restore material, and backend-derived result logs.
 
 ## Current UI scope
 
@@ -64,6 +64,58 @@ Not yet implemented:
 
 - Patch Recovery
 - Tools
+
+
+## Current engineering note (May 28, 2026 — Phase 0 Home clarity baseline)
+
+Home now carries the first product-clarity layer for new and returning users.
+
+Important current behavior:
+
+- The Home page includes a `Start here` journey: `Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`.
+- A Home safety/status panel summarizes whether the library is configured, last scan state, review queue pressure, and the current preview-only boundary.
+- Evidence labels are explicitly defined in visible copy: exact match, evidence-backed cue, heuristic hint, manual review needed, and not supported yet.
+- Locked-action copy stays visible on Home: `No files changed`, `Preview only`, `Apply not ready yet`, and `Restore not ready yet`.
+- This UI work does not add a Tauri command, confirmation token, executor, backup, restore, folder creation, or file mutation path.
+
+## Current engineering note (May 27, 2026 — Plan Hash / Provenance V1)
+
+Newly saved ApplyPlans now receive a backend-owned immutable SHA-256 preview identity.
+
+Important current behavior:
+
+- migration `0006_applyplan_hash_provenance_v1` adds `plan_hash`, hash metadata, and `plan_provenance_json` to `apply_plans`.
+- `src-tauri/src/core/apply_plan_provenance.rs` builds the hash from persisted preview content: source scope, folder config, context trail, plan counts/caveats, saved items, source/destination preview paths, signals, blockers, source file snapshots, and rule/seed/settings version evidence.
+- SQLite triggers prevent rewriting hash/provenance columns once they are set.
+- validation preview checks the stored hash and blocks future confirmation if provenance is missing or mismatched.
+- the saved-plan UI displays the backend-owned hash as identity/provenance only and keeps confirmation unavailable.
+- This gate does not implement Apply, Restore, backup execution, confirmation tokens, result logging, restore execution, folder creation, or file mutation.
+
+## Current engineering note (May 27, 2026)
+
+Organize ApplyPlan previews now carry two explicit pieces of future-Apply context without crossing the file-mutation boundary.
+
+Important current behavior:
+
+- `GenerateSortingPreviewPlanRequest` accepts an optional folder configuration snapshot.
+- The sorting preview can use custom bucket folder names, optional subtype folders, optional creator folders, max-depth caps, and preview exclusion notes to shape destination previews only.
+- `apply_plans` now has `folder_config_json` and `context_trail_json` columns via migration `0005_applyplan_context_snapshots`.
+- Saved ApplyPlan details surface the folder profile and cross-system trail in Confirmation Design V1.
+- The context trail is evidence/routing data from Library, Duplicates, Creator/Category Audit, Inbox/Updates, Organize, validation, and dry-run; it does not authorize Apply, backup, restore, delete, quarantine, replace, or result-log writes.
+- Validation and dry-run remain read-only and still return false progression flags.
+
+## Current engineering note (May 27, 2026 — Backend Command Gating V1)
+
+The Tauri command boundary now has a fail-closed gate for commands that could otherwise bypass current preview-only UI flows.
+
+Important current behavior:
+
+- `src-tauri/src/command_gate.rs` classifies commands as read-only, preview/draft write, internal fixture-only, future executor-only, or blocked external.
+- Safe ApplyPlan review commands remain callable: sorting preview generation, saved plan list/detail, validation preview, dry-run preview, and read-only result/restore history listing.
+- Preview/draft DB writes remain callable for saved ApplyPlan review: `save_apply_plan_preview` and `build_apply_plan_from_staging_plan`.
+- Client-callable ApplyPlan run/result/restore writers now fail closed at the command boundary.
+- Legacy file-changing commands such as staging commit/cleanup, Organize legacy apply, Downloads apply/reject/restore, special repair/install, and snapshot restore now fail closed before doing work.
+- This gate does not implement Apply, Restore, backup execution, confirmation tokens, result logging, or restore execution. It only blocks unsafe external invocation until those systems exist.
 
 ## Current engineering note (May 8, 2026)
 
@@ -607,12 +659,12 @@ Important current watch behavior:
 
 ## Current engineering note (March 13, 2026)
 
-The current app is no longer just a scan-and-sort shell. It already has a real Downloads Inbox, a real guided special-mod pipeline, real snapshot-backed apply flows, and one shared version-and-watch foundation for all content.
+The current app is no longer just a scan-and-sort shell. It has a real Downloads Inbox, a guided special-mod review/preview pipeline, preview-only ApplyPlan foundations, and one shared version-and-watch foundation for all content. Current externally callable flows do not expose real Apply/Restore or snapshot-backed file moves.
 
 Important current behavior:
 
 - `Downloads` is the intake desk for new files, archives, guided special-mod installs, blocked items, and review-only batches
-- `Organize` is the safe sorter for broader library cleanup and preset-based moves
+- `Organize` is the preview-first sorter for broader library cleanup and future preset-based moves; current UI/backend flows stop at review and dry-run
 - `Library`, `Creator Audit`, and `Category Audit` feed learned data back into later scans and suggestions
 - `Review` is the hold queue for files that still need a human decision
 - `Duplicates` is inspection-only right now

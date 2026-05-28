@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -206,6 +208,83 @@ pub enum StagingPlanCurrentRoot {
     Unknown,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanFolderConfigMode {
+    Default,
+    Custom,
+}
+
+impl Default for ApplyPlanFolderConfigMode {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanCreatorFolderMode {
+    Off,
+    WhenAvailable,
+}
+
+impl Default for ApplyPlanCreatorFolderMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanCategoryFolderMode {
+    BucketOnly,
+    BucketAndCategory,
+}
+
+impl Default for ApplyPlanCategoryFolderMode {
+    fn default() -> Self {
+        Self::BucketOnly
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanFolderConfig {
+    #[serde(default)]
+    pub mode: ApplyPlanFolderConfigMode,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub bucket_folders: BTreeMap<String, String>,
+    #[serde(default)]
+    pub creator_folder_mode: ApplyPlanCreatorFolderMode,
+    #[serde(default)]
+    pub category_folder_mode: ApplyPlanCategoryFolderMode,
+    #[serde(default)]
+    pub max_depth: Option<i64>,
+    #[serde(default)]
+    pub exclusion_patterns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanContextSignalStrength {
+    Blocking,
+    Evidence,
+    Routing,
+    ReadOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanContextSignal {
+    pub source_system: String,
+    pub signal_kind: String,
+    pub label: String,
+    pub value: Option<String>,
+    pub strength: ApplyPlanContextSignalStrength,
+}
+
 impl Default for StagingPlanCurrentRoot {
     fn default() -> Self {
         Self::Unknown
@@ -342,6 +421,16 @@ pub struct PersistedApplyPlan {
     pub review_only_items: i64,
     pub caveats: Vec<String>,
     pub source_scope: Option<serde_json::Value>,
+    pub folder_config: Option<ApplyPlanFolderConfig>,
+    pub context_trail: Vec<ApplyPlanContextSignal>,
+    pub plan_hash: Option<String>,
+    pub plan_hash_version: String,
+    pub plan_hash_algorithm: String,
+    pub plan_hash_created_at: Option<String>,
+    pub preview_snapshot_id: Option<i64>,
+    pub preview_snapshot_hash: Option<String>,
+    #[serde(skip)]
+    pub plan_provenance: serde_json::Value,
     pub scan_session_id: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
@@ -365,6 +454,12 @@ pub struct ApplyPlanListItem {
     pub applyable_items: i64,
     pub blocked_items: i64,
     pub review_only_items: i64,
+    pub plan_hash: Option<String>,
+    pub plan_hash_version: String,
+    pub plan_hash_algorithm: String,
+    pub plan_hash_created_at: Option<String>,
+    pub preview_snapshot_id: Option<i64>,
+    pub preview_snapshot_hash: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -378,7 +473,29 @@ pub struct SaveApplyPlanPreviewRequest {
     #[serde(default)]
     pub source_scope: Option<serde_json::Value>,
     #[serde(default)]
+    pub folder_config: Option<ApplyPlanFolderConfig>,
+    #[serde(default)]
+    pub context_trail: Vec<ApplyPlanContextSignal>,
+    #[serde(default)]
     pub scan_session_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateSortingPreviewPlanResult {
+    pub plan: StagingPlan,
+    pub preview_snapshot_id: i64,
+    pub preview_snapshot_hash: String,
+    pub preview_snapshot_hash_version: String,
+    pub preview_snapshot_hash_algorithm: String,
+    pub preview_snapshot_created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveApplyPlanFromPreviewSnapshotRequest {
+    pub preview_snapshot_id: i64,
+    pub preview_snapshot_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,6 +511,10 @@ pub struct BuildApplyPlanFromStagingPlanRequest {
     pub preview_request: GenerateSortingPreviewPlanRequest,
     #[serde(default)]
     pub source_plan_kind: Option<String>,
+    #[serde(default)]
+    pub folder_config: Option<ApplyPlanFolderConfig>,
+    #[serde(default)]
+    pub context_trail: Vec<ApplyPlanContextSignal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -491,6 +612,8 @@ pub struct ApplyPlanValidationItem {
 #[serde(rename_all = "camelCase")]
 pub struct ApplyPlanValidationPreview {
     pub plan_id: i64,
+    pub plan_hash: Option<String>,
+    pub source_plan_kind: String,
     pub status: ApplyPlanValidationPreviewStatus,
     pub can_proceed_to_confirmation: bool,
     pub checked_at: String,
@@ -608,6 +731,7 @@ pub struct PersistedApplyPlanRun {
     pub apply_plan_id: i64,
     pub status: ApplyPlanRunLogStatus,
     pub backup_strategy: String,
+    #[serde(skip)]
     pub confirmation_token: Option<String>,
     pub confirmed_at: Option<String>,
     pub started_at: Option<String>,
@@ -769,6 +893,10 @@ pub struct ListApplyPlanRestoreEntriesRequest {
 #[serde(rename_all = "camelCase")]
 pub struct GenerateSortingPreviewPlanRequest {
     pub scope: GenerateSortingPreviewPlanScope,
+    #[serde(default)]
+    pub folder_config: Option<ApplyPlanFolderConfig>,
+    #[serde(default)]
+    pub context_trail: Vec<ApplyPlanContextSignal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

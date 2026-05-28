@@ -6,10 +6,11 @@ use rusqlite::{params_from_iter, types::Value, Connection};
 use crate::{
     error::AppResult,
     models::{
-        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanScope, LibrarySettings,
-        StagingPlan, StagingPlanActionKind, StagingPlanBucket, StagingPlanConfidenceLabel,
-        StagingPlanCurrentRoot, StagingPlanEvidenceLevel, StagingPlanItem, StagingPlanSource,
-        StagingPlanStatus,
+        ApplyPlanCategoryFolderMode, ApplyPlanCreatorFolderMode, ApplyPlanFolderConfig,
+        ApplyPlanFolderConfigMode, GenerateSortingPreviewPlanRequest,
+        GenerateSortingPreviewPlanScope, LibrarySettings, StagingPlan, StagingPlanActionKind,
+        StagingPlanBucket, StagingPlanConfidenceLabel, StagingPlanCurrentRoot,
+        StagingPlanEvidenceLevel, StagingPlanItem, StagingPlanSource, StagingPlanStatus,
     },
 };
 
@@ -41,6 +42,16 @@ pub fn generate_sorting_preview_plan(
     request: GenerateSortingPreviewPlanRequest,
 ) -> AppResult<StagingPlan> {
     let mut caveats = base_plan_caveats();
+    let folder_config = request.folder_config.clone();
+    if folder_config
+        .as_ref()
+        .is_some_and(|config| config.mode == ApplyPlanFolderConfigMode::Custom)
+    {
+        caveats.push(
+            "Custom folder configuration influenced destination previews only; no folders or files were changed."
+                .to_owned(),
+        );
+    }
     let candidates = match request.scope {
         GenerateSortingPreviewPlanScope::SelectedFiles { file_ids } => {
             let requested_count = file_ids.len();
@@ -71,7 +82,7 @@ pub fn generate_sorting_preview_plan(
 
     let items = candidates
         .iter()
-        .map(|candidate| plan_item_for_candidate(settings, candidate))
+        .map(|candidate| plan_item_for_candidate(settings, folder_config.as_ref(), candidate))
         .collect::<Vec<_>>();
 
     let item_count = items.len();
@@ -147,7 +158,7 @@ fn load_selected_candidates(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "{} WHERE f.source_location <> 'downloads' AND f.id IN ({}) ORDER BY f.filename COLLATE NOCASE",
+        "{} WHERE f.source_location <> 'downloads' AND f.id IN ({}) ORDER BY f.filename COLLATE NOCASE, f.id ASC",
         candidate_select_sql(),
         placeholders
     );
@@ -201,7 +212,7 @@ fn load_folder_candidates(
 
     params.push(Value::Integer(limit));
     let sql = format!(
-        "{}{} ORDER BY f.filename COLLATE NOCASE LIMIT ?",
+        "{}{} ORDER BY f.filename COLLATE NOCASE, f.id ASC LIMIT ?",
         candidate_select_sql(),
         filters
     );
@@ -317,6 +328,7 @@ fn exact_duplicate_exists_sql() -> &'static str {
 
 fn plan_item_for_candidate(
     settings: &LibrarySettings,
+    folder_config: Option<&ApplyPlanFolderConfig>,
     candidate: &SortingCandidate,
 ) -> StagingPlanItem {
     let mut signals = vec![
@@ -445,6 +457,7 @@ fn plan_item_for_candidate(
         }
         return suggest_bucket_item(
             settings,
+            folder_config,
             candidate,
             StagingPlanBucket::ScriptMods,
             "This is a script file, so SimSuite can preview a Script Mods destination with caveats.",
@@ -486,7 +499,7 @@ fn plan_item_for_candidate(
     }
 
     if let Some(bucket) = strong_bucket_for_candidate(candidate) {
-        if current_parent_matches_bucket(settings, candidate, &bucket) {
+        if current_parent_matches_bucket(settings, folder_config, candidate, &bucket) {
             let mut signals = signals;
             signals.push("current_folder_matches_bucket".to_owned());
             return StagingPlanItem {
@@ -514,6 +527,7 @@ fn plan_item_for_candidate(
         let reason = bucket_reason(&bucket);
         return suggest_bucket_item(
             settings,
+            folder_config,
             candidate,
             bucket,
             reason,
@@ -614,6 +628,7 @@ fn leave_in_place_item(
 
 fn suggest_bucket_item(
     settings: &LibrarySettings,
+    folder_config: Option<&ApplyPlanFolderConfig>,
     candidate: &SortingCandidate,
     bucket: StagingPlanBucket,
     reason: &str,
@@ -624,8 +639,22 @@ fn suggest_bucket_item(
     current_root: StagingPlanCurrentRoot,
 ) -> StagingPlanItem {
     let target_root = target_root_for_bucket(settings, &bucket);
-    let suggested_destination_path =
-        target_root.map(|root| build_suggested_destination(root, &bucket, &candidate.filename));
+    let (suggested_destination_path, custom_folder_applied) = target_root
+        .map(|root| {
+            build_suggested_destination(
+                root,
+                &bucket,
+                &candidate.filename,
+                folder_config,
+                candidate,
+            )
+        })
+        .map(|(path, applied)| (Some(path), applied))
+        .unwrap_or((None, false));
+    let mut source_signals = source_signals;
+    if custom_folder_applied {
+        source_signals.push("custom_folder_config_applied".to_owned());
+    }
     let (action_kind, bucket, blocked_reasons) = if suggested_destination_path.is_some() {
         (StagingPlanActionKind::SuggestMove, bucket, Vec::new())
     } else {
@@ -707,15 +736,89 @@ fn target_root_for_bucket<'a>(
     .filter(|value| !value.trim().is_empty())
 }
 
-fn build_suggested_destination(root: &str, bucket: &StagingPlanBucket, filename: &str) -> String {
-    Path::new(root)
-        .join(bucket_folder_name(bucket))
-        .join(filename)
-        .to_string_lossy()
-        .to_string()
+fn build_suggested_destination(
+    root: &str,
+    bucket: &StagingPlanBucket,
+    filename: &str,
+    folder_config: Option<&ApplyPlanFolderConfig>,
+    candidate: &SortingCandidate,
+) -> (String, bool) {
+    let (segments, custom_folder_applied) =
+        destination_folder_segments(bucket, folder_config, candidate);
+    let mut destination = Path::new(root).to_path_buf();
+    for segment in segments {
+        destination = destination.join(segment);
+    }
+    destination = destination.join(filename);
+    (
+        destination.to_string_lossy().to_string(),
+        custom_folder_applied,
+    )
 }
 
-fn bucket_folder_name(bucket: &StagingPlanBucket) -> &'static str {
+fn destination_folder_segments(
+    bucket: &StagingPlanBucket,
+    folder_config: Option<&ApplyPlanFolderConfig>,
+    candidate: &SortingCandidate,
+) -> (Vec<String>, bool) {
+    let default_segment = default_bucket_folder_name(bucket).to_owned();
+    let Some(config) = folder_config else {
+        return (vec![default_segment], false);
+    };
+
+    if config.mode != ApplyPlanFolderConfigMode::Custom {
+        return (vec![default_segment], false);
+    }
+
+    let mut applied_custom = false;
+    let bucket_key = bucket_config_key(bucket);
+    let mut segments = config
+        .bucket_folders
+        .get(bucket_key)
+        .map(|value| safe_config_path_segments(value))
+        .filter(|segments| !segments.is_empty())
+        .unwrap_or_else(|| vec![default_segment.clone()]);
+
+    if segments != vec![default_segment.clone()] {
+        applied_custom = true;
+    }
+
+    if config.category_folder_mode == ApplyPlanCategoryFolderMode::BucketAndCategory {
+        if let Some(subtype) = candidate
+            .subtype
+            .as_ref()
+            .map(|value| sanitize_config_segment(value))
+            .filter(|value| !value.is_empty())
+        {
+            segments.push(subtype);
+            applied_custom = true;
+        }
+    }
+
+    if config.creator_folder_mode == ApplyPlanCreatorFolderMode::WhenAvailable {
+        if let Some(creator) = candidate
+            .creator
+            .as_ref()
+            .map(|value| sanitize_config_segment(value))
+            .filter(|value| !value.is_empty())
+        {
+            segments.push(creator);
+            applied_custom = true;
+        }
+    }
+
+    if let Some(max_depth) = config.max_depth.filter(|value| *value > 0) {
+        segments.truncate(max_depth as usize);
+    }
+
+    if segments.is_empty() {
+        (vec![default_segment], applied_custom)
+    } else {
+        (segments, applied_custom)
+    }
+}
+
+fn default_bucket_folder_name(bucket: &StagingPlanBucket) -> &'static str {
     match bucket {
         StagingPlanBucket::ScriptMods => "Script Mods",
         StagingPlanBucket::Cas => "CAS",
@@ -729,8 +832,56 @@ fn bucket_folder_name(bucket: &StagingPlanBucket) -> &'static str {
     }
 }
 
+fn bucket_config_key(bucket: &StagingPlanBucket) -> &'static str {
+    match bucket {
+        StagingPlanBucket::ScriptMods => "script_mods",
+        StagingPlanBucket::Cas => "cas",
+        StagingPlanBucket::BuildBuy => "build_buy",
+        StagingPlanBucket::Gameplay => "gameplay",
+        StagingPlanBucket::PresetsSliders => "presets_sliders",
+        StagingPlanBucket::OverridesDefaults => "overrides_defaults",
+        StagingPlanBucket::Tray => "tray",
+        StagingPlanBucket::NeedsReview => "needs_review",
+        StagingPlanBucket::UnknownLeaveInPlace => "unknown_leave_in_place",
+    }
+}
+
+fn safe_config_path_segments(value: &str) -> Vec<String> {
+    value
+        .replace('\\', "/")
+        .split('/')
+        .map(sanitize_config_segment)
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
+fn sanitize_config_segment(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || matches!(trimmed, "." | "..") || trimmed.contains(':') {
+        return String::new();
+    }
+
+    trimmed
+        .chars()
+        .map(|character| {
+            if matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            ) {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .trim()
+        .to_owned()
+}
+
 fn current_parent_matches_bucket(
     settings: &LibrarySettings,
+    folder_config: Option<&ApplyPlanFolderConfig>,
     candidate: &SortingCandidate,
     bucket: &StagingPlanBucket,
 ) -> bool {
@@ -752,7 +903,11 @@ fn current_parent_matches_bucket(
         .components()
         .next()
         .map(|component| normalize_component(&component.as_os_str().to_string_lossy()));
-    first.as_deref() == Some(&normalize_component(bucket_folder_name(bucket)))
+    let expected = destination_folder_segments(bucket, folder_config, candidate)
+        .0
+        .first()
+        .map(|segment| normalize_component(segment));
+    first == expected
 }
 
 fn is_tray_content(candidate: &SortingCandidate) -> bool {
@@ -955,6 +1110,8 @@ mod tests {
     fn selected_request(file_ids: Vec<i64>) -> GenerateSortingPreviewPlanRequest {
         GenerateSortingPreviewPlanRequest {
             scope: GenerateSortingPreviewPlanScope::SelectedFiles { file_ids },
+            folder_config: None,
+            context_trail: Vec::new(),
         }
     }
 
@@ -1269,6 +1426,8 @@ mod tests {
                     recursive: false,
                     limit: Some(3),
                 },
+                folder_config: None,
+                context_trail: Vec::new(),
             },
         )
         .expect("plan");

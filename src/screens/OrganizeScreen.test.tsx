@@ -10,12 +10,14 @@ import type {
   PersistedApplyPlanRun,
   ApplyPlanValidationPreview,
   PersistedApplyPlan,
+  GenerateSortingPreviewPlanResult,
   StagingPlan,
 } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
     generateSortingPreviewPlan: vi.fn(),
+    saveApplyPlanFromPreviewSnapshot: vi.fn(),
     buildApplyPlanFromStagingPlan: vi.fn(),
     saveApplyPlanPreview: vi.fn(),
     listSavedApplyPlans: vi.fn(),
@@ -101,6 +103,16 @@ const previewPlan: StagingPlan = {
   ],
 };
 
+const previewResult: GenerateSortingPreviewPlanResult = {
+  plan: previewPlan,
+  previewSnapshotId: 1701,
+  previewSnapshotHash:
+    "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  previewSnapshotHashVersion: "apply_plan_preview_snapshot_v2",
+  previewSnapshotHashAlgorithm: "sha256",
+  previewSnapshotCreatedAt: "2026-05-15T09:30:00.000Z",
+};
+
 const stagedSummary = {
   areas: [
     {
@@ -123,7 +135,7 @@ const stagedSummary = {
 const savedPlanSummary: ApplyPlanListItem = {
   id: 701,
   sourceStagingPlanId: "organize-preview-plan-test",
-  sourcePlanKind: "sorting_preview",
+  sourcePlanKind: "backend_generated_sorting_preview",
   title: "Suggested organization preview",
   summary:
     "2 Library files have preview-only organization suggestions. No files changed.",
@@ -136,6 +148,14 @@ const savedPlanSummary: ApplyPlanListItem = {
   applyableItems: 0,
   blockedItems: 1,
   reviewOnlyItems: 1,
+  planHash:
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  planHashVersion: "apply_plan_hash_v1",
+  planHashAlgorithm: "sha256",
+  planHashCreatedAt: "2026-05-15T10:00:00.000Z",
+  previewSnapshotId: 1701,
+  previewSnapshotHash:
+    "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
   createdAt: "2026-05-15T10:00:00.000Z",
   updatedAt: "2026-05-15T10:00:00.000Z",
 };
@@ -153,6 +173,31 @@ const savedPlanDetails: PersistedApplyPlan = {
     recursive: true,
     limit: 60,
   },
+  folderConfig: {
+    mode: "custom",
+    label: "Custom Organize folder profile",
+    bucketFolders: { cas: "CAS/Hair" },
+    creatorFolderMode: "when_available",
+    categoryFolderMode: "bucket_and_category",
+    maxDepth: 3,
+    exclusionPatterns: ["keep loose overrides in review"],
+  },
+  contextTrail: [
+    {
+      sourceSystem: "library",
+      signalKind: "indexed_scope",
+      label: "Library paths and package metadata feed destination suggestions",
+      value: "mods",
+      strength: "evidence",
+    },
+    {
+      sourceSystem: "creator_category_audit",
+      signalKind: "metadata_bucket_hints",
+      label: "Creator and Category Audit confidence can shape preview buckets",
+      value: "custom",
+      strength: "routing",
+    },
+  ],
   scanSessionId: null,
   items: [
     {
@@ -246,6 +291,9 @@ const savedPlanDetails: PersistedApplyPlan = {
 
 const validationPreview: ApplyPlanValidationPreview = {
   planId: 701,
+  planHash:
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  sourcePlanKind: "backend_generated_sorting_preview",
   status: "blocked",
   canProceedToConfirmation: false,
   checkedAt: "2026-05-15T11:00:00.000Z",
@@ -641,7 +689,7 @@ it("caps pending batch rows before showing technical details", async () => {
 });
 
 it("generates and renders grouped preview plan details", async () => {
-  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewPlan);
+  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewResult);
   renderOrganize();
 
   fireEvent.change(screen.getByLabelText(/Folder path/i), {
@@ -650,15 +698,18 @@ it("generates and renders grouped preview plan details", async () => {
   fireEvent.click(screen.getByRole("button", { name: /Generate preview/i }));
 
   await waitFor(() => {
-    expect(api.generateSortingPreviewPlan).toHaveBeenCalledWith({
-      scope: {
-        kind: "library_folder",
-        sourceLocation: "mods",
-        folderPath: "CAS/Hair",
-        recursive: true,
-        limit: 60,
-      },
-    });
+    expect(api.generateSortingPreviewPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: {
+          kind: "library_folder",
+          sourceLocation: "mods",
+          folderPath: "CAS/Hair",
+          recursive: true,
+          limit: 60,
+        },
+        folderConfig: expect.objectContaining({ mode: "default" }),
+      }),
+    );
   });
 
   expect(await screen.findByText(/Suggested organization preview/i)).toBeInTheDocument();
@@ -684,11 +735,14 @@ it("generates and renders grouped preview plan details", async () => {
 
 it("shows a blocked state when the generator has no plan items", async () => {
   vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue({
-    ...previewPlan,
-    status: "blocked",
-    summary: "No supported files were found for this bounded preview.",
-    itemCount: 0,
-    items: [],
+    ...previewResult,
+    plan: {
+      ...previewPlan,
+      status: "blocked",
+      summary: "No supported files were found for this bounded preview.",
+      itemCount: 0,
+      items: [],
+    },
   });
   renderOrganize();
 
@@ -701,9 +755,9 @@ it("shows a blocked state when the generator has no plan items", async () => {
   expect(api.applyPreviewOrganization).not.toHaveBeenCalled();
 });
 
-it("saves a generated preview plan through the backend-owned builder", async () => {
-  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewPlan);
-  vi.mocked(api.buildApplyPlanFromStagingPlan).mockResolvedValue({
+it("saves a generated preview plan through the backend-owned preview snapshot", async () => {
+  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewResult);
+  vi.mocked(api.saveApplyPlanFromPreviewSnapshot).mockResolvedValue({
     planId: savedPlanSummary.id,
     plan: savedPlanSummary,
   });
@@ -720,20 +774,13 @@ it("saves a generated preview plan through the backend-owned builder", async () 
   fireEvent.click(screen.getByRole("button", { name: /Save preview plan/i }));
 
   await waitFor(() => {
-    expect(api.buildApplyPlanFromStagingPlan).toHaveBeenCalledWith({
-      previewRequest: {
-        scope: {
-          kind: "library_folder",
-          sourceLocation: "mods",
-          folderPath: "CAS/Hair",
-          recursive: true,
-          limit: 60,
-        },
-      },
-      sourcePlanKind: "sorting_preview",
+    expect(api.saveApplyPlanFromPreviewSnapshot).toHaveBeenCalledWith({
+      previewSnapshotId: previewResult.previewSnapshotId,
+      previewSnapshotHash: previewResult.previewSnapshotHash,
     });
   });
 
+  expect(api.buildApplyPlanFromStagingPlan).not.toHaveBeenCalled();
   expect(api.saveApplyPlanPreview).not.toHaveBeenCalled();
   expect(await screen.findByText(/Saved as draft preview plan/i)).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: /Saved plans/i })).toHaveAttribute(
@@ -745,6 +792,37 @@ it("saves a generated preview plan through the backend-owned builder", async () 
   expect(await screen.findByText(/Plan details/i)).toBeInTheDocument();
   expect(screen.getByText(/kind:CAS/i)).toBeInTheDocument();
   expect(screen.getByText(/weak_or_unknown_metadata/i)).toBeInTheDocument();
+});
+
+it("saves generated previews from the preview-time snapshot after UI config changes", async () => {
+  vi.mocked(api.generateSortingPreviewPlan).mockResolvedValue(previewResult);
+  vi.mocked(api.saveApplyPlanFromPreviewSnapshot).mockResolvedValue({
+    planId: savedPlanSummary.id,
+    plan: savedPlanSummary,
+  });
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.change(screen.getByLabelText(/Folder path/i), {
+    target: { value: "CAS/Hair" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Generate preview/i }));
+
+  expect(await screen.findByText(/Suggested organization preview/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText(/Use custom folders/i));
+  fireEvent.change(screen.getByLabelText(/^CAS$/i), {
+    target: { value: "Changed/CAS" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Save preview plan/i }));
+
+  await waitFor(() => {
+    expect(api.saveApplyPlanFromPreviewSnapshot).toHaveBeenCalledWith({
+      previewSnapshotId: previewResult.previewSnapshotId,
+      previewSnapshotHash: previewResult.previewSnapshotHash,
+    });
+  });
+  expect(api.buildApplyPlanFromStagingPlan).not.toHaveBeenCalled();
 });
 
 it("lists saved draft plans without dumping paths, opens details, and cancels drafts safely", async () => {
@@ -868,8 +946,8 @@ it("explains valid preview-only validation without implying Apply readiness", as
   fireEvent.click(await screen.findByRole("button", { name: /Check saved plan/i }));
 
   expect(
-    await screen.findByText(/No current blocker found, but still preview-only/i),
-  ).toBeInTheDocument();
+    (await screen.findAllByText(/No current blocker found, but still preview-only/i)).length,
+  ).toBeGreaterThan(0);
   expect(screen.getByText(/Apply is still not available/i)).toBeInTheDocument();
   expect(screen.queryByText(/Ready to apply/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/Safe to move/i)).not.toBeInTheDocument();
@@ -890,6 +968,49 @@ it("shows validation preview errors safely", async () => {
   expect(await screen.findByText(/Could not load validation preview/i)).toBeInTheDocument();
   expect(screen.getByText(/validation unavailable/i)).toBeInTheDocument();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+});
+
+it("shows read-only confirmation design for saved plans without enabling execution", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+
+  expect(await screen.findByRole("region", { name: /Confirmation design/i })).toBeInTheDocument();
+  const bodyText = document.body.textContent ?? "";
+  expect(bodyText).toMatch(/Confirmation Design V1/i);
+  expect(bodyText).toMatch(/Execution controls disabled/i);
+  expect(bodyText).toMatch(/Confirmation token not issued/i);
+  expect(bodyText).toMatch(/Backend-generated sorting preview/i);
+  expect(bodyText).toMatch(/Source kind: backend_generated_sorting_preview/i);
+  expect(bodyText).toMatch(/Backend-owned plan hash recorded/i);
+  expect(bodyText).toMatch(/0123456789ab…89abcdef/i);
+  expect(bodyText).toMatch(/identity\/provenance only; it does not authorize Apply/i);
+  expect(bodyText).toMatch(/Custom folder configurations/i);
+  expect(bodyText).toMatch(/influences preview destinations only/i);
+  expect(bodyText).toMatch(/Cross-system context trail/i);
+  expect(bodyText).toMatch(/Library paths and package metadata/i);
+  expect(bodyText).toMatch(/Creator and Category Audit confidence/i);
+  expect(bodyText).toMatch(/Future operation list/i);
+  expect(bodyText).toMatch(/VeryLongCreatorName_With_A_Long_CAS_Hair_File_Name/i);
+  expect(bodyText).toMatch(/UnknownThing\.package/i);
+  expect(bodyText).toMatch(/Backup must be created before any mutation/i);
+  expect(bodyText).toMatch(/Restore map must be written by the backend executor/i);
+  expect(bodyText).toMatch(/Validation must be re-run immediately before confirmation/i);
+  expect(screen.getByRole("button", { name: /Confirmation unavailable/i })).toBeDisabled();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|restore now|run backup|run restore|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
 });
 
 it("shows read-only dry-run preview classifications for saved plans", async () => {

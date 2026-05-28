@@ -13,6 +13,12 @@ const APPLY_PLAN_PERSISTENCE_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0003_applyplan_persistence_foundation.sql");
 const APPLY_PLAN_RESULT_RESTORE_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0004_applyplan_result_restore_foundation.sql");
+const APPLY_PLAN_CONTEXT_SNAPSHOTS_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0005_applyplan_context_snapshots.sql");
+const APPLY_PLAN_HASH_PROVENANCE_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0006_applyplan_hash_provenance_v1.sql");
+const APPLY_PLAN_PREVIEW_SNAPSHOTS_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0007_applyplan_preview_snapshots_v2.sql");
 
 #[derive(Debug, Clone)]
 pub struct UserCategoryOverride {
@@ -103,6 +109,51 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v5_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 5",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v5_exists.is_none() {
+        ensure_apply_plan_context_snapshot_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![5_i64, "applyplan_context_snapshots"],
+        )?;
+    }
+
+    let v6_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 6",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v6_exists.is_none() {
+        ensure_apply_plan_hash_provenance_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![6_i64, "applyplan_hash_provenance_v1"],
+        )?;
+    }
+
+    let v7_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 7",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v7_exists.is_none() {
+        ensure_apply_plan_preview_snapshot_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![7_i64, "applyplan_preview_snapshots_v2"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -120,6 +171,234 @@ fn table_exists(connection: &Connection, table_name: &str) -> AppResult<bool> {
         .is_some();
 
     Ok(exists)
+}
+
+fn ensure_apply_plan_context_snapshot_schema(connection: &Connection) -> AppResult<()> {
+    let _migration_sql = APPLY_PLAN_CONTEXT_SNAPSHOTS_SCHEMA_SQL;
+    if table_exists(connection, "apply_plans")? {
+        ensure_column(connection, "apply_plans", "folder_config_json", "TEXT")?;
+        ensure_column(
+            connection,
+            "apply_plans",
+            "context_trail_json",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+    }
+
+    Ok(())
+}
+
+fn ensure_apply_plan_hash_provenance_schema(connection: &Connection) -> AppResult<()> {
+    let _migration_sql = APPLY_PLAN_HASH_PROVENANCE_SCHEMA_SQL;
+    if table_exists(connection, "apply_plans")? {
+        ensure_column(connection, "apply_plans", "plan_hash", "TEXT")?;
+        ensure_column(
+            connection,
+            "apply_plans",
+            "plan_hash_version",
+            "TEXT NOT NULL DEFAULT 'apply_plan_hash_v1'",
+        )?;
+        ensure_column(
+            connection,
+            "apply_plans",
+            "plan_hash_algorithm",
+            "TEXT NOT NULL DEFAULT 'sha256'",
+        )?;
+        ensure_column(connection, "apply_plans", "plan_hash_created_at", "TEXT")?;
+        ensure_column(
+            connection,
+            "apply_plans",
+            "plan_provenance_json",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )?;
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_apply_plans_plan_hash ON apply_plans (plan_hash);
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_plan_hash_immutable
+            BEFORE UPDATE OF plan_hash ON apply_plans
+            WHEN OLD.plan_hash IS NOT NULL AND OLD.plan_hash IS NOT NEW.plan_hash
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.plan_hash is immutable once set');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_plan_hash_version_immutable
+            BEFORE UPDATE OF plan_hash_version ON apply_plans
+            WHEN OLD.plan_hash_version IS NOT NEW.plan_hash_version
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.plan_hash_version is immutable');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_plan_hash_algorithm_immutable
+            BEFORE UPDATE OF plan_hash_algorithm ON apply_plans
+            WHEN OLD.plan_hash_algorithm IS NOT NEW.plan_hash_algorithm
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.plan_hash_algorithm is immutable');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_plan_hash_created_at_immutable
+            BEFORE UPDATE OF plan_hash_created_at ON apply_plans
+            WHEN OLD.plan_hash_created_at IS NOT NULL AND OLD.plan_hash_created_at IS NOT NEW.plan_hash_created_at
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.plan_hash_created_at is immutable once set');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_plan_provenance_immutable
+            BEFORE UPDATE OF plan_provenance_json ON apply_plans
+            WHEN OLD.plan_provenance_json != '{}' AND OLD.plan_provenance_json IS NOT NEW.plan_provenance_json
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.plan_provenance_json is immutable once set');
+            END;",
+        )?;
+    }
+
+    Ok(())
+}
+
+fn ensure_apply_plan_preview_snapshot_schema(connection: &Connection) -> AppResult<()> {
+    let _migration_sql = APPLY_PLAN_PREVIEW_SNAPSHOTS_SCHEMA_SQL;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS apply_plan_preview_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snapshot_id TEXT NOT NULL UNIQUE,
+            source_plan_kind TEXT NOT NULL DEFAULT 'backend_generated_sorting_preview',
+            source_plan_json TEXT NOT NULL,
+            source_scope_json TEXT,
+            folder_config_json TEXT,
+            context_trail_json TEXT NOT NULL DEFAULT '[]',
+            preview_snapshot_hash TEXT NOT NULL,
+            preview_snapshot_hash_version TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v2',
+            preview_snapshot_hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+            preview_snapshot_provenance_json TEXT NOT NULL,
+            scan_session_id INTEGER REFERENCES scan_sessions(id) ON DELETE SET NULL,
+            consumed_apply_plan_id INTEGER REFERENCES apply_plans(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT
+        );",
+    )?;
+
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "source_plan_kind",
+        "TEXT NOT NULL DEFAULT 'backend_generated_sorting_preview'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "source_plan_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "source_scope_json",
+        "TEXT",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "folder_config_json",
+        "TEXT",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "context_trail_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "preview_snapshot_hash",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "preview_snapshot_hash_version",
+        "TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v2'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "preview_snapshot_hash_algorithm",
+        "TEXT NOT NULL DEFAULT 'sha256'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "preview_snapshot_provenance_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "scan_session_id",
+        "INTEGER REFERENCES scan_sessions(id) ON DELETE SET NULL",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "consumed_apply_plan_id",
+        "INTEGER REFERENCES apply_plans(id) ON DELETE SET NULL",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "created_at",
+        "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    )?;
+    ensure_column(
+        connection,
+        "apply_plan_preview_snapshots",
+        "expires_at",
+        "TEXT",
+    )?;
+
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_apply_plan_preview_snapshots_hash
+            ON apply_plan_preview_snapshots(preview_snapshot_hash);
+        CREATE INDEX IF NOT EXISTS idx_apply_plan_preview_snapshots_created_at
+            ON apply_plan_preview_snapshots(created_at);
+
+        CREATE TRIGGER IF NOT EXISTS trg_apply_plan_preview_snapshots_identity_immutable
+        BEFORE UPDATE OF snapshot_id, source_plan_kind, source_plan_json, source_scope_json, folder_config_json, context_trail_json, preview_snapshot_hash, preview_snapshot_hash_version, preview_snapshot_hash_algorithm, preview_snapshot_provenance_json, scan_session_id, created_at, expires_at
+        ON apply_plan_preview_snapshots
+        BEGIN
+            SELECT RAISE(ABORT, 'apply_plan_preview_snapshots identity/provenance is immutable');
+        END;",
+    )?;
+
+    if table_exists(connection, "apply_plans")? {
+        ensure_column(
+            connection,
+            "apply_plans",
+            "preview_snapshot_id",
+            "INTEGER REFERENCES apply_plan_preview_snapshots(id) ON DELETE SET NULL",
+        )?;
+        ensure_column(connection, "apply_plans", "preview_snapshot_hash", "TEXT")?;
+        connection.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_apply_plans_preview_snapshot_id_unique
+                ON apply_plans(preview_snapshot_id)
+                WHERE preview_snapshot_id IS NOT NULL;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_preview_snapshot_id_immutable
+            BEFORE UPDATE OF preview_snapshot_id ON apply_plans
+            WHEN OLD.preview_snapshot_id IS NOT NULL AND OLD.preview_snapshot_id IS NOT NEW.preview_snapshot_id
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.preview_snapshot_id is immutable once set');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_apply_plans_preview_snapshot_hash_immutable
+            BEFORE UPDATE OF preview_snapshot_hash ON apply_plans
+            WHEN OLD.preview_snapshot_hash IS NOT NULL AND OLD.preview_snapshot_hash IS NOT NEW.preview_snapshot_hash
+            BEGIN
+                SELECT RAISE(ABORT, 'apply_plans.preview_snapshot_hash is immutable once set');
+            END;",
+        )?;
+    }
+
+    Ok(())
 }
 
 fn ensure_migration_table(connection: &Connection) -> AppResult<()> {
@@ -1068,6 +1347,9 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     )?;
     ensure_apply_plan_schema(connection)?;
     ensure_apply_plan_result_restore_schema(connection)?;
+    ensure_apply_plan_context_snapshot_schema(connection)?;
+    ensure_apply_plan_hash_provenance_schema(connection)?;
+    ensure_apply_plan_preview_snapshot_schema(connection)?;
 
     Ok(())
 }
@@ -1429,6 +1711,209 @@ mod tests {
                 )
                 .expect("index lookup");
             assert_eq!(count, 1, "missing index {index_name}");
+        }
+    }
+
+    #[test]
+    fn initialize_creates_apply_plan_context_snapshot_columns() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        for column_name in ["folder_config_json", "context_trail_json"] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('apply_plans') WHERE name = ?1",
+                    params![column_name],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(count, 1, "missing ApplyPlan context column {column_name}");
+        }
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 5 AND name = 'applyplan_context_snapshots'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+    }
+
+    #[test]
+    fn initialize_creates_apply_plan_hash_provenance_columns_and_guards() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        for column_name in [
+            "plan_hash",
+            "plan_hash_version",
+            "plan_hash_algorithm",
+            "plan_hash_created_at",
+            "plan_provenance_json",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('apply_plans') WHERE name = ?1",
+                    params![column_name],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(count, 1, "missing ApplyPlan hash column {column_name}");
+        }
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 6 AND name = 'applyplan_hash_provenance_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+
+        for trigger_name in [
+            "trg_apply_plans_plan_hash_immutable",
+            "trg_apply_plans_plan_provenance_immutable",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?1",
+                    params![trigger_name],
+                    |row| row.get(0),
+                )
+                .expect("trigger lookup");
+            assert_eq!(count, 1, "missing trigger {trigger_name}");
+        }
+    }
+
+    #[test]
+    fn initialize_creates_apply_plan_preview_snapshot_columns_and_guards() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        assert!(
+            table_exists(&connection, "apply_plan_preview_snapshots").expect("table lookup"),
+            "missing preview snapshot table"
+        );
+
+        for column_name in [
+            "snapshot_id",
+            "source_plan_kind",
+            "source_plan_json",
+            "source_scope_json",
+            "folder_config_json",
+            "context_trail_json",
+            "preview_snapshot_hash",
+            "preview_snapshot_hash_version",
+            "preview_snapshot_hash_algorithm",
+            "preview_snapshot_provenance_json",
+            "consumed_apply_plan_id",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('apply_plan_preview_snapshots') WHERE name = ?1",
+                    params![column_name],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(count, 1, "missing preview snapshot column {column_name}");
+        }
+
+        for column_name in ["preview_snapshot_id", "preview_snapshot_hash"] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('apply_plans') WHERE name = ?1",
+                    params![column_name],
+                    |row| row.get(0),
+                )
+                .expect("apply_plans column lookup");
+            assert_eq!(count, 1, "missing ApplyPlan snapshot column {column_name}");
+        }
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 7 AND name = 'applyplan_preview_snapshots_v2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+
+        for object_name in [
+            "idx_apply_plan_preview_snapshots_hash",
+            "idx_apply_plan_preview_snapshots_created_at",
+            "idx_apply_plans_preview_snapshot_id_unique",
+            "trg_apply_plan_preview_snapshots_identity_immutable",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = ?1",
+                    params![object_name],
+                    |row| row.get(0),
+                )
+                .expect("sqlite object lookup");
+            assert_eq!(count, 1, "missing sqlite object {object_name}");
+        }
+    }
+
+    #[test]
+    fn ensure_schema_repairs_partial_apply_plan_preview_snapshot_schema() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "DROP TABLE apply_plan_preview_snapshots;
+                 CREATE TABLE apply_plan_preview_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT NOT NULL UNIQUE
+                 );",
+            )
+            .expect("create partial preview snapshot table");
+
+        initialize(&mut connection).expect("repair schema");
+
+        for column_name in [
+            "source_plan_kind",
+            "source_plan_json",
+            "source_scope_json",
+            "folder_config_json",
+            "context_trail_json",
+            "preview_snapshot_hash",
+            "preview_snapshot_hash_version",
+            "preview_snapshot_hash_algorithm",
+            "preview_snapshot_provenance_json",
+            "scan_session_id",
+            "consumed_apply_plan_id",
+            "created_at",
+            "expires_at",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('apply_plan_preview_snapshots') WHERE name = ?1",
+                    params![column_name],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(
+                count, 1,
+                "missing repaired preview snapshot column {column_name}"
+            );
+        }
+
+        for object_name in [
+            "idx_apply_plan_preview_snapshots_hash",
+            "idx_apply_plan_preview_snapshots_created_at",
+            "idx_apply_plans_preview_snapshot_id_unique",
+            "trg_apply_plan_preview_snapshots_identity_immutable",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = ?1",
+                    params![object_name],
+                    |row| row.get(0),
+                )
+                .expect("sqlite object lookup");
+            assert_eq!(count, 1, "missing repaired sqlite object {object_name}");
         }
     }
 

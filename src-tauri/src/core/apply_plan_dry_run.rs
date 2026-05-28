@@ -469,6 +469,8 @@ mod tests {
                 source_plan: source_plan(items),
                 source_plan_kind: Some("sorting_preview".to_owned()),
                 source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )

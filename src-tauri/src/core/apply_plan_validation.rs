@@ -1,10 +1,10 @@
-use std::path::{Component, Path};
+use std::{collections::HashMap, path::Path};
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
-    core::apply_plan_persistence,
+    core::{apply_plan_persistence, apply_plan_provenance},
     error::{AppError, AppResult},
     models::{
         ApplyPlanConflictStatus, ApplyPlanValidationItem, ApplyPlanValidationPreview,
@@ -44,14 +44,37 @@ pub fn preview_apply_plan_validation(
         push_unique_caveat(&mut caveats, "This saved draft has no items to validate.");
     }
 
+    let plan_hash_check = apply_plan_persistence::verify_apply_plan_hash(connection, plan.id)?;
+    if !plan_hash_check.is_valid {
+        push_unique_caveat(
+            &mut caveats,
+            &format!("{} ({})", plan_hash_check.message, plan_hash_check.status),
+        );
+    }
+    let backend_generated_provenance = has_backend_generated_provenance(&plan);
+    if !backend_generated_provenance {
+        push_unique_caveat(
+            &mut caveats,
+            "Client-supplied or legacy ApplyPlan previews are review/audit-only and cannot proceed to future confirmation. Regenerate from a backend-generated sorting preview.",
+        );
+    }
+
+    let destination_conflicts = detect_destination_conflicts(&plan.items);
     let mut items = Vec::with_capacity(plan.items.len());
     for item in &plan.items {
-        items.push(validate_item(connection, settings, item)?);
+        items.push(validate_item(
+            connection,
+            settings,
+            item,
+            destination_conflicts.get(&item.id).cloned(),
+        )?);
     }
 
     let summary = summarize_items(&plan, &items);
     let status = if plan.status == PersistedApplyPlanStatus::Cancelled
         || plan.items.is_empty()
+        || !plan_hash_check.is_valid
+        || !backend_generated_provenance
         || summary.blocked_items > 0
         || summary.conflict_items > 0
         || summary.backup_blocked_items > 0
@@ -63,6 +86,8 @@ pub fn preview_apply_plan_validation(
 
     Ok(ApplyPlanValidationPreview {
         plan_id: plan.id,
+        plan_hash: plan.plan_hash.clone(),
+        source_plan_kind: plan.source_plan_kind.clone(),
         status,
         can_proceed_to_confirmation: false,
         checked_at: Utc::now().to_rfc3339(),
@@ -76,6 +101,7 @@ fn validate_item(
     connection: &Connection,
     settings: &LibrarySettings,
     item: &PersistedApplyPlanItem,
+    destination_conflict: Option<ApplyPlanConflictStatus>,
 ) -> AppResult<ApplyPlanValidationItem> {
     let mut reasons = Vec::new();
     let mut required_next_steps = Vec::new();
@@ -115,6 +141,29 @@ fn validate_item(
             ApplyPlanValidationStatus::ReviewOnlyBlocked,
             ApplyPlanConflictStatus::NotChecked,
         )
+    } else if let Some(conflict_status) = destination_conflict {
+        match conflict_status {
+            ApplyPlanConflictStatus::CaseConflict => {
+                reasons.push(
+                    "Another item in this plan targets the same destination under Windows case-insensitive path rules.".to_owned(),
+                );
+            }
+            ApplyPlanConflictStatus::SameNameConflict => {
+                reasons.push(
+                    "Another item in this plan targets the same canonical destination path."
+                        .to_owned(),
+                );
+            }
+            _ => {
+                reasons
+                    .push("Another item in this plan conflicts with this destination.".to_owned());
+            }
+        }
+        required_next_steps.push(
+            "Regenerate or edit the preview so each destination is unique before future validation."
+                .to_owned(),
+        );
+        (ApplyPlanValidationStatus::Blocked, conflict_status)
     } else if item.file_id.is_none() {
         if item.current_path.trim().is_empty() {
             reasons.push("No saved source path or Library file id is available.".to_owned());
@@ -326,6 +375,58 @@ fn validate_item_paths(
     }
 }
 
+fn detect_destination_conflicts(
+    items: &[PersistedApplyPlanItem],
+) -> HashMap<i64, ApplyPlanConflictStatus> {
+    let mut by_canonical: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+    for item in items {
+        if item.blocked
+            || item.review_only
+            || item.item_status == PersistedApplyPlanItemStatus::Blocked
+            || item.item_status == PersistedApplyPlanItemStatus::ReviewOnly
+        {
+            continue;
+        }
+        let Some(destination_path) = item
+            .destination_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let canonical = normalized_path_key(destination_path);
+        by_canonical
+            .entry(canonical)
+            .or_default()
+            .push((item.id, normalize_separators_for_display(destination_path)));
+    }
+
+    let mut conflicts = HashMap::new();
+    for destinations in by_canonical.values() {
+        if destinations.len() < 2 {
+            continue;
+        }
+        let first_path = &destinations[0].1;
+        let conflict_status = if destinations.iter().any(|(_, path)| path != first_path) {
+            ApplyPlanConflictStatus::CaseConflict
+        } else {
+            ApplyPlanConflictStatus::SameNameConflict
+        };
+        for (item_id, _) in destinations {
+            conflicts.insert(*item_id, conflict_status.clone());
+        }
+    }
+    conflicts
+}
+
+fn normalize_separators_for_display(path: &str) -> String {
+    path.trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_owned()
+}
+
 fn summarize_items(
     plan: &PersistedApplyPlan,
     items: &[ApplyPlanValidationItem],
@@ -406,6 +507,26 @@ fn has_duplicate_review_signal_or_blocker(item: &PersistedApplyPlanItem) -> bool
     })
 }
 
+fn has_backend_generated_provenance(plan: &PersistedApplyPlan) -> bool {
+    let expected = apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND;
+    let Some(preview_snapshot_hash) = plan.preview_snapshot_hash.as_deref() else {
+        return false;
+    };
+
+    plan.preview_snapshot_id.is_some()
+        && plan.source_plan_kind == expected
+        && plan
+            .plan_provenance
+            .get("sourceKind")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|source_kind| source_kind == expected)
+        && plan
+            .plan_provenance
+            .get("previewSnapshotHash")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|provenance_hash| provenance_hash == preview_snapshot_hash)
+}
+
 fn has_non_review_blocker(blockers: &[PersistedApplyPlanBlocker]) -> bool {
     blockers.iter().any(|blocker| {
         !blocker.blocker_kind.eq_ignore_ascii_case("review_only")
@@ -428,12 +549,15 @@ fn configured_root<'a>(settings: &'a LibrarySettings, root_name: &str) -> Option
 }
 
 fn contains_parent_dir_component(path: &str) -> bool {
-    Path::new(path)
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
+    path.replace('\\', "/")
+        .split('/')
+        .any(|component| component == "..")
 }
 
 fn path_is_under_root(path: &str, root: &str) -> bool {
+    if contains_parent_dir_component(path) || contains_parent_dir_component(root) {
+        return false;
+    }
     let path = normalized_path_key(path);
     let root = normalized_path_key(root);
     path == root || path.starts_with(&format!("{root}/"))
@@ -583,6 +707,8 @@ mod tests {
                 source_plan: source_plan(items),
                 source_plan_kind: Some("sorting_preview".to_owned()),
                 source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
@@ -621,7 +747,7 @@ mod tests {
         .expect("preview");
 
         assert_eq!(preview.status, ApplyPlanValidationPreviewStatus::Blocked);
-        assert_eq!(preview.can_proceed_to_confirmation, false);
+        assert!(!preview.can_proceed_to_confirmation);
         assert_eq!(preview.summary.backup_blocked_items, 1);
         assert_eq!(
             preview.items[0].validation_status,
@@ -631,7 +757,293 @@ mod tests {
             preview.items[0].conflict_status,
             ApplyPlanConflictStatus::None
         );
-        assert_eq!(preview.items[0].can_apply_later, false);
+        assert!(!preview.items[0].can_apply_later);
+        assert!(preview.caveats.iter().any(|caveat| caveat
+            .contains("Client-supplied or legacy ApplyPlan previews are review/audit-only")));
+    }
+
+    #[test]
+    fn canonical_destination_validation_rejects_duplicate_destinations() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path_a = mods_root.join("a.package");
+        let source_path_b = mods_root.join("b.package");
+        let destination_path = mods_root.join("CAS").join("shared.package");
+        fs::create_dir_all(source_path_a.parent().unwrap()).expect("source parent");
+        fs::write(&source_path_a, b"package-a").expect("source file a");
+        fs::write(&source_path_b, b"package-b").expect("source file b");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 31, &path_string(&source_path_a), "mods");
+        insert_file(&connection, 32, &path_string(&source_path_b), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![
+                candidate_item(
+                    Some(31),
+                    path_string(&source_path_a),
+                    Some(path_string(&destination_path)),
+                ),
+                candidate_item(
+                    Some(32),
+                    path_string(&source_path_b),
+                    Some(path_string(&destination_path)),
+                ),
+            ],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(preview.summary.conflict_items, 2);
+        assert!(preview
+            .items
+            .iter()
+            .all(|item| item.conflict_status == ApplyPlanConflictStatus::SameNameConflict));
+        assert!(preview.items.iter().all(|item| item.blocked));
+    }
+
+    #[test]
+    fn canonical_destination_validation_rejects_case_only_conflicts() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path_a = mods_root.join("a.package");
+        let source_path_b = mods_root.join("b.package");
+        let destination_path_a = mods_root.join("CAS").join("Shared.package");
+        let destination_path_b = mods_root.join("CAS").join("shared.package");
+        fs::create_dir_all(source_path_a.parent().unwrap()).expect("source parent");
+        fs::write(&source_path_a, b"package-a").expect("source file a");
+        fs::write(&source_path_b, b"package-b").expect("source file b");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 41, &path_string(&source_path_a), "mods");
+        insert_file(&connection, 42, &path_string(&source_path_b), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![
+                candidate_item(
+                    Some(41),
+                    path_string(&source_path_a),
+                    Some(path_string(&destination_path_a)),
+                ),
+                candidate_item(
+                    Some(42),
+                    path_string(&source_path_b),
+                    Some(path_string(&destination_path_b)),
+                ),
+            ],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(preview.summary.conflict_items, 2);
+        assert!(preview
+            .items
+            .iter()
+            .all(|item| item.conflict_status == ApplyPlanConflictStatus::CaseConflict));
+        assert!(preview.items.iter().all(|item| item.blocked));
+    }
+
+    #[test]
+    fn canonical_destination_validation_includes_plan_hash_and_source_kind() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("hair.package");
+        let destination_path = mods_root.join("CAS").join("hair.package");
+        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 51, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(51),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(preview.source_plan_kind, "client_supplied_preview");
+        assert_eq!(preview.plan_hash.as_deref().map(str::len), Some(64));
+        assert!(!preview.can_proceed_to_confirmation);
+    }
+
+    #[test]
+    fn windows_style_parent_destination_is_rejected_before_prefix_match() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("hair.package");
+        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 21, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(21),
+                path_string(&source_path),
+                Some("C:\\Sims\\Mods\\..\\Elsewhere\\hair.package".to_owned()),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:\\Sims\\Mods".to_owned()),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeDestination
+        );
+    }
+
+    #[test]
+    fn tampered_plan_hash_blocks_validation_preview() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("hair.package");
+        let destination_path = mods_root.join("CAS").join("hair.package");
+        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 10, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(10),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+        connection
+            .execute(
+                "UPDATE apply_plans SET context_trail_json = '[{\"sourceSystem\":\"test\",\"signalKind\":\"tamper\",\"label\":\"Tampered\",\"value\":null,\"strength\":\"evidence\"}]' WHERE id = ?1",
+                [plan_id],
+            )
+            .expect("tamper context");
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(preview.status, ApplyPlanValidationPreviewStatus::Blocked);
+        assert!(!preview.can_proceed_to_confirmation);
+        assert!(preview
+            .caveats
+            .iter()
+            .any(|caveat| caveat.contains("Saved ApplyPlan hash/provenance no longer matches")));
+    }
+
+    #[test]
+    fn missing_or_empty_plan_provenance_blocks_validation_preview() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let connection = memory_connection();
+
+        for (plan_hash, plan_provenance_json, expected) in [
+            (None, "{}", "Saved ApplyPlan hash/provenance is missing"),
+            (
+                Some("0".repeat(64)),
+                "{}",
+                "Saved ApplyPlan hash/provenance is missing",
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO apply_plans (
+                        source_plan_kind, title, summary, status, total_items,
+                        caveats_json, context_trail_json, plan_hash, plan_provenance_json
+                    ) VALUES ('client_supplied_preview', 'legacy', 'legacy', 'preview_only_source', 0, '[]', '[]', ?1, ?2)",
+                    params![plan_hash, plan_provenance_json],
+                )
+                .expect("insert legacy/malformed provenance plan");
+            let plan_id = connection.last_insert_rowid();
+
+            let preview = preview_apply_plan_validation(
+                &connection,
+                &LibrarySettings {
+                    mods_path: Some(path_string(&mods_root)),
+                    ..Default::default()
+                },
+                PreviewApplyPlanValidationRequest { plan_id },
+            )
+            .expect("preview");
+
+            assert_eq!(preview.status, ApplyPlanValidationPreviewStatus::Blocked);
+            assert!(!preview.can_proceed_to_confirmation);
+            assert!(preview
+                .caveats
+                .iter()
+                .any(|caveat| caveat.contains(expected)));
+        }
+    }
+
+    #[test]
+    fn malformed_plan_provenance_fails_validation_closed() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let connection = memory_connection();
+        connection
+            .execute(
+                "INSERT INTO apply_plans (
+                    source_plan_kind, title, summary, status, total_items,
+                    caveats_json, context_trail_json, plan_hash, plan_provenance_json
+                ) VALUES ('client_supplied_preview', 'bad', 'bad', 'preview_only_source', 0, '[]', '[]', ?1, '{')",
+                params![Some("0".repeat(64))],
+            )
+            .expect("insert malformed provenance plan");
+        let plan_id = connection.last_insert_rowid();
+
+        let error = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect_err("malformed provenance should fail closed");
+
+        assert!(error.to_string().contains("plan_provenance_json"));
     }
 
     #[test]
@@ -663,7 +1075,7 @@ mod tests {
             preview.items[0].validation_status,
             ApplyPlanValidationStatus::ReviewOnlyBlocked
         );
-        assert_eq!(preview.items[0].can_apply_later, false);
+        assert!(!preview.items[0].can_apply_later);
     }
 
     #[test]

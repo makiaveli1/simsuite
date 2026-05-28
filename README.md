@@ -126,6 +126,7 @@ Keep the repo docs lean:
 - `docs/IMPLEMENTATION_STATUS.md` — current product state and next gates.
 - `docs/DESKTOP-VERIFICATION-RUNBOOK.md` — desktop proof/testing instructions.
 - `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md` — safety boundaries.
+- `docs/planning/CONFIRMATION_DESIGN_V1.md` — read-only confirmation contract, custom folder configuration direction, and cross-system context trail.
 - `docs/planning/` — active safety and ApplyPlan design contracts.
 - `docs/product-specs/` — longer product specification archive.
 

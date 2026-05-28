@@ -18,6 +18,8 @@ import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { PendingPlansPreview } from "./organize/PendingPlansPreview";
 import { SavedPlansReview } from "./organize/SavedPlansReview";
 import type {
+  ApplyPlanContextSignal,
+  ApplyPlanFolderConfig,
   GenerateSortingPreviewPlanRequest,
   Screen,
   StagingPlan,
@@ -38,6 +40,11 @@ interface OrganizeScreenProps {
 
 type SourceLocation = "mods" | "tray";
 type OrganizeTab = "create_plan" | "saved_plans" | "pending_batches";
+
+interface PreviewSnapshot {
+  previewSnapshotId: number;
+  previewSnapshotHash: string;
+}
 
 const BUCKET_ORDER: StagingPlanBucket[] = [
   "script_mods",
@@ -86,6 +93,15 @@ const ROOT_LABELS: Record<StagingPlanCurrentRoot, string> = {
   unknown: "Unknown",
 };
 
+const DEFAULT_BUCKET_FOLDERS: Partial<Record<StagingPlanBucket, string>> = {
+  script_mods: "Script Mods",
+  cas: "CAS",
+  build_buy: "BuildBuy",
+  gameplay: "Gameplay",
+  presets_sliders: "PresetsAndSliders",
+  overrides_defaults: "OverridesAndDefaults",
+};
+
 function statusLabel(plan: StagingPlan): string {
   switch (plan.status) {
     case "blocked":
@@ -96,6 +112,86 @@ function statusLabel(plan: StagingPlan): string {
     default:
       return "Preview only";
   }
+}
+
+
+function buildFolderConfig({
+  customProfileEnabled,
+  bucketFolders,
+  creatorFoldersEnabled,
+  categoryFoldersEnabled,
+  maxDepth,
+  exclusionPatterns,
+}: {
+  customProfileEnabled: boolean;
+  bucketFolders: Partial<Record<StagingPlanBucket, string>>;
+  creatorFoldersEnabled: boolean;
+  categoryFoldersEnabled: boolean;
+  maxDepth: number | null;
+  exclusionPatterns: string;
+}): ApplyPlanFolderConfig {
+  const cleanBucketFolders = Object.fromEntries(
+    Object.entries(bucketFolders)
+      .map(([bucket, value]) => [bucket, value.trim()])
+      .filter(([, value]) => value.length > 0),
+  ) as Partial<Record<StagingPlanBucket, string>>;
+
+  return {
+    mode: customProfileEnabled ? "custom" : "default",
+    label: customProfileEnabled ? "Custom Organize folder profile" : "SimSuite default buckets",
+    bucketFolders: customProfileEnabled ? cleanBucketFolders : DEFAULT_BUCKET_FOLDERS,
+    creatorFolderMode: creatorFoldersEnabled ? "when_available" : "off",
+    categoryFolderMode: categoryFoldersEnabled ? "bucket_and_category" : "bucket_only",
+    maxDepth: maxDepth && maxDepth > 0 ? maxDepth : null,
+    exclusionPatterns: exclusionPatterns
+      .split(/[\n,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 20),
+  };
+}
+
+function buildContextTrail(
+  folderConfig: ApplyPlanFolderConfig,
+  sourceLocation: SourceLocation,
+): ApplyPlanContextSignal[] {
+  return [
+    {
+      sourceSystem: "library",
+      signalKind: "indexed_scope",
+      label: "Library paths and package metadata feed destination suggestions",
+      value: sourceLocation,
+      strength: "evidence",
+    },
+    {
+      sourceSystem: "duplicates",
+      signalKind: "duplicate_blocker",
+      label: "Duplicate proof routes items to review instead of cleanup",
+      value: "review_only",
+      strength: "blocking",
+    },
+    {
+      sourceSystem: "creator_category_audit",
+      signalKind: "metadata_bucket_hints",
+      label: "Creator and category confidence can shape buckets",
+      value: folderConfig.mode,
+      strength: "routing",
+    },
+    {
+      sourceSystem: "downloads_inbox_updates",
+      signalKind: "origin_and_update_caveats",
+      label: "Inbox and Updates context can add caveats, not execution permission",
+      value: "read_only_context",
+      strength: "read_only",
+    },
+    {
+      sourceSystem: "organize_validation_dry_run",
+      signalKind: "future_gate_chain",
+      label: "Organize feeds validation and dry-run before any confirmation design",
+      value: "preview_only",
+      strength: "blocking",
+    },
+  ];
 }
 
 function groupItemsByBucket(items: StagingPlanItem[]) {
@@ -419,8 +515,7 @@ export function OrganizeScreen({
   const [recursive, setRecursive] = useState(true);
   const [limit, setLimit] = useState(60);
   const [plan, setPlan] = useState<StagingPlan | null>(null);
-  const [lastPreviewRequest, setLastPreviewRequest] =
-    useState<GenerateSortingPreviewPlanRequest | null>(null);
+  const [lastPreviewSnapshot, setLastPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -428,6 +523,42 @@ export function OrganizeScreen({
   const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
   const [savedPlansRefreshVersion, setSavedPlansRefreshVersion] = useState(0);
   const [selectedSavedPlanId, setSelectedSavedPlanId] = useState<number | null>(null);
+  const [customProfileEnabled, setCustomProfileEnabled] = useState(false);
+  const [bucketFolders, setBucketFolders] =
+    useState<Partial<Record<StagingPlanBucket, string>>>(DEFAULT_BUCKET_FOLDERS);
+  const [creatorFoldersEnabled, setCreatorFoldersEnabled] = useState(false);
+  const [categoryFoldersEnabled, setCategoryFoldersEnabled] = useState(false);
+  const [maxDepth, setMaxDepth] = useState<number | null>(null);
+  const [exclusionPatterns, setExclusionPatterns] = useState("");
+
+  const folderConfig = useMemo(
+    () =>
+      buildFolderConfig({
+        customProfileEnabled,
+        bucketFolders,
+        creatorFoldersEnabled,
+        categoryFoldersEnabled,
+        maxDepth,
+        exclusionPatterns,
+      }),
+    [
+      bucketFolders,
+      categoryFoldersEnabled,
+      creatorFoldersEnabled,
+      customProfileEnabled,
+      exclusionPatterns,
+      maxDepth,
+    ],
+  );
+
+  const contextTrail = useMemo(
+    () => buildContextTrail(folderConfig, sourceLocation),
+    [folderConfig, sourceLocation],
+  );
+
+  const updateBucketFolder = (bucket: StagingPlanBucket, value: string) => {
+    setBucketFolders((current) => ({ ...current, [bucket]: value }));
+  };
 
   const handleGeneratePreview = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -444,15 +575,20 @@ export function OrganizeScreen({
         recursive,
         limit,
       },
+      folderConfig,
+      contextTrail,
     };
 
     try {
-      const nextPlan = await api.generateSortingPreviewPlan(request);
-      setPlan(nextPlan);
-      setLastPreviewRequest(request);
+      const previewResult = await api.generateSortingPreviewPlan(request);
+      setPlan(previewResult.plan);
+      setLastPreviewSnapshot({
+        previewSnapshotId: previewResult.previewSnapshotId,
+        previewSnapshotHash: previewResult.previewSnapshotHash,
+      });
     } catch (error) {
       setPlan(null);
-      setLastPreviewRequest(null);
+      setLastPreviewSnapshot(null);
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsGenerating(false);
@@ -460,7 +596,7 @@ export function OrganizeScreen({
   };
 
   const handleSavePreviewPlan = async () => {
-    if (!plan || !lastPreviewRequest) {
+    if (!plan || !lastPreviewSnapshot) {
       setSaveErrorMessage("Generate a preview plan before saving a draft.");
       return;
     }
@@ -470,9 +606,9 @@ export function OrganizeScreen({
     setSaveStatusMessage(null);
 
     try {
-      const saved = await api.buildApplyPlanFromStagingPlan({
-        previewRequest: lastPreviewRequest,
-        sourcePlanKind: "sorting_preview",
+      const saved = await api.saveApplyPlanFromPreviewSnapshot({
+        previewSnapshotId: lastPreviewSnapshot.previewSnapshotId,
+        previewSnapshotHash: lastPreviewSnapshot.previewSnapshotHash,
       });
       setSelectedSavedPlanId(saved.planId);
       setSavedPlansRefreshVersion((value) => value + 1);
@@ -633,6 +769,114 @@ export function OrganizeScreen({
               <span>Include nested folders</span>
             </label>
 
+            <section className="organize-folder-profile" aria-label="Apply plan folder profile">
+              <div className="organize-folder-profile-heading">
+                <div>
+                  <span className="eyebrow">Apply plan profile</span>
+                  <h3>Folder configuration snapshot</h3>
+                  <p>
+                    Customize where preview destinations point. This only changes
+                    the draft plan preview and saved snapshot; it does not create
+                    folders or move files.
+                  </p>
+                </div>
+                <label className="organize-switch-row">
+                  <input
+                    type="checkbox"
+                    checked={customProfileEnabled}
+                    onChange={(event) => setCustomProfileEnabled(event.target.checked)}
+                  />
+                  <span>Use custom folders</span>
+                </label>
+              </div>
+
+              {customProfileEnabled ? (
+                <>
+                  <div className="organize-folder-grid">
+                    {([
+                      "script_mods",
+                      "cas",
+                      "build_buy",
+                      "gameplay",
+                      "presets_sliders",
+                      "overrides_defaults",
+                    ] as StagingPlanBucket[]).map((bucket) => (
+                      <label className="organize-plan-field" key={bucket}>
+                        <span>{BUCKET_LABELS[bucket]}</span>
+                        <input
+                          value={bucketFolders[bucket] ?? ""}
+                          onChange={(event) => updateBucketFolder(bucket, event.target.value)}
+                          placeholder={DEFAULT_BUCKET_FOLDERS[bucket]}
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="organize-folder-options">
+                    <label className="organize-check-row">
+                      <input
+                        type="checkbox"
+                        checked={categoryFoldersEnabled}
+                        onChange={(event) => setCategoryFoldersEnabled(event.target.checked)}
+                      />
+                      <span>Add category/subtype folders when metadata is strong</span>
+                    </label>
+                    <label className="organize-check-row">
+                      <input
+                        type="checkbox"
+                        checked={creatorFoldersEnabled}
+                        onChange={(event) => setCreatorFoldersEnabled(event.target.checked)}
+                      />
+                      <span>Add creator folders when creator evidence exists</span>
+                    </label>
+                    <label className="organize-plan-field organize-plan-field--compact">
+                      <span>Max custom depth</span>
+                      <select
+                        value={maxDepth ?? ""}
+                        onChange={(event) =>
+                          setMaxDepth(event.target.value ? Number(event.target.value) : null)
+                        }
+                      >
+                        <option value="">No cap</option>
+                        <option value={1}>1 folder</option>
+                        <option value={2}>2 folders</option>
+                        <option value={3}>3 folders</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="organize-plan-field">
+                    <span>Preview exclusions / notes</span>
+                    <textarea
+                      value={exclusionPatterns}
+                      onChange={(event) => setExclusionPatterns(event.target.value)}
+                      placeholder="One pattern or note per line. Saved with the plan snapshot for future validation."
+                    />
+                  </label>
+                </>
+              ) : (
+                <div className="organize-folder-default-state">
+                  <CheckCircle2 size={16} />
+                  <span>Using SimSuite default buckets. You can switch to custom folders before generating a preview.</span>
+                </div>
+              )}
+            </section>
+
+            <section className="organize-context-trail" aria-label="Cross-system decision trail">
+              <div>
+                <span className="eyebrow">Organic decision trail</span>
+                <h3>Systems feed each other, but safety still owns the gate.</h3>
+              </div>
+              <div className="organize-context-grid">
+                {contextTrail.map((signal) => (
+                  <span key={`${signal.sourceSystem}-${signal.signalKind}`}>
+                    <strong>{signal.sourceSystem.replace(/_/g, " ")}</strong>
+                    <small>{signal.label}</small>
+                  </span>
+                ))}
+              </div>
+            </section>
+
             <div className="organize-next-step-actions">
               <button
                 type="submit"
@@ -683,7 +927,7 @@ export function OrganizeScreen({
               plan={plan}
               isGenerating={isGenerating}
               errorMessage={errorMessage}
-              canSavePlan={Boolean(plan && lastPreviewRequest)}
+              canSavePlan={Boolean(plan && lastPreviewSnapshot)}
               isSavingPlan={isSavingPlan}
               saveErrorMessage={saveErrorMessage}
               onSavePreviewPlan={handleSavePreviewPlan}

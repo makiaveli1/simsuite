@@ -1575,11 +1575,14 @@ async function main() {
     await navigateToScreen(driver, "downloads", 30000);
     summary.inboxHash = await waitForHash(driver, "#downloads", 30000);
     await waitForVisibleElement(driver, ".downloads-shell", 30000);
-    await waitForAnyText(
+    await waitForVisibleElement(driver, ".inbox-intake-summary", 30000);
+    await waitForBodyMatch(
       driver,
-      ["Review new downloads and imported batches", "No files changed", "Inbox"],
+      /review new downloads and imported batches|inbox is the intake area/i,
       30000,
     );
+    await waitForBodyMatch(driver, /no files changed/i, 30000);
+    await waitForBodyMatch(driver, /create preview plan|open organize/i, 30000);
     const inboxBody = await getBodyText(driver);
     summary.inboxBodyHasIntakePurpose =
       /review new downloads and imported batches|inbox is the intake area/i.test(inboxBody);

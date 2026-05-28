@@ -200,6 +200,41 @@ function formatScope(scope: Record<string, unknown> | null): string {
   return "Saved preview source";
 }
 
+function formatFolderConfigSummary(plan: PersistedApplyPlan): string {
+  const config = plan.folderConfig;
+  if (!config || config.mode === "default") {
+    return "SimSuite default preview buckets";
+  }
+
+  const customBucketCount = Object.values(config.bucketFolders ?? {}).filter(Boolean).length;
+  const creatorMode =
+    config.creatorFolderMode === "when_available" ? "creator folders on" : "creator folders off";
+  const categoryMode =
+    config.categoryFolderMode === "bucket_and_category"
+      ? "category folders on"
+      : "bucket folders only";
+  return `${config.label || "Custom folder profile"}: ${formatCount(
+    customBucketCount,
+    "custom bucket",
+  )}, ${creatorMode}, ${categoryMode}`;
+}
+
+function contextTrailForPlan(plan: PersistedApplyPlan) {
+  if (plan.contextTrail.length > 0) {
+    return plan.contextTrail.map((signal) => signal.label);
+  }
+
+  return [
+    "Library provides indexed paths, roots, hashes, and folder facts.",
+    "Inbox provides origin and intake context, not execution permission.",
+    "Updates provide source caveats, never automatic replacement proof.",
+    "Duplicates can route review, but cannot authorize cleanup here.",
+    "Creator and Category Audit confidence can shape preview buckets.",
+    "Organize owns the saved draft; validation and dry-run classify it.",
+    "Recovery remains read-only until a backend executor creates logs.",
+  ];
+}
+
 function shortenPath(path: string | null): string {
   if (!path) return "Path unavailable";
   if (path.length <= 76) return path;
@@ -207,6 +242,12 @@ function shortenPath(path: string | null): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
   if (parts.length <= 3) return path;
   return `...\\${parts.slice(-3).join("\\")}`;
+}
+
+function shortenHash(hash: string | null): string {
+  if (!hash) return "Plan hash unavailable";
+  if (hash.length <= 20) return hash;
+  return `${hash.slice(0, 12)}…${hash.slice(-8)}`;
 }
 
 function groupSavedItems(items: PersistedApplyPlanItem[]) {
@@ -994,6 +1035,183 @@ function DryRunPreviewSection({
   );
 }
 
+function ConfirmationDesignSection({
+  plan,
+  validationPreview,
+  dryRunPreview,
+}: {
+  plan: PersistedApplyPlan;
+  validationPreview: ApplyPlanValidationPreview | null;
+  dryRunPreview: ApplyPlanDryRunPreview | null;
+}) {
+  const candidateCount = dryRunPreview?.summary.candidateItems ?? plan.applyableItems;
+  const blockedCount = dryRunPreview?.summary.blockedItems ?? plan.blockedItems;
+  const skippedOrReviewCount =
+    dryRunPreview?.summary.skippedItems ?? plan.reviewOnlyItems;
+  const visibleItems = plan.items.slice(0, 6);
+  const hiddenItemCount = Math.max(0, plan.items.length - visibleItems.length);
+  const validationStatus = validationPreview
+    ? formatPlanValidationStatus(validationPreview.status)
+    : "Validation not run in this view";
+  const dryRunStatus = dryRunPreview
+    ? formatDryRunPreviewStatus(dryRunPreview.status)
+    : "Dry-run not run in this view";
+  const sourceKindLabel =
+    plan.sourcePlanKind === "backend_generated_sorting_preview"
+      ? "Backend-generated sorting preview; eligible as a future confirmation input only after fresh validation, backup, restore-map, result-log, and token gates exist."
+      : "Client-supplied or legacy preview; review/audit-only and not eligible for future confirmation.";
+  const planHashLabel = plan.planHash
+    ? `Backend-owned plan hash recorded (${plan.planHashAlgorithm}, ${plan.planHashVersion}): ${shortenHash(plan.planHash)}.`
+    : "Backend-owned plan hash unavailable for this legacy draft.";
+  const provenanceCreatedLabel = plan.planHashCreatedAt
+    ? `Provenance recorded at ${plan.planHashCreatedAt}.`
+    : "Provenance timestamp unavailable.";
+
+  return (
+    <section className="validation-preview-panel" aria-label="Confirmation design">
+      <div className="validation-preview-header">
+        <div>
+          <div className="eyebrow">Confirmation design</div>
+          <h4>Confirmation Design V1</h4>
+          <p>
+            This read-only contract shows what future confirmation must prove
+            before SimSuite can change files. It is not an Apply flow.
+          </p>
+        </div>
+        <button type="button" className="secondary-action" disabled>
+          <ShieldCheck size={16} />
+          Confirmation unavailable
+        </button>
+      </div>
+
+      <div className="validation-preview-safety-strip">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          Execution controls disabled. Confirmation token not issued. No backup,
+          restore map, result log, folder creation, or file mutation is performed.
+        </span>
+      </div>
+
+      <div className="validation-preview-grid" aria-label="Confirmation readiness summary">
+        <span>
+          <strong>{candidateCount}</strong>
+          <small>Future candidates after gates</small>
+        </span>
+        <span>
+          <strong>{blockedCount}</strong>
+          <small>Blocked from confirmation</small>
+        </span>
+        <span>
+          <strong>{skippedOrReviewCount}</strong>
+          <small>Skipped or review-only</small>
+        </span>
+        <span>
+          <strong>Disabled</strong>
+          <small>Confirmation state</small>
+        </span>
+      </div>
+
+      <div className="organize-plan-detail-block">
+        <h4>Plan provenance</h4>
+        <ul className="organize-plan-caveats">
+          <li>{sourceKindLabel}</li>
+          <li>Source kind: {plan.sourcePlanKind}.</li>
+          <li title={plan.planHash ?? undefined}>{planHashLabel}</li>
+          <li>{provenanceCreatedLabel}</li>
+          <li>Plan hash is identity/provenance only; it does not authorize Apply.</li>
+          <li>Confirmation token not issued.</li>
+          <li>Validation status: {validationStatus}.</li>
+          <li>Dry-run status: {dryRunStatus}.</li>
+        </ul>
+      </div>
+
+      <div className="organize-plan-detail-block">
+        <h4>Custom folder configurations</h4>
+        <p>
+          Folder configuration snapshot: {formatFolderConfigSummary(plan)}. It
+          influences preview destinations only; it must still be validated,
+          snapshotted, and rechecked before any future confirmation.
+        </p>
+        {plan.folderConfig?.exclusionPatterns.length ? (
+          <div className="organize-plan-tags">
+            {plan.folderConfig.exclusionPatterns.map((pattern) => (
+              <span className="organize-plan-tag" key={pattern}>
+                {pattern}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="organize-plan-detail-block">
+        <h4>Future operation list</h4>
+        <p>
+          Exact future operations remain preview-only here. Candidate rows are
+          still excluded from execution until validation, custom folder config,
+          backup, restore-map, result-log, and confirmation gates exist.
+        </p>
+        <div className="validation-preview-item-list">
+          {visibleItems.map((item) => (
+            <article className="validation-preview-item" key={item.id}>
+              <div className="validation-preview-item-header">
+                <div className="organize-plan-item-title">
+                  <span>{item.fileName}</span>
+                  <small>{formatOperationKind(item.actionKind)}</small>
+                </div>
+                <span className="organize-plan-status-chip">
+                  {formatItemStatus(item.itemStatus)}
+                </span>
+              </div>
+              <div className="organize-plan-path-grid">
+                <div className="organize-plan-path-card">
+                  <span>Current source</span>
+                  <code title={item.currentPath ?? undefined}>
+                    {shortenPath(item.currentPath)}
+                  </code>
+                </div>
+                <div className="organize-plan-path-card">
+                  <span>Preview destination</span>
+                  <code title={item.destinationPath ?? undefined}>
+                    {shortenPath(item.destinationPath)}
+                  </code>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        {hiddenItemCount > 0 ? (
+          <p className="validation-preview-note">
+            {formatCount(hiddenItemCount, "additional item")} hidden in this
+            preview. No files changed.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="organize-plan-detail-block">
+        <h4>Cross-system context trail</h4>
+        <ul className="organize-plan-caveats">
+          {contextTrailForPlan(plan).map((entry) => (
+            <li key={entry}>{entry}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="organize-plan-detail-block">
+        <h4>Still required before confirmation can exist</h4>
+        <ul className="organize-plan-caveats">
+          <li>Validation must be re-run immediately before confirmation.</li>
+          <li>Backup must be created before any mutation.</li>
+          <li>Restore map must be written by the backend executor.</li>
+          <li>Result log must be written from observed backend operations.</li>
+          <li>Custom folder configuration snapshot must be attached to the plan.</li>
+          <li>Confirmation token must be backend-issued and single-use.</li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function RecoveryRunCard({
   run,
   selected,
@@ -1577,6 +1795,12 @@ function SavedPlanDetails({
         onPreview={onPreviewDryRun}
       />
 
+      <ConfirmationDesignSection
+        plan={plan}
+        validationPreview={validationPreview}
+        dryRunPreview={dryRunPreview}
+      />
+
       <RecoveryHistorySection
         runs={recoveryRuns}
         selectedRunId={selectedRecoveryRunId}
@@ -1808,12 +2032,16 @@ export function SavedPlansReview({
     setValidationError(null);
     try {
       const preview = await api.previewApplyPlanValidation({ planId });
+      if (selectedPlanIdRef.current !== planId) return;
       setValidationPreview(preview);
     } catch (error) {
+      if (selectedPlanIdRef.current !== planId) return;
       setValidationPreview(null);
       setValidationError(error instanceof Error ? error.message : String(error));
     } finally {
-      setValidationLoading(false);
+      if (selectedPlanIdRef.current === planId) {
+        setValidationLoading(false);
+      }
     }
   };
 

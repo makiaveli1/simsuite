@@ -4,14 +4,19 @@ import { api } from "./api";
 const DEFAULT_MOCK_PATH_MARKER = "C:\\Users\\Player";
 
 describe("sorting preview plan API", () => {
-  it("returns a preview-only mock plan with rule-audit fields", async () => {
-    const plan = await api.generateSortingPreviewPlan({
+  it("returns a preview-only mock plan with backend-owned snapshot metadata", async () => {
+    const result = await api.generateSortingPreviewPlan({
       scope: {
         kind: "selected_files",
         fileIds: [101, 102],
       },
     });
+    const { plan } = result;
 
+    expect(result.previewSnapshotId).toBeGreaterThan(0);
+    expect(result.previewSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.previewSnapshotHashVersion).toBe("apply_plan_preview_snapshot_v2");
+    expect(result.previewSnapshotHashAlgorithm).toBe("sha256");
     expect(plan.source).toBe("organize");
     expect(plan.status).toBe("preview_only");
     expect(plan.wouldTouchFiles).toBe(false);
@@ -42,7 +47,7 @@ describe("ApplyPlan preview persistence API", () => {
     });
 
     expect(saved.planId).toBeGreaterThan(0);
-    expect(saved.plan.sourcePlanKind).toBe("sorting_preview");
+    expect(saved.plan.sourcePlanKind).toBe("backend_generated_sorting_preview");
     expect(saved.plan.wouldTouchFiles).toBe(false);
     expect(saved.plan.applyableItems).toBe(0);
 
@@ -126,7 +131,7 @@ describe("ApplyPlan preview persistence API", () => {
   });
 
   it("saves, lists, reads, and soft-cancels preview-only plans in the mock API", async () => {
-    const sourcePlan = await api.generateSortingPreviewPlan({
+    const sourcePreview = await api.generateSortingPreviewPlan({
       scope: {
         kind: "selected_files",
         fileIds: [101, 102],
@@ -134,7 +139,7 @@ describe("ApplyPlan preview persistence API", () => {
     });
 
     const saved = await api.saveApplyPlanPreview({
-      sourcePlan,
+      sourcePlan: sourcePreview.plan,
       sourcePlanKind: "sorting_preview",
       sourceScope: {
         kind: "selected_files",
@@ -156,7 +161,7 @@ describe("ApplyPlan preview persistence API", () => {
     const plan = await api.getApplyPlan(saved.planId);
     expect(plan).not.toBeNull();
     expect(plan?.wouldTouchFiles).toBe(false);
-    expect(plan?.items.length).toBe(sourcePlan.items.length);
+    expect(plan?.items.length).toBe(sourcePreview.plan.items.length);
     expect(plan?.items.some((item) => item.signals.length > 0)).toBe(true);
     expect(plan?.items.some((item) => item.blockers.length > 0)).toBe(true);
 

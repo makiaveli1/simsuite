@@ -1,45 +1,124 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use sha2::Digest;
 
 use crate::{
+    core::apply_plan_provenance,
     error::{AppError, AppResult},
     models::{
-        ApplyPlanListItem, BuildApplyPlanFromStagingPlanRequest, DeleteDraftApplyPlanResult,
-        LibrarySettings, ListSavedApplyPlansRequest, PersistedApplyPlan, PersistedApplyPlanBlocker,
+        ApplyPlanContextSignal, ApplyPlanFolderConfig, ApplyPlanListItem,
+        BuildApplyPlanFromStagingPlanRequest, DeleteDraftApplyPlanResult,
+        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, LibrarySettings,
+        ListSavedApplyPlansRequest, PersistedApplyPlan, PersistedApplyPlanBlocker,
         PersistedApplyPlanItem, PersistedApplyPlanItemStatus, PersistedApplyPlanSignal,
-        PersistedApplyPlanStatus, SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult,
-        StagingPlan, StagingPlanActionKind, StagingPlanBucket, StagingPlanConfidenceLabel,
+        PersistedApplyPlanStatus, SaveApplyPlanFromPreviewSnapshotRequest,
+        SaveApplyPlanPreviewRequest, SaveApplyPlanPreviewResult, StagingPlan,
+        StagingPlanActionKind, StagingPlanBucket, StagingPlanConfidenceLabel,
         StagingPlanEvidenceLevel, StagingPlanStatus,
     },
 };
 
 const PATH_PRIVACY_LEVEL: &str = "local_full_path_required";
 const SOURCE_SYSTEM: &str = "staging_plan";
-const SORTING_PREVIEW_SOURCE_KIND: &str = "sorting_preview";
+
+pub fn generate_sorting_preview_snapshot(
+    connection: &mut Connection,
+    settings: &LibrarySettings,
+    request: GenerateSortingPreviewPlanRequest,
+) -> AppResult<GenerateSortingPreviewPlanResult> {
+    let source_scope = serde_json::to_value(&request.scope)?;
+    let folder_config = request.folder_config.clone();
+    let context_trail = request.context_trail.clone();
+    let source_plan = crate::core::rule_engine::sorting_plan::generate_sorting_preview_plan(
+        connection, settings, request,
+    )?;
+    reject_file_touching_source_plan(&source_plan)?;
+
+    let seed = serde_json::to_vec(&source_plan)?;
+    let seed_hash = hex::encode(sha2::Sha256::digest(seed));
+    let snapshot_id = format!(
+        "apply-preview-{}-{}",
+        Utc::now().timestamp_millis(),
+        &seed_hash[..12]
+    );
+
+    let source_plan_kind = apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND;
+    let hash_stamp = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+        connection,
+        &source_plan,
+        source_plan_kind,
+        &Some(source_scope.clone()),
+        &folder_config,
+        &context_trail,
+        None,
+    )?;
+    let source_plan_json = serde_json::to_string(&source_plan)?;
+    let source_scope_json = serde_json::to_string(&source_scope)?;
+    let folder_config_json = folder_config
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let context_trail_json = serde_json::to_string(&context_trail)?;
+    let provenance_json = serde_json::to_string(&hash_stamp.provenance)?;
+    let created_at = Utc::now().to_rfc3339();
+
+    connection.execute(
+        "INSERT INTO apply_plan_preview_snapshots (
+            snapshot_id,
+            source_plan_kind,
+            source_plan_json,
+            source_scope_json,
+            folder_config_json,
+            context_trail_json,
+            preview_snapshot_hash,
+            preview_snapshot_hash_version,
+            preview_snapshot_hash_algorithm,
+            preview_snapshot_provenance_json,
+            created_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            snapshot_id,
+            source_plan_kind,
+            source_plan_json,
+            source_scope_json,
+            folder_config_json,
+            context_trail_json,
+            hash_stamp.hash,
+            hash_stamp.version,
+            hash_stamp.algorithm,
+            provenance_json,
+            created_at,
+        ],
+    )?;
+    let preview_snapshot_id = connection.last_insert_rowid();
+
+    Ok(GenerateSortingPreviewPlanResult {
+        plan: source_plan,
+        preview_snapshot_id,
+        preview_snapshot_hash: hash_stamp.hash,
+        preview_snapshot_hash_version: hash_stamp.version,
+        preview_snapshot_hash_algorithm: hash_stamp.algorithm,
+        preview_snapshot_created_at: created_at,
+    })
+}
 
 pub fn build_apply_plan_from_staging_plan(
     connection: &mut Connection,
     settings: &LibrarySettings,
     request: BuildApplyPlanFromStagingPlanRequest,
 ) -> AppResult<SaveApplyPlanPreviewResult> {
-    let source_scope = serde_json::to_value(&request.preview_request.scope)?;
-    let source_plan_kind = request
-        .source_plan_kind
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| SORTING_PREVIEW_SOURCE_KIND.to_owned());
-    let source_plan = crate::core::rule_engine::sorting_plan::generate_sorting_preview_plan(
-        connection,
-        settings,
-        request.preview_request,
-    )?;
+    let mut preview_request = request.preview_request;
+    preview_request.folder_config = request.folder_config.or(preview_request.folder_config);
+    if !request.context_trail.is_empty() {
+        preview_request.context_trail = request.context_trail;
+    }
 
-    save_apply_plan_preview(
+    let preview = generate_sorting_preview_snapshot(connection, settings, preview_request)?;
+    save_apply_plan_from_preview_snapshot(
         connection,
-        SaveApplyPlanPreviewRequest {
-            source_plan,
-            source_plan_kind: Some(source_plan_kind),
-            source_scope: Some(source_scope),
-            scan_session_id: None,
+        SaveApplyPlanFromPreviewSnapshotRequest {
+            preview_snapshot_id: preview.preview_snapshot_id,
+            preview_snapshot_hash: preview.preview_snapshot_hash,
         },
     )
 }
@@ -48,18 +127,154 @@ pub fn save_apply_plan_preview(
     connection: &mut Connection,
     request: SaveApplyPlanPreviewRequest,
 ) -> AppResult<SaveApplyPlanPreviewResult> {
+    save_apply_plan_preview_with_source_kind(
+        connection,
+        request,
+        apply_plan_provenance::CLIENT_SUPPLIED_PREVIEW_SOURCE_KIND,
+        None,
+        None,
+    )
+}
+
+pub fn save_apply_plan_from_preview_snapshot(
+    connection: &mut Connection,
+    request: SaveApplyPlanFromPreviewSnapshotRequest,
+) -> AppResult<SaveApplyPlanPreviewResult> {
+    let snapshot = load_preview_snapshot(connection, request.preview_snapshot_id)?
+        .ok_or_else(|| AppError::Message("Preview snapshot was not found.".to_owned()))?;
+
+    if snapshot.consumed_apply_plan_id.is_some() {
+        return Err(AppError::Message(
+            "Preview snapshot has already been saved as an ApplyPlan draft.".to_owned(),
+        ));
+    }
+
+    if snapshot.preview_snapshot_hash != request.preview_snapshot_hash {
+        return Err(AppError::Message(
+            "Preview snapshot hash mismatch; regenerate the preview before saving.".to_owned(),
+        ));
+    }
+
+    if snapshot.preview_snapshot_hash_version
+        != apply_plan_provenance::PREVIEW_SNAPSHOT_HASH_VERSION
+        || snapshot.preview_snapshot_hash_algorithm != apply_plan_provenance::PLAN_HASH_ALGORITHM
+    {
+        return Err(AppError::Message(
+            "Preview snapshot uses an unsupported hash version or algorithm.".to_owned(),
+        ));
+    }
+
+    let source_plan: StagingPlan =
+        serde_json::from_str(&snapshot.source_plan_json).map_err(|error| {
+            AppError::Message(format!(
+                "Invalid source_plan_json for preview snapshot {}: {error}",
+                snapshot.id
+            ))
+        })?;
+    let source_scope: Option<serde_json::Value> = snapshot
+        .source_scope_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| {
+            AppError::Message(format!(
+                "Invalid source_scope_json for preview snapshot {}: {error}",
+                snapshot.id
+            ))
+        })?;
+    let folder_config: Option<ApplyPlanFolderConfig> = snapshot
+        .folder_config_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| {
+            AppError::Message(format!(
+                "Invalid folder_config_json for preview snapshot {}: {error}",
+                snapshot.id
+            ))
+        })?;
+    let context_trail: Vec<ApplyPlanContextSignal> =
+        serde_json::from_str(&snapshot.context_trail_json).map_err(|error| {
+            AppError::Message(format!(
+                "Invalid context_trail_json for preview snapshot {}: {error}",
+                snapshot.id
+            ))
+        })?;
+    let stored_provenance: serde_json::Value =
+        serde_json::from_str(&snapshot.preview_snapshot_provenance_json).map_err(|error| {
+            AppError::Message(format!(
+                "Invalid preview_snapshot_provenance_json for preview snapshot {}: {error}",
+                snapshot.id
+            ))
+        })?;
+    let recomputed = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+        connection,
+        &source_plan,
+        &snapshot.source_plan_kind,
+        &source_scope,
+        &folder_config,
+        &context_trail,
+        snapshot.scan_session_id,
+    )?;
+    if recomputed.hash != snapshot.preview_snapshot_hash
+        || recomputed.provenance != stored_provenance
+    {
+        return Err(AppError::Message(
+            "Preview snapshot provenance no longer matches stored preview content.".to_owned(),
+        ));
+    }
+
+    let result = save_apply_plan_preview_with_source_kind(
+        connection,
+        SaveApplyPlanPreviewRequest {
+            source_plan,
+            source_plan_kind: None,
+            source_scope,
+            folder_config,
+            context_trail,
+            scan_session_id: snapshot.scan_session_id,
+        },
+        &snapshot.source_plan_kind,
+        Some(snapshot.id),
+        Some(snapshot.preview_snapshot_hash.clone()),
+    )?;
+    let consumed_rows = connection.execute(
+        "UPDATE apply_plan_preview_snapshots
+         SET consumed_apply_plan_id = ?1
+         WHERE id = ?2 AND consumed_apply_plan_id IS NULL",
+        params![result.plan_id, snapshot.id],
+    )?;
+    if consumed_rows != 1 {
+        return Err(AppError::Message(
+            "Preview snapshot has already been saved as an ApplyPlan draft.".to_owned(),
+        ));
+    }
+
+    Ok(result)
+}
+
+fn save_apply_plan_preview_with_source_kind(
+    connection: &mut Connection,
+    request: SaveApplyPlanPreviewRequest,
+    source_plan_kind: &str,
+    preview_snapshot_id: Option<i64>,
+    preview_snapshot_hash: Option<String>,
+) -> AppResult<SaveApplyPlanPreviewResult> {
     let source_plan = request.source_plan;
     reject_file_touching_source_plan(&source_plan)?;
 
-    let source_plan_kind = request
-        .source_plan_kind
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(enum_value(&source_plan.source)?);
+    let source_plan_kind = source_plan_kind.to_owned();
     let source_scope_json = request
         .source_scope
         .as_ref()
         .map(serde_json::to_string)
         .transpose()?;
+    let folder_config_json = request
+        .folder_config
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let context_trail_json = serde_json::to_string(&request.context_trail)?;
     let caveats_json = serde_json::to_string(&source_plan.caveats)?;
     let now = Utc::now().to_rfc3339();
     let prepared_items = prepare_items(&source_plan)?;
@@ -98,10 +313,14 @@ pub fn save_apply_plan_preview(
             review_only_items,
             caveats_json,
             source_scope_json,
+            folder_config_json,
+            context_trail_json,
             scan_session_id,
+            preview_snapshot_id,
+            preview_snapshot_hash,
             created_at,
             updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 1, 0, ?6, 0, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 1, 0, ?6, 0, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             source_plan.id,
             source_plan_kind,
@@ -113,7 +332,12 @@ pub fn save_apply_plan_preview(
             review_only_items,
             caveats_json,
             source_scope_json,
+            folder_config_json,
+            context_trail_json,
             request.scan_session_id,
+            preview_snapshot_id,
+            preview_snapshot_hash,
+            now,
             now,
         ],
     )?;
@@ -213,6 +437,28 @@ pub fn save_apply_plan_preview(
         }
     }
 
+    let persisted = get_apply_plan(&transaction, plan_id)?
+        .ok_or_else(|| AppError::Message("saved ApplyPlan could not be reloaded".to_owned()))?;
+    let hash_stamp = apply_plan_provenance::build_hash_stamp(&transaction, &persisted)?;
+    let plan_provenance_json = serde_json::to_string(&hash_stamp.provenance)?;
+    transaction.execute(
+        "UPDATE apply_plans
+         SET plan_hash = ?1,
+             plan_hash_version = ?2,
+             plan_hash_algorithm = ?3,
+             plan_hash_created_at = ?4,
+             plan_provenance_json = ?5
+         WHERE id = ?6",
+        params![
+            hash_stamp.hash,
+            hash_stamp.version,
+            hash_stamp.algorithm,
+            now,
+            plan_provenance_json,
+            plan_id,
+        ],
+    )?;
+
     transaction.commit()?;
     let plan = get_apply_plan_list_item(connection, plan_id)?
         .ok_or_else(|| AppError::Message("saved ApplyPlan could not be reloaded".to_owned()))?;
@@ -229,14 +475,20 @@ pub fn list_saved_apply_plans(
     let sql = if include_cancelled {
         "SELECT id, source_staging_plan_id, source_plan_kind, title, summary, status,
             would_touch_files, confirmation_required, backup_required, restore_available,
-            total_items, applyable_items, blocked_items, review_only_items, created_at, updated_at
+            total_items, applyable_items, blocked_items, review_only_items,
+            plan_hash, plan_hash_version, plan_hash_algorithm, plan_hash_created_at,
+            preview_snapshot_id, preview_snapshot_hash,
+            created_at, updated_at
          FROM apply_plans
          ORDER BY created_at DESC, id DESC
          LIMIT ?1"
     } else {
         "SELECT id, source_staging_plan_id, source_plan_kind, title, summary, status,
             would_touch_files, confirmation_required, backup_required, restore_available,
-            total_items, applyable_items, blocked_items, review_only_items, created_at, updated_at
+            total_items, applyable_items, blocked_items, review_only_items,
+            plan_hash, plan_hash_version, plan_hash_algorithm, plan_hash_created_at,
+            preview_snapshot_id, preview_snapshot_hash,
+            created_at, updated_at
          FROM apply_plans
          WHERE status != 'cancelled'
          ORDER BY created_at DESC, id DESC
@@ -260,13 +512,19 @@ pub fn get_apply_plan(
             "SELECT id, source_staging_plan_id, source_plan_kind, title, summary, status,
                 would_touch_files, confirmation_required, backup_required, restore_available,
                 total_items, applyable_items, blocked_items, review_only_items,
-                caveats_json, source_scope_json, scan_session_id, created_at, updated_at
+                caveats_json, source_scope_json, folder_config_json, context_trail_json,
+                plan_hash, plan_hash_version, plan_hash_algorithm, plan_hash_created_at,
+                preview_snapshot_id, preview_snapshot_hash,
+                plan_provenance_json, scan_session_id, created_at, updated_at
              FROM apply_plans
              WHERE id = ?1",
             params![plan_id],
             |row| {
                 let caveats_json: String = row.get(14)?;
                 let source_scope_json: Option<String> = row.get(15)?;
+                let folder_config_json: Option<String> = row.get(16)?;
+                let context_trail_json: String = row.get(17)?;
+                let plan_provenance_json: String = row.get(24)?;
                 Ok(PlanRow {
                     id: row.get(0)?,
                     source_staging_plan_id: row.get(1)?,
@@ -284,9 +542,18 @@ pub fn get_apply_plan(
                     review_only_items: row.get(13)?,
                     caveats_json,
                     source_scope_json,
-                    scan_session_id: row.get(16)?,
-                    created_at: row.get(17)?,
-                    updated_at: row.get(18)?,
+                    folder_config_json,
+                    context_trail_json,
+                    plan_hash: row.get(18)?,
+                    plan_hash_version: row.get(19)?,
+                    plan_hash_algorithm: row.get(20)?,
+                    plan_hash_created_at: row.get(21)?,
+                    preview_snapshot_id: row.get(22)?,
+                    preview_snapshot_hash: row.get(23)?,
+                    plan_provenance_json,
+                    scan_session_id: row.get(25)?,
+                    created_at: row.get(26)?,
+                    updated_at: row.get(27)?,
                 })
             },
         )
@@ -297,11 +564,46 @@ pub fn get_apply_plan(
     };
 
     let items = load_apply_plan_items(connection, plan.id)?;
-    let caveats = serde_json::from_str::<Vec<String>>(&plan.caveats_json).unwrap_or_default();
-    let source_scope = match plan.source_scope_json {
-        Some(value) => serde_json::from_str::<serde_json::Value>(&value).ok(),
-        None => None,
-    };
+    let caveats = serde_json::from_str::<Vec<String>>(&plan.caveats_json).map_err(|error| {
+        AppError::Message(format!(
+            "Invalid caveats_json for ApplyPlan {}: {error}",
+            plan.id
+        ))
+    })?;
+    let source_scope = plan
+        .source_scope_json
+        .as_deref()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .transpose()
+        .map_err(|error| {
+            AppError::Message(format!(
+                "Invalid source_scope_json for ApplyPlan {}: {error}",
+                plan.id
+            ))
+        })?;
+    let folder_config = plan
+        .folder_config_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| {
+            AppError::Message(format!(
+                "Invalid folder_config_json for ApplyPlan {}: {error}",
+                plan.id
+            ))
+        })?;
+    let context_trail = serde_json::from_str(&plan.context_trail_json).map_err(|error| {
+        AppError::Message(format!(
+            "Invalid context_trail_json for ApplyPlan {}: {error}",
+            plan.id
+        ))
+    })?;
+    let plan_provenance = serde_json::from_str(&plan.plan_provenance_json).map_err(|error| {
+        AppError::Message(format!(
+            "Invalid plan_provenance_json for ApplyPlan {}: {error}",
+            plan.id
+        ))
+    })?;
 
     Ok(Some(PersistedApplyPlan {
         id: plan.id,
@@ -320,11 +622,29 @@ pub fn get_apply_plan(
         review_only_items: plan.review_only_items,
         caveats,
         source_scope,
+        folder_config,
+        context_trail,
+        plan_hash: plan.plan_hash,
+        plan_hash_version: plan.plan_hash_version,
+        plan_hash_algorithm: plan.plan_hash_algorithm,
+        plan_hash_created_at: plan.plan_hash_created_at,
+        preview_snapshot_id: plan.preview_snapshot_id,
+        preview_snapshot_hash: plan.preview_snapshot_hash,
+        plan_provenance,
         scan_session_id: plan.scan_session_id,
         created_at: plan.created_at,
         updated_at: plan.updated_at,
         items,
     }))
+}
+
+pub fn verify_apply_plan_hash(
+    connection: &Connection,
+    plan_id: i64,
+) -> AppResult<apply_plan_provenance::ApplyPlanHashVerification> {
+    let plan = get_apply_plan(connection, plan_id)?
+        .ok_or_else(|| AppError::Message(format!("Saved ApplyPlan {plan_id} was not found")))?;
+    apply_plan_provenance::verify_hash(connection, &plan)
 }
 
 pub fn delete_draft_apply_plan(
@@ -378,7 +698,10 @@ fn get_apply_plan_list_item(
         .query_row(
             "SELECT id, source_staging_plan_id, source_plan_kind, title, summary, status,
                 would_touch_files, confirmation_required, backup_required, restore_available,
-                total_items, applyable_items, blocked_items, review_only_items, created_at, updated_at
+                total_items, applyable_items, blocked_items, review_only_items,
+            plan_hash, plan_hash_version, plan_hash_algorithm, plan_hash_created_at,
+            preview_snapshot_id, preview_snapshot_hash,
+            created_at, updated_at
              FROM apply_plans
              WHERE id = ?1",
             params![plan_id],
@@ -641,6 +964,44 @@ fn destination_root_for_bucket(bucket: &StagingPlanBucket) -> Option<&'static st
     }
 }
 
+fn load_preview_snapshot(
+    connection: &Connection,
+    preview_snapshot_id: i64,
+) -> AppResult<Option<PreviewSnapshotRow>> {
+    connection
+        .query_row(
+            "SELECT id, snapshot_id, source_plan_kind, source_plan_json, source_scope_json,
+                folder_config_json, context_trail_json, preview_snapshot_hash,
+                preview_snapshot_hash_version, preview_snapshot_hash_algorithm,
+                preview_snapshot_provenance_json, scan_session_id, consumed_apply_plan_id,
+                created_at, expires_at
+             FROM apply_plan_preview_snapshots
+             WHERE id = ?1",
+            params![preview_snapshot_id],
+            |row| {
+                Ok(PreviewSnapshotRow {
+                    id: row.get(0)?,
+                    snapshot_id: row.get(1)?,
+                    source_plan_kind: row.get(2)?,
+                    source_plan_json: row.get(3)?,
+                    source_scope_json: row.get(4)?,
+                    folder_config_json: row.get(5)?,
+                    context_trail_json: row.get(6)?,
+                    preview_snapshot_hash: row.get(7)?,
+                    preview_snapshot_hash_version: row.get(8)?,
+                    preview_snapshot_hash_algorithm: row.get(9)?,
+                    preview_snapshot_provenance_json: row.get(10)?,
+                    scan_session_id: row.get(11)?,
+                    consumed_apply_plan_id: row.get(12)?,
+                    created_at: row.get(13)?,
+                    expires_at: row.get(14)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(AppError::from)
+}
+
 fn apply_plan_list_item_from_row(row: &Row<'_>) -> rusqlite::Result<ApplyPlanListItem> {
     let status: String = row.get(5)?;
     Ok(ApplyPlanListItem {
@@ -658,8 +1019,14 @@ fn apply_plan_list_item_from_row(row: &Row<'_>) -> rusqlite::Result<ApplyPlanLis
         applyable_items: row.get(11)?,
         blocked_items: row.get(12)?,
         review_only_items: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
+        plan_hash: row.get(14)?,
+        plan_hash_version: row.get(15)?,
+        plan_hash_algorithm: row.get(16)?,
+        plan_hash_created_at: row.get(17)?,
+        preview_snapshot_id: row.get(18)?,
+        preview_snapshot_hash: row.get(19)?,
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
     })
 }
 
@@ -755,6 +1122,24 @@ struct PreparedBlocker {
     message: String,
 }
 
+struct PreviewSnapshotRow {
+    id: i64,
+    snapshot_id: String,
+    source_plan_kind: String,
+    source_plan_json: String,
+    source_scope_json: Option<String>,
+    folder_config_json: Option<String>,
+    context_trail_json: String,
+    preview_snapshot_hash: String,
+    preview_snapshot_hash_version: String,
+    preview_snapshot_hash_algorithm: String,
+    preview_snapshot_provenance_json: String,
+    scan_session_id: Option<i64>,
+    consumed_apply_plan_id: Option<i64>,
+    created_at: String,
+    expires_at: Option<String>,
+}
+
 struct PlanRow {
     id: i64,
     source_staging_plan_id: Option<String>,
@@ -772,6 +1157,15 @@ struct PlanRow {
     review_only_items: i64,
     caveats_json: String,
     source_scope_json: Option<String>,
+    folder_config_json: Option<String>,
+    context_trail_json: String,
+    plan_hash: Option<String>,
+    plan_hash_version: String,
+    plan_hash_algorithm: String,
+    plan_hash_created_at: Option<String>,
+    preview_snapshot_id: Option<i64>,
+    preview_snapshot_hash: Option<String>,
+    plan_provenance_json: String,
     scan_session_id: Option<i64>,
     created_at: String,
     updated_at: String,
@@ -809,7 +1203,8 @@ mod tests {
         database,
         models::{
             BuildApplyPlanFromStagingPlanRequest, GenerateSortingPreviewPlanRequest,
-            GenerateSortingPreviewPlanScope, LibrarySettings, StagingPlanActionKind,
+            GenerateSortingPreviewPlanScope, LibrarySettings,
+            SaveApplyPlanFromPreviewSnapshotRequest, StagingPlanActionKind,
         },
     };
 
@@ -847,6 +1242,8 @@ mod tests {
                 scope: GenerateSortingPreviewPlanScope::SelectedFiles {
                     file_ids: vec![1, 2],
                 },
+                folder_config: None,
+                context_trail: Vec::new(),
             },
         )
         .expect("preview plan")
@@ -858,9 +1255,226 @@ mod tests {
                 scope: GenerateSortingPreviewPlanScope::SelectedFiles {
                     file_ids: vec![1, 2],
                 },
+                folder_config: None,
+                context_trail: Vec::new(),
             },
             source_plan_kind: None,
+            folder_config: None,
+            context_trail: Vec::new(),
         }
+    }
+
+    fn insert_snapshot_preview_files(connection: &Connection) {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    id, path, filename, extension, size, modified_at, hash, kind, subtype,
+                    confidence, safety_notes, parser_warnings, source_location, relative_depth
+                ) VALUES
+                (1, 'C:/Sims/Mods/a.package', 'a.package', 'package', 1, '2026-01-01', 'h1', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 1),
+                (2, 'C:/Sims/Mods/b.package', 'b.package', 'package', 1, '2026-01-01', 'h2', 'Unknown', NULL, 0.10, '[]', '[\"parser_warning\"]', 'mods', 1)",
+                [],
+            )
+            .expect("files");
+    }
+
+    fn snapshot_settings() -> LibrarySettings {
+        LibrarySettings {
+            mods_path: Some("C:/Sims/Mods".to_owned()),
+            tray_path: Some("C:/Sims/Tray".to_owned()),
+            ..Default::default()
+        }
+    }
+
+    fn snapshot_preview_request() -> GenerateSortingPreviewPlanRequest {
+        GenerateSortingPreviewPlanRequest {
+            scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                file_ids: vec![1, 2],
+            },
+            folder_config: None,
+            context_trail: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn preview_snapshot_save_binds_backend_snapshot_and_rejects_reuse() {
+        let mut connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+        let preview = generate_sorting_preview_snapshot(
+            &mut connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("preview snapshot");
+
+        assert!(preview.preview_snapshot_id > 0);
+        assert_eq!(preview.preview_snapshot_hash.len(), 64);
+        assert!(preview
+            .preview_snapshot_hash
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit()));
+        assert_eq!(
+            preview.preview_snapshot_hash_version,
+            apply_plan_provenance::PREVIEW_SNAPSHOT_HASH_VERSION
+        );
+        assert_eq!(preview.preview_snapshot_hash_algorithm, "sha256");
+
+        let saved = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: preview.preview_snapshot_id,
+                preview_snapshot_hash: preview.preview_snapshot_hash.clone(),
+            },
+        )
+        .expect("save from snapshot");
+        let persisted = get_apply_plan(&connection, saved.plan_id)
+            .expect("get")
+            .expect("persisted plan");
+
+        assert_eq!(
+            persisted.source_plan_kind,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND
+        );
+        assert_eq!(
+            persisted.preview_snapshot_id,
+            Some(preview.preview_snapshot_id)
+        );
+        assert_eq!(
+            persisted.preview_snapshot_hash.as_deref(),
+            Some(preview.preview_snapshot_hash.as_str())
+        );
+        assert_eq!(
+            persisted
+                .plan_provenance
+                .get("previewSnapshotHash")
+                .and_then(|value| value.as_str()),
+            Some(preview.preview_snapshot_hash.as_str())
+        );
+
+        let consumed_apply_plan_id: Option<i64> = connection
+            .query_row(
+                "SELECT consumed_apply_plan_id FROM apply_plan_preview_snapshots WHERE id = ?1",
+                [preview.preview_snapshot_id],
+                |row| row.get(0),
+            )
+            .expect("consumed snapshot id");
+        assert_eq!(consumed_apply_plan_id, Some(saved.plan_id));
+
+        let reuse = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: preview.preview_snapshot_id,
+                preview_snapshot_hash: preview.preview_snapshot_hash,
+            },
+        )
+        .expect_err("snapshot reuse must fail closed");
+        assert!(reuse.to_string().contains("already been saved"));
+    }
+
+    #[test]
+    fn generated_preview_snapshots_saved_twice_have_same_plan_hash() {
+        let mut connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+
+        let first_preview = generate_sorting_preview_snapshot(
+            &mut connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("first preview snapshot");
+        let first_saved = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: first_preview.preview_snapshot_id,
+                preview_snapshot_hash: first_preview.preview_snapshot_hash.clone(),
+            },
+        )
+        .expect("first save from snapshot");
+
+        let second_preview = generate_sorting_preview_snapshot(
+            &mut connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("second preview snapshot");
+        let second_saved = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: second_preview.preview_snapshot_id,
+                preview_snapshot_hash: second_preview.preview_snapshot_hash.clone(),
+            },
+        )
+        .expect("second save from snapshot");
+
+        let first_plan = get_apply_plan(&connection, first_saved.plan_id)
+            .expect("get first")
+            .expect("first plan");
+        let second_plan = get_apply_plan(&connection, second_saved.plan_id)
+            .expect("get second")
+            .expect("second plan");
+
+        assert_eq!(
+            first_preview.preview_snapshot_hash,
+            second_preview.preview_snapshot_hash
+        );
+        assert_eq!(first_plan.plan_hash, second_plan.plan_hash);
+    }
+
+    #[test]
+    fn preview_snapshot_save_rejects_hash_mismatch() {
+        let mut connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+        let preview = generate_sorting_preview_snapshot(
+            &mut connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("preview snapshot");
+
+        let err = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: preview.preview_snapshot_id,
+                preview_snapshot_hash: "0".repeat(64),
+            },
+        )
+        .expect_err("hash mismatch must fail closed");
+        assert!(err.to_string().contains("hash mismatch"));
+
+        let saved_plan_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM apply_plans", [], |row| row.get(0))
+            .expect("saved plan count");
+        assert_eq!(saved_plan_count, 0);
+    }
+
+    #[test]
+    fn preview_snapshot_save_rejects_rule_drift_before_persistence() {
+        let mut connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+        let preview = generate_sorting_preview_snapshot(
+            &mut connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("preview snapshot");
+
+        connection
+            .execute(
+                "INSERT INTO rules (rule_name, rule_template, rule_priority, enabled)
+                 VALUES ('snapshot-drift', 'changed after preview', 1, 1)",
+                [],
+            )
+            .expect("rule drift");
+
+        let err = save_apply_plan_from_preview_snapshot(
+            &mut connection,
+            SaveApplyPlanFromPreviewSnapshotRequest {
+                preview_snapshot_id: preview.preview_snapshot_id,
+                preview_snapshot_hash: preview.preview_snapshot_hash,
+            },
+        )
+        .expect_err("rule drift must fail closed");
+        assert!(err.to_string().contains("provenance no longer matches"));
     }
 
     #[test]
@@ -872,19 +1486,46 @@ mod tests {
                 source_plan: sample_plan(),
                 source_plan_kind: Some("organize".to_owned()),
                 source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
         .expect("save");
 
         assert!(result.plan_id > 0);
-        assert_eq!(result.plan.would_touch_files, false);
+        assert_eq!(
+            result.plan.source_plan_kind,
+            apply_plan_provenance::CLIENT_SUPPLIED_PREVIEW_SOURCE_KIND
+        );
+        assert!(!result.plan.would_touch_files);
         assert_eq!(result.plan.applyable_items, 0);
         assert_eq!(result.plan.total_items, 2);
 
         let saved = get_apply_plan(&connection, result.plan_id)
             .expect("get")
             .expect("saved plan");
+        let plan_hash = saved.plan_hash.as_ref().expect("backend plan hash");
+        assert_eq!(saved.plan_hash_version, "apply_plan_hash_v1");
+        assert_eq!(saved.plan_hash_algorithm, "sha256");
+        assert_eq!(plan_hash.len(), 64);
+        assert!(plan_hash.chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert_eq!(
+            saved
+                .plan_provenance
+                .get("sourceScope")
+                .and_then(|scope| scope.get("kind"))
+                .and_then(|value| value.as_str()),
+            Some("selected_files")
+        );
+        assert_eq!(
+            saved
+                .plan_provenance
+                .get("items")
+                .and_then(|items| items.as_array())
+                .map(Vec::len),
+            Some(2)
+        );
         assert_eq!(saved.items.len(), 2);
         assert!(saved.items.iter().all(|item| !item.signals.is_empty()));
         assert!(saved
@@ -899,6 +1540,134 @@ mod tests {
     }
 
     #[test]
+    fn saved_plan_hash_verification_detects_tampered_context_and_destination() {
+        let mut connection = memory_connection();
+        let result = save_apply_plan_preview(
+            &mut connection,
+            SaveApplyPlanPreviewRequest {
+                source_plan: sample_plan(),
+                source_plan_kind: Some("organize".to_owned()),
+                source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
+                scan_session_id: None,
+            },
+        )
+        .expect("save");
+
+        assert!(
+            verify_apply_plan_hash(&connection, result.plan_id)
+                .expect("verify original")
+                .is_valid
+        );
+
+        connection
+            .execute(
+                "UPDATE apply_plans SET context_trail_json = '[{\"sourceSystem\":\"test\",\"signalKind\":\"tamper\",\"label\":\"Tampered\",\"value\":null,\"strength\":\"evidence\"}]' WHERE id = ?1",
+                [result.plan_id],
+            )
+            .expect("tamper context");
+        let context_check =
+            verify_apply_plan_hash(&connection, result.plan_id).expect("verify tampered context");
+        assert!(!context_check.is_valid);
+        assert_eq!(context_check.status, "mismatch");
+
+        connection
+            .execute(
+                "UPDATE apply_plans SET context_trail_json = '[]' WHERE id = ?1",
+                [result.plan_id],
+            )
+            .expect("restore context");
+        connection
+            .execute(
+                "UPDATE apply_plan_items SET destination_path = 'C:/Sims/Mods/Tampered/a.package' WHERE apply_plan_id = ?1 AND destination_path IS NOT NULL",
+                [result.plan_id],
+            )
+            .expect("tamper destination");
+        let destination_check = verify_apply_plan_hash(&connection, result.plan_id)
+            .expect("verify tampered destination");
+        assert!(!destination_check.is_valid);
+        assert_eq!(destination_check.status, "mismatch");
+    }
+
+    #[test]
+    fn saved_plan_hash_verification_detects_same_count_source_scope_tampering() {
+        let mut connection = memory_connection();
+        connection
+            .execute(
+                "INSERT INTO files (
+                    id, path, filename, extension, size, modified_at, hash, kind, subtype,
+                    confidence, safety_notes, parser_warnings, source_location, relative_depth
+                ) VALUES
+                (1, 'C:/Sims/Mods/a.package', 'a.package', 'package', 1, '2026-01-01', 'h1', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 1),
+                (2, 'C:/Sims/Mods/b.package', 'b.package', 'package', 1, '2026-01-01', 'h2', 'Unknown', NULL, 0.10, '[]', '[\"parser_warning\"]', 'mods', 1),
+                (999, 'C:/Sims/Mods/other-a.package', 'other-a.package', 'package', 1, '2026-01-01', 'other1', 'CAS', 'Skin', 0.95, '[]', '[]', 'mods', 1),
+                (1000, 'C:/Sims/Mods/other-b.package', 'other-b.package', 'package', 1, '2026-01-01', 'other2', 'BuildBuy', NULL, 0.95, '[]', '[]', 'mods', 1)",
+                [],
+            )
+            .expect("files");
+        let result = save_apply_plan_preview(
+            &mut connection,
+            SaveApplyPlanPreviewRequest {
+                source_plan: sample_plan(),
+                source_plan_kind: None,
+                source_scope: Some(
+                    serde_json::json!({"kind": "selected_files", "fileIds": [1, 2]}),
+                ),
+                folder_config: None,
+                context_trail: Vec::new(),
+                scan_session_id: None,
+            },
+        )
+        .expect("save");
+        assert!(
+            verify_apply_plan_hash(&connection, result.plan_id)
+                .expect("verify original")
+                .is_valid
+        );
+
+        connection
+            .execute(
+                "UPDATE apply_plans SET source_scope_json = '{\"kind\":\"selected_files\",\"fileIds\":[999,1000]}' WHERE id = ?1",
+                [result.plan_id],
+            )
+            .expect("tamper source scope");
+        let source_scope_check = verify_apply_plan_hash(&connection, result.plan_id)
+            .expect("verify tampered source scope");
+        assert!(!source_scope_check.is_valid);
+        assert_eq!(source_scope_check.status, "mismatch");
+    }
+
+    #[test]
+    fn cancelling_draft_does_not_rewrite_immutable_plan_hash() {
+        let mut connection = memory_connection();
+        let result = save_apply_plan_preview(
+            &mut connection,
+            SaveApplyPlanPreviewRequest {
+                source_plan: sample_plan(),
+                source_plan_kind: None,
+                source_scope: None,
+                folder_config: None,
+                context_trail: Vec::new(),
+                scan_session_id: None,
+            },
+        )
+        .expect("save");
+        let before = get_apply_plan(&connection, result.plan_id)
+            .expect("get")
+            .expect("saved")
+            .plan_hash;
+
+        delete_draft_apply_plan(&mut connection, result.plan_id).expect("cancel draft");
+
+        let after = get_apply_plan(&connection, result.plan_id)
+            .expect("get after cancel")
+            .expect("saved after cancel")
+            .plan_hash;
+        assert_eq!(before, after);
+    }
+
+    #[test]
     fn save_rejects_source_plan_that_would_touch_files() {
         let mut connection = memory_connection();
         let mut plan = sample_plan();
@@ -910,6 +1679,8 @@ mod tests {
                 source_plan: plan,
                 source_plan_kind: None,
                 source_scope: None,
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
@@ -930,6 +1701,8 @@ mod tests {
                 source_plan: plan,
                 source_plan_kind: None,
                 source_scope: None,
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
@@ -949,6 +1722,8 @@ mod tests {
                 source_plan: sample_plan(),
                 source_plan_kind: None,
                 source_scope: None,
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
@@ -1010,6 +1785,8 @@ mod tests {
                 source_plan: plan,
                 source_plan_kind: None,
                 source_scope: None,
+                folder_config: None,
+                context_trail: Vec::new(),
                 scan_session_id: None,
             },
         )
@@ -1053,8 +1830,11 @@ mod tests {
         .expect("build saved draft");
 
         assert!(result.plan_id > 0);
-        assert_eq!(result.plan.source_plan_kind, "sorting_preview");
-        assert_eq!(result.plan.would_touch_files, false);
+        assert_eq!(
+            result.plan.source_plan_kind,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND
+        );
+        assert!(!result.plan.would_touch_files);
         assert_eq!(result.plan.applyable_items, 0);
         assert_eq!(result.plan.total_items, 2);
 
@@ -1087,5 +1867,179 @@ mod tests {
             .items
             .iter()
             .any(|item| item.item_status == PersistedApplyPlanItemStatus::Blocked));
+        assert!(
+            saved.preview_snapshot_id.is_some(),
+            "backend-generated builder saves must be bound to a preview snapshot"
+        );
+        assert!(saved.preview_snapshot_hash.is_some());
+    }
+
+    #[test]
+    fn backend_generated_preview_saved_twice_has_same_hash() {
+        let mut connection = memory_connection();
+        let settings = LibrarySettings {
+            mods_path: Some("C:/Sims/Mods".to_owned()),
+            tray_path: Some("C:/Sims/Tray".to_owned()),
+            ..Default::default()
+        };
+        connection
+            .execute(
+                "INSERT INTO files (
+                    id, path, filename, extension, size, modified_at, hash, kind, subtype,
+                    confidence, safety_notes, parser_warnings, source_location, relative_depth
+                ) VALUES
+                (10, 'C:/Sims/Mods/Shared.package', 'shared.package', 'package', 1, '2026-01-01', 'h10', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 1),
+                (11, 'C:/Sims/Mods/Nested/shared.package', 'shared.package', 'package', 1, '2026-01-01', 'h11', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 2)",
+                [],
+            )
+            .expect("files");
+
+        let request = BuildApplyPlanFromStagingPlanRequest {
+            preview_request: GenerateSortingPreviewPlanRequest {
+                scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                    file_ids: vec![10, 11],
+                },
+                folder_config: None,
+                context_trail: Vec::new(),
+            },
+            source_plan_kind: Some("malicious_client_override".to_owned()),
+            folder_config: None,
+            context_trail: Vec::new(),
+        };
+
+        let first = build_apply_plan_from_staging_plan(&mut connection, &settings, request.clone())
+            .expect("first save");
+        let second = build_apply_plan_from_staging_plan(&mut connection, &settings, request)
+            .expect("second save");
+        let first_plan = get_apply_plan(&connection, first.plan_id)
+            .expect("get first")
+            .expect("first plan");
+        let second_plan = get_apply_plan(&connection, second.plan_id)
+            .expect("get second")
+            .expect("second plan");
+
+        assert_eq!(
+            first_plan.source_plan_kind,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND
+        );
+        assert_eq!(first_plan.plan_hash, second_plan.plan_hash);
+    }
+
+    #[test]
+    fn same_count_rule_template_edit_invalidates_saved_hash() {
+        let mut connection = memory_connection();
+        connection
+            .execute(
+                "INSERT INTO rules (rule_name, rule_template, rule_priority, enabled)
+                 VALUES ('provenance-test-rule', 'initial template', 1, 1)",
+                [],
+            )
+            .expect("insert active rule");
+        let result = save_apply_plan_preview(
+            &mut connection,
+            SaveApplyPlanPreviewRequest {
+                source_plan: sample_plan(),
+                source_plan_kind: Some("ignored_client_kind".to_owned()),
+                source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
+                scan_session_id: None,
+            },
+        )
+        .expect("save");
+
+        assert!(
+            verify_apply_plan_hash(&connection, result.plan_id)
+                .expect("original hash")
+                .is_valid
+        );
+        connection
+            .execute(
+                "UPDATE rules
+                 SET rule_template = rule_template || ' :: edited for provenance test'
+                 WHERE id = (SELECT id FROM rules WHERE enabled = 1 ORDER BY rule_priority ASC, rule_name ASC LIMIT 1)",
+                [],
+            )
+            .expect("edit one active rule");
+
+        let check =
+            verify_apply_plan_hash(&connection, result.plan_id).expect("verify after rule edit");
+        assert!(!check.is_valid);
+        assert_eq!(check.status, "mismatch");
+    }
+
+    #[test]
+    fn persisted_plan_serialization_exposes_hash_metadata_not_full_provenance() {
+        let mut connection = memory_connection();
+        let result = save_apply_plan_preview(
+            &mut connection,
+            SaveApplyPlanPreviewRequest {
+                source_plan: sample_plan(),
+                source_plan_kind: Some("ignored_client_kind".to_owned()),
+                source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                folder_config: None,
+                context_trail: Vec::new(),
+                scan_session_id: None,
+            },
+        )
+        .expect("save");
+        let saved = get_apply_plan(&connection, result.plan_id)
+            .expect("get")
+            .expect("saved");
+
+        let serialized = serde_json::to_string(&saved).expect("serialize plan");
+        assert!(serialized.contains("planHash"));
+        assert!(serialized.contains("planHashVersion"));
+        assert!(!serialized.contains("planProvenance"));
+        assert!(!serialized.contains("plan_provenance"));
+        assert!(!serialized.contains("sourceFileSnapshot"));
+    }
+
+    #[test]
+    fn malformed_persisted_plan_json_fails_closed() {
+        for column in [
+            "caveats_json",
+            "source_scope_json",
+            "folder_config_json",
+            "context_trail_json",
+        ] {
+            let mut connection = memory_connection();
+            let result = save_apply_plan_preview(
+                &mut connection,
+                SaveApplyPlanPreviewRequest {
+                    source_plan: sample_plan(),
+                    source_plan_kind: None,
+                    source_scope: Some(serde_json::json!({"kind": "selected_files"})),
+                    folder_config: None,
+                    context_trail: Vec::new(),
+                    scan_session_id: None,
+                },
+            )
+            .expect("save");
+            connection
+                .execute(
+                    &format!("UPDATE apply_plans SET {column} = '{{' WHERE id = ?1"),
+                    [result.plan_id],
+                )
+                .expect("corrupt json column");
+
+            let error = get_apply_plan(&connection, result.plan_id)
+                .expect_err("malformed JSON should fail closed");
+            assert!(error.to_string().contains(column));
+        }
+
+        let connection = memory_connection();
+        connection
+            .execute(
+                "INSERT INTO apply_plans (
+                    source_plan_kind, title, summary, status, total_items,
+                    caveats_json, context_trail_json, plan_provenance_json
+                ) VALUES ('client_supplied_preview', 'bad', 'bad', 'preview_only_source', 0, '[]', '[]', '{')",
+                [],
+            )
+            .expect("insert malformed provenance");
+        let error = get_apply_plan(&connection, connection.last_insert_rowid())
+            .expect_err("malformed provenance should fail closed");
+        assert!(error.to_string().contains("plan_provenance_json"));
     }
 }

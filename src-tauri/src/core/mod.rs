@@ -2,6 +2,7 @@ pub mod ai_classifier;
 pub mod apply_plan_backup_prototype;
 pub mod apply_plan_dry_run;
 pub mod apply_plan_persistence;
+pub mod apply_plan_provenance;
 pub mod apply_plan_results;
 pub mod apply_plan_validation;
 pub mod bundle_detector;
