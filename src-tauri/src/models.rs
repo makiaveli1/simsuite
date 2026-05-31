@@ -554,6 +554,8 @@ pub enum ApplyPlanValidationStatus {
     Blocked,
     StaleSource,
     MissingSource,
+    MissingSourceRoot,
+    UnsafeSource,
     MissingDestinationRoot,
     UnsafeDestination,
     DestinationExists,
