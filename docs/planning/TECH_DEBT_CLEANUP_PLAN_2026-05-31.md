@@ -118,6 +118,19 @@ Commit shape:
 chore: remove mechanical Rust clippy warnings
 ```
 
+## Phase A landing result
+
+Phase A removed the targeted derivable-default and `src/lib.rs` needless-borrow Clippy findings without changing serialized field names, command registration, ApplyPlan validation, command gating, or file-operation boundaries.
+
+Fresh post-Phase-A Clippy summary:
+
+```bash
+cargo clippy --all-targets --all-features --manifest-path src-tauri/Cargo.toml
+# exit 0; simsuite lib generated 70 warnings; lib test generated 72 warnings, 64 duplicates
+```
+
+The remaining warning debt is Phase B/C/D territory, not part of this mechanical landing slice.
+
 ## Phase B — test-build warning cleanup
 
 Goal: remove unused imports, unused locals, and stale parser scratch values that appear only in lib-test builds.

@@ -163,7 +163,7 @@ pub enum StagingPlanEvidenceLevel {
     ReviewOnly,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StagingPlanBucket {
     ScriptMods,
@@ -173,78 +173,54 @@ pub enum StagingPlanBucket {
     PresetsSliders,
     OverridesDefaults,
     Tray,
+    #[default]
     NeedsReview,
     UnknownLeaveInPlace,
 }
 
-impl Default for StagingPlanBucket {
-    fn default() -> Self {
-        Self::NeedsReview
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum StagingPlanConfidenceLabel {
     Deterministic,
     EvidenceBacked,
     Heuristic,
+    #[default]
     ReviewOnly,
 }
 
-impl Default for StagingPlanConfidenceLabel {
-    fn default() -> Self {
-        Self::ReviewOnly
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StagingPlanCurrentRoot {
     Mods,
     Tray,
     Downloads,
     Inbox,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanFolderConfigMode {
+    #[default]
     Default,
     Custom,
 }
 
-impl Default for ApplyPlanFolderConfigMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanCreatorFolderMode {
+    #[default]
     Off,
     WhenAvailable,
 }
 
-impl Default for ApplyPlanCreatorFolderMode {
-    fn default() -> Self {
-        Self::Off
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanCategoryFolderMode {
+    #[default]
     BucketOnly,
     BucketAndCategory,
-}
-
-impl Default for ApplyPlanCategoryFolderMode {
-    fn default() -> Self {
-        Self::BucketOnly
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -283,12 +259,6 @@ pub struct ApplyPlanContextSignal {
     pub label: String,
     pub value: Option<String>,
     pub strength: ApplyPlanContextSignalStrength,
-}
-
-impl Default for StagingPlanCurrentRoot {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1951,33 +1921,23 @@ pub struct DownloadsInboxQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadIntakeMode {
+    #[default]
     Standard,
     Guided,
     NeedsReview,
     Blocked,
 }
 
-impl Default for DownloadIntakeMode {
-    fn default() -> Self {
-        Self::Standard
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadRiskLevel {
+    #[default]
     Low,
     Medium,
     High,
-}
-
-impl Default for DownloadRiskLevel {
-    fn default() -> Self {
-        Self::Low
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -136,20 +136,11 @@ pub struct InstallCatalogSeed {
     pub review_only_patterns: Vec<ReviewOnlyPatternSeed>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VersionSignalPathPatternSeed {
     pub path_patterns: Vec<String>,
     pub pattern: String,
-}
-
-impl Default for VersionSignalPathPatternSeed {
-    fn default() -> Self {
-        Self {
-            path_patterns: Vec::new(),
-            pattern: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

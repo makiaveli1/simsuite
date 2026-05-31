@@ -120,7 +120,7 @@ pub fn run() {
                     return;
                 }
 
-                if sync_tray_visibility(&app, true).is_ok() {
+                if sync_tray_visibility(app, true).is_ok() {
                     api.prevent_close();
                     let _ = window.hide();
                 } else {
