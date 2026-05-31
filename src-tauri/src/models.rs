@@ -703,6 +703,9 @@ pub struct PersistedApplyPlanRun {
     pub apply_plan_id: i64,
     pub status: ApplyPlanRunLogStatus,
     pub backup_strategy: String,
+    /// Future Apply execution must validate a backend-issued, single-use token.
+    /// It is intentionally never serialized back to the frontend.
+    #[allow(dead_code)]
     #[serde(skip)]
     pub confirmation_token: Option<String>,
     pub confirmed_at: Option<String>,
@@ -1320,6 +1323,9 @@ pub enum ProblemSignalSeverity {
     Info,
     Caution,
     Warning,
+    /// Reserved serialized API vocabulary for future blockers that require a
+    /// stronger warning state than today's generated signals.
+    #[allow(dead_code)]
     Severe,
 }
 
@@ -1328,7 +1334,11 @@ pub enum ProblemSignalSeverity {
 pub enum ProblemSignalProofLevel {
     Confirmed,
     Detected,
+    /// Reserved serialized API vocabulary for future heuristic/evidence signals.
+    #[allow(dead_code)]
     Inferred,
+    /// Reserved serialized API vocabulary for explicitly uncertain future signals.
+    #[allow(dead_code)]
     Unknown,
 }
 
@@ -1387,10 +1397,6 @@ pub struct LibraryFileRow {
     /// True if this file appears in an exact deterministic duplicate pair.
     #[serde(default)]
     pub has_duplicate: bool,
-    /// Installed version string for list display — populated from content_versions
-    /// resolution for the detail panel; list query leaves this None.
-    #[serde(skip)]
-    pub installed_version: Option<String>,
     /// How many other files share the same indexed parent folder in the
     /// current filtered result set.
     #[serde(default)]
@@ -2116,50 +2122,6 @@ pub struct SpecialModDecision {
     pub apply_ready: bool,
     pub available_actions: Vec<ReviewPlanAction>,
     pub primary_action: Option<ReviewPlanAction>,
-}
-
-/// MCCC auto-update info returned by check_mccc_update command.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McccUpdateInfo {
-    /// Whether MCCC is currently installed.
-    pub is_installed: bool,
-    /// The currently installed version, if detected.
-    pub installed_version: Option<String>,
-    /// The path where MCCC is installed.
-    pub install_path: Option<String>,
-    /// The latest version available on the official page.
-    pub latest_version: Option<String>,
-    /// Direct URL to download the latest MCCC zip.
-    pub download_url: Option<String>,
-    /// When the latest version was checked.
-    pub checked_at: Option<String>,
-    /// Whether a newer version is available.
-    pub update_available: bool,
-    /// Confidence score of the latest version detection (0.0 to 1.0).
-    pub confidence: f64,
-    /// Status message or note.
-    pub status: String,
-    /// Error message if the check failed.
-    pub error: Option<String>,
-}
-
-/// Result of applying an MCCC update.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplyMcccUpdateResult {
-    /// The new version installed.
-    pub new_version: String,
-    /// Number of files installed.
-    pub installed_count: i64,
-    /// Number of files replaced.
-    pub replaced_count: i64,
-    /// Number of files preserved (.cfg files kept).
-    pub preserved_count: i64,
-    /// ID of the snapshot created before the update.
-    pub snapshot_id: i64,
-    /// Name of the snapshot.
-    pub snapshot_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

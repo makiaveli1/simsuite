@@ -1124,6 +1124,9 @@ struct PreparedBlocker {
 
 struct PreviewSnapshotRow {
     id: i64,
+    /// Stable human-facing snapshot identity. The current save path keys by DB id,
+    /// but this remains part of the immutable preview audit contract.
+    #[allow(dead_code)]
     snapshot_id: String,
     source_plan_kind: String,
     source_plan_json: String,
@@ -1136,7 +1139,11 @@ struct PreviewSnapshotRow {
     preview_snapshot_provenance_json: String,
     scan_session_id: Option<i64>,
     consumed_apply_plan_id: Option<i64>,
+    /// Audit timestamp retained with the row for future snapshot review/reporting.
+    #[allow(dead_code)]
     created_at: String,
+    /// Reserved for future preview expiry enforcement; not enforced in Phase C.
+    #[allow(dead_code)]
     expires_at: Option<String>,
 }
 

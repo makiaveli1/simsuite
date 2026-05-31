@@ -219,6 +219,34 @@ Commit shape:
 chore: document intentional future Rust contracts
 ```
 
+## Phase C landing result
+
+Phase C classified the future-contract/dead-code warning surface instead of deleting safety vocabulary blindly:
+
+- kept and documented command-gate capability taxonomy variants used for safety review vocabulary;
+- kept and documented preview snapshot audit/expiry row hooks without enabling expiry enforcement;
+- kept `PersistedApplyPlanRun.confirmation_token` as a future backend-issued token contract and still skipped serialization;
+- kept future serialized problem-signal vocabulary with narrow comments/allow markers;
+- kept external seed-shape provenance/help/example fields so curated catalog metadata remains required by serde;
+- removed stale direct-MCCC update result structs that had no command/API references;
+- removed the inert, skipped `LibraryFileRow.installed_version` field from list rows rather than pretending list queries populate it.
+
+Fresh post-Phase-C Clippy summary:
+
+```bash
+cargo clippy --all-targets --all-features --manifest-path src-tauri/Cargo.toml
+# exit 0; simsuite lib generated 49 warnings; lib test generated 52 warnings, 45 duplicates
+```
+
+Fresh post-Phase-C `cargo check` summary:
+
+```bash
+cargo check --manifest-path src-tauri/Cargo.toml
+# exit 0; simsuite lib generated 13 warnings
+```
+
+The remaining warning debt is now mostly broader mechanical Clippy cleanup, test helper argument-shape warnings, and a few deferred dead-code decisions (`emit_downloads_progress`, downloads watcher source rows, thumbnail/cache helpers, special-mod version helpers).
+
 ## Phase D — warning budget gate
 
 Goal: make new warnings harder to introduce after the backlog is cleaned.
@@ -285,6 +313,10 @@ refactor: split ApplyPlan persistence boundaries
 
 ## Recommended immediate next step
 
-Start with Phase A. It is low-risk, verifies quickly, and removes Clippy noise before touching file-inspector or future-contract fields.
+Continue with a narrow Phase D-prep mechanical cleanup, not the warning budget gate itself yet. The repo still has 49/52 Clippy warnings, so a hard budget gate would mostly enshrine debt rather than prevent it.
 
-Do not jump straight to Operation-set Preview V1 until the local warning noise is reduced enough that safety-review output is not buried under unrelated warnings. Tiny cleanup before sharper knives. Boring, but boring is how file tools avoid becoming horror stories.
+Best next slice:
+
+- low-risk mechanical Clippy suggestions in `library_index`, `rule_engine/sorting_plan`, `validator`, `content_versions`, and small `downloads_watcher` call-site cleanups;
+- keep too-many-arguments and file-inspector thumbnail/cache dead-code decisions separate;
+- do not jump straight to Operation-set Preview V1 until the remaining warning noise is low enough that safety-review output is readable. Tiny cleanup before sharper knives. Boring, but boring is how file tools avoid becoming horror stories.

@@ -819,7 +819,6 @@ fn list_library_files_scoped(
                 insights,
                 watch_status,
                 has_duplicate,
-                installed_version: None,
                 same_folder_peer_count,
                 same_pack_peer_count,
                 primary_problem_signal,
