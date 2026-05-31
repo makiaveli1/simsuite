@@ -167,6 +167,19 @@ Commit shape:
 chore: clean Rust test-build warning noise
 ```
 
+## Phase B landing result
+
+Phase B removed low-risk test-build warning noise in `file_inspector` and `downloads_watcher`: unused imports, stale scratch locals, an unused local parser constant, a no-op Windows timeout scaffold, an intentionally ignored ZIP count binding, and an unnecessary mutable closure binding.
+
+Fresh post-Phase-B Clippy summary:
+
+```bash
+cargo clippy --all-targets --all-features --manifest-path src-tauri/Cargo.toml
+# exit 0; simsuite lib generated 60 warnings; lib test generated 62 warnings, 54 duplicates
+```
+
+The remaining warning debt is mostly future-contract/dead-code decisions and broader mechanical lints that belong to Phase C/D, not this narrow test-build cleanup slice.
+
 ## Phase C — intentional future-contract fields
 
 Goal: distinguish real dead code from fields intentionally kept for future Apply/Restore/API contracts.

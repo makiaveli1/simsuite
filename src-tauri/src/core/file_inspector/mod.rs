@@ -4,7 +4,6 @@ use std::{
     io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
     sync::OnceLock,
-    time::Duration,
 };
 
 use tracing::{debug, warn};
@@ -43,23 +42,11 @@ pub const THUMBNAIL_DEFERRED: bool = true;
 /// do not hang indefinitely. Used by extract_embedded_thum to prevent scan hangs
 /// on packages with invalid offsets (Phase 5an fix).
 #[cfg(target_os = "windows")]
-fn set_file_read_timeout(file: &mut std::fs::File) {
-    use std::mem::MaybeUninit;
-    use std::os::windows::io::{AsRawHandle, FromRawHandle};
-
-    extern "system" {
-        fn SetFileTime(
-            hFile: *mut std::ffi::c_void,
-            lpCreationTime: *const std::ffi::c_void,
-            lpLastAccessTime: *const std::ffi::c_void,
-            lpLastWriteTime: *const std::ffi::c_void,
-        ) -> i32;
-    }
+fn set_file_read_timeout(_file: &mut std::fs::File) {
     // On Windows, we use a named pipe trick for timeouts — but that requires async I/O.
     // Instead, we just accept that Windows fs is non-blocking by default and rely on
     // the process-level timeout. For Rust blocking I/O, we use a shorter read buffer
     // and early-exit on seek failures instead.
-    let _ = file; // Windows: no sync timeout needed; seek/read fail fast on corrupt files.
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -2438,8 +2425,6 @@ fn parse_localthumbcache_entries(buffer: &[u8]) -> AppResult<Vec<ThumbnailEntry>
         u32::from_le_bytes(bytes)
     };
 
-    // localthumbcache uses fixed-size entries (no common_mask compression)
-    const ENTRY_SIZE: usize = 28; // 7 × u32 = 28 bytes
     let mut entries = Vec::with_capacity(record_count as usize);
 
     for _ in 0..record_count {
@@ -2452,7 +2437,7 @@ fn parse_localthumbcache_entries(buffer: &[u8]) -> AppResult<Vec<ThumbnailEntry>
             *field = u32::from_le_bytes(bytes);
         }
 
-        let [group_id, instance_id_high, instance_id_low, resource_type, offset, packed_size, mem_size] =
+        let [_group_id, instance_id_high, instance_id_low, resource_type, offset, packed_size, mem_size] =
             fields;
 
         let instance_id = ((instance_id_high as u64) << 32) | (instance_id_low as u64);
@@ -2606,7 +2591,7 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
 
     // Re-parse records from the buffer (parse_dbpf_records takes File, not buffer)
     // We inline the record parsing here to avoid duplicating the File dependency.
-    use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+    use std::io::{Cursor, Read, Seek, SeekFrom};
     let mut cursor = Cursor::new(buffer.as_slice());
     let common_mask = {
         let mut bytes = [0u8; 4];
@@ -2624,11 +2609,9 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
 
     // Collect THUM records from the index entries
     let mut thum_offsets = Vec::new();
-    let mut pos_before = cursor.position() as usize;
     let buf_len = buffer.len();
 
     while cursor.position() as usize + 28 <= buf_len {
-        let start_pos = cursor.position() as usize;
         let mut record = [0u32; 8];
         for (index, value) in record.iter_mut().enumerate() {
             if ((common_mask >> index) & 1) == 1 {
@@ -2718,7 +2701,6 @@ fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
     }
 
     // Read first record's values (overwriting common_values where mask bits are 0)
-    let first_entry_values = common_values;
     let mut first_record = [0u32; 8];
     for (index, value) in first_record.iter_mut().enumerate() {
         if ((common_mask >> index) & 1) == 0 {

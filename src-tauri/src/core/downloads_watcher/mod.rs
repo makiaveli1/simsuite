@@ -2237,7 +2237,7 @@ fn process_source(
             &source.display_name,
             Utc::now(),
         );
-        let (extracted, ignored_count) = if source.archive_format.as_deref() == Some("zip") {
+        let (extracted, _ignored_count) = if source.archive_format.as_deref() == Some("zip") {
             extract_zip_archive_single_pass(&source.path, &next_root, &mut notes)?
         } else {
             // Non-ZIP, non-7z/rar formats — use legacy extract (7z/rar already held)
@@ -2957,7 +2957,7 @@ fn extract_archive(
     // ZIP uses single-pass — extract and return discovered in one step, no WalkDir needed
     if source.archive_format.as_deref() == Some("zip") {
         return extract_zip_archive_single_pass(&source.path, destination_root, notes).map(
-            |(mut files, ignored_count)| {
+            |(files, ignored_count)| {
                 if ignored_count > 0 {
                     notes.push(format!(
                         "Ignored {ignored_count} unsupported archive entries."
