@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub const PLAN_HASH_VERSION: &str = "apply_plan_hash_v1";
-pub const PREVIEW_SNAPSHOT_HASH_VERSION: &str = "apply_plan_preview_snapshot_v2";
+pub const PREVIEW_SNAPSHOT_HASH_VERSION: &str = "apply_plan_preview_snapshot_v3";
 pub const PLAN_HASH_ALGORITHM: &str = "sha256";
 pub const SORTING_PREVIEW_PLAN_VERSION: &str = "sorting_preview_plan_v1";
 pub const VALIDATION_PREVIEW_VERSION: &str = "apply_plan_validation_preview_v1";
@@ -81,6 +81,7 @@ pub fn build_preview_snapshot_hash_stamp(
                 "destinationPath": item.suggested_destination_path,
                 "actionKind": item.action_kind,
                 "evidenceLevel": item.evidence_level,
+                "reason": item.reason,
                 "bucket": item.bucket,
                 "confidenceLabel": item.confidence_label,
                 "blockedReasons": item.blocked_reasons,
@@ -112,8 +113,11 @@ pub fn build_preview_snapshot_hash_stamp(
         "sourcePlanKind": source_plan_kind,
         "sourceKind": source_plan_kind,
         "sourceStagingPlanId": source_plan.id,
+        "source": source_plan.source,
+        "status": source_plan.status,
         "title": source_plan.title,
         "summary": source_plan.summary,
+        "itemCount": source_plan.item_count,
         "wouldTouchFiles": source_plan.would_touch_files,
         "caveats": source_plan.caveats,
         "sourceScope": sanitized_source_scope(connection, source_scope)?,
@@ -132,7 +136,7 @@ pub fn build_preview_snapshot_hash_stamp(
             "activeRules": active_rules
         },
         "immutabilityNotes": [
-            "Preview snapshot hash binds the exact backend-generated preview returned to the frontend.",
+            "Preview snapshot hash binds the backend-generated preview's stable reviewed content returned to the frontend.",
             "Saving from this snapshot must not regenerate preview rows.",
             "This hash is identity/provenance only; it does not authorize Apply, Restore, backup execution, result logs, or file mutation."
         ]

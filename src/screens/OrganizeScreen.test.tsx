@@ -108,7 +108,7 @@ const previewResult: GenerateSortingPreviewPlanResult = {
   previewSnapshotId: 1701,
   previewSnapshotHash:
     "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-  previewSnapshotHashVersion: "apply_plan_preview_snapshot_v2",
+  previewSnapshotHashVersion: "apply_plan_preview_snapshot_v3",
   previewSnapshotHashAlgorithm: "sha256",
   previewSnapshotCreatedAt: "2026-05-15T09:30:00.000Z",
 };

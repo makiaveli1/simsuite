@@ -654,7 +654,7 @@ const createMockSortingPreviewResult = (
   const createdAt = new Date().toISOString();
   const previewSnapshotId = mockNextPreviewSnapshotId++;
   const previewSnapshotHash = deterministicMockPlanHash({
-    version: "apply_plan_preview_snapshot_v2",
+    version: "apply_plan_preview_snapshot_v3",
     sourcePlanKind: "backend_generated_sorting_preview",
     request,
     plan,
@@ -663,7 +663,7 @@ const createMockSortingPreviewResult = (
     plan,
     previewSnapshotId,
     previewSnapshotHash,
-    previewSnapshotHashVersion: "apply_plan_preview_snapshot_v2",
+    previewSnapshotHashVersion: "apply_plan_preview_snapshot_v3",
     previewSnapshotHashAlgorithm: "sha256",
     previewSnapshotCreatedAt: createdAt,
   };

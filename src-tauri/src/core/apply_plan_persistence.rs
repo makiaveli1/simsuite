@@ -1372,6 +1372,88 @@ mod tests {
     }
 
     #[test]
+    fn preview_snapshot_hash_binds_reviewed_plan_fields() {
+        let connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+        let source_plan = crate::core::rule_engine::sorting_plan::generate_sorting_preview_plan(
+            &connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("source preview plan");
+        let source_scope = Some(serde_json::json!({
+            "kind": "selected_files",
+            "fileIds": [1, 2]
+        }));
+        let base = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+            &connection,
+            &source_plan,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("base snapshot hash");
+
+        let mut changed_reason = source_plan.clone();
+        changed_reason.items[0].reason = "tampered reviewed reason".to_owned();
+        let changed_reason_hash = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_reason,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed reason hash");
+        assert_ne!(base.hash, changed_reason_hash.hash);
+
+        let mut changed_status = source_plan.clone();
+        changed_status.status = StagingPlanStatus::Blocked;
+        let changed_status_hash = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_status,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed status hash");
+        assert_ne!(base.hash, changed_status_hash.hash);
+
+        let mut changed_source = source_plan.clone();
+        changed_source.source = crate::models::StagingPlanSource::Manual;
+        let changed_source_hash = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_source,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed source hash");
+        assert_ne!(base.hash, changed_source_hash.hash);
+
+        let mut changed_item_count = source_plan.clone();
+        changed_item_count.item_count += 1;
+        let changed_item_count_hash = apply_plan_provenance::build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_item_count,
+            apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed item count hash");
+        assert_ne!(base.hash, changed_item_count_hash.hash);
+    }
+
+    #[test]
     fn generated_preview_snapshots_saved_twice_have_same_plan_hash() {
         let mut connection = memory_connection();
         insert_snapshot_preview_files(&connection);

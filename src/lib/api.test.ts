@@ -15,7 +15,7 @@ describe("sorting preview plan API", () => {
 
     expect(result.previewSnapshotId).toBeGreaterThan(0);
     expect(result.previewSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.previewSnapshotHashVersion).toBe("apply_plan_preview_snapshot_v2");
+    expect(result.previewSnapshotHashVersion).toBe("apply_plan_preview_snapshot_v3");
     expect(result.previewSnapshotHashAlgorithm).toBe("sha256");
     expect(plan.source).toBe("organize");
     expect(plan.status).toBe("preview_only");
