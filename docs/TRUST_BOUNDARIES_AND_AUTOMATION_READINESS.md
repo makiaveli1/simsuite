@@ -1,6 +1,6 @@
 # SimSuite Trust Boundaries and Automation Readiness
 
-Date: 2026-05-13
+Date: 2026-05-31
 
 This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Plan Preview/internal Staging, sorting, and AI prompts should use it before adding automation.
 
@@ -35,9 +35,14 @@ folders, or change user data.
 
 The first read-only validation preview command now exists. It inspects saved
 draft ApplyPlan records against current Library/settings evidence and reports
-readiness blockers with `canProceedToConfirmation=false`. It is response-only in
-v1: no validation status is persisted, no folders or backups are created, and
-no user files are changed.
+readiness blockers with `canProceedToConfirmation=false`. Canonical Destination
+Validation V1 now rejects malformed/unsupported paths, parent traversal,
+root-prefix spoofing, destination paths outside configured Mods/Tray roots,
+missing destination parents, cross-root moves, duplicate/case-conflicting
+destinations, existing destinations, unsupported action kinds, heuristic-only
+rows, and symlink/reparse-style source or destination-parent escapes where
+detectable. It is response-only in v1: no validation status is persisted, no
+folders or backups are created, and no user files are changed.
 
 The first visible validation preview UI now exists inside Organize `Saved
 plans`. It calls the read-only validation command, shows blocker/conflict
@@ -116,6 +121,16 @@ version evidence. Validation blocks future confirmation if the hash is missing
 or mismatched. This is identity/provenance only; it does not authorize Apply,
 Restore, backup execution, confirmation tokens, result logs, restore logs,
 folder creation, or file mutation.
+
+Canonical Destination Validation V1 now adds a read-only root/path safety gate
+to saved-plan validation. It checks that source paths are still present under
+their configured Library root, checks that destination parents are still under
+configured Mods/Tray roots, blocks cross-root moves for V1, rejects duplicate/case-only
+destination conflicts, rejects existing destinations, blocks unsupported grouped
+or heuristic-only rows, and fails closed on symlink/reparse-style source or
+destination-parent escapes where detectable. It is still not execution
+authorization: future confirmation/executor work must re-run validation and add
+backend-issued tokens, backup/restore material, and backend-observed result logs.
 
 ## Why This Exists
 

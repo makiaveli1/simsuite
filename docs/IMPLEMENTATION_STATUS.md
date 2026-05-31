@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-05-28
+Last updated: 2026-05-31
 
 ## Current product state
 
@@ -28,6 +28,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Command-surface Apply safety audit.
 - Backend Command Gating V1 for externally callable legacy file-changing commands and client-forged ApplyPlan run/result/restore writes.
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
+- Canonical Destination Validation V1 for saved ApplyPlans: read-only source/destination root checks, hostile-path rejection, duplicate/case-conflict detection, symlink/reparse-style blocking where detectable, and review-only gating for unsupported/heuristic items.
 - Phase 0 Home clarity baseline: first-run journey cards (`Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`), a Home safety/status panel, consistent evidence labels, and explicit locked-action copy (`No files changed`, `Preview only`, `Apply not ready yet`, `Restore not ready yet`).
 
 ## Still blocked
@@ -56,10 +57,10 @@ Required direction before real Apply:
 
 1. Keep legacy file-changing Tauri commands out of current user flows.
 2. Require backend-owned ApplyPlan identity and immutable plan hash. ✅ V1 implemented for newly saved plans; future confirmation token work must still consume it.
-3. Require backend-issued confirmation token.
-4. Re-run validation immediately before execution.
-5. Enforce canonical root checks at execution time.
-6. Revalidate the saved folder-configuration snapshot and context trail before any confirmation token.
+3. Re-run validation immediately before execution. ✅ Preview-time validation now includes Canonical Destination Validation V1, but execution-time validation still must re-run it.
+4. Enforce canonical root checks at execution time. ✅ Read-only V1 implemented for preview validation; future executor must treat it as a prerequisite, not authorization.
+5. Revalidate the saved folder-configuration snapshot and context trail before any confirmation token.
+6. Require backend-issued confirmation token.
 7. Create backup/restore material before any user-file mutation.
 8. Write per-file result logs only from backend-observed operations.
 9. Keep delete/quarantine/replace out of the first visible Apply release.
@@ -89,20 +90,23 @@ npm run desktop:smoke:fixtures
 
 ## Recommended next sprint
 
-Build **Canonical Destination Validation V1** before any executor work:
+Build **Operation-set preview / confirmation readiness V1** before any executor work:
 
-- canonicalize source and destination paths at validation time;
-- prove every destination remains under the configured Mods/Tray root after normalization and symlink/parent-component checks where supported;
-- reject cross-root, missing-root, parent-directory, empty, duplicate, case-conflict, and existing-destination hazards;
-- bind the canonical validation result to the existing Plan Hash / Provenance V1 identity before any future confirmation token work;
+- consume the existing Plan Hash / Provenance V1 identity and Canonical Destination Validation V1 results;
+- define the exact backend operation set that would be needed for a future Apply without executing it;
+- keep `canProceedToConfirmation=false` until a backend-issued single-use token, backup/restore proof, execution-time validation, and result logging all exist;
 - keep Backend Command Gating V1 in place: legacy file-changing commands and client-forged result/restore writes must keep failing closed;
 - keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, and cleanup unavailable.
 
-After that, move to a hidden fixture-only executor prototype.
+After that, move to backend-issued confirmation token design and then a hidden fixture-only executor prototype.
 
 ## Recent backend safety gate
 
 Backend Command Gating V1 is now implemented at the Tauri command boundary. Current safe review commands remain callable, but externally callable legacy file-changing commands and client-forged ApplyPlan run/result/restore writes fail closed before doing work. This gate does not enable Apply or Restore; it only makes the previous UI-only boundary harder to bypass.
+
+## Recent backend canonical destination gate
+
+Canonical Destination Validation V1 is now implemented inside the read-only `preview_apply_plan_validation` flow. The backend rejects unsupported/malformed source and destination paths, parent-directory traversal (including Windows backslash variants), root-prefix spoofing, destinations outside configured Mods/Tray roots, missing destination parents, cross-root moves, duplicate destinations, case-only destination conflicts, existing destinations, symlink/reparse-style source escapes where detectable, symlink/reparse-style destination-parent escapes where detectable, unsupported grouped/non-move action kinds, and heuristic-only rows. This does not create folders, issue confirmation tokens, create backups, write result logs, or mutate files; it only reports readiness blockers while keeping `canProceedToConfirmation=false`.
 
 ## Recent backend provenance gate
 
