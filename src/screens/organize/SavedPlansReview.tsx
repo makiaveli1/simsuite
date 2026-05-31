@@ -63,6 +63,8 @@ const VALIDATION_STATUS_LABELS: Record<ApplyPlanValidationStatus, string> = {
   blocked: "Blocked",
   stale_source: "Stale source",
   missing_source: "Missing source",
+  missing_source_root: "Missing source root",
+  unsafe_source: "Unsafe source",
   missing_destination_root: "Missing destination root",
   unsafe_destination: "Unsafe destination",
   destination_exists: "Destination exists",

@@ -1082,6 +1082,8 @@ const mockDryRunClassification = (
           "Manual review is required before this item can be discussed for future Apply.",
       };
     case "missing_source":
+    case "missing_source_root":
+    case "unsafe_source":
     case "stale_source":
       return {
         dryRunStatus: "would_skip",

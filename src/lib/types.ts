@@ -409,6 +409,8 @@ export type ApplyPlanValidationStatus =
   | "blocked"
   | "stale_source"
   | "missing_source"
+  | "missing_source_root"
+  | "unsafe_source"
   | "missing_destination_root"
   | "unsafe_destination"
   | "destination_exists"
