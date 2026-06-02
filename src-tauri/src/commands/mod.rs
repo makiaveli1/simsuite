@@ -2893,8 +2893,7 @@ fn bounded_library_tree_file_query(query: LibraryQuery) -> LibraryQuery {
             query
                 .limit
                 .unwrap_or(LIBRARY_TREE_FILE_COMPAT_LIMIT)
-                .max(0)
-                .min(LIBRARY_TREE_FILE_COMPAT_LIMIT),
+                .clamp(0, LIBRARY_TREE_FILE_COMPAT_LIMIT),
         ),
         offset: Some(query.offset.unwrap_or(0).max(0)),
         include_previews: Some(false),
@@ -3667,6 +3666,10 @@ pub fn emit_downloads_status(
         .map_err(|error| error.to_string())
 }
 
+// Frontend already subscribes to this event; backend progress emission is kept
+// as an explicit downloads-watcher contract even though current production work
+// reports progress through `downloads-status` snapshots.
+#[allow(dead_code)]
 pub fn emit_downloads_progress(
     app: &AppHandle,
     progress: &crate::models::DownloadProgress,

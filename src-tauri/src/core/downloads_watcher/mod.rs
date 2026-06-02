@@ -141,13 +141,22 @@ struct ExistingDownloadItem {
 
 #[derive(Debug, Clone)]
 pub struct DownloadItemSourceRecord {
+    // Retained for staged-batch callers that need to preserve the original
+    // inbox row identity even when the current import flow passes it separately.
+    #[allow(dead_code)]
     pub id: i64,
+    // UI-facing source label retained with the source row contract; staged-batch
+    // imports may override the display name for the new imported item.
+    #[allow(dead_code)]
     pub display_name: String,
     pub source_path: String,
     pub source_kind: String,
     pub archive_format: Option<String>,
     pub source_size: i64,
     pub source_modified_at: Option<String>,
+    // Retained so callers can audit or resume the previous staging location;
+    // current re-import code passes the selected staging root explicitly.
+    #[allow(dead_code)]
     pub staging_path: Option<String>,
 }
 
@@ -1391,7 +1400,7 @@ pub fn list_rejected_items(connection: &Connection) -> AppResult<Vec<RejectedIte
         items.push(RejectedItem {
             item_id,
             display_name,
-            rejected_at: rejected_at.into(),
+            rejected_at,
             file_count,
             reject_path,
         });
@@ -2192,6 +2201,7 @@ fn current_downloads_assessment_version(seed_pack: &crate::seed::SeedPack) -> St
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_source(
     connection: &mut Connection,
     state: &AppState,
@@ -2448,6 +2458,7 @@ fn ingest_ignored_non_sims_source(
     Ok(item_id)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ingest_processed_source(
     connection: &mut Connection,
     seed_pack: &crate::seed::SeedPack,
@@ -3626,8 +3637,7 @@ fn load_item_sample_names_batch(
         return Ok(HashMap::new());
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(item_ids.len())
+    let placeholders = std::iter::repeat_n("?", item_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -3820,7 +3830,7 @@ pub fn list_staging_areas(app_data_dir: &Path) -> AppResult<StagingAreasSummary>
             let created_at = std::fs::metadata(&sub_path)
                 .and_then(|m| m.created())
                 .ok()
-                .map(|t| system_time_to_rfc3339(t));
+                .map(system_time_to_rfc3339);
 
             subdirectories.push(StagingSubDirectory {
                 path: sub_path.to_string_lossy().into_owned(),
@@ -4991,9 +5001,12 @@ mod tests {
         let existing = load_existing_items(&connection).expect("existing items");
         std::fs::remove_file(&removed_path).expect("remove file");
 
-        let changed =
-            mark_missing_direct_sources_for_paths(&connection, &existing, &[removed_path.clone()])
-                .expect("mark removed file");
+        let changed = mark_missing_direct_sources_for_paths(
+            &connection,
+            &existing,
+            std::slice::from_ref(&removed_path),
+        )
+        .expect("mark removed file");
 
         let (status, error_message): (String, Option<String>) = connection
             .query_row(

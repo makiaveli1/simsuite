@@ -533,6 +533,7 @@ fn evaluate_download_item_cached(
     Ok(result)
 }
 
+#[cfg(test)]
 pub fn assess_download_item(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -1720,6 +1721,7 @@ fn special_decision_queue_lane(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_special_queue_summary(
     profile: &GuidedInstallProfileSeed,
     state: &SpecialDecisionState,
@@ -2155,17 +2157,17 @@ fn collect_legacy_hint_candidates(
     }
 
     let path_allowed = strategy
-        .and_then(|value| {
+        .map(|value| {
             if value.payload_patterns.is_empty() {
-                return Some(true);
+                return true;
             }
 
-            Some(value.payload_patterns.iter().any(|rule| {
+            value.payload_patterns.iter().any(|rule| {
                 rule.path_patterns.is_empty()
                     || rule.path_patterns.iter().any(|pattern| {
                         regex_matches(pattern, container_name) || regex_matches(pattern, filename)
                     })
-            }))
+            })
         })
         .unwrap_or(true);
 
@@ -2669,6 +2671,7 @@ fn parse_download_intake_mode(value: String) -> DownloadIntakeMode {
     }
 }
 
+#[cfg(test)]
 fn evaluate_download_item(
     connection: &Connection,
     settings: &LibrarySettings,
@@ -2766,7 +2769,7 @@ fn evaluate_download_item_with_context(
     );
 
     if let Some(candidate) = best_candidate {
-        let layout = match context.as_deref_mut() {
+        let layout = match context {
             Some(context) => detect_existing_layout_cached(
                 connection,
                 settings,
@@ -3853,7 +3856,7 @@ fn detect_existing_layout_with_inventory(
     }
 
     let target_folder = select_existing_target_folder(
-        &mods_root,
+        mods_root,
         &default_target_folder,
         &existing_candidates,
         &preserve_candidates,
@@ -5161,6 +5164,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assert_same_version_signature_policy_case(
         profile_key: &str,
         display_name: &str,

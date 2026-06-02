@@ -30,6 +30,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
 - Canonical Destination Validation V1 for saved ApplyPlans: read-only source/destination root checks, hostile-path rejection, duplicate/case-conflict detection, symlink/reparse-style blocking where detectable, and review-only gating for unsupported/heuristic items.
 - Phase 0 Home clarity baseline: first-run journey cards (`Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`), a Home safety/status panel, consistent evidence labels, and explicit locked-action copy (`No files changed`, `Preview only`, `Apply not ready yet`, `Restore not ready yet`).
+- ApplyPlan persistence boundary cleanup through Phase E review checkpoint: strict JSON parsing, row mapping, preview snapshot repository, item persistence, hash persistence, record lifecycle, full-plan loading, draft saving, snapshot creation, snapshot consumption, backend builder orchestration, provenance hashing, save rejection, malformed JSON, and record lifecycle boundary tests are split/colocated behind focused backend modules; the remaining public persistence façade tests have been reviewed and retained as compatibility/integration coverage while public APIs remain stable.
 
 ## Still blocked
 
@@ -74,6 +75,7 @@ npx tsc --noEmit
 npm run test:unit
 npm run build
 npm run test:rust
+npm run test:rust:warnings
 ```
 
 For focused desktop proof:

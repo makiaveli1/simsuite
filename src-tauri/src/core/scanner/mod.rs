@@ -271,7 +271,7 @@ where
         &discovered,
         &hash_candidates,
         &mut errors,
-        |progress| emit(progress),
+        &mut emit,
     )?;
 
     let mut connection = state.connection()?;
@@ -481,6 +481,7 @@ fn collect_roots(settings: &crate::models::LibrarySettings) -> AppResult<Vec<Sca
     Ok(roots)
 }
 
+#[cfg(test)]
 fn collect_supported_files_with_progress<F>(
     scan_roots: &[ScanRoot],
     errors: &mut Vec<String>,
@@ -1094,6 +1095,7 @@ fn insert_cached_file(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn insert_parsed_file(
     transaction: &Transaction<'_>,
     creator_cache: &mut HashMap<String, i64>,

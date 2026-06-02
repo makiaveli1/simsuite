@@ -442,3 +442,138 @@ fn optional_scalar(connection: &Connection, sql: &str) -> AppResult<Option<Strin
         .optional()
         .map_err(AppError::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    use crate::{
+        database,
+        models::{
+            GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanScope, LibrarySettings,
+            StagingPlanStatus,
+        },
+    };
+
+    use super::{build_preview_snapshot_hash_stamp, BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND};
+
+    fn memory_connection() -> Connection {
+        let mut connection = Connection::open_in_memory().expect("memory db");
+        database::initialize(&mut connection).expect("schema");
+        connection
+    }
+
+    fn insert_snapshot_preview_files(connection: &Connection) {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    id, path, filename, extension, size, modified_at, hash, kind, subtype,
+                    confidence, safety_notes, parser_warnings, source_location, relative_depth
+                ) VALUES
+                (1, 'C:/Sims/Mods/a.package', 'a.package', 'package', 1, '2026-01-01', 'h1', 'CAS', 'Hair', 0.95, '[]', '[]', 'mods', 1),
+                (2, 'C:/Sims/Mods/b.package', 'b.package', 'package', 1, '2026-01-01', 'h2', 'Unknown', NULL, 0.10, '[]', '[\"parser_warning\"]', 'mods', 1)",
+                [],
+            )
+            .expect("files");
+    }
+
+    fn snapshot_settings() -> LibrarySettings {
+        LibrarySettings {
+            mods_path: Some("C:/Sims/Mods".to_owned()),
+            tray_path: Some("C:/Sims/Tray".to_owned()),
+            ..Default::default()
+        }
+    }
+
+    fn snapshot_preview_request() -> GenerateSortingPreviewPlanRequest {
+        GenerateSortingPreviewPlanRequest {
+            scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                file_ids: vec![1, 2],
+            },
+            folder_config: None,
+            context_trail: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn preview_snapshot_hash_binds_reviewed_plan_fields() {
+        let connection = memory_connection();
+        insert_snapshot_preview_files(&connection);
+        let source_plan = crate::core::rule_engine::sorting_plan::generate_sorting_preview_plan(
+            &connection,
+            &snapshot_settings(),
+            snapshot_preview_request(),
+        )
+        .expect("source preview plan");
+        let source_scope = Some(serde_json::json!({
+            "kind": "selected_files",
+            "fileIds": [1, 2]
+        }));
+        let base = build_preview_snapshot_hash_stamp(
+            &connection,
+            &source_plan,
+            BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("base snapshot hash");
+
+        let mut changed_reason = source_plan.clone();
+        changed_reason.items[0].reason = "tampered reviewed reason".to_owned();
+        let changed_reason_hash = build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_reason,
+            BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed reason hash");
+        assert_ne!(base.hash, changed_reason_hash.hash);
+
+        let mut changed_status = source_plan.clone();
+        changed_status.status = StagingPlanStatus::Blocked;
+        let changed_status_hash = build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_status,
+            BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed status hash");
+        assert_ne!(base.hash, changed_status_hash.hash);
+
+        let mut changed_source = source_plan.clone();
+        changed_source.source = crate::models::StagingPlanSource::Manual;
+        let changed_source_hash = build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_source,
+            BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed source hash");
+        assert_ne!(base.hash, changed_source_hash.hash);
+
+        let mut changed_item_count = source_plan.clone();
+        changed_item_count.item_count += 1;
+        let changed_item_count_hash = build_preview_snapshot_hash_stamp(
+            &connection,
+            &changed_item_count,
+            BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND,
+            &source_scope,
+            &None,
+            &[],
+            None,
+        )
+        .expect("changed item count hash");
+        assert_ne!(base.hash, changed_item_count_hash.hash);
+    }
+}

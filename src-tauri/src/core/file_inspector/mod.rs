@@ -118,7 +118,6 @@ const RESOURCE_SCRIPT: u32 = 0x073f_aa07;
 const RESOURCE_THUM: u32 = 0x3C1A_F1F2;
 /// Object/build-buy thumbnail — 4 embedded sizes (32, 64, 78, 116 px)
 const RESOURCE_THUM_OBJECT: u32 = 0x3C2A_8647;
-const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
 const BUILD_SURFACE_RESOURCE_TYPES: &[u32] = &[
     0x01d0_e75d,
     0xb4f7_62c9,
@@ -273,7 +272,7 @@ fn compute_script_content_fingerprint(path: &Path) -> ContentFingerprintOutcome 
         Err(error) => return ContentFingerprintOutcome::failed("script", error.to_string()),
     };
 
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return ContentFingerprintOutcome::failed("script", "archive has no entries");
     }
     if archive.len() > MAX_SCRIPT_FINGERPRINT_ENTRIES {
@@ -1120,7 +1119,7 @@ fn parse_dbpf_header(file: &mut File) -> AppResult<DbpfHeader> {
     // Some Sims 4 package variants store an EOF-relative offset here.
     // We detect this and compute the absolute offset, then fall back to
     // the standard byte 96 if it points outside the file.
-    let file_size = file.metadata()?.len() as u64;
+    let file_size = file.metadata()?.len();
     let raw_index_offset = read_u32(&header[12..16])?;
     let index_offset: u32 = if raw_index_offset as u64 >= file_size {
         // EOF-relative: absolute = file_size - raw_value
@@ -1170,7 +1169,7 @@ fn read_index_buffer(file: &mut File, header_offset: u32, index_size: u32) -> Ap
     }
 
     // Always fall back to standard byte 96
-    if (BASE96 as u64) < file_size {
+    if BASE96 < file_size {
         let remain = (file_size - BASE96) as usize;
         let to_read = (index_size as usize + 256).min(remain);
         let mut buf = vec![0_u8; to_read];
@@ -2050,20 +2049,6 @@ fn unique_display_values(values: Vec<String>) -> Vec<String> {
     unique
 }
 
-fn resource_label(resource_type: u32) -> Option<&'static str> {
-    match resource_type {
-        RESOURCE_NAME_MAP => Some("NameMap"),
-        RESOURCE_STRING_TABLE => Some("StringTable"),
-        RESOURCE_CAS_PART => Some("CASPart"),
-        RESOURCE_SKINTONE => Some("Skintone"),
-        RESOURCE_CATALOG => Some("Catalog"),
-        RESOURCE_DEFINITION => Some("Definition"),
-        RESOURCE_HOTSPOT => Some("HotSpotControl"),
-        RESOURCE_SCRIPT => Some("ScriptResource"),
-        _ => None,
-    }
-}
-
 fn parse_name_map_entries(bytes: &[u8]) -> AppResult<Vec<String>> {
     if bytes.len() < 8 {
         return Ok(Vec::new());
@@ -2225,26 +2210,6 @@ fn read_u32(bytes: &[u8]) -> AppResult<u32> {
 // NOTE: WSL cannot access Windows %LOCALAPPDATA%. This parser logs a warning on WSL
 // and returns None — thumbnail lookup falls back to embedded THUM only.
 
-/// Full DBPF index entry with all instance ID fields (unlike the truncated
-/// `DbpfRecord` used internally for Sims 4 content analysis).
-#[derive(Debug, Clone)]
-struct DbpfIndexEntry {
-    pub group_id: u32,
-    pub instance_id_high: u32,
-    pub instance_id_low: u32,
-    pub resource_type: u32,
-    pub offset: u32,
-    pub packed_size: u32,
-    pub mem_size: u32,
-}
-
-impl DbpfIndexEntry {
-    /// Combined 64-bit Sims 4 Instance ID (as used in localthumbcache lookups).
-    fn instance_id(&self) -> u64 {
-        ((self.instance_id_high as u64) << 32) | (self.instance_id_low as u64)
-    }
-}
-
 /// A thumbnail entry extracted from localthumbcache.package.
 #[derive(Debug, Clone)]
 pub struct ThumbnailEntry {
@@ -2257,6 +2222,7 @@ pub struct ThumbnailEntry {
     /// Uncompressed (in-memory) size of the DDS data.
     pub mem_size: u32,
     /// DBPF resource type — should be DDS but we carry it for diagnostics.
+    #[allow(dead_code)]
     pub resource_type: u32,
 }
 
@@ -2395,7 +2361,7 @@ fn read_localthumbcache_index(
         }
     }
 
-    if (BASE96 as u64) < file_size {
+    if BASE96 < file_size {
         let remain = (file_size - BASE96) as usize;
         let to_read = (index_size as usize + 256).min(remain);
         let mut buf = vec![0_u8; to_read];
@@ -2455,10 +2421,10 @@ fn parse_localthumbcache_entries(buffer: &[u8]) -> AppResult<Vec<ThumbnailEntry>
 }
 
 /// Find a thumbnail entry for a given package's 64-bit Instance ID.
-pub fn find_thumbnail_for_file<'a>(
-    cache_entries: &'a [ThumbnailEntry],
+pub fn find_thumbnail_for_file(
+    cache_entries: &[ThumbnailEntry],
     package_instance_id: u64,
-) -> Option<&'a ThumbnailEntry> {
+) -> Option<&ThumbnailEntry> {
     cache_entries
         .iter()
         .find(|e| e.instance_id == package_instance_id)
@@ -2534,7 +2500,7 @@ fn decode_dds_to_base64_png(dds_data: &[u8]) -> Option<String> {
 
     // Compute expected row stride (DWORD-aligned)
     let bpp = if has_alpha { 4 } else { 3 };
-    let row_stride = ((px * bpp + 3) / 4) * 4;
+    let row_stride = (px * bpp).div_ceil(4) * 4;
 
     // Build RGBA pixel buffer from BGRA/BGR DDS data
     let mut rgba_pixels = vec![0u8; px * py * 4];
@@ -2635,7 +2601,6 @@ fn extract_embedded_thum(path: &Path) -> Option<String> {
     // Phase 5an fix: use set_file_read_timeout to prevent hangs on corrupt packages.
     // Without timeout, a package with invalid offset hangs the entire scan.
     set_file_read_timeout(&mut file);
-    drop(cursor);
     for (offset, psize) in thum_offsets {
         let offset = offset as u64;
         let psize = psize as usize;
@@ -2728,7 +2693,7 @@ fn try_get_package_cached_thumbnail(path: &Path) -> Option<String> {
         return None;
     }
 
-    let thumb_entry = find_thumbnail_for_file(&cache_entries, package_instance_id)?;
+    let thumb_entry = find_thumbnail_for_file(cache_entries, package_instance_id)?;
     debug!(
         "localthumbcache: found entry for {:016x}, decoding...",
         package_instance_id

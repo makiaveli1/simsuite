@@ -25,7 +25,12 @@ pub struct StoredSpecialModFamilyState {
 
 #[derive(Debug, Clone)]
 pub struct VersionComparison {
+    // Preserved for future queue/API copy that explains what candidate version
+    // and file signature were compared, even though current callers only need
+    // the derived status flags.
+    #[allow(dead_code)]
     pub incoming_version: Option<String>,
+    #[allow(dead_code)]
     pub incoming_signature: Option<String>,
     pub version_status: SpecialVersionStatus,
     pub same_version: bool,
@@ -228,6 +233,7 @@ pub fn extract_version_from_values(values: &[String]) -> Option<String> {
         .map(|candidate| candidate.normalized)
 }
 
+#[allow(dead_code)]
 pub fn extract_version_from_value(value: &str) -> Option<String> {
     extract_ranked_version_candidates(value)
         .into_iter()
@@ -426,10 +432,7 @@ fn summarize_latest_check_error(error: &str) -> String {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .unwrap_or("network, provider, or response issue");
-    let compact = first_line
-        .replace('\r', " ")
-        .replace('\n', " ")
-        .replace('\t', " ");
+    let compact = first_line.replace(['\r', '\n', '\t'], " ");
     let mut summary = compact
         .split_whitespace()
         .take(24)
@@ -951,6 +954,7 @@ pub fn version_hints_from_profile(
     values
 }
 
+#[allow(dead_code)]
 pub fn signature_entries_from_paths(paths: &[&Path]) -> Vec<SignatureEntry> {
     paths
         .iter()

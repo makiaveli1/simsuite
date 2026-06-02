@@ -141,8 +141,7 @@ fn normalized_file_ids(file_ids: Vec<i64>) -> Vec<i64> {
 fn bounded_limit(limit: Option<i64>) -> i64 {
     limit
         .unwrap_or(DEFAULT_SORTING_PLAN_LIMIT)
-        .max(0)
-        .min(MAX_SORTING_PLAN_LIMIT)
+        .clamp(0, MAX_SORTING_PLAN_LIMIT)
 }
 
 fn load_selected_candidates(
@@ -153,8 +152,7 @@ fn load_selected_candidates(
         return Ok(Vec::new());
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(file_ids.len())
+    let placeholders = std::iter::repeat_n("?", file_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -568,6 +566,7 @@ fn plan_item_for_candidate(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_review_item(
     candidate: &SortingCandidate,
     reason: &str,
@@ -626,6 +625,7 @@ fn leave_in_place_item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn suggest_bucket_item(
     settings: &LibrarySettings,
     folder_config: Option<&ApplyPlanFolderConfig>,
@@ -944,9 +944,7 @@ fn current_root_for_source(source_location: &str) -> StagingPlanCurrentRoot {
 
 fn normalize_extension(value: String) -> String {
     let trimmed = value.trim().to_ascii_lowercase();
-    if trimmed.starts_with('.') {
-        trimmed
-    } else if trimmed.is_empty() {
+    if trimmed.starts_with('.') || trimmed.is_empty() {
         trimmed
     } else {
         format!(".{trimmed}")
@@ -1055,6 +1053,7 @@ mod tests {
         (connection, settings)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_file(
         connection: &Connection,
         settings: &LibrarySettings,
