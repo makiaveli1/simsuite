@@ -4505,6 +4505,7 @@ dependencies = [
  "chrono",
  "dirs",
  "flate2",
+ "getrandom 0.3.4",
  "hex",
  "image",
  "notify",

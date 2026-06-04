@@ -152,6 +152,8 @@ pub fn run() {
             commands::get_apply_plan,
             commands::preview_apply_plan_validation,
             commands::preview_apply_plan_dry_run,
+            commands::preview_apply_plan_operations,
+            commands::issue_apply_plan_confirmation_token,
             commands::create_apply_plan_run_log,
             commands::list_apply_plan_run_logs,
             commands::get_apply_plan_run_log,
@@ -293,6 +295,8 @@ mod tests {
             "commands::get_apply_plan",
             "commands::preview_apply_plan_validation",
             "commands::preview_apply_plan_dry_run",
+            "commands::preview_apply_plan_operations",
+            "commands::issue_apply_plan_confirmation_token",
             "commands::create_apply_plan_run_log",
             "commands::list_apply_plan_run_logs",
             "commands::get_apply_plan_run_log",
@@ -307,5 +311,43 @@ mod tests {
                 "missing Tauri command registration for {command}"
             );
         }
+    }
+
+    #[test]
+    fn fixture_apply_executor_prototype_is_not_registered_as_tauri_command() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        assert!(
+            !handler_source.contains("fixture_apply_executor")
+                && !handler_source.contains("run_fixture_apply_executor_prototype"),
+            "fixture-only executor prototype must stay hidden and unregistered"
+        );
+    }
+
+    #[test]
+    fn hidden_real_move_executor_spike_is_not_registered_as_tauri_command() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        assert!(
+            !handler_source.contains("apply_plan_real_move_executor")
+                && !handler_source.contains("run_hidden_real_move_executor_spike"),
+            "hidden real move executor spike must stay hidden and unregistered"
+        );
     }
 }

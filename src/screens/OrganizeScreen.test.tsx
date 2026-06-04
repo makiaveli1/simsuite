@@ -4,11 +4,13 @@ import { api } from "../lib/api";
 import { OrganizeScreen } from "./OrganizeScreen";
 import type {
   ApplyPlanListItem,
+  ApplyPlanConfirmationTokenReceipt,
   ApplyPlanDryRunPreview,
   PersistedApplyPlanRestoreEntry,
   PersistedApplyPlanResult,
   PersistedApplyPlanRun,
   ApplyPlanValidationPreview,
+  ApplyPlanOperationPreview,
   PersistedApplyPlan,
   GenerateSortingPreviewPlanResult,
   StagingPlan,
@@ -24,6 +26,8 @@ vi.mock("../lib/api", () => ({
     getApplyPlan: vi.fn(),
     previewApplyPlanValidation: vi.fn(),
     previewApplyPlanDryRun: vi.fn(),
+    previewApplyPlanOperations: vi.fn(),
+    issueApplyPlanConfirmationToken: vi.fn(),
     createApplyPlanRunLog: vi.fn(),
     listApplyPlanRunLogs: vi.fn(),
     getApplyPlanRunLog: vi.fn(),
@@ -443,6 +447,101 @@ const dryRunPreview: ApplyPlanDryRunPreview = {
   ],
 };
 
+const operationPreview: ApplyPlanOperationPreview = {
+  planId: 701,
+  status: "preview_only",
+  canProceedToApply: false,
+  canProceedToConfirmation: false,
+  checkedAt: "2026-05-15T11:10:00.000Z",
+  operationSetHash:
+    "bbbbbb0123456789bbbbbb0123456789bbbbbb0123456789bbbbbb0123456789",
+  operationSetHashAlgorithm: "sha256",
+  operationSetHashVersion: "apply_plan_operation_set_v1",
+  summary: {
+    totalItems: 5,
+    candidateOperations: 2,
+    blockedItems: 1,
+    skippedItems: 3,
+    reviewOnlyItems: 1,
+    conflictItems: 1,
+    backupRequiredItems: 1,
+  },
+  caveats: [
+    "No files changed. This operation-set preview is read-only.",
+    "Operation-set preview is not Apply; confirmation, backup, restore map, result log, and executor proof are still required.",
+  ],
+  operations: [
+    {
+      itemId: 9001,
+      fileId: 101,
+      fileName: "OperationCandidate.package",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\OperationCandidate.package",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\OperationCandidate.package",
+      actionPreview: "would_move_later",
+      reasons: ["Backend validation and dry-run classified this as a future candidate."],
+      requiredBeforeApply: [
+        "Validation proof required",
+        "Backup required",
+        "Restore map required",
+        "Result log required",
+        "Explicit confirmation required",
+        "Apply executor proof required",
+      ],
+      canApply: false,
+    },
+    {
+      itemId: 9003,
+      fileId: 103,
+      fileName: "OperationBackupProof.package",
+      sourcePath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\Loose\\OperationBackupProof.package",
+      destinationPath:
+        "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods\\CAS\\OperationBackupProof.package",
+      actionPreview: "no_action",
+      reasons: ["Backup required before any future file-changing workflow."],
+      requiredBeforeApply: ["Backup required", "Restore map required"],
+      canApply: false,
+    },
+  ],
+};
+
+const blockedOperationPreview: ApplyPlanOperationPreview = {
+  ...operationPreview,
+  status: "blocked",
+  summary: {
+    ...operationPreview.summary,
+    candidateOperations: 0,
+  },
+  operations: [],
+  caveats: [
+    ...operationPreview.caveats,
+    "Client-supplied or legacy ApplyPlan previews are review/audit-only and cannot produce operation-set candidates.",
+  ],
+};
+
+const confirmationReceipt: ApplyPlanConfirmationTokenReceipt = {
+  token: "aptok_v1_test_confirmation_token",
+  tokenId: 3101,
+  planId: 701,
+  planHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  operationSetHash: operationPreview.operationSetHash,
+  operationSetHashAlgorithm: operationPreview.operationSetHashAlgorithm,
+  operationSetHashVersion: operationPreview.operationSetHashVersion,
+  sourcePlanKind: "backend_generated_sorting_preview",
+  allowedOperationCount: 2,
+  singleUseState: "unused",
+  issuedAt: "2026-05-15T11:12:00.000Z",
+  expiresAt: null,
+  canProceedToApply: false,
+  canExecute: false,
+  caveats: [
+    "Backend-issued confirmation token V1 created for this operation-set hash.",
+    "Apply executor is still locked. This token cannot move, copy, delete, quarantine, replace, or restore files.",
+  ],
+};
+
 const recoveryRunLog: PersistedApplyPlanRun = {
   id: 3001,
   applyPlanId: 701,
@@ -585,6 +684,8 @@ beforeEach(() => {
   vi.mocked(api.listApplyPlanResultLogs).mockResolvedValue([]);
   vi.mocked(api.listApplyPlanRestoreEntries).mockResolvedValue([]);
   vi.mocked(api.previewApplyPlanDryRun).mockResolvedValue(dryRunPreview);
+  vi.mocked(api.previewApplyPlanOperations).mockResolvedValue(operationPreview);
+  vi.mocked(api.issueApplyPlanConfirmationToken).mockResolvedValue(confirmationReceipt);
 });
 
 afterEach(() => {
@@ -981,8 +1082,8 @@ it("shows read-only confirmation design for saved plans without enabling executi
   expect(await screen.findByRole("region", { name: /Confirmation design/i })).toBeInTheDocument();
   const bodyText = document.body.textContent ?? "";
   expect(bodyText).toMatch(/Confirmation Design V1/i);
-  expect(bodyText).toMatch(/Execution controls disabled/i);
-  expect(bodyText).toMatch(/Confirmation token not issued/i);
+  expect(bodyText).toMatch(/Backend-issued confirmation tokens bind/i);
+  expect(bodyText).toMatch(/not issued in this view/i);
   expect(bodyText).toMatch(/Backend-generated sorting preview/i);
   expect(bodyText).toMatch(/Source kind: backend_generated_sorting_preview/i);
   expect(bodyText).toMatch(/Backend-owned plan hash recorded/i);
@@ -999,7 +1100,7 @@ it("shows read-only confirmation design for saved plans without enabling executi
   expect(bodyText).toMatch(/Backup must be created before any mutation/i);
   expect(bodyText).toMatch(/Restore map must be written by the backend executor/i);
   expect(bodyText).toMatch(/Validation must be re-run immediately before confirmation/i);
-  expect(screen.getByRole("button", { name: /Confirmation unavailable/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Issue read-only token/i })).toBeDisabled();
   expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
   expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
   expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
@@ -1136,6 +1237,188 @@ it("clears dry-run preview results when switching saved plans", async () => {
   expect(await screen.findByText(/Second saved dry-run draft/i)).toBeInTheDocument();
   expect(screen.queryAllByText(/CandidateHair\.package/i)).toHaveLength(0);
   expect(screen.getByText(/Run a dry-run preview/i)).toBeInTheDocument();
+});
+
+it("shows operation-set preview rows without enabling Apply", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Preview operation set/i }));
+
+  expect(await screen.findByText(/Operation Set Preview V1/i)).toBeInTheDocument();
+  expect((await screen.findAllByText(/OperationCandidate\.package/i)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/OperationBackupProof\.package/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Preview operation/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Preview operations/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/operation canApply=false/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/canApply=false/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/canProceedToApply=false/i)).toBeInTheDocument();
+  expect(screen.getByText(/canProceedToConfirmation=false/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+
+  await waitFor(() => {
+    expect(api.previewApplyPlanOperations).toHaveBeenCalledWith({
+      planId: savedPlanSummary.id,
+      expectedPlanHash: savedPlanDetails.planHash,
+    });
+  });
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|restore now|run backup|run restore|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
+});
+
+it("issues a backend confirmation token from an operation-set hash without unlocking Apply", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.listApplyPlanRunLogs).mockResolvedValue([
+    {
+      ...recoveryRunLog,
+      id: confirmationReceipt.tokenId,
+      confirmationToken: confirmationReceipt.token,
+      summary: "confirmation_token_v1 read-only record. No files changed.",
+    },
+  ]);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Preview operation set/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Issue read-only token/i }));
+
+  await waitFor(() => {
+    expect(api.issueApplyPlanConfirmationToken).toHaveBeenCalledWith({
+      planId: savedPlanSummary.id,
+      expectedPlanHash: savedPlanDetails.planHash,
+      expectedOperationSetHash: operationPreview.operationSetHash,
+    });
+  });
+
+  const bodyText = document.body.textContent ?? "";
+  expect(bodyText).toMatch(/Backend-issued confirmation token/i);
+  expect(bodyText).toMatch(/Executor still locked/i);
+  expect(bodyText).toMatch(/singleUseState=unused/i);
+  expect(bodyText).toMatch(/canExecute=false/i);
+  expect(bodyText).toMatch(/aptok_v1_test_confirmation_token/i);
+  expect(bodyText).toMatch(/Apply executor is still locked/i);
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+  expect(enabledButtonLabels()).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /apply|restore now|run backup|run restore|move files|clean up|quarantine|delete|fix|auto-sort now|sort automatically|safe to move|safe to delete|ready to apply|proceed to confirmation/i,
+      ),
+    ]),
+  );
+});
+
+it("shows blocked operation previews as empty and audit-only", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  vi.mocked(api.previewApplyPlanOperations).mockResolvedValueOnce(blockedOperationPreview);
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Preview operation set/i }));
+
+  expect(await screen.findByText(/No operation rows returned/i)).toBeInTheDocument();
+  expect(screen.getByText(/review\/audit-only/i)).toBeInTheDocument();
+  expect(screen.getByText(/This draft remains blocked or audit-only/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(api.createApplyPlanRunLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanResultLog).not.toHaveBeenCalled();
+  expect(api.recordApplyPlanRestoreEntry).not.toHaveBeenCalled();
+});
+
+it("shows operation-set loading and error states without changing files", async () => {
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([savedPlanSummary]);
+  vi.mocked(api.getApplyPlan).mockResolvedValue(savedPlanDetails);
+  let resolveOperationPreview: (preview: ApplyPlanOperationPreview) => void = () => {};
+  vi.mocked(api.previewApplyPlanOperations).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveOperationPreview = resolve;
+    }),
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Review details/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /Preview operation set/i }));
+
+  expect((await screen.findAllByText(/Checking operation preview/i)).length).toBeGreaterThan(0);
+
+  await act(async () => {
+    resolveOperationPreview(operationPreview);
+  });
+
+  expect((await screen.findAllByText(/OperationCandidate\.package/i)).length).toBeGreaterThan(0);
+
+  vi.mocked(api.previewApplyPlanOperations).mockRejectedValueOnce(
+    new Error("operation preview unavailable"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Refresh operation preview/i }));
+
+  expect(await screen.findByText(/Operation preview could not be loaded/i)).toBeInTheDocument();
+  expect(screen.getByText(/operation preview unavailable/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/No files changed/i).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/OperationCandidate\.package/i)).toHaveLength(0);
+});
+
+it("clears operation-set preview results when switching saved plans", async () => {
+  const secondPlanSummary: ApplyPlanListItem = {
+    ...savedPlanSummary,
+    id: 702,
+    title: "Second saved operation draft",
+    sourceStagingPlanId: "second-operation-plan-test",
+  };
+  const secondPlanDetails: PersistedApplyPlan = {
+    ...savedPlanDetails,
+    id: 702,
+    title: "Second saved operation draft",
+    sourceStagingPlanId: "second-operation-plan-test",
+    items: [
+      {
+        ...savedPlanDetails.items[0],
+        id: 9401,
+        applyPlanId: 702,
+        fileName: "SecondOperationPlan.package",
+        sourceItemId: "second-operation-plan-item",
+      },
+    ],
+  };
+
+  vi.mocked(api.listSavedApplyPlans).mockResolvedValue([
+    savedPlanSummary,
+    secondPlanSummary,
+  ]);
+  vi.mocked(api.getApplyPlan).mockImplementation(async (planId) =>
+    planId === secondPlanSummary.id ? secondPlanDetails : savedPlanDetails,
+  );
+  renderOrganize();
+
+  fireEvent.click(screen.getByRole("tab", { name: /Saved plans/i }));
+  const reviewButtons = await screen.findAllByRole("button", { name: /Review details/i });
+  fireEvent.click(reviewButtons[0]);
+  fireEvent.click(await screen.findByRole("button", { name: /Preview operation set/i }));
+
+  expect((await screen.findAllByText(/OperationCandidate\.package/i)).length).toBeGreaterThan(0);
+  fireEvent.click(await screen.findByRole("button", { name: /^Review details$/i }));
+
+  expect(await screen.findByText(/Second saved operation draft/i)).toBeInTheDocument();
+  expect(screen.queryAllByText(/OperationCandidate\.package/i)).toHaveLength(0);
+  expect(screen.getByText(/Run an operation preview/i)).toBeInTheDocument();
 });
 
 it("shows read-only recovery history empty states for saved plans", async () => {

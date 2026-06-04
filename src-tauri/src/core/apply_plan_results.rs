@@ -26,6 +26,7 @@ pub fn create_apply_plan_run_log(
     }
 
     let status = parse_run_status(request.status.as_deref().unwrap_or("draft_log"))?;
+    ensure_create_run_status_allowed(&status)?;
     let backup_strategy = validate_backup_strategy(request.backup_strategy.as_deref())?;
     let total_items = non_negative_or(request.total_items, plan.total_items, "totalItems")?;
     let skipped_items = non_negative_or(request.skipped_items, 0, "skippedItems")?;
@@ -68,6 +69,118 @@ pub fn create_apply_plan_run_log(
     let run_id = connection.last_insert_rowid();
     get_apply_plan_run(connection, run_id)?
         .ok_or_else(|| AppError::Message("ApplyPlan run log could not be reloaded.".to_owned()))
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn mark_apply_plan_run_applying(
+    connection: &Connection,
+    run_id: i64,
+    total_items: i64,
+) -> AppResult<PersistedApplyPlanRun> {
+    if total_items < 0 {
+        return Err(AppError::Message(
+            "totalItems must be zero or greater for backend run transition.".to_owned(),
+        ));
+    }
+    ensure_run_transition_allowed(connection, run_id)?;
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE apply_plan_runs
+         SET status = 'applying',
+             confirmed_at = COALESCE(confirmed_at, ?2),
+             started_at = COALESCE(started_at, ?2),
+             total_items = ?3,
+             updated_at = ?2
+         WHERE id = ?1",
+        params![run_id, now, total_items],
+    )?;
+    get_apply_plan_run(connection, run_id)?
+        .ok_or_else(|| AppError::Message("ApplyPlan run log could not be reloaded.".to_owned()))
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn mark_apply_plan_run_applied(
+    connection: &Connection,
+    run_id: i64,
+    applied_items: i64,
+    failed_items: i64,
+    skipped_items: i64,
+    _summary: &str,
+) -> AppResult<PersistedApplyPlanRun> {
+    ensure_non_negative_transition_count(applied_items, "appliedItems")?;
+    ensure_non_negative_transition_count(failed_items, "failedItems")?;
+    ensure_non_negative_transition_count(skipped_items, "skippedItems")?;
+    ensure_run_transition_allowed(connection, run_id)?;
+    let status = if failed_items > 0 {
+        "apply_failed"
+    } else {
+        "applied"
+    };
+    let total_items = applied_items + failed_items + skipped_items;
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE apply_plan_runs
+         SET status = ?2,
+             finished_at = ?3,
+             total_items = ?4,
+             skipped_items = ?5,
+             applied_items = ?6,
+             failed_items = ?7,
+             updated_at = ?3
+         WHERE id = ?1",
+        params![
+            run_id,
+            status,
+            now,
+            total_items,
+            skipped_items,
+            applied_items,
+            failed_items,
+        ],
+    )?;
+    get_apply_plan_run(connection, run_id)?
+        .ok_or_else(|| AppError::Message("ApplyPlan run log could not be reloaded.".to_owned()))
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn mark_apply_plan_run_restored(
+    connection: &Connection,
+    run_id: i64,
+    restored_items: i64,
+    _summary: &str,
+) -> AppResult<PersistedApplyPlanRun> {
+    ensure_non_negative_transition_count(restored_items, "restoredItems")?;
+    ensure_run_transition_allowed(connection, run_id)?;
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE apply_plan_runs
+         SET status = 'restored',
+             restored_items = ?2,
+             updated_at = ?3
+         WHERE id = ?1",
+        params![run_id, restored_items, now],
+    )?;
+    get_apply_plan_run(connection, run_id)?
+        .ok_or_else(|| AppError::Message("ApplyPlan run log could not be reloaded.".to_owned()))
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn mark_apply_plan_restore_entry_restored(
+    connection: &Connection,
+    restore_entry_id: i64,
+) -> AppResult<PersistedApplyPlanRestoreEntry> {
+    let now = Utc::now().to_rfc3339();
+    connection.execute(
+        "UPDATE apply_plan_restore_entries
+         SET restore_status = 'restored',
+             restored_at = ?2,
+             updated_at = ?2
+         WHERE id = ?1 AND restore_status = 'not_restored'",
+        params![restore_entry_id, now],
+    )?;
+    get_apply_plan_restore_entry(connection, restore_entry_id)?.ok_or_else(|| {
+        AppError::Message("ApplyPlan restore entry could not be reloaded.".to_owned())
+    })
 }
 
 pub fn list_apply_plan_run_logs(
@@ -155,6 +268,22 @@ pub fn record_apply_plan_result_log(
     connection: &Connection,
     request: RecordApplyPlanResultLogRequest,
 ) -> AppResult<PersistedApplyPlanResult> {
+    record_apply_plan_result_log_with_policy(connection, request, false)
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn record_backend_apply_plan_result_log(
+    connection: &Connection,
+    request: RecordApplyPlanResultLogRequest,
+) -> AppResult<PersistedApplyPlanResult> {
+    record_apply_plan_result_log_with_policy(connection, request, true)
+}
+
+fn record_apply_plan_result_log_with_policy(
+    connection: &Connection,
+    request: RecordApplyPlanResultLogRequest,
+    allow_backend_execution_statuses: bool,
+) -> AppResult<PersistedApplyPlanResult> {
     let run = load_run_reference(connection, request.apply_plan_run_id)?;
     if run.status == "cancelled" {
         return Err(AppError::Message(
@@ -166,6 +295,9 @@ pub fn record_apply_plan_result_log(
     }
 
     let result_status = parse_result_status(&request.result_status)?;
+    if !allow_backend_execution_statuses {
+        ensure_record_result_status_allowed(&result_status)?;
+    }
     let operation_kind = require_trimmed(request.operation_kind, "operationKind")?;
     let user_summary = require_trimmed(request.user_summary, "userSummary")?;
     let now = Utc::now().to_rfc3339();
@@ -235,6 +367,22 @@ pub fn record_apply_plan_restore_entry(
     connection: &Connection,
     request: RecordApplyPlanRestoreEntryRequest,
 ) -> AppResult<PersistedApplyPlanRestoreEntry> {
+    record_apply_plan_restore_entry_with_policy(connection, request, false)
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+pub(crate) fn record_backend_apply_plan_restore_entry(
+    connection: &Connection,
+    request: RecordApplyPlanRestoreEntryRequest,
+) -> AppResult<PersistedApplyPlanRestoreEntry> {
+    record_apply_plan_restore_entry_with_policy(connection, request, true)
+}
+
+fn record_apply_plan_restore_entry_with_policy(
+    connection: &Connection,
+    request: RecordApplyPlanRestoreEntryRequest,
+    allow_backend_execution_statuses: bool,
+) -> AppResult<PersistedApplyPlanRestoreEntry> {
     let run = load_run_reference(connection, request.apply_plan_run_id)?;
     if run.status == "cancelled" {
         return Err(AppError::Message(
@@ -280,6 +428,10 @@ pub fn record_apply_plan_restore_entry(
 
     let operation_result_status = parse_result_status(&request.operation_result_status)?;
     let restore_status = parse_restore_status(&request.restore_status)?;
+    if !allow_backend_execution_statuses {
+        ensure_record_result_status_allowed(&operation_result_status)?;
+        ensure_record_restore_status_allowed(&restore_status)?;
+    }
     let original_source_path = require_trimmed(request.original_source_path, "originalSourcePath")?;
     let operation_kind = require_trimmed(request.operation_kind, "operationKind")?;
     if matches!(request.file_size_before, Some(value) if value < 0) {
@@ -592,11 +744,66 @@ fn ensure_item_belongs_to_plan(
 fn parse_run_status(value: &str) -> AppResult<ApplyPlanRunLogStatus> {
     match value {
         "draft_log" => Ok(ApplyPlanRunLogStatus::DraftLog),
+        "confirmed" => Ok(ApplyPlanRunLogStatus::Confirmed),
+        "applying" => Ok(ApplyPlanRunLogStatus::Applying),
+        "applied" => Ok(ApplyPlanRunLogStatus::Applied),
+        "apply_failed" => Ok(ApplyPlanRunLogStatus::ApplyFailed),
+        "restored" => Ok(ApplyPlanRunLogStatus::Restored),
+        "restore_failed" => Ok(ApplyPlanRunLogStatus::RestoreFailed),
         "blocked" => Ok(ApplyPlanRunLogStatus::Blocked),
         "cancelled" => Ok(ApplyPlanRunLogStatus::Cancelled),
         _ => Err(AppError::Message(format!(
             "Unsupported DB-only ApplyPlan run status for v1: {value}"
         ))),
+    }
+}
+
+fn ensure_create_run_status_allowed(status: &ApplyPlanRunLogStatus) -> AppResult<()> {
+    if matches!(
+        status,
+        ApplyPlanRunLogStatus::DraftLog
+            | ApplyPlanRunLogStatus::Blocked
+            | ApplyPlanRunLogStatus::Cancelled
+    ) {
+        Ok(())
+    } else {
+        Err(AppError::Message(format!(
+            "ApplyPlan run status {} can only be set by backend-observed executor transitions.",
+            run_status_value(status)
+        )))
+    }
+}
+
+fn ensure_record_result_status_allowed(status: &ApplyPlanResultLogStatus) -> AppResult<()> {
+    if matches!(
+        status,
+        ApplyPlanResultLogStatus::PendingLog
+            | ApplyPlanResultLogStatus::Skipped
+            | ApplyPlanResultLogStatus::Blocked
+            | ApplyPlanResultLogStatus::FailedBeforeChange
+    ) {
+        Ok(())
+    } else {
+        Err(AppError::Message(format!(
+            "ApplyPlan result status {} can only be set by backend-observed executor transitions.",
+            result_status_value(status)
+        )))
+    }
+}
+
+fn ensure_record_restore_status_allowed(status: &ApplyPlanRestoreEntryStatus) -> AppResult<()> {
+    if matches!(
+        status,
+        ApplyPlanRestoreEntryStatus::NotAvailable
+            | ApplyPlanRestoreEntryStatus::DesignOnly
+            | ApplyPlanRestoreEntryStatus::NotRestored
+    ) {
+        Ok(())
+    } else {
+        Err(AppError::Message(format!(
+            "ApplyPlan restore status {} can only be set by backend-observed executor transitions.",
+            restore_status_value(status)
+        )))
     }
 }
 
@@ -606,6 +813,9 @@ fn parse_result_status(value: &str) -> AppResult<ApplyPlanResultLogStatus> {
         "skipped" => Ok(ApplyPlanResultLogStatus::Skipped),
         "blocked" => Ok(ApplyPlanResultLogStatus::Blocked),
         "failed_before_change" => Ok(ApplyPlanResultLogStatus::FailedBeforeChange),
+        "applied" => Ok(ApplyPlanResultLogStatus::Applied),
+        "failed_after_change" => Ok(ApplyPlanResultLogStatus::FailedAfterChange),
+        "restored" => Ok(ApplyPlanResultLogStatus::Restored),
         _ => Err(AppError::Message(format!(
             "Unsupported DB-only ApplyPlan result status for v1: {value}"
         ))),
@@ -617,6 +827,8 @@ fn parse_restore_status(value: &str) -> AppResult<ApplyPlanRestoreEntryStatus> {
         "not_available" => Ok(ApplyPlanRestoreEntryStatus::NotAvailable),
         "design_only" => Ok(ApplyPlanRestoreEntryStatus::DesignOnly),
         "not_restored" => Ok(ApplyPlanRestoreEntryStatus::NotRestored),
+        "restored" => Ok(ApplyPlanRestoreEntryStatus::Restored),
+        "restore_failed" => Ok(ApplyPlanRestoreEntryStatus::RestoreFailed),
         _ => Err(AppError::Message(format!(
             "Unsupported DB-only ApplyPlan restore status for v1: {value}"
         ))),
@@ -626,6 +838,12 @@ fn parse_restore_status(value: &str) -> AppResult<ApplyPlanRestoreEntryStatus> {
 fn run_status_value(status: &ApplyPlanRunLogStatus) -> &'static str {
     match status {
         ApplyPlanRunLogStatus::DraftLog => "draft_log",
+        ApplyPlanRunLogStatus::Confirmed => "confirmed",
+        ApplyPlanRunLogStatus::Applying => "applying",
+        ApplyPlanRunLogStatus::Applied => "applied",
+        ApplyPlanRunLogStatus::ApplyFailed => "apply_failed",
+        ApplyPlanRunLogStatus::Restored => "restored",
+        ApplyPlanRunLogStatus::RestoreFailed => "restore_failed",
         ApplyPlanRunLogStatus::Blocked => "blocked",
         ApplyPlanRunLogStatus::Cancelled => "cancelled",
     }
@@ -637,6 +855,9 @@ fn result_status_value(status: &ApplyPlanResultLogStatus) -> &'static str {
         ApplyPlanResultLogStatus::Skipped => "skipped",
         ApplyPlanResultLogStatus::Blocked => "blocked",
         ApplyPlanResultLogStatus::FailedBeforeChange => "failed_before_change",
+        ApplyPlanResultLogStatus::Applied => "applied",
+        ApplyPlanResultLogStatus::FailedAfterChange => "failed_after_change",
+        ApplyPlanResultLogStatus::Restored => "restored",
     }
 }
 
@@ -645,6 +866,8 @@ fn restore_status_value(status: &ApplyPlanRestoreEntryStatus) -> &'static str {
         ApplyPlanRestoreEntryStatus::NotAvailable => "not_available",
         ApplyPlanRestoreEntryStatus::DesignOnly => "design_only",
         ApplyPlanRestoreEntryStatus::NotRestored => "not_restored",
+        ApplyPlanRestoreEntryStatus::Restored => "restored",
+        ApplyPlanRestoreEntryStatus::RestoreFailed => "restore_failed",
     }
 }
 
@@ -666,6 +889,29 @@ fn non_negative_or(value: Option<i64>, default: i64, field_name: &str) -> AppRes
         )))
     } else {
         Ok(value)
+    }
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+fn ensure_non_negative_transition_count(value: i64, field_name: &str) -> AppResult<()> {
+    if value < 0 {
+        Err(AppError::Message(format!(
+            "{field_name} must be zero or greater for backend run transition."
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg_attr(not(feature = "apply-executor-real-move-spike"), allow(dead_code))]
+fn ensure_run_transition_allowed(connection: &Connection, run_id: i64) -> AppResult<()> {
+    let run = load_run_reference(connection, run_id)?;
+    if run.status == "cancelled" {
+        Err(AppError::Message(
+            "Cannot transition a cancelled ApplyPlan run log.".to_owned(),
+        ))
+    } else {
+        Ok(())
     }
 }
 

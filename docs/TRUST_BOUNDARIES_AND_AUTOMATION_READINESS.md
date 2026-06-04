@@ -78,6 +78,19 @@ against temporary test files only, verifies backup and restored copies, records
 safe result/restore metadata, and remains hidden from UI and Tauri commands. It
 does not change user files and does not make Apply or Restore ready.
 
+The hidden feature-gated real move executor spike now proves a narrow
+backup-first move path behind the `apply-executor-real-move-spike` Cargo feature
+and a separate runtime gate. It is not registered as a Tauri command. It accepts
+only backend-owned move previews bound to a backend-issued confirmation token,
+creates and verifies backup material before `rename`, records backend-observed
+result/restore metadata, updates only backend-owned run status/counters from
+observed operations, and records recovery metadata if a move fails after backup
+verification. The paired hidden run-scoped restore proof reads only backend
+restore entries for the requested run, refuses arbitrary rollback paths,
+verifies destination and backup bytes against recorded hash/size, marks verified
+restore entries `restored`, and remains hidden from UI and Tauri commands. These
+proofs do not make Apply or Restore ready.
+
 Organize `Saved plans` now shows read-only `Recovery history` metadata from
 existing DB-only run logs, result logs, and restore-map records. It keeps `No
 files changed`, `Apply is not ready yet`, and `Restore is not ready yet`

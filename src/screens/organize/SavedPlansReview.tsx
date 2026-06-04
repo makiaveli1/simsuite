@@ -19,6 +19,10 @@ import type {
   ApplyPlanDryRunItemStatus,
   ApplyPlanDryRunPreview,
   ApplyPlanDryRunPreviewStatus,
+  ApplyPlanConfirmationTokenReceipt,
+  ApplyPlanOperationPreview,
+  ApplyPlanOperationPreviewItem,
+  ApplyPlanOperationPreviewStatus,
   ApplyPlanRestoreEntryStatus,
   ApplyPlanResultLogStatus,
   ApplyPlanRunLogStatus,
@@ -97,6 +101,12 @@ const PLAN_VALIDATION_LABELS: Record<ApplyPlanValidationPreviewStatus, string> =
 
 const DRY_RUN_PREVIEW_STATUS_LABELS: Record<ApplyPlanDryRunPreviewStatus, string> = {
   not_run: "Not run",
+  blocked: "Blocked",
+  preview_only: "Preview only",
+  error: "Could not preview",
+};
+
+const OPERATION_PREVIEW_STATUS_LABELS: Record<ApplyPlanOperationPreviewStatus, string> = {
   blocked: "Blocked",
   preview_only: "Preview only",
   error: "Could not preview",
@@ -287,6 +297,10 @@ function formatPlanValidationStatus(status: ApplyPlanValidationPreviewStatus): s
 
 function formatDryRunPreviewStatus(status: ApplyPlanDryRunPreviewStatus): string {
   return DRY_RUN_PREVIEW_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+function formatOperationPreviewStatus(status: ApplyPlanOperationPreviewStatus): string {
+  return OPERATION_PREVIEW_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
 }
 
 function formatDryRunItemStatus(status: ApplyPlanDryRunItemStatus): string {
@@ -1037,14 +1051,303 @@ function DryRunPreviewSection({
   );
 }
 
+function OperationPreviewSummaryGrid({ preview }: { preview: ApplyPlanOperationPreview }) {
+  return (
+    <div className="validation-preview-grid" aria-label="Operation preview summary counts">
+      <span>
+        <strong>{preview.summary.totalItems}</strong>
+        <small>Total saved items</small>
+      </span>
+      <span>
+        <strong>{preview.summary.candidateOperations}</strong>
+        <small>Preview operations</small>
+      </span>
+      <span>
+        <strong>{preview.summary.blockedItems}</strong>
+        <small>Blocked items</small>
+      </span>
+      <span>
+        <strong>{preview.summary.conflictItems}</strong>
+        <small>Destination conflicts</small>
+      </span>
+      <span>
+        <strong>{preview.summary.backupRequiredItems}</strong>
+        <small>Need backup proof</small>
+      </span>
+      <span>
+        <strong>{preview.summary.reviewOnlyItems}</strong>
+        <small>Review-only</small>
+      </span>
+      <span>
+        <strong>{preview.summary.skippedItems}</strong>
+        <small>Skipped</small>
+      </span>
+    </div>
+  );
+}
+
+function OperationPreviewItemCard({ item }: { item: ApplyPlanOperationPreviewItem }) {
+  return (
+    <article className="validation-preview-item" aria-label={`${item.fileName} operation preview`}>
+      <div className="validation-preview-item-header">
+        <div className="organize-plan-item-title">
+          <span>{item.fileName}</span>
+          <small>{formatDryRunActionPreview(item.actionPreview)}</small>
+        </div>
+        <div className="organize-plan-status-row" aria-label="Operation preview item labels">
+          <span className="organize-plan-status-chip">Preview operation</span>
+          <span className="organize-plan-tag organize-plan-tag--blocked">canApply=false</span>
+        </div>
+      </div>
+
+      <div className="organize-plan-path-grid">
+        <div className="organize-plan-path-card">
+          <span>Source snapshot</span>
+          <code title={item.sourcePath ?? undefined}>{shortenPath(item.sourcePath)}</code>
+        </div>
+        <div className="organize-plan-path-card">
+          <span>Destination snapshot</span>
+          <code title={item.destinationPath ?? undefined}>{shortenPath(item.destinationPath)}</code>
+        </div>
+      </div>
+
+      <div className="validation-preview-reasons">
+        <div>
+          <h5>Reasons</h5>
+          {item.reasons.length > 0 ? (
+            <ul>
+              {item.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No operation reason was returned.</p>
+          )}
+        </div>
+        <div>
+          <h5>Still required before any future Apply</h5>
+          {item.requiredBeforeApply.length > 0 ? (
+            <ul>
+              {item.requiredBeforeApply.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>Future safety gates still apply.</p>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function OperationPreviewSection({
+  plan,
+  preview,
+  loading,
+  error,
+  onPreview,
+}: {
+  plan: PersistedApplyPlan;
+  preview: ApplyPlanOperationPreview | null;
+  loading: boolean;
+  error: string | null;
+  onPreview: (plan: PersistedApplyPlan) => void;
+}) {
+  const buttonLabel = preview ? "Refresh operation preview" : "Preview operation set";
+
+  return (
+    <section className="validation-preview-panel" aria-label="Operation-set preview">
+      <div className="validation-preview-header">
+        <div>
+          <div className="eyebrow">Operation preview</div>
+          <h4>Operation Set Preview V1</h4>
+          <p>
+            Builds the backend-owned, read-only operation list for future Apply
+            planning. It cannot move, delete, replace, or restore files.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary-action"
+          disabled={loading}
+          onClick={() => onPreview(plan)}
+        >
+          {loading ? (
+            <>
+              <LoaderCircle size={16} className="spin" />
+              Checking operation preview
+            </>
+          ) : (
+            <>
+              <ListChecks size={16} />
+              {buttonLabel}
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="validation-preview-safety-strip">
+        <ShieldCheck size={16} />
+        <strong>No files changed</strong>
+        <span>
+          Operation preview is not Apply. Future confirmation, backup,
+          restore-map, result-log, and executor proof are still required.
+        </span>
+      </div>
+
+      {!preview && !loading && !error ? (
+        <div className="validation-preview-empty">
+          <Info size={20} />
+          <div>
+            <strong>Preview only</strong>
+            <span>
+              Run an operation preview to inspect backend-generated candidate
+              operations. No files changed.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="validation-preview-empty" aria-live="polite">
+          <LoaderCircle size={20} className="spin" />
+          <div>
+            <strong>Checking operation preview...</strong>
+            <span>SimSuite is reading saved metadata only. No files changed.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            Operation preview could not be loaded: {error}. No files changed.
+          </span>
+        </div>
+      ) : null}
+
+      {preview ? (
+        <div className="validation-preview-results">
+          <div className="validation-preview-status-row">
+            <span className="organize-plan-status-chip">
+              {formatOperationPreviewStatus(preview.status)}
+            </span>
+            <span className="organize-plan-tag organize-plan-tag--blocked">
+              Apply is not ready yet
+            </span>
+            <span className="organize-plan-status-chip">
+              Confirmation token can be issued read-only
+            </span>
+            <span className="organize-plan-status-chip">
+              Checked {formatDateTime(preview.checkedAt)}
+            </span>
+          </div>
+
+          <div className="validation-preview-empty">
+            <ShieldCheck size={20} />
+            <div>
+              <strong>Operation preview remains read-only.</strong>
+              <span>
+                canProceedToApply=false; canProceedToConfirmation=false;
+                operation canApply=false.
+              </span>
+            </div>
+          </div>
+
+          <OperationPreviewSummaryGrid preview={preview} />
+
+          {preview.caveats.length > 0 ? (
+            <div className="organize-plan-detail-block">
+              <h4>Operation preview caveats</h4>
+              <ul className="organize-plan-caveats">
+                {preview.caveats.map((caveat) => (
+                  <li key={caveat}>{caveat}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {preview.operations.length > 0 ? (
+            <div className="organize-plan-detail-block">
+              <div className="organize-plan-bucket-heading">
+                <h4>Preview operations</h4>
+                <span>{formatCount(preview.operations.length, "operation")}</span>
+              </div>
+              <div className="validation-preview-item-list">
+                {preview.operations.map((item) => (
+                  <OperationPreviewItemCard key={item.itemId} item={item} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="validation-preview-empty">
+              <Info size={20} />
+              <div>
+                <strong>No operation rows returned.</strong>
+                <span>No files changed. This draft remains blocked or audit-only.</span>
+              </div>
+            </div>
+          )}
+
+          <details>
+            <summary>Technical details</summary>
+            <div className="pending-batch-technical">
+              <div>
+                <strong>Plan id</strong>
+                <code>{preview.planId}</code>
+              </div>
+              <div>
+                <strong>Expected plan hash</strong>
+                <code>{plan.planHash ?? "No plan hash"}</code>
+              </div>
+              <div>
+                <strong>Operation-set hash</strong>
+                <code>{preview.operationSetHash}</code>
+              </div>
+              <div>
+                <strong>Operation-set hash algorithm</strong>
+                <code>{preview.operationSetHashAlgorithm}</code>
+              </div>
+              <div>
+                <strong>Operation-set hash version</strong>
+                <code>{preview.operationSetHashVersion}</code>
+              </div>
+              <div>
+                <strong>canProceedToApply</strong>
+                <code>{String(preview.canProceedToApply)}</code>
+              </div>
+              <div>
+                <strong>canProceedToConfirmation</strong>
+                <code>{String(preview.canProceedToConfirmation)}</code>
+              </div>
+            </div>
+          </details>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ConfirmationDesignSection({
   plan,
   validationPreview,
   dryRunPreview,
+  operationPreview,
+  confirmationReceipt,
+  confirmationLoading,
+  confirmationError,
+  onIssueToken,
 }: {
   plan: PersistedApplyPlan;
   validationPreview: ApplyPlanValidationPreview | null;
   dryRunPreview: ApplyPlanDryRunPreview | null;
+  operationPreview: ApplyPlanOperationPreview | null;
+  confirmationReceipt: ApplyPlanConfirmationTokenReceipt | null;
+  confirmationLoading: boolean;
+  confirmationError: string | null;
+  onIssueToken: (plan: PersistedApplyPlan, operationPreview: ApplyPlanOperationPreview) => void;
 }) {
   const candidateCount = dryRunPreview?.summary.candidateItems ?? plan.applyableItems;
   const blockedCount = dryRunPreview?.summary.blockedItems ?? plan.blockedItems;
@@ -1080,9 +1383,25 @@ function ConfirmationDesignSection({
             before SimSuite can change files. It is not an Apply flow.
           </p>
         </div>
-        <button type="button" className="secondary-action" disabled>
-          <ShieldCheck size={16} />
-          Confirmation unavailable
+        <button
+          type="button"
+          className="secondary-action"
+          disabled={confirmationLoading || !operationPreview || operationPreview.operations.length === 0}
+          onClick={() => {
+            if (operationPreview) onIssueToken(plan, operationPreview);
+          }}
+        >
+          {confirmationLoading ? (
+            <>
+              <LoaderCircle size={16} className="spin" />
+              Issuing token
+            </>
+          ) : (
+            <>
+              <ShieldCheck size={16} />
+              Issue read-only token
+            </>
+          )}
         </button>
       </div>
 
@@ -1090,8 +1409,9 @@ function ConfirmationDesignSection({
         <ShieldCheck size={16} />
         <strong>No files changed</strong>
         <span>
-          Execution controls disabled. Confirmation token not issued. No backup,
-          restore map, result log, folder creation, or file mutation is performed.
+          Execution controls disabled. Backend-issued confirmation tokens bind
+          the current operation-set hash, but no backup, restore map, folder
+          creation, or file mutation is performed.
         </span>
       </div>
 
@@ -1109,10 +1429,78 @@ function ConfirmationDesignSection({
           <small>Skipped or review-only</small>
         </span>
         <span>
-          <strong>Disabled</strong>
+          <strong>{confirmationReceipt ? "Issued" : "Token V1"}</strong>
           <small>Confirmation state</small>
         </span>
       </div>
+
+      {!operationPreview ? (
+        <div className="validation-preview-empty">
+          <Info size={20} />
+          <div>
+            <strong>Run operation preview first.</strong>
+            <span>
+              Token issuance requires the current backend operation-set hash.
+              No files changed.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmationError ? (
+        <div className="staging-result staging-result--warn" role="status">
+          <AlertCircle size={16} />
+          <span>
+            Confirmation token could not be issued: {confirmationError}. No files changed.
+          </span>
+        </div>
+      ) : null}
+
+      {confirmationReceipt ? (
+        <div className="organize-plan-detail-block" aria-label="Backend-issued confirmation token">
+          <h4>Backend-issued confirmation token</h4>
+          <div className="validation-preview-safety-strip">
+            <ShieldCheck size={16} />
+            <strong>Executor still locked</strong>
+            <span>
+              canProceedToApply=false; canExecute=false; singleUseState={confirmationReceipt.singleUseState}. No files changed.
+            </span>
+          </div>
+          <div className="pending-batch-technical">
+            <div>
+              <strong>Token id</strong>
+              <code>{confirmationReceipt.tokenId}</code>
+            </div>
+            <div>
+              <strong>Token</strong>
+              <code>{confirmationReceipt.token}</code>
+            </div>
+            <div>
+              <strong>Operation-set hash</strong>
+              <code>{confirmationReceipt.operationSetHash}</code>
+            </div>
+            <div>
+              <strong>Allowed operation count</strong>
+              <code>{confirmationReceipt.allowedOperationCount}</code>
+            </div>
+            <div>
+              <strong>Issued at</strong>
+              <code>{formatDateTime(confirmationReceipt.issuedAt)}</code>
+            </div>
+            <div>
+              <strong>Can execute</strong>
+              <code>{String(confirmationReceipt.canExecute)}</code>
+            </div>
+          </div>
+          {confirmationReceipt.caveats.length > 0 ? (
+            <ul className="organize-plan-caveats">
+              {confirmationReceipt.caveats.map((caveat) => (
+                <li key={caveat}>{caveat}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="organize-plan-detail-block">
         <h4>Plan provenance</h4>
@@ -1122,7 +1510,9 @@ function ConfirmationDesignSection({
           <li title={plan.planHash ?? undefined}>{planHashLabel}</li>
           <li>{provenanceCreatedLabel}</li>
           <li>Plan hash is identity/provenance only; it does not authorize Apply.</li>
-          <li>Confirmation token not issued.</li>
+          <li>
+            Confirmation token status: {confirmationReceipt ? "backend-issued read-only token recorded" : "not issued in this view"}.
+          </li>
           <li>Validation status: {validationStatus}.</li>
           <li>Dry-run status: {dryRunStatus}.</li>
         </ul>
@@ -1207,7 +1597,8 @@ function ConfirmationDesignSection({
           <li>Restore map must be written by the backend executor.</li>
           <li>Result log must be written from observed backend operations.</li>
           <li>Custom folder configuration snapshot must be attached to the plan.</li>
-          <li>Confirmation token must be backend-issued and single-use.</li>
+          <li>Confirmation token is backend-issued and single-use.</li>
+          <li>Issued confirmation tokens do not unlock Apply until the executor gate exists.</li>
         </ul>
       </div>
     </section>
@@ -1597,6 +1988,12 @@ function SavedPlanDetails({
   dryRunPreview,
   dryRunLoading,
   dryRunError,
+  operationPreview,
+  operationLoading,
+  operationError,
+  confirmationReceipt,
+  confirmationLoading,
+  confirmationError,
   recoveryRuns,
   selectedRecoveryRunId,
   recoveryResults,
@@ -1607,6 +2004,8 @@ function SavedPlanDetails({
   cancelling,
   onCheckValidation,
   onPreviewDryRun,
+  onPreviewOperations,
+  onIssueConfirmationToken,
   onSelectRecoveryRun,
   onCancelDraft,
   onConfirmCancel,
@@ -1621,6 +2020,12 @@ function SavedPlanDetails({
   dryRunPreview: ApplyPlanDryRunPreview | null;
   dryRunLoading: boolean;
   dryRunError: string | null;
+  operationPreview: ApplyPlanOperationPreview | null;
+  operationLoading: boolean;
+  operationError: string | null;
+  confirmationReceipt: ApplyPlanConfirmationTokenReceipt | null;
+  confirmationLoading: boolean;
+  confirmationError: string | null;
   recoveryRuns: PersistedApplyPlanRun[];
   selectedRecoveryRunId: number | null;
   recoveryResults: PersistedApplyPlanResult[];
@@ -1631,6 +2036,8 @@ function SavedPlanDetails({
   cancelling: boolean;
   onCheckValidation: (planId: number) => void;
   onPreviewDryRun: (planId: number) => void;
+  onPreviewOperations: (plan: PersistedApplyPlan) => void;
+  onIssueConfirmationToken: (plan: PersistedApplyPlan, operationPreview: ApplyPlanOperationPreview) => void;
   onSelectRecoveryRun: (runId: number) => void;
   onCancelDraft: () => void;
   onConfirmCancel: () => void;
@@ -1797,10 +2204,23 @@ function SavedPlanDetails({
         onPreview={onPreviewDryRun}
       />
 
+      <OperationPreviewSection
+        plan={plan}
+        preview={operationPreview}
+        loading={operationLoading}
+        error={operationError}
+        onPreview={onPreviewOperations}
+      />
+
       <ConfirmationDesignSection
         plan={plan}
         validationPreview={validationPreview}
         dryRunPreview={dryRunPreview}
+        operationPreview={operationPreview}
+        confirmationReceipt={confirmationReceipt}
+        confirmationLoading={confirmationLoading}
+        confirmationError={confirmationError}
+        onIssueToken={onIssueConfirmationToken}
       />
 
       <RecoveryHistorySection
@@ -1865,6 +2285,14 @@ export function SavedPlansReview({
     useState<ApplyPlanDryRunPreview | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunError, setDryRunError] = useState<string | null>(null);
+  const [operationPreview, setOperationPreview] =
+    useState<ApplyPlanOperationPreview | null>(null);
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [confirmationReceipt, setConfirmationReceipt] =
+    useState<ApplyPlanConfirmationTokenReceipt | null>(null);
+  const [confirmationLoading, setConfirmationLoading] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [recoveryRuns, setRecoveryRuns] = useState<PersistedApplyPlanRun[]>([]);
   const [selectedRecoveryRunId, setSelectedRecoveryRunId] = useState<number | null>(
     null,
@@ -1917,6 +2345,12 @@ export function SavedPlansReview({
       setDryRunPreview(null);
       setDryRunError(null);
       setDryRunLoading(false);
+      setOperationPreview(null);
+      setOperationError(null);
+      setOperationLoading(false);
+      setConfirmationReceipt(null);
+      setConfirmationError(null);
+      setConfirmationLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -1937,6 +2371,12 @@ export function SavedPlansReview({
       setDryRunPreview(null);
       setDryRunError(null);
       setDryRunLoading(false);
+      setOperationPreview(null);
+      setOperationError(null);
+      setOperationLoading(false);
+      setConfirmationReceipt(null);
+      setConfirmationError(null);
+      setConfirmationLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -1951,6 +2391,9 @@ export function SavedPlansReview({
           setDryRunPreview(null);
           setDryRunError(null);
           setDryRunLoading(false);
+          setOperationPreview(null);
+          setOperationError(null);
+          setOperationLoading(false);
           setDetailError("Saved preview plan was not found.");
           return;
         }
@@ -2066,6 +2509,77 @@ export function SavedPlansReview({
     }
   };
 
+  const handlePreviewOperations = async (plan: PersistedApplyPlan) => {
+    const planId = plan.id;
+    setOperationLoading(true);
+    setOperationError(null);
+    setOperationPreview(null);
+    setConfirmationReceipt(null);
+    setConfirmationError(null);
+    try {
+      const preview = await api.previewApplyPlanOperations({
+        planId,
+        expectedPlanHash: plan.planHash,
+      });
+      if (selectedPlanIdRef.current !== planId) return;
+      setOperationPreview(preview);
+    } catch (error) {
+      if (selectedPlanIdRef.current !== planId) return;
+      setOperationPreview(null);
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (selectedPlanIdRef.current === planId) {
+        setOperationLoading(false);
+      }
+    }
+  };
+
+  const handleIssueConfirmationToken = async (
+    plan: PersistedApplyPlan,
+    operationPreview: ApplyPlanOperationPreview,
+  ) => {
+    const planId = plan.id;
+    setConfirmationLoading(true);
+    setConfirmationError(null);
+    setConfirmationReceipt(null);
+    try {
+      const receipt = await api.issueApplyPlanConfirmationToken({
+        planId,
+        expectedPlanHash: plan.planHash,
+        expectedOperationSetHash: operationPreview.operationSetHash,
+      });
+      if (selectedPlanIdRef.current !== planId) return;
+      setConfirmationReceipt(receipt);
+      setLocalStatusMessage(
+        "Confirmation token issued for the current operation-set hash. Apply remains locked; no files changed.",
+      );
+      const runs =
+        (await api.listApplyPlanRunLogs({
+          applyPlanId: planId,
+          limit: 20,
+        })) ?? [];
+      if (selectedPlanIdRef.current !== planId) return;
+      setRecoveryRuns(runs);
+      setSelectedRecoveryRunId(receipt.tokenId);
+      const [results, restoreEntries] = await Promise.all([
+        api.listApplyPlanResultLogs({ applyPlanRunId: receipt.tokenId }),
+        api.listApplyPlanRestoreEntries({ applyPlanRunId: receipt.tokenId }),
+      ]);
+      if (selectedPlanIdRef.current !== planId) return;
+      setRecoveryResults(results ?? []);
+      setRecoveryRestoreEntries(restoreEntries ?? []);
+      setRecoveryError(null);
+    } catch (error) {
+      if (selectedPlanIdRef.current !== planId) return;
+      setConfirmationReceipt(null);
+      setConfirmationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (selectedPlanIdRef.current === planId) {
+        setConfirmationLoading(false);
+      }
+    }
+  };
+
   const handleSelectRecoveryRun = async (runId: number) => {
     setSelectedRecoveryRunId(runId);
     setRecoveryLoading(true);
@@ -2098,6 +2612,12 @@ export function SavedPlansReview({
       setDryRunPreview(null);
       setDryRunError(null);
       setDryRunLoading(false);
+      setOperationPreview(null);
+      setOperationError(null);
+      setOperationLoading(false);
+      setConfirmationReceipt(null);
+      setConfirmationError(null);
+      setConfirmationLoading(false);
       setRecoveryRuns([]);
       setSelectedRecoveryRunId(null);
       setRecoveryResults([]);
@@ -2214,6 +2734,12 @@ export function SavedPlansReview({
               dryRunPreview={dryRunPreview}
               dryRunLoading={dryRunLoading}
               dryRunError={dryRunError}
+              operationPreview={operationPreview}
+              operationLoading={operationLoading}
+              operationError={operationError}
+              confirmationReceipt={confirmationReceipt}
+              confirmationLoading={confirmationLoading}
+              confirmationError={confirmationError}
               recoveryRuns={recoveryRuns}
               selectedRecoveryRunId={selectedRecoveryRunId}
               recoveryResults={recoveryResults}
@@ -2224,6 +2750,8 @@ export function SavedPlansReview({
               cancelling={cancelling}
               onCheckValidation={handleCheckValidation}
               onPreviewDryRun={handlePreviewDryRun}
+              onPreviewOperations={handlePreviewOperations}
+              onIssueConfirmationToken={handleIssueConfirmationToken}
               onSelectRecoveryRun={handleSelectRecoveryRun}
               onCancelDraft={() => setConfirmingCancel(true)}
               onConfirmCancel={handleCancelDraft}

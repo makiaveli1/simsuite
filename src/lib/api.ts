@@ -72,7 +72,9 @@ import type {
   ApplyPlanDryRunItem,
   ApplyPlanDryRunItemStatus,
   ApplyPlanDryRunPreview,
+  ApplyPlanConfirmationTokenReceipt,
   ApplyPlanListItem,
+  ApplyPlanOperationPreview,
   ApplyPlanRunLogDetail,
   ApplyPlanRunLogStatus,
   ApplyPlanResultLogStatus,
@@ -83,6 +85,7 @@ import type {
   BuildApplyPlanFromStagingPlanRequest,
   CreateApplyPlanRunLogRequest,
   DeleteDraftApplyPlanResult,
+  IssueApplyPlanConfirmationTokenRequest,
   ListApplyPlanRestoreEntriesRequest,
   ListApplyPlanResultLogsRequest,
   ListApplyPlanRunLogsRequest,
@@ -96,6 +99,7 @@ import type {
   PersistedApplyPlanRun,
   PersistedApplyPlanSignal,
   PreviewApplyPlanDryRunRequest,
+  PreviewApplyPlanOperationsRequest,
   PreviewApplyPlanValidationRequest,
   RecordApplyPlanRestoreEntryRequest,
   RecordApplyPlanResultLogRequest,
@@ -1236,6 +1240,160 @@ const buildMockApplyPlanDryRunPreview = (
       "Restore is not ready yet. Future Apply still requires backup, restore map, result log, confirmation, and executor proof.",
     ],
     items,
+  };
+};
+
+const buildMockApplyPlanOperationPreview = (
+  request: PreviewApplyPlanOperationsRequest,
+): ApplyPlanOperationPreview => {
+  const plan = mockSavedApplyPlans.find((candidate) => candidate.id === request.planId);
+  if (!plan) {
+    throw new Error("Saved preview plan was not found.");
+  }
+
+  const dryRun = buildMockApplyPlanDryRunPreview({ planId: request.planId });
+  const expectedPlanHash = request.expectedPlanHash?.trim() ?? "";
+  const planHashMatches =
+    !expectedPlanHash || (Boolean(plan.planHash) && expectedPlanHash === plan.planHash);
+  const backendGenerated = plan.sourcePlanKind === "backend_generated_sorting_preview";
+  const caveats = [
+    ...dryRun.caveats,
+    "No files changed. This operation-set preview is read-only.",
+    "Operation-set preview is not Apply; confirmation, backup, restore map, result log, and executor proof are still required.",
+    ...(backendGenerated
+      ? []
+      : [
+          "Client-supplied or legacy ApplyPlan previews are review/audit-only and cannot produce operation-set candidates.",
+        ]),
+    ...(planHashMatches
+      ? []
+      : ["Expected plan hash does not match the saved backend-owned plan hash."]),
+  ];
+  const operations: ApplyPlanOperationPreview["operations"] =
+    backendGenerated && planHashMatches
+      ? dryRun.items
+          .filter((item) =>
+            ["candidate_after_future_safety_gates", "would_require_backup"].includes(
+              item.dryRunStatus,
+            ),
+          )
+          .map((item) => ({
+            itemId: item.itemId,
+            fileId: item.fileId,
+            fileName: item.fileName,
+            sourcePath: item.sourcePath,
+            destinationPath: item.destinationPath,
+            actionPreview: item.actionPreview,
+            reasons: item.reasons,
+            requiredBeforeApply: item.requiredBeforeApply,
+            canApply: false,
+          }))
+      : [];
+  const operationSetHash = deterministicMockPlanHash({
+    planId: plan.id,
+    planHash: plan.planHash,
+    operations,
+  });
+
+  return {
+    planId: plan.id,
+    status: operations.length > 0 ? "preview_only" : "blocked",
+    canProceedToApply: false,
+    canProceedToConfirmation: false,
+    checkedAt: dryRun.checkedAt,
+    operationSetHash,
+    operationSetHashAlgorithm: "sha256",
+    operationSetHashVersion: "apply_plan_operation_set_v1",
+    summary: {
+      totalItems: dryRun.summary.totalItems,
+      candidateOperations: operations.length,
+      blockedItems: dryRun.summary.blockedItems,
+      skippedItems: dryRun.summary.skippedItems,
+      reviewOnlyItems: dryRun.summary.reviewOnlyItems,
+      conflictItems: dryRun.summary.conflictItems,
+      backupRequiredItems: dryRun.summary.backupRequiredItems,
+    },
+    caveats,
+    operations,
+  };
+};
+
+const issueMockApplyPlanConfirmationToken = (
+  request: IssueApplyPlanConfirmationTokenRequest,
+): ApplyPlanConfirmationTokenReceipt => {
+  const plan = mockSavedPlanById(request.planId);
+  if (plan.status === "cancelled") {
+    throw new Error("Cannot issue a confirmation token for a cancelled ApplyPlan.");
+  }
+  if (!plan.planHash?.trim()) {
+    throw new Error("Cannot issue a confirmation token because the ApplyPlan hash is missing.");
+  }
+  const preview = buildMockApplyPlanOperationPreview({
+    planId: request.planId,
+    expectedPlanHash: request.expectedPlanHash,
+  });
+  const expectedOperationSetHash = request.expectedOperationSetHash?.trim() ?? "";
+  if (expectedOperationSetHash && expectedOperationSetHash !== preview.operationSetHash) {
+    throw new Error(
+      "Expected operation-set hash did not match the current backend operation preview. Reload the saved plan before requesting confirmation.",
+    );
+  }
+  if (preview.operations.length === 0) {
+    throw new Error(
+      "Cannot issue a confirmation token without at least one current backend-owned operation candidate.",
+    );
+  }
+
+  const token = `aptok_v1_${deterministicMockPlanHash({
+    planId: plan.id,
+    planHash: plan.planHash,
+    operationSetHash: preview.operationSetHash,
+    issueSequence: mockNextApplyPlanRunId,
+  })}`;
+  const run = createMockApplyPlanRunLog({
+    applyPlanId: plan.id,
+    status: "draft_log",
+    backupStrategy: "copy_backup_first",
+    confirmationToken: token,
+    totalItems: preview.summary.totalItems,
+    skippedItems: preview.summary.skippedItems,
+    failedItems: 0,
+    summary: JSON.stringify({
+      kind: "confirmation_token_v1",
+      planHash: plan.planHash,
+      operationSetHash: preview.operationSetHash,
+      operationSetHashVersion: preview.operationSetHashVersion,
+      operationSetHashAlgorithm: preview.operationSetHashAlgorithm,
+      allowedOperationCount: preview.operations.length,
+      readOnlyBoundary: {
+        canProceedToApply: false,
+        canExecute: false,
+        note: "Token issuance binds the current operation-set preview but does not unlock the Apply executor.",
+      },
+    }),
+  });
+
+  return {
+    token,
+    tokenId: run.id,
+    planId: plan.id,
+    planHash: plan.planHash,
+    operationSetHash: preview.operationSetHash,
+    operationSetHashAlgorithm: preview.operationSetHashAlgorithm,
+    operationSetHashVersion: preview.operationSetHashVersion,
+    sourcePlanKind: plan.sourcePlanKind,
+    allowedOperationCount: preview.operations.length,
+    singleUseState: "unused",
+    issuedAt: run.createdAt,
+    expiresAt: null,
+    canProceedToApply: false,
+    canExecute: false,
+    caveats: [
+      ...preview.caveats,
+      "Backend-issued confirmation token V1 created for this operation-set hash.",
+      "Confirmation token is single-use, but Apply executor is still locked; no files changed.",
+      "Apply executor is still locked. This token cannot move, copy, delete, quarantine, replace, or restore files.",
+    ],
   };
 };
 
@@ -7472,6 +7630,20 @@ async function mockInvoke<T>(
       }
       return structuredClone(buildMockApplyPlanDryRunPreview(request)) as T;
     }
+    case "preview_apply_plan_operations": {
+      const request = payload?.request as PreviewApplyPlanOperationsRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan operation-set preview request.");
+      }
+      return structuredClone(buildMockApplyPlanOperationPreview(request)) as T;
+    }
+    case "issue_apply_plan_confirmation_token": {
+      const request = payload?.request as IssueApplyPlanConfirmationTokenRequest | undefined;
+      if (!request) {
+        throw new Error("Missing ApplyPlan confirmation-token request.");
+      }
+      return structuredClone(issueMockApplyPlanConfirmationToken(request)) as T;
+    }
     case "create_apply_plan_run_log": {
       const request = payload?.request as CreateApplyPlanRunLogRequest | undefined;
       if (!request) {
@@ -9007,6 +9179,10 @@ export const api = {
     invoke<ApplyPlanValidationPreview>("preview_apply_plan_validation", { request }),
   previewApplyPlanDryRun: (request: PreviewApplyPlanDryRunRequest) =>
     invoke<ApplyPlanDryRunPreview>("preview_apply_plan_dry_run", { request }),
+  previewApplyPlanOperations: (request: PreviewApplyPlanOperationsRequest) =>
+    invoke<ApplyPlanOperationPreview>("preview_apply_plan_operations", { request }),
+  issueApplyPlanConfirmationToken: (request: IssueApplyPlanConfirmationTokenRequest) =>
+    invoke<ApplyPlanConfirmationTokenReceipt>("issue_apply_plan_confirmation_token", { request }),
   createApplyPlanRunLog: (request: CreateApplyPlanRunLogRequest) =>
     invoke<PersistedApplyPlanRun>("create_apply_plan_run_log", { request }),
   listApplyPlanRunLogs: (request?: ListApplyPlanRunLogsRequest) =>

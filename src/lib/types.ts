@@ -473,11 +473,18 @@ export interface PreviewApplyPlanDryRunRequest {
   planId: number;
 }
 
+export interface PreviewApplyPlanOperationsRequest {
+  planId: number;
+  expectedPlanHash?: string | null;
+}
+
 export type ApplyPlanDryRunPreviewStatus =
   | "not_run"
   | "blocked"
   | "preview_only"
   | "error";
+
+export type ApplyPlanOperationPreviewStatus = "blocked" | "preview_only" | "error";
 
 export type ApplyPlanDryRunItemStatus =
   | "blocked"
@@ -527,6 +534,68 @@ export interface ApplyPlanDryRunPreview {
   summary: ApplyPlanDryRunSummary;
   caveats: string[];
   items: ApplyPlanDryRunItem[];
+}
+
+export interface ApplyPlanOperationPreviewSummary {
+  totalItems: number;
+  candidateOperations: number;
+  blockedItems: number;
+  skippedItems: number;
+  reviewOnlyItems: number;
+  conflictItems: number;
+  backupRequiredItems: number;
+}
+
+export interface ApplyPlanOperationPreviewItem {
+  itemId: number;
+  fileId: number | null;
+  fileName: string;
+  sourcePath: string | null;
+  destinationPath: string | null;
+  actionPreview: ApplyPlanDryRunActionPreview;
+  reasons: string[];
+  requiredBeforeApply: string[];
+  canApply: false;
+}
+
+export interface ApplyPlanOperationPreview {
+  planId: number;
+  status: ApplyPlanOperationPreviewStatus;
+  canProceedToApply: false;
+  canProceedToConfirmation: false;
+  checkedAt: string;
+  operationSetHash: string;
+  operationSetHashAlgorithm: string;
+  operationSetHashVersion: string;
+  summary: ApplyPlanOperationPreviewSummary;
+  caveats: string[];
+  operations: ApplyPlanOperationPreviewItem[];
+}
+
+export interface IssueApplyPlanConfirmationTokenRequest {
+  planId: number;
+  expectedPlanHash?: string | null;
+  expectedOperationSetHash?: string | null;
+}
+
+export type ApplyPlanConfirmationTokenUseState = "unused" | "used" | "revoked";
+
+export interface ApplyPlanConfirmationTokenReceipt {
+  token: string;
+  tokenId: number;
+  planId: number;
+  planHash: string;
+  operationSetHash: string;
+  operationSetHashAlgorithm: string;
+  operationSetHashVersion: string;
+  sourcePlanKind: string;
+  allowedOperationCount: number;
+  singleUseState: ApplyPlanConfirmationTokenUseState;
+  issuedAt: string;
+  expiresAt: string | null;
+  canProceedToApply: false;
+  canExecute: false;
+  caveats: string[];
 }
 
 export type ApplyPlanRunLogStatus =

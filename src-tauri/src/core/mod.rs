@@ -1,10 +1,13 @@
 pub mod ai_classifier;
 pub mod apply_plan_backup_prototype;
 pub(crate) mod apply_plan_builders;
+pub mod apply_plan_confirmation_token;
 pub mod apply_plan_dry_run;
+pub(crate) mod apply_plan_fixture_executor;
 pub(crate) mod apply_plan_hash_persistence;
 pub(crate) mod apply_plan_items;
 pub(crate) mod apply_plan_loading;
+pub mod apply_plan_operation_preview;
 pub mod apply_plan_path_validation;
 pub mod apply_plan_persistence;
 pub(crate) mod apply_plan_persistence_json;
@@ -12,6 +15,8 @@ pub(crate) mod apply_plan_persistence_rows;
 pub(crate) mod apply_plan_preview_snapshot_consumption;
 pub(crate) mod apply_plan_preview_snapshots;
 pub mod apply_plan_provenance;
+#[cfg(feature = "apply-executor-real-move-spike")]
+pub(crate) mod apply_plan_real_move_executor;
 pub(crate) mod apply_plan_records;
 pub mod apply_plan_results;
 pub(crate) mod apply_plan_saves;

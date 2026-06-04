@@ -82,6 +82,21 @@ run/plan/item/result context, records only safe DB metadata, and still does not
 execute real Apply, user-file backup, user-file Restore, movement, deletion,
 cleanup, quarantine, replacement, or AI decisions.
 
+Current implementation note: the hidden feature-gated real move executor spike
+now proves a narrow backup-first move path behind the
+`apply-executor-real-move-spike` Cargo feature and a separate runtime gate. It is
+not registered as a Tauri command. It accepts only backend-owned move previews
+bound to a backend-issued confirmation token, creates and verifies backup
+material before `rename`, records backend-observed result/restore metadata,
+updates only backend-owned run status/counters from observed operations, and
+records recovery metadata if a move fails after backup verification. Its paired
+hidden run-scoped restore proof reads only backend restore entries for the
+requested run, refuses arbitrary rollback paths, verifies destination and backup
+bytes against recorded hash/size, marks verified backend restore entries
+`restored`, and remains hidden from UI and Tauri commands.
+These proofs still do not expose real Apply, user-file Restore, deletion,
+cleanup, quarantine, replacement, folder creation, or AI decisions.
+
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and
 restore-map records. It keeps `No files changed`, `Apply is not ready yet`, and

@@ -671,10 +671,112 @@ pub struct ApplyPlanDryRunPreview {
     pub items: Vec<ApplyPlanDryRunItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewApplyPlanOperationsRequest {
+    pub plan_id: i64,
+    #[serde(default)]
+    pub expected_plan_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanOperationPreviewStatus {
+    Blocked,
+    PreviewOnly,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreviewSummary {
+    pub total_items: i64,
+    pub candidate_operations: i64,
+    pub blocked_items: i64,
+    pub skipped_items: i64,
+    pub review_only_items: i64,
+    pub conflict_items: i64,
+    pub backup_required_items: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreviewItem {
+    pub item_id: i64,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub source_path: Option<String>,
+    pub destination_path: Option<String>,
+    pub action_preview: ApplyPlanDryRunActionPreview,
+    pub reasons: Vec<String>,
+    pub required_before_apply: Vec<String>,
+    pub can_apply: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreview {
+    pub plan_id: i64,
+    pub status: ApplyPlanOperationPreviewStatus,
+    pub can_proceed_to_apply: bool,
+    pub can_proceed_to_confirmation: bool,
+    pub checked_at: String,
+    pub operation_set_hash: String,
+    pub operation_set_hash_algorithm: String,
+    pub operation_set_hash_version: String,
+    pub summary: ApplyPlanOperationPreviewSummary,
+    pub caveats: Vec<String>,
+    pub operations: Vec<ApplyPlanOperationPreviewItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueApplyPlanConfirmationTokenRequest {
+    pub plan_id: i64,
+    #[serde(default)]
+    pub expected_plan_hash: Option<String>,
+    #[serde(default)]
+    pub expected_operation_set_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanConfirmationTokenUseState {
+    Unused,
+    Used,
+    Revoked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanConfirmationTokenReceipt {
+    pub token: String,
+    pub token_id: i64,
+    pub plan_id: i64,
+    pub plan_hash: String,
+    pub operation_set_hash: String,
+    pub operation_set_hash_algorithm: String,
+    pub operation_set_hash_version: String,
+    pub source_plan_kind: String,
+    pub allowed_operation_count: i64,
+    pub single_use_state: ApplyPlanConfirmationTokenUseState,
+    pub issued_at: String,
+    pub expires_at: Option<String>,
+    pub can_proceed_to_apply: bool,
+    pub can_execute: bool,
+    pub caveats: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanRunLogStatus {
     DraftLog,
+    Confirmed,
+    Applying,
+    Applied,
+    ApplyFailed,
+    Restored,
+    RestoreFailed,
     Blocked,
     Cancelled,
 }
@@ -686,6 +788,9 @@ pub enum ApplyPlanResultLogStatus {
     Skipped,
     Blocked,
     FailedBeforeChange,
+    Applied,
+    FailedAfterChange,
+    Restored,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -694,6 +799,8 @@ pub enum ApplyPlanRestoreEntryStatus {
     NotAvailable,
     DesignOnly,
     NotRestored,
+    Restored,
+    RestoreFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
