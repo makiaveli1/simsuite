@@ -2853,10 +2853,7 @@ fn summarize_watch_check_error(error: &str) -> String {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .unwrap_or("network, provider, or response issue");
-    let compact = first_line
-        .replace('\r', " ")
-        .replace('\n', " ")
-        .replace('\t', " ");
+    let compact = first_line.replace(['\r', '\n', '\t'], " ");
     let mut summary = compact
         .split_whitespace()
         .take(24)

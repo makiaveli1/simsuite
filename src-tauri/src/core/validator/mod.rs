@@ -38,7 +38,8 @@ pub fn validate_suggestion(
     request: &ValidationRequest,
     reserved_targets: &HashSet<String>,
 ) -> AppResult<ValidationResult> {
-    let mut final_relative = PathBuf::from(&request.suggested_relative_path);
+    let suggested_relative = Path::new(&request.suggested_relative_path);
+    let mut final_relative = PathBuf::from(suggested_relative);
     let mut notes = Vec::new();
 
     if request.kind.starts_with("Tray") {
@@ -58,7 +59,7 @@ pub fn validate_suggestion(
         final_relative = PathBuf::from(bundle_folder)
             .join(bundle_name)
             .join(&request.filename);
-        if final_relative != PathBuf::from(&request.suggested_relative_path) {
+        if final_relative != suggested_relative {
             notes.push("validator_routed_tray_content_to_tray_root".to_owned());
         }
     }
@@ -75,7 +76,7 @@ pub fn validate_suggestion(
                 .join(&request.filename),
             None => PathBuf::from("ScriptMods").join(&request.filename),
         };
-        if final_relative != PathBuf::from(&request.suggested_relative_path) {
+        if final_relative != suggested_relative {
             notes.push("validator_flattened_script_depth".to_owned());
         }
     }
@@ -155,7 +156,7 @@ pub fn validate_suggestion(
     Ok(ValidationResult {
         final_relative_path: normalize_relative_path(&final_relative),
         final_absolute_path,
-        corrected: final_relative != PathBuf::from(&request.suggested_relative_path),
+        corrected: final_relative != suggested_relative,
         review_required,
         notes,
     })

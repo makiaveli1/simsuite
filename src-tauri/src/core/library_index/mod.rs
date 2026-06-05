@@ -819,7 +819,6 @@ fn list_library_files_scoped(
                 insights,
                 watch_status,
                 has_duplicate,
-                installed_version: None,
                 same_folder_peer_count,
                 same_pack_peer_count,
                 primary_problem_signal,
@@ -878,8 +877,7 @@ fn empty_library_list_response() -> LibraryListResponse {
 fn bounded_folder_query_limit(limit: Option<i64>) -> i64 {
     limit
         .unwrap_or(DEFAULT_FOLDER_QUERY_LIMIT)
-        .max(0)
-        .min(MAX_FOLDER_QUERY_LIMIT)
+        .clamp(0, MAX_FOLDER_QUERY_LIMIT)
 }
 
 #[derive(Debug)]
@@ -1119,8 +1117,7 @@ fn load_library_folder_rows(
         return Ok(Vec::new());
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(sources.len())
+    let placeholders = std::iter::repeat_n("?", sources.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -1401,9 +1398,7 @@ fn folder_root_name(source_location: &str) -> Option<String> {
     }
 
     let mut chars = trimmed.chars();
-    let Some(first) = chars.next() else {
-        return None;
-    };
+    let first = chars.next()?;
     Some(format!(
         "{}{}",
         first.to_ascii_uppercase(),
@@ -2003,6 +1998,7 @@ mod tests {
         serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json")
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_library_file_row(
         connection: &rusqlite::Connection,
         path: &str,
@@ -2040,6 +2036,7 @@ mod tests {
         connection.last_insert_rowid()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_library_folder_row(
         connection: &rusqlite::Connection,
         source_location: &str,

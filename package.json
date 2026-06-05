@@ -21,6 +21,7 @@
         "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
         "test:unit": "node scripts/test/run-vitest.mjs",
         "test:rust": "node scripts/test/run-rust-tests.mjs",
+        "test:rust:warnings": "node scripts/test/run-rust-warning-budget.mjs",
         "test:library:stress": "node scripts/test/run-rust-tests.mjs large_ -- --ignored --nocapture"
     },
     "dependencies": {

@@ -163,7 +163,7 @@ pub enum StagingPlanEvidenceLevel {
     ReviewOnly,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StagingPlanBucket {
     ScriptMods,
@@ -173,78 +173,54 @@ pub enum StagingPlanBucket {
     PresetsSliders,
     OverridesDefaults,
     Tray,
+    #[default]
     NeedsReview,
     UnknownLeaveInPlace,
 }
 
-impl Default for StagingPlanBucket {
-    fn default() -> Self {
-        Self::NeedsReview
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum StagingPlanConfidenceLabel {
     Deterministic,
     EvidenceBacked,
     Heuristic,
+    #[default]
     ReviewOnly,
 }
 
-impl Default for StagingPlanConfidenceLabel {
-    fn default() -> Self {
-        Self::ReviewOnly
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StagingPlanCurrentRoot {
     Mods,
     Tray,
     Downloads,
     Inbox,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanFolderConfigMode {
+    #[default]
     Default,
     Custom,
 }
 
-impl Default for ApplyPlanFolderConfigMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanCreatorFolderMode {
+    #[default]
     Off,
     WhenAvailable,
 }
 
-impl Default for ApplyPlanCreatorFolderMode {
-    fn default() -> Self {
-        Self::Off
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanCategoryFolderMode {
+    #[default]
     BucketOnly,
     BucketAndCategory,
-}
-
-impl Default for ApplyPlanCategoryFolderMode {
-    fn default() -> Self {
-        Self::BucketOnly
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -283,12 +259,6 @@ pub struct ApplyPlanContextSignal {
     pub label: String,
     pub value: Option<String>,
     pub strength: ApplyPlanContextSignalStrength,
-}
-
-impl Default for StagingPlanCurrentRoot {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -554,6 +524,8 @@ pub enum ApplyPlanValidationStatus {
     Blocked,
     StaleSource,
     MissingSource,
+    MissingSourceRoot,
+    UnsafeSource,
     MissingDestinationRoot,
     UnsafeDestination,
     DestinationExists,
@@ -699,10 +671,112 @@ pub struct ApplyPlanDryRunPreview {
     pub items: Vec<ApplyPlanDryRunItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewApplyPlanOperationsRequest {
+    pub plan_id: i64,
+    #[serde(default)]
+    pub expected_plan_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanOperationPreviewStatus {
+    Blocked,
+    PreviewOnly,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreviewSummary {
+    pub total_items: i64,
+    pub candidate_operations: i64,
+    pub blocked_items: i64,
+    pub skipped_items: i64,
+    pub review_only_items: i64,
+    pub conflict_items: i64,
+    pub backup_required_items: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreviewItem {
+    pub item_id: i64,
+    pub file_id: Option<i64>,
+    pub file_name: String,
+    pub source_path: Option<String>,
+    pub destination_path: Option<String>,
+    pub action_preview: ApplyPlanDryRunActionPreview,
+    pub reasons: Vec<String>,
+    pub required_before_apply: Vec<String>,
+    pub can_apply: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanOperationPreview {
+    pub plan_id: i64,
+    pub status: ApplyPlanOperationPreviewStatus,
+    pub can_proceed_to_apply: bool,
+    pub can_proceed_to_confirmation: bool,
+    pub checked_at: String,
+    pub operation_set_hash: String,
+    pub operation_set_hash_algorithm: String,
+    pub operation_set_hash_version: String,
+    pub summary: ApplyPlanOperationPreviewSummary,
+    pub caveats: Vec<String>,
+    pub operations: Vec<ApplyPlanOperationPreviewItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueApplyPlanConfirmationTokenRequest {
+    pub plan_id: i64,
+    #[serde(default)]
+    pub expected_plan_hash: Option<String>,
+    #[serde(default)]
+    pub expected_operation_set_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyPlanConfirmationTokenUseState {
+    Unused,
+    Used,
+    Revoked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlanConfirmationTokenReceipt {
+    pub token: String,
+    pub token_id: i64,
+    pub plan_id: i64,
+    pub plan_hash: String,
+    pub operation_set_hash: String,
+    pub operation_set_hash_algorithm: String,
+    pub operation_set_hash_version: String,
+    pub source_plan_kind: String,
+    pub allowed_operation_count: i64,
+    pub single_use_state: ApplyPlanConfirmationTokenUseState,
+    pub issued_at: String,
+    pub expires_at: Option<String>,
+    pub can_proceed_to_apply: bool,
+    pub can_execute: bool,
+    pub caveats: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyPlanRunLogStatus {
     DraftLog,
+    Confirmed,
+    Applying,
+    Applied,
+    ApplyFailed,
+    Restored,
+    RestoreFailed,
     Blocked,
     Cancelled,
 }
@@ -714,6 +788,9 @@ pub enum ApplyPlanResultLogStatus {
     Skipped,
     Blocked,
     FailedBeforeChange,
+    Applied,
+    FailedAfterChange,
+    Restored,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -722,6 +799,8 @@ pub enum ApplyPlanRestoreEntryStatus {
     NotAvailable,
     DesignOnly,
     NotRestored,
+    Restored,
+    RestoreFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -731,6 +810,9 @@ pub struct PersistedApplyPlanRun {
     pub apply_plan_id: i64,
     pub status: ApplyPlanRunLogStatus,
     pub backup_strategy: String,
+    /// Future Apply execution must validate a backend-issued, single-use token.
+    /// It is intentionally never serialized back to the frontend.
+    #[allow(dead_code)]
     #[serde(skip)]
     pub confirmation_token: Option<String>,
     pub confirmed_at: Option<String>,
@@ -1348,6 +1430,9 @@ pub enum ProblemSignalSeverity {
     Info,
     Caution,
     Warning,
+    /// Reserved serialized API vocabulary for future blockers that require a
+    /// stronger warning state than today's generated signals.
+    #[allow(dead_code)]
     Severe,
 }
 
@@ -1356,7 +1441,11 @@ pub enum ProblemSignalSeverity {
 pub enum ProblemSignalProofLevel {
     Confirmed,
     Detected,
+    /// Reserved serialized API vocabulary for future heuristic/evidence signals.
+    #[allow(dead_code)]
     Inferred,
+    /// Reserved serialized API vocabulary for explicitly uncertain future signals.
+    #[allow(dead_code)]
     Unknown,
 }
 
@@ -1415,10 +1504,6 @@ pub struct LibraryFileRow {
     /// True if this file appears in an exact deterministic duplicate pair.
     #[serde(default)]
     pub has_duplicate: bool,
-    /// Installed version string for list display — populated from content_versions
-    /// resolution for the detail panel; list query leaves this None.
-    #[serde(skip)]
-    pub installed_version: Option<String>,
     /// How many other files share the same indexed parent folder in the
     /// current filtered result set.
     #[serde(default)]
@@ -1949,33 +2034,23 @@ pub struct DownloadsInboxQuery {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadIntakeMode {
+    #[default]
     Standard,
     Guided,
     NeedsReview,
     Blocked,
 }
 
-impl Default for DownloadIntakeMode {
-    fn default() -> Self {
-        Self::Standard
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadRiskLevel {
+    #[default]
     Low,
     Medium,
     High,
-}
-
-impl Default for DownloadRiskLevel {
-    fn default() -> Self {
-        Self::Low
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2154,50 +2229,6 @@ pub struct SpecialModDecision {
     pub apply_ready: bool,
     pub available_actions: Vec<ReviewPlanAction>,
     pub primary_action: Option<ReviewPlanAction>,
-}
-
-/// MCCC auto-update info returned by check_mccc_update command.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McccUpdateInfo {
-    /// Whether MCCC is currently installed.
-    pub is_installed: bool,
-    /// The currently installed version, if detected.
-    pub installed_version: Option<String>,
-    /// The path where MCCC is installed.
-    pub install_path: Option<String>,
-    /// The latest version available on the official page.
-    pub latest_version: Option<String>,
-    /// Direct URL to download the latest MCCC zip.
-    pub download_url: Option<String>,
-    /// When the latest version was checked.
-    pub checked_at: Option<String>,
-    /// Whether a newer version is available.
-    pub update_available: bool,
-    /// Confidence score of the latest version detection (0.0 to 1.0).
-    pub confidence: f64,
-    /// Status message or note.
-    pub status: String,
-    /// Error message if the check failed.
-    pub error: Option<String>,
-}
-
-/// Result of applying an MCCC update.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplyMcccUpdateResult {
-    /// The new version installed.
-    pub new_version: String,
-    /// Number of files installed.
-    pub installed_count: i64,
-    /// Number of files replaced.
-    pub replaced_count: i64,
-    /// Number of files preserved (.cfg files kept).
-    pub preserved_count: i64,
-    /// ID of the snapshot created before the update.
-    pub snapshot_id: i64,
-    /// Name of the snapshot.
-    pub snapshot_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

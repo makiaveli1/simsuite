@@ -43,7 +43,7 @@ The current Organize/ApplyPlan flow is intentionally bounded to preview and revi
 6. saved-plan review / disabled confirmation design
 7. immutable plan hash / provenance check
 
-The current externally callable flow stops there. User approval does not unlock a move engine path today, and snapshot restore is not externally available from current UI flows. Legacy file-changing Tauri commands are gated fail-closed until a future executor has plan hashes, confirmation tokens, fresh validation, backup/restore material, and backend-derived result logs.
+The current externally callable flow stops there. User approval does not unlock a move engine path today, and snapshot restore is not externally available from current UI flows. Legacy file-changing Tauri commands are gated fail-closed until a future executor has plan hashes, confirmation tokens, fresh validation, backup/restore material, and backend-derived result logs. A hidden real-move/restore proof exists only behind the `apply-executor-real-move-spike` Cargo feature plus a runtime gate, updates backend-owned run status/counters only from observed hidden operations, is not registered in the invoke handler, and does not alter the visible Apply/Restore boundary.
 
 ## Current UI scope
 

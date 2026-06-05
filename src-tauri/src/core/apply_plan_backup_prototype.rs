@@ -748,6 +748,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn restore_request(
         plan_id: i64,
         item_id: Option<i64>,

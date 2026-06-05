@@ -966,7 +966,7 @@ pub fn update_file_record_on_restore(
         params![
             restored_path.to_string_lossy().to_string(),
             source_location,
-            relative_depth(&settings, restored_path, &kind),
+            relative_depth(settings, restored_path, &kind),
             file_id
         ],
     )?;

@@ -19,6 +19,9 @@ const APPLY_PLAN_HASH_PROVENANCE_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0006_applyplan_hash_provenance_v1.sql");
 const APPLY_PLAN_PREVIEW_SNAPSHOTS_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0007_applyplan_preview_snapshots_v2.sql");
+const APPLY_PLAN_RESULT_RESTORE_STATUS_CONSTRAINTS_SQL: &str = include_str!(
+    "../../../database/migrations/0008_applyplan_result_restore_status_constraints.sql"
+);
 
 #[derive(Debug, Clone)]
 pub struct UserCategoryOverride {
@@ -154,6 +157,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v8_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 8",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v8_exists.is_none() {
+        ensure_apply_plan_result_restore_status_constraints(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![8_i64, "applyplan_result_restore_status_constraints"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -266,7 +284,7 @@ fn ensure_apply_plan_preview_snapshot_schema(connection: &Connection) -> AppResu
             folder_config_json TEXT,
             context_trail_json TEXT NOT NULL DEFAULT '[]',
             preview_snapshot_hash TEXT NOT NULL,
-            preview_snapshot_hash_version TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v2',
+            preview_snapshot_hash_version TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v3',
             preview_snapshot_hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
             preview_snapshot_provenance_json TEXT NOT NULL,
             scan_session_id INTEGER REFERENCES scan_sessions(id) ON DELETE SET NULL,
@@ -316,7 +334,7 @@ fn ensure_apply_plan_preview_snapshot_schema(connection: &Connection) -> AppResu
         connection,
         "apply_plan_preview_snapshots",
         "preview_snapshot_hash_version",
-        "TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v2'",
+        "TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v3'",
     )?;
     ensure_column(
         connection,
@@ -1364,6 +1382,32 @@ fn ensure_apply_plan_result_restore_schema(connection: &Connection) -> AppResult
     Ok(())
 }
 
+fn ensure_apply_plan_result_restore_status_constraints(connection: &Connection) -> AppResult<()> {
+    ensure_apply_plan_result_restore_schema(connection)?;
+
+    let needs_rebuild = !table_sql_contains(connection, "apply_plan_runs", "apply_failed")?
+        || !table_sql_contains(connection, "apply_plan_results", "failed_after_change")?
+        || !table_sql_contains(connection, "apply_plan_restore_entries", "restore_failed")?;
+
+    if needs_rebuild {
+        connection.execute_batch(APPLY_PLAN_RESULT_RESTORE_STATUS_CONSTRAINTS_SQL)?;
+    }
+
+    Ok(())
+}
+
+fn table_sql_contains(connection: &Connection, table_name: &str, needle: &str) -> AppResult<bool> {
+    let sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![table_name],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(sql.is_some_and(|sql| sql.contains(needle)))
+}
+
 fn merge_runtime_creator(runtime: &mut SeedPack, creator: SeedCreator) {
     let canonical_name = creator.canonical_name.clone();
     let normalized = normalize_key(&canonical_name);
@@ -1712,6 +1756,174 @@ mod tests {
                 .expect("index lookup");
             assert_eq!(count, 1, "missing index {index_name}");
         }
+    }
+
+    #[test]
+    fn initialize_migrates_existing_apply_plan_result_restore_status_constraints() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        connection
+            .execute_batch(
+                "DELETE FROM schema_migrations WHERE version = 8;
+                 DROP TABLE apply_plan_restore_entries;
+                 DROP TABLE apply_plan_results;
+                 DROP TABLE apply_plan_runs;
+
+                 CREATE TABLE apply_plan_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    apply_plan_id INTEGER NOT NULL REFERENCES apply_plans (id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'draft_log' CHECK (status IN ('draft_log', 'blocked', 'cancelled')),
+                    backup_strategy TEXT NOT NULL DEFAULT 'copy_backup_first' CHECK (backup_strategy IN ('copy_backup_first', 'design_only')),
+                    confirmation_token TEXT,
+                    confirmed_at TEXT,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    total_items INTEGER NOT NULL DEFAULT 0 CHECK (total_items >= 0),
+                    skipped_items INTEGER NOT NULL DEFAULT 0 CHECK (skipped_items >= 0),
+                    applied_items INTEGER NOT NULL DEFAULT 0 CHECK (applied_items >= 0),
+                    failed_items INTEGER NOT NULL DEFAULT 0 CHECK (failed_items >= 0),
+                    restored_items INTEGER NOT NULL DEFAULT 0 CHECK (restored_items >= 0),
+                    summary TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+
+                 CREATE TABLE apply_plan_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    apply_plan_run_id INTEGER NOT NULL REFERENCES apply_plan_runs (id) ON DELETE CASCADE,
+                    apply_plan_id INTEGER NOT NULL REFERENCES apply_plans (id) ON DELETE CASCADE,
+                    apply_plan_item_id INTEGER REFERENCES apply_plan_items (id) ON DELETE SET NULL,
+                    operation_kind TEXT NOT NULL,
+                    result_status TEXT NOT NULL CHECK (result_status IN ('pending_log', 'skipped', 'blocked', 'failed_before_change')),
+                    source_path_at_execution TEXT,
+                    destination_path_at_execution TEXT,
+                    backup_path TEXT,
+                    error_code TEXT,
+                    error_message TEXT,
+                    user_summary TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+
+                 CREATE TABLE apply_plan_restore_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    apply_plan_run_id INTEGER NOT NULL REFERENCES apply_plan_runs (id) ON DELETE CASCADE,
+                    apply_plan_result_id INTEGER REFERENCES apply_plan_results (id) ON DELETE SET NULL,
+                    apply_plan_id INTEGER NOT NULL REFERENCES apply_plans (id) ON DELETE CASCADE,
+                    apply_plan_item_id INTEGER REFERENCES apply_plan_items (id) ON DELETE SET NULL,
+                    original_source_path TEXT NOT NULL,
+                    destination_path_at_execution TEXT,
+                    backup_path TEXT,
+                    file_hash_before TEXT,
+                    file_size_before INTEGER CHECK (file_size_before IS NULL OR file_size_before >= 0),
+                    operation_kind TEXT NOT NULL,
+                    operation_result_status TEXT NOT NULL CHECK (operation_result_status IN ('pending_log', 'skipped', 'blocked', 'failed_before_change')),
+                    restore_status TEXT NOT NULL CHECK (restore_status IN ('not_available', 'design_only', 'not_restored')),
+                    restore_error_code TEXT,
+                    restore_error_message TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    restored_at TEXT,
+                    failed_at TEXT
+                 );",
+            )
+            .expect("old v4 result/restore schema");
+
+        connection
+            .execute(
+                "INSERT INTO apply_plans (source_plan_kind, title, summary) VALUES (?1, ?2, ?3)",
+                params![
+                    "backend_generated_sorting_preview",
+                    "Legacy",
+                    "Legacy schema"
+                ],
+            )
+            .expect("legacy apply plan");
+        let apply_plan_id = connection.last_insert_rowid();
+        connection
+            .execute(
+                "INSERT INTO apply_plan_runs (id, apply_plan_id, status, total_items, summary)
+                 VALUES (1, ?1, 'draft_log', 1, 'legacy run')",
+                params![apply_plan_id],
+            )
+            .expect("legacy run");
+        connection
+            .execute(
+                "INSERT INTO apply_plan_results (id, apply_plan_run_id, apply_plan_id, operation_kind, result_status, user_summary)
+                 VALUES (1, 1, ?1, 'move', 'pending_log', 'legacy result')",
+                params![apply_plan_id],
+            )
+            .expect("legacy result");
+        connection
+            .execute(
+                "INSERT INTO apply_plan_restore_entries (
+                    id,
+                    apply_plan_run_id,
+                    apply_plan_result_id,
+                    apply_plan_id,
+                    original_source_path,
+                    operation_kind,
+                    operation_result_status,
+                    restore_status
+                 ) VALUES (1, 1, 1, ?1, 'C:/Mods/a.package', 'move', 'pending_log', 'not_restored')",
+                params![apply_plan_id],
+            )
+            .expect("legacy restore entry");
+
+        initialize(&mut connection).expect("v8 status constraint migration");
+
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 8 AND name = 'applyplan_result_restore_status_constraints'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+
+        for (table_name, expected_status) in [
+            ("apply_plan_runs", "apply_failed"),
+            ("apply_plan_results", "failed_after_change"),
+            ("apply_plan_restore_entries", "restore_failed"),
+        ] {
+            assert!(
+                table_sql_contains(&connection, table_name, expected_status).expect("table sql"),
+                "missing expanded status constraint for {table_name}"
+            );
+        }
+
+        let preserved_result_summary: String = connection
+            .query_row(
+                "SELECT user_summary FROM apply_plan_results WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("preserved result row");
+        assert_eq!(preserved_result_summary, "legacy result");
+
+        connection
+            .execute(
+                "UPDATE apply_plan_runs SET status = 'applying' WHERE id = 1",
+                [],
+            )
+            .expect("expanded run status should be accepted");
+        connection
+            .execute(
+                "UPDATE apply_plan_results SET result_status = 'failed_after_change' WHERE id = 1",
+                [],
+            )
+            .expect("expanded result status should be accepted");
+        connection
+            .execute(
+                "UPDATE apply_plan_restore_entries
+                 SET operation_result_status = 'restored', restore_status = 'restore_failed'
+                 WHERE id = 1",
+                [],
+            )
+            .expect("expanded restore statuses should be accepted");
     }
 
     #[test]

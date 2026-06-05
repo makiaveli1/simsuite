@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS apply_plan_preview_snapshots (
     folder_config_json TEXT,
     context_trail_json TEXT NOT NULL DEFAULT '[]',
     preview_snapshot_hash TEXT NOT NULL,
-    preview_snapshot_hash_version TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v2',
+    preview_snapshot_hash_version TEXT NOT NULL DEFAULT 'apply_plan_preview_snapshot_v3',
     preview_snapshot_hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
     preview_snapshot_provenance_json TEXT NOT NULL,
     scan_session_id INTEGER REFERENCES scan_sessions(id) ON DELETE SET NULL,

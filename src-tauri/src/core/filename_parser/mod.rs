@@ -531,6 +531,7 @@ fn apply_keyword_scoring(
     blocked_indices
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_category_match(
     result: &mut FilenameClassification,
     seed_pack: &SeedPack,
@@ -725,8 +726,8 @@ fn block_preset_tokens(
     start: usize,
     width: usize,
 ) {
-    for index in start..(start + width) {
-        let token = tokens[index].as_str();
+    for (index, token) in tokens.iter().enumerate().skip(start).take(width) {
+        let token = token.as_str();
         if matches!(token, "preset" | "slider" | "facial" | "body") {
             blocked_indices.insert(index);
         }

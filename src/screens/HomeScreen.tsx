@@ -527,7 +527,9 @@ export function HomeScreen({
                     <strong>{step.label}</strong>
                     <small>{step.note}</small>
                   </span>
-                  <span className="ghost-chip home-journey-action">{step.actionLabel}</span>
+                  {step.actionLabel !== step.label ? (
+                    <span className="ghost-chip home-journey-action">{step.actionLabel}</span>
+                  ) : null}
                 </button>
               ))}
             </div>

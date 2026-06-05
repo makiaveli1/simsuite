@@ -1,10 +1,8 @@
-use std::{collections::HashMap, path::Path};
-
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
-    core::{apply_plan_persistence, apply_plan_provenance},
+    core::{apply_plan_path_validation, apply_plan_persistence, apply_plan_provenance},
     error::{AppError, AppResult},
     models::{
         ApplyPlanConflictStatus, ApplyPlanValidationItem, ApplyPlanValidationPreview,
@@ -59,7 +57,8 @@ pub fn preview_apply_plan_validation(
         );
     }
 
-    let destination_conflicts = detect_destination_conflicts(&plan.items);
+    let destination_conflicts =
+        apply_plan_path_validation::detect_destination_conflicts(&plan.items);
     let mut items = Vec::with_capacity(plan.items.len());
     for item in &plan.items {
         items.push(validate_item(
@@ -141,29 +140,36 @@ fn validate_item(
             ApplyPlanValidationStatus::ReviewOnlyBlocked,
             ApplyPlanConflictStatus::NotChecked,
         )
-    } else if let Some(conflict_status) = destination_conflict {
-        match conflict_status {
-            ApplyPlanConflictStatus::CaseConflict => {
-                reasons.push(
-                    "Another item in this plan targets the same destination under Windows case-insensitive path rules.".to_owned(),
-                );
-            }
-            ApplyPlanConflictStatus::SameNameConflict => {
-                reasons.push(
-                    "Another item in this plan targets the same canonical destination path."
-                        .to_owned(),
-                );
-            }
-            _ => {
-                reasons
-                    .push("Another item in this plan conflicts with this destination.".to_owned());
-            }
-        }
-        required_next_steps.push(
-            "Regenerate or edit the preview so each destination is unique before future validation."
+    } else if !item.action_kind.eq_ignore_ascii_case("suggest_move") {
+        reasons.push(
+            "Only direct move suggestions are eligible for future Apply validation; grouped, review, leave-in-place, and no-action rows stay review-only."
                 .to_owned(),
         );
-        (ApplyPlanValidationStatus::Blocked, conflict_status)
+        required_next_steps.push(
+            "Regenerate the preview with direct move suggestions before future validation."
+                .to_owned(),
+        );
+        (
+            ApplyPlanValidationStatus::ReviewOnlyBlocked,
+            ApplyPlanConflictStatus::Unsupported,
+        )
+    } else if item.evidence_level.eq_ignore_ascii_case("heuristic")
+        || item
+            .confidence_label
+            .as_deref()
+            .is_some_and(|label| label.eq_ignore_ascii_case("heuristic"))
+    {
+        reasons.push(
+            "Heuristic-only evidence is review-only and cannot proceed to future confirmation."
+                .to_owned(),
+        );
+        required_next_steps.push(
+            "Use deterministic or evidence-backed signals before future validation.".to_owned(),
+        );
+        (
+            ApplyPlanValidationStatus::ReviewOnlyBlocked,
+            ApplyPlanConflictStatus::Unsupported,
+        )
     } else if item.file_id.is_none() {
         if item.current_path.trim().is_empty() {
             reasons.push("No saved source path or Library file id is available.".to_owned());
@@ -190,6 +196,7 @@ fn validate_item(
             connection,
             settings,
             item,
+            destination_conflict,
             &mut reasons,
             &mut required_next_steps,
         )?
@@ -220,6 +227,7 @@ fn validate_item_paths(
     connection: &Connection,
     settings: &LibrarySettings,
     item: &PersistedApplyPlanItem,
+    destination_conflict: Option<ApplyPlanConflictStatus>,
     reasons: &mut Vec<String>,
     required_next_steps: &mut Vec<String>,
 ) -> AppResult<(ApplyPlanValidationStatus, ApplyPlanConflictStatus)> {
@@ -234,7 +242,9 @@ fn validate_item_paths(
         ));
     };
 
-    if normalized_path_key(&current_file.path) != normalized_path_key(&item.current_path) {
+    if apply_plan_path_validation::normalized_path_key(&current_file.path)
+        != apply_plan_path_validation::normalized_path_key(&item.current_path)
+    {
         reasons.push("Saved source path no longer matches the current Library index.".to_owned());
         required_next_steps
             .push("Review the current Library location before future validation.".to_owned());
@@ -244,26 +254,31 @@ fn validate_item_paths(
         ));
     }
 
-    match read_only_path_exists(&current_file.path) {
-        Ok(true) => {}
-        Ok(false) => {
-            reasons.push("The indexed source file was not found on disk.".to_owned());
-            required_next_steps
-                .push("Rescan or regenerate the preview from current Library data.".to_owned());
-            return Ok((
-                ApplyPlanValidationStatus::MissingSource,
-                ApplyPlanConflictStatus::SourceMissing,
-            ));
-        }
-        Err(message) => {
-            reasons.push(format!("Source existence could not be checked: {message}"));
-            required_next_steps
-                .push("Review source file permissions before future validation.".to_owned());
-            return Ok((
-                ApplyPlanValidationStatus::Error,
-                ApplyPlanConflictStatus::PermissionUnknown,
-            ));
-        }
+    if !is_supported_apply_plan_file_type(&current_file.extension, &current_file.kind) {
+        reasons.push(format!(
+            "Unsupported file type for future Apply validation: extension `{}`, kind `{}`.",
+            current_file.extension, current_file.kind
+        ));
+        required_next_steps.push(
+            "Regenerate the preview with supported Sims package/script/tray files only.".to_owned(),
+        );
+        return Ok((
+            ApplyPlanValidationStatus::ReviewOnlyBlocked,
+            ApplyPlanConflictStatus::Unsupported,
+        ));
+    }
+
+    let source_root =
+        apply_plan_path_validation::configured_root(settings, current_file.source_location.trim());
+    let source_outcome =
+        apply_plan_path_validation::validate_source_under_root(&current_file.path, source_root);
+    if source_outcome.validation_status != ApplyPlanValidationStatus::ValidPreviewOnly {
+        reasons.push(source_outcome.reason);
+        required_next_steps.push(source_outcome.required_next_step);
+        return Ok((
+            source_outcome.validation_status,
+            source_outcome.conflict_status,
+        ));
     }
 
     let Some(destination_path) = item
@@ -296,135 +311,46 @@ fn validate_item_paths(
         ));
     };
 
-    let Some(destination_root) = configured_root(settings, destination_root_name) else {
-        reasons.push(format!(
-            "Destination root `{destination_root_name}` is not configured."
-        ));
-        required_next_steps
-            .push("Configure the destination root before future validation.".to_owned());
-        return Ok((
-            ApplyPlanValidationStatus::MissingDestinationRoot,
-            ApplyPlanConflictStatus::Unsupported,
-        ));
-    };
-
-    if contains_parent_dir_component(destination_path)
-        || !path_is_under_root(destination_path, destination_root)
-    {
-        reasons.push(
-            "Destination path cannot be proven under the configured Mods/Tray root.".to_owned(),
+    if let Some(conflict_status) = destination_conflict {
+        match conflict_status {
+            ApplyPlanConflictStatus::CaseConflict => {
+                reasons.push(
+                    "Another item in this plan targets the same destination under Windows case-insensitive path rules.".to_owned(),
+                );
+            }
+            ApplyPlanConflictStatus::SameNameConflict => {
+                reasons.push(
+                    "Another item in this plan targets the same canonical destination path."
+                        .to_owned(),
+                );
+            }
+            _ => {
+                reasons
+                    .push("Another item in this plan conflicts with this destination.".to_owned());
+            }
+        }
+        required_next_steps.push(
+            "Regenerate or edit the preview so each destination is unique before future validation."
+                .to_owned(),
         );
-        required_next_steps.push("Regenerate the preview with a safe destination path.".to_owned());
-        return Ok((
-            ApplyPlanValidationStatus::UnsafeDestination,
-            ApplyPlanConflictStatus::Unsupported,
-        ));
+        return Ok((ApplyPlanValidationStatus::Blocked, conflict_status));
     }
 
-    if !current_file
-        .source_location
-        .eq_ignore_ascii_case(destination_root_name)
-        || (!item.current_root.eq_ignore_ascii_case("unknown")
-            && !item
-                .current_root
-                .eq_ignore_ascii_case(destination_root_name))
-    {
-        reasons.push("Cross-root movement is not supported by the validation preview.".to_owned());
-        required_next_steps
-            .push("Keep future validation within one configured Library root.".to_owned());
-        return Ok((
-            ApplyPlanValidationStatus::UnsupportedCrossRoot,
-            ApplyPlanConflictStatus::CrossRootBlocked,
-        ));
-    }
-
-    match read_only_path_exists(destination_path) {
-        Ok(true) => {
-            reasons
-                .push("A file or folder already exists at the saved destination path.".to_owned());
-            required_next_steps
-                .push("Resolve the destination conflict before future validation.".to_owned());
-            Ok((
-                ApplyPlanValidationStatus::DestinationExists,
-                ApplyPlanConflictStatus::DestinationExists,
-            ))
-        }
-        Ok(false) => {
-            reasons
-                .push("No current validation blocker was found for this preview item.".to_owned());
-            required_next_steps.push(
-                "Backup/restore and confirmation work must exist before this could go further."
-                    .to_owned(),
-            );
-            Ok((
-                ApplyPlanValidationStatus::ValidPreviewOnly,
-                ApplyPlanConflictStatus::None,
-            ))
-        }
-        Err(message) => {
-            reasons.push(format!(
-                "Destination conflict could not be checked: {message}"
-            ));
-            required_next_steps
-                .push("Review destination permissions before future validation.".to_owned());
-            Ok((
-                ApplyPlanValidationStatus::Error,
-                ApplyPlanConflictStatus::PermissionUnknown,
-            ))
-        }
-    }
-}
-
-fn detect_destination_conflicts(
-    items: &[PersistedApplyPlanItem],
-) -> HashMap<i64, ApplyPlanConflictStatus> {
-    let mut by_canonical: HashMap<String, Vec<(i64, String)>> = HashMap::new();
-    for item in items {
-        if item.blocked
-            || item.review_only
-            || item.item_status == PersistedApplyPlanItemStatus::Blocked
-            || item.item_status == PersistedApplyPlanItemStatus::ReviewOnly
-        {
-            continue;
-        }
-        let Some(destination_path) = item
-            .destination_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        let canonical = normalized_path_key(destination_path);
-        by_canonical
-            .entry(canonical)
-            .or_default()
-            .push((item.id, normalize_separators_for_display(destination_path)));
-    }
-
-    let mut conflicts = HashMap::new();
-    for destinations in by_canonical.values() {
-        if destinations.len() < 2 {
-            continue;
-        }
-        let first_path = &destinations[0].1;
-        let conflict_status = if destinations.iter().any(|(_, path)| path != first_path) {
-            ApplyPlanConflictStatus::CaseConflict
-        } else {
-            ApplyPlanConflictStatus::SameNameConflict
-        };
-        for (item_id, _) in destinations {
-            conflicts.insert(*item_id, conflict_status.clone());
-        }
-    }
-    conflicts
-}
-
-fn normalize_separators_for_display(path: &str) -> String {
-    path.trim()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_owned()
+    let destination_outcome = apply_plan_path_validation::validate_destination(
+        apply_plan_path_validation::DestinationValidationInput {
+            settings,
+            destination_path,
+            destination_root_name,
+            indexed_source_root_name: current_file.source_location.trim(),
+            saved_current_root_name: item.current_root.trim(),
+        },
+    );
+    reasons.push(destination_outcome.reason);
+    required_next_steps.push(destination_outcome.required_next_step);
+    Ok((
+        destination_outcome.validation_status,
+        destination_outcome.conflict_status,
+    ))
 }
 
 fn summarize_items(
@@ -459,7 +385,14 @@ fn summarize_items(
             .count() as i64,
         missing_source_items: items
             .iter()
-            .filter(|item| item.validation_status == ApplyPlanValidationStatus::MissingSource)
+            .filter(|item| {
+                matches!(
+                    item.validation_status,
+                    ApplyPlanValidationStatus::MissingSource
+                        | ApplyPlanValidationStatus::MissingSourceRoot
+                        | ApplyPlanValidationStatus::UnsafeSource
+                )
+            })
             .count() as i64,
         destination_conflict_items: items
             .iter()
@@ -479,12 +412,14 @@ fn summarize_items(
 fn load_current_file(connection: &Connection, file_id: i64) -> AppResult<Option<CurrentFileRow>> {
     connection
         .query_row(
-            "SELECT path, source_location FROM files WHERE id = ?1",
+            "SELECT path, source_location, extension, kind FROM files WHERE id = ?1",
             params![file_id],
             |row| {
                 Ok(CurrentFileRow {
                     path: row.get(0)?,
                     source_location: row.get(1)?,
+                    extension: row.get(2)?,
+                    kind: row.get(3)?,
                 })
             },
         )
@@ -540,51 +475,37 @@ fn contains_duplicate_text(value: &str) -> bool {
     value.to_ascii_lowercase().contains("duplicate")
 }
 
-fn configured_root<'a>(settings: &'a LibrarySettings, root_name: &str) -> Option<&'a str> {
-    match root_name {
-        value if value.eq_ignore_ascii_case("mods") => settings.mods_path.as_deref(),
-        value if value.eq_ignore_ascii_case("tray") => settings.tray_path.as_deref(),
-        _ => None,
-    }
-}
-
-fn contains_parent_dir_component(path: &str) -> bool {
-    path.replace('\\', "/")
-        .split('/')
-        .any(|component| component == "..")
-}
-
-fn path_is_under_root(path: &str, root: &str) -> bool {
-    if contains_parent_dir_component(path) || contains_parent_dir_component(root) {
-        return false;
-    }
-    let path = normalized_path_key(path);
-    let root = normalized_path_key(root);
-    path == root || path.starts_with(&format!("{root}/"))
-}
-
-fn normalized_path_key(path: &str) -> String {
-    path.trim()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
-}
-
-fn read_only_path_exists(path: &str) -> Result<bool, String> {
-    Path::new(path)
-        .try_exists()
-        .map_err(|error| error.to_string())
-}
-
 fn push_unique_caveat(caveats: &mut Vec<String>, caveat: &str) {
     if !caveats.iter().any(|existing| existing == caveat) {
         caveats.push(caveat.to_owned());
     }
 }
 
+fn is_supported_apply_plan_file_type(extension: &str, _kind: &str) -> bool {
+    let extension = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    matches!(
+        extension.as_str(),
+        "package"
+            | "ts4script"
+            | "trayitem"
+            | "blueprint"
+            | "bpi"
+            | "hhi"
+            | "householdbinary"
+            | "sgi"
+            | "rmi"
+            | "room"
+    )
+}
+
 struct CurrentFileRow {
     path: String,
     source_location: String,
+    extension: String,
+    kind: String,
 }
 
 #[cfg(test)]
@@ -616,13 +537,24 @@ mod tests {
     }
 
     fn insert_file(connection: &Connection, file_id: i64, path: &str, source_location: &str) {
+        insert_file_with_extension(connection, file_id, path, source_location, "package", "CAS");
+    }
+
+    fn insert_file_with_extension(
+        connection: &Connection,
+        file_id: i64,
+        path: &str,
+        source_location: &str,
+        extension: &str,
+        kind: &str,
+    ) {
         connection
             .execute(
                 "INSERT INTO files (
                     id, path, filename, extension, size, modified_at, hash, kind, subtype,
                     confidence, safety_notes, parser_warnings, source_location, relative_depth
-                ) VALUES (?1, ?2, ?3, 'package', 1, '2026-01-01', ?4, 'CAS', 'Hair', 0.95, '[]', '[]', ?5, 1)",
-                params![file_id, path, file_name(path), format!("h{file_id}"), source_location],
+                ) VALUES (?1, ?2, ?3, ?4, 1, '2026-01-01', ?5, ?6, 'Hair', 0.95, '[]', '[]', ?7, 1)",
+                params![file_id, path, file_name(path), extension, format!("h{file_id}"), kind, source_location],
             )
             .expect("insert file");
     }
@@ -723,6 +655,7 @@ mod tests {
         let source_path = mods_root.join("hair.package");
         let destination_path = mods_root.join("CAS").join("hair.package");
         fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
         fs::write(&source_path, b"package").expect("source file");
 
         let mut connection = memory_connection();
@@ -860,6 +793,475 @@ mod tests {
     }
 
     #[test]
+    fn canonical_destination_validation_rejects_missing_destination_parent() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("hair.package");
+        let destination_path = mods_root.join("MissingParent").join("hair.package");
+        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 61, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(61),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeDestination
+        );
+        assert_eq!(
+            preview.items[0].conflict_status,
+            ApplyPlanConflictStatus::FolderMissing
+        );
+    }
+
+    #[test]
+    fn canonical_destination_validation_rejects_source_outside_configured_root() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let outside_root = temp.path().join("Elsewhere");
+        let source_path = outside_root.join("hair.package");
+        let destination_path = mods_root.join("CAS").join("hair.package");
+        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 62, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(62),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeSource
+        );
+        assert_eq!(
+            preview.items[0].conflict_status,
+            ApplyPlanConflictStatus::Unsupported
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_destination_validation_rejects_source_symlink_escape() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let outside_root = temp.path().join("Elsewhere");
+        let outside_source = outside_root.join("linked.package");
+        let symlink_source = mods_root.join("linked.package");
+        let destination_path = mods_root.join("CAS").join("linked.package");
+        fs::create_dir_all(&mods_root).expect("mods root");
+        fs::create_dir_all(outside_source.parent().unwrap()).expect("outside parent");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&outside_source, b"package").expect("outside source file");
+        std::os::unix::fs::symlink(&outside_source, &symlink_source).expect("source symlink");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 65, &path_string(&symlink_source), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(65),
+                path_string(&symlink_source),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeSource
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("symlink")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_destination_validation_rejects_destination_symlink_escape() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let outside_root = temp.path().join("Elsewhere");
+        let source_path = mods_root.join("hair.package");
+        let linked_parent = mods_root.join("LinkedCas");
+        let destination_path = linked_parent.join("hair.package");
+        fs::create_dir_all(&mods_root).expect("mods root");
+        fs::create_dir_all(&outside_root).expect("outside root");
+        fs::write(&source_path, b"package").expect("source file");
+        std::os::unix::fs::symlink(&outside_root, &linked_parent).expect("destination symlink");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 66, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(66),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeDestination
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("symlink")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_destination_validation_rejects_dangling_destination_symlink_leaf() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("hair.package");
+        let destination_path = mods_root.join("CAS").join("hair.package");
+        let missing_target = temp.path().join("missing-target.package");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&source_path, b"package").expect("source file");
+        std::os::unix::fs::symlink(&missing_target, &destination_path)
+            .expect("dangling destination symlink");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 67, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(67),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeDestination
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("symlink")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_destination_validation_rejects_configured_root_symlink() {
+        let temp = tempdir().expect("tempdir");
+        let real_mods_root = temp.path().join("RealMods");
+        let linked_mods_root = temp.path().join("ModsLink");
+        let source_path = linked_mods_root.join("hair.package");
+        let destination_path = linked_mods_root.join("CAS").join("hair.package");
+        fs::create_dir_all(real_mods_root.join("CAS")).expect("real destination parent");
+        fs::write(real_mods_root.join("hair.package"), b"package").expect("source file");
+        std::os::unix::fs::symlink(&real_mods_root, &linked_mods_root)
+            .expect("configured root symlink");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 68, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(68),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&linked_mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeSource
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("root") && reason.contains("symlink")));
+    }
+
+    #[test]
+    fn canonical_destination_validation_ignores_ineligible_rows_for_destination_conflicts() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let first_source_path = mods_root.join("hair.package");
+        let heuristic_source_path = mods_root.join("heuristic.package");
+        let group_source_path = mods_root.join("group.package");
+        let destination_path = mods_root.join("CAS").join("hair.package");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&first_source_path, b"package").expect("first source file");
+        fs::write(&heuristic_source_path, b"package").expect("heuristic source file");
+        fs::write(&group_source_path, b"package").expect("group source file");
+
+        let mut heuristic_item = candidate_item(
+            Some(69),
+            path_string(&heuristic_source_path),
+            Some(path_string(&destination_path)),
+        );
+        heuristic_item.evidence_level = StagingPlanEvidenceLevel::Heuristic;
+        heuristic_item.confidence_label = StagingPlanConfidenceLabel::Heuristic;
+
+        let mut group_item = candidate_item(
+            Some(70),
+            path_string(&group_source_path),
+            Some(path_string(&destination_path)),
+        );
+        group_item.action_kind = StagingPlanActionKind::SuggestGroup;
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 1, &path_string(&first_source_path), "mods");
+        insert_file(
+            &connection,
+            69,
+            &path_string(&heuristic_source_path),
+            "mods",
+        );
+        insert_file(&connection, 70, &path_string(&group_source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![
+                candidate_item(
+                    Some(1),
+                    path_string(&first_source_path),
+                    Some(path_string(&destination_path)),
+                ),
+                heuristic_item,
+                group_item,
+            ],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::ValidPreviewOnly
+        );
+        assert_eq!(
+            preview.items[0].conflict_status,
+            ApplyPlanConflictStatus::None
+        );
+        assert_eq!(
+            preview.items[1].validation_status,
+            ApplyPlanValidationStatus::ReviewOnlyBlocked
+        );
+        assert_eq!(
+            preview.items[2].validation_status,
+            ApplyPlanValidationStatus::ReviewOnlyBlocked
+        );
+    }
+
+    #[test]
+    fn canonical_destination_validation_blocks_unsupported_file_types() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("notes.txt");
+        let destination_path = mods_root.join("CAS").join("notes.txt");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&source_path, b"notes").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file_with_extension(
+            &connection,
+            71,
+            &path_string(&source_path),
+            "mods",
+            "txt",
+            "Document",
+        );
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(71),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::ReviewOnlyBlocked
+        );
+        assert_eq!(
+            preview.items[0].conflict_status,
+            ApplyPlanConflictStatus::Unsupported
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("Unsupported file type")));
+    }
+
+    #[test]
+    fn canonical_destination_validation_blocks_unsupported_group_actions() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("grouped.package");
+        let destination_path = mods_root.join("CAS").join("grouped.package");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 63, &path_string(&source_path), "mods");
+        let mut item = candidate_item(
+            Some(63),
+            path_string(&source_path),
+            Some(path_string(&destination_path)),
+        );
+        item.action_kind = StagingPlanActionKind::SuggestGroup;
+        let plan_id = save_plan(&mut connection, vec![item]);
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::ReviewOnlyBlocked
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("Only direct move suggestions")));
+    }
+
+    #[test]
+    fn canonical_destination_validation_blocks_heuristic_only_items() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("heuristic.package");
+        let destination_path = mods_root.join("CAS").join("heuristic.package");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 64, &path_string(&source_path), "mods");
+        let mut item = candidate_item(
+            Some(64),
+            path_string(&source_path),
+            Some(path_string(&destination_path)),
+        );
+        item.evidence_level = StagingPlanEvidenceLevel::Heuristic;
+        item.confidence_label = StagingPlanConfidenceLabel::Heuristic;
+        let plan_id = save_plan(&mut connection, vec![item]);
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::ReviewOnlyBlocked
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("Heuristic-only")));
+    }
+
+    #[test]
     fn canonical_destination_validation_includes_plan_hash_and_source_kind() {
         let temp = tempdir().expect("tempdir");
         let mods_root = temp.path().join("Mods");
@@ -904,19 +1306,20 @@ mod tests {
 
         let mut connection = memory_connection();
         insert_file(&connection, 21, &path_string(&source_path), "mods");
+        let destination_path = format!("{}\\..\\Elsewhere\\hair.package", path_string(&mods_root));
         let plan_id = save_plan(
             &mut connection,
             vec![candidate_item(
                 Some(21),
                 path_string(&source_path),
-                Some("C:\\Sims\\Mods\\..\\Elsewhere\\hair.package".to_owned()),
+                Some(destination_path),
             )],
         );
 
         let preview = preview_apply_plan_validation(
             &connection,
             &LibrarySettings {
-                mods_path: Some("C:\\Sims\\Mods".to_owned()),
+                mods_path: Some(path_string(&mods_root)),
                 ..Default::default()
             },
             PreviewApplyPlanValidationRequest { plan_id },
@@ -1291,18 +1694,20 @@ mod tests {
 
         let mut connection = memory_connection();
         insert_file(&connection, 8, &path_string(&source_path), "mods");
-        let plan_id = save_plan(
-            &mut connection,
-            vec![candidate_item(
-                Some(8),
-                path_string(&source_path),
-                Some(path_string(&mods_root.join("CAS").join("root.package"))),
-            )],
+        let mut item = candidate_item(
+            Some(8),
+            path_string(&source_path),
+            Some(path_string(&temp.path().join("Tray").join("root.trayitem"))),
         );
+        item.bucket = StagingPlanBucket::Tray;
+        let plan_id = save_plan(&mut connection, vec![item]);
 
         let preview = preview_apply_plan_validation(
             &connection,
-            &LibrarySettings::default(),
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
             PreviewApplyPlanValidationRequest { plan_id },
         )
         .expect("preview");
@@ -1396,11 +1801,17 @@ mod tests {
 
     #[test]
     fn validation_module_production_code_avoids_mutating_file_calls() {
-        let source = include_str!("apply_plan_validation.rs");
-        let production_source = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("production source");
+        let production_source = [
+            include_str!("apply_plan_validation.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .expect("validation production source"),
+            include_str!("apply_plan_path_validation.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .expect("path validation production source"),
+        ]
+        .join("\n");
 
         for forbidden in [
             concat!("apply_", "preview_organization"),

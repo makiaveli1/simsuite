@@ -198,7 +198,10 @@ fn classify_status(
     };
 
     match validation_item.validation_status {
-        ApplyPlanValidationStatus::MissingSource | ApplyPlanValidationStatus::StaleSource => (
+        ApplyPlanValidationStatus::MissingSource
+        | ApplyPlanValidationStatus::MissingSourceRoot
+        | ApplyPlanValidationStatus::UnsafeSource
+        | ApplyPlanValidationStatus::StaleSource => (
             ApplyPlanDryRunItemStatus::WouldSkip,
             ApplyPlanDryRunActionPreview::WouldSkip,
             "The saved source evidence is missing or stale, so dry-run would skip this item.",
@@ -496,7 +499,7 @@ mod tests {
         let mods_root = temp.path().join("Mods");
         let source_path = mods_root.join("hair.package");
         let destination_path = mods_root.join("CAS").join("hair.package");
-        fs::create_dir_all(source_path.parent().unwrap()).expect("source parent");
+        fs::create_dir_all(destination_path.parent().unwrap()).expect("destination parent");
         fs::write(&source_path, b"package").expect("source file");
 
         let mut connection = memory_connection();
@@ -512,8 +515,8 @@ mod tests {
 
         let preview = preview(&connection, &mods_root, plan_id);
 
-        assert_eq!(preview.can_proceed_to_apply, false);
-        assert_eq!(preview.can_proceed_to_confirmation, false);
+        assert!(!preview.can_proceed_to_apply);
+        assert!(!preview.can_proceed_to_confirmation);
         assert!(preview.items.iter().all(|item| !item.can_apply));
         assert_eq!(
             preview.items[0].dry_run_status,

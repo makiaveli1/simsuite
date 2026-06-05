@@ -19,33 +19,36 @@ use crate::{
     app_state::AppState,
     command_gate::{assert_command_allowed, CommandCapability},
     core::{
-        apply_plan_dry_run, apply_plan_persistence, apply_plan_results, apply_plan_validation,
-        bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
-        duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
-        scanner, snapshot_manager, watch_polling,
+        apply_plan_confirmation_token, apply_plan_dry_run, apply_plan_operation_preview,
+        apply_plan_persistence, apply_plan_results, apply_plan_validation, bundle_detector,
+        category_audit, content_versions, creator_audit, downloads_watcher, duplicate_detector,
+        install_profile_engine, library_index, move_engine, rule_engine, scanner, snapshot_manager,
+        watch_polling,
     },
     database, ensure_tray,
     error::AppError,
     models::{
         AppBehaviorSettings, ApplyCategoryAuditResult, ApplyCreatorAuditResult,
-        ApplyGuidedDownloadResult, ApplyPlanDryRunPreview, ApplyPlanListItem,
-        ApplyPlanRunLogDetail, ApplyPlanValidationPreview, ApplyPreviewResult,
-        ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
-        BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile, CategoryAuditQuery,
-        CategoryAuditResponse, CleanupResult, CreateApplyPlanRunLogRequest, CreatorAuditFile,
-        CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
-        DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
-        DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
-        DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        ApplyGuidedDownloadResult, ApplyPlanConfirmationTokenReceipt, ApplyPlanDryRunPreview,
+        ApplyPlanListItem, ApplyPlanOperationPreview, ApplyPlanRunLogDetail,
+        ApplyPlanValidationPreview, ApplyPreviewResult, ApplyReviewPlanActionResult,
+        ApplySpecialReviewFixResult, BatchApplyResult, BuildApplyPlanFromStagingPlanRequest,
+        CategoryAuditFile, CategoryAuditQuery, CategoryAuditResponse, CleanupResult,
+        CreateApplyPlanRunLogRequest, CreatorAuditFile, CreatorAuditQuery, CreatorAuditResponse,
+        DeleteDraftApplyPlanResult, DetectedLibraryPaths, DownloadInboxDetail,
+        DownloadsBootstrapResponse, DownloadsInboxQuery, DownloadsInboxResponse,
+        DownloadsSelectionResponse, DownloadsWatcherState, DownloadsWatcherStatus,
+        DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
-        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
-        LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
-        LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
-        LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
-        ListApplyPlanRestoreEntriesRequest, ListApplyPlanResultLogsRequest,
-        ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest, OrganizationPreview,
-        PersistedApplyPlan, PersistedApplyPlanRestoreEntry, PersistedApplyPlanResult,
-        PersistedApplyPlanRun, PreviewApplyPlanDryRunRequest, PreviewApplyPlanValidationRequest,
+        HomeOverview, IgnoreItemsResult, IssueApplyPlanConfirmationTokenRequest, LibraryFacets,
+        LibraryFolderFilesQuery, LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery,
+        LibrarySettings, LibrarySummary, LibraryWatchBulkSaveItemResult,
+        LibraryWatchBulkSaveResult, LibraryWatchListResponse, LibraryWatchReviewResponse,
+        LibraryWatchSetupResponse, ListApplyPlanRestoreEntriesRequest,
+        ListApplyPlanResultLogsRequest, ListApplyPlanRunLogsRequest, ListSavedApplyPlansRequest,
+        OrganizationPreview, PersistedApplyPlan, PersistedApplyPlanRestoreEntry,
+        PersistedApplyPlanResult, PersistedApplyPlanRun, PreviewApplyPlanDryRunRequest,
+        PreviewApplyPlanOperationsRequest, PreviewApplyPlanValidationRequest,
         RecordApplyPlanRestoreEntryRequest, RecordApplyPlanResultLogRequest, RejectResult,
         RejectedItem, RestoreSnapshotResult, ReviewPlanAction, ReviewPlanActionKind,
         ReviewQueueItem, RulePreset, SaveApplyPlanFromPreviewSnapshotRequest,
@@ -917,6 +920,44 @@ pub async fn preview_apply_plan_dry_run(
         let settings = database::get_library_settings(&connection).map_err(map_error)?;
         apply_plan_dry_run::preview_apply_plan_dry_run(&connection, &settings, request)
             .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_apply_plan_operations(
+    state: State<'_, AppState>,
+    request: PreviewApplyPlanOperationsRequest,
+) -> Result<ApplyPlanOperationPreview, String> {
+    let state = state.inner().clone();
+    run_blocking_command("preview_apply_plan_operations", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        apply_plan_operation_preview::preview_apply_plan_operations(&connection, &settings, request)
+            .map_err(map_error)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn issue_apply_plan_confirmation_token(
+    state: State<'_, AppState>,
+    request: IssueApplyPlanConfirmationTokenRequest,
+) -> Result<ApplyPlanConfirmationTokenReceipt, String> {
+    assert_command_allowed(
+        "issue_apply_plan_confirmation_token",
+        CommandCapability::PreviewDraftWrite,
+    )?;
+    let state = state.inner().clone();
+    run_blocking_command("issue_apply_plan_confirmation_token", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let settings = database::get_library_settings(&connection).map_err(map_error)?;
+        apply_plan_confirmation_token::issue_apply_plan_confirmation_token(
+            &connection,
+            &settings,
+            request,
+        )
+        .map_err(map_error)
     })
     .await
 }
@@ -2893,8 +2934,7 @@ fn bounded_library_tree_file_query(query: LibraryQuery) -> LibraryQuery {
             query
                 .limit
                 .unwrap_or(LIBRARY_TREE_FILE_COMPAT_LIMIT)
-                .max(0)
-                .min(LIBRARY_TREE_FILE_COMPAT_LIMIT),
+                .clamp(0, LIBRARY_TREE_FILE_COMPAT_LIMIT),
         ),
         offset: Some(query.offset.unwrap_or(0).max(0)),
         include_previews: Some(false),
@@ -3667,6 +3707,10 @@ pub fn emit_downloads_status(
         .map_err(|error| error.to_string())
 }
 
+// Frontend already subscribes to this event; backend progress emission is kept
+// as an explicit downloads-watcher contract even though current production work
+// reports progress through `downloads-status` snapshots.
+#[allow(dead_code)]
 pub fn emit_downloads_progress(
     app: &AppHandle,
     progress: &crate::models::DownloadProgress,

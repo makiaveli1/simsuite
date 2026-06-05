@@ -136,20 +136,11 @@ pub struct InstallCatalogSeed {
     pub review_only_patterns: Vec<ReviewOnlyPatternSeed>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VersionSignalPathPatternSeed {
     pub path_patterns: Vec<String>,
     pub pattern: String,
-}
-
-impl Default for VersionSignalPathPatternSeed {
-    fn default() -> Self {
-        Self {
-            path_patterns: Vec::new(),
-            pattern: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -230,7 +221,13 @@ pub struct GuidedInstallProfileSeed {
 pub struct DependencyRuleSeed {
     pub key: String,
     pub display_name: String,
+    /// Required seed provenance metadata; retained to keep catalog entries reviewable
+    /// even before the UI surfaces dependency creator/family details.
+    #[allow(dead_code)]
     pub creator: Option<String>,
+    /// Required seed provenance metadata; deleting this would loosen the curated
+    /// dependency catalog shape accepted by serde.
+    #[allow(dead_code)]
     pub family: String,
     pub official_source_url: String,
     #[serde(default)]
@@ -238,9 +235,13 @@ pub struct DependencyRuleSeed {
     #[serde(default)]
     pub reference_source: Vec<String>,
     pub reviewed_at: String,
+    /// Example filenames are retained as catalog review evidence and future help UI data.
     #[serde(default)]
+    #[allow(dead_code)]
     pub sample_filenames: Vec<String>,
     pub dependency_key: String,
+    /// Required help copy for future dependency-explanation UI.
+    #[allow(dead_code)]
     pub help_summary: String,
     #[serde(default)]
     pub name_clues: Vec<String>,
@@ -253,12 +254,16 @@ pub struct DependencyRuleSeed {
 #[derive(Debug, Clone, Deserialize)]
 pub struct IncompatibilityRuleSeed {
     pub key: String,
+    /// Required catalog display copy kept for future incompatibility-review UI.
+    #[allow(dead_code)]
     pub display_name: String,
     pub official_source_url: String,
     #[serde(default)]
     pub reference_source: Vec<String>,
     pub reviewed_at: String,
+    /// Example filenames are retained as catalog review evidence and future help UI data.
     #[serde(default)]
+    #[allow(dead_code)]
     pub sample_filenames: Vec<String>,
     pub installed_profile_key: String,
     #[serde(default)]
@@ -272,13 +277,17 @@ pub struct IncompatibilityRuleSeed {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReviewOnlyPatternSeed {
+    /// Stable seed identity retained for future review/provenance UI and seed audits.
+    #[allow(dead_code)]
     pub key: String,
     pub display_name: String,
     pub official_source_url: Option<String>,
     #[serde(default)]
     pub reference_source: Vec<String>,
     pub reviewed_at: String,
+    /// Example filenames are retained as catalog review evidence and future help UI data.
     #[serde(default)]
+    #[allow(dead_code)]
     pub sample_filenames: Vec<String>,
     pub help_summary: String,
     #[serde(default)]

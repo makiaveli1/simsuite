@@ -1,6 +1,6 @@
 # SimSuite Trust Boundaries and Automation Readiness
 
-Date: 2026-05-13
+Date: 2026-05-31
 
 This document is the standing trust policy for SimSuite. Future Library, Inbox, Updates, Duplicates, Plan Preview/internal Staging, sorting, and AI prompts should use it before adding automation.
 
@@ -35,9 +35,14 @@ folders, or change user data.
 
 The first read-only validation preview command now exists. It inspects saved
 draft ApplyPlan records against current Library/settings evidence and reports
-readiness blockers with `canProceedToConfirmation=false`. It is response-only in
-v1: no validation status is persisted, no folders or backups are created, and
-no user files are changed.
+readiness blockers with `canProceedToConfirmation=false`. Canonical Destination
+Validation V1 now rejects malformed/unsupported paths, parent traversal,
+root-prefix spoofing, destination paths outside configured Mods/Tray roots,
+missing destination parents, cross-root moves, duplicate/case-conflicting
+destinations, existing destinations, unsupported action kinds, heuristic-only
+rows, and symlink/reparse-style source or destination-parent escapes where
+detectable. It is response-only in v1: no validation status is persisted, no
+folders or backups are created, and no user files are changed.
 
 The first visible validation preview UI now exists inside Organize `Saved
 plans`. It calls the read-only validation command, shows blocker/conflict
@@ -72,6 +77,19 @@ test/prototype code. It runs the private backup and restore helpers together
 against temporary test files only, verifies backup and restored copies, records
 safe result/restore metadata, and remains hidden from UI and Tauri commands. It
 does not change user files and does not make Apply or Restore ready.
+
+The hidden feature-gated real move executor spike now proves a narrow
+backup-first move path behind the `apply-executor-real-move-spike` Cargo feature
+and a separate runtime gate. It is not registered as a Tauri command. It accepts
+only backend-owned move previews bound to a backend-issued confirmation token,
+creates and verifies backup material before `rename`, records backend-observed
+result/restore metadata, updates only backend-owned run status/counters from
+observed operations, and records recovery metadata if a move fails after backup
+verification. The paired hidden run-scoped restore proof reads only backend
+restore entries for the requested run, refuses arbitrary rollback paths,
+verifies destination and backup bytes against recorded hash/size, marks verified
+restore entries `restored`, and remains hidden from UI and Tauri commands. These
+proofs do not make Apply or Restore ready.
 
 Organize `Saved plans` now shows read-only `Recovery history` metadata from
 existing DB-only run logs, result logs, and restore-map records. It keeps `No
@@ -116,6 +134,16 @@ version evidence. Validation blocks future confirmation if the hash is missing
 or mismatched. This is identity/provenance only; it does not authorize Apply,
 Restore, backup execution, confirmation tokens, result logs, restore logs,
 folder creation, or file mutation.
+
+Canonical Destination Validation V1 now adds a read-only root/path safety gate
+to saved-plan validation. It checks that source paths are still present under
+their configured Library root, checks that destination parents are still under
+configured Mods/Tray roots, blocks cross-root moves for V1, rejects duplicate/case-only
+destination conflicts, rejects existing destinations, blocks unsupported grouped
+or heuristic-only rows, and fails closed on symlink/reparse-style source or
+destination-parent escapes where detectable. It is still not execution
+authorization: future confirmation/executor work must re-run validation and add
+backend-issued tokens, backup/restore material, and backend-observed result logs.
 
 ## Why This Exists
 

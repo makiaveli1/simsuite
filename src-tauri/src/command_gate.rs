@@ -1,7 +1,16 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandCapability {
+    /// Safe request/response commands. Kept as explicit safety-review vocabulary
+    /// even while most current read-only commands do not call the gate yet.
+    #[allow(dead_code)]
     ReadOnly,
+    /// Commands that may persist preview/draft metadata but must not mutate user files.
+    /// This remains distinct from executor-only capabilities for command-surface review.
+    #[allow(dead_code)]
     PreviewDraftWrite,
+    /// Hidden fixture/prototype helpers may use this later, but it must never be
+    /// treated as externally callable by the current UI command gate.
+    #[allow(dead_code)]
     InternalFixtureOnly,
     FutureExecutorOnly,
     BlockedExternal,
