@@ -58,39 +58,42 @@ models/              Local model/prompt placeholders
 
 Prerequisites:
 
-- Node.js 24+ recommended for this repo state.
-- Rust stable with the Windows MSVC toolchain for desktop builds.
-- Windows 10/11 as the primary runtime target.
-- WSL is supported for agent/development orchestration.
+- Node.js 24 is the verified development baseline for this repo state.
+- Corepack with pnpm 10.34.5, pinned by `package.json`.
+- Rust stable and the native Tauri prerequisites for the current operating system.
+- Windows 10/11, Apple Silicon macOS, and native Linux are covered by the cross-platform development foundation.
+- Apple Silicon macOS is verified end to end; Windows behavior is preserved by the existing lane and cross-platform tests; native Linux packaging still needs verification on a Linux host.
+- WSL remains supported for Windows-oriented agent and verification workflows.
 
 Install dependencies:
 
 ```bash
-npm install
+corepack enable
+pnpm install --frozen-lockfile
 ```
 
 Run the frontend dev server:
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
-Run the Tauri dev app from Windows/WSL:
+Run the native Tauri dev app:
 
 ```bash
-npm run tauri:dev
+pnpm run tauri:dev
 ```
 
 Build the frontend:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
-Build the desktop app:
+Build the desktop app for the current operating system:
 
 ```bash
-npm run tauri:build
+pnpm run tauri:build
 ```
 
 ## Verification
@@ -98,22 +101,23 @@ npm run tauri:build
 Baseline lane before review:
 
 ```bash
-npx tsc --noEmit
-npm run test:unit
-npm run build
-npm run test:rust
+pnpm exec tsc --noEmit
+pnpm run test:unit
+pnpm run build
+pnpm run test:rust
 ```
 
 Notes:
 
-- `npm run test:unit` forces `NODE_ENV=test` through `scripts/test/run-vitest.mjs` so inherited production environments do not poison Vitest/React tests.
-- `npm run test:rust` runs Cargo through Windows PowerShell when called from WSL so path-sensitive Tauri tests match the Windows target.
+- `pnpm run test:unit` forces `NODE_ENV=test` and keeps jsdom in control of browser storage through `scripts/test/run-vitest.mjs`.
+- `pnpm run test:rust` uses native Cargo on macOS and Linux. From WSL it deliberately runs Cargo through Windows PowerShell so path-sensitive Tauri tests match the Windows target.
+- The Windows fixture desktop proof remains Windows/WSL-specific. Native macOS and Linux proof lanes will be added separately.
 
-Desktop proof/smoke lanes:
+Desktop proof/smoke lanes on Windows or WSL:
 
 ```bash
-npm run desktop:proof:fixtures -- --SkipBuild
-npm run desktop:smoke:fixtures
+pnpm run desktop:proof:fixtures -- --SkipBuild
+pnpm run desktop:smoke:fixtures
 ```
 
 Generated proof output belongs under `output/`, which is ignored.

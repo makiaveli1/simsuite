@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-05-28
+Last updated: 2026-08-03
 
 ## Current product state
 
@@ -25,10 +25,20 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Fixture-only backend proof work for future backup/restore logic.
 - Windows desktop proof/smoke scripts.
 - Validation wrappers for WSL/Windows test reliability.
+- Cross-platform development foundation with pnpm 10.34.5 pinned as the canonical package manager.
+- Portable Tauri development and build wrappers that preserve the existing Windows/WSL PowerShell lane and use native Node/Tauri execution on macOS and Linux.
+- Tested native file-manager dispatch for Windows Explorer, macOS Finder, and Linux desktop openers.
+- Apple Silicon macOS production verification, including a launchable `.app` bundle and generated DMG.
 - Command-surface Apply safety audit.
 - Backend Command Gating V1 for externally callable legacy file-changing commands and client-forged ApplyPlan run/result/restore writes.
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
 - Phase 0 Home clarity baseline: first-run journey cards (`Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`), a Home safety/status panel, consistent evidence labels, and explicit locked-action copy (`No files changed`, `Preview only`, `Apply not ready yet`, `Restore not ready yet`).
+
+## Cross-platform verification remaining
+
+- Re-run the existing Windows fixture desktop proof and smoke lanes on a Windows host after this branch is reviewed.
+- Verify dependency installation, native Tauri build, app launch, and file-manager behavior on a native Linux host.
+- Add native macOS and Linux fixture desktop automation rather than treating the Windows webdriver lane as universal.
 
 ## Still blocked
 
@@ -69,22 +79,28 @@ Required direction before real Apply:
 Run before claiming a branch is ready:
 
 ```bash
-npx tsc --noEmit
-npm run test:unit
-npm run build
-npm run test:rust
+pnpm exec tsc --noEmit
+pnpm run test:unit
+pnpm run build
+pnpm run test:rust
 ```
 
-For focused desktop proof:
+For focused Windows desktop proof:
 
 ```bash
-npm run desktop:proof:fixtures -- --SkipBuild
+pnpm run desktop:proof:fixtures -- --SkipBuild
 ```
 
-For broader desktop regression proof:
+For broader Windows desktop regression proof:
 
 ```bash
-npm run desktop:smoke:fixtures
+pnpm run desktop:smoke:fixtures
+```
+
+For a native package on the current operating system:
+
+```bash
+pnpm run tauri:build
 ```
 
 ## Recommended next sprint

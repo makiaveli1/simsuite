@@ -313,7 +313,7 @@ What is already safer:
 - Core duplicate indexes exist.
 - `idx_files_source_location_depth` supports source/depth folder filtering.
 - `library_folders` indexes support source/path/parent/depth folder tree loading.
-- The opt-in `npm run test:library:stress` harness inserts 10,000 synthetic Library rows plus 5,002 duplicate stress rows and prints query timings without committing generated output.
+- The opt-in `pnpm run test:library:stress` harness inserts 10,000 synthetic Library rows plus 5,002 duplicate stress rows and prints query timings without committing generated output.
 - Recent 10,000-row synthetic timings were informational: list first page about 103 ms, search about 18 ms, filter about 17 ms, sort about 110 ms, folder tree metadata about 119 ms, large direct folder page about 80 ms, recursive folder page about 67 ms, relationship-heavy page about 29 ms, file detail about 4 ms, duplicate overview about 0 ms, preview diagnostics about 73 ms on this machine.
 
 Risks:

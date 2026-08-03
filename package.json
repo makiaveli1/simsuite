@@ -2,29 +2,30 @@
     "name": "simsuite",
     "private": true,
     "version": "0.1.0",
+    "packageManager": "pnpm@10.34.5",
     "type": "module",
     "description": "Local-first Sims content management suite built with Tauri, React, Rust, and SQLite.",
     "scripts": {
         "dev": "vite",
-        "dev:cleanup": "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/cleanup-dev-port.ps1",
+        "dev:cleanup": "node scripts/dev/prepare-dev-port.mjs",
         "build": "tsc && vite build",
         "preview": "vite preview",
         "tauri": "tauri",
-        "tauri:dev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-tauri-dev.ps1",
-        "tauri:build": "tauri build",
-        "desktop:driver": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/desktop/run-tauri-webdriver.ps1",
+        "tauri:dev": "node scripts/dev/run-tauri-dev.mjs",
+        "tauri:build": "node scripts/dev/run-tauri-build.mjs",
+        "desktop:driver": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-webdriver.ps1",
         "desktop:driver:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-webdriver.ps1 -UseSmokeFixtures",
         "desktop:smoke": "node scripts/desktop/desktop-smoke.mjs",
         "desktop:smoke:apply": "node scripts/desktop/desktop-smoke.mjs --include-apply",
         "desktop:smoke:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1",
         "desktop:smoke:apply:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
         "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
-        "test:unit": "node scripts/test/run-vitest.mjs",
+        "test:dev-scripts": "node --test scripts/dev/dev-runtime.test.mjs",
+        "test:unit": "node scripts/test/run-vitest.mjs && node --test scripts/dev/dev-runtime.test.mjs",
         "test:rust": "node scripts/test/run-rust-tests.mjs",
         "test:library:stress": "node scripts/test/run-rust-tests.mjs large_ -- --ignored --nocapture"
     },
     "dependencies": {
-        "@rollup/rollup-linux-x64-gnu": "^4.60.2",
         "@tauri-apps/api": "^2.10.1",
         "lru-cache": "^5.1.1",
         "lucide-react": "^0.577.0",
@@ -52,6 +53,9 @@
     "pnpm": {
         "overrides": {
             "@babel/helper-compilation-targets>lru-cache": "5.1.1"
-        }
+        },
+        "onlyBuiltDependencies": [
+            "esbuild"
+        ]
     }
 }

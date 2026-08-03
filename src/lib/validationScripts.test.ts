@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error Validation wrappers are Node ESM scripts outside the TS app bundle.
-import { buildVitestInvocation, chunkTestFiles, shouldRunVitestInBatches } from "../../scripts/test/run-vitest.mjs";
+import { buildVitestInvocation, chunkTestFiles, sanitizeNodeOptions, shouldRunVitestInBatches, supportsWebStorageDisable } from "../../scripts/test/run-vitest.mjs";
 // @ts-expect-error Validation wrappers are Node ESM scripts outside the TS app bundle.
 import { buildRustTestInvocation } from "../../scripts/test/run-rust-tests.mjs";
 
@@ -16,6 +16,30 @@ describe("validation script wrappers", () => {
     expect(invocation.args).toEqual(["vitest", "run", "src/trustBoundaryCopy.test.ts", "--runInBand"]);
     expect(invocation.env.NODE_ENV).toBe("test");
     expect(invocation.env.SIMSUITE_FLAG).toBe("kept");
+  });
+
+  it("disables inherited Node Web Storage only on runtimes that support the flag", () => {
+    expect(supportsWebStorageDisable("22.3.0")).toBe(false);
+    expect(supportsWebStorageDisable("22.4.0")).toBe(true);
+    expect(supportsWebStorageDisable("24.19.0")).toBe(true);
+    expect(
+      sanitizeNodeOptions(
+        "--trace-warnings --experimental-webstorage --localstorage-file=/tmp/node-storage.json",
+        "24.19.0",
+      ),
+    ).toBe("--trace-warnings --no-experimental-webstorage");
+    expect(sanitizeNodeOptions("--trace-warnings", "20.19.0")).toBe("--trace-warnings");
+
+    const invocation = buildVitestInvocation({
+      env: {
+        NODE_OPTIONS:
+          "--experimental-webstorage --localstorage-file /tmp/node-storage.json --trace-warnings",
+      },
+      platform: "darwin",
+      nodeVersion: "24.19.0",
+    });
+
+    expect(invocation.env.NODE_OPTIONS).toBe("--trace-warnings --no-experimental-webstorage");
   });
 
   it("batches full Vitest runs so WSL/OneDrive worker startup limits do not sink precommit", () => {

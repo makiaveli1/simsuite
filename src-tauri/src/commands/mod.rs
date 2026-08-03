@@ -3524,68 +3524,12 @@ pub fn apply_category_audit(
 
 #[tauri::command]
 pub async fn reveal_file_in_folder(path: String) -> Result<(), String> {
-    let raw_path = PathBuf::from(path.trim());
-    if path.trim().is_empty() {
+    let trimmed_path = path.trim();
+    if trimmed_path.is_empty() {
         return Err("No file path was provided.".to_owned());
     }
 
-    let resolved = fs::canonicalize(&raw_path).unwrap_or_else(|_| raw_path.clone());
-
-    #[cfg(target_os = "windows")]
-    {
-        let target_exists = resolved.exists();
-        let parent = resolved.parent().map(Path::to_path_buf);
-
-        if target_exists && resolved.is_dir() {
-            let normalized = resolved.to_string_lossy().replace('/', "\\");
-            std::process::Command::new("explorer.exe")
-                .arg(&normalized)
-                .spawn()
-                .map_err(|e| format!("Explorer launch failed for '{}': {}", normalized, e))?;
-            return Ok(());
-        }
-
-        if target_exists && resolved.is_file() {
-            let normalized = resolved.to_string_lossy().replace('/', "\\");
-            std::process::Command::new("explorer.exe")
-                .arg("/select,")
-                .arg(&normalized)
-                .spawn()
-                .map_err(|e| format!("Explorer launch failed for '{}': {}", normalized, e))?;
-            return Ok(());
-        }
-
-        if let Some(parent) = parent {
-            let normalized_parent = parent.to_string_lossy().replace('/', "\\");
-            std::process::Command::new("explorer.exe")
-                .arg(&normalized_parent)
-                .spawn()
-                .map_err(|e| {
-                    format!(
-                        "Explorer fallback failed for '{}': {}",
-                        normalized_parent, e
-                    )
-                })?;
-            return Ok(());
-        }
-
-        return Err(format!(
-            "Explorer could not open '{}', and no parent folder was available.",
-            resolved.display()
-        ));
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let parent = resolved
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| resolved.clone());
-        std::process::Command::new("xdg-open")
-            .arg(&parent)
-            .status()
-            .map_err(|e| format!("Failed to open folder '{}': {}", parent.display(), e))?;
-        Ok(())
-    }
+    crate::platform::reveal_in_file_manager(Path::new(trimmed_path))
 }
 
 #[tauri::command]

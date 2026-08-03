@@ -12,6 +12,38 @@ function executableForNpx(platform = process.platform) {
   return platform === "win32" ? "npx.cmd" : "npx";
 }
 
+export function supportsWebStorageDisable(nodeVersion = process.versions.node) {
+  const [major = 0, minor = 0] = String(nodeVersion)
+    .split(".", 2)
+    .map((value) => Number.parseInt(value, 10));
+  return major > 22 || (major === 22 && minor >= 4);
+}
+
+export function sanitizeNodeOptions(value = "", nodeVersion = process.versions.node) {
+  const tokens = String(value).match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  const sanitized = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--experimental-webstorage" || token === "--no-experimental-webstorage") {
+      continue;
+    }
+    if (token === "--localstorage-file") {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--localstorage-file=")) {
+      continue;
+    }
+    sanitized.push(token);
+  }
+
+  if (supportsWebStorageDisable(nodeVersion)) {
+    sanitized.push("--no-experimental-webstorage");
+  }
+  return sanitized.join(" ");
+}
+
 function normalizePathForVitest(filePath) {
   return filePath.split(path.sep).join("/");
 }
@@ -61,6 +93,7 @@ export function buildVitestInvocation({
   argv = process.argv,
   env = process.env,
   platform = process.platform,
+  nodeVersion = process.versions.node,
 } = {}) {
   const passthroughArgs = argv.slice(2);
 
@@ -70,6 +103,7 @@ export function buildVitestInvocation({
     env: {
       ...env,
       NODE_ENV: "test",
+      NODE_OPTIONS: sanitizeNodeOptions(env.NODE_OPTIONS, nodeVersion),
     },
     passthroughArgs,
   };

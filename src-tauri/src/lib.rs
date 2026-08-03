@@ -5,6 +5,7 @@ mod core;
 mod database;
 mod error;
 mod models;
+mod platform;
 mod seed;
 
 use app_state::AppState;

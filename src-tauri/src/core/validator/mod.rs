@@ -1,9 +1,10 @@
 use std::{
     collections::HashSet,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 use crate::{error::AppResult, models::LibrarySettings};
 
@@ -30,6 +31,28 @@ pub struct ValidationResult {
     pub notes: Vec<String>,
     pub corrected: bool,
     pub review_required: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetPathState {
+    Missing,
+    Occupied,
+    Unreadable,
+}
+
+fn target_path_state_from_error_kind(kind: ErrorKind) -> TargetPathState {
+    if kind == ErrorKind::NotFound {
+        TargetPathState::Missing
+    } else {
+        TargetPathState::Unreadable
+    }
+}
+
+fn target_path_state(path: &Path) -> TargetPathState {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => TargetPathState::Occupied,
+        Err(error) => target_path_state_from_error_kind(error.kind()),
+    }
 }
 
 pub fn validate_suggestion(
@@ -126,17 +149,27 @@ pub fn validate_suggestion(
             notes.push("preview_path_collision_detected".to_owned());
         }
 
-        if !request.allow_existing_target {
-            let existing_owner: Option<i64> = connection
-                .query_row(
-                    "SELECT id FROM files WHERE path = ?1 AND id <> ?2",
-                    params![path, request.file_id],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if existing_owner.is_some() {
+        match target_path_state(Path::new(path)) {
+            TargetPathState::Unreadable => {
                 notes.push("existing_path_collision_detected".to_owned());
             }
+            TargetPathState::Occupied if !request.allow_existing_target => {
+                let current_file_owns_target: bool = connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND path = ?2)",
+                    params![request.file_id, path],
+                    |row| row.get(0),
+                )?;
+                let another_file_owns_target: bool = connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM files WHERE path = ?1 AND id <> ?2)",
+                    params![path, request.file_id],
+                    |row| row.get(0),
+                )?;
+
+                if !current_file_owns_target || another_file_owns_target {
+                    notes.push("existing_path_collision_detected".to_owned());
+                }
+            }
+            TargetPathState::Missing | TargetPathState::Occupied => {}
         }
     }
 
@@ -210,13 +243,32 @@ fn normalize_relative_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, io::ErrorKind};
 
     use tempfile::tempdir;
 
     use crate::{database, models::LibrarySettings};
 
-    use super::{validate_suggestion, ValidationRequest};
+    use super::{
+        target_path_state_from_error_kind, validate_suggestion, TargetPathState,
+        ValidationRequest,
+    };
+
+    #[test]
+    fn validator_treats_unreadable_destination_metadata_as_occupied_risk() {
+        assert_eq!(
+            target_path_state_from_error_kind(ErrorKind::NotFound),
+            TargetPathState::Missing
+        );
+        assert_eq!(
+            target_path_state_from_error_kind(ErrorKind::PermissionDenied),
+            TargetPathState::Unreadable
+        );
+        assert_eq!(
+            target_path_state_from_error_kind(ErrorKind::InvalidData),
+            TargetPathState::Unreadable
+        );
+    }
 
     #[test]
     fn validator_flattens_script_mod_destinations() {
@@ -264,6 +316,10 @@ mod tests {
         let temp = tempdir().expect("tempdir");
         let mods_root = temp.path().join("Mods");
         std::fs::create_dir_all(&mods_root).expect("mods");
+        let existing_path = mods_root.join("CAS/Hair/Simstrouble/Breezy.package");
+        std::fs::create_dir_all(existing_path.parent().expect("existing parent"))
+            .expect("existing parent directory");
+        std::fs::write(&existing_path, b"occupied").expect("existing target");
 
         let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
         database::initialize(&mut connection).expect("schema");
@@ -272,7 +328,7 @@ mod tests {
                 "INSERT INTO files (path, filename, extension, kind, subtype, confidence, source_location)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
-                    mods_root.join("CAS/Hair/Simstrouble/Breezy.package").to_string_lossy(),
+                    existing_path.to_string_lossy(),
                     "Breezy.package",
                     ".package",
                     "CAS",
@@ -311,6 +367,130 @@ mod tests {
 
         assert!(result.review_required);
         assert!(result
+            .notes
+            .contains(&"existing_path_collision_detected".to_owned()));
+    }
+
+    #[test]
+    fn validator_distinguishes_unindexed_targets_from_the_current_file() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let target_path = mods_root.join("CAS/Hair/Simstrouble/Breezy.package");
+        std::fs::create_dir_all(target_path.parent().expect("target parent"))
+            .expect("target parent directory");
+        std::fs::write(&target_path, b"occupied").expect("target file");
+
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let request = ValidationRequest {
+            file_id: 99,
+            filename: "Breezy.package".to_owned(),
+            extension: ".package".to_owned(),
+            kind: "CAS".to_owned(),
+            subtype: Some("Hair".to_owned()),
+            creator: Some("Simstrouble".to_owned()),
+            bundle_name: None,
+            source_location: "mods".to_owned(),
+            confidence: 0.8,
+            suggested_relative_path: "CAS/Hair/Simstrouble/Breezy.package".to_owned(),
+            guided_install: false,
+            allow_existing_target: false,
+        };
+        let settings = LibrarySettings {
+            mods_path: Some(mods_root.to_string_lossy().to_string()),
+            tray_path: Some(temp.path().join("Tray").to_string_lossy().to_string()),
+            downloads_path: None,
+            ..Default::default()
+        };
+
+        let unindexed_result =
+            validate_suggestion(&connection, &settings, &request, &HashSet::new())
+                .expect("unindexed target validation");
+        assert!(unindexed_result.review_required);
+        assert!(unindexed_result
+            .notes
+            .contains(&"existing_path_collision_detected".to_owned()));
+
+        connection
+            .execute(
+                "INSERT INTO files (id, path, filename, extension, kind, subtype, confidence, source_location)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    request.file_id,
+                    target_path.to_string_lossy(),
+                    request.filename,
+                    request.extension,
+                    request.kind,
+                    request.subtype,
+                    request.confidence,
+                    request.source_location
+                ],
+            )
+            .expect("current file row");
+
+        let current_file_result =
+            validate_suggestion(&connection, &settings, &request, &HashSet::new())
+                .expect("current file validation");
+        assert!(!current_file_result.review_required);
+        assert!(!current_file_result
+            .notes
+            .contains(&"existing_path_collision_detected".to_owned()));
+    }
+
+    #[test]
+    fn validator_ignores_stale_index_rows_when_target_file_is_missing() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        std::fs::create_dir_all(&mods_root).expect("mods");
+        let stale_path = mods_root.join("MCCC/mc_cmd_center.ts4script");
+
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        connection
+            .execute(
+                "INSERT INTO files (path, filename, extension, kind, subtype, confidence, source_location)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    stale_path.to_string_lossy(),
+                    "mc_cmd_center.ts4script",
+                    ".ts4script",
+                    "Script Mods",
+                    "Utility",
+                    0.97_f64,
+                    "mods"
+                ],
+            )
+            .expect("stale index row");
+
+        let result = validate_suggestion(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(mods_root.to_string_lossy().to_string()),
+                tray_path: Some(temp.path().join("Tray").to_string_lossy().to_string()),
+                downloads_path: None,
+                ..Default::default()
+            },
+            &ValidationRequest {
+                file_id: 99,
+                filename: "mc_cmd_center.ts4script".to_owned(),
+                extension: ".ts4script".to_owned(),
+                kind: "ScriptMods".to_owned(),
+                subtype: Some("Utility".to_owned()),
+                creator: Some("Deaderpool".to_owned()),
+                bundle_name: None,
+                source_location: "downloads".to_owned(),
+                confidence: 0.97,
+                suggested_relative_path: "MCCC/mc_cmd_center.ts4script".to_owned(),
+                guided_install: true,
+                allow_existing_target: false,
+            },
+            &HashSet::new(),
+        )
+        .expect("validated");
+
+        assert!(!stale_path.exists());
+        assert!(!result.review_required);
+        assert!(!result
             .notes
             .contains(&"existing_path_collision_detected".to_owned()));
     }

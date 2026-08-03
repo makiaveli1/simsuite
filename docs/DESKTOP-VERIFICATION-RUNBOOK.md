@@ -17,10 +17,10 @@ The goal is to prove:
 
 ## Recommended command
 
-From the SimSort repo root in WSL or Windows PowerShell:
+From the SimSuite repo root in WSL or Windows PowerShell:
 
 ```bash
-npm run desktop:proof:fixtures -- --SkipBuild
+pnpm run desktop:proof:fixtures -- --SkipBuild
 ```
 
 If you want it to rebuild the desktop binary first, omit `--SkipBuild`.
@@ -30,21 +30,21 @@ If you want it to rebuild the desktop binary first, omit `--SkipBuild`.
 Run this before claiming a branch is ready for review:
 
 ```bash
-npx tsc --noEmit
-npm run test:unit
-npm run build
-npm run test:rust
+pnpm exec tsc --noEmit
+pnpm run test:unit
+pnpm run build
+pnpm run test:rust
 ```
 
-`npm run test:unit` uses `scripts/test/run-vitest.mjs`, which forces `NODE_ENV=test`. This is intentional: some agent shells inherit `NODE_ENV=production`, and React/Vitest can fail for environment reasons instead of product reasons.
+`pnpm run test:unit` uses `scripts/test/run-vitest.mjs`, which forces `NODE_ENV=test` and keeps jsdom in control of browser storage. This is intentional: some agent shells inherit production or Node Web Storage settings, and React/Vitest can otherwise fail for environment reasons instead of product reasons.
 
-`npm run test:rust` uses `scripts/test/run-rust-tests.mjs`. From WSL it deliberately runs Cargo through Windows PowerShell so Rust path semantics match the Windows Tauri desktop target. From non-WSL Unix it falls back to local Cargo.
+`pnpm run test:rust` uses `scripts/test/run-rust-tests.mjs`. From WSL it deliberately runs Cargo through Windows PowerShell so Rust path semantics match the Windows Tauri desktop target. From native macOS and Linux it uses local Cargo.
 
 For narrow checks, pass the test target through the wrapper:
 
 ```bash
-npm run test:unit -- src/screens/OrganizeScreen.test.tsx
-npm run test:rust -- core::scanner::tests::scan_empty_roots
+pnpm run test:unit -- src/screens/OrganizeScreen.test.tsx
+pnpm run test:rust -- core::scanner::tests::scan_empty_roots
 ```
 
 ## What it does
@@ -119,7 +119,7 @@ It also prefers the built release executable over the dev-oriented debug binary,
 
 If webdriver is misbehaving on the machine:
 
-1. run `npm run tauri:dev` in Windows PowerShell
+1. run `pnpm run tauri:dev` in Windows PowerShell
 2. open Library
 3. select the target file
 4. capture screenshots manually
