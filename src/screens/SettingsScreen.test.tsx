@@ -171,6 +171,49 @@ const macosCandidate: GameInstallationCandidate = {
   ],
 };
 
+const windowsCandidate: GameInstallationCandidate = {
+  candidateId: "windows_onedrive_commercial",
+  rank: 1,
+  gameId: "sims4",
+  operatingEnvironment: "native_windows",
+  suggestedName: "Sims 4 in work or school OneDrive Documents",
+  confidence: "strong",
+  readOnly: true,
+  detectionEvidence: [
+    "Windows exposed this OneDrive root through an explicit OneDrive environment setting.",
+    "An existing Sims 4 user-data directory was found.",
+    "An existing Mods directory was found inside this setup.",
+    "An existing Tray directory was found inside this setup.",
+  ],
+  warnings: [],
+  suggestedRoots: [
+    {
+      rootId: "user_data",
+      rootRole: "game_user_data",
+      configuredPath:
+        "C:\\Users\\Player\\OneDrive - Example\\Documents\\Electronic Arts\\The Sims 4",
+      required: false,
+      exists: true,
+    },
+    {
+      rootId: "mods",
+      rootRole: "installed_mods",
+      configuredPath:
+        "C:\\Users\\Player\\OneDrive - Example\\Documents\\Electronic Arts\\The Sims 4\\Mods",
+      required: true,
+      exists: true,
+    },
+    {
+      rootId: "tray",
+      rootRole: "installed_tray",
+      configuredPath:
+        "C:\\Users\\Player\\OneDrive - Example\\Documents\\Electronic Arts\\The Sims 4\\Tray",
+      required: true,
+      exists: true,
+    },
+  ],
+};
+
 const validation: GameInstallationProfileValidationReport = {
   profileId: profile.profileId,
   profileName: profile.profileName,
@@ -434,6 +477,46 @@ it("copies a read-only macOS suggestion into the manual form without saving or a
   expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
 });
 
+it("shows read-only Windows Documents and OneDrive suggestions without saving or activating them", async () => {
+  vi.mocked(api.detectGameInstallationCandidates).mockResolvedValue({
+    currentEnvironment: "native_windows",
+    supported: true,
+    candidates: [windowsCandidate],
+    readOnly: true,
+    reviewNotes: [],
+  });
+
+  renderSettings();
+  await openGameSetup();
+
+  expect(
+    await screen.findByRole("heading", {
+      name: "Existing setups found on this Windows PC",
+    }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/configured Documents location, explicit OneDrive roots/i),
+  ).toBeInTheDocument();
+  expect(screen.getByText(windowsCandidate.suggestedName)).toBeInTheDocument();
+  expect(screen.getAllByText("Native Windows").length).toBeGreaterThan(0);
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: /Review this suggestion/i }),
+  );
+
+  expect(
+    await screen.findByDisplayValue(windowsCandidate.suggestedName),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByDisplayValue(windowsCandidate.suggestedRoots[0].configuredPath),
+  ).toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.confirmManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+});
+
 it("keeps saved profile evidence available when candidate detection fails", async () => {
   vi.mocked(api.detectGameInstallationCandidates).mockRejectedValue(
     new Error("Candidate probe failed"),
@@ -474,12 +557,12 @@ it("surfaces macOS locations that could not be inspected", async () => {
 
 it("shows a truthful manual-only state on hosts without candidate support", async () => {
   vi.mocked(api.detectGameInstallationCandidates).mockResolvedValue({
-    currentEnvironment: "native_windows",
+    currentEnvironment: "native_linux",
     supported: false,
     candidates: [],
     readOnly: true,
     reviewNotes: [
-      "Automatic Sims 4 folder suggestions are not available on this operating system yet. Use the guarded manual folder chooser.",
+      "Automatic Sims 4 folder suggestions are not available for native Linux yet. Use the guarded manual folder chooser. Wine, Proton, and Lutris setups need a separate environment adapter before SimSuite can identify them safely.",
     ],
   });
 
@@ -491,8 +574,9 @@ it("shows a truthful manual-only state on hosts without candidate support", asyn
       name: /Automatic suggestions are not available on this host/i,
     }),
   ).toBeInTheDocument();
-  expect(screen.getByText(/Native Windows/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/Native Linux/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/Manual setup remains available/i)).toBeInTheDocument();
+  expect(screen.getByText(/Wine, Proton, and Lutris/i)).toBeInTheDocument();
   expect(screen.queryByText(/No standard macOS setup was found/i)).not.toBeInTheDocument();
   expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
   expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();

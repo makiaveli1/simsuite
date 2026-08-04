@@ -14,12 +14,37 @@ use crate::{
     platform::{current_platform, PlatformId},
 };
 
+#[derive(Debug, Clone)]
+struct NativeCandidateSource {
+    source_code: String,
+    suggested_name: String,
+    documents_path: PathBuf,
+    source_evidence: String,
+    source_priority: usize,
+}
+
+#[derive(Debug, Clone)]
+struct WindowsOneDriveSource {
+    source_code: &'static str,
+    suggested_name: &'static str,
+    root_path: PathBuf,
+    source_priority: usize,
+}
+
 pub fn detect_game_installation_candidates() -> GameInstallationCandidateDetectionResult {
+    let platform = current_platform();
+    let windows_one_drive_sources = if platform == PlatformId::Windows {
+        collect_windows_one_drive_sources()
+    } else {
+        Vec::new()
+    };
+
     detect_game_installation_candidates_for_platform(
-        current_platform(),
+        platform,
         dirs::document_dir(),
         dirs::home_dir(),
         dirs::download_dir(),
+        windows_one_drive_sources,
     )
 }
 
@@ -28,23 +53,36 @@ fn detect_game_installation_candidates_for_platform(
     documents_dir: Option<PathBuf>,
     home_dir: Option<PathBuf>,
     downloads_dir: Option<PathBuf>,
+    windows_one_drive_sources: Vec<WindowsOneDriveSource>,
 ) -> GameInstallationCandidateDetectionResult {
     let current_environment = match platform {
         PlatformId::Windows => GameOperatingEnvironment::NativeWindows,
         PlatformId::Macos => GameOperatingEnvironment::NativeMacos,
         PlatformId::Linux => GameOperatingEnvironment::NativeLinux,
     };
-    let supported = platform == PlatformId::Macos;
-    let (candidates, review_notes) = if supported {
-        detect_macos_sims4_candidates(documents_dir, home_dir, downloads_dir)
-    } else {
-        (
+    let (supported, candidates, review_notes) = match platform {
+        PlatformId::Macos => {
+            let (candidates, review_notes) =
+                detect_macos_sims4_candidates(documents_dir, home_dir, downloads_dir);
+            (true, candidates, review_notes)
+        }
+        PlatformId::Windows => {
+            let (candidates, review_notes) = detect_windows_sims4_candidates(
+                documents_dir,
+                home_dir,
+                downloads_dir,
+                windows_one_drive_sources,
+            );
+            (true, candidates, review_notes)
+        }
+        PlatformId::Linux => (
+            false,
             Vec::new(),
             vec![
-                "Automatic Sims 4 folder suggestions are not available on this operating system yet. Use the guarded manual folder chooser."
+                "Automatic Sims 4 folder suggestions are not available for native Linux yet. Use the guarded manual folder chooser. Wine, Proton, and Lutris setups need a separate environment adapter before SimSuite can identify them safely."
                     .to_owned(),
             ],
-        )
+        ),
     };
 
     GameInstallationCandidateDetectionResult {
@@ -63,30 +101,140 @@ fn detect_macos_sims4_candidates(
 ) -> (Vec<GameInstallationCandidate>, Vec<String>) {
     let mut sources = Vec::new();
     if let Some(documents_dir) = documents_dir {
-        sources.push((
-            "macos_documents_directory",
-            "Sims 4 in macOS Documents",
-            documents_dir.join("Electronic Arts").join("The Sims 4"),
-            0_usize,
-        ));
+        sources.push(NativeCandidateSource {
+            source_code: "macos_documents_directory".to_owned(),
+            suggested_name: "Sims 4 in macOS Documents".to_owned(),
+            documents_path: documents_dir,
+            source_evidence: "The macOS Documents location resolved successfully.".to_owned(),
+            source_priority: 0,
+        });
     }
     if let Some(home_dir) = home_dir {
-        sources.push((
-            "macos_home_documents_fallback",
-            "Sims 4 in home Documents",
-            home_dir
-                .join("Documents")
-                .join("Electronic Arts")
-                .join("The Sims 4"),
-            1_usize,
-        ));
+        sources.push(NativeCandidateSource {
+            source_code: "macos_home_documents_fallback".to_owned(),
+            suggested_name: "Sims 4 in home Documents".to_owned(),
+            documents_path: home_dir.join("Documents"),
+            source_evidence: "The standard home Documents fallback exists on this Mac."
+                .to_owned(),
+            source_priority: 10,
+        });
     }
 
+    detect_native_sims4_candidates(
+        sources,
+        downloads_dir,
+        GameOperatingEnvironment::NativeMacos,
+        "macOS",
+    )
+}
+
+fn detect_windows_sims4_candidates(
+    documents_dir: Option<PathBuf>,
+    home_dir: Option<PathBuf>,
+    downloads_dir: Option<PathBuf>,
+    windows_one_drive_sources: Vec<WindowsOneDriveSource>,
+) -> (Vec<GameInstallationCandidate>, Vec<String>) {
+    let mut sources = Vec::new();
+    if let Some(documents_dir) = documents_dir {
+        sources.push(NativeCandidateSource {
+            source_code: "windows_configured_documents".to_owned(),
+            suggested_name: "Sims 4 in configured Windows Documents".to_owned(),
+            documents_path: documents_dir,
+            source_evidence:
+                "Windows reported this as the configured Documents location, including any operating-system folder redirection."
+                    .to_owned(),
+            source_priority: 0,
+        });
+    }
+
+    for source in windows_one_drive_sources {
+        if !source.root_path.is_absolute() {
+            continue;
+        }
+        sources.push(NativeCandidateSource {
+            source_code: source.source_code.to_owned(),
+            suggested_name: source.suggested_name.to_owned(),
+            documents_path: source.root_path.join("Documents"),
+            source_evidence:
+                "Windows exposed this OneDrive root through an explicit OneDrive environment setting."
+                    .to_owned(),
+            source_priority: source.source_priority,
+        });
+    }
+
+    if let Some(home_dir) = home_dir {
+        sources.push(NativeCandidateSource {
+            source_code: "windows_home_documents_fallback".to_owned(),
+            suggested_name: "Sims 4 in home Documents".to_owned(),
+            documents_path: home_dir.join("Documents"),
+            source_evidence:
+                "The standard Windows home Documents fallback exists for this user."
+                    .to_owned(),
+            source_priority: 20,
+        });
+    }
+
+    detect_native_sims4_candidates(
+        sources,
+        downloads_dir,
+        GameOperatingEnvironment::NativeWindows,
+        "Windows",
+    )
+}
+
+fn collect_windows_one_drive_sources() -> Vec<WindowsOneDriveSource> {
+    [
+        (
+            "OneDrive",
+            "windows_onedrive",
+            "Sims 4 in OneDrive Documents",
+            5_usize,
+        ),
+        (
+            "OneDriveConsumer",
+            "windows_onedrive_consumer",
+            "Sims 4 in personal OneDrive Documents",
+            6_usize,
+        ),
+        (
+            "OneDriveCommercial",
+            "windows_onedrive_commercial",
+            "Sims 4 in work or school OneDrive Documents",
+            7_usize,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(environment_variable, source_code, suggested_name, source_priority)| {
+        let value = std::env::var_os(environment_variable)?;
+        if value.is_empty() {
+            return None;
+        }
+        Some(WindowsOneDriveSource {
+            source_code,
+            suggested_name,
+            root_path: PathBuf::from(value),
+            source_priority,
+        })
+    })
+    .collect()
+}
+
+fn detect_native_sims4_candidates(
+    sources: Vec<NativeCandidateSource>,
+    downloads_dir: Option<PathBuf>,
+    operating_environment: GameOperatingEnvironment,
+    host_label: &str,
+) -> (Vec<GameInstallationCandidate>, Vec<String>) {
     let downloads_dir = downloads_dir.filter(|path| path.is_dir());
     let mut seen_roots = HashSet::new();
     let mut candidates = Vec::new();
     let mut review_notes = Vec::new();
-    for (source_code, suggested_name, user_data_path, source_priority) in sources {
+
+    for source in sources {
+        let user_data_path = source
+            .documents_path
+            .join("Electronic Arts")
+            .join("The Sims 4");
         match fs::metadata(&user_data_path) {
             Ok(metadata) if metadata.is_dir() => {}
             Ok(_) => continue,
@@ -94,7 +242,7 @@ fn detect_macos_sims4_candidates(
             Err(error) => {
                 review_notes.push(format!(
                     "SimSuite could not inspect '{}' at '{}': {}",
-                    suggested_name,
+                    source.suggested_name,
                     path_to_string(&user_data_path),
                     error
                 ));
@@ -102,17 +250,19 @@ fn detect_macos_sims4_candidates(
             }
         }
 
-        let identity = canonical_or_original(&user_data_path);
+        let identity = candidate_identity(&user_data_path, operating_environment);
         if !seen_roots.insert(identity) {
             continue;
         }
 
+        let source_priority = source.source_priority;
         candidates.push((
-            build_macos_candidate(
-                source_code,
-                suggested_name,
+            build_native_candidate(
+                source,
                 user_data_path,
                 downloads_dir.as_deref(),
+                operating_environment,
+                host_label,
             ),
             source_priority,
         ));
@@ -133,14 +283,16 @@ fn detect_macos_sims4_candidates(
             candidate
         })
         .collect();
+
     (candidates, review_notes)
 }
 
-fn build_macos_candidate(
-    source_code: &str,
-    suggested_name: &str,
+fn build_native_candidate(
+    source: NativeCandidateSource,
     user_data_path: PathBuf,
     downloads_dir: Option<&Path>,
+    operating_environment: GameOperatingEnvironment,
+    host_label: &str,
 ) -> GameInstallationCandidate {
     let mods_path = user_data_path.join("Mods");
     let tray_path = user_data_path.join("Tray");
@@ -153,7 +305,7 @@ fn build_macos_candidate(
     };
 
     let mut evidence = vec![
-        "The macOS Documents location resolved successfully.".to_owned(),
+        source.source_evidence,
         "An existing Sims 4 user-data directory was found.".to_owned(),
     ];
     let mut warnings = Vec::new();
@@ -179,7 +331,7 @@ fn build_macos_candidate(
         .unwrap_or(false)
     {
         warnings.push(
-            "The user-data path is a symbolic link or alias. SimSuite will require its normal live validation before confirmation."
+            "The user-data path is a symbolic link or filesystem redirect. SimSuite will require its normal live validation before confirmation."
                 .to_owned(),
         );
     }
@@ -215,15 +367,17 @@ fn build_macos_candidate(
             required: false,
             exists: true,
         });
-        evidence.push("An existing macOS Downloads directory is available as optional intake.".to_owned());
+        evidence.push(format!(
+            "An existing {host_label} Downloads directory is available as optional intake."
+        ));
     }
 
     GameInstallationCandidate {
-        candidate_id: source_code.to_owned(),
+        candidate_id: source.source_code,
         rank: 0,
         game_id: "sims4".to_owned(),
-        operating_environment: GameOperatingEnvironment::NativeMacos,
-        suggested_name: suggested_name.to_owned(),
+        operating_environment,
+        suggested_name: source.suggested_name,
         suggested_roots,
         confidence,
         detection_evidence: evidence,
@@ -232,8 +386,14 @@ fn build_macos_candidate(
     }
 }
 
-fn canonical_or_original(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+fn candidate_identity(path: &Path, operating_environment: GameOperatingEnvironment) -> String {
+    let canonical_path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let identity = path_to_string(&canonical_path).replace('\\', "/");
+    if operating_environment == GameOperatingEnvironment::NativeWindows {
+        identity.to_lowercase()
+    } else {
+        identity
+    }
 }
 
 fn path_to_string(path: &Path) -> String {
@@ -252,6 +412,19 @@ mod tests {
         fs::create_dir_all(path).expect("create test directory");
     }
 
+    fn windows_one_drive_source(
+        source_code: &'static str,
+        root_path: PathBuf,
+        source_priority: usize,
+    ) -> WindowsOneDriveSource {
+        WindowsOneDriveSource {
+            source_code,
+            suggested_name: "Sims 4 in OneDrive Documents",
+            root_path,
+            source_priority,
+        }
+    }
+
     #[test]
     fn complete_macos_layout_returns_one_strong_ranked_candidate() {
         let temp = TempDir::new().expect("temp dir");
@@ -267,6 +440,7 @@ mod tests {
             Some(documents),
             None,
             Some(downloads),
+            Vec::new(),
         );
 
         assert!(result.supported);
@@ -299,6 +473,7 @@ mod tests {
             Some(documents),
             None,
             None,
+            Vec::new(),
         );
 
         assert!(result.supported);
@@ -315,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn equivalent_documents_sources_are_deduplicated() {
+    fn equivalent_macos_documents_sources_are_deduplicated() {
         let temp = TempDir::new().expect("temp dir");
         let home = temp.path();
         let documents = home.join("Documents");
@@ -328,6 +503,7 @@ mod tests {
             Some(documents),
             Some(home.to_path_buf()),
             None,
+            Vec::new(),
         );
 
         assert_eq!(result.candidates.len(), 1);
@@ -338,7 +514,134 @@ mod tests {
     }
 
     #[test]
-    fn non_macos_hosts_return_no_native_macos_candidates() {
+    fn configured_windows_documents_returns_a_strong_candidate() {
+        let temp = TempDir::new().expect("temp dir");
+        let redirected_documents = temp.path().join("Redirected Documents");
+        let user_data = redirected_documents
+            .join("Electronic Arts")
+            .join("The Sims 4");
+        create_directory(&user_data.join("Mods"));
+        create_directory(&user_data.join("Tray"));
+
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Windows,
+            Some(redirected_documents),
+            None,
+            None,
+            Vec::new(),
+        );
+
+        assert!(result.supported);
+        assert_eq!(result.current_environment, GameOperatingEnvironment::NativeWindows);
+        assert_eq!(result.candidates.len(), 1);
+        let candidate = &result.candidates[0];
+        assert_eq!(candidate.rank, 1);
+        assert_eq!(candidate.candidate_id, "windows_configured_documents");
+        assert_eq!(candidate.confidence, GameInstallationCandidateConfidence::Strong);
+        assert!(candidate
+            .detection_evidence
+            .iter()
+            .any(|item| item.contains("folder redirection")));
+    }
+
+    #[test]
+    fn explicit_onedrive_root_can_supply_a_windows_candidate() {
+        let temp = TempDir::new().expect("temp dir");
+        let one_drive_root = temp.path().join("OneDrive - Example");
+        let user_data = one_drive_root
+            .join("Documents")
+            .join("Electronic Arts")
+            .join("The Sims 4");
+        create_directory(&user_data.join("Mods"));
+        create_directory(&user_data.join("Tray"));
+
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Windows,
+            None,
+            None,
+            None,
+            vec![windows_one_drive_source(
+                "windows_onedrive_commercial",
+                one_drive_root,
+                7,
+            )],
+        );
+
+        assert_eq!(result.candidates.len(), 1);
+        let candidate = &result.candidates[0];
+        assert_eq!(candidate.candidate_id, "windows_onedrive_commercial");
+        assert!(candidate
+            .detection_evidence
+            .iter()
+            .any(|item| item.contains("explicit OneDrive")));
+    }
+
+    #[test]
+    fn configured_documents_and_onedrive_sources_are_deduplicated() {
+        let temp = TempDir::new().expect("temp dir");
+        let one_drive_root = temp.path().join("OneDrive");
+        let documents = one_drive_root.join("Documents");
+        let user_data = documents.join("Electronic Arts").join("The Sims 4");
+        create_directory(&user_data.join("Mods"));
+        create_directory(&user_data.join("Tray"));
+
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Windows,
+            Some(documents),
+            None,
+            None,
+            vec![windows_one_drive_source(
+                "windows_onedrive",
+                one_drive_root,
+                5,
+            )],
+        );
+
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(
+            result.candidates[0].candidate_id,
+            "windows_configured_documents"
+        );
+    }
+
+    #[test]
+    fn windows_strong_candidates_rank_before_possible_candidates() {
+        let temp = TempDir::new().expect("temp dir");
+        let configured_documents = temp.path().join("Configured Documents");
+        let configured_user_data = configured_documents
+            .join("Electronic Arts")
+            .join("The Sims 4");
+        create_directory(&configured_user_data.join("Mods"));
+
+        let one_drive_root = temp.path().join("OneDrive");
+        let one_drive_user_data = one_drive_root
+            .join("Documents")
+            .join("Electronic Arts")
+            .join("The Sims 4");
+        create_directory(&one_drive_user_data.join("Mods"));
+        create_directory(&one_drive_user_data.join("Tray"));
+
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Windows,
+            Some(configured_documents),
+            None,
+            None,
+            vec![windows_one_drive_source(
+                "windows_onedrive",
+                one_drive_root,
+                5,
+            )],
+        );
+
+        assert_eq!(result.candidates.len(), 2);
+        assert_eq!(result.candidates[0].candidate_id, "windows_onedrive");
+        assert_eq!(result.candidates[0].confidence, GameInstallationCandidateConfidence::Strong);
+        assert_eq!(result.candidates[1].candidate_id, "windows_configured_documents");
+        assert_eq!(result.candidates[1].confidence, GameInstallationCandidateConfidence::Possible);
+    }
+
+    #[test]
+    fn native_linux_remains_manual_only() {
         let temp = TempDir::new().expect("temp dir");
         let documents = temp.path().join("Documents");
         create_directory(
@@ -348,24 +651,51 @@ mod tests {
                 .join("Mods"),
         );
 
-        for platform in [PlatformId::Windows, PlatformId::Linux] {
-            let result = detect_game_installation_candidates_for_platform(
-                platform,
-                Some(documents.clone()),
-                None,
-                None,
-            );
-            assert!(!result.supported);
-            assert!(result.read_only);
-            assert!(result.candidates.is_empty());
-            assert_eq!(result.review_notes.len(), 1);
-            let expected_environment = match platform {
-                PlatformId::Windows => GameOperatingEnvironment::NativeWindows,
-                PlatformId::Linux => GameOperatingEnvironment::NativeLinux,
-                PlatformId::Macos => unreachable!(),
-            };
-            assert_eq!(result.current_environment, expected_environment);
-        }
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Linux,
+            Some(documents),
+            None,
+            None,
+            Vec::new(),
+        );
+
+        assert!(!result.supported);
+        assert!(result.read_only);
+        assert!(result.candidates.is_empty());
+        assert_eq!(result.current_environment, GameOperatingEnvironment::NativeLinux);
+        assert!(result.review_notes[0].contains("Wine, Proton, and Lutris"));
+    }
+
+    #[test]
+    fn windows_candidate_identity_is_case_and_separator_insensitive() {
+        let upper = candidate_identity(
+            Path::new("C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4"),
+            GameOperatingEnvironment::NativeWindows,
+        );
+        let lower = candidate_identity(
+            Path::new("c:/users/player/documents/electronic arts/the sims 4"),
+            GameOperatingEnvironment::NativeWindows,
+        );
+
+        assert_eq!(upper, lower);
+    }
+
+    #[test]
+    fn relative_onedrive_roots_are_ignored() {
+        let result = detect_game_installation_candidates_for_platform(
+            PlatformId::Windows,
+            None,
+            None,
+            None,
+            vec![windows_one_drive_source(
+                "windows_onedrive",
+                PathBuf::from("relative-onedrive"),
+                5,
+            )],
+        );
+
+        assert!(result.supported);
+        assert!(result.candidates.is_empty());
     }
 
     #[test]

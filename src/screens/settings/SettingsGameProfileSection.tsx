@@ -509,10 +509,24 @@ function SettingsGameCandidateSuggestions({
   const supported = detection?.supported ?? null;
   const currentEnvironment = detection?.currentEnvironment ?? null;
   const inspectionNotes = supported ? detection?.reviewNotes ?? [] : [];
+  const supportedHostLabel =
+    currentEnvironment === "native_windows"
+      ? "this Windows PC"
+      : currentEnvironment === "native_macos"
+        ? "this Mac"
+        : "this host";
   const heading =
     supported === false
       ? "Automatic suggestions are not available on this host"
-      : "Existing setups found on this Mac";
+      : `Existing setups found on ${supportedHostLabel}`;
+  const supportedDescription =
+    currentEnvironment === "native_windows"
+      ? "SimSuite checks Windows' configured Documents location, explicit OneDrive roots, and the normal home Documents fallback. It ranks only Sims 4 folders that already exist. A suggestion is temporary until you review and save it manually."
+      : "SimSuite checks standard macOS Documents locations and ranks only folders that already exist. A suggestion is temporary until you review and save it manually.";
+  const emptyHeading =
+    currentEnvironment === "native_windows"
+      ? "No standard Windows setup was found"
+      : "No standard macOS setup was found";
 
   return (
     <section
@@ -533,7 +547,7 @@ function SettingsGameCandidateSuggestions({
                     ? environmentLabel(currentEnvironment)
                     : "this operating system"
                 } yet. Use the guarded manual folder chooser below.`
-              : "SimSuite checks standard macOS Documents locations and ranks only folders that already exist. A suggestion is temporary until you review and save it manually."}
+              : supportedDescription}
           </p>
         </div>
         <span className="ghost-chip">
@@ -577,7 +591,7 @@ function SettingsGameCandidateSuggestions({
         <div className="settings-game-candidate-state">
           <FolderSearch size={16} strokeWidth={2} />
           <div>
-            <strong>No standard macOS setup was found</strong>
+            <strong>{emptyHeading}</strong>
             <span>Use the manual folder chooser below. SimSuite will not invent paths.</span>
           </div>
         </div>
