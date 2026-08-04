@@ -1,4 +1,4 @@
-const { chromium } = await import('/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort/node_modules/playwright/index.mjs');
+import { chromium } from "playwright";
 
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();

@@ -1,17 +1,10 @@
-$ErrorActionPreference = "Stop"
-$file = 'C:\Users\likwi\OneDrive\Desktop\PROJS\SimSort\node_modules\.pnpm\@babel+helper-compilation-targets@7.28.6\node_modules\@babel\helper-compilation-targets\lib\index.js'
-$content = Get-Content -Raw $file -Encoding UTF8
+$ErrorActionPreference = 'Stop'
 
-$old = 'var _lruCache = require("lru-cache");'
-$new = 'var _lruCache = require("lru-cache");
-if (typeof _lruCache !== "function") { _lruCache = _lruCache.default || Object.values(_lruCache)[0]; }'
+throw @'
+This legacy node_modules patch is retired.
 
-if ($content -notmatch [regex]::Escape($old)) {
-    Write-Output "Pattern not found! Current require line:"
-    $content -split "`n" | Select-String "lruCache" | Select-Object -First 3
-    exit 1
-}
+SimSuite now resolves the Babel/lru-cache compatibility issue through the pinned pnpm override in package.json. Do not modify installed dependency files directly.
 
-$newContent = $content -replace [regex]::Escape($old), $new
-Set-Content -Path $file -Value $newContent -Encoding UTF8 -NoNewline
-Write-Output "Patched successfully"
+Run this from the repository root instead:
+  pnpm install --frozen-lockfile
+'@

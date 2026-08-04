@@ -1,3 +1,5 @@
+// @ts-expect-error This repository-contract test intentionally reads files through Node.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error Validation wrappers are Node ESM scripts outside the TS app bundle.
 import { buildVitestInvocation, chunkTestFiles, sanitizeNodeOptions, shouldRunVitestInBatches, supportsWebStorageDisable } from "../../scripts/test/run-vitest.mjs";
@@ -83,9 +85,65 @@ describe("validation script wrappers", () => {
     ]);
   });
 
+  it("keeps Windows desktop verification repo-relative and pnpm-native", () => {
+    const canonicalProofScripts = [
+      "scripts/desktop/run-desktop-library-proof.ps1",
+      "scripts/desktop/run-tauri-smoke.ps1",
+    ];
+
+    for (const scriptPath of canonicalProofScripts) {
+      const source = readFileSync(scriptPath, "utf8");
+      expect(source).toContain("$ErrorActionPreference = 'Stop'");
+      expect(source).toContain("pnpm run tauri:build");
+      expect(source).not.toMatch(/\bnpm run\b/i);
+      expect(source).not.toMatch(/[A-Za-z]:\\Users\\/);
+    }
+
+    const compatibilitySource = readFileSync(
+      "scripts/desktop/run-tauri-smoke-fixed.ps1",
+      "utf8",
+    );
+    expect(compatibilitySource).toContain("run-tauri-smoke.ps1");
+    expect(compatibilitySource).toContain("@PSBoundParameters");
+    expect(compatibilitySource).not.toMatch(/\bnpm run\b/i);
+    expect(compatibilitySource).not.toMatch(/[A-Za-z]:\\Users\\/);
+
+    const rebuildSource = readFileSync("scripts/dev/rebuild-msi.ps1", "utf8");
+    expect(rebuildSource).toContain("$repoRoot = Resolve-Path");
+    expect(rebuildSource).toContain("pnpm run tauri:build");
+    expect(rebuildSource).not.toMatch(/\bnpm run\b/i);
+    expect(rebuildSource).not.toMatch(/[A-Za-z]:\\Users\\/);
+
+    const standaloneSmokeSource = readFileSync("smoke-library-redesign.cjs", "utf8");
+    expect(standaloneSmokeSource).toContain("run-powershell-script.mjs");
+    expect(standaloneSmokeSource).toContain("run-desktop-library-proof.ps1");
+    expect(standaloneSmokeSource).not.toContain("connectOverCDP");
+
+    const portableHelperPaths = [
+      "smoke-library-redesign.cjs",
+      "verify-phase5ag.cjs",
+      "verify-phase5ag.mjs",
+      "mode-compare.cjs",
+      "scripts/desktop/library-inspector-sheet-audit.mjs",
+      "patch-babel.ps1",
+    ];
+    for (const helperPath of portableHelperPaths) {
+      const source = readFileSync(helperPath, "utf8");
+      expect(source).not.toMatch(/(?:[A-Za-z]:\\Users\\|\/mnt\/[a-z]\/Users\/|\/home\/[^/]+\/\.openclaw\/)/i);
+    }
+
+    const retiredBabelPatch = readFileSync("patch-babel.ps1", "utf8");
+    expect(retiredBabelPatch).toContain("legacy node_modules patch is retired");
+    expect(retiredBabelPatch).not.toContain("Set-Content");
+
+    const agentInstructions = readFileSync("AGENTS.md", "utf8");
+    expect(agentInstructions).toContain("Resolve `anthropic-frontend-design` and `frontend-design` by skill name");
+    expect(agentInstructions).not.toMatch(/[A-Za-z]:\/Users\//);
+  });
+
   it("uses the Windows PowerShell Rust lane from WSL so cargo path semantics match the desktop target", () => {
     const invocation = buildRustTestInvocation({
-      cwd: "/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort",
+      cwd: "/mnt/c/Users/player/Projects/SimSuite",
       argv: ["node", "scripts/test/run-rust-tests.mjs", "core::scanner::tests::scan_empty_roots"],
       env: { WSL_DISTRO_NAME: "Ubuntu" },
       platform: "linux",
@@ -94,7 +152,7 @@ describe("validation script wrappers", () => {
 
     expect(invocation.command).toBe("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe");
     expect(invocation.args).toContain("-Command");
-    expect(invocation.args.join(" ")).toContain("C:\\Users\\likwi\\OneDrive\\Desktop\\PROJS\\SimSort");
+    expect(invocation.args.join(" ")).toContain("C:\\Users\\player\\Projects\\SimSuite");
     expect(invocation.args.join(" ")).toContain("cargo test --manifest-path src-tauri/Cargo.toml");
     expect(invocation.args.join(" ")).toContain("core::scanner::tests::scan_empty_roots");
   });

@@ -5,12 +5,12 @@ alwaysApply: true
 
 # Repo agents
 
-## Guaranteed skills
+## Frontend skills
 
-- `anthropic-frontend-design` is a guaranteed skill for this repository.
-  Path: `C:/Users/likwi/.codex/skills/anthropic-frontend-design/SKILL.md`
-- For frontend, layout, typography, styling, and UI redesign work, open and follow `anthropic-frontend-design` together with `frontend-design`.
-- If the user explicitly names `anthropic-frontend-design`, treat that as an instruction to use it for the turn.
+- Resolve `anthropic-frontend-design` and `frontend-design` by skill name through the active agent runtime. Never hardcode a developer-specific absolute skill path.
+- For frontend, layout, typography, styling, and UI redesign work, open and follow both skills when the current runtime provides them.
+- If a required skill is unavailable, say so in the work record and continue with the repository's frontend direction below. Do not claim that an unavailable skill was loaded.
+- If the user explicitly names `anthropic-frontend-design`, treat that as an instruction to use it for the turn when available.
 
 ## Frontend direction
 

@@ -4,6 +4,7 @@ param(
     [string]$OutputDir
 )
 
+$ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $sessionFile = Join-Path $repoRoot 'output\desktop\tauri-driver-session.json'
 $outputRoot = if ($OutputDir) { $OutputDir } else { Join-Path $repoRoot 'output\desktop\library-proof' }
@@ -12,9 +13,12 @@ try {
     if (-not $SkipBuild) {
         Write-Output "DESKTOP_LIBRARY_PROOF_BUILD start=1"
         Push-Location $repoRoot
-        & npm run tauri:build
-        $buildResult = $LASTEXITCODE
-        Pop-Location
+        try {
+            & pnpm run tauri:build
+            $buildResult = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
         if ($buildResult -ne 0) {
             exit $buildResult
         }

@@ -1,10 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const BASE_URL = process.env.SIMSORT_AUDIT_URL ?? "http://127.0.0.1:3101/#library";
-const ROOT = "/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort";
-const OUTPUT_DIR = path.join(ROOT, "output", "library-ui-audit-2026-04-07");
+const BASE_URL = process.env.SIMSUITE_AUDIT_URL
+  ?? process.env.SIMSORT_AUDIT_URL
+  ?? "http://127.0.0.1:3101/#library";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const OUTPUT_DIR = process.env.SIMSUITE_AUDIT_OUTPUT_DIR
+  ?? path.join(ROOT, "output", "library-ui-audit");
 const STORAGE_KEY = "simsuite:user-view";
 
 const MODES = [

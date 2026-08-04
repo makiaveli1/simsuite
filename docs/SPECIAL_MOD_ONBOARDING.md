@@ -30,7 +30,7 @@ If those rules are not met, keep it as normal Inbox content for now.
 
 ### 1. Add or update the candidate record
 
-Start in [SPECIAL_MOD_CANDIDATES.json](/C:/Users/likwi/OneDrive/Desktop/PROJS/SimSort/docs/SPECIAL_MOD_CANDIDATES.json).
+Start in [SPECIAL_MOD_CANDIDATES.json](./SPECIAL_MOD_CANDIDATES.json).
 
 Each record must say:
 

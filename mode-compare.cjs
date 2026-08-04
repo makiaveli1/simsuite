@@ -1,4 +1,10 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const { chromium } = require('playwright');
+
+const outputDir = process.env.SIMSUITE_MODE_COMPARE_OUTPUT_DIR
+  || path.join(__dirname, 'output', 'mode-compare');
+fs.mkdirSync(outputDir, { recursive: true });
 
 (async () => {
   const browser = await chromium.launch({
@@ -99,7 +105,7 @@ const { chromium } = require('playwright');
         }
         
         await page.screenshot({
-          path: `/home/likwid/.openclaw/workspace/simsort-ph4-${mode.name}-grid.png`,
+          path: path.join(outputDir, `simsuite-${mode.name}-grid.png`),
           fullPage: true
         });
       }

@@ -5,7 +5,7 @@ import { buildPowerShellInvocation, toWindowsPath } from "../../scripts/desktop/
 describe("desktop PowerShell wrapper", () => {
   it("converts WSL repo script paths before invoking Windows PowerShell", () => {
     const invocation = buildPowerShellInvocation({
-      cwd: "/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort",
+      cwd: "/mnt/c/Users/player/Projects/SimSuite",
       env: { WSL_DISTRO_NAME: "Ubuntu" },
       platform: "linux",
       script: "scripts/desktop/run-tauri-smoke.ps1",
@@ -16,14 +16,14 @@ describe("desktop PowerShell wrapper", () => {
     expect(invocation.executable).toBe("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe");
     expect(invocation.args).toContain("-File");
     expect(invocation.args).toContain(
-      "C:\\Users\\likwi\\OneDrive\\Desktop\\PROJS\\SimSort\\scripts\\desktop\\run-tauri-smoke.ps1",
+      "C:\\Users\\player\\Projects\\SimSuite\\scripts\\desktop\\run-tauri-smoke.ps1",
     );
     expect(invocation.args).toContain("-IncludeApply");
   });
 
   it("uses native PowerShell and native paths on Windows", () => {
     const invocation = buildPowerShellInvocation({
-      cwd: "C:\\Users\\likwi\\OneDrive\\Desktop\\PROJS\\SimSort",
+      cwd: "C:\\Users\\player\\Projects\\SimSuite",
       env: {},
       platform: "win32",
       script: "scripts/desktop/run-desktop-library-proof.ps1",
@@ -31,7 +31,7 @@ describe("desktop PowerShell wrapper", () => {
 
     expect(invocation.executable).toBe("powershell.exe");
     expect(invocation.args).toContain(
-      "C:\\Users\\likwi\\OneDrive\\Desktop\\PROJS\\SimSort\\scripts\\desktop\\run-desktop-library-proof.ps1",
+      "C:\\Users\\player\\Projects\\SimSuite\\scripts\\desktop\\run-desktop-library-proof.ps1",
     );
   });
 

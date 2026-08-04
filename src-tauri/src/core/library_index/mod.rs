@@ -2645,7 +2645,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "large synthetic stress harness; run npm run test:library:stress"]
+    #[ignore = "large synthetic stress harness; run pnpm run test:library:stress"]
     fn large_library_backend_stress_queries_remain_bounded_and_truthful() {
         let (mut connection, settings, seed_pack) = setup_library_env();
         let started_at = Instant::now();

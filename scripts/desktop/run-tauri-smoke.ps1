@@ -4,6 +4,7 @@ param(
     [switch]$SkipBuild
 )
 
+$ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $sessionFile = Join-Path $repoRoot 'output\desktop\tauri-driver-session.json'
 
@@ -11,9 +12,12 @@ try {
     if (-not $SkipBuild) {
         Write-Output "TAURI_SMOKE_BUILD start=1"
         Push-Location $repoRoot
-        & npm run tauri:build
-        $buildResult = $LASTEXITCODE
-        Pop-Location
+        try {
+            & pnpm run tauri:build
+            $buildResult = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
         if ($buildResult -ne 0) {
             exit $buildResult
         }

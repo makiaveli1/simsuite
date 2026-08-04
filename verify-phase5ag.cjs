@@ -1,17 +1,14 @@
-import { chromium } from '/mnt/c/Users/likwi/OneDrive/Desktop/PROJS/SimSort/node_modules/playwright/index.mjs';
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-const page = await browser.newPage();
-await page.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-await page.waitForTimeout(3000);
+// Deprecated CommonJS compatibility entry point. The maintained smoke check is ESM.
+const result = spawnSync(process.execPath, [path.join(__dirname, "verify-phase5ag.mjs")], {
+  stdio: "inherit",
+});
 
-const title = await page.title();
-const html = await page.content();
-const hasFolderToggle = html.includes('folder') || html.includes('Folder');
-const hasLooseFiles = html.includes('loose') || html.includes('Loose');
+if (result.error) {
+  console.error("Could not launch verify-phase5ag.mjs:", result.error.message);
+  process.exit(1);
+}
 
-console.log('Title:', title);
-console.log('Has folder content:', hasFolderToggle);
-console.log('Has loose-files content:', hasLooseFiles);
-
-await browser.close();
+process.exit(result.status ?? 1);

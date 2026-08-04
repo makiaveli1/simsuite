@@ -1423,7 +1423,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "large synthetic stress harness; run npm run test:library:stress"]
+    #[ignore = "large synthetic stress harness; run pnpm run test:library:stress"]
     fn large_same_name_and_version_review_groups_are_bounded() {
         let mut connection = Connection::open_in_memory().expect("db");
         database::initialize(&mut connection).expect("schema");
