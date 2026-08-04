@@ -134,6 +134,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_game_installation_profiles,
             commands::get_active_game_installation_profile,
+            commands::detect_game_installation_candidates,
             commands::create_manual_game_installation_profile,
             commands::confirm_manual_game_installation_profile,
             commands::set_active_game_installation_profile,
@@ -296,6 +297,7 @@ mod tests {
         for command in [
             "commands::list_game_installation_profiles",
             "commands::get_active_game_installation_profile",
+            "commands::detect_game_installation_candidates",
             "commands::create_manual_game_installation_profile",
             "commands::confirm_manual_game_installation_profile",
             "commands::set_active_game_installation_profile",

@@ -35,6 +35,7 @@ import type {
   DuplicateOverview,
   DuplicatePair,
   FileDetail,
+  GameInstallationCandidateDetectionResult,
   GameInstallationProfile,
   GameInstallationProfileConfirmationResult,
   GameInstallationProfileValidationReport,
@@ -178,6 +179,64 @@ function createMockGameInstallationProfile(): GameInstallationProfile {
           ]
         : [],
     ),
+  };
+}
+
+function createMockGameInstallationCandidates(): GameInstallationCandidateDetectionResult {
+  const userDataPath = "/Users/player/Documents/Electronic Arts/The Sims 4";
+  return {
+    currentEnvironment: "native_macos",
+    supported: true,
+    readOnly: true,
+    reviewNotes: [],
+    candidates: [
+      {
+        candidateId: "macos_documents_directory",
+        rank: 1,
+        gameId: "sims4",
+        operatingEnvironment: "native_macos",
+        suggestedName: "Sims 4 in macOS Documents",
+        confidence: "strong",
+        readOnly: true,
+        detectionEvidence: [
+          "The macOS Documents location resolved successfully.",
+          "An existing Sims 4 user-data directory was found.",
+          "An existing Mods directory was found inside this setup.",
+          "An existing Tray directory was found inside this setup.",
+        ],
+        warnings: [],
+        suggestedRoots: [
+          {
+            rootId: "user_data",
+            rootRole: "game_user_data",
+            configuredPath: userDataPath,
+            required: false,
+            exists: true,
+          },
+          {
+            rootId: "mods",
+            rootRole: "installed_mods",
+            configuredPath: `${userDataPath}/Mods`,
+            required: true,
+            exists: true,
+          },
+          {
+            rootId: "tray",
+            rootRole: "installed_tray",
+            configuredPath: `${userDataPath}/Tray`,
+            required: true,
+            exists: true,
+          },
+          {
+            rootId: "downloads",
+            rootRole: "intake_downloads",
+            configuredPath: "/Users/player/Downloads",
+            required: false,
+            exists: true,
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -7471,6 +7530,8 @@ async function mockInvoke<T>(
       ] as T;
     case "get_active_game_installation_profile":
       return structuredClone(createMockGameInstallationProfile()) as T;
+    case "detect_game_installation_candidates":
+      return structuredClone(createMockGameInstallationCandidates()) as T;
     case "create_manual_game_installation_profile": {
       const request = payload?.request as
         | CreateManualGameInstallationProfileRequest
@@ -9206,6 +9267,10 @@ export const api = {
     invoke<GameInstallationProfile[]>("list_game_installation_profiles"),
   getActiveGameInstallationProfile: () =>
     invoke<GameInstallationProfile | null>("get_active_game_installation_profile"),
+  detectGameInstallationCandidates: () =>
+    invoke<GameInstallationCandidateDetectionResult>(
+      "detect_game_installation_candidates",
+    ),
   createManualGameInstallationProfile: (
     request: CreateManualGameInstallationProfileRequest,
   ) =>

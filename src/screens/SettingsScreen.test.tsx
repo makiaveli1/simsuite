@@ -4,6 +4,7 @@ import { UiPreferencesProvider } from "../components/UiPreferencesContext";
 import { api } from "../lib/api";
 import type {
   AppBehaviorSettings,
+  GameInstallationCandidate,
   GameInstallationProfile,
   GameInstallationProfileValidationReport,
   LibrarySettings,
@@ -16,6 +17,7 @@ vi.mock("../lib/api", () => ({
     getLibrarySettings: vi.fn(),
     listGameInstallationProfiles: vi.fn(),
     getActiveGameInstallationProfile: vi.fn(),
+    detectGameInstallationCandidates: vi.fn(),
     createManualGameInstallationProfile: vi.fn(),
     confirmManualGameInstallationProfile: vi.fn(),
     setActiveGameInstallationProfile: vi.fn(),
@@ -122,6 +124,53 @@ const foreignProfile: GameInstallationProfile = {
   })),
 };
 
+const macosCandidate: GameInstallationCandidate = {
+  candidateId: "macos_documents_directory",
+  rank: 1,
+  gameId: "sims4",
+  operatingEnvironment: "native_macos",
+  suggestedName: "Sims 4 in macOS Documents",
+  confidence: "strong",
+  readOnly: true,
+  detectionEvidence: [
+    "The macOS Documents location resolved successfully.",
+    "An existing Sims 4 user-data directory was found.",
+    "An existing Mods directory was found inside this setup.",
+    "An existing Tray directory was found inside this setup.",
+  ],
+  warnings: [],
+  suggestedRoots: [
+    {
+      rootId: "user_data",
+      rootRole: "game_user_data",
+      configuredPath: "/Users/player/Documents/Electronic Arts/The Sims 4",
+      required: false,
+      exists: true,
+    },
+    {
+      rootId: "mods",
+      rootRole: "installed_mods",
+      configuredPath: librarySettings.modsPath!,
+      required: true,
+      exists: true,
+    },
+    {
+      rootId: "tray",
+      rootRole: "installed_tray",
+      configuredPath: librarySettings.trayPath!,
+      required: true,
+      exists: true,
+    },
+    {
+      rootId: "downloads",
+      rootRole: "intake_downloads",
+      configuredPath: librarySettings.downloadsPath!,
+      required: false,
+      exists: true,
+    },
+  ],
+};
+
 const validation: GameInstallationProfileValidationReport = {
   profileId: profile.profileId,
   profileName: profile.profileName,
@@ -194,6 +243,13 @@ beforeEach(() => {
     foreignProfile,
   ]);
   vi.mocked(api.getActiveGameInstallationProfile).mockResolvedValue(profile);
+  vi.mocked(api.detectGameInstallationCandidates).mockResolvedValue({
+    currentEnvironment: "native_macos",
+    supported: true,
+    candidates: [macosCandidate],
+    readOnly: true,
+    reviewNotes: [],
+  });
   vi.mocked(api.createManualGameInstallationProfile).mockResolvedValue(manualProfile);
   vi.mocked(api.confirmManualGameInstallationProfile).mockResolvedValue({
     profile: {
@@ -341,6 +397,105 @@ it("shows active readiness with a guarded selector and no file apply controls", 
   ]) {
     expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   }
+});
+
+it("copies a read-only macOS suggestion into the manual form without saving or activating it", async () => {
+  renderSettings();
+  expect(api.detectGameInstallationCandidates).not.toHaveBeenCalled();
+
+  await openGameSetup();
+
+  expect(api.detectGameInstallationCandidates).toHaveBeenCalledTimes(1);
+  expect(
+    await screen.findByRole("heading", {
+      name: "Existing setups found on this Mac",
+    }),
+  ).toBeInTheDocument();
+  expect(screen.getByText(macosCandidate.suggestedName)).toBeInTheDocument();
+  expect(screen.getByText("Strong match")).toBeInTheDocument();
+  expect(screen.getByText(/temporary until you review and save it manually/i)).toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: /Review this suggestion/i }),
+  );
+
+  expect(
+    await screen.findByDisplayValue(macosCandidate.suggestedName),
+  ).toBeInTheDocument();
+  expect(screen.getByDisplayValue(librarySettings.modsPath!)).toBeInTheDocument();
+  expect(screen.getByDisplayValue(librarySettings.trayPath!)).toBeInTheDocument();
+  expect(
+    screen.getByText(/has not been saved, confirmed, or activated/i),
+  ).toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.confirmManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+});
+
+it("keeps saved profile evidence available when candidate detection fails", async () => {
+  vi.mocked(api.detectGameInstallationCandidates).mockRejectedValue(
+    new Error("Candidate probe failed"),
+  );
+
+  renderSettings();
+  await openGameSetup();
+
+  expect(await screen.findByText(profile.profileName)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Automatic setup suggestions could not be checked/i),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/Candidate probe failed/i)).toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+});
+
+it("surfaces macOS locations that could not be inspected", async () => {
+  vi.mocked(api.detectGameInstallationCandidates).mockResolvedValue({
+    currentEnvironment: "native_macos",
+    supported: true,
+    candidates: [],
+    readOnly: true,
+    reviewNotes: ["SimSuite could not inspect the macOS Documents location: permission denied"],
+  });
+
+  renderSettings();
+  await openGameSetup();
+
+  expect(
+    await screen.findByText(/Some standard locations could not be inspected/i),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/permission denied/i)).toBeInTheDocument();
+  expect(screen.queryByText(/No standard macOS setup was found/i)).not.toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+});
+
+it("shows a truthful manual-only state on hosts without candidate support", async () => {
+  vi.mocked(api.detectGameInstallationCandidates).mockResolvedValue({
+    currentEnvironment: "native_windows",
+    supported: false,
+    candidates: [],
+    readOnly: true,
+    reviewNotes: [
+      "Automatic Sims 4 folder suggestions are not available on this operating system yet. Use the guarded manual folder chooser.",
+    ],
+  });
+
+  renderSettings();
+  await openGameSetup();
+
+  expect(
+    await screen.findByRole("heading", {
+      name: /Automatic suggestions are not available on this host/i,
+    }),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/Native Windows/i)).toBeInTheDocument();
+  expect(screen.getByText(/Manual setup remains available/i)).toBeInTheDocument();
+  expect(screen.queryByText(/No standard macOS setup was found/i)).not.toBeInTheDocument();
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
 });
 
 it("lets an empty active state choose from real saved profiles", async () => {

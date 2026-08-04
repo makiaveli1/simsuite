@@ -99,6 +99,37 @@ export interface GameInstallationProfileConfirmationResult {
   validation: GameInstallationProfileValidationReport;
 }
 
+export type GameInstallationCandidateConfidence = "strong" | "possible";
+
+export interface GameInstallationCandidateRoot {
+  rootId: string;
+  rootRole: string;
+  configuredPath: string;
+  required: boolean;
+  exists: boolean;
+}
+
+export interface GameInstallationCandidate {
+  candidateId: string;
+  rank: number;
+  gameId: string;
+  operatingEnvironment: GameOperatingEnvironment;
+  suggestedName: string;
+  suggestedRoots: GameInstallationCandidateRoot[];
+  confidence: GameInstallationCandidateConfidence;
+  detectionEvidence: string[];
+  warnings: string[];
+  readOnly: boolean;
+}
+
+export interface GameInstallationCandidateDetectionResult {
+  currentEnvironment: GameOperatingEnvironment;
+  supported: boolean;
+  candidates: GameInstallationCandidate[];
+  readOnly: boolean;
+  reviewNotes: string[];
+}
+
 export type GameInstallationEnvironmentCompatibility =
   | "matches"
   | "mismatch"

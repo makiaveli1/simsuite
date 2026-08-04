@@ -81,6 +81,30 @@ describe("game installation profile read API", () => {
     expect(report.reviewNotes.join(" ")).toMatch(/simulated/i);
   });
 
+  it("returns ranked read-only installation candidates without saving or activating them", async () => {
+    const profilesBefore = await api.listGameInstallationProfiles();
+    const activeBefore = await api.getActiveGameInstallationProfile();
+    const result = await api.detectGameInstallationCandidates();
+
+    expect(result.supported).toBe(true);
+    expect(result.readOnly).toBe(true);
+    expect(result.currentEnvironment).toBe("native_macos");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      candidateId: "macos_documents_directory",
+      rank: 1,
+      operatingEnvironment: "native_macos",
+      confidence: "strong",
+      readOnly: true,
+    });
+    expect(
+      result.candidates[0].suggestedRoots.map((root) => root.rootId),
+    ).toEqual(["user_data", "mods", "tray", "downloads"]);
+    expect(result.candidates[0].warnings).toEqual([]);
+    expect(await api.listGameInstallationProfiles()).toEqual(profilesBefore);
+    expect(await api.getActiveGameInstallationProfile()).toEqual(activeBefore);
+  });
+
   it("creates an unconfirmed manual draft and keeps activation separate from confirmation", async () => {
     const created = await api.createManualGameInstallationProfile({
       profileName: "Second setup",

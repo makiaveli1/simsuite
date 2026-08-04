@@ -1,6 +1,7 @@
 import {
   CircleCheck,
   FolderPlus,
+  FolderSearch,
   FolderTree,
   Gamepad2,
   LoaderCircle,
@@ -10,6 +11,8 @@ import {
 import type {
   CreateManualGameInstallationProfileRequest,
   GameInstallationAdapterReadinessReport,
+  GameInstallationCandidate,
+  GameInstallationCandidateDetectionResult,
   GameInstallationEvidenceStrength,
   GameInstallationProfile,
   GameInstallationProfileStatus,
@@ -20,10 +23,12 @@ import type {
 interface SettingsGameProfileSectionProps {
   profile: GameInstallationProfile | null | undefined;
   profiles: GameInstallationProfile[];
+  candidateDetection: GameInstallationCandidateDetectionResult | null;
   selectedProfileId: string;
   selectedValidation: GameInstallationProfileValidationReport | null;
   validation: GameInstallationProfileValidationReport | null;
   error: string | null;
+  candidateError: string | null;
   selectionCheckError: string | null;
   selectionError: string | null;
   selectionMessage: string | null;
@@ -32,12 +37,14 @@ interface SettingsGameProfileSectionProps {
   manualError: string | null;
   manualMessage: string | null;
   isLoading: boolean;
+  isDetectingCandidates: boolean;
   isCheckingSelection: boolean;
   isSelecting: boolean;
   isCreatingManualProfile: boolean;
   isConfirmingManualProfile: boolean;
   onSelectedProfileIdChange: (profileId: string) => void;
   onSelectProfile: () => void;
+  onReviewCandidate: (candidateId: string) => void;
   onToggleManualSetup: () => void;
   onManualDraftChange: (
     values: Partial<CreateManualGameInstallationProfileRequest>,
@@ -53,10 +60,12 @@ interface SettingsGameProfileSectionProps {
 export function SettingsGameProfileSection({
   profile,
   profiles,
+  candidateDetection,
   selectedProfileId,
   selectedValidation,
   validation,
   error,
+  candidateError,
   selectionCheckError,
   selectionError,
   selectionMessage,
@@ -65,12 +74,14 @@ export function SettingsGameProfileSection({
   manualError,
   manualMessage,
   isLoading,
+  isDetectingCandidates,
   isCheckingSelection,
   isSelecting,
   isCreatingManualProfile,
   isConfirmingManualProfile,
   onSelectedProfileIdChange,
   onSelectProfile,
+  onReviewCandidate,
   onToggleManualSetup,
   onManualDraftChange,
   onPickManualFolder,
@@ -127,6 +138,12 @@ export function SettingsGameProfileSection({
           isSelecting={isSelecting}
           onSelectedProfileIdChange={onSelectedProfileIdChange}
           onSelectProfile={onSelectProfile}
+        />
+        <SettingsGameCandidateSuggestions
+          detection={candidateDetection}
+          error={candidateError}
+          isLoading={isDetectingCandidates}
+          onReviewCandidate={onReviewCandidate}
         />
         <SettingsManualProfileSetup
           profiles={profiles}
@@ -196,6 +213,12 @@ export function SettingsGameProfileSection({
         isSelecting={isSelecting}
         onSelectedProfileIdChange={onSelectedProfileIdChange}
         onSelectProfile={onSelectProfile}
+      />
+      <SettingsGameCandidateSuggestions
+        detection={candidateDetection}
+        error={candidateError}
+        isLoading={isDetectingCandidates}
+        onReviewCandidate={onReviewCandidate}
       />
       <SettingsManualProfileSetup
         profiles={profiles}
@@ -465,6 +488,167 @@ function SettingsProfileSelector({
         <div className="settings-profile-selection-message is-error" role="alert">
           <TriangleAlert size={16} strokeWidth={2} />
           <span>{selectionError}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SettingsGameCandidateSuggestions({
+  detection,
+  error,
+  isLoading,
+  onReviewCandidate,
+}: {
+  detection: GameInstallationCandidateDetectionResult | null;
+  error: string | null;
+  isLoading: boolean;
+  onReviewCandidate: (candidateId: string) => void;
+}) {
+  const candidates = detection?.candidates ?? [];
+  const supported = detection?.supported ?? null;
+  const currentEnvironment = detection?.currentEnvironment ?? null;
+  const inspectionNotes = supported ? detection?.reviewNotes ?? [] : [];
+  const heading =
+    supported === false
+      ? "Automatic suggestions are not available on this host"
+      : "Existing setups found on this Mac";
+
+  return (
+    <section
+      className="settings-game-candidates"
+      aria-labelledby="game-candidates-heading"
+    >
+      <div className="settings-game-candidates-heading">
+        <div>
+          <span className="section-label">
+            <FolderSearch size={14} strokeWidth={2} />
+            Read-only suggestions
+          </span>
+          <h3 id="game-candidates-heading">{heading}</h3>
+          <p className="workspace-toolbar-copy">
+            {supported === false
+              ? `SimSuite does not guess standard Sims 4 paths for ${
+                  currentEnvironment
+                    ? environmentLabel(currentEnvironment)
+                    : "this operating system"
+                } yet. Use the guarded manual folder chooser below.`
+              : "SimSuite checks standard macOS Documents locations and ranks only folders that already exist. A suggestion is temporary until you review and save it manually."}
+          </p>
+        </div>
+        <span className="ghost-chip">
+          {supported === false ? "Manual only" : `${candidates.length} found`}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <div className="settings-game-candidate-state" role="status">
+          <LoaderCircle size={16} strokeWidth={2} className="spin" />
+          <span>Checking supported folder locations without changing them.</span>
+        </div>
+      ) : error ? (
+        <div className="settings-game-candidate-state is-error" role="alert">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <div>
+            <strong>Suggestions could not be checked</strong>
+            <span>{error}</span>
+          </div>
+        </div>
+      ) : supported === false ? (
+        <div className="settings-game-candidate-state">
+          <FolderSearch size={16} strokeWidth={2} />
+          <div>
+            <strong>Manual setup remains available</strong>
+            <span>
+              {detection?.reviewNotes[0] ??
+                "Automatic folder suggestions are not available on this host yet."}
+            </span>
+          </div>
+        </div>
+      ) : candidates.length === 0 && inspectionNotes.length > 0 ? (
+        <div className="settings-game-candidate-state is-error" role="status">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <div>
+            <strong>Some standard locations could not be inspected</strong>
+            <span>{inspectionNotes[0]}</span>
+          </div>
+        </div>
+      ) : candidates.length === 0 ? (
+        <div className="settings-game-candidate-state">
+          <FolderSearch size={16} strokeWidth={2} />
+          <div>
+            <strong>No standard macOS setup was found</strong>
+            <span>Use the manual folder chooser below. SimSuite will not invent paths.</span>
+          </div>
+        </div>
+      ) : (
+        <div className="settings-game-candidate-list" role="list">
+          {candidates.map((candidate) => (
+            <article
+              className="settings-game-candidate-row"
+              role="listitem"
+              key={candidate.candidateId}
+            >
+              <div className="settings-game-candidate-rank" aria-label={`Rank ${candidate.rank}`}>
+                <span>#{candidate.rank}</span>
+                <strong>{candidateConfidenceLabel(candidate.confidence)}</strong>
+              </div>
+              <div className="settings-game-candidate-body">
+                <div className="settings-game-candidate-title">
+                  <div>
+                    <strong>{candidate.suggestedName}</strong>
+                    <span>{environmentLabel(candidate.operatingEnvironment)}</span>
+                  </div>
+                  <span className="ghost-chip">Read only</span>
+                </div>
+                <div className="settings-game-candidate-roots" role="list">
+                  {candidate.suggestedRoots.map((root) => (
+                    <div role="listitem" key={root.rootId}>
+                      <span>{rootLabel(root.rootId)}</span>
+                      <strong title={root.configuredPath}>{root.configuredPath}</strong>
+                      <em className={root.exists ? "is-ready" : "is-review"}>
+                        {root.exists ? "Found" : "Not found"}
+                      </em>
+                    </div>
+                  ))}
+                </div>
+                <div className="settings-game-candidate-evidence">
+                  {candidate.detectionEvidence.map((item) => (
+                    <span key={item}>
+                      <CircleCheck size={13} strokeWidth={2} />
+                      {item}
+                    </span>
+                  ))}
+                  {candidate.warnings.map((warning) => (
+                    <span className="is-warning" key={warning}>
+                      <TriangleAlert size={13} strokeWidth={2} />
+                      {warning}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-game-candidate-action">
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => onReviewCandidate(candidate.candidateId)}
+                >
+                  Review this suggestion
+                </button>
+                <span>Copies paths into the unsaved manual form only.</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {!isLoading && !error && candidates.length > 0 && inspectionNotes.length > 0 ? (
+        <div className="settings-game-candidate-state" role="status">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <div>
+            <strong>Some other locations could not be inspected</strong>
+            <span>{inspectionNotes[0]}</span>
+          </div>
         </div>
       ) : null}
     </section>
@@ -931,8 +1115,8 @@ function SettingsProfileSafetyBoundary() {
         <span>
           Validation evidence remains read-only. Selecting a saved profile updates the
           active preference and restarts Downloads monitoring; it does not run Apply or
-          Restore or move installed Mods or Tray files. Profile editing and discovery
-          remain unavailable.
+          Restore or move installed Mods or Tray files. Suggestions remain temporary,
+          and confirmed-profile editing stays unavailable.
         </span>
       </div>
     </div>
@@ -1041,6 +1225,12 @@ function caseSensitivityLabel(
 
 function gameLabel(gameId: string) {
   return gameId === "sims4" ? "The Sims 4" : gameId;
+}
+
+function candidateConfidenceLabel(
+  confidence: GameInstallationCandidate["confidence"],
+) {
+  return confidence === "strong" ? "Strong match" : "Possible match";
 }
 
 function environmentLabel(

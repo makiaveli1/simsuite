@@ -14,6 +14,7 @@ pub mod duplicate_detector;
 pub mod file_inspector;
 pub mod filename_parser;
 pub mod game_adapter;
+pub mod game_installation_candidate_detection;
 pub mod game_installation_profile_validation;
 pub mod install_profile_engine;
 pub mod sims4_adapter;

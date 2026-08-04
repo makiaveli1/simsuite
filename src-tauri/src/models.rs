@@ -110,6 +110,48 @@ pub struct GameInstallationProfileConfirmationResult {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum GameInstallationCandidateConfidence {
+    Strong,
+    Possible,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationCandidateRoot {
+    pub root_id: String,
+    pub root_role: String,
+    pub configured_path: String,
+    pub required: bool,
+    pub exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationCandidate {
+    pub candidate_id: String,
+    pub rank: usize,
+    pub game_id: String,
+    pub operating_environment: GameOperatingEnvironment,
+    pub suggested_name: String,
+    pub suggested_roots: Vec<GameInstallationCandidateRoot>,
+    pub confidence: GameInstallationCandidateConfidence,
+    pub detection_evidence: Vec<String>,
+    pub warnings: Vec<String>,
+    pub read_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationCandidateDetectionResult {
+    pub current_environment: GameOperatingEnvironment,
+    pub supported: bool,
+    pub candidates: Vec<GameInstallationCandidate>,
+    pub read_only: bool,
+    pub review_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum GameInstallationEnvironmentCompatibility {
     Matches,
     Mismatch,

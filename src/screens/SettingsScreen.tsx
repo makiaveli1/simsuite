@@ -24,6 +24,7 @@ import type {
   AppBehaviorSettings,
   CreateManualGameInstallationProfileRequest,
   ExperienceMode,
+  GameInstallationCandidateDetectionResult,
   GameInstallationProfile,
   GameInstallationProfileValidationReport,
   LibrarySettings,
@@ -127,12 +128,15 @@ export function SettingsScreen({
     GameInstallationProfile | null | undefined
   >(undefined);
   const [gameProfiles, setGameProfiles] = useState<GameInstallationProfile[]>([]);
+  const [gameCandidateDetection, setGameCandidateDetection] =
+    useState<GameInstallationCandidateDetectionResult | null>(null);
   const [selectedGameProfileId, setSelectedGameProfileId] = useState("");
   const [gameProfileValidation, setGameProfileValidation] =
     useState<GameInstallationProfileValidationReport | null>(null);
   const [selectedGameProfileValidation, setSelectedGameProfileValidation] =
     useState<GameInstallationProfileValidationReport | null>(null);
   const [gameProfileError, setGameProfileError] = useState<string | null>(null);
+  const [gameCandidateError, setGameCandidateError] = useState<string | null>(null);
   const [gameProfileSelectionCheckError, setGameProfileSelectionCheckError] =
     useState<string | null>(null);
   const [gameProfileSelectionError, setGameProfileSelectionError] =
@@ -140,6 +144,7 @@ export function SettingsScreen({
   const [gameProfileSelectionMessage, setGameProfileSelectionMessage] =
     useState<string | null>(null);
   const [isLoadingGameProfile, setIsLoadingGameProfile] = useState(false);
+  const [isDetectingGameCandidates, setIsDetectingGameCandidates] = useState(false);
   const [isCheckingGameProfileSelection, setIsCheckingGameProfileSelection] =
     useState(false);
   const [isSelectingGameProfile, setIsSelectingGameProfile] = useState(false);
@@ -167,6 +172,7 @@ export function SettingsScreen({
   const keepRunningInBackground = appBehavior?.keepRunningInBackground ?? false;
   const automaticWatchChecks = appBehavior?.automaticWatchChecks ?? false;
   const watchCheckIntervalHours = appBehavior?.watchCheckIntervalHours ?? 12;
+  const gameInstallationCandidates = gameCandidateDetection?.candidates ?? [];
   const gameProfileSummary = isLoadingGameProfile
     ? "Checking setup"
     : gameProfileError
@@ -273,17 +279,21 @@ export function SettingsScreen({
 
     let cancelled = false;
     setIsLoadingGameProfile(true);
+    setIsDetectingGameCandidates(true);
     setGameProfileError(null);
+    setGameCandidateError(null);
     setGameProfileSelectionError(null);
     setGameProfileSelectionMessage(null);
     setGameProfileValidation(null);
 
     void (async () => {
       try {
-        const [profilesResult, profileResult] = await Promise.allSettled([
-          api.listGameInstallationProfiles(),
-          api.getActiveGameInstallationProfile(),
-        ]);
+        const [profilesResult, profileResult, candidatesResult] =
+          await Promise.allSettled([
+            api.listGameInstallationProfiles(),
+            api.getActiveGameInstallationProfile(),
+            api.detectGameInstallationCandidates(),
+          ]);
         if (cancelled) {
           return;
         }
@@ -297,6 +307,16 @@ export function SettingsScreen({
         setGameProfiles(profiles);
         setActiveGameProfile(profile);
         setSelectedGameProfileId(profile?.profileId ?? profiles[0]?.profileId ?? "");
+        if (candidatesResult.status === "fulfilled") {
+          setGameCandidateDetection(candidatesResult.value);
+        } else {
+          setGameCandidateDetection(null);
+          setGameCandidateError(
+            `Automatic setup suggestions could not be checked: ${toErrorMessage(
+              candidatesResult.reason,
+            )}`,
+          );
+        }
         if (profilesResult.status === "rejected") {
           setGameProfileSelectionError(
             `Saved profile list could not be read: ${toErrorMessage(
@@ -320,6 +340,7 @@ export function SettingsScreen({
       } finally {
         if (!cancelled) {
           setIsLoadingGameProfile(false);
+          setIsDetectingGameCandidates(false);
           setHasLoadedGameProfile(true);
         }
       }
@@ -478,6 +499,31 @@ export function SettingsScreen({
     setManualProfileDraft((current) => ({ ...current, ...values }));
     setManualProfileError(null);
     setManualProfileMessage(null);
+  }
+
+  function reviewGameInstallationCandidate(candidateId: string) {
+    const candidate = gameInstallationCandidates.find(
+      (item) => item.candidateId === candidateId,
+    );
+    if (!candidate) {
+      return;
+    }
+
+    const rootPath = (rootId: string) =>
+      candidate.suggestedRoots.find((root) => root.rootId === rootId)
+        ?.configuredPath ?? null;
+    setManualProfileDraft({
+      profileName: candidate.suggestedName,
+      userDataPath: rootPath("user_data"),
+      modsPath: rootPath("mods") ?? "",
+      trayPath: rootPath("tray") ?? "",
+      downloadsPath: rootPath("downloads"),
+    });
+    setIsManualProfileSetupOpen(true);
+    setManualProfileError(null);
+    setManualProfileMessage(
+      `Suggestion #${candidate.rank} was copied into the manual form for review. It has not been saved, confirmed, or activated.`,
+    );
   }
 
   async function pickManualProfileFolder(
@@ -796,10 +842,12 @@ export function SettingsScreen({
                 <SettingsGameProfileSection
                   profile={activeGameProfile}
                   profiles={gameProfiles}
+                  candidateDetection={gameCandidateDetection}
                   selectedProfileId={selectedGameProfileId}
                   selectedValidation={selectedGameProfileValidation}
                   validation={gameProfileValidation}
                   error={gameProfileError}
+                  candidateError={gameCandidateError}
                   selectionCheckError={gameProfileSelectionCheckError}
                   selectionError={gameProfileSelectionError}
                   selectionMessage={gameProfileSelectionMessage}
@@ -808,12 +856,14 @@ export function SettingsScreen({
                   manualError={manualProfileError}
                   manualMessage={manualProfileMessage}
                   isLoading={isLoadingGameProfile}
+                  isDetectingCandidates={isDetectingGameCandidates}
                   isCheckingSelection={isCheckingGameProfileSelection}
                   isSelecting={isSelectingGameProfile}
                   isCreatingManualProfile={isCreatingManualProfile}
                   isConfirmingManualProfile={isConfirmingManualProfile}
                   onSelectedProfileIdChange={setSelectedGameProfileId}
                   onSelectProfile={selectActiveGameProfile}
+                  onReviewCandidate={reviewGameInstallationCandidate}
                   onToggleManualSetup={() =>
                     setIsManualProfileSetupOpen((open) => !open)
                   }
@@ -937,10 +987,12 @@ export function SettingsScreen({
                 <SettingsGameProfileSection
                   profile={activeGameProfile}
                   profiles={gameProfiles}
+                  candidateDetection={gameCandidateDetection}
                   selectedProfileId={selectedGameProfileId}
                   selectedValidation={selectedGameProfileValidation}
                   validation={gameProfileValidation}
                   error={gameProfileError}
+                  candidateError={gameCandidateError}
                   selectionCheckError={gameProfileSelectionCheckError}
                   selectionError={gameProfileSelectionError}
                   selectionMessage={gameProfileSelectionMessage}
@@ -949,12 +1001,14 @@ export function SettingsScreen({
                   manualError={manualProfileError}
                   manualMessage={manualProfileMessage}
                   isLoading={isLoadingGameProfile}
+                  isDetectingCandidates={isDetectingGameCandidates}
                   isCheckingSelection={isCheckingGameProfileSelection}
                   isSelecting={isSelectingGameProfile}
                   isCreatingManualProfile={isCreatingManualProfile}
                   isConfirmingManualProfile={isConfirmingManualProfile}
                   onSelectedProfileIdChange={setSelectedGameProfileId}
                   onSelectProfile={selectActiveGameProfile}
+                  onReviewCandidate={reviewGameInstallationCandidate}
                   onToggleManualSetup={() =>
                     setIsManualProfileSetupOpen((open) => !open)
                   }

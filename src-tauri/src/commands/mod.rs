@@ -21,8 +21,9 @@ use crate::{
     core::{
         apply_plan_dry_run, apply_plan_persistence, apply_plan_results, apply_plan_validation,
         bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
-        duplicate_detector, game_installation_profile_validation, install_profile_engine,
-        library_index, move_engine, rule_engine, scanner, snapshot_manager, watch_polling,
+        duplicate_detector, game_installation_candidate_detection,
+        game_installation_profile_validation, install_profile_engine, library_index, move_engine,
+        rule_engine, scanner, snapshot_manager, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
@@ -38,9 +39,10 @@ use crate::{
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
-        GameInstallationConfirmationState, GameInstallationEnvironmentCompatibility,
-        GameInstallationProfile, GameInstallationProfileConfirmationResult,
-        GameInstallationProfileValidationReport, GenerateSortingPreviewPlanRequest,
+        GameInstallationCandidateDetectionResult, GameInstallationConfirmationState,
+        GameInstallationEnvironmentCompatibility, GameInstallationProfile,
+        GameInstallationProfileConfirmationResult, GameInstallationProfileValidationReport,
+        GenerateSortingPreviewPlanRequest,
         GenerateSortingPreviewPlanResult, GuidedInstallPlan,
         HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery,
@@ -418,6 +420,19 @@ pub fn get_active_game_installation_profile(
 ) -> Result<Option<GameInstallationProfile>, String> {
     let connection = state.connection().map_err(map_error)?;
     database::get_active_game_installation_profile(&connection).map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn detect_game_installation_candidates(
+) -> Result<GameInstallationCandidateDetectionResult, String> {
+    assert_command_allowed(
+        "detect_game_installation_candidates",
+        CommandCapability::ReadOnly,
+    )?;
+    run_blocking_command("detect_game_installation_candidates", move || {
+        Ok(game_installation_candidate_detection::detect_game_installation_candidates())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -4137,6 +4152,41 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "profile validation command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn candidate_detection_command_is_read_only_and_has_no_state_or_mutation_calls() {
+        let source = include_str!("mod.rs");
+        let command_start = source
+            .find("pub async fn detect_game_installation_candidates(")
+            .expect("candidate detection command");
+        let remaining = &source[command_start..];
+        let command_end = remaining
+            .find("\n#[tauri::command]\npub fn create_manual_game_installation_profile(")
+            .expect("manual profile command boundary");
+        let command_source = &remaining[..command_end];
+
+        assert!(command_source.contains("CommandCapability::ReadOnly"));
+        assert!(command_source.contains(
+            "game_installation_candidate_detection::detect_game_installation_candidates"
+        ));
+        for forbidden in [
+            "state.connection",
+            "database::",
+            "set_active_game_installation_profile",
+            "restart_watcher",
+            "emit_workspace_domains",
+            "fs::write",
+            "fs::copy",
+            "fs::rename",
+            "fs::remove",
+            "fs::create_dir",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "candidate detection command must not call {forbidden}"
             );
         }
     }
