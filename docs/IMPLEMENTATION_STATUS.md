@@ -37,6 +37,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 
 ## Cross-platform verification remaining
 
+- Inspect and record the hosted Windows, macOS, and Linux preflight triggered by commit `9354056`. The branch push is verified, but hosted job details require authenticated GitHub access and are not yet claimed.
 - Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, and native compilation, but it does not exercise the webdriver player journey.
 - Verify native app launch and file-manager behavior on a real Linux desktop host. The CI Linux runner provides compile/test coverage only.
 - Add native macOS and Linux fixture desktop automation rather than treating the Windows webdriver lane as universal.
@@ -54,8 +55,9 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 
 ## Current safety contract
 
-The main safety docs are:
+The main safety and platform-boundary docs are:
 
+- `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`
 - `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`
 - `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`
 - `docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`
@@ -106,16 +108,22 @@ pnpm run tauri:build
 
 ## Recommended next sprint
 
-Build **Canonical Destination Validation V1** before any executor work:
+Build **Platform Path Semantics V1** and complete **Canonical Destination Validation V2** before any executor work.
 
-- canonicalize source and destination paths at validation time;
-- prove every destination remains under the configured Mods/Tray root after normalization and symlink/parent-component checks where supported;
-- reject cross-root, missing-root, parent-directory, empty, duplicate, case-conflict, and existing-destination hazards;
-- bind the canonical validation result to the existing Plan Hash / Provenance V1 identity before any future confirmation token work;
+The current read-only validation layer already blocks missing roots, parent traversal, cross-root movement, duplicate destinations, case-only conflicts under its present comparison rule, existing destinations, stale sources, invalid provenance, and unreadable metadata. It is useful, but it is not yet a universal filesystem-aware canonical layer because several systems still lowercase paths and compare normalized strings.
+
+Next work:
+
+- introduce platform identity, filesystem capabilities, root identity, and profile-relative portable path identity;
+- derive path comparison keys from the confirmed root's case-sensitivity and normalization capabilities rather than unconditional lowercasing;
+- distinguish lexical normalization from physical canonical containment and detect symlink or alias escapes where supported;
+- fail closed when source, destination, root, or ancestor metadata cannot be read;
+- integrate the shared path contract into ApplyPlan validation first, then duplicate identity, scanner folder keys, Library folder queries, Downloads intake, and hidden move preflight;
+- implement Installation Profile V1 and a Sims 4 game-adapter boundary before the fixture journey;
 - keep Backend Command Gating V1 in place: legacy file-changing commands and client-forged result/restore writes must keep failing closed;
-- keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, and cleanup unavailable.
+- keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, cleanup, and automatic mutation unavailable.
 
-After that, move to a hidden fixture-only executor prototype.
+The detailed findings and required tests are in `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`. After the path and profile contracts pass, move to a hidden macOS fixture-only executor and undo prototype.
 
 ## Recent backend safety gate
 

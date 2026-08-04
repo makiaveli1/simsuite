@@ -5,13 +5,16 @@ use std::{
     process::Command,
 };
 
+#[allow(dead_code)]
+pub mod path_semantics;
+
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 compile_error!("SimSuite currently supports Windows, macOS, and Linux desktop targets.");
 
 // A native build constructs only its host variant. Pure tests exercise all three command plans.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DesktopPlatform {
+pub enum PlatformId {
     Windows,
     Macos,
     Linux,
@@ -58,30 +61,30 @@ fn classify_target(path: &Path) -> RevealTargetKind {
     }
 }
 
-fn current_platform() -> DesktopPlatform {
+fn current_platform() -> PlatformId {
     #[cfg(target_os = "windows")]
     {
-        DesktopPlatform::Windows
+        PlatformId::Windows
     }
 
     #[cfg(target_os = "macos")]
     {
-        DesktopPlatform::Macos
+        PlatformId::Macos
     }
 
     #[cfg(target_os = "linux")]
     {
-        DesktopPlatform::Linux
+        PlatformId::Linux
     }
 }
 
 fn build_reveal_command(
-    platform: DesktopPlatform,
+    platform: PlatformId,
     path: &Path,
     target_kind: RevealTargetKind,
 ) -> Result<NativeCommand, String> {
     match platform {
-        DesktopPlatform::Windows => match target_kind {
+        PlatformId::Windows => match target_kind {
             RevealTargetKind::Directory => Ok(NativeCommand {
                 program: "explorer.exe",
                 args: vec![windows_path(path)],
@@ -95,7 +98,7 @@ fn build_reveal_command(
                 args: vec![windows_path(parent_or_error(path)?)],
             }),
         },
-        DesktopPlatform::Macos => match target_kind {
+        PlatformId::Macos => match target_kind {
             RevealTargetKind::Directory => Ok(NativeCommand {
                 program: "open",
                 args: vec![native_path(path)],
@@ -109,7 +112,7 @@ fn build_reveal_command(
                 args: vec![native_path(parent_or_error(path)?)],
             }),
         },
-        DesktopPlatform::Linux => match target_kind {
+        PlatformId::Linux => match target_kind {
             RevealTargetKind::Directory => Ok(NativeCommand {
                 program: "xdg-open",
                 args: vec![native_path(path)],
@@ -159,14 +162,14 @@ mod tests {
     use std::{ffi::OsString, path::Path};
 
     use super::{
-        build_reveal_command, DesktopPlatform, NativeCommand, RevealTargetKind,
+        build_reveal_command, NativeCommand, PlatformId, RevealTargetKind,
     };
 
     #[test]
     fn macos_reveals_files_and_directories_natively() {
         assert_eq!(
             build_reveal_command(
-                DesktopPlatform::Macos,
+                PlatformId::Macos,
                 Path::new("/Users/player/Mods/example.package"),
                 RevealTargetKind::File,
             )
@@ -181,7 +184,7 @@ mod tests {
         );
         assert_eq!(
             build_reveal_command(
-                DesktopPlatform::Macos,
+                PlatformId::Macos,
                 Path::new("/Users/player/Mods"),
                 RevealTargetKind::Directory,
             )
@@ -197,7 +200,7 @@ mod tests {
     fn windows_selects_files_and_normalizes_separators() {
         assert_eq!(
             build_reveal_command(
-                DesktopPlatform::Windows,
+                PlatformId::Windows,
                 Path::new("C:/Users/player/Mods/example.package"),
                 RevealTargetKind::File,
             )
@@ -216,7 +219,7 @@ mod tests {
     fn linux_opens_the_parent_for_files() {
         assert_eq!(
             build_reveal_command(
-                DesktopPlatform::Linux,
+                PlatformId::Linux,
                 Path::new("/home/player/Mods/example.package"),
                 RevealTargetKind::File,
             )
@@ -232,7 +235,7 @@ mod tests {
     fn missing_paths_fall_back_to_a_real_parent() {
         assert_eq!(
             build_reveal_command(
-                DesktopPlatform::Macos,
+                PlatformId::Macos,
                 Path::new("/Users/player/Mods/missing.package"),
                 RevealTargetKind::Missing,
             )
@@ -243,7 +246,7 @@ mod tests {
             }
         );
         assert!(build_reveal_command(
-            DesktopPlatform::Linux,
+            PlatformId::Linux,
             Path::new("missing.package"),
             RevealTargetKind::Missing,
         )
