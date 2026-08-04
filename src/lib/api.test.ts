@@ -30,6 +30,16 @@ describe("game installation profile read API", () => {
     ).toBe(true);
   });
 
+  it("selects only a saved profile and rejects unknown profile IDs", async () => {
+    const profiles = await api.listGameInstallationProfiles();
+    const selected = await api.setActiveGameInstallationProfile(profiles[0].profileId);
+
+    expect(selected.profileId).toBe(profiles[0].profileId);
+    await expect(
+      api.setActiveGameInstallationProfile("missing-profile"),
+    ).rejects.toThrow(/does not exist/i);
+  });
+
   it("returns a clearly read-only Sims 4 readiness report without hiding generic uncertainty", async () => {
     const active = await api.getActiveGameInstallationProfile();
     const report = await api.validateGameInstallationProfile(

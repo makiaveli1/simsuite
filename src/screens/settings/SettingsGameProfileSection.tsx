@@ -17,16 +17,36 @@ import type {
 
 interface SettingsGameProfileSectionProps {
   profile: GameInstallationProfile | null | undefined;
+  profiles: GameInstallationProfile[];
+  selectedProfileId: string;
+  selectedValidation: GameInstallationProfileValidationReport | null;
   validation: GameInstallationProfileValidationReport | null;
   error: string | null;
+  selectionCheckError: string | null;
+  selectionError: string | null;
+  selectionMessage: string | null;
   isLoading: boolean;
+  isCheckingSelection: boolean;
+  isSelecting: boolean;
+  onSelectedProfileIdChange: (profileId: string) => void;
+  onSelectProfile: () => void;
 }
 
 export function SettingsGameProfileSection({
   profile,
+  profiles,
+  selectedProfileId,
+  selectedValidation,
   validation,
   error,
+  selectionCheckError,
+  selectionError,
+  selectionMessage,
   isLoading,
+  isCheckingSelection,
+  isSelecting,
+  onSelectedProfileIdChange,
+  onSelectProfile,
 }: SettingsGameProfileSectionProps) {
   if (isLoading) {
     return (
@@ -66,13 +86,26 @@ export function SettingsGameProfileSection({
     return (
       <>
         <SettingsGameProfileHeading />
+        <SettingsProfileSelector
+          profiles={profiles}
+          activeProfileId={null}
+          selectedProfileId={selectedProfileId}
+          selectedValidation={selectedValidation}
+          selectionCheckError={selectionCheckError}
+          selectionError={selectionError}
+          selectionMessage={selectionMessage}
+          isCheckingSelection={isCheckingSelection}
+          isSelecting={isSelecting}
+          onSelectedProfileIdChange={onSelectedProfileIdChange}
+          onSelectProfile={onSelectProfile}
+        />
         <div className="settings-profile-empty">
           <TriangleAlert size={18} strokeWidth={2} />
           <div>
             <strong>No active game profile</strong>
             <p className="workspace-toolbar-copy">
-              SimSuite has not selected a saved Sims 4 setup. Profile creation and
-              selection are not available in this read-only phase.
+              Choose one of the saved setups above. Creating or editing profiles is not
+              available yet.
             </p>
           </div>
         </div>
@@ -106,6 +139,19 @@ export function SettingsGameProfileSection({
   return (
     <>
       <SettingsGameProfileHeading />
+      <SettingsProfileSelector
+        profiles={profiles}
+        activeProfileId={profile.profileId}
+        selectedProfileId={selectedProfileId}
+        selectedValidation={selectedValidation}
+        selectionCheckError={selectionCheckError}
+        selectionError={selectionError}
+        selectionMessage={selectionMessage}
+        isCheckingSelection={isCheckingSelection}
+        isSelecting={isSelecting}
+        onSelectedProfileIdChange={onSelectedProfileIdChange}
+        onSelectProfile={onSelectProfile}
+      />
 
       {error ? (
         <div className="settings-profile-alert" role="alert">
@@ -218,6 +264,152 @@ export function SettingsGameProfileSection({
   );
 }
 
+function SettingsProfileSelector({
+  profiles,
+  activeProfileId,
+  selectedProfileId,
+  selectedValidation,
+  selectionCheckError,
+  selectionError,
+  selectionMessage,
+  isCheckingSelection,
+  isSelecting,
+  onSelectedProfileIdChange,
+  onSelectProfile,
+}: {
+  profiles: GameInstallationProfile[];
+  activeProfileId: string | null;
+  selectedProfileId: string;
+  selectedValidation: GameInstallationProfileValidationReport | null;
+  selectionCheckError: string | null;
+  selectionError: string | null;
+  selectionMessage: string | null;
+  isCheckingSelection: boolean;
+  isSelecting: boolean;
+  onSelectedProfileIdChange: (profileId: string) => void;
+  onSelectProfile: () => void;
+}) {
+  const selectedProfile =
+    profiles.find((candidate) => candidate.profileId === selectedProfileId) ?? null;
+  const selectionIsActive = selectedProfileId === activeProfileId;
+  const selectionIsConfirmed = selectedProfile?.confirmationState === "confirmed";
+  const environmentMatches =
+    selectedValidation?.environmentCompatibility === "matches";
+  const selectionBlocker = selectionIsActive
+    ? null
+    : !selectedProfile
+      ? "Choose a saved profile."
+      : !selectionIsConfirmed
+        ? "This setup must be confirmed before it can become active."
+        : selectionCheckError
+          ? `Compatibility could not be verified: ${selectionCheckError}`
+          : isCheckingSelection
+            ? "Checking whether this setup matches the current host."
+            : selectedValidation?.environmentCompatibility === "mismatch"
+              ? "This setup belongs to a different native operating system. Open SimSuite on that host to activate it."
+              : selectedValidation?.environmentCompatibility === "requires_adapter"
+                ? "Wine, Proton, or Lutris activation needs an environment adapter that is not available yet."
+                : selectedValidation?.environmentCompatibility === "unknown"
+                  ? "The operating environment is unknown, so activation is blocked until that environment is identified."
+                  : !environmentMatches
+                    ? "Compatibility has not been proven, so activation remains blocked."
+                    : null;
+  const canSelect =
+    Boolean(selectedProfile) &&
+    !selectionIsActive &&
+    selectionIsConfirmed &&
+    environmentMatches &&
+    !isCheckingSelection &&
+    !isSelecting;
+
+  return (
+    <section className="settings-profile-selector" aria-labelledby="profile-selector-heading">
+      <div className="settings-profile-selector-copy">
+        <span className="section-label">Saved setups</span>
+        <h3 id="profile-selector-heading">Choose the folders SimSuite should use</h3>
+        <p className="workspace-toolbar-copy">
+          This updates SimSuite's active folder preference and restarts Downloads
+          monitoring. The watcher may refresh inbox or staging data, but this action does
+          not run Apply or Restore or move installed Mods or Tray files.
+        </p>
+      </div>
+
+      {profiles.length > 0 ? (
+        <div className="settings-profile-selector-controls">
+          <label htmlFor="active-game-profile-select">Saved Sims 4 setup</label>
+          <div className="settings-profile-selector-action-row">
+            <select
+              id="active-game-profile-select"
+              value={selectedProfileId}
+              disabled={isSelecting}
+              onChange={(event) => onSelectedProfileIdChange(event.target.value)}
+            >
+              {profiles.map((candidate) => (
+                <option key={candidate.profileId} value={candidate.profileId}>
+                  {candidate.profileName}
+                  {candidate.profileId === activeProfileId ? " (active)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="primary-action settings-profile-select-button"
+              disabled={!canSelect}
+              onClick={onSelectProfile}
+            >
+              {isSelecting ? (
+                <>
+                  <LoaderCircle size={15} strokeWidth={2} className="spin" />
+                  Switching setup
+                </>
+              ) : selectionIsActive ? (
+                "Already active"
+              ) : isCheckingSelection ? (
+                <>
+                  <LoaderCircle size={15} strokeWidth={2} className="spin" />
+                  Checking setup
+                </>
+              ) : selectionBlocker ? (
+                "Unavailable on this host"
+              ) : (
+                "Use selected profile"
+              )}
+            </button>
+          </div>
+          {selectedProfile ? (
+            <span className="settings-profile-selector-preview">
+              {environmentLabel(selectedProfile.operatingEnvironment)} · {selectedProfile.roots.length} configured roots · {confirmationLabel(selectedProfile.confirmationState)}
+            </span>
+          ) : null}
+          {selectionBlocker ? (
+            <span className="settings-profile-selector-eligibility" role="status">
+              <TriangleAlert size={14} strokeWidth={2} />
+              {selectionBlocker}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="settings-profile-selector-empty">
+          No saved game setups are available yet. SimSuite will not invent one.
+        </div>
+      )}
+
+      {selectionMessage ? (
+        <div className="settings-profile-selection-message is-success" role="status">
+          <CircleCheck size={16} strokeWidth={2} />
+          <span>{selectionMessage}</span>
+        </div>
+      ) : null}
+      {selectionError ? (
+        <div className="settings-profile-selection-message is-error" role="alert">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <span>{selectionError}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SettingsGameProfileHeading() {
   return (
     <div className="panel-heading settings-focus-heading">
@@ -229,8 +421,8 @@ function SettingsGameProfileHeading() {
         <h2>Your active Sims 4 profile</h2>
       </div>
       <p className="workspace-toolbar-copy">
-        Review saved roots and current readiness evidence. This screen cannot edit,
-        select, discover, or create profiles.
+        Choose an existing saved setup, then review its roots and current readiness
+        evidence. Creating or editing profiles remains unavailable.
       </p>
     </div>
   );
@@ -350,10 +542,12 @@ function SettingsProfileSafetyBoundary() {
     <div className="settings-profile-safety-note">
       <ShieldCheck size={15} strokeWidth={2} />
       <div>
-        <strong>Read-only setup evidence</strong>
+        <strong>Guarded setup boundary</strong>
         <span>
-          No files changed. No profile status or filesystem capability was saved. Apply,
-          Restore, profile editing, profile selection, and discovery remain unavailable.
+          Validation evidence remains read-only. Selecting a saved profile updates the
+          active preference and restarts Downloads monitoring; it does not run Apply or
+          Restore or move installed Mods or Tray files. Profile editing and discovery
+          remain unavailable.
         </span>
       </div>
     </div>

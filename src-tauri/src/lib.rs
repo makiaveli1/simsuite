@@ -134,6 +134,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_game_installation_profiles,
             commands::get_active_game_installation_profile,
+            commands::set_active_game_installation_profile,
             commands::validate_game_installation_profile,
             commands::get_library_settings,
             commands::get_app_behavior_settings,
@@ -279,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn game_installation_profile_read_commands_are_registered_with_tauri() {
+    fn game_installation_profile_commands_are_registered_with_tauri() {
         let source = include_str!("lib.rs");
         let handler_start = source
             .find(".invoke_handler(tauri::generate_handler![")
@@ -293,6 +294,7 @@ mod tests {
         for command in [
             "commands::list_game_installation_profiles",
             "commands::get_active_game_installation_profile",
+            "commands::set_active_game_installation_profile",
             "commands::validate_game_installation_profile",
         ] {
             assert!(

@@ -1254,6 +1254,35 @@ pub fn get_active_game_installation_profile(
     get_game_installation_profile(connection, &profile_id).map(Some)
 }
 
+pub fn set_active_game_installation_profile(
+    connection: &mut Connection,
+    profile_id: &str,
+) -> AppResult<GameInstallationProfile> {
+    let profile_id = profile_id.trim();
+    if profile_id.is_empty() {
+        return Err(AppError::Message(
+            "game installation profile ID cannot be empty".to_owned(),
+        ));
+    }
+
+    let transaction = connection.transaction()?;
+    let profile = get_game_installation_profile(&transaction, profile_id)?;
+    if profile.confirmation_state != GameInstallationConfirmationState::Confirmed {
+        return Err(AppError::Message(format!(
+            "Game installation profile '{}' must be confirmed before it can become active.",
+            profile.profile_name
+        )));
+    }
+    upsert_setting(
+        &transaction,
+        ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+        Some(&profile.profile_id),
+    )?;
+    transaction.commit()?;
+
+    Ok(profile)
+}
+
 fn validate_profile_json_object(value: &str, label: &str) -> AppResult<()> {
     let parsed: serde_json::Value = serde_json::from_str(value).map_err(|error| {
         AppError::Message(format!("{label} contains invalid JSON: {error}"))
@@ -2324,6 +2353,134 @@ mod tests {
             .expect("selected profile");
         assert_eq!(active.profile_id, "profile-later");
         assert_eq!(active.roots, profiles[1].roots);
+    }
+
+    #[test]
+    fn active_profile_selection_is_atomic_and_updates_library_compatibility() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "INSERT INTO game_installation_profiles (
+                    profile_id, profile_name, game_id, operating_environment, status,
+                    detection_method, detection_evidence_json, confirmation_state,
+                    confirmed_at, last_validated_at, created_at, updated_at
+                 ) VALUES
+                    ('profile-a', 'Profile A', 'sims4', 'native_macos', 'valid',
+                     'manual', '{}', 'confirmed', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z'),
+                    ('profile-b', 'Profile B', 'sims4', 'native_macos', 'needs_review',
+                     'manual', '{}', 'confirmed', '2026-02-01T00:00:00Z', NULL,
+                     '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');
+                 INSERT INTO game_installation_roots (
+                    profile_id, root_id, root_role, configured_path, required,
+                    validation_state, filesystem_capabilities_json,
+                    last_validated_at, created_at, updated_at
+                 ) VALUES
+                    ('profile-a', 'mods', 'installed_mods', '/profile-a/Mods', 1,
+                     'valid', '{}', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                    ('profile-b', 'mods', 'installed_mods', '/profile-b/Mods', 1,
+                     'unvalidated', '{}', NULL,
+                     '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z'),
+                    ('profile-b', 'tray', 'installed_tray', '/profile-b/Tray', 1,
+                     'unvalidated', '{}', NULL,
+                     '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');",
+            )
+            .expect("profile fixtures");
+        save_app_setting(
+            &mut connection,
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            Some("profile-a"),
+            "user",
+        )
+        .expect("initial active profile");
+
+        let selected = set_active_game_installation_profile(&mut connection, " profile-b ")
+            .expect("select profile");
+        assert_eq!(selected.profile_id, "profile-b");
+
+        let active = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("selected profile");
+        assert_eq!(active.profile_id, "profile-b");
+
+        let settings = get_library_settings(&connection).expect("derived settings");
+        assert_eq!(settings.mods_path.as_deref(), Some("/profile-b/Mods"));
+        assert_eq!(settings.tray_path.as_deref(), Some("/profile-b/Tray"));
+    }
+
+    #[test]
+    fn invalid_active_profile_selection_preserves_previous_profile() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "INSERT INTO game_installation_profiles (
+                    profile_id, profile_name, game_id, operating_environment, status,
+                    detection_method, detection_evidence_json, confirmation_state,
+                    confirmed_at, last_validated_at, created_at, updated_at
+                 ) VALUES ('profile-a', 'Profile A', 'sims4', 'native_macos', 'valid',
+                    'manual', '{}', 'confirmed', '2026-01-01T00:00:00Z',
+                    '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+                    '2026-01-01T00:00:00Z');",
+            )
+            .expect("profile fixture");
+        save_app_setting(
+            &mut connection,
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            Some("profile-a"),
+            "user",
+        )
+        .expect("initial active profile");
+
+        let error = set_active_game_installation_profile(&mut connection, "missing-profile")
+            .expect_err("unknown profile should fail");
+        assert!(error.to_string().contains("does not exist"));
+
+        let active = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("preserved profile");
+        assert_eq!(active.profile_id, "profile-a");
+    }
+
+    #[test]
+    fn unconfirmed_active_profile_selection_preserves_previous_profile() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "INSERT INTO game_installation_profiles (
+                    profile_id, profile_name, game_id, operating_environment, status,
+                    detection_method, detection_evidence_json, confirmation_state,
+                    confirmed_at, last_validated_at, created_at, updated_at
+                 ) VALUES
+                    ('profile-a', 'Profile A', 'sims4', 'native_macos', 'valid',
+                     'manual', '{}', 'confirmed', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z'),
+                    ('profile-draft', 'Draft profile', 'sims4', 'native_macos', 'draft',
+                     'manual', '{}', 'unconfirmed', NULL, NULL,
+                     '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');",
+            )
+            .expect("profile fixtures");
+        save_app_setting(
+            &mut connection,
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            Some("profile-a"),
+            "user",
+        )
+        .expect("initial active profile");
+
+        let error = set_active_game_installation_profile(&mut connection, "profile-draft")
+            .expect_err("unconfirmed profile should fail");
+        assert!(error.to_string().contains("must be confirmed"));
+
+        let active = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("preserved profile");
+        assert_eq!(active.profile_id, "profile-a");
     }
 
     #[test]

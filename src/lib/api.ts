@@ -7448,6 +7448,14 @@ async function mockInvoke<T>(
       return [structuredClone(createMockGameInstallationProfile())] as T;
     case "get_active_game_installation_profile":
       return structuredClone(createMockGameInstallationProfile()) as T;
+    case "set_active_game_installation_profile": {
+      const profile = createMockGameInstallationProfile();
+      const profileId = String(payload?.profileId ?? "").trim();
+      if (profile.profileId !== profileId) {
+        throw new Error(`Game installation profile '${profileId}' does not exist.`);
+      }
+      return structuredClone(profile) as T;
+    }
     case "validate_game_installation_profile":
       return structuredClone(
         createMockGameInstallationProfileValidation(String(payload?.profileId ?? "")),
@@ -9100,6 +9108,10 @@ export const api = {
     invoke<GameInstallationProfile[]>("list_game_installation_profiles"),
   getActiveGameInstallationProfile: () =>
     invoke<GameInstallationProfile | null>("get_active_game_installation_profile"),
+  setActiveGameInstallationProfile: (profileId: string) =>
+    invoke<GameInstallationProfile>("set_active_game_installation_profile", {
+      profileId,
+    }),
   validateGameInstallationProfile: (profileId: string) =>
     invoke<GameInstallationProfileValidationReport>(
       "validate_game_installation_profile",

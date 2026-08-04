@@ -33,6 +33,12 @@ pub fn validate_game_installation_profile(
     validate_game_installation_profile_for_platform(profile, current_platform())
 }
 
+pub fn game_installation_profile_environment_compatibility(
+    profile: &GameInstallationProfile,
+) -> GameInstallationEnvironmentCompatibility {
+    environment_compatibility(profile.operating_environment, current_platform())
+}
+
 fn validate_game_installation_profile_for_platform(
     profile: &GameInstallationProfile,
     platform: PlatformId,

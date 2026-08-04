@@ -115,10 +115,23 @@ export function SettingsScreen({
   const [activeGameProfile, setActiveGameProfile] = useState<
     GameInstallationProfile | null | undefined
   >(undefined);
+  const [gameProfiles, setGameProfiles] = useState<GameInstallationProfile[]>([]);
+  const [selectedGameProfileId, setSelectedGameProfileId] = useState("");
   const [gameProfileValidation, setGameProfileValidation] =
     useState<GameInstallationProfileValidationReport | null>(null);
+  const [selectedGameProfileValidation, setSelectedGameProfileValidation] =
+    useState<GameInstallationProfileValidationReport | null>(null);
   const [gameProfileError, setGameProfileError] = useState<string | null>(null);
+  const [gameProfileSelectionCheckError, setGameProfileSelectionCheckError] =
+    useState<string | null>(null);
+  const [gameProfileSelectionError, setGameProfileSelectionError] =
+    useState<string | null>(null);
+  const [gameProfileSelectionMessage, setGameProfileSelectionMessage] =
+    useState<string | null>(null);
   const [isLoadingGameProfile, setIsLoadingGameProfile] = useState(false);
+  const [isCheckingGameProfileSelection, setIsCheckingGameProfileSelection] =
+    useState(false);
+  const [isSelectingGameProfile, setIsSelectingGameProfile] = useState(false);
   const [hasLoadedGameProfile, setHasLoadedGameProfile] = useState(false);
   const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
@@ -243,15 +256,36 @@ export function SettingsScreen({
     let cancelled = false;
     setIsLoadingGameProfile(true);
     setGameProfileError(null);
+    setGameProfileSelectionError(null);
+    setGameProfileSelectionMessage(null);
     setGameProfileValidation(null);
 
     void (async () => {
       try {
-        const profile = await api.getActiveGameInstallationProfile();
+        const [profilesResult, profileResult] = await Promise.allSettled([
+          api.listGameInstallationProfiles(),
+          api.getActiveGameInstallationProfile(),
+        ]);
         if (cancelled) {
           return;
         }
+        if (profileResult.status === "rejected") {
+          throw profileResult.reason;
+        }
+
+        const profiles =
+          profilesResult.status === "fulfilled" ? profilesResult.value : [];
+        const profile = profileResult.value;
+        setGameProfiles(profiles);
         setActiveGameProfile(profile);
+        setSelectedGameProfileId(profile?.profileId ?? profiles[0]?.profileId ?? "");
+        if (profilesResult.status === "rejected") {
+          setGameProfileSelectionError(
+            `Saved profile list could not be read: ${toErrorMessage(
+              profilesResult.reason,
+            )} The active profile evidence is still available, but switching is disabled.`,
+          );
+        }
 
         if (!profile) {
           return;
@@ -277,6 +311,148 @@ export function SettingsScreen({
       cancelled = true;
     };
   }, [activeSection, hasLoadedGameProfile]);
+
+  useEffect(() => {
+    if (
+      activeSection !== "gameProfile" ||
+      !hasLoadedGameProfile ||
+      !selectedGameProfileId ||
+      isSelectingGameProfile
+    ) {
+      setSelectedGameProfileValidation(null);
+      setGameProfileSelectionCheckError(null);
+      setIsCheckingGameProfileSelection(false);
+      return;
+    }
+
+    if (
+      activeGameProfile?.profileId === selectedGameProfileId &&
+      gameProfileValidation
+    ) {
+      setSelectedGameProfileValidation(gameProfileValidation);
+      setGameProfileSelectionCheckError(null);
+      setIsCheckingGameProfileSelection(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSelectedGameProfileValidation(null);
+    setGameProfileSelectionCheckError(null);
+    setIsCheckingGameProfileSelection(true);
+
+    void api
+      .validateGameInstallationProfile(selectedGameProfileId)
+      .then((validation) => {
+        if (!cancelled) {
+          setSelectedGameProfileValidation(validation);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setGameProfileSelectionCheckError(toErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsCheckingGameProfileSelection(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeGameProfile?.profileId,
+    activeSection,
+    gameProfileValidation,
+    hasLoadedGameProfile,
+    isSelectingGameProfile,
+    selectedGameProfileId,
+  ]);
+
+  async function refreshGameProfileValidation(
+    profile: GameInstallationProfile | null,
+  ) {
+    setGameProfileValidation(null);
+    setGameProfileError(null);
+    if (!profile) {
+      return;
+    }
+
+    try {
+      const validation = await api.validateGameInstallationProfile(profile.profileId);
+      setGameProfileValidation(validation);
+    } catch (error) {
+      setGameProfileError(toErrorMessage(error));
+    }
+  }
+
+  async function selectActiveGameProfile() {
+    const profileId = selectedGameProfileId.trim();
+    if (
+      !profileId ||
+      isSelectingGameProfile ||
+      activeGameProfile?.profileId === profileId
+    ) {
+      return;
+    }
+
+    setIsSelectingGameProfile(true);
+    setGameProfileSelectionError(null);
+    setGameProfileSelectionMessage(null);
+    setGameProfileValidation(null);
+    setGameProfileError(null);
+
+    try {
+      const selectedProfile = await api.setActiveGameInstallationProfile(profileId);
+      setActiveGameProfile(selectedProfile);
+      setSelectedGameProfileId(selectedProfile.profileId);
+      setGameProfiles((profiles) =>
+        profiles.map((profile) =>
+          profile.profileId === selectedProfile.profileId ? selectedProfile : profile,
+        ),
+      );
+
+      try {
+        setLibrarySettings(await api.getLibrarySettings());
+      } catch {
+        // The selection is already stored. Other workspaces receive a refresh event.
+      }
+
+      await refreshGameProfileValidation(selectedProfile);
+      setGameProfileSelectionMessage(
+        `“${selectedProfile.profileName}” is now the active setup. SimSuite refreshed the folders used by Downloads and the Library.`,
+      );
+    } catch (error) {
+      const selectionError = toErrorMessage(error);
+      try {
+        const storedProfile = await api.getActiveGameInstallationProfile();
+        setActiveGameProfile(storedProfile);
+        setSelectedGameProfileId(
+          storedProfile?.profileId ?? gameProfiles[0]?.profileId ?? "",
+        );
+
+        try {
+          setLibrarySettings(await api.getLibrarySettings());
+        } catch {
+          // Keep the last visible compatibility settings if this secondary read fails.
+        }
+
+        await refreshGameProfileValidation(storedProfile);
+        setGameProfileSelectionError(
+          `${selectionError} SimSuite rechecked the database and the setup shown below is the current stored selection.`,
+        );
+      } catch (reconcileError) {
+        setGameProfileSelectionError(
+          `${selectionError} SimSuite could not confirm the stored selection afterward: ${toErrorMessage(
+            reconcileError,
+          )}`,
+        );
+      }
+    } finally {
+      setIsSelectingGameProfile(false);
+    }
+  }
 
   async function saveBehaviorSettings(nextValues: Partial<AppBehaviorSettings>) {
     if (!appBehavior) {
@@ -483,7 +659,9 @@ export function SettingsScreen({
             </div>
             <m.section
               key={activeSection}
-              className="panel-card settings-focus-panel"
+              className={`panel-card settings-focus-panel ${
+                activeSection === "gameProfile" ? "settings-focus-panel-content-led" : ""
+              }`}
               {...stagedListItem(2)}
             >
               {activeSection === "experience" ? (
@@ -497,9 +675,19 @@ export function SettingsScreen({
               {activeSection === "gameProfile" ? (
                 <SettingsGameProfileSection
                   profile={activeGameProfile}
+                  profiles={gameProfiles}
+                  selectedProfileId={selectedGameProfileId}
+                  selectedValidation={selectedGameProfileValidation}
                   validation={gameProfileValidation}
                   error={gameProfileError}
+                  selectionCheckError={gameProfileSelectionCheckError}
+                  selectionError={gameProfileSelectionError}
+                  selectionMessage={gameProfileSelectionMessage}
                   isLoading={isLoadingGameProfile}
+                  isCheckingSelection={isCheckingGameProfileSelection}
+                  isSelecting={isSelectingGameProfile}
+                  onSelectedProfileIdChange={setSelectedGameProfileId}
+                  onSelectProfile={selectActiveGameProfile}
                 />
               ) : null}
 
@@ -599,7 +787,9 @@ export function SettingsScreen({
           <div className="settings-detail-column">
             <m.section
               key={activeSection}
-              className="panel-card settings-focus-panel"
+              className={`panel-card settings-focus-panel ${
+                activeSection === "gameProfile" ? "settings-focus-panel-content-led" : ""
+              }`}
               {...stagedListItem(2)}
             >
               {activeSection === "experience" ? (
@@ -613,9 +803,19 @@ export function SettingsScreen({
               {activeSection === "gameProfile" ? (
                 <SettingsGameProfileSection
                   profile={activeGameProfile}
+                  profiles={gameProfiles}
+                  selectedProfileId={selectedGameProfileId}
+                  selectedValidation={selectedGameProfileValidation}
                   validation={gameProfileValidation}
                   error={gameProfileError}
+                  selectionCheckError={gameProfileSelectionCheckError}
+                  selectionError={gameProfileSelectionError}
+                  selectionMessage={gameProfileSelectionMessage}
                   isLoading={isLoadingGameProfile}
+                  isCheckingSelection={isCheckingGameProfileSelection}
+                  isSelecting={isSelectingGameProfile}
+                  onSelectedProfileIdChange={setSelectedGameProfileId}
+                  onSelectProfile={selectActiveGameProfile}
                 />
               ) : null}
 

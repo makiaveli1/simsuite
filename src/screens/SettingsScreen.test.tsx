@@ -14,7 +14,9 @@ vi.mock("../lib/api", () => ({
   api: {
     getAppBehaviorSettings: vi.fn(),
     getLibrarySettings: vi.fn(),
+    listGameInstallationProfiles: vi.fn(),
     getActiveGameInstallationProfile: vi.fn(),
+    setActiveGameInstallationProfile: vi.fn(),
     validateGameInstallationProfile: vi.fn(),
   },
 }));
@@ -75,6 +77,29 @@ const profile: GameInstallationProfile = {
       updatedAt: "2026-08-04T12:00:00Z",
     },
   ],
+};
+
+const alternateProfile: GameInstallationProfile = {
+  ...profile,
+  profileId: "sims4-alt",
+  profileName: "Alternate Sims 4 setup",
+  roots: profile.roots.map((root) => ({
+    ...root,
+    profileId: "sims4-alt",
+    configuredPath: root.configuredPath.replace("/Users/player", "/Users/alternate"),
+  })),
+};
+
+const foreignProfile: GameInstallationProfile = {
+  ...profile,
+  profileId: "sims4-windows",
+  profileName: "Windows Sims 4 setup",
+  operatingEnvironment: "native_windows",
+  roots: profile.roots.map((root) => ({
+    ...root,
+    profileId: "sims4-windows",
+    configuredPath: `C:\\Users\\Player\\${root.rootId}`,
+  })),
 };
 
 const validation: GameInstallationProfileValidationReport = {
@@ -143,8 +168,79 @@ async function openGameSetup() {
 beforeEach(() => {
   vi.mocked(api.getAppBehaviorSettings).mockResolvedValue(appBehavior);
   vi.mocked(api.getLibrarySettings).mockResolvedValue(librarySettings);
+  vi.mocked(api.listGameInstallationProfiles).mockResolvedValue([
+    profile,
+    alternateProfile,
+    foreignProfile,
+  ]);
   vi.mocked(api.getActiveGameInstallationProfile).mockResolvedValue(profile);
-  vi.mocked(api.validateGameInstallationProfile).mockResolvedValue(validation);
+  vi.mocked(api.setActiveGameInstallationProfile).mockImplementation(
+    async (profileId) => {
+      if (profileId === alternateProfile.profileId) {
+        return alternateProfile;
+      }
+      if (profileId === profile.profileId) {
+        return profile;
+      }
+      throw new Error(`Game installation profile '${profileId}' does not exist.`);
+    },
+  );
+  vi.mocked(api.validateGameInstallationProfile).mockImplementation(
+    async (profileId) => {
+      if (profileId === alternateProfile.profileId) {
+        return {
+          ...validation,
+          profileId: alternateProfile.profileId,
+          profileName: alternateProfile.profileName,
+          roots: validation.roots.map((root) => ({
+            ...root,
+            configuredPath: root.configuredPath.replace(
+              "/Users/player",
+              "/Users/alternate",
+            ),
+            canonicalPathDisplay:
+              root.canonicalPathDisplay?.replace(
+                "/Users/player",
+                "/Users/alternate",
+              ) ?? null,
+          })),
+        };
+      }
+      if (profileId === foreignProfile.profileId) {
+        return {
+          ...validation,
+          profileId: foreignProfile.profileId,
+          profileName: foreignProfile.profileName,
+          storedEnvironment: "native_windows",
+          environmentCompatibility: "mismatch",
+          state: "needs_review",
+          genericRootState: "needs_review",
+          gameSpecificValidationPending: true,
+          gameReadiness: null,
+          roots: foreignProfile.roots.map((root) => ({
+            rootId: root.rootId,
+            rootRole: root.rootRole,
+            configuredPath: root.configuredPath,
+            required: root.required,
+            state: "needs_review" as const,
+            absolutePath: null,
+            exists: null,
+            metadataReadable: null,
+            metadataState: "not_checked" as const,
+            canonicalPathDisplay: null,
+            caseSensitivity: "not_checked" as const,
+            symlinkObserved: null,
+            blockers: [],
+            reviewNotes: ["Foreign-native path probing was skipped."],
+          })),
+          reviewNotes: [
+            "This profile targets a different native operating system.",
+          ],
+        };
+      }
+      return validation;
+    },
+  );
 });
 
 afterEach(() => {
@@ -153,34 +249,127 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("shows active profile readiness and evidence without mutation controls", async () => {
+it("shows active readiness with a guarded selector and no file apply controls", async () => {
   renderSettings();
   expect(api.getActiveGameInstallationProfile).not.toHaveBeenCalled();
 
   await openGameSetup();
 
   expect(await screen.findByText(profile.profileName)).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: /Saved Sims 4 setup/i })).toHaveValue(
+    profile.profileId,
+  );
+  expect(screen.getByRole("button", { name: "Already active" })).toBeDisabled();
   expect(screen.getByText("Overall readiness")).toBeInTheDocument();
   expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
   expect(screen.getByText("Shared user-data tree supported")).toBeInTheDocument();
   expect(screen.getByText(/No blockers or review notes/i)).toBeInTheDocument();
-  expect(screen.getByText(/No files changed/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/does not run Apply or Restore/i).length).toBeGreaterThan(0);
 
-  for (const name of [/Edit profile/i, /Create profile/i, /Select profile/i, /Discover profile/i, /^Apply$/i, /^Restore$/i]) {
+  for (const name of [
+    /Edit profile/i,
+    /Create profile/i,
+    /Discover profile/i,
+    /^Apply$/i,
+    /^Restore$/i,
+  ]) {
     expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   }
 });
 
-it("shows a truthful empty state when no active profile exists", async () => {
+it("lets an empty active state choose from real saved profiles", async () => {
   vi.mocked(api.getActiveGameInstallationProfile).mockResolvedValue(null);
 
   renderSettings();
   await openGameSetup();
 
   expect(await screen.findByText("No active game profile")).toBeInTheDocument();
-  expect(screen.getByText(/creation and selection are not available/i)).toBeInTheDocument();
-  expect(api.validateGameInstallationProfile).not.toHaveBeenCalled();
-  expect(screen.getByText(/No files changed/i)).toBeInTheDocument();
+  expect(screen.getByText(/Choose one of the saved setups above/i)).toBeInTheDocument();
+  expect(
+    await screen.findByRole("button", { name: /Use selected profile/i }),
+  ).toBeEnabled();
+  expect(api.validateGameInstallationProfile).toHaveBeenCalledWith(profile.profileId);
+  expect(screen.getAllByText(/does not run Apply or Restore/i).length).toBeGreaterThan(0);
+});
+
+it("switches only after an explicit selection and confirmation click", async () => {
+  renderSettings();
+  await openGameSetup();
+
+  const selector = screen.getByRole("combobox", { name: /Saved Sims 4 setup/i });
+  fireEvent.change(selector, { target: { value: alternateProfile.profileId } });
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Use selected profile/i }),
+  );
+
+  await waitFor(() => {
+    expect(api.setActiveGameInstallationProfile).toHaveBeenCalledWith(
+      alternateProfile.profileId,
+    );
+  });
+  expect(await screen.findByText(/is now the active setup/i)).toBeInTheDocument();
+  expect(api.validateGameInstallationProfile).toHaveBeenCalledWith(
+    alternateProfile.profileId,
+  );
+  expect(selector).toHaveValue(alternateProfile.profileId);
+  expect(screen.getByRole("button", { name: "Already active" })).toBeDisabled();
+});
+
+it("keeps a foreign-host profile visible but blocks activation", async () => {
+  renderSettings();
+  await openGameSetup();
+
+  const selector = screen.getByRole("combobox", { name: /Saved Sims 4 setup/i });
+  fireEvent.change(selector, { target: { value: foreignProfile.profileId } });
+
+  expect(
+    await screen.findByText(/belongs to a different native operating system/i),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Unavailable on this host/i }),
+  ).toBeDisabled();
+  expect(selector).toHaveValue(foreignProfile.profileId);
+  expect(api.validateGameInstallationProfile).toHaveBeenCalledWith(
+    foreignProfile.profileId,
+  );
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+});
+
+it("reconciles to the stored profile when switching reports an error", async () => {
+  vi.mocked(api.setActiveGameInstallationProfile).mockRejectedValue(
+    new Error("Switch blocked"),
+  );
+
+  renderSettings();
+  await openGameSetup();
+
+  const selector = screen.getByRole("combobox", { name: /Saved Sims 4 setup/i });
+  fireEvent.change(selector, { target: { value: alternateProfile.profileId } });
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Use selected profile/i }),
+  );
+
+  expect(await screen.findByText(/Switch blocked/i)).toBeInTheDocument();
+  expect(screen.getByText(/rechecked the database/i)).toBeInTheDocument();
+  expect(selector).toHaveValue(profile.profileId);
+  expect(screen.getByRole("button", { name: "Already active" })).toBeDisabled();
+});
+
+it("keeps active evidence visible when the saved profile list fails", async () => {
+  vi.mocked(api.listGameInstallationProfiles).mockRejectedValue(
+    new Error("Profile list failed"),
+  );
+
+  renderSettings();
+  await openGameSetup();
+
+  expect(await screen.findByText(profile.profileName)).toBeInTheDocument();
+  expect(screen.getByText(/Saved profile list could not be read/i)).toBeInTheDocument();
+  expect(screen.getByText(/switching is disabled/i)).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: /Saved Sims 4 setup/i })).not.toBeInTheDocument();
+  expect(api.validateGameInstallationProfile).toHaveBeenCalledWith(profile.profileId);
 });
 
 it("keeps the saved profile visible when transient validation fails", async () => {
@@ -214,5 +403,5 @@ it("shows a read error instead of an endless loading state when profile lookup f
   expect(screen.getByText("Profile lookup failed")).toBeInTheDocument();
   expect(screen.getByText(/No profile or filesystem state was changed/i)).toBeInTheDocument();
   expect(api.validateGameInstallationProfile).not.toHaveBeenCalled();
-  expect(screen.getByText(/No files changed/i)).toBeInTheDocument();
+  expect(screen.getByText(/does not run Apply or Restore/i)).toBeInTheDocument();
 });

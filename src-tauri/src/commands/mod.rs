@@ -37,6 +37,7 @@ use crate::{
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
+        GameInstallationConfirmationState, GameInstallationEnvironmentCompatibility,
         GameInstallationProfile, GameInstallationProfileValidationReport,
         GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
         HomeOverview, IgnoreItemsResult,
@@ -415,6 +416,72 @@ pub fn get_active_game_installation_profile(
 ) -> Result<Option<GameInstallationProfile>, String> {
     let connection = state.connection().map_err(map_error)?;
     database::get_active_game_installation_profile(&connection).map_err(map_error)
+}
+
+fn ensure_game_installation_profile_can_be_activated(
+    profile: &GameInstallationProfile,
+) -> Result<(), String> {
+    if profile.confirmation_state != GameInstallationConfirmationState::Confirmed {
+        return Err(format!(
+            "Game installation profile '{}' must be confirmed before it can become active.",
+            profile.profile_name
+        ));
+    }
+
+    match game_installation_profile_validation::game_installation_profile_environment_compatibility(
+        profile,
+    ) {
+        GameInstallationEnvironmentCompatibility::Matches => Ok(()),
+        GameInstallationEnvironmentCompatibility::Mismatch => Err(format!(
+            "Game installation profile '{}' targets a different native operating system and cannot become active on this host.",
+            profile.profile_name
+        )),
+        GameInstallationEnvironmentCompatibility::RequiresAdapter => Err(format!(
+            "Game installation profile '{}' requires Wine, Proton, or Lutris environment support before it can become active.",
+            profile.profile_name
+        )),
+        GameInstallationEnvironmentCompatibility::Unknown => Err(format!(
+            "Game installation profile '{}' has an unknown operating environment and cannot become active until that environment is identified.",
+            profile.profile_name
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn set_active_game_installation_profile(
+    app: AppHandle,
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<GameInstallationProfile, String> {
+    assert_command_allowed(
+        "set_active_game_installation_profile",
+        CommandCapability::SettingsWrite,
+    )?;
+    let profile_id = profile_id.trim();
+    let mut connection = state.connection().map_err(map_error)?;
+    let candidate =
+        database::get_game_installation_profile(&connection, profile_id).map_err(map_error)?;
+    ensure_game_installation_profile_can_be_activated(&candidate)?;
+    let profile = database::set_active_game_installation_profile(&mut connection, profile_id)
+        .map_err(map_error)?;
+    downloads_watcher::restart_watcher(&app, state.inner()).map_err(map_error)?;
+    emit_workspace_domains(
+        &app,
+        vec![
+            WorkspaceDomain::Home,
+            WorkspaceDomain::Downloads,
+            WorkspaceDomain::Library,
+            WorkspaceDomain::Organize,
+            WorkspaceDomain::Review,
+            WorkspaceDomain::Duplicates,
+            WorkspaceDomain::CreatorAudit,
+            WorkspaceDomain::CategoryAudit,
+        ],
+        "active-game-profile-changed",
+        Vec::new(),
+        Vec::new(),
+    )?;
+    Ok(profile)
 }
 
 #[tauri::command]
@@ -3687,12 +3754,18 @@ fn normalize_optional_path(path: Option<String>) -> Option<PathBuf> {
 mod tests {
     use super::{
         approved_review_action_url, approved_watch_source_url, bounded_library_tree_file_query,
-        is_locked_read_error, retry_locked_read, review_action_url_matches,
-        validate_review_download_redirect, LIBRARY_TREE_FILE_COMPAT_LIMIT,
+        ensure_game_installation_profile_can_be_activated, is_locked_read_error,
+        retry_locked_read, review_action_url_matches, validate_review_download_redirect,
+        LIBRARY_TREE_FILE_COMPAT_LIMIT,
     };
     use crate::{
         error::AppError,
-        models::{LibraryQuery, ReviewPlanAction, ReviewPlanActionKind},
+        models::{
+            GameInstallationConfirmationState, GameInstallationDetectionMethod,
+            GameInstallationProfile, GameInstallationProfileStatus, GameOperatingEnvironment,
+            LibraryQuery, ReviewPlanAction, ReviewPlanActionKind,
+        },
+        platform::{current_platform, PlatformId},
     };
     use reqwest::Url;
 
@@ -3705,6 +3778,35 @@ mod tests {
             related_item_id: None,
             related_item_name: Some("Test".to_owned()),
             url: url.map(ToOwned::to_owned),
+        }
+    }
+
+    fn native_test_environment() -> GameOperatingEnvironment {
+        match current_platform() {
+            PlatformId::Windows => GameOperatingEnvironment::NativeWindows,
+            PlatformId::Macos => GameOperatingEnvironment::NativeMacos,
+            PlatformId::Linux => GameOperatingEnvironment::NativeLinux,
+        }
+    }
+
+    fn activation_profile(
+        environment: GameOperatingEnvironment,
+        confirmation_state: GameInstallationConfirmationState,
+    ) -> GameInstallationProfile {
+        GameInstallationProfile {
+            profile_id: "profile-test".to_owned(),
+            profile_name: "Test profile".to_owned(),
+            game_id: "sims4".to_owned(),
+            operating_environment: environment,
+            status: GameInstallationProfileStatus::NeedsReview,
+            detection_method: GameInstallationDetectionMethod::Manual,
+            detection_evidence_json: "{}".to_owned(),
+            confirmation_state,
+            confirmed_at: None,
+            last_validated_at: None,
+            created_at: "2026-08-04T00:00:00Z".to_owned(),
+            updated_at: "2026-08-04T00:00:00Z".to_owned(),
+            roots: Vec::new(),
         }
     }
 
@@ -3976,6 +4078,92 @@ mod tests {
             assert!(
                 !command_source.contains(forbidden),
                 "profile validation command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn active_profile_activation_requires_confirmation_and_matching_environment() {
+        let matching = activation_profile(
+            native_test_environment(),
+            GameInstallationConfirmationState::Confirmed,
+        );
+        assert!(ensure_game_installation_profile_can_be_activated(&matching).is_ok());
+
+        let unconfirmed = activation_profile(
+            native_test_environment(),
+            GameInstallationConfirmationState::Unconfirmed,
+        );
+        assert!(
+            ensure_game_installation_profile_can_be_activated(&unconfirmed)
+                .expect_err("unconfirmed profile should be blocked")
+                .contains("must be confirmed")
+        );
+
+        let foreign_environment = match current_platform() {
+            PlatformId::Windows => GameOperatingEnvironment::NativeMacos,
+            PlatformId::Macos | PlatformId::Linux => GameOperatingEnvironment::NativeWindows,
+        };
+        let foreign = activation_profile(
+            foreign_environment,
+            GameInstallationConfirmationState::Confirmed,
+        );
+        assert!(
+            ensure_game_installation_profile_can_be_activated(&foreign)
+                .expect_err("foreign profile should be blocked")
+                .contains("different native operating system")
+        );
+
+        let adapter_dependent = activation_profile(
+            GameOperatingEnvironment::Wine,
+            GameInstallationConfirmationState::Confirmed,
+        );
+        assert!(
+            ensure_game_installation_profile_can_be_activated(&adapter_dependent)
+                .expect_err("adapter-dependent profile should be blocked")
+                .contains("requires Wine, Proton, or Lutris")
+        );
+    }
+
+    #[test]
+    fn active_profile_selection_is_settings_gated_before_database_and_has_no_file_operations() {
+        let source = include_str!("mod.rs");
+        let command_start = source
+            .find("pub fn set_active_game_installation_profile(")
+            .expect("active profile selection command");
+        let remaining = &source[command_start..];
+        let command_end = remaining
+            .find("\n#[tauri::command]\npub async fn validate_game_installation_profile")
+            .expect("next command boundary");
+        let command_source = &remaining[..command_end];
+
+        let gate_position = command_source
+            .find("CommandCapability::SettingsWrite")
+            .expect("settings-write command gate");
+        let connection_position = command_source
+            .find("state.connection()")
+            .expect("database connection");
+        assert!(
+            gate_position < connection_position,
+            "profile selection must pass the settings-write gate before opening the database"
+        );
+        assert!(command_source.contains("database::set_active_game_installation_profile"));
+        assert!(command_source.contains("downloads_watcher::restart_watcher"));
+        assert!(command_source.contains("active-game-profile-changed"));
+
+        for forbidden in [
+            "save_library_paths",
+            "fs::write",
+            "fs::copy",
+            "fs::rename",
+            "fs::remove",
+            "fs::create_dir",
+            "apply_preview_organization",
+            "restore_snapshot",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "profile selection command must not call {forbidden}"
             );
         }
     }
