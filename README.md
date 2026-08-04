@@ -109,9 +109,10 @@ pnpm run test:rust
 
 Notes:
 
-- `pnpm run test:unit` forces `NODE_ENV=test` and keeps jsdom in control of browser storage through `scripts/test/run-vitest.mjs`.
+- `pnpm run test:unit` runs the repository-local Vitest CLI, forces `NODE_ENV=test`, and keeps jsdom in control of browser storage through `scripts/test/run-vitest.mjs`.
 - `pnpm run test:rust` uses native Cargo on macOS and Linux. From WSL it deliberately runs Cargo through Windows PowerShell so path-sensitive Tauri tests match the Windows target.
-- The Windows fixture desktop proof remains Windows/WSL-specific. Native macOS and Linux proof lanes will be added separately.
+- `.github/workflows/cross-platform-preflight.yml` runs locked installs, tests, frontend builds, and native Tauri compilation on Windows, macOS, and Linux.
+- The CI preflight does not replace the Windows fixture desktop proof or real Linux app-launch and file-manager checks. Native desktop proof remains platform-specific.
 
 Desktop proof/smoke lanes on Windows or WSL:
 

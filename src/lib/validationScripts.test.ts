@@ -5,17 +5,37 @@ import { buildVitestInvocation, chunkTestFiles, sanitizeNodeOptions, shouldRunVi
 import { buildRustTestInvocation } from "../../scripts/test/run-rust-tests.mjs";
 
 describe("validation script wrappers", () => {
-  it("forces Vitest to run with NODE_ENV=test while preserving caller arguments", () => {
+  it("runs the pinned local Vitest CLI with NODE_ENV=test while preserving caller arguments", () => {
     const invocation = buildVitestInvocation({
+      cwd: "/home/player/SimSuite",
       argv: ["node", "scripts/test/run-vitest.mjs", "src/trustBoundaryCopy.test.ts", "--runInBand"],
       env: { NODE_ENV: "production", SIMSUITE_FLAG: "kept" },
       platform: "linux",
+      nodeExecutable: "/usr/bin/node",
     });
 
-    expect(invocation.command).toBe("npx");
-    expect(invocation.args).toEqual(["vitest", "run", "src/trustBoundaryCopy.test.ts", "--runInBand"]);
+    expect(invocation.command).toBe("/usr/bin/node");
+    expect(invocation.args).toEqual([
+      "/home/player/SimSuite/node_modules/vitest/vitest.mjs",
+      "run",
+      "src/trustBoundaryCopy.test.ts",
+      "--runInBand",
+    ]);
+    expect(invocation.requiredPath).toBe("/home/player/SimSuite/node_modules/vitest/vitest.mjs");
     expect(invocation.env.NODE_ENV).toBe("test");
     expect(invocation.env.SIMSUITE_FLAG).toBe("kept");
+
+    const windowsInvocation = buildVitestInvocation({
+      cwd: "C:\\Users\\player\\SimSuite",
+      argv: ["node", "scripts/test/run-vitest.mjs"],
+      env: {},
+      platform: "win32",
+      nodeExecutable: "C:\\Program Files\\nodejs\\node.exe",
+    });
+    expect(windowsInvocation.command).toBe("C:\\Program Files\\nodejs\\node.exe");
+    expect(windowsInvocation.requiredPath).toBe(
+      "C:\\Users\\player\\SimSuite\\node_modules\\vitest\\vitest.mjs",
+    );
   });
 
   it("disables inherited Node Web Storage only on runtimes that support the flag", () => {

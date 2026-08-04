@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-08-03
+Last updated: 2026-08-04
 
 ## Current product state
 
@@ -29,6 +29,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Portable Tauri development and build wrappers that preserve the existing Windows/WSL PowerShell lane and use native Node/Tauri execution on macOS and Linux.
 - Tested native file-manager dispatch for Windows Explorer, macOS Finder, and Linux desktop openers.
 - Apple Silicon macOS production verification, including a launchable `.app` bundle and generated DMG.
+- Project-owned cross-platform CI preflight for locked dependency installation, TypeScript, unit tests, Rust tests, frontend builds, and native Tauri compilation on Windows, macOS, and Linux runners.
 - Command-surface Apply safety audit.
 - Backend Command Gating V1 for externally callable legacy file-changing commands and client-forged ApplyPlan run/result/restore writes.
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
@@ -36,8 +37,8 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 
 ## Cross-platform verification remaining
 
-- Re-run the existing Windows fixture desktop proof and smoke lanes on a Windows host after this branch is reviewed.
-- Verify dependency installation, native Tauri build, app launch, and file-manager behavior on a native Linux host.
+- Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, and native compilation, but it does not exercise the webdriver player journey.
+- Verify native app launch and file-manager behavior on a real Linux desktop host. The CI Linux runner provides compile/test coverage only.
 - Add native macOS and Linux fixture desktop automation rather than treating the Windows webdriver lane as universal.
 
 ## Still blocked

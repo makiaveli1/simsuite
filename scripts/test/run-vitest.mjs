@@ -8,8 +8,9 @@ import path from "node:path";
 const DEFAULT_BATCH_SIZE = 3;
 const TEST_FILE_PATTERN = /\.test\.(ts|tsx)$/;
 
-function executableForNpx(platform = process.platform) {
-  return platform === "win32" ? "npx.cmd" : "npx";
+function localVitestCliPath(cwd = process.cwd(), platform = process.platform) {
+  const pathApi = platform === "win32" ? path.win32 : path;
+  return pathApi.join(cwd, "node_modules", "vitest", "vitest.mjs");
 }
 
 export function supportsWebStorageDisable(nodeVersion = process.versions.node) {
@@ -90,16 +91,21 @@ export function shouldRunVitestInBatches({ passthroughArgs, env = process.env } 
 }
 
 export function buildVitestInvocation({
+  cwd = process.cwd(),
   argv = process.argv,
   env = process.env,
   platform = process.platform,
   nodeVersion = process.versions.node,
+  nodeExecutable = process.execPath,
 } = {}) {
   const passthroughArgs = argv.slice(2);
+  const cliPath = localVitestCliPath(cwd, platform);
 
   return {
-    command: executableForNpx(platform),
-    args: ["vitest", "run", ...passthroughArgs],
+    command: nodeExecutable,
+    args: [cliPath, "run", ...passthroughArgs],
+    cwd,
+    requiredPath: cliPath,
     env: {
       ...env,
       NODE_ENV: "test",
@@ -111,6 +117,7 @@ export function buildVitestInvocation({
 
 function runVitest(invocation, args) {
   const result = spawnSync(invocation.command, args, {
+    cwd: invocation.cwd,
     env: invocation.env,
     stdio: "inherit",
     shell: false,
@@ -125,6 +132,11 @@ function runVitest(invocation, args) {
 
 export function run(argv = process.argv) {
   const invocation = buildVitestInvocation({ argv });
+  if (!fs.existsSync(invocation.requiredPath)) {
+    throw new Error(
+      `SimSuite could not find the local Vitest CLI at ${invocation.requiredPath}. Run pnpm install first.`,
+    );
+  }
 
   if (!shouldRunVitestInBatches({ passthroughArgs: invocation.passthroughArgs, env: invocation.env })) {
     return runVitest(invocation, invocation.args);
@@ -141,7 +153,13 @@ export function run(argv = process.argv) {
   for (const [index, batch] of batches.entries()) {
     console.log(`\n[run-vitest] batch ${index + 1}/${batches.length}: ${batch.join(" ")}`);
     const batchPool = invocation.env.SIMSUITE_VITEST_BATCH_POOL ?? "forks";
-    const status = runVitest(invocation, ["vitest", "run", "--pool", batchPool, ...batch]);
+    const status = runVitest(invocation, [
+      invocation.requiredPath,
+      "run",
+      "--pool",
+      batchPool,
+      ...batch,
+    ]);
     if (status !== 0) {
       return status;
     }

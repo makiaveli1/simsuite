@@ -1,0 +1,88 @@
+name: Cross-platform preflight
+
+"on":
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "platform/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-platform-preflight-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm from packageManager
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm exec tsc --noEmit
+
+      - name: Run unit and wrapper tests
+        run: pnpm run test:unit
+
+      - name: Run Rust tests
+        run: pnpm run test:rust
+
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Compile native Tauri application
+        run: pnpm run tauri:build -- --no-bundle
+
+      - name: Record native-proof boundary
+        run: >-
+          echo "This preflight compiles and tests native targets. It does not replace the fixture desktop proof,
+          app-launch smoke, or native file-manager behavior checks required on real Windows and Linux hosts."
