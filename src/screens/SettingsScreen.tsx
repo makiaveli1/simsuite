@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { m } from "motion/react";
 import {
+  Gamepad2,
+  HelpCircle,
   LayoutPanelLeft,
   LoaderCircle,
   Palette,
@@ -8,7 +10,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Workflow,
-  HelpCircle,
 } from "lucide-react";
 import { Tooltip } from "../components/Tooltip";
 import { useUiPreferences } from "../components/UiPreferencesContext";
@@ -22,11 +23,14 @@ import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type {
   AppBehaviorSettings,
   ExperienceMode,
+  GameInstallationProfile,
+  GameInstallationProfileValidationReport,
   LibrarySettings,
   UiDensity,
   WatchRefreshSummary,
 } from "../lib/types";
 import { screenHelperLine } from "../lib/uiLanguage";
+import { SettingsGameProfileSection } from "./settings/SettingsGameProfileSection";
 
 const EXPERIENCE_CARDS: Record<
   ExperienceMode,
@@ -89,6 +93,7 @@ const DENSITIES: Array<{
 
 type SettingsSectionId =
   | "experience"
+  | "gameProfile"
   | "appearance"
   | "density"
   | "automation"
@@ -107,6 +112,14 @@ export function SettingsScreen({
     useUiPreferences();
   const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings | null>(null);
   const [librarySettings, setLibrarySettings] = useState<LibrarySettings | null>(null);
+  const [activeGameProfile, setActiveGameProfile] = useState<
+    GameInstallationProfile | null | undefined
+  >(undefined);
+  const [gameProfileValidation, setGameProfileValidation] =
+    useState<GameInstallationProfileValidationReport | null>(null);
+  const [gameProfileError, setGameProfileError] = useState<string | null>(null);
+  const [isLoadingGameProfile, setIsLoadingGameProfile] = useState(false);
+  const [hasLoadedGameProfile, setHasLoadedGameProfile] = useState(false);
   const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
   const [isRefreshingWatchedSources, setIsRefreshingWatchedSources] = useState(false);
@@ -123,6 +136,15 @@ export function SettingsScreen({
   const keepRunningInBackground = appBehavior?.keepRunningInBackground ?? false;
   const automaticWatchChecks = appBehavior?.automaticWatchChecks ?? false;
   const watchCheckIntervalHours = appBehavior?.watchCheckIntervalHours ?? 12;
+  const gameProfileSummary = isLoadingGameProfile
+    ? "Checking setup"
+    : gameProfileError
+      ? "Needs attention"
+      : activeGameProfile === undefined
+        ? "Open to check"
+        : activeGameProfile === null
+          ? "Not configured"
+          : gameProfileStatusLabel(gameProfileValidation?.state ?? activeGameProfile.status);
   const settingsSections = [
     {
       id: "experience" as const,
@@ -131,6 +153,14 @@ export function SettingsScreen({
       summary: `${activeView.label} mode`,
       hint: "Choose how much help and proof stays open while you sort.",
       icon: Sparkles,
+    },
+    {
+      id: "gameProfile" as const,
+      label: "Game setup",
+      title: "Your active Sims 4 profile",
+      summary: gameProfileSummary,
+      hint: "Review the roots SimSuite reads and the evidence behind readiness.",
+      icon: Gamepad2,
     },
     {
       id: "appearance" as const,
@@ -204,6 +234,49 @@ export function SettingsScreen({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== "gameProfile" || hasLoadedGameProfile) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingGameProfile(true);
+    setGameProfileError(null);
+    setGameProfileValidation(null);
+
+    void (async () => {
+      try {
+        const profile = await api.getActiveGameInstallationProfile();
+        if (cancelled) {
+          return;
+        }
+        setActiveGameProfile(profile);
+
+        if (!profile) {
+          return;
+        }
+
+        const validation = await api.validateGameInstallationProfile(profile.profileId);
+        if (!cancelled) {
+          setGameProfileValidation(validation);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGameProfileError(toErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingGameProfile(false);
+          setHasLoadedGameProfile(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, hasLoadedGameProfile]);
 
   async function saveBehaviorSettings(nextValues: Partial<AppBehaviorSettings>) {
     if (!appBehavior) {
@@ -421,6 +494,15 @@ export function SettingsScreen({
                 />
               ) : null}
 
+              {activeSection === "gameProfile" ? (
+                <SettingsGameProfileSection
+                  profile={activeGameProfile}
+                  validation={gameProfileValidation}
+                  error={gameProfileError}
+                  isLoading={isLoadingGameProfile}
+                />
+              ) : null}
+
               {activeSection === "appearance" ? (
                 <SettingsAppearanceSection
                   activeTheme={activeTheme}
@@ -525,6 +607,15 @@ export function SettingsScreen({
                   experienceMode={experienceMode}
                   activeView={activeView}
                   onExperienceModeChange={onExperienceModeChange}
+                />
+              ) : null}
+
+              {activeSection === "gameProfile" ? (
+                <SettingsGameProfileSection
+                  profile={activeGameProfile}
+                  validation={gameProfileValidation}
+                  error={gameProfileError}
+                  isLoading={isLoadingGameProfile}
                 />
               ) : null}
 
@@ -1329,6 +1420,19 @@ function IgnorePatternsEditor({
       </div>
     </div>
   );
+}
+
+function gameProfileStatusLabel(status: GameInstallationProfile["status"]) {
+  switch (status) {
+    case "valid":
+      return "Ready";
+    case "needs_review":
+      return "Needs review";
+    case "unavailable":
+      return "Unavailable";
+    case "draft":
+      return "Draft";
+  }
 }
 
 function toErrorMessage(error: unknown) {
