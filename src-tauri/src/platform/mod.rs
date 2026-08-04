@@ -61,7 +61,7 @@ fn classify_target(path: &Path) -> RevealTargetKind {
     }
 }
 
-fn current_platform() -> PlatformId {
+pub(crate) fn current_platform() -> PlatformId {
     #[cfg(target_os = "windows")]
     {
         PlatformId::Windows

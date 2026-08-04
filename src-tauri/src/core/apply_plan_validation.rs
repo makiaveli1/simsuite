@@ -12,6 +12,12 @@ use crate::{
         LibrarySettings, PersistedApplyPlan, PersistedApplyPlanBlocker, PersistedApplyPlanItem,
         PersistedApplyPlanItemStatus, PersistedApplyPlanStatus, PreviewApplyPlanValidationRequest,
     },
+    platform::{
+        current_platform,
+        path_semantics::{
+            PathComparisonKey, PathMetadataState, PathSemanticsError, RootIdentity,
+        },
+    },
 };
 
 pub fn preview_apply_plan_validation(
@@ -59,12 +65,13 @@ pub fn preview_apply_plan_validation(
         );
     }
 
-    let destination_conflicts = detect_destination_conflicts(&plan.items);
+    let root_identities = probe_configured_root_identities(settings);
+    let destination_conflicts = detect_destination_conflicts(&root_identities, &plan.items);
     let mut items = Vec::with_capacity(plan.items.len());
     for item in &plan.items {
         items.push(validate_item(
             connection,
-            settings,
+            &root_identities,
             item,
             destination_conflicts.get(&item.id).cloned(),
         )?);
@@ -99,7 +106,7 @@ pub fn preview_apply_plan_validation(
 
 fn validate_item(
     connection: &Connection,
-    settings: &LibrarySettings,
+    root_identities: &ConfiguredRootIdentities,
     item: &PersistedApplyPlanItem,
     destination_conflict: Option<ApplyPlanConflictStatus>,
 ) -> AppResult<ApplyPlanValidationItem> {
@@ -145,7 +152,7 @@ fn validate_item(
         match conflict_status {
             ApplyPlanConflictStatus::CaseConflict => {
                 reasons.push(
-                    "Another item in this plan targets the same destination under Windows case-insensitive path rules.".to_owned(),
+                    "Another item in this plan targets the same destination under the configured root's case-insensitive filesystem rules.".to_owned(),
                 );
             }
             ApplyPlanConflictStatus::SameNameConflict => {
@@ -188,7 +195,7 @@ fn validate_item(
     } else {
         validate_item_paths(
             connection,
-            settings,
+            root_identities,
             item,
             &mut reasons,
             &mut required_next_steps,
@@ -218,7 +225,7 @@ fn validate_item(
 
 fn validate_item_paths(
     connection: &Connection,
-    settings: &LibrarySettings,
+    root_identities: &ConfiguredRootIdentities,
     item: &PersistedApplyPlanItem,
     reasons: &mut Vec<String>,
     required_next_steps: &mut Vec<String>,
@@ -233,16 +240,6 @@ fn validate_item_paths(
             ApplyPlanConflictStatus::SourceMissing,
         ));
     };
-
-    if normalized_path_key(&current_file.path) != normalized_path_key(&item.current_path) {
-        reasons.push("Saved source path no longer matches the current Library index.".to_owned());
-        required_next_steps
-            .push("Review the current Library location before future validation.".to_owned());
-        return Ok((
-            ApplyPlanValidationStatus::StaleSource,
-            ApplyPlanConflictStatus::NotChecked,
-        ));
-    }
 
     match read_only_path_exists(&current_file.path) {
         Ok(true) => {}
@@ -296,23 +293,9 @@ fn validate_item_paths(
         ));
     };
 
-    let Some(destination_root) = configured_root(settings, destination_root_name) else {
-        reasons.push(format!(
-            "Destination root `{destination_root_name}` is not configured."
-        ));
-        required_next_steps
-            .push("Configure the destination root before future validation.".to_owned());
-        return Ok((
-            ApplyPlanValidationStatus::MissingDestinationRoot,
-            ApplyPlanConflictStatus::Unsupported,
-        ));
-    };
-
-    if contains_parent_dir_component(destination_path)
-        || !path_is_under_root(destination_path, destination_root)
-    {
+    if contains_parent_dir_component(destination_path) {
         reasons.push(
-            "Destination path cannot be proven under the configured Mods/Tray root.".to_owned(),
+            "Destination path contains a parent-directory traversal component.".to_owned(),
         );
         required_next_steps.push("Regenerate the preview with a safe destination path.".to_owned());
         return Ok((
@@ -320,6 +303,47 @@ fn validate_item_paths(
             ApplyPlanConflictStatus::Unsupported,
         ));
     }
+
+    let destination_root_identity =
+        match configured_root_identity(root_identities, destination_root_name) {
+            Some(Ok(identity)) => identity,
+            None => {
+                reasons.push(format!(
+                    "Destination root `{destination_root_name}` is not configured."
+                ));
+                required_next_steps
+                    .push("Configure the destination root before future validation.".to_owned());
+                return Ok((
+                    ApplyPlanValidationStatus::MissingDestinationRoot,
+                    ApplyPlanConflictStatus::Unsupported,
+                ));
+            }
+            Some(Err(error)) => {
+                reasons.push(format!(
+                    "Destination root `{destination_root_name}` could not be safely inspected: {}",
+                    error.message
+                ));
+                required_next_steps.push(
+                    if error.missing_root {
+                        "Choose an existing destination root before future validation."
+                    } else {
+                        "Review destination root permissions and filesystem capabilities before future validation."
+                    }
+                    .to_owned(),
+                );
+                return Ok(if error.missing_root {
+                    (
+                        ApplyPlanValidationStatus::MissingDestinationRoot,
+                        ApplyPlanConflictStatus::Unsupported,
+                    )
+                } else {
+                    (
+                        ApplyPlanValidationStatus::Error,
+                        ApplyPlanConflictStatus::PermissionUnknown,
+                    )
+                });
+            }
+        };
 
     if !current_file
         .source_location
@@ -338,8 +362,122 @@ fn validate_item_paths(
         ));
     }
 
-    match read_only_path_exists(destination_path) {
-        Ok(true) => {
+    let current_source_identity = match destination_root_identity
+        .identify_path("legacy-library-settings", Path::new(&current_file.path))
+    {
+        Ok(identity) => identity,
+        Err(error) => {
+            let stale_source = source_path_error_is_stale(&error);
+            reasons.push(format!(
+                "Current indexed source path cannot be proven under its configured root: {error}"
+            ));
+            required_next_steps.push(
+                if stale_source {
+                    "Rescan or review the current Library location before future validation."
+                } else {
+                    "Review source permissions and filesystem capabilities before future validation."
+                }
+                .to_owned(),
+            );
+            return Ok(if stale_source {
+                (
+                    ApplyPlanValidationStatus::StaleSource,
+                    ApplyPlanConflictStatus::NotChecked,
+                )
+            } else {
+                (
+                    ApplyPlanValidationStatus::Error,
+                    ApplyPlanConflictStatus::PermissionUnknown,
+                )
+            });
+        }
+    };
+
+    let saved_source_identity = match destination_root_identity
+        .identify_path("legacy-library-settings", Path::new(&item.current_path))
+    {
+        Ok(identity) => identity,
+        Err(error) => {
+            let stale_source = source_path_error_is_stale(&error);
+            reasons.push(format!(
+                "Saved source path cannot be proven under the configured root: {error}"
+            ));
+            required_next_steps.push(
+                if stale_source {
+                    "Regenerate the preview from the current Library location."
+                } else {
+                    "Review source permissions and filesystem capabilities before future validation."
+                }
+                .to_owned(),
+            );
+            return Ok(if stale_source {
+                (
+                    ApplyPlanValidationStatus::StaleSource,
+                    ApplyPlanConflictStatus::NotChecked,
+                )
+            } else {
+                (
+                    ApplyPlanValidationStatus::Error,
+                    ApplyPlanConflictStatus::PermissionUnknown,
+                )
+            });
+        }
+    };
+
+    if current_source_identity.comparison_key != saved_source_identity.comparison_key {
+        reasons.push("Saved source path no longer matches the current Library index.".to_owned());
+        required_next_steps
+            .push("Review the current Library location before future validation.".to_owned());
+        return Ok((
+            ApplyPlanValidationStatus::StaleSource,
+            ApplyPlanConflictStatus::NotChecked,
+        ));
+    }
+
+    let destination_identity = match destination_root_identity
+        .identify_path("legacy-library-settings", Path::new(destination_path))
+    {
+        Ok(identity) => identity,
+        Err(error) => {
+            let unsafe_destination = matches!(
+                &error,
+                PathSemanticsError::CandidateMustBeAbsolute(_)
+                    | PathSemanticsError::RelativePathRequired(_)
+                    | PathSemanticsError::ParentTraversal(_)
+                    | PathSemanticsError::UnsupportedPathComponent(_)
+                    | PathSemanticsError::ExistingAncestorNotDirectory(_)
+                    | PathSemanticsError::OutsideRoot { .. }
+            );
+            reasons.push(format!(
+                "Destination path cannot be proven under the configured Mods/Tray root: {error}"
+            ));
+            required_next_steps.push(
+                if unsafe_destination {
+                    "Regenerate the preview with a safe destination path."
+                } else {
+                    "Review destination permissions and filesystem capabilities before future validation."
+                }
+                .to_owned(),
+            );
+            return Ok(if unsafe_destination {
+                (
+                    ApplyPlanValidationStatus::UnsafeDestination,
+                    ApplyPlanConflictStatus::Unsupported,
+                )
+            } else {
+                (
+                    ApplyPlanValidationStatus::Error,
+                    ApplyPlanConflictStatus::PermissionUnknown,
+                )
+            });
+        }
+    };
+
+    match destination_identity.metadata_state {
+        PathMetadataState::File
+        | PathMetadataState::Directory
+        | PathMetadataState::Symlink
+        | PathMetadataState::Other => {
             reasons
                 .push("A file or folder already exists at the saved destination path.".to_owned());
             required_next_steps
@@ -349,7 +487,7 @@ fn validate_item_paths(
                 ApplyPlanConflictStatus::DestinationExists,
             ))
         }
-        Ok(false) => {
+        PathMetadataState::Missing => {
             reasons
                 .push("No current validation blocker was found for this preview item.".to_owned());
             required_next_steps.push(
@@ -361,9 +499,9 @@ fn validate_item_paths(
                 ApplyPlanConflictStatus::None,
             ))
         }
-        Err(message) => {
+        PathMetadataState::Unreadable(error_kind) => {
             reasons.push(format!(
-                "Destination conflict could not be checked: {message}"
+                "Destination conflict could not be checked safely: {error_kind}"
             ));
             required_next_steps
                 .push("Review destination permissions before future validation.".to_owned());
@@ -376,9 +514,11 @@ fn validate_item_paths(
 }
 
 fn detect_destination_conflicts(
+    root_identities: &ConfiguredRootIdentities,
     items: &[PersistedApplyPlanItem],
 ) -> HashMap<i64, ApplyPlanConflictStatus> {
-    let mut by_canonical: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+    let mut by_identity: HashMap<(String, PathComparisonKey), Vec<(i64, String)>> =
+        HashMap::new();
     for item in items {
         if item.blocked
             || item.review_only
@@ -395,20 +535,43 @@ fn detect_destination_conflicts(
         else {
             continue;
         };
-        let canonical = normalized_path_key(destination_path);
-        by_canonical
-            .entry(canonical)
+        let Some(destination_root_name) = item
+            .destination_root
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let Some(Ok(root_identity)) =
+            configured_root_identity(root_identities, destination_root_name)
+        else {
+            continue;
+        };
+        let Ok(identity) = root_identity
+            .identify_path("legacy-library-settings", Path::new(destination_path))
+        else {
+            continue;
+        };
+
+        by_identity
+            .entry((identity.root_id, identity.comparison_key))
             .or_default()
             .push((item.id, normalize_separators_for_display(destination_path)));
     }
 
     let mut conflicts = HashMap::new();
-    for destinations in by_canonical.values() {
+    for destinations in by_identity.values() {
         if destinations.len() < 2 {
             continue;
         }
         let first_path = &destinations[0].1;
-        let conflict_status = if destinations.iter().any(|(_, path)| path != first_path) {
+        let paths_differ = destinations.iter().any(|(_, path)| path != first_path);
+        let conflict_status = if paths_differ
+            && destinations
+                .iter()
+                .all(|(_, path)| path.to_lowercase() == first_path.to_lowercase())
+        {
             ApplyPlanConflictStatus::CaseConflict
         } else {
             ApplyPlanConflictStatus::SameNameConflict
@@ -540,11 +703,54 @@ fn contains_duplicate_text(value: &str) -> bool {
     value.to_ascii_lowercase().contains("duplicate")
 }
 
-fn configured_root<'a>(settings: &'a LibrarySettings, root_name: &str) -> Option<&'a str> {
-    match root_name {
-        value if value.eq_ignore_ascii_case("mods") => settings.mods_path.as_deref(),
-        value if value.eq_ignore_ascii_case("tray") => settings.tray_path.as_deref(),
-        _ => None,
+type ConfiguredRootIdentities =
+    HashMap<String, Result<RootIdentity, ConfiguredRootProbeFailure>>;
+
+#[derive(Debug)]
+struct ConfiguredRootProbeFailure {
+    message: String,
+    missing_root: bool,
+}
+
+fn probe_configured_root_identities(settings: &LibrarySettings) -> ConfiguredRootIdentities {
+    let mut identities = HashMap::new();
+    for (root_name, root_path) in [
+        ("mods", settings.mods_path.as_deref()),
+        ("tray", settings.tray_path.as_deref()),
+    ] {
+        let Some(root_path) = root_path else {
+            continue;
+        };
+        let result = RootIdentity::probe_existing_root(
+            root_name,
+            current_platform(),
+            Path::new(root_path),
+        )
+        .map_err(|error| ConfiguredRootProbeFailure {
+            missing_root: root_error_is_missing(&error),
+            message: error.to_string(),
+        });
+        identities.insert(root_name.to_owned(), result);
+    }
+    identities
+}
+
+fn configured_root_identity<'a>(
+    identities: &'a ConfiguredRootIdentities,
+    root_name: &str,
+) -> Option<&'a Result<RootIdentity, ConfiguredRootProbeFailure>> {
+    identities.get(&root_name.trim().to_ascii_lowercase())
+}
+
+fn root_error_is_missing(error: &PathSemanticsError) -> bool {
+    match error {
+        PathSemanticsError::RootMustBeAbsolute(_) | PathSemanticsError::RootIsNotDirectory(_) => {
+            true
+        }
+        PathSemanticsError::RootUnavailable { source, .. } => {
+            source.kind() == std::io::ErrorKind::NotFound
+        }
+        _ => false,
     }
 }
 
@@ -554,20 +760,16 @@ fn contains_parent_dir_component(path: &str) -> bool {
         .any(|component| component == "..")
 }
 
-fn path_is_under_root(path: &str, root: &str) -> bool {
-    if contains_parent_dir_component(path) || contains_parent_dir_component(root) {
-        return false;
-    }
-    let path = normalized_path_key(path);
-    let root = normalized_path_key(root);
-    path == root || path.starts_with(&format!("{root}/"))
-}
-
-fn normalized_path_key(path: &str) -> String {
-    path.trim()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
+fn source_path_error_is_stale(error: &PathSemanticsError) -> bool {
+    matches!(
+        error,
+        PathSemanticsError::CandidateMustBeAbsolute(_)
+            | PathSemanticsError::RelativePathRequired(_)
+            | PathSemanticsError::ParentTraversal(_)
+            | PathSemanticsError::UnsupportedPathComponent(_)
+            | PathSemanticsError::ExistingAncestorNotDirectory(_)
+            | PathSemanticsError::OutsideRoot { .. }
+    )
 }
 
 fn read_only_path_exists(path: &str) -> Result<bool, String> {
@@ -603,6 +805,7 @@ mod tests {
             StagingPlanConfidenceLabel, StagingPlanCurrentRoot, StagingPlanEvidenceLevel,
             StagingPlanItem, StagingPlanSource, StagingPlanStatus,
         },
+        platform::path_semantics::CaseSensitivity,
     };
 
     fn memory_connection() -> Connection {
@@ -811,7 +1014,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_destination_validation_rejects_case_only_conflicts() {
+    fn canonical_destination_validation_follows_root_case_policy() {
         let temp = tempdir().expect("tempdir");
         let mods_root = temp.path().join("Mods");
         let source_path_a = mods_root.join("a.package");
@@ -841,22 +1044,46 @@ mod tests {
             ],
         );
 
+        let settings = LibrarySettings {
+            mods_path: Some(path_string(&mods_root)),
+            ..Default::default()
+        };
+        let root_identities = probe_configured_root_identities(&settings);
+        let case_sensitivity = configured_root_identity(&root_identities, "mods")
+            .expect("configured root")
+            .as_ref()
+            .expect("root probe")
+            .capabilities
+            .case_sensitivity;
         let preview = preview_apply_plan_validation(
             &connection,
-            &LibrarySettings {
-                mods_path: Some(path_string(&mods_root)),
-                ..Default::default()
-            },
+            &settings,
             PreviewApplyPlanValidationRequest { plan_id },
         )
         .expect("preview");
 
-        assert_eq!(preview.summary.conflict_items, 2);
-        assert!(preview
-            .items
-            .iter()
-            .all(|item| item.conflict_status == ApplyPlanConflictStatus::CaseConflict));
-        assert!(preview.items.iter().all(|item| item.blocked));
+        match case_sensitivity {
+            CaseSensitivity::Insensitive => {
+                assert_eq!(preview.summary.conflict_items, 2);
+                assert!(preview.items.iter().all(|item| {
+                    item.conflict_status == ApplyPlanConflictStatus::CaseConflict
+                }));
+                assert!(preview.items.iter().all(|item| item.blocked));
+            }
+            CaseSensitivity::Sensitive => {
+                assert_eq!(preview.summary.conflict_items, 0);
+                assert!(preview.items.iter().all(|item| {
+                    item.conflict_status == ApplyPlanConflictStatus::None
+                        && item.validation_status == ApplyPlanValidationStatus::ValidPreviewOnly
+                }));
+            }
+            CaseSensitivity::Unknown => {
+                assert!(preview.items.iter().all(|item| {
+                    item.validation_status == ApplyPlanValidationStatus::Error
+                        && item.conflict_status == ApplyPlanConflictStatus::PermissionUnknown
+                }));
+            }
+        }
     }
 
     #[test]
@@ -1205,6 +1432,75 @@ mod tests {
     }
 
     #[test]
+    fn source_path_drift_follows_root_case_policy() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let source_path = mods_root.join("CaseSource.package");
+        let saved_source_path = mods_root.join("caseSource.package");
+        let destination_path = mods_root.join("CAS").join("CaseSource.package");
+        fs::create_dir_all(&mods_root).expect("mods root");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 64, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(64),
+                path_string(&saved_source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+        let settings = LibrarySettings {
+            mods_path: Some(path_string(&mods_root)),
+            ..Default::default()
+        };
+        let root_identities = probe_configured_root_identities(&settings);
+        let case_sensitivity = configured_root_identity(&root_identities, "mods")
+            .expect("configured root")
+            .as_ref()
+            .expect("root probe")
+            .capabilities
+            .case_sensitivity;
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &settings,
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        match case_sensitivity {
+            CaseSensitivity::Sensitive => {
+                assert_eq!(
+                    preview.items[0].validation_status,
+                    ApplyPlanValidationStatus::StaleSource
+                );
+            }
+            CaseSensitivity::Insensitive => {
+                assert_eq!(
+                    preview.items[0].validation_status,
+                    ApplyPlanValidationStatus::ValidPreviewOnly
+                );
+                assert_eq!(
+                    preview.items[0].conflict_status,
+                    ApplyPlanConflictStatus::None
+                );
+            }
+            CaseSensitivity::Unknown => {
+                assert_eq!(
+                    preview.items[0].validation_status,
+                    ApplyPlanValidationStatus::Error
+                );
+                assert_eq!(
+                    preview.items[0].conflict_status,
+                    ApplyPlanConflictStatus::PermissionUnknown
+                );
+            }
+        }
+    }
+
+    #[test]
     fn destination_outside_configured_root_returns_unsafe_destination() {
         let temp = tempdir().expect("tempdir");
         let mods_root = temp.path().join("Mods");
@@ -1238,6 +1534,222 @@ mod tests {
             preview.items[0].validation_status,
             ApplyPlanValidationStatus::UnsafeDestination
         );
+    }
+
+    #[test]
+    fn configured_destination_root_must_exist_on_disk() {
+        let temp = tempdir().expect("tempdir");
+        let missing_mods_root = temp.path().join("MissingMods");
+        let source_path = temp.path().join("source.package");
+        let destination_path = missing_mods_root.join("CAS").join("source.package");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 61, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(61),
+                path_string(&source_path),
+                Some(path_string(&destination_path)),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&missing_mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::MissingDestinationRoot
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("could not be safely inspected")));
+    }
+
+    #[test]
+    fn configured_destination_root_must_be_absolute() {
+        let temp = tempdir().expect("tempdir");
+        let source_path = temp.path().join("source.package");
+        fs::write(&source_path, b"package").expect("source file");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 63, &path_string(&source_path), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(63),
+                path_string(&source_path),
+                Some("relative/Mods/CAS/source.package".to_owned()),
+            )],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("relative/Mods".to_owned()),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(
+            preview.items[0].validation_status,
+            ApplyPlanValidationStatus::MissingDestinationRoot
+        );
+        assert!(preview.items[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("must be an absolute path")));
+    }
+
+    #[test]
+    fn root_probe_errors_distinguish_missing_paths_from_permission_failures() {
+        let missing = PathSemanticsError::RootUnavailable {
+            path: std::path::PathBuf::from("/missing/Mods"),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
+        };
+        let denied = PathSemanticsError::RootUnavailable {
+            path: std::path::PathBuf::from("/restricted/Mods"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        };
+
+        assert!(root_error_is_missing(&missing));
+        assert!(!root_error_is_missing(&denied));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_symlinks_must_remain_inside_the_configured_root() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let inside = mods_root.join("Inside");
+        let outside = temp.path().join("Outside");
+        let source_path = mods_root.join("source.package");
+        fs::create_dir_all(&inside).expect("inside directory");
+        fs::create_dir(&outside).expect("outside directory");
+        fs::write(&source_path, b"package").expect("source file");
+        symlink(&outside, mods_root.join("EscapeLink")).expect("escape symlink");
+        symlink(&inside, mods_root.join("InsideLink")).expect("inside symlink");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 62, &path_string(&source_path), "mods");
+
+        let escape_plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(62),
+                path_string(&source_path),
+                Some(path_string(
+                    &mods_root.join("EscapeLink").join("escaped.package"),
+                )),
+            )],
+        );
+        let settings = LibrarySettings {
+            mods_path: Some(path_string(&mods_root)),
+            ..Default::default()
+        };
+        let escape_preview = preview_apply_plan_validation(
+            &connection,
+            &settings,
+            PreviewApplyPlanValidationRequest {
+                plan_id: escape_plan_id,
+            },
+        )
+        .expect("escape preview");
+        assert_eq!(
+            escape_preview.items[0].validation_status,
+            ApplyPlanValidationStatus::UnsafeDestination
+        );
+
+        let internal_plan_id = save_plan(
+            &mut connection,
+            vec![candidate_item(
+                Some(62),
+                path_string(&source_path),
+                Some(path_string(
+                    &mods_root.join("InsideLink").join("internal.package"),
+                )),
+            )],
+        );
+        let internal_preview = preview_apply_plan_validation(
+            &connection,
+            &settings,
+            PreviewApplyPlanValidationRequest {
+                plan_id: internal_plan_id,
+            },
+        )
+        .expect("internal preview");
+        assert_eq!(
+            internal_preview.items[0].validation_status,
+            ApplyPlanValidationStatus::ValidPreviewOnly
+        );
+        assert_eq!(
+            internal_preview.items[0].conflict_status,
+            ApplyPlanConflictStatus::None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn internal_aliases_to_one_destination_are_not_mislabeled_as_case_conflicts() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let inside = mods_root.join("Inside");
+        let alias = mods_root.join("InsideAlias");
+        let source_path_a = mods_root.join("a.package");
+        let source_path_b = mods_root.join("b.package");
+        fs::create_dir_all(&inside).expect("inside directory");
+        fs::write(&source_path_a, b"a").expect("source a");
+        fs::write(&source_path_b, b"b").expect("source b");
+        symlink(&inside, &alias).expect("inside alias");
+
+        let mut connection = memory_connection();
+        insert_file(&connection, 65, &path_string(&source_path_a), "mods");
+        insert_file(&connection, 66, &path_string(&source_path_b), "mods");
+        let plan_id = save_plan(
+            &mut connection,
+            vec![
+                candidate_item(
+                    Some(65),
+                    path_string(&source_path_a),
+                    Some(path_string(&inside.join("shared.package"))),
+                ),
+                candidate_item(
+                    Some(66),
+                    path_string(&source_path_b),
+                    Some(path_string(&alias.join("shared.package"))),
+                ),
+            ],
+        );
+
+        let preview = preview_apply_plan_validation(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some(path_string(&mods_root)),
+                ..Default::default()
+            },
+            PreviewApplyPlanValidationRequest { plan_id },
+        )
+        .expect("preview");
+
+        assert_eq!(preview.summary.conflict_items, 2);
+        assert!(preview.items.iter().all(|item| {
+            item.conflict_status == ApplyPlanConflictStatus::SameNameConflict && item.blocked
+        }));
     }
 
     #[test]

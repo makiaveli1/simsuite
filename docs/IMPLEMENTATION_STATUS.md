@@ -33,13 +33,16 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Command-surface Apply safety audit.
 - Backend Command Gating V1 for externally callable legacy file-changing commands and client-forged ApplyPlan run/result/restore writes.
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
+- Platform Path Semantics V1 foundation with absolute canonical root identity, read-only root-local case-sensitivity probing, root-derived comparison keys, canonical containment, metadata states, and fail-closed handling when capabilities cannot be proven.
+- Canonical Destination Validation V2 in the read-only ApplyPlan validator: source drift and destination conflicts now follow confirmed root semantics; missing or relative roots, parent traversal, physical root escape, external symlink escape, unreadable metadata, and duplicate destinations block without enabling execution. Internal symlinks that remain inside the confirmed root are accepted as preview-only paths.
 - Phase 0 Home clarity baseline: first-run journey cards (`Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`), a Home safety/status panel, consistent evidence labels, and explicit locked-action copy (`No files changed`, `Preview only`, `Apply not ready yet`, `Restore not ready yet`).
 
 ## Cross-platform verification remaining
 
 - Inspect and record the hosted Windows, macOS, and Linux preflight triggered by commit `9354056`. The branch push is verified, but hosted job details require authenticated GitHub access and are not yet claimed.
 - Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, and native compilation, but it does not exercise the webdriver player journey.
-- Verify native app launch and file-manager behavior on a real Linux desktop host. The CI Linux runner provides compile/test coverage only.
+- Verify Platform Path Semantics V1 and Canonical Destination Validation V2 on native Windows, including root-local case probing, Windows path forms, case-only source drift, duplicate destination detection, and symlink or reparse-point containment.
+- Verify native app launch, file-manager behavior, and filesystem-aware ApplyPlan validation on a real Linux desktop host. The CI Linux runner provides compile/test coverage only.
 - Add native macOS and Linux fixture desktop automation rather than treating the Windows webdriver lane as universal.
 
 ## Still blocked
@@ -108,22 +111,21 @@ pnpm run tauri:build
 
 ## Recommended next sprint
 
-Build **Platform Path Semantics V1** and complete **Canonical Destination Validation V2** before any executor work.
+Complete native proof for **Platform Path Semantics V1** and **Canonical Destination Validation V2**, then extend the shared identity model incrementally. Do not begin executor work from Mac-only evidence.
 
-The current read-only validation layer already blocks missing roots, parent traversal, cross-root movement, duplicate destinations, case-only conflicts under its present comparison rule, existing destinations, stale sources, invalid provenance, and unreadable metadata. It is useful, but it is not yet a universal filesystem-aware canonical layer because several systems still lowercase paths and compare normalized strings.
+The read-only ApplyPlan validator now derives source drift, destination containment, destination occupancy, and duplicate destination identity from the confirmed root's filesystem behavior. It rejects missing or relative roots, parent traversal, physical and symlink escape, cross-root movement, unreadable metadata, and unprovable case behavior. Apply and Restore remain unavailable.
 
 Next work:
 
-- introduce platform identity, filesystem capabilities, root identity, and profile-relative portable path identity;
-- derive path comparison keys from the confirmed root's case-sensitivity and normalization capabilities rather than unconditional lowercasing;
-- distinguish lexical normalization from physical canonical containment and detect symlink or alias escapes where supported;
-- fail closed when source, destination, root, or ancestor metadata cannot be read;
-- integrate the shared path contract into ApplyPlan validation first, then duplicate identity, scanner folder keys, Library folder queries, Downloads intake, and hidden move preflight;
-- implement Installation Profile V1 and a Sims 4 game-adapter boundary before the fixture journey;
-- keep Backend Command Gating V1 in place: legacy file-changing commands and client-forged result/restore writes must keep failing closed;
+- run the final path-semantics and ApplyPlan validation suite on native Windows, including drive paths, UNC or supported extended path forms, case-only collisions, and reparse-point containment;
+- run the same validation on a native Linux desktop and record case-sensitive behavior plus file-manager smoke evidence;
+- inspect authenticated hosted Windows, macOS, and Linux workflow results before claiming hosted CI proof;
+- integrate the shared root-derived comparison key into duplicate identity, scanner folder keys, Library folder queries, Downloads intake, and hidden move preflight in small verified batches;
+- add Installation Profile V1 and the Sims 4 game-adapter boundary so root identity is profile-relative rather than one global Mods/Tray assumption;
+- preserve Backend Command Gating V1: legacy file-changing commands and client-forged ApplyPlan run/result/restore writes must keep failing closed;
 - keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, cleanup, and automatic mutation unavailable.
 
-The detailed findings and required tests are in `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`. After the path and profile contracts pass, move to a hidden macOS fixture-only executor and undo prototype.
+The detailed findings and required tests are in `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`. A hidden fixture-only executor and undo prototype remain later work, after native path and profile proof.
 
 ## Recent backend safety gate
 

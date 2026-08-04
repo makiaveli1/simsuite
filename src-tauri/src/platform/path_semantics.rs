@@ -1,5 +1,5 @@
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fmt,
     fs,
     io,
@@ -71,6 +71,27 @@ pub struct RootIdentity {
 }
 
 impl RootIdentity {
+    pub fn probe_existing_root(
+        root_id: impl Into<String>,
+        platform: PlatformId,
+        root: &Path,
+    ) -> Result<Self, PathSemanticsError> {
+        if !root.is_absolute() {
+            return Err(PathSemanticsError::RootMustBeAbsolute(root.to_path_buf()));
+        }
+        let case_sensitivity = probe_case_sensitivity(root)?;
+        Self::from_existing_root(
+            root_id,
+            platform,
+            root,
+            FilesystemCapabilities {
+                case_sensitivity,
+                readable: true,
+                ..FilesystemCapabilities::default()
+            },
+        )
+    }
+
     pub fn from_existing_root(
         root_id: impl Into<String>,
         platform: PlatformId,
@@ -80,6 +101,9 @@ impl RootIdentity {
         let root_id = root_id.into();
         if root_id.trim().is_empty() {
             return Err(PathSemanticsError::EmptyRootId);
+        }
+        if !root.is_absolute() {
+            return Err(PathSemanticsError::RootMustBeAbsolute(root.to_path_buf()));
         }
 
         let canonical_root = fs::canonicalize(root).map_err(|source| {
@@ -210,6 +234,7 @@ pub struct CanonicalContainment {
 pub enum PathSemanticsError {
     EmptyProfileId,
     EmptyRootId,
+    RootMustBeAbsolute(PathBuf),
     RootUnavailable { path: PathBuf, source: io::Error },
     RootIsNotDirectory(PathBuf),
     CandidateMustBeAbsolute(PathBuf),
@@ -228,6 +253,11 @@ impl fmt::Display for PathSemanticsError {
         match self {
             Self::EmptyProfileId => write!(formatter, "profile identity cannot be empty"),
             Self::EmptyRootId => write!(formatter, "root identity cannot be empty"),
+            Self::RootMustBeAbsolute(path) => write!(
+                formatter,
+                "root '{}' must be an absolute path",
+                path.display()
+            ),
             Self::RootUnavailable { path, source } => write!(
                 formatter,
                 "root '{}' could not be canonicalized: {}",
@@ -288,6 +318,114 @@ impl fmt::Display for PathSemanticsError {
 }
 
 impl std::error::Error for PathSemanticsError {}
+
+pub fn probe_case_sensitivity(root: &Path) -> Result<CaseSensitivity, PathSemanticsError> {
+    if !root.is_absolute() {
+        return Err(PathSemanticsError::RootMustBeAbsolute(root.to_path_buf()));
+    }
+
+    let canonical_root = fs::canonicalize(root).map_err(|source| {
+        PathSemanticsError::RootUnavailable {
+            path: root.to_path_buf(),
+            source,
+        }
+    })?;
+    let metadata = fs::metadata(&canonical_root).map_err(|source| {
+        PathSemanticsError::MetadataUnreadable {
+            path: canonical_root.clone(),
+            source,
+        }
+    })?;
+    if !metadata.is_dir() {
+        return Err(PathSemanticsError::RootIsNotDirectory(canonical_root));
+    }
+
+    let entries = fs::read_dir(&canonical_root).map_err(|source| {
+        PathSemanticsError::MetadataUnreadable {
+            path: canonical_root.clone(),
+            source,
+        }
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| PathSemanticsError::MetadataUnreadable {
+            path: canonical_root.clone(),
+            source,
+        })?;
+        let entry_path = entry.path();
+        let entry_type = entry
+            .file_type()
+            .map_err(|source| PathSemanticsError::MetadataUnreadable {
+                path: entry_path.clone(),
+                source,
+            })?;
+        if entry_type.is_symlink() {
+            continue;
+        }
+
+        let Some(alternate_name) = toggle_ascii_case(&entry.file_name()) else {
+            continue;
+        };
+        let alternate_path = canonical_root.join(alternate_name);
+        match fs::symlink_metadata(&alternate_path) {
+            Ok(alternate_metadata) if alternate_metadata.file_type().is_symlink() => {
+                continue;
+            }
+            Ok(_) => {
+                let entry_canonical =
+                    fs::canonicalize(&entry_path).map_err(|source| {
+                        PathSemanticsError::MetadataUnreadable {
+                            path: entry_path.clone(),
+                            source,
+                        }
+                    })?;
+                let alternate_canonical =
+                    fs::canonicalize(&alternate_path).map_err(|source| {
+                        PathSemanticsError::MetadataUnreadable {
+                            path: alternate_path.clone(),
+                            source,
+                        }
+                    })?;
+                return Ok(if alternate_canonical == entry_canonical {
+                    CaseSensitivity::Insensitive
+                } else {
+                    CaseSensitivity::Sensitive
+                });
+            }
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                return Ok(CaseSensitivity::Sensitive);
+            }
+            Err(source) => {
+                return Err(PathSemanticsError::MetadataUnreadable {
+                    path: alternate_path,
+                    source,
+                });
+            }
+        }
+    }
+
+    Ok(CaseSensitivity::Unknown)
+}
+
+fn toggle_ascii_case(value: &OsStr) -> Option<OsString> {
+    let text = value.to_str()?;
+    let mut changed = false;
+    let toggled: String = text
+        .chars()
+        .map(|character| {
+            if changed || !character.is_ascii_alphabetic() {
+                character
+            } else {
+                changed = true;
+                if character.is_ascii_lowercase() {
+                    character.to_ascii_uppercase()
+                } else {
+                    character.to_ascii_lowercase()
+                }
+            }
+        })
+        .collect();
+    changed.then(|| OsString::from(toggled))
+}
 
 pub fn comparison_key(
     relative_path: &Path,
@@ -568,6 +706,61 @@ mod tests {
             writable: true,
             ..FilesystemCapabilities::default()
         }
+    }
+
+    #[test]
+    fn case_sensitivity_probe_matches_child_lookup_inside_the_root() {
+        let directory = tempdir().expect("tempdir");
+        let root = directory.path().join("ModsProbe");
+        fs::create_dir(&root).expect("root");
+        let probe_entry = root.join("CaseProbe.package");
+        fs::write(&probe_entry, b"probe").expect("probe entry");
+        let alternate = root.join("caseProbe.package");
+        let alternate_resolves = alternate.try_exists().expect("alternate case lookup");
+
+        let detected = probe_case_sensitivity(&root).expect("case sensitivity probe");
+        assert_eq!(
+            detected,
+            if alternate_resolves {
+                CaseSensitivity::Insensitive
+            } else {
+                CaseSensitivity::Sensitive
+            }
+        );
+
+        let identity = RootIdentity::probe_existing_root("mods", PlatformId::Macos, &root)
+            .expect("probed root identity");
+        assert_eq!(identity.capabilities.case_sensitivity, detected);
+        assert!(identity.capabilities.readable);
+        assert!(!identity.capabilities.writable);
+    }
+
+    #[test]
+    fn empty_root_case_sensitivity_remains_unknown() {
+        let directory = tempdir().expect("tempdir");
+        let root = directory.path().join("EmptyMods");
+        fs::create_dir(&root).expect("root");
+
+        assert_eq!(
+            probe_case_sensitivity(&root).expect("case sensitivity probe"),
+            CaseSensitivity::Unknown
+        );
+    }
+
+    #[test]
+    fn root_identity_rejects_relative_roots_before_filesystem_lookup() {
+        let error = RootIdentity::probe_existing_root(
+            "mods",
+            PlatformId::Linux,
+            Path::new("relative/Mods"),
+        )
+        .expect_err("relative root must fail closed");
+
+        assert!(matches!(
+            error,
+            PathSemanticsError::RootMustBeAbsolute(path)
+                if path == PathBuf::from("relative/Mods")
+        ));
     }
 
     #[test]
