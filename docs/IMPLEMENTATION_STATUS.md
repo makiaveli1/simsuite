@@ -35,6 +35,8 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Plan Hash / Provenance V1 for newly saved ApplyPlans: backend-computed SHA-256 preview identity, immutable provenance storage, and validation mismatch blocking.
 - Platform Path Semantics V1 foundation with absolute canonical root identity, read-only root-local case-sensitivity probing, root-derived comparison keys, canonical containment, metadata states, and fail-closed handling when capabilities cannot be proven.
 - Canonical Destination Validation V2 in the read-only ApplyPlan validator: source drift and destination conflicts now follow confirmed root semantics; missing or relative roots, parent traversal, physical root escape, external symlink escape, unreadable metadata, and duplicate destinations block without enabling execution. Internal symlinks that remain inside the confirmed root are accepted as preview-only paths.
+- Game Installation Profile V1 backend foundation: versioned profile/root tables, stable root IDs, idempotent migration of previously saved Mods/Tray/Downloads paths, one explicit active-profile setting, fail-closed enum and JSON parsing, schema self-repair, and a compatibility `LibrarySettings` view for existing callers. The old settings command can update only the reserved legacy-migration profile and cannot silently rewrite manually created profiles.
+- Product direction execution plan that defines SimSuite as a local-first lifecycle companion across intake, understanding, planning, installation, verification, Library, maintenance, troubleshooting, and recovery. The next golden milestone remains fixture-only and does not enable real user-file execution.
 - Phase 0 Home clarity baseline: first-run journey cards (`Scan Library` -> `Review Inbox` -> `Check Duplicates` -> `Review Updates` -> `Create Organization Preview`), a Home safety/status panel, consistent evidence labels, and explicit locked-action copy (`No files changed`, `Preview only`, `Apply not ready yet`, `Restore not ready yet`).
 
 ## Cross-platform verification remaining
@@ -61,6 +63,8 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 The main safety and platform-boundary docs are:
 
 - `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`
+- `docs/planning/SIMSUITE_APP_DIRECTION_EXECUTION_PLAN_V1.md`
+- `docs/planning/GAME_INSTALLATION_PROFILE_V1_DESIGN.md`
 - `docs/TRUST_BOUNDARIES_AND_AUTOMATION_READINESS.md`
 - `docs/planning/APPLY_SAFETY_CONTRACT_V1.md`
 - `docs/planning/VALIDATION_CONFLICT_PREVIEW_V1.md`
@@ -111,21 +115,24 @@ pnpm run tauri:build
 
 ## Recommended next sprint
 
-Complete native proof for **Platform Path Semantics V1** and **Canonical Destination Validation V2**, then extend the shared identity model incrementally. Do not begin executor work from Mac-only evidence.
+Complete **Game Installation Profile V1** as a read-only player setup and validation feature, then introduce the **Sims4Adapter** boundary. Do not begin executor work from database models alone or from Mac-only evidence.
 
-The read-only ApplyPlan validator now derives source drift, destination containment, destination occupancy, and duplicate destination identity from the confirmed root's filesystem behavior. It rejects missing or relative roots, parent traversal, physical and symlink escape, cross-root movement, unreadable metadata, and unprovable case behavior. Apply and Restore remain unavailable.
+The profile foundation now preserves existing users' effective Mods, Tray, and Downloads paths through an idempotent compatibility migration. It does not yet provide a profile editor, automatic candidate discovery, profile validation commands, or profile-aware scanner/index ownership.
 
 Next work:
 
-- run the final path-semantics and ApplyPlan validation suite on native Windows, including drive paths, UNC or supported extended path forms, case-only collisions, and reparse-point containment;
-- run the same validation on a native Linux desktop and record case-sensitive behavior plus file-manager smoke evidence;
-- inspect authenticated hosted Windows, macOS, and Linux workflow results before claiming hosted CI proof;
-- integrate the shared root-derived comparison key into duplicate identity, scanner folder keys, Library folder queries, Downloads intake, and hidden move preflight in small verified batches;
-- add Installation Profile V1 and the Sims 4 game-adapter boundary so root identity is profile-relative rather than one global Mods/Tray assumption;
+- expose read-only profile listing and active-profile lookup through guarded Tauri commands;
+- implement read-only profile validation using the existing canonical root and filesystem-capability layer;
+- add manual profile creation and explicit active-profile selection before automatic discovery;
+- introduce the Sims4Adapter boundary for Sims 4 root coherence, supported file types, placement rules, and readiness evidence;
+- keep old `LibrarySettings` callers on the compatibility view while migrating one subsystem at a time;
+- add ranked macOS candidates, then Windows OneDrive/custom Documents evidence, without silent activation;
+- run path-semantics and profile-validation proof on native Windows and Linux, separately from hosted CI evidence;
+- integrate profile/root-relative identity into duplicate identity, scanner folder keys, Library queries, Downloads intake, and hidden move preflight in small verified batches;
 - preserve Backend Command Gating V1: legacy file-changing commands and client-forged ApplyPlan run/result/restore writes must keep failing closed;
 - keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, cleanup, and automatic mutation unavailable.
 
-The detailed findings and required tests are in `docs/PLATFORM_BOUNDARY_AUDIT_V1.md`. A hidden fixture-only executor and undo prototype remain later work, after native path and profile proof.
+The product hierarchy and golden fixture journey are defined in `docs/planning/SIMSUITE_APP_DIRECTION_EXECUTION_PLAN_V1.md`. The profile migration and API contract are defined in `docs/planning/GAME_INSTALLATION_PROFILE_V1_DESIGN.md`. A hidden fixture-only executor and undo prototype remain later work, after profile UX, adapter boundaries, and native proof.
 
 ## Recent backend safety gate
 

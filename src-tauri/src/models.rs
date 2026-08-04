@@ -12,6 +12,85 @@ pub struct LibrarySettings {
     pub download_reject_folder: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameOperatingEnvironment {
+    NativeWindows,
+    NativeMacos,
+    NativeLinux,
+    Wine,
+    Proton,
+    Lutris,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationProfileStatus {
+    Draft,
+    Valid,
+    NeedsReview,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationDetectionMethod {
+    Manual,
+    LegacySettingsMigration,
+    PlatformCandidate,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationConfirmationState {
+    Unconfirmed,
+    Confirmed,
+    ConfirmationStale,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationRootValidationState {
+    Unvalidated,
+    Valid,
+    NeedsReview,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationRoot {
+    pub profile_id: String,
+    pub root_id: String,
+    pub root_role: String,
+    pub configured_path: String,
+    pub required: bool,
+    pub validation_state: GameInstallationRootValidationState,
+    pub filesystem_capabilities_json: String,
+    pub last_validated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationProfile {
+    pub profile_id: String,
+    pub profile_name: String,
+    pub game_id: String,
+    pub operating_environment: GameOperatingEnvironment,
+    pub status: GameInstallationProfileStatus,
+    pub detection_method: GameInstallationDetectionMethod,
+    pub detection_evidence_json: String,
+    pub confirmation_state: GameInstallationConfirmationState,
+    pub confirmed_at: Option<String>,
+    pub last_validated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub roots: Vec<GameInstallationRoot>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppBehaviorSettings {

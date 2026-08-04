@@ -5,7 +5,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
     error::{AppError, AppResult},
-    models::{DownloadsTimelineEntry, LibrarySettings},
+    models::{
+        DownloadsTimelineEntry, GameInstallationConfirmationState,
+        GameInstallationDetectionMethod, GameInstallationProfile,
+        GameInstallationProfileStatus, GameInstallationRoot,
+        GameInstallationRootValidationState, GameOperatingEnvironment, LibrarySettings,
+    },
     seed::{SeedCreator, SeedPack},
 };
 
@@ -19,6 +24,12 @@ const APPLY_PLAN_HASH_PROVENANCE_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0006_applyplan_hash_provenance_v1.sql");
 const APPLY_PLAN_PREVIEW_SNAPSHOTS_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0007_applyplan_preview_snapshots_v2.sql");
+const GAME_INSTALLATION_PROFILES_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0008_game_installation_profiles_v1.sql");
+
+const LEGACY_GAME_INSTALLATION_PROFILE_ID: &str = "legacy-sims4-default";
+const ACTIVE_GAME_INSTALLATION_PROFILE_SETTING: &str =
+    "active_game_installation_profile_id";
 
 #[derive(Debug, Clone)]
 pub struct UserCategoryOverride {
@@ -154,6 +165,181 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v8_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 8",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v8_exists.is_none() {
+        ensure_game_installation_profile_schema(connection)?;
+        backfill_legacy_game_installation_profile(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![8_i64, "game_installation_profiles_v1"],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn ensure_game_installation_profile_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(GAME_INSTALLATION_PROFILES_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn current_native_operating_environment_storage() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "native_windows"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "native_macos"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "native_linux"
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        "unknown"
+    }
+}
+
+fn backfill_legacy_game_installation_profile(connection: &mut Connection) -> AppResult<()> {
+    let existing_profiles: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM game_installation_profiles",
+        [],
+        |row| row.get(0),
+    )?;
+    if existing_profiles > 0 {
+        return Ok(());
+    }
+
+    let mods_path = get_app_setting(connection, "mods_path")?;
+    let tray_path = get_app_setting(connection, "tray_path")?;
+    let downloads_path = get_app_setting(connection, "downloads_path")?;
+    if mods_path.is_none() && tray_path.is_none() && downloads_path.is_none() {
+        return Ok(());
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let transaction = connection.transaction()?;
+    transaction.execute(
+        "INSERT INTO game_installation_profiles (
+            profile_id,
+            profile_name,
+            game_id,
+            operating_environment,
+            status,
+            detection_method,
+            detection_evidence_json,
+            confirmation_state,
+            confirmed_at,
+            last_validated_at,
+            created_at,
+            updated_at
+         ) VALUES (?1, ?2, 'sims4', ?3, 'needs_review', 'legacy_settings_migration', ?4, 'confirmed', ?5, NULL, ?5, ?5)",
+        params![
+            LEGACY_GAME_INSTALLATION_PROFILE_ID,
+            "Current Sims 4 setup",
+            current_native_operating_environment_storage(),
+            r#"{"source":"legacy_app_settings"}"#,
+            now,
+        ],
+    )?;
+
+    upsert_legacy_game_installation_root(
+        &transaction,
+        "mods",
+        "installed_mods",
+        mods_path.as_deref(),
+        true,
+        &now,
+    )?;
+    upsert_legacy_game_installation_root(
+        &transaction,
+        "tray",
+        "installed_tray",
+        tray_path.as_deref(),
+        true,
+        &now,
+    )?;
+    upsert_legacy_game_installation_root(
+        &transaction,
+        "downloads",
+        "intake_downloads",
+        downloads_path.as_deref(),
+        false,
+        &now,
+    )?;
+
+    transaction.execute(
+        "INSERT INTO app_settings (key, value, source, updated_at)
+         VALUES (?1, ?2, 'user', ?3)
+         ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            source = excluded.source,
+            updated_at = excluded.updated_at",
+        params![
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            LEGACY_GAME_INSTALLATION_PROFILE_ID,
+            now,
+        ],
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn upsert_legacy_game_installation_root(
+    transaction: &rusqlite::Transaction<'_>,
+    root_id: &str,
+    root_role: &str,
+    configured_path: Option<&str>,
+    required: bool,
+    now: &str,
+) -> AppResult<()> {
+    let Some(configured_path) = configured_path.map(str::trim).filter(|path| !path.is_empty())
+    else {
+        transaction.execute(
+            "DELETE FROM game_installation_roots WHERE profile_id = ?1 AND root_id = ?2",
+            params![LEGACY_GAME_INSTALLATION_PROFILE_ID, root_id],
+        )?;
+        return Ok(());
+    };
+
+    transaction.execute(
+        "INSERT INTO game_installation_roots (
+            profile_id,
+            root_id,
+            root_role,
+            configured_path,
+            required,
+            validation_state,
+            filesystem_capabilities_json,
+            last_validated_at,
+            created_at,
+            updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'unvalidated', '{}', NULL, ?6, ?6)
+         ON CONFLICT(profile_id, root_id) DO UPDATE SET
+            root_role = excluded.root_role,
+            configured_path = excluded.configured_path,
+            required = excluded.required,
+            validation_state = 'unvalidated',
+            filesystem_capabilities_json = '{}',
+            last_validated_at = NULL,
+            updated_at = excluded.updated_at",
+        params![
+            LEGACY_GAME_INSTALLATION_PROFILE_ID,
+            root_id,
+            root_role,
+            configured_path,
+            if required { 1_i64 } else { 0_i64 },
+            now,
+        ],
+    )?;
     Ok(())
 }
 
@@ -886,13 +1072,274 @@ pub fn sync_category_override_path(
     Ok(())
 }
 
+pub fn get_active_game_installation_profile(
+    connection: &Connection,
+) -> AppResult<Option<GameInstallationProfile>> {
+    let Some(profile_id) = get_app_setting(connection, ACTIVE_GAME_INSTALLATION_PROFILE_SETTING)?
+    else {
+        return Ok(None);
+    };
+
+    let stored_profile = connection
+        .query_row(
+            "SELECT
+                profile_id,
+                profile_name,
+                game_id,
+                operating_environment,
+                status,
+                detection_method,
+                detection_evidence_json,
+                confirmation_state,
+                confirmed_at,
+                last_validated_at,
+                created_at,
+                updated_at
+             FROM game_installation_profiles
+             WHERE profile_id = ?1",
+            params![profile_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, String>(11)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((
+        profile_id,
+        profile_name,
+        game_id,
+        operating_environment,
+        status,
+        detection_method,
+        detection_evidence_json,
+        confirmation_state,
+        confirmed_at,
+        last_validated_at,
+        created_at,
+        updated_at,
+    )) = stored_profile
+    else {
+        return Err(AppError::Message(format!(
+            "active game installation profile `{profile_id}` does not exist"
+        )));
+    };
+
+    validate_profile_json_object(
+        &detection_evidence_json,
+        "game installation profile detection evidence",
+    )?;
+
+    let mut statement = connection.prepare(
+        "SELECT
+            profile_id,
+            root_id,
+            root_role,
+            configured_path,
+            required,
+            validation_state,
+            filesystem_capabilities_json,
+            last_validated_at,
+            created_at,
+            updated_at
+         FROM game_installation_roots
+         WHERE profile_id = ?1
+         ORDER BY root_id",
+    )?;
+    let stored_roots = statement
+        .query_map(params![profile_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let roots = stored_roots
+        .into_iter()
+        .map(
+            |(
+                profile_id,
+                root_id,
+                root_role,
+                configured_path,
+                required,
+                validation_state,
+                filesystem_capabilities_json,
+                last_validated_at,
+                created_at,
+                updated_at,
+            )| {
+                validate_profile_json_object(
+                    &filesystem_capabilities_json,
+                    "game installation root filesystem capabilities",
+                )?;
+                Ok(GameInstallationRoot {
+                    profile_id,
+                    root_id,
+                    root_role,
+                    configured_path,
+                    required: required != 0,
+                    validation_state: parse_game_installation_root_validation_state(
+                        &validation_state,
+                    )?,
+                    filesystem_capabilities_json,
+                    last_validated_at,
+                    created_at,
+                    updated_at,
+                })
+            },
+        )
+        .collect::<AppResult<Vec<_>>>()?;
+
+    Ok(Some(GameInstallationProfile {
+        profile_id,
+        profile_name,
+        game_id,
+        operating_environment: parse_game_operating_environment(&operating_environment)?,
+        status: parse_game_installation_profile_status(&status)?,
+        detection_method: parse_game_installation_detection_method(&detection_method)?,
+        detection_evidence_json,
+        confirmation_state: parse_game_installation_confirmation_state(&confirmation_state)?,
+        confirmed_at,
+        last_validated_at,
+        created_at,
+        updated_at,
+        roots,
+    }))
+}
+
+fn validate_profile_json_object(value: &str, label: &str) -> AppResult<()> {
+    let parsed: serde_json::Value = serde_json::from_str(value).map_err(|error| {
+        AppError::Message(format!("{label} contains invalid JSON: {error}"))
+    })?;
+    if !parsed.is_object() {
+        return Err(AppError::Message(format!(
+            "{label} must be stored as a JSON object"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_game_operating_environment(value: &str) -> AppResult<GameOperatingEnvironment> {
+    match value {
+        "native_windows" => Ok(GameOperatingEnvironment::NativeWindows),
+        "native_macos" => Ok(GameOperatingEnvironment::NativeMacos),
+        "native_linux" => Ok(GameOperatingEnvironment::NativeLinux),
+        "wine" => Ok(GameOperatingEnvironment::Wine),
+        "proton" => Ok(GameOperatingEnvironment::Proton),
+        "lutris" => Ok(GameOperatingEnvironment::Lutris),
+        "unknown" => Ok(GameOperatingEnvironment::Unknown),
+        _ => Err(AppError::Message(format!(
+            "unsupported game installation operating environment `{value}`"
+        ))),
+    }
+}
+
+fn parse_game_installation_profile_status(
+    value: &str,
+) -> AppResult<GameInstallationProfileStatus> {
+    match value {
+        "draft" => Ok(GameInstallationProfileStatus::Draft),
+        "valid" => Ok(GameInstallationProfileStatus::Valid),
+        "needs_review" => Ok(GameInstallationProfileStatus::NeedsReview),
+        "unavailable" => Ok(GameInstallationProfileStatus::Unavailable),
+        _ => Err(AppError::Message(format!(
+            "unsupported game installation profile status `{value}`"
+        ))),
+    }
+}
+
+fn parse_game_installation_detection_method(
+    value: &str,
+) -> AppResult<GameInstallationDetectionMethod> {
+    match value {
+        "manual" => Ok(GameInstallationDetectionMethod::Manual),
+        "legacy_settings_migration" => {
+            Ok(GameInstallationDetectionMethod::LegacySettingsMigration)
+        }
+        "platform_candidate" => Ok(GameInstallationDetectionMethod::PlatformCandidate),
+        _ => Err(AppError::Message(format!(
+            "unsupported game installation detection method `{value}`"
+        ))),
+    }
+}
+
+fn parse_game_installation_confirmation_state(
+    value: &str,
+) -> AppResult<GameInstallationConfirmationState> {
+    match value {
+        "unconfirmed" => Ok(GameInstallationConfirmationState::Unconfirmed),
+        "confirmed" => Ok(GameInstallationConfirmationState::Confirmed),
+        "confirmation_stale" => Ok(GameInstallationConfirmationState::ConfirmationStale),
+        _ => Err(AppError::Message(format!(
+            "unsupported game installation confirmation state `{value}`"
+        ))),
+    }
+}
+
+fn parse_game_installation_root_validation_state(
+    value: &str,
+) -> AppResult<GameInstallationRootValidationState> {
+    match value {
+        "unvalidated" => Ok(GameInstallationRootValidationState::Unvalidated),
+        "valid" => Ok(GameInstallationRootValidationState::Valid),
+        "needs_review" => Ok(GameInstallationRootValidationState::NeedsReview),
+        "unavailable" => Ok(GameInstallationRootValidationState::Unavailable),
+        _ => Err(AppError::Message(format!(
+            "unsupported game installation root validation state `{value}`"
+        ))),
+    }
+}
+
+fn library_settings_from_game_installation_profile(
+    profile: &GameInstallationProfile,
+) -> LibrarySettings {
+    let mut settings = LibrarySettings::default();
+    for root in &profile.roots {
+        match root.root_id.as_str() {
+            "mods" => settings.mods_path = Some(root.configured_path.clone()),
+            "tray" => settings.tray_path = Some(root.configured_path.clone()),
+            "downloads" => settings.downloads_path = Some(root.configured_path.clone()),
+            "reject" => settings.download_reject_folder = Some(root.configured_path.clone()),
+            _ => {}
+        }
+    }
+    settings
+}
+
 pub fn get_library_settings(connection: &Connection) -> AppResult<LibrarySettings> {
-    Ok(apply_library_settings_overrides(LibrarySettings {
+    let legacy_settings = LibrarySettings {
         mods_path: get_app_setting(connection, "mods_path")?,
         tray_path: get_app_setting(connection, "tray_path")?,
         downloads_path: get_app_setting(connection, "downloads_path")?,
         ..Default::default()
-    }))
+    };
+    let stored_settings = get_active_game_installation_profile(connection)?
+        .as_ref()
+        .map(library_settings_from_game_installation_profile)
+        .unwrap_or(legacy_settings);
+    Ok(apply_library_settings_overrides(stored_settings))
 }
 
 pub fn save_library_paths(
@@ -907,6 +1354,62 @@ pub fn save_library_paths(
         "downloads_path",
         settings.downloads_path.as_deref(),
     )?;
+
+    let active_profile_id = transaction
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![ACTIVE_GAME_INSTALLATION_PROFILE_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(clean_optional_string);
+    if active_profile_id.as_deref() == Some(LEGACY_GAME_INSTALLATION_PROFILE_ID) {
+        let detection_method = transaction
+            .query_row(
+                "SELECT detection_method
+                 FROM game_installation_profiles
+                 WHERE profile_id = ?1",
+                params![LEGACY_GAME_INSTALLATION_PROFILE_ID],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if detection_method.as_deref() == Some("legacy_settings_migration") {
+            let now = Utc::now().to_rfc3339();
+            upsert_legacy_game_installation_root(
+                &transaction,
+                "mods",
+                "installed_mods",
+                settings.mods_path.as_deref(),
+                true,
+                &now,
+            )?;
+            upsert_legacy_game_installation_root(
+                &transaction,
+                "tray",
+                "installed_tray",
+                settings.tray_path.as_deref(),
+                true,
+                &now,
+            )?;
+            upsert_legacy_game_installation_root(
+                &transaction,
+                "downloads",
+                "intake_downloads",
+                settings.downloads_path.as_deref(),
+                false,
+                &now,
+            )?;
+            transaction.execute(
+                "UPDATE game_installation_profiles
+                 SET status = 'needs_review',
+                     last_validated_at = NULL,
+                     updated_at = ?2
+                 WHERE profile_id = ?1",
+                params![LEGACY_GAME_INSTALLATION_PROFILE_ID, now],
+            )?;
+        }
+    }
+
     transaction.commit()?;
     Ok(())
 }
@@ -990,7 +1493,7 @@ fn apply_library_settings_override_values(
         mods_path: mods_override.or(settings.mods_path),
         tray_path: tray_override.or(settings.tray_path),
         downloads_path: downloads_override.or(settings.downloads_path),
-        ..Default::default()
+        download_reject_folder: settings.download_reject_folder,
     }
 }
 
@@ -1350,6 +1853,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_apply_plan_context_snapshot_schema(connection)?;
     ensure_apply_plan_hash_provenance_schema(connection)?;
     ensure_apply_plan_preview_snapshot_schema(connection)?;
+    ensure_game_installation_profile_schema(connection)?;
 
     Ok(())
 }
@@ -1604,7 +2108,7 @@ mod tests {
                 mods_path: Some("C:/Mods/Real".to_owned()),
                 tray_path: Some("C:/Tray/Real".to_owned()),
                 downloads_path: Some("C:/Downloads/Real".to_owned()),
-                ..Default::default()
+                download_reject_folder: Some("C:/Downloads/Rejected".to_owned()),
             },
             Some("C:/Mods/Test".to_owned()),
             None,
@@ -1617,6 +2121,233 @@ mod tests {
             settings.downloads_path,
             Some("C:/Downloads/Test".to_owned())
         );
+        assert_eq!(
+            settings.download_reject_folder,
+            Some("C:/Downloads/Rejected".to_owned())
+        );
+    }
+
+    fn legacy_settings_connection(
+        mods_path: Option<&str>,
+        tray_path: Option<&str>,
+        downloads_path: Option<&str>,
+    ) -> Connection {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        connection
+            .execute_batch(schema::INITIAL_SCHEMA_SQL)
+            .expect("initial schema");
+        for (key, value) in [
+            ("mods_path", mods_path),
+            ("tray_path", tray_path),
+            ("downloads_path", downloads_path),
+        ] {
+            if let Some(value) = value {
+                save_app_setting(&mut connection, key, Some(value), "user")
+                    .expect("legacy setting");
+            }
+        }
+        connection
+    }
+
+    #[test]
+    fn initialize_creates_game_installation_profile_schema_without_fake_profile() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        for table_name in ["game_installation_profiles", "game_installation_roots"] {
+            assert!(
+                table_exists(&connection, table_name).expect("table lookup"),
+                "missing table {table_name}"
+            );
+        }
+        let migration_exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 8 AND name = 'game_installation_profiles_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_exists, 1);
+        let profile_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM game_installation_profiles", [], |row| {
+                row.get(0)
+            })
+            .expect("profile count");
+        assert_eq!(profile_count, 0);
+        assert!(get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .is_none());
+    }
+
+    #[test]
+    fn legacy_library_paths_backfill_one_active_profile_idempotently() {
+        let mut connection = legacy_settings_connection(
+            Some("/Users/player/Documents/Electronic Arts/The Sims 4/Mods"),
+            Some("/Users/player/Documents/Electronic Arts/The Sims 4/Tray"),
+            Some("/Users/player/Downloads"),
+        );
+        initialize(&mut connection).expect("first initialization");
+        initialize(&mut connection).expect("second initialization");
+
+        let profile_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM game_installation_profiles", [], |row| {
+                row.get(0)
+            })
+            .expect("profile count");
+        assert_eq!(profile_count, 1);
+        let root_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM game_installation_roots", [], |row| {
+                row.get(0)
+            })
+            .expect("root count");
+        assert_eq!(root_count, 3);
+        assert_eq!(
+            get_app_setting(&connection, ACTIVE_GAME_INSTALLATION_PROFILE_SETTING)
+                .expect("active profile setting"),
+            Some(LEGACY_GAME_INSTALLATION_PROFILE_ID.to_owned())
+        );
+
+        let profile = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("migrated profile");
+        assert_eq!(profile.profile_id, LEGACY_GAME_INSTALLATION_PROFILE_ID);
+        assert_eq!(profile.game_id, "sims4");
+        assert_eq!(
+            profile.detection_method,
+            GameInstallationDetectionMethod::LegacySettingsMigration
+        );
+        assert_eq!(
+            profile.confirmation_state,
+            GameInstallationConfirmationState::Confirmed
+        );
+        assert_eq!(profile.roots.len(), 3);
+
+        let settings = get_library_settings(&connection).expect("derived settings");
+        assert_eq!(
+            settings.mods_path.as_deref(),
+            Some("/Users/player/Documents/Electronic Arts/The Sims 4/Mods")
+        );
+        assert_eq!(
+            settings.tray_path.as_deref(),
+            Some("/Users/player/Documents/Electronic Arts/The Sims 4/Tray")
+        );
+        assert_eq!(
+            settings.downloads_path.as_deref(),
+            Some("/Users/player/Downloads")
+        );
+    }
+
+    #[test]
+    fn legacy_path_save_updates_only_the_migrated_profile() {
+        let mut connection =
+            legacy_settings_connection(Some("/old/Mods"), Some("/old/Tray"), None);
+        initialize(&mut connection).expect("schema");
+
+        save_library_paths(
+            &mut connection,
+            &LibrarySettings {
+                mods_path: Some("/new/Mods".to_owned()),
+                tray_path: Some("/new/Tray".to_owned()),
+                downloads_path: Some("/new/Downloads".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("save paths");
+
+        let profile = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("migrated profile");
+        let settings = library_settings_from_game_installation_profile(&profile);
+        assert_eq!(settings.mods_path.as_deref(), Some("/new/Mods"));
+        assert_eq!(settings.tray_path.as_deref(), Some("/new/Tray"));
+        assert_eq!(settings.downloads_path.as_deref(), Some("/new/Downloads"));
+        assert_eq!(profile.status, GameInstallationProfileStatus::NeedsReview);
+        assert!(profile.last_validated_at.is_none());
+    }
+
+    #[test]
+    fn legacy_path_save_does_not_rewrite_manual_profile() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        let now = Utc::now().to_rfc3339();
+        connection
+            .execute(
+                "INSERT INTO game_installation_profiles (
+                    profile_id, profile_name, game_id, operating_environment, status,
+                    detection_method, detection_evidence_json, confirmation_state,
+                    confirmed_at, last_validated_at, created_at, updated_at
+                 ) VALUES ('manual-profile', 'Manual profile', 'sims4', 'native_macos',
+                    'valid', 'manual', '{}', 'confirmed', ?1, ?1, ?1, ?1)",
+                params![now],
+            )
+            .expect("manual profile");
+        connection
+            .execute(
+                "INSERT INTO game_installation_roots (
+                    profile_id, root_id, root_role, configured_path, required,
+                    validation_state, filesystem_capabilities_json,
+                    last_validated_at, created_at, updated_at
+                 ) VALUES ('manual-profile', 'mods', 'installed_mods', '/manual/Mods', 1,
+                    'valid', '{}', ?1, ?1, ?1)",
+                params![now],
+            )
+            .expect("manual root");
+        save_app_setting(
+            &mut connection,
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            Some("manual-profile"),
+            "user",
+        )
+        .expect("active profile");
+
+        save_library_paths(
+            &mut connection,
+            &LibrarySettings {
+                mods_path: Some("/legacy/Mods".to_owned()),
+                tray_path: Some("/legacy/Tray".to_owned()),
+                downloads_path: None,
+                ..Default::default()
+            },
+        )
+        .expect("legacy settings save");
+
+        let profile = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("manual profile");
+        assert_eq!(
+            library_settings_from_game_installation_profile(&profile)
+                .mods_path
+                .as_deref(),
+            Some("/manual/Mods")
+        );
+        assert_eq!(
+            get_app_setting(&connection, "mods_path").expect("legacy mods setting"),
+            Some("/legacy/Mods".to_owned())
+        );
+    }
+
+    #[test]
+    fn profile_enum_and_json_parsing_fail_closed_for_unknown_values() {
+        assert!(parse_game_operating_environment("future_runtime").is_err());
+        assert!(parse_game_installation_profile_status("maybe").is_err());
+        assert!(parse_game_installation_detection_method("automatic").is_err());
+        assert!(parse_game_installation_confirmation_state("assumed").is_err());
+        assert!(parse_game_installation_root_validation_state("unchecked").is_err());
+        assert!(validate_profile_json_object("{}", "evidence").is_ok());
+        assert!(validate_profile_json_object("[]", "evidence").is_err());
+        assert!(validate_profile_json_object("not-json", "evidence").is_err());
+    }
+
+    #[test]
+    fn initialize_repairs_missing_game_installation_profile_table() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute("DROP TABLE game_installation_roots", [])
+            .expect("drop roots table");
+
+        initialize(&mut connection).expect("schema repair");
+        assert!(table_exists(&connection, "game_installation_roots").expect("table lookup"));
     }
 
     #[test]
