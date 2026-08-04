@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 ## Current product state
 
@@ -24,7 +24,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Read-only Confirmation Design V1 in saved plan details, including persisted custom folder configuration and cross-system context trail snapshots.
 - Fixture-only backend proof work for future backup/restore logic.
 - Windows desktop proof/smoke scripts.
-- Native Windows game-profile candidate proof wrapper that runs the real read-only detector and candidate test module, emits ignored local JSON evidence, and includes a temporary NTFS junction/reparse-point test. The lane is prepared but has not yet been executed on a real Windows host in this revision.
+- Native Windows game-profile candidate proof wrapper that runs the real read-only detector and candidate test module, emits ignored local JSON evidence, and includes a temporary NTFS junction/reparse-point test. The cross-platform preflight is wired to run this lane only on its Windows runner and retain the receipt as a 14-day workflow artifact. The wiring is local in this revision, so no hosted Windows receipt is claimed yet.
 - Validation wrappers for WSL/Windows test reliability.
 - Cross-platform development foundation with pnpm 10.34.5 pinned as the canonical package manager.
 - Portable Tauri development and build wrappers that preserve the existing Windows/WSL PowerShell lane and use native Node/Tauri execution on macOS and Linux.
@@ -43,9 +43,9 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 
 ## Cross-platform verification remaining
 
-- Inspect and record the hosted Windows, macOS, and Linux preflight triggered by commit `9354056`. The branch push is verified, but hosted job details require authenticated GitHub access and are not yet claimed.
-- Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, and native compilation, but it does not exercise the webdriver player journey.
-- Run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and retain the generated JSON receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points. The wrapper exists, but no native receipt is claimed yet.
+- After explicit push approval, inspect the current Windows, macOS, and Linux preflight and retain the uploaded hosted Windows game-profile artifact. The workflow wiring exists locally, but no hosted run or receipt is claimed for this revision.
+- Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, native compilation, and the read-only game-profile detector baseline, but it does not exercise the webdriver player journey or a player's real Sims folders.
+- Run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and retain the generated JSON receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points. A hosted-runner receipt is only baseline evidence and does not satisfy these player-environment scenarios.
 - Verify Platform Path Semantics V1 and Canonical Destination Validation V2 on native Windows, including root-local case probing, Windows path forms, case-only source drift, duplicate destination detection, and symlink or reparse-point containment.
 - Verify native app launch, file-manager behavior, and filesystem-aware ApplyPlan validation on a real Linux desktop host. The CI Linux runner provides compile/test coverage only.
 - Add native macOS and Linux fixture desktop automation rather than treating the Windows webdriver lane as universal.
@@ -124,13 +124,14 @@ pnpm run tauri:build
 
 ## Recommended next sprint
 
-Advance **Game Installation Profile V1** from the verified macOS and code-level Windows candidate proofs through the prepared native Windows evidence lane, while keeping silent activation, confirmed-profile editing/deletion, Linux environment guessing, and executor work behind later safety gates. Do not treat macOS-hosted unit tests or the existence of the proof wrapper as proof of real Windows known-folder, OneDrive, case, permission, or reparse-point behaviour; require a passing native JSON receipt and scenario review.
+Advance **Game Installation Profile V1** from the verified macOS and code-level Windows candidate proofs through the prepared hosted and representative Windows evidence lanes, while keeping silent activation, confirmed-profile editing/deletion, Linux environment guessing, and executor work behind later safety gates. The hosted runner should establish a repeatable Windows/NTFS baseline after an approved push, but only representative player-machine receipts can prove real known-folder, OneDrive, case, permission, and redirection behaviour.
 
 The profile foundation preserves existing users' effective Mods, Tray, and Downloads paths through an idempotent compatibility migration. Complete profiles, guarded manual draft creation, fresh validation-backed confirmation, guarded active-profile selection, transient generic root evidence, Sims4Adapter readiness reports, and ranked read-only macOS and Windows candidates are available through backend and TypeScript APIs. Settings presents candidates as temporary suggestions and permits only confirmed, current-host-compatible saved profiles to become active; foreign-native and adapter-dependent environments remain review-only. Candidate review and manual setup never create folders or activate a profile silently. The adapter proves coherent Mods/Tray relationships for matching native profiles and shares its content-extension and placement-depth contract with scanner and validation code.
 
 Next work:
-- run `pnpm run desktop:proof:game-profile:windows` on real Windows hosts and review the generated receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points;
-- add a safe explicit candidate refresh action only after that native Windows proof passes;
+- after explicit push approval, inspect the Windows preflight result and archive the hosted baseline artifact without treating it as player-environment proof;
+- run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and review the generated receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points;
+- add a safe explicit candidate refresh action only after the hosted baseline and representative native Windows proof pass;
 - keep old `LibrarySettings` callers on the compatibility view while migrating one subsystem at a time;
 - design Wine/Proton/Lutris environment identification separately without interpreting native Linux paths as a Sims 4 setup;
 - run path-semantics and profile-validation proof on native Windows and Linux, separately from hosted CI evidence;

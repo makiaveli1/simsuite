@@ -154,6 +154,28 @@ describe("validation script wrappers", () => {
     expect(agentInstructions).not.toMatch(/[A-Za-z]:\/Users\//);
   });
 
+  it("keeps the hosted Windows game-profile proof bounded and reviewable", () => {
+    const workflowSource = readFileSync(
+      ".github/workflows/cross-platform-preflight.yml",
+      "utf8",
+    );
+    expect(workflowSource).toContain("- name: Run hosted Windows game-profile baseline");
+    expect(workflowSource).toContain("id: windows_game_profile_proof");
+    expect(workflowSource).toContain("if: runner.os == 'Windows'");
+    expect(workflowSource).toContain("run: pnpm run desktop:proof:game-profile:windows");
+    expect(workflowSource).toContain("- name: Upload hosted Windows game-profile evidence");
+    expect(workflowSource).toContain(
+      "if: ${{ runner.os == 'Windows' && !cancelled() && steps.windows_game_profile_proof.outcome != 'skipped' }}",
+    );
+    expect(workflowSource).toContain(
+      "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    );
+    expect(workflowSource).toContain("path: output/desktop/windows-game-profile-proof/");
+    expect(workflowSource).toContain("if-no-files-found: error");
+    expect(workflowSource).toContain("retention-days: 14");
+    expect(workflowSource.match(/run: pnpm run desktop:proof:game-profile:windows/g)).toHaveLength(1);
+  });
+
   it("uses the Windows PowerShell Rust lane from WSL so cargo path semantics match the desktop target", () => {
     const invocation = buildRustTestInvocation({
       cwd: "/mnt/c/Users/player/Projects/SimSuite",

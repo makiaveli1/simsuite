@@ -45,6 +45,12 @@ Each run records `cargo-test.log`, a timestamped `summary.json`, and `latest-sum
 
 A passing receipt proves the detector ran on that Windows host. It does not by itself prove every redirection, permission, personal OneDrive, commercial OneDrive, or inaccessible-folder scenario. Those scenarios still need to be exercised on representative Windows machines before candidate refresh or stronger automation is enabled.
 
+### Hosted Windows baseline
+
+The Windows leg of `.github/workflows/cross-platform-preflight.yml` runs the same proof command after the ordinary Rust suite. It uploads `output/desktop/windows-game-profile-proof/` as a 14-day workflow artifact even when the proof step fails after creating evidence. This gives the project a repeatable Windows and NTFS baseline after a branch is pushed or a pull request is opened.
+
+Treat that artifact as **hosted-runner evidence only**. GitHub's temporary runner does not reproduce a player's redirected Documents folder, signed-in personal or commercial OneDrive layout, custom permissions, existing Sims library, or desktop interaction. A hosted pass must not unlock candidate refresh or stronger automation by itself.
+
 ## Baseline validation lane
 
 Run this before claiming a branch is ready for review:
