@@ -34,6 +34,7 @@ import type {
   DuplicateOverview,
   DuplicatePair,
   FileDetail,
+  GameInstallationProfile,
   GuidedInstallPlan,
   GenerateSortingPreviewPlanRequest,
   GenerateSortingPreviewPlanResult,
@@ -133,6 +134,49 @@ let mockSettings: LibrarySettings = {
   downloadsPath: DEFAULT_DOWNLOADS_PATH,
   downloadRejectFolder: null,
 };
+
+function createMockGameInstallationProfile(): GameInstallationProfile {
+  const createdAt = "2026-03-08T03:45:00.000Z";
+  const rootDefinitions = [
+    ["mods", "installed_mods", mockSettings.modsPath, true],
+    ["tray", "installed_tray", mockSettings.trayPath, true],
+    ["downloads", "intake_downloads", mockSettings.downloadsPath, false],
+    ["reject", "intake_reject", mockSettings.downloadRejectFolder, false],
+  ] as const;
+
+  return {
+    profileId: "legacy-sims4-default",
+    profileName: "Current Sims 4 setup",
+    gameId: "sims4",
+    operatingEnvironment: "native_windows",
+    status: "needs_review",
+    detectionMethod: "legacy_settings_migration",
+    detectionEvidenceJson: JSON.stringify({ source: "mock_legacy_settings" }),
+    confirmationState: "confirmed",
+    confirmedAt: createdAt,
+    lastValidatedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+    roots: rootDefinitions.flatMap(([rootId, rootRole, configuredPath, required]) =>
+      configuredPath
+        ? [
+            {
+              profileId: "legacy-sims4-default",
+              rootId,
+              rootRole,
+              configuredPath,
+              required,
+              validationState: "unvalidated" as const,
+              filesystemCapabilitiesJson: "{}",
+              lastValidatedAt: null,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          ]
+        : [],
+    ),
+  };
+}
 
 let mockLastScanAt = "2026-03-08T03:48:00.000Z";
 let mockSnapshotId = 12;
@@ -7323,6 +7367,10 @@ async function mockInvoke<T>(
   payload?: Record<string, unknown>,
 ): Promise<T> {
   switch (command) {
+    case "list_game_installation_profiles":
+      return [structuredClone(createMockGameInstallationProfile())] as T;
+    case "get_active_game_installation_profile":
+      return structuredClone(createMockGameInstallationProfile()) as T;
     case "get_library_settings":
       return structuredClone(mockSettings) as T;
     case "save_library_paths":
@@ -8967,6 +9015,10 @@ async function getDownloadsSelection(itemId: number, presetName?: string) {
 }
 
 export const api = {
+  listGameInstallationProfiles: () =>
+    invoke<GameInstallationProfile[]>("list_game_installation_profiles"),
+  getActiveGameInstallationProfile: () =>
+    invoke<GameInstallationProfile | null>("get_active_game_installation_profile"),
   getLibrarySettings: () => invoke<LibrarySettings>("get_library_settings"),
   getAppBehaviorSettings: () =>
     invoke<AppBehaviorSettings>("get_app_behavior_settings"),

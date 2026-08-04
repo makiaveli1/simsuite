@@ -132,6 +132,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::list_game_installation_profiles,
+            commands::get_active_game_installation_profile,
             commands::get_library_settings,
             commands::get_app_behavior_settings,
             commands::save_app_behavior_settings,
@@ -273,6 +275,29 @@ mod tests {
             handler_source.contains("commands::get_library_preview_diagnostics"),
             "missing Tauri command registration for get_library_preview_diagnostics"
         );
+    }
+
+    #[test]
+    fn game_installation_profile_read_commands_are_registered_with_tauri() {
+        let source = include_str!("lib.rs");
+        let handler_start = source
+            .find(".invoke_handler(tauri::generate_handler![")
+            .expect("Tauri invoke handler should be present");
+        let handler_source = &source[handler_start..];
+        let handler_end = handler_source
+            .find("])")
+            .expect("Tauri invoke handler should be closed");
+        let handler_source = &handler_source[..handler_end];
+
+        for command in [
+            "commands::list_game_installation_profiles",
+            "commands::get_active_game_installation_profile",
+        ] {
+            assert!(
+                handler_source.contains(command),
+                "missing Tauri command registration for {command}"
+            );
+        }
     }
 
     #[test]

@@ -1072,14 +1072,10 @@ pub fn sync_category_override_path(
     Ok(())
 }
 
-pub fn get_active_game_installation_profile(
+fn get_game_installation_profile(
     connection: &Connection,
-) -> AppResult<Option<GameInstallationProfile>> {
-    let Some(profile_id) = get_app_setting(connection, ACTIVE_GAME_INSTALLATION_PROFILE_SETTING)?
-    else {
-        return Ok(None);
-    };
-
+    profile_id: &str,
+) -> AppResult<GameInstallationProfile> {
     let stored_profile = connection
         .query_row(
             "SELECT
@@ -1212,7 +1208,7 @@ pub fn get_active_game_installation_profile(
         )
         .collect::<AppResult<Vec<_>>>()?;
 
-    Ok(Some(GameInstallationProfile {
+    Ok(GameInstallationProfile {
         profile_id,
         profile_name,
         game_id,
@@ -1226,7 +1222,36 @@ pub fn get_active_game_installation_profile(
         created_at,
         updated_at,
         roots,
-    }))
+    })
+}
+
+pub fn list_game_installation_profiles(
+    connection: &Connection,
+) -> AppResult<Vec<GameInstallationProfile>> {
+    let mut statement = connection.prepare(
+        "SELECT profile_id
+         FROM game_installation_profiles
+         ORDER BY created_at ASC, profile_name COLLATE NOCASE ASC, profile_id ASC",
+    )?;
+    let profile_ids = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    profile_ids
+        .into_iter()
+        .map(|profile_id| get_game_installation_profile(connection, &profile_id))
+        .collect()
+}
+
+pub fn get_active_game_installation_profile(
+    connection: &Connection,
+) -> AppResult<Option<GameInstallationProfile>> {
+    let Some(profile_id) = get_app_setting(connection, ACTIVE_GAME_INSTALLATION_PROFILE_SETTING)?
+    else {
+        return Ok(None);
+    };
+
+    get_game_installation_profile(connection, &profile_id).map(Some)
 }
 
 fn validate_profile_json_object(value: &str, label: &str) -> AppResult<()> {
@@ -2235,6 +2260,70 @@ mod tests {
             settings.downloads_path.as_deref(),
             Some("/Users/player/Downloads")
         );
+    }
+
+    #[test]
+    fn profile_list_and_active_lookup_share_ordered_complete_records() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+        connection
+            .execute_batch(
+                "INSERT INTO game_installation_profiles (
+                    profile_id, profile_name, game_id, operating_environment, status,
+                    detection_method, detection_evidence_json, confirmation_state,
+                    confirmed_at, last_validated_at, created_at, updated_at
+                 ) VALUES
+                    ('profile-later', 'Later profile', 'sims4', 'native_macos', 'needs_review',
+                     'manual', '{}', 'confirmed', '2026-02-01T00:00:00Z', NULL,
+                     '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z'),
+                    ('profile-earlier', 'Earlier profile', 'sims4', 'native_macos', 'valid',
+                     'manual', '{}', 'confirmed', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+                     '2026-01-01T00:00:00Z');
+                 INSERT INTO game_installation_roots (
+                    profile_id, root_id, root_role, configured_path, required,
+                    validation_state, filesystem_capabilities_json,
+                    last_validated_at, created_at, updated_at
+                 ) VALUES
+                    ('profile-later', 'mods', 'installed_mods', '/later/Mods', 1,
+                     'unvalidated', '{}', NULL, '2026-02-01T00:00:00Z',
+                     '2026-02-01T00:00:00Z'),
+                    ('profile-later', 'downloads', 'intake_downloads', '/later/Downloads', 0,
+                     'unvalidated', '{}', NULL, '2026-02-01T00:00:00Z',
+                     '2026-02-01T00:00:00Z');",
+            )
+            .expect("profile fixtures");
+        save_app_setting(
+            &mut connection,
+            ACTIVE_GAME_INSTALLATION_PROFILE_SETTING,
+            Some("profile-later"),
+            "user",
+        )
+        .expect("active profile setting");
+
+        let profiles = list_game_installation_profiles(&connection).expect("profile list");
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|profile| profile.profile_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["profile-earlier", "profile-later"]
+        );
+        assert!(profiles[0].roots.is_empty());
+        assert_eq!(
+            profiles[1]
+                .roots
+                .iter()
+                .map(|root| root.root_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["downloads", "mods"]
+        );
+
+        let active = get_active_game_installation_profile(&connection)
+            .expect("active profile")
+            .expect("selected profile");
+        assert_eq!(active.profile_id, "profile-later");
+        assert_eq!(active.roots, profiles[1].roots);
     }
 
     #[test]

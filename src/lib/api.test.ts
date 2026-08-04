@@ -3,6 +3,34 @@ import { api } from "./api";
 
 const DEFAULT_MOCK_PATH_MARKER = "C:\\Users\\Player";
 
+describe("game installation profile read API", () => {
+  it("lists the same complete profile returned by active lookup", async () => {
+    const profiles = await api.listGameInstallationProfiles();
+    const active = await api.getActiveGameInstallationProfile();
+
+    expect(profiles).toHaveLength(1);
+    expect(active).toEqual(profiles[0]);
+    expect(active?.profileId).toBe("legacy-sims4-default");
+    expect(active?.detectionMethod).toBe("legacy_settings_migration");
+    expect(active?.confirmationState).toBe("confirmed");
+    expect(JSON.parse(active?.detectionEvidenceJson ?? "null")).toEqual({
+      source: "mock_legacy_settings",
+    });
+    expect(active?.roots.map((root) => root.rootId)).toEqual([
+      "mods",
+      "tray",
+      "downloads",
+    ]);
+    expect(
+      active?.roots.every(
+        (root) =>
+          root.validationState === "unvalidated" &&
+          JSON.parse(root.filesystemCapabilitiesJson) instanceof Object,
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("sorting preview plan API", () => {
   it("returns a preview-only mock plan with backend-owned snapshot metadata", async () => {
     const result = await api.generateSortingPreviewPlan({

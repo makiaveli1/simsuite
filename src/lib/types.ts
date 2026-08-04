@@ -30,6 +30,62 @@ export type DuplicatesLayoutPreset =
   | "compare"
   | "custom";
 
+export type GameOperatingEnvironment =
+  | "native_windows"
+  | "native_macos"
+  | "native_linux"
+  | "wine"
+  | "proton"
+  | "lutris"
+  | "unknown";
+export type GameInstallationProfileStatus =
+  | "draft"
+  | "valid"
+  | "needs_review"
+  | "unavailable";
+export type GameInstallationDetectionMethod =
+  | "manual"
+  | "legacy_settings_migration"
+  | "platform_candidate";
+export type GameInstallationConfirmationState =
+  | "unconfirmed"
+  | "confirmed"
+  | "confirmation_stale";
+export type GameInstallationRootValidationState =
+  | "unvalidated"
+  | "valid"
+  | "needs_review"
+  | "unavailable";
+
+export interface GameInstallationRoot {
+  profileId: string;
+  rootId: string;
+  rootRole: string;
+  configuredPath: string;
+  required: boolean;
+  validationState: GameInstallationRootValidationState;
+  filesystemCapabilitiesJson: string;
+  lastValidatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameInstallationProfile {
+  profileId: string;
+  profileName: string;
+  gameId: string;
+  operatingEnvironment: GameOperatingEnvironment;
+  status: GameInstallationProfileStatus;
+  detectionMethod: GameInstallationDetectionMethod;
+  detectionEvidenceJson: string;
+  confirmationState: GameInstallationConfirmationState;
+  confirmedAt: string | null;
+  lastValidatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  roots: GameInstallationRoot[];
+}
+
 export interface LibrarySettings {
   modsPath: string | null;
   trayPath: string | null;

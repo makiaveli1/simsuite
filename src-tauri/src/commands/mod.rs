@@ -37,8 +37,9 @@ use crate::{
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
-        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
-        HomeOverview, IgnoreItemsResult, LibraryFacets, LibraryFolderFilesQuery,
+        GameInstallationProfile, GenerateSortingPreviewPlanRequest,
+        GenerateSortingPreviewPlanResult, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
+        LibraryFacets, LibraryFolderFilesQuery,
         LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
         LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
         LibraryWatchListResponse, LibraryWatchReviewResponse, LibraryWatchSetupResponse,
@@ -397,6 +398,22 @@ fn copy_split_files(
         fs::copy(&file.current_path, &destination).map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn list_game_installation_profiles(
+    state: State<'_, AppState>,
+) -> Result<Vec<GameInstallationProfile>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    database::list_game_installation_profiles(&connection).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn get_active_game_installation_profile(
+    state: State<'_, AppState>,
+) -> Result<Option<GameInstallationProfile>, String> {
+    let connection = state.connection().map_err(map_error)?;
+    database::get_active_game_installation_profile(&connection).map_err(map_error)
 }
 
 #[tauri::command]
