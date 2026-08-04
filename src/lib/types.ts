@@ -86,6 +86,19 @@ export interface GameInstallationProfile {
   roots: GameInstallationRoot[];
 }
 
+export interface CreateManualGameInstallationProfileRequest {
+  profileName: string;
+  userDataPath: string | null;
+  modsPath: string;
+  trayPath: string;
+  downloadsPath: string | null;
+}
+
+export interface GameInstallationProfileConfirmationResult {
+  profile: GameInstallationProfile;
+  validation: GameInstallationProfileValidationReport;
+}
+
 export type GameInstallationEnvironmentCompatibility =
   | "matches"
   | "mismatch"

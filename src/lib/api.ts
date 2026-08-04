@@ -21,6 +21,7 @@ import type {
   CreatorAuditQuery,
   CreatorAuditResponse,
   CreatorLearningInfo,
+  CreateManualGameInstallationProfileRequest,
   DependencyStatus,
   DownloadInboxDetail,
   DownloadsInboxItem,
@@ -35,6 +36,7 @@ import type {
   DuplicatePair,
   FileDetail,
   GameInstallationProfile,
+  GameInstallationProfileConfirmationResult,
   GameInstallationProfileValidationReport,
   GuidedInstallPlan,
   GenerateSortingPreviewPlanRequest,
@@ -179,13 +181,29 @@ function createMockGameInstallationProfile(): GameInstallationProfile {
   };
 }
 
+let mockManualGameInstallationProfiles: GameInstallationProfile[] = [];
+
+function findMockGameInstallationProfile(profileId: string) {
+  const legacyProfile = createMockGameInstallationProfile();
+  if (legacyProfile.profileId === profileId) {
+    return legacyProfile;
+  }
+  return (
+    mockManualGameInstallationProfiles.find(
+      (profile) => profile.profileId === profileId,
+    ) ?? null
+  );
+}
+
 function createMockGameInstallationProfileValidation(
   profileId: string,
 ): GameInstallationProfileValidationReport {
-  const profile = createMockGameInstallationProfile();
-  if (profile.profileId !== profileId) {
+  const profile = findMockGameInstallationProfile(profileId);
+  if (!profile) {
     throw new Error(`Game installation profile '${profileId}' does not exist.`);
   }
+  const isManual = profile.detectionMethod === "manual";
+  const state = isManual ? "valid" : "needs_review";
 
   return {
     profileId: profile.profileId,
@@ -194,13 +212,13 @@ function createMockGameInstallationProfileValidation(
     storedEnvironment: profile.operatingEnvironment,
     currentEnvironment: "native_windows",
     environmentCompatibility: "matches",
-    state: "needs_review",
-    genericRootState: "needs_review",
+    state,
+    genericRootState: state,
     gameSpecificValidationPending: false,
     gameReadiness: {
       adapterId: "sims4_v1",
       complete: true,
-      state: "needs_review",
+      state,
       supportedModExtensions: [".package", ".ts4script"],
       supportedTrayExtensions: [
         ".trayitem",
@@ -234,18 +252,20 @@ function createMockGameInstallationProfileValidation(
       rootRole: root.rootRole,
       configuredPath: root.configuredPath,
       required: root.required,
-      state: "needs_review",
+      state: isManual ? "valid" : "needs_review",
       absolutePath: true,
       exists: true,
       metadataReadable: true,
       metadataState: "directory",
       canonicalPathDisplay: root.configuredPath,
-      caseSensitivity: "unknown",
+      caseSensitivity: isManual ? "sensitive" : "unknown",
       symlinkObserved: false,
       blockers: [],
-      reviewNotes: [
-        "Browser mock validation cannot prove root-local filesystem case behavior.",
-      ],
+      reviewNotes: isManual
+        ? []
+        : [
+            "Browser mock validation cannot prove root-local filesystem case behavior.",
+          ],
     })),
     blockers: [],
     reviewNotes: [
@@ -7445,14 +7465,92 @@ async function mockInvoke<T>(
 ): Promise<T> {
   switch (command) {
     case "list_game_installation_profiles":
-      return [structuredClone(createMockGameInstallationProfile())] as T;
+      return [
+        structuredClone(createMockGameInstallationProfile()),
+        ...structuredClone(mockManualGameInstallationProfiles),
+      ] as T;
     case "get_active_game_installation_profile":
       return structuredClone(createMockGameInstallationProfile()) as T;
-    case "set_active_game_installation_profile": {
-      const profile = createMockGameInstallationProfile();
+    case "create_manual_game_installation_profile": {
+      const request = payload?.request as
+        | CreateManualGameInstallationProfileRequest
+        | undefined;
+      if (!request?.profileName.trim() || !request.modsPath.trim() || !request.trayPath.trim()) {
+        throw new Error("Manual Sims 4 profiles require a name, Mods folder, and Tray folder.");
+      }
+      const createdAt = new Date().toISOString();
+      const profileId = `manual-sims4-browser-${mockManualGameInstallationProfiles.length + 1}`;
+      const rootDefinitions = [
+        ["user_data", "game_user_data", request.userDataPath, false],
+        ["mods", "installed_mods", request.modsPath, true],
+        ["tray", "installed_tray", request.trayPath, true],
+        ["downloads", "intake_downloads", request.downloadsPath, false],
+      ] as const;
+      const profile: GameInstallationProfile = {
+        profileId,
+        profileName: request.profileName.trim(),
+        gameId: "sims4",
+        operatingEnvironment: "native_windows",
+        status: "draft",
+        detectionMethod: "manual",
+        detectionEvidenceJson: JSON.stringify({ source: "manual_settings" }),
+        confirmationState: "unconfirmed",
+        confirmedAt: null,
+        lastValidatedAt: null,
+        createdAt,
+        updatedAt: createdAt,
+        roots: rootDefinitions.flatMap(([rootId, rootRole, configuredPath, required]) =>
+          configuredPath?.trim()
+            ? [
+                {
+                  profileId,
+                  rootId,
+                  rootRole,
+                  configuredPath: configuredPath.trim(),
+                  required,
+                  validationState: "unvalidated" as const,
+                  filesystemCapabilitiesJson: "{}",
+                  lastValidatedAt: null,
+                  createdAt,
+                  updatedAt: createdAt,
+                },
+              ]
+            : [],
+        ),
+      };
+      mockManualGameInstallationProfiles.push(profile);
+      return structuredClone(profile) as T;
+    }
+    case "confirm_manual_game_installation_profile": {
       const profileId = String(payload?.profileId ?? "").trim();
-      if (profile.profileId !== profileId) {
+      const profile = findMockGameInstallationProfile(profileId);
+      if (!profile || profile.detectionMethod !== "manual") {
+        throw new Error(`Manual game installation profile '${profileId}' does not exist.`);
+      }
+      const validation = createMockGameInstallationProfileValidation(profileId);
+      const confirmedAt = new Date().toISOString();
+      const confirmedProfile: GameInstallationProfile = {
+        ...profile,
+        status: "valid",
+        confirmationState: "confirmed",
+        confirmedAt,
+        lastValidatedAt: confirmedAt,
+        updatedAt: confirmedAt,
+        roots: profile.roots,
+      };
+      mockManualGameInstallationProfiles = mockManualGameInstallationProfiles.map((item) =>
+        item.profileId === profileId ? confirmedProfile : item,
+      );
+      return structuredClone({ profile: confirmedProfile, validation }) as T;
+    }
+    case "set_active_game_installation_profile": {
+      const profileId = String(payload?.profileId ?? "").trim();
+      const profile = findMockGameInstallationProfile(profileId);
+      if (!profile) {
         throw new Error(`Game installation profile '${profileId}' does not exist.`);
+      }
+      if (profile.confirmationState !== "confirmed") {
+        throw new Error(`Game installation profile '${profile.profileName}' must be confirmed before it can become active.`);
       }
       return structuredClone(profile) as T;
     }
@@ -9108,6 +9206,17 @@ export const api = {
     invoke<GameInstallationProfile[]>("list_game_installation_profiles"),
   getActiveGameInstallationProfile: () =>
     invoke<GameInstallationProfile | null>("get_active_game_installation_profile"),
+  createManualGameInstallationProfile: (
+    request: CreateManualGameInstallationProfileRequest,
+  ) =>
+    invoke<GameInstallationProfile>("create_manual_game_installation_profile", {
+      request,
+    }),
+  confirmManualGameInstallationProfile: (profileId: string) =>
+    invoke<GameInstallationProfileConfirmationResult>(
+      "confirm_manual_game_installation_profile",
+      { profileId },
+    ),
   setActiveGameInstallationProfile: (profileId: string) =>
     invoke<GameInstallationProfile>("set_active_game_installation_profile", {
       profileId,

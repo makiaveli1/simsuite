@@ -80,6 +80,53 @@ describe("game installation profile read API", () => {
     ).toBe(true);
     expect(report.reviewNotes.join(" ")).toMatch(/simulated/i);
   });
+
+  it("creates an unconfirmed manual draft and keeps activation separate from confirmation", async () => {
+    const created = await api.createManualGameInstallationProfile({
+      profileName: "Second setup",
+      userDataPath: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4",
+      modsPath: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Mods",
+      trayPath: "C:\\Users\\Player\\Documents\\Electronic Arts\\The Sims 4\\Tray",
+      downloadsPath: "C:\\Users\\Player\\Downloads",
+    });
+
+    expect(created.detectionMethod).toBe("manual");
+    expect(created.status).toBe("draft");
+    expect(created.confirmationState).toBe("unconfirmed");
+    expect(created.confirmedAt).toBeNull();
+    expect(created.roots.map((root) => root.rootId).sort()).toEqual([
+      "downloads",
+      "mods",
+      "tray",
+      "user_data",
+    ]);
+    await expect(
+      api.setActiveGameInstallationProfile(created.profileId),
+    ).rejects.toThrow(/must be confirmed/i);
+
+    const liveReport = await api.validateGameInstallationProfile(created.profileId);
+    expect(liveReport.readOnly).toBe(true);
+    expect(liveReport.state).toBe("valid");
+    expect(liveReport.roots.every((root) => root.state === "valid")).toBe(true);
+
+    const confirmed = await api.confirmManualGameInstallationProfile(
+      created.profileId,
+    );
+    expect(confirmed.validation.state).toBe("valid");
+    expect(confirmed.profile.confirmationState).toBe("confirmed");
+    expect(confirmed.profile.status).toBe("valid");
+    expect(confirmed.profile.confirmedAt).not.toBeNull();
+    expect(
+      confirmed.profile.roots.every(
+        (root) =>
+          root.validationState === "unvalidated" &&
+          root.filesystemCapabilitiesJson === "{}",
+      ),
+    ).toBe(true);
+
+    const selected = await api.setActiveGameInstallationProfile(created.profileId);
+    expect(selected.profileId).toBe(created.profileId);
+  });
 });
 
 describe("sorting preview plan API", () => {

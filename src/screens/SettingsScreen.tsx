@@ -22,6 +22,7 @@ import { hoverLift, stagedListItem, tapPress } from "../lib/motion";
 import { UI_THEMES, getThemeDefinition } from "../lib/themeMeta";
 import type {
   AppBehaviorSettings,
+  CreateManualGameInstallationProfileRequest,
   ExperienceMode,
   GameInstallationProfile,
   GameInstallationProfileValidationReport,
@@ -91,6 +92,16 @@ const DENSITIES: Array<{
   },
 ];
 
+function emptyManualProfileDraft(): CreateManualGameInstallationProfileRequest {
+  return {
+    profileName: "",
+    userDataPath: null,
+    modsPath: "",
+    trayPath: "",
+    downloadsPath: null,
+  };
+}
+
 type SettingsSectionId =
   | "experience"
   | "gameProfile"
@@ -132,6 +143,13 @@ export function SettingsScreen({
   const [isCheckingGameProfileSelection, setIsCheckingGameProfileSelection] =
     useState(false);
   const [isSelectingGameProfile, setIsSelectingGameProfile] = useState(false);
+  const [isManualProfileSetupOpen, setIsManualProfileSetupOpen] = useState(false);
+  const [manualProfileDraft, setManualProfileDraft] =
+    useState<CreateManualGameInstallationProfileRequest>(emptyManualProfileDraft);
+  const [isCreatingManualProfile, setIsCreatingManualProfile] = useState(false);
+  const [isConfirmingManualProfile, setIsConfirmingManualProfile] = useState(false);
+  const [manualProfileError, setManualProfileError] = useState<string | null>(null);
+  const [manualProfileMessage, setManualProfileMessage] = useState<string | null>(null);
   const [hasLoadedGameProfile, setHasLoadedGameProfile] = useState(false);
   const [isSavingBackgroundMode, setIsSavingBackgroundMode] = useState(false);
   const [backgroundModeError, setBackgroundModeError] = useState<string | null>(null);
@@ -454,6 +472,108 @@ export function SettingsScreen({
     }
   }
 
+  function updateManualProfileDraft(
+    values: Partial<CreateManualGameInstallationProfileRequest>,
+  ) {
+    setManualProfileDraft((current) => ({ ...current, ...values }));
+    setManualProfileError(null);
+    setManualProfileMessage(null);
+  }
+
+  async function pickManualProfileFolder(
+    field: "userDataPath" | "modsPath" | "trayPath" | "downloadsPath",
+    title: string,
+  ) {
+    try {
+      const picked = await api.pickFolder(title);
+      if (picked) {
+        updateManualProfileDraft({ [field]: picked });
+      }
+    } catch (error) {
+      setManualProfileError(toErrorMessage(error));
+    }
+  }
+
+  async function createManualGameProfile() {
+    if (isCreatingManualProfile) {
+      return;
+    }
+    if (
+      !manualProfileDraft.profileName.trim() ||
+      !manualProfileDraft.modsPath.trim() ||
+      !manualProfileDraft.trayPath.trim()
+    ) {
+      setManualProfileError(
+        "Add a profile name, Mods folder, and Tray folder before saving the draft.",
+      );
+      return;
+    }
+
+    setIsCreatingManualProfile(true);
+    setManualProfileError(null);
+    setManualProfileMessage(null);
+    setGameProfileSelectionError(null);
+    setGameProfileSelectionMessage(null);
+
+    try {
+      const profile = await api.createManualGameInstallationProfile({
+        ...manualProfileDraft,
+        profileName: manualProfileDraft.profileName.trim(),
+        modsPath: manualProfileDraft.modsPath.trim(),
+        trayPath: manualProfileDraft.trayPath.trim(),
+        userDataPath: manualProfileDraft.userDataPath?.trim() || null,
+        downloadsPath: manualProfileDraft.downloadsPath?.trim() || null,
+      });
+      setGameProfiles((profiles) => [...profiles, profile]);
+      setSelectedGameProfileId(profile.profileId);
+      setSelectedGameProfileValidation(null);
+      setManualProfileDraft(emptyManualProfileDraft());
+      setIsManualProfileSetupOpen(false);
+      setManualProfileMessage(
+        `“${profile.profileName}” was saved as an unconfirmed draft. Review the live evidence, then confirm it when every required root is valid.`,
+      );
+    } catch (error) {
+      setManualProfileError(toErrorMessage(error));
+    } finally {
+      setIsCreatingManualProfile(false);
+    }
+  }
+
+  async function confirmSelectedManualGameProfile() {
+    const profileId = selectedGameProfileId.trim();
+    const selectedProfile = gameProfiles.find(
+      (profile) => profile.profileId === profileId,
+    );
+    if (
+      !selectedProfile ||
+      selectedProfile.detectionMethod !== "manual" ||
+      selectedProfile.confirmationState === "confirmed" ||
+      isConfirmingManualProfile
+    ) {
+      return;
+    }
+
+    setIsConfirmingManualProfile(true);
+    setManualProfileError(null);
+    setManualProfileMessage(null);
+    try {
+      const result = await api.confirmManualGameInstallationProfile(profileId);
+      setGameProfiles((profiles) =>
+        profiles.map((profile) =>
+          profile.profileId === result.profile.profileId ? result.profile : profile,
+        ),
+      );
+      setSelectedGameProfileValidation(result.validation);
+      setManualProfileMessage(
+        `“${result.profile.profileName}” is confirmed. It is still not active until you explicitly choose Use selected profile.`,
+      );
+    } catch (error) {
+      setManualProfileError(toErrorMessage(error));
+    } finally {
+      setIsConfirmingManualProfile(false);
+    }
+  }
+
   async function saveBehaviorSettings(nextValues: Partial<AppBehaviorSettings>) {
     if (!appBehavior) {
       return;
@@ -683,11 +803,24 @@ export function SettingsScreen({
                   selectionCheckError={gameProfileSelectionCheckError}
                   selectionError={gameProfileSelectionError}
                   selectionMessage={gameProfileSelectionMessage}
+                  manualDraft={manualProfileDraft}
+                  manualSetupOpen={isManualProfileSetupOpen}
+                  manualError={manualProfileError}
+                  manualMessage={manualProfileMessage}
                   isLoading={isLoadingGameProfile}
                   isCheckingSelection={isCheckingGameProfileSelection}
                   isSelecting={isSelectingGameProfile}
+                  isCreatingManualProfile={isCreatingManualProfile}
+                  isConfirmingManualProfile={isConfirmingManualProfile}
                   onSelectedProfileIdChange={setSelectedGameProfileId}
                   onSelectProfile={selectActiveGameProfile}
+                  onToggleManualSetup={() =>
+                    setIsManualProfileSetupOpen((open) => !open)
+                  }
+                  onManualDraftChange={updateManualProfileDraft}
+                  onPickManualFolder={pickManualProfileFolder}
+                  onCreateManualProfile={createManualGameProfile}
+                  onConfirmManualProfile={confirmSelectedManualGameProfile}
                 />
               ) : null}
 
@@ -811,11 +944,24 @@ export function SettingsScreen({
                   selectionCheckError={gameProfileSelectionCheckError}
                   selectionError={gameProfileSelectionError}
                   selectionMessage={gameProfileSelectionMessage}
+                  manualDraft={manualProfileDraft}
+                  manualSetupOpen={isManualProfileSetupOpen}
+                  manualError={manualProfileError}
+                  manualMessage={manualProfileMessage}
                   isLoading={isLoadingGameProfile}
                   isCheckingSelection={isCheckingGameProfileSelection}
                   isSelecting={isSelectingGameProfile}
+                  isCreatingManualProfile={isCreatingManualProfile}
+                  isConfirmingManualProfile={isConfirmingManualProfile}
                   onSelectedProfileIdChange={setSelectedGameProfileId}
                   onSelectProfile={selectActiveGameProfile}
+                  onToggleManualSetup={() =>
+                    setIsManualProfileSetupOpen((open) => !open)
+                  }
+                  onManualDraftChange={updateManualProfileDraft}
+                  onPickManualFolder={pickManualProfileFolder}
+                  onCreateManualProfile={createManualGameProfile}
+                  onConfirmManualProfile={confirmSelectedManualGameProfile}
                 />
               ) : null}
 

@@ -1,5 +1,6 @@
 import {
   CircleCheck,
+  FolderPlus,
   FolderTree,
   Gamepad2,
   LoaderCircle,
@@ -7,6 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type {
+  CreateManualGameInstallationProfileRequest,
   GameInstallationAdapterReadinessReport,
   GameInstallationEvidenceStrength,
   GameInstallationProfile,
@@ -25,11 +27,27 @@ interface SettingsGameProfileSectionProps {
   selectionCheckError: string | null;
   selectionError: string | null;
   selectionMessage: string | null;
+  manualDraft: CreateManualGameInstallationProfileRequest;
+  manualSetupOpen: boolean;
+  manualError: string | null;
+  manualMessage: string | null;
   isLoading: boolean;
   isCheckingSelection: boolean;
   isSelecting: boolean;
+  isCreatingManualProfile: boolean;
+  isConfirmingManualProfile: boolean;
   onSelectedProfileIdChange: (profileId: string) => void;
   onSelectProfile: () => void;
+  onToggleManualSetup: () => void;
+  onManualDraftChange: (
+    values: Partial<CreateManualGameInstallationProfileRequest>,
+  ) => void;
+  onPickManualFolder: (
+    field: "userDataPath" | "modsPath" | "trayPath" | "downloadsPath",
+    title: string,
+  ) => void;
+  onCreateManualProfile: () => void;
+  onConfirmManualProfile: () => void;
 }
 
 export function SettingsGameProfileSection({
@@ -42,11 +60,22 @@ export function SettingsGameProfileSection({
   selectionCheckError,
   selectionError,
   selectionMessage,
+  manualDraft,
+  manualSetupOpen,
+  manualError,
+  manualMessage,
   isLoading,
   isCheckingSelection,
   isSelecting,
+  isCreatingManualProfile,
+  isConfirmingManualProfile,
   onSelectedProfileIdChange,
   onSelectProfile,
+  onToggleManualSetup,
+  onManualDraftChange,
+  onPickManualFolder,
+  onCreateManualProfile,
+  onConfirmManualProfile,
 }: SettingsGameProfileSectionProps) {
   if (isLoading) {
     return (
@@ -99,13 +128,29 @@ export function SettingsGameProfileSection({
           onSelectedProfileIdChange={onSelectedProfileIdChange}
           onSelectProfile={onSelectProfile}
         />
+        <SettingsManualProfileSetup
+          profiles={profiles}
+          selectedProfileId={selectedProfileId}
+          selectedValidation={selectedValidation}
+          draft={manualDraft}
+          isOpen={manualSetupOpen}
+          error={manualError}
+          message={manualMessage}
+          isCreating={isCreatingManualProfile}
+          isConfirming={isConfirmingManualProfile}
+          onToggle={onToggleManualSetup}
+          onDraftChange={onManualDraftChange}
+          onPickFolder={onPickManualFolder}
+          onCreate={onCreateManualProfile}
+          onConfirm={onConfirmManualProfile}
+        />
         <div className="settings-profile-empty">
           <TriangleAlert size={18} strokeWidth={2} />
           <div>
             <strong>No active game profile</strong>
             <p className="workspace-toolbar-copy">
-              Choose one of the saved setups above. Creating or editing profiles is not
-              available yet.
+              Choose one of the saved setups above, or add one manually by selecting the
+              existing Sims 4 folders yourself.
             </p>
           </div>
         </div>
@@ -151,6 +196,22 @@ export function SettingsGameProfileSection({
         isSelecting={isSelecting}
         onSelectedProfileIdChange={onSelectedProfileIdChange}
         onSelectProfile={onSelectProfile}
+      />
+      <SettingsManualProfileSetup
+        profiles={profiles}
+        selectedProfileId={selectedProfileId}
+        selectedValidation={selectedValidation}
+        draft={manualDraft}
+        isOpen={manualSetupOpen}
+        error={manualError}
+        message={manualMessage}
+        isCreating={isCreatingManualProfile}
+        isConfirming={isConfirmingManualProfile}
+        onToggle={onToggleManualSetup}
+        onDraftChange={onManualDraftChange}
+        onPickFolder={onPickManualFolder}
+        onCreate={onCreateManualProfile}
+        onConfirm={onConfirmManualProfile}
       />
 
       {error ? (
@@ -410,6 +471,330 @@ function SettingsProfileSelector({
   );
 }
 
+function SettingsManualProfileSetup({
+  profiles,
+  selectedProfileId,
+  selectedValidation,
+  draft,
+  isOpen,
+  error,
+  message,
+  isCreating,
+  isConfirming,
+  onToggle,
+  onDraftChange,
+  onPickFolder,
+  onCreate,
+  onConfirm,
+}: {
+  profiles: GameInstallationProfile[];
+  selectedProfileId: string;
+  selectedValidation: GameInstallationProfileValidationReport | null;
+  draft: CreateManualGameInstallationProfileRequest;
+  isOpen: boolean;
+  error: string | null;
+  message: string | null;
+  isCreating: boolean;
+  isConfirming: boolean;
+  onToggle: () => void;
+  onDraftChange: (
+    values: Partial<CreateManualGameInstallationProfileRequest>,
+  ) => void;
+  onPickFolder: (
+    field: "userDataPath" | "modsPath" | "trayPath" | "downloadsPath",
+    title: string,
+  ) => void;
+  onCreate: () => void;
+  onConfirm: () => void;
+}) {
+  const selectedProfile =
+    profiles.find((profile) => profile.profileId === selectedProfileId) ?? null;
+  const isManualDraft =
+    selectedProfile?.detectionMethod === "manual" &&
+    selectedProfile.confirmationState !== "confirmed";
+  const canConfirm =
+    isManualDraft &&
+    selectedValidation?.environmentCompatibility === "matches" &&
+    selectedValidation.state === "valid" &&
+    selectedValidation.blockers.length === 0 &&
+    !isConfirming;
+
+  return (
+    <section className="settings-manual-profile" aria-labelledby="manual-profile-heading">
+      <div className="settings-manual-profile-heading">
+        <div>
+          <span className="section-label">
+            <FolderPlus size={14} strokeWidth={2} />
+            Manual setup
+          </span>
+          <h3 id="manual-profile-heading">Add another Sims 4 setup</h3>
+          <p className="workspace-toolbar-copy">
+            Choose existing folders yourself. SimSuite saves an unconfirmed draft first,
+            then requires a separate read-only validation and confirmation step.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary-action"
+          aria-expanded={isOpen}
+          onClick={onToggle}
+        >
+          {isOpen ? "Close setup" : "Choose folders manually"}
+        </button>
+      </div>
+
+      {isOpen ? (
+        <div className="settings-manual-profile-form">
+          <label className="settings-manual-profile-name">
+            <span>Profile name</span>
+            <input
+              type="text"
+              maxLength={80}
+              value={draft.profileName}
+              placeholder="For example, Main Sims 4 setup"
+              disabled={isCreating}
+              onChange={(event) =>
+                onDraftChange({ profileName: event.target.value })
+              }
+            />
+          </label>
+
+          <ManualFolderField
+            inputId="manual-profile-user-data-path"
+            label="Sims 4 user-data folder"
+            hint="Optional. Usually the folder that directly contains Mods and Tray."
+            value={draft.userDataPath ?? ""}
+            required={false}
+            disabled={isCreating}
+            onChange={(value) => onDraftChange({ userDataPath: value || null })}
+            onPick={() =>
+              onPickFolder(
+                "userDataPath",
+                "Choose the Sims 4 user-data folder",
+              )
+            }
+          />
+          <ManualFolderField
+            inputId="manual-profile-mods-path"
+            label="Mods folder"
+            hint="Required. Select the existing folder where installed .package and .ts4script files live."
+            value={draft.modsPath}
+            required
+            disabled={isCreating}
+            onChange={(value) => onDraftChange({ modsPath: value })}
+            onPick={() => onPickFolder("modsPath", "Choose the Sims 4 Mods folder")}
+          />
+          <ManualFolderField
+            inputId="manual-profile-tray-path"
+            label="Tray folder"
+            hint="Required. Select the existing folder where Sims, households, rooms, and lots are stored."
+            value={draft.trayPath}
+            required
+            disabled={isCreating}
+            onChange={(value) => onDraftChange({ trayPath: value })}
+            onPick={() => onPickFolder("trayPath", "Choose the Sims 4 Tray folder")}
+          />
+          <ManualFolderField
+            inputId="manual-profile-downloads-path"
+            label="Downloads folder"
+            hint="Optional. SimSuite can watch this folder after the profile becomes active."
+            value={draft.downloadsPath ?? ""}
+            required={false}
+            disabled={isCreating}
+            onChange={(value) => onDraftChange({ downloadsPath: value || null })}
+            onPick={() =>
+              onPickFolder("downloadsPath", "Choose a Downloads intake folder")
+            }
+          />
+
+          <div className="settings-manual-profile-actions">
+            <button
+              type="button"
+              className="primary-action"
+              disabled={
+                isCreating ||
+                !draft.profileName.trim() ||
+                !draft.modsPath.trim() ||
+                !draft.trayPath.trim()
+              }
+              onClick={onCreate}
+            >
+              {isCreating ? (
+                <>
+                  <LoaderCircle size={15} strokeWidth={2} className="spin" />
+                  Saving draft
+                </>
+              ) : (
+                "Save unconfirmed draft"
+              )}
+            </button>
+            <span>No folder is created, moved, renamed, or changed.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {isManualDraft ? (
+        <div className="settings-manual-profile-review">
+          <div className="settings-manual-profile-confirmation">
+            <div>
+              <span className="section-label">Selected draft evidence</span>
+              <strong>Confirm “{selectedProfile.profileName}”</strong>
+              <p>
+                {selectedValidation?.state === "valid"
+                  ? "The current read-only evidence is valid. Confirmation will rerun that check before saving the confirmed state."
+                  : "This evidence belongs to the selected draft, not the active profile. Confirmation stays blocked until every required root is valid."}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={!canConfirm}
+              onClick={onConfirm}
+            >
+              {isConfirming ? (
+                <>
+                  <LoaderCircle size={15} strokeWidth={2} className="spin" />
+                  Rechecking and confirming
+                </>
+              ) : (
+                "Confirm validated profile"
+              )}
+            </button>
+          </div>
+
+          <div className="settings-manual-profile-evidence-summary">
+            <div>
+              <span>Live status</span>
+              <strong>
+                {selectedValidation
+                  ? profileStatusLabel(selectedValidation.state)
+                  : "Checking evidence"}
+              </strong>
+            </div>
+            <div>
+              <span>Host compatibility</span>
+              <strong>
+                {selectedValidation
+                  ? environmentCompatibilityLabel(
+                      selectedValidation.environmentCompatibility,
+                    )
+                  : "Not proven"}
+              </strong>
+            </div>
+            <div>
+              <span>Validation mode</span>
+              <strong>{selectedValidation?.readOnly ? "Read only" : "Pending"}</strong>
+            </div>
+          </div>
+
+          <div className="settings-manual-profile-root-review" role="list">
+            {selectedProfile.roots.map((storedRoot) => {
+              const liveRoot = selectedValidation?.roots.find(
+                (root) => root.rootId === storedRoot.rootId,
+              );
+              return (
+                <div
+                  className="settings-manual-profile-root-review-row"
+                  role="listitem"
+                  key={storedRoot.rootId}
+                >
+                  <div>
+                    <span>{rootLabel(storedRoot.rootId)}</span>
+                    <strong title={storedRoot.configuredPath}>
+                      {storedRoot.configuredPath}
+                    </strong>
+                  </div>
+                  <span>{storedRoot.required ? "Required" : "Optional"}</span>
+                  <strong
+                    className={
+                      liveRoot
+                        ? profileStatusTone(rootStateAsProfileStatus(liveRoot.state))
+                        : "is-review"
+                    }
+                  >
+                    {liveRoot ? rootStateLabel(liveRoot.state) : "Checking"}
+                  </strong>
+                </div>
+              );
+            })}
+          </div>
+
+          {selectedValidation?.blockers.length ? (
+            <div className="settings-manual-profile-blockers" role="alert">
+              <TriangleAlert size={16} strokeWidth={2} />
+              <div>
+                <strong>Why confirmation is blocked</strong>
+                <ul>
+                  {selectedValidation.blockers.map((blocker) => (
+                    <li key={blocker}>{blocker}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {message ? (
+        <div className="settings-profile-selection-message is-success" role="status">
+          <CircleCheck size={16} strokeWidth={2} />
+          <span>{message}</span>
+        </div>
+      ) : null}
+      {error ? (
+        <div className="settings-profile-selection-message is-error" role="alert">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <span>{error}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ManualFolderField({
+  inputId,
+  label,
+  hint,
+  value,
+  required,
+  disabled,
+  onChange,
+  onPick,
+}: {
+  inputId: string;
+  label: string;
+  hint: string;
+  value: string;
+  required: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onPick: () => void;
+}) {
+  const hintId = `${inputId}-hint`;
+  return (
+    <div className="settings-manual-folder-field">
+      <label htmlFor={inputId}>
+        {label} {required ? <em>Required</em> : <em>Optional</em>}
+      </label>
+      <small id={hintId}>{hint}</small>
+      <div>
+        <input
+          id={inputId}
+          type="text"
+          value={value}
+          disabled={disabled}
+          aria-describedby={hintId}
+          placeholder={`Choose ${label.toLowerCase()}`}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <button type="button" className="secondary-action" disabled={disabled} onClick={onPick}>
+          Browse
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsGameProfileHeading() {
   return (
     <div className="panel-heading settings-focus-heading">
@@ -421,8 +806,8 @@ function SettingsGameProfileHeading() {
         <h2>Your active Sims 4 profile</h2>
       </div>
       <p className="workspace-toolbar-copy">
-        Choose an existing saved setup, then review its roots and current readiness
-        evidence. Creating or editing profiles remains unavailable.
+        Choose a saved setup, review its roots and evidence, or add another setup by
+        selecting existing folders manually. Editing confirmed profiles remains unavailable.
       </p>
     </div>
   );

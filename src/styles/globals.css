@@ -4342,6 +4342,259 @@ h2,
   color: var(--danger);
 }
 
+.settings-manual-profile {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0.88rem;
+  border: 1px solid var(--line);
+  background: var(--surface-4);
+}
+
+.settings-manual-profile-heading,
+.settings-manual-profile-confirmation {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.settings-manual-profile-heading > div,
+.settings-manual-profile-confirmation > div {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.settings-manual-profile-heading h3,
+.settings-manual-profile-confirmation strong,
+.settings-manual-profile-confirmation p {
+  margin: 0;
+}
+
+.settings-manual-profile-heading h3 {
+  font-size: 0.94rem;
+}
+
+.settings-manual-profile-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.68rem;
+  padding-top: 0.72rem;
+  border-top: 1px solid var(--line);
+}
+
+.settings-manual-profile-name,
+.settings-manual-folder-field {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.settings-manual-profile-name {
+  grid-column: 1 / -1;
+}
+
+.settings-manual-profile-name > span,
+.settings-manual-folder-field > label {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.settings-manual-folder-field em {
+  margin-left: 0.3rem;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-manual-folder-field small {
+  min-height: 2.6em;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.settings-manual-profile-name input,
+.settings-manual-folder-field input {
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0 0.68rem;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.settings-manual-profile-name input:focus-visible,
+.settings-manual-folder-field input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: 2px;
+  border-color: var(--accent-line);
+}
+
+.settings-manual-folder-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+}
+
+.settings-manual-profile-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+  padding-top: 0.15rem;
+}
+
+.settings-manual-profile-actions > span {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.settings-manual-profile-confirmation {
+  padding: 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-5));
+}
+
+.settings-manual-profile-confirmation p {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.settings-manual-profile-review {
+  display: grid;
+  gap: 0.58rem;
+  padding: 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface-4));
+}
+
+.settings-manual-profile-review .settings-manual-profile-confirmation {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-manual-profile-evidence-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.42rem;
+}
+
+.settings-manual-profile-evidence-summary > div {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.52rem 0.58rem;
+  border: 1px solid var(--line);
+  background: var(--surface-5);
+}
+
+.settings-manual-profile-evidence-summary span,
+.settings-manual-profile-root-review-row > span,
+.settings-manual-profile-root-review-row > div > span {
+  color: var(--text-dim);
+  font-size: 0.64rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.settings-manual-profile-evidence-summary strong {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.settings-manual-profile-root-review {
+  display: grid;
+  border: 1px solid var(--line);
+  background: var(--surface-5);
+}
+
+.settings-manual-profile-root-review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.72rem;
+  padding: 0.52rem 0.58rem;
+}
+
+.settings-manual-profile-root-review-row + .settings-manual-profile-root-review-row {
+  border-top: 1px solid var(--line);
+}
+
+.settings-manual-profile-root-review-row > div {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.settings-manual-profile-root-review-row > div > strong {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-manual-profile-root-review-row > strong {
+  font-size: 0.7rem;
+}
+
+.settings-manual-profile-root-review-row > strong.is-valid {
+  color: var(--success);
+}
+
+.settings-manual-profile-root-review-row > strong.is-review {
+  color: var(--warning);
+}
+
+.settings-manual-profile-root-review-row > strong.is-unavailable {
+  color: var(--danger);
+}
+
+.settings-manual-profile-blockers {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.52rem;
+  padding: 0.58rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-5));
+}
+
+.settings-manual-profile-blockers > svg {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+  color: var(--danger);
+}
+
+.settings-manual-profile-blockers > div {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.settings-manual-profile-blockers strong,
+.settings-manual-profile-blockers ul {
+  margin: 0;
+}
+
+.settings-manual-profile-blockers ul {
+  display: grid;
+  gap: 0.2rem;
+  padding-left: 1rem;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 .settings-profile-empty,
 .settings-profile-alert,
 .settings-profile-safety-note {
@@ -4734,8 +4987,25 @@ h2,
   .settings-profile-facts,
   .settings-profile-root-row,
   .settings-profile-evidence-row,
-  .settings-profile-reason {
+  .settings-profile-reason,
+  .settings-manual-profile-form,
+  .settings-manual-folder-field > div,
+  .settings-manual-profile-evidence-summary,
+  .settings-manual-profile-root-review-row {
     grid-template-columns: 1fr;
+  }
+
+  .settings-manual-profile-heading,
+  .settings-manual-profile-confirmation,
+  .settings-manual-profile-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-manual-profile-heading > button,
+  .settings-manual-profile-confirmation > button,
+  .settings-manual-profile-actions > button {
+    width: 100%;
   }
 
   .settings-profile-select-button {

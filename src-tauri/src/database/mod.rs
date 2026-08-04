@@ -6,9 +6,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::{
     error::{AppError, AppResult},
     models::{
-        DownloadsTimelineEntry, GameInstallationConfirmationState,
-        GameInstallationDetectionMethod, GameInstallationProfile,
-        GameInstallationProfileStatus, GameInstallationRoot,
+        CreateManualGameInstallationProfileRequest, DownloadsTimelineEntry,
+        GameInstallationConfirmationState, GameInstallationDetectionMethod,
+        GameInstallationEnvironmentCompatibility, GameInstallationProfile,
+        GameInstallationProfileStatus, GameInstallationProfileValidationReport,
+        GameInstallationRoot,
         GameInstallationRootValidationState, GameOperatingEnvironment, LibrarySettings,
     },
     seed::{SeedCreator, SeedPack},
@@ -1254,6 +1256,177 @@ pub fn get_active_game_installation_profile(
     get_game_installation_profile(connection, &profile_id).map(Some)
 }
 
+pub fn create_manual_game_installation_profile(
+    connection: &mut Connection,
+    request: &CreateManualGameInstallationProfileRequest,
+    operating_environment: GameOperatingEnvironment,
+) -> AppResult<GameInstallationProfile> {
+    let profile_name = request.profile_name.trim();
+    let mods_path = request.mods_path.trim();
+    let tray_path = request.tray_path.trim();
+    if profile_name.is_empty() {
+        return Err(AppError::Message("profile name cannot be empty".to_owned()));
+    }
+    if profile_name.chars().count() > 80 {
+        return Err(AppError::Message(
+            "profile name must be 80 characters or fewer".to_owned(),
+        ));
+    }
+    if mods_path.is_empty() || tray_path.is_empty() {
+        return Err(AppError::Message(
+            "manual Sims 4 profiles require both Mods and Tray folders".to_owned(),
+        ));
+    }
+
+    let now = Utc::now();
+    let now_text = now.to_rfc3339();
+    let profile_id = format!(
+        "manual-sims4-{}-{}",
+        std::process::id(),
+        now.timestamp_nanos_opt().unwrap_or_else(|| now.timestamp_micros() * 1_000)
+    );
+    let environment_value = game_operating_environment_storage_value(operating_environment);
+    let detection_evidence_json = serde_json::json!({
+        "source": "manual_settings",
+        "entered_on_environment": environment_value,
+    })
+    .to_string();
+
+    let transaction = connection.transaction()?;
+    transaction.execute(
+        "INSERT INTO game_installation_profiles (
+            profile_id, profile_name, game_id, operating_environment, status,
+            detection_method, detection_evidence_json, confirmation_state,
+            confirmed_at, last_validated_at, created_at, updated_at
+         ) VALUES (?1, ?2, 'sims4', ?3, 'draft', 'manual', ?4, 'unconfirmed', NULL, NULL, ?5, ?5)",
+        params![
+            profile_id,
+            profile_name,
+            environment_value,
+            detection_evidence_json,
+            now_text
+        ],
+    )?;
+
+    let mut roots = vec![
+        ("mods", "installed_mods", mods_path.to_owned(), true),
+        ("tray", "installed_tray", tray_path.to_owned(), true),
+    ];
+    if let Some(path) = request
+        .user_data_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        roots.push(("user_data", "game_user_data", path.to_owned(), false));
+    }
+    if let Some(path) = request
+        .downloads_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        roots.push(("downloads", "intake_downloads", path.to_owned(), false));
+    }
+    for (root_id, root_role, configured_path, required) in roots {
+        transaction.execute(
+            "INSERT INTO game_installation_roots (
+                profile_id, root_id, root_role, configured_path, required,
+                validation_state, filesystem_capabilities_json, last_validated_at,
+                created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'unvalidated', '{}', NULL, ?6, ?6)",
+            params![
+                profile_id,
+                root_id,
+                root_role,
+                configured_path,
+                if required { 1_i64 } else { 0_i64 },
+                now_text
+            ],
+        )?;
+    }
+    transaction.commit()?;
+
+    get_game_installation_profile(connection, &profile_id)
+}
+
+pub fn confirm_manual_game_installation_profile(
+    connection: &mut Connection,
+    validation: &GameInstallationProfileValidationReport,
+) -> AppResult<GameInstallationProfile> {
+    if !validation.read_only
+        || validation.environment_compatibility
+            != GameInstallationEnvironmentCompatibility::Matches
+        || validation.state != GameInstallationProfileStatus::Valid
+        || !validation.blockers.is_empty()
+    {
+        return Err(AppError::Message(
+            "manual profile confirmation requires a fresh, read-only, valid current-host report with no blockers"
+                .to_owned(),
+        ));
+    }
+
+    let transaction = connection.transaction()?;
+    let profile = get_game_installation_profile(&transaction, &validation.profile_id)?;
+    if profile.detection_method != GameInstallationDetectionMethod::Manual {
+        return Err(AppError::Message(
+            "only manually created game installation profiles can use this confirmation flow"
+                .to_owned(),
+        ));
+    }
+    if profile.game_id != "sims4"
+        || profile.game_id != validation.game_id
+        || profile.profile_name != validation.profile_name
+        || profile.operating_environment != validation.stored_environment
+    {
+        return Err(AppError::Message(
+            "the validation report does not match the stored manual profile".to_owned(),
+        ));
+    }
+    if validation.roots.len() != profile.roots.len() {
+        return Err(AppError::Message(
+            "the validation report does not cover every stored profile root".to_owned(),
+        ));
+    }
+    for stored_root in &profile.roots {
+        let Some(validated_root) = validation
+            .roots
+            .iter()
+            .find(|root| root.root_id == stored_root.root_id)
+        else {
+            return Err(AppError::Message(format!(
+                "the validation report is missing root '{}'",
+                stored_root.root_id
+            )));
+        };
+        if validated_root.root_role != stored_root.root_role
+            || validated_root.configured_path != stored_root.configured_path
+            || validated_root.required != stored_root.required
+            || validated_root.state != GameInstallationRootValidationState::Valid
+        {
+            return Err(AppError::Message(format!(
+                "the validation report no longer matches stored root '{}'",
+                stored_root.root_id
+            )));
+        }
+    }
+
+    let now = Utc::now().to_rfc3339();
+    transaction.execute(
+        "UPDATE game_installation_profiles
+         SET status = 'valid',
+             confirmation_state = 'confirmed',
+             confirmed_at = ?2,
+             last_validated_at = ?2,
+             updated_at = ?2
+         WHERE profile_id = ?1",
+        params![profile.profile_id, now],
+    )?;
+    transaction.commit()?;
+
+    get_game_installation_profile(connection, &validation.profile_id)
+}
+
 pub fn set_active_game_installation_profile(
     connection: &mut Connection,
     profile_id: &str,
@@ -1293,6 +1466,20 @@ fn validate_profile_json_object(value: &str, label: &str) -> AppResult<()> {
         )));
     }
     Ok(())
+}
+
+fn game_operating_environment_storage_value(
+    value: GameOperatingEnvironment,
+) -> &'static str {
+    match value {
+        GameOperatingEnvironment::NativeWindows => "native_windows",
+        GameOperatingEnvironment::NativeMacos => "native_macos",
+        GameOperatingEnvironment::NativeLinux => "native_linux",
+        GameOperatingEnvironment::Wine => "wine",
+        GameOperatingEnvironment::Proton => "proton",
+        GameOperatingEnvironment::Lutris => "lutris",
+        GameOperatingEnvironment::Unknown => "unknown",
+    }
 }
 
 fn parse_game_operating_environment(value: &str) -> AppResult<GameOperatingEnvironment> {
@@ -2151,7 +2338,16 @@ fn ensure_column(
 
 #[cfg(test)]
 mod tests {
-    use crate::{models::LibrarySettings, seed::load_seed_pack};
+    use crate::{
+        models::{
+            CreateManualGameInstallationProfileRequest,
+            GameInstallationCaseSensitivity, GameInstallationEnvironmentCompatibility,
+            GameInstallationPathMetadataState, GameInstallationProfileStatus,
+            GameInstallationProfileValidationReport, GameInstallationRootValidationReport,
+            GameInstallationRootValidationState, GameOperatingEnvironment, LibrarySettings,
+        },
+        seed::load_seed_pack,
+    };
 
     use super::*;
 
@@ -2231,6 +2427,125 @@ mod tests {
         assert!(get_active_game_installation_profile(&connection)
             .expect("active profile")
             .is_none());
+    }
+
+    fn valid_manual_profile_confirmation_report(
+        profile: &GameInstallationProfile,
+    ) -> GameInstallationProfileValidationReport {
+        GameInstallationProfileValidationReport {
+            profile_id: profile.profile_id.clone(),
+            profile_name: profile.profile_name.clone(),
+            game_id: profile.game_id.clone(),
+            stored_environment: profile.operating_environment,
+            current_environment: profile.operating_environment,
+            environment_compatibility: GameInstallationEnvironmentCompatibility::Matches,
+            state: GameInstallationProfileStatus::Valid,
+            generic_root_state: GameInstallationProfileStatus::Valid,
+            game_specific_validation_pending: false,
+            game_readiness: None,
+            read_only: true,
+            roots: profile
+                .roots
+                .iter()
+                .map(|root| GameInstallationRootValidationReport {
+                    root_id: root.root_id.clone(),
+                    root_role: root.root_role.clone(),
+                    configured_path: root.configured_path.clone(),
+                    required: root.required,
+                    state: GameInstallationRootValidationState::Valid,
+                    absolute_path: Some(true),
+                    exists: Some(true),
+                    metadata_readable: Some(true),
+                    metadata_state: GameInstallationPathMetadataState::Directory,
+                    canonical_path_display: Some(root.configured_path.clone()),
+                    case_sensitivity: GameInstallationCaseSensitivity::Sensitive,
+                    symlink_observed: Some(false),
+                    blockers: Vec::new(),
+                    review_notes: Vec::new(),
+                })
+                .collect(),
+            blockers: Vec::new(),
+            review_notes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn manual_profile_creation_confirmation_and_activation_are_separate_atomic_steps() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("schema");
+
+        let profile = create_manual_game_installation_profile(
+            &mut connection,
+            &CreateManualGameInstallationProfileRequest {
+                profile_name: "Main manual setup".to_owned(),
+                user_data_path: Some("/Users/player/The Sims 4".to_owned()),
+                mods_path: "/Users/player/The Sims 4/Mods".to_owned(),
+                tray_path: "/Users/player/The Sims 4/Tray".to_owned(),
+                downloads_path: Some("/Users/player/Downloads".to_owned()),
+            },
+            GameOperatingEnvironment::NativeMacos,
+        )
+        .expect("manual profile draft");
+
+        assert_eq!(profile.status, GameInstallationProfileStatus::Draft);
+        assert_eq!(
+            profile.confirmation_state,
+            GameInstallationConfirmationState::Unconfirmed
+        );
+        assert!(profile.confirmed_at.is_none());
+        assert!(get_active_game_installation_profile(&connection)
+            .expect("active lookup")
+            .is_none());
+        assert_eq!(profile.roots.len(), 4);
+        assert!(profile.roots.iter().all(|root| {
+            root.validation_state == GameInstallationRootValidationState::Unvalidated
+                && root.filesystem_capabilities_json == "{}"
+                && root.last_validated_at.is_none()
+        }));
+        assert!(set_active_game_installation_profile(&mut connection, &profile.profile_id)
+            .expect_err("unconfirmed profile must not activate")
+            .to_string()
+            .contains("must be confirmed"));
+
+        let mut invalid_report = valid_manual_profile_confirmation_report(&profile);
+        invalid_report.state = GameInstallationProfileStatus::NeedsReview;
+        invalid_report
+            .blockers
+            .push("Required root needs review.".to_owned());
+        assert!(confirm_manual_game_installation_profile(&mut connection, &invalid_report)
+            .expect_err("review state must not confirm")
+            .to_string()
+            .contains("fresh, read-only, valid"));
+        assert_eq!(
+            get_game_installation_profile(&connection, &profile.profile_id)
+                .expect("stored draft")
+                .confirmation_state,
+            GameInstallationConfirmationState::Unconfirmed
+        );
+
+        let report = valid_manual_profile_confirmation_report(&profile);
+        let confirmed = confirm_manual_game_installation_profile(&mut connection, &report)
+            .expect("confirm manual profile");
+        assert_eq!(confirmed.status, GameInstallationProfileStatus::Valid);
+        assert_eq!(
+            confirmed.confirmation_state,
+            GameInstallationConfirmationState::Confirmed
+        );
+        assert!(confirmed.confirmed_at.is_some());
+        assert!(confirmed.last_validated_at.is_some());
+        assert!(confirmed.roots.iter().all(|root| {
+            root.validation_state == GameInstallationRootValidationState::Unvalidated
+                && root.filesystem_capabilities_json == "{}"
+                && root.last_validated_at.is_none()
+        }));
+
+        let active = set_active_game_installation_profile(&mut connection, &profile.profile_id)
+            .expect("activate confirmed profile");
+        assert_eq!(active.profile_id, profile.profile_id);
+        let settings = get_library_settings(&connection).expect("profile compatibility view");
+        assert_eq!(settings.mods_path.as_deref(), Some("/Users/player/The Sims 4/Mods"));
+        assert_eq!(settings.tray_path.as_deref(), Some("/Users/player/The Sims 4/Tray"));
+        assert_eq!(settings.downloads_path.as_deref(), Some("/Users/player/Downloads"));
     }
 
     #[test]

@@ -91,6 +91,23 @@ pub struct GameInstallationProfile {
     pub roots: Vec<GameInstallationRoot>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateManualGameInstallationProfileRequest {
+    pub profile_name: String,
+    pub user_data_path: Option<String>,
+    pub mods_path: String,
+    pub tray_path: String,
+    pub downloads_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationProfileConfirmationResult {
+    pub profile: GameInstallationProfile,
+    pub validation: GameInstallationProfileValidationReport,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GameInstallationEnvironmentCompatibility {

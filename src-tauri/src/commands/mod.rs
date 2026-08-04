@@ -32,14 +32,16 @@ use crate::{
         ApplyPlanRunLogDetail, ApplyPlanValidationPreview, ApplyPreviewResult,
         ApplyReviewPlanActionResult, ApplySpecialReviewFixResult, BatchApplyResult,
         BuildApplyPlanFromStagingPlanRequest, CategoryAuditFile, CategoryAuditQuery,
-        CategoryAuditResponse, CleanupResult, CreateApplyPlanRunLogRequest, CreatorAuditFile,
-        CreatorAuditQuery, CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
+        CategoryAuditResponse, CleanupResult, CreateApplyPlanRunLogRequest,
+        CreateManualGameInstallationProfileRequest, CreatorAuditFile, CreatorAuditQuery,
+        CreatorAuditResponse, DeleteDraftApplyPlanResult, DetectedLibraryPaths,
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
         GameInstallationConfirmationState, GameInstallationEnvironmentCompatibility,
-        GameInstallationProfile, GameInstallationProfileValidationReport,
-        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
+        GameInstallationProfile, GameInstallationProfileConfirmationResult,
+        GameInstallationProfileValidationReport, GenerateSortingPreviewPlanRequest,
+        GenerateSortingPreviewPlanResult, GuidedInstallPlan,
         HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery,
         LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
@@ -416,6 +418,63 @@ pub fn get_active_game_installation_profile(
 ) -> Result<Option<GameInstallationProfile>, String> {
     let connection = state.connection().map_err(map_error)?;
     database::get_active_game_installation_profile(&connection).map_err(map_error)
+}
+
+#[tauri::command]
+pub fn create_manual_game_installation_profile(
+    request: CreateManualGameInstallationProfileRequest,
+    state: State<'_, AppState>,
+) -> Result<GameInstallationProfile, String> {
+    assert_command_allowed(
+        "create_manual_game_installation_profile",
+        CommandCapability::SettingsWrite,
+    )?;
+    let mut connection = state.connection().map_err(map_error)?;
+    database::create_manual_game_installation_profile(
+        &mut connection,
+        &request,
+        game_installation_profile_validation::current_manual_sims4_environment(),
+    )
+    .map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn confirm_manual_game_installation_profile(
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<GameInstallationProfileConfirmationResult, String> {
+    assert_command_allowed(
+        "confirm_manual_game_installation_profile",
+        CommandCapability::SettingsWrite,
+    )?;
+    let profile_id = profile_id.trim().to_owned();
+    if profile_id.is_empty() {
+        return Err("game installation profile ID cannot be empty".to_owned());
+    }
+
+    let state = state.inner().clone();
+    run_blocking_command("confirm_manual_game_installation_profile", move || {
+        let profile = {
+            let connection = state.connection().map_err(map_error)?;
+            database::get_game_installation_profile(&connection, &profile_id)
+                .map_err(map_error)?
+        };
+        let validation =
+            game_installation_profile_validation::validate_game_installation_profile(&profile);
+        let profile = {
+            let mut connection = state.connection().map_err(map_error)?;
+            database::confirm_manual_game_installation_profile(
+                &mut connection,
+                &validation,
+            )
+            .map_err(map_error)?
+        };
+        Ok(GameInstallationProfileConfirmationResult {
+            profile,
+            validation,
+        })
+    })
+    .await
 }
 
 fn ensure_game_installation_profile_can_be_activated(
@@ -4079,6 +4138,59 @@ mod tests {
                 !command_source.contains(forbidden),
                 "profile validation command must not call {forbidden}"
             );
+        }
+    }
+
+    #[test]
+    fn manual_profile_commands_are_settings_gated_and_do_not_activate_or_touch_files() {
+        let source = include_str!("mod.rs");
+
+        let create_start = source
+            .find("pub fn create_manual_game_installation_profile(")
+            .expect("manual profile create command");
+        let create_remaining = &source[create_start..];
+        let create_end = create_remaining
+            .find("\n#[tauri::command]\npub async fn confirm_manual_game_installation_profile(")
+            .expect("manual profile confirm boundary");
+        let create_source = &create_remaining[..create_end];
+        assert!(create_source.contains("CommandCapability::SettingsWrite"));
+        assert!(create_source.contains("database::create_manual_game_installation_profile"));
+
+        let confirm_start = source
+            .find("pub async fn confirm_manual_game_installation_profile(")
+            .expect("manual profile confirm command");
+        let confirm_remaining = &source[confirm_start..];
+        let confirm_end = confirm_remaining
+            .find("\nfn ensure_game_installation_profile_can_be_activated(")
+            .expect("activation helper boundary");
+        let confirm_source = &confirm_remaining[..confirm_end];
+        assert!(confirm_source.contains("CommandCapability::SettingsWrite"));
+        let validation_position = confirm_source
+            .find("validate_game_installation_profile(&profile)")
+            .expect("fresh validation");
+        let persistence_position = confirm_source
+            .find("database::confirm_manual_game_installation_profile")
+            .expect("confirmation persistence");
+        assert!(validation_position < persistence_position);
+
+        for command_source in [create_source, confirm_source] {
+            for forbidden in [
+                "set_active_game_installation_profile",
+                "restart_watcher",
+                "emit_workspace_domains",
+                "fs::write",
+                "fs::copy",
+                "fs::rename",
+                "fs::remove",
+                "fs::create_dir",
+                "move_engine::",
+                "restore_snapshot",
+            ] {
+                assert!(
+                    !command_source.contains(forbidden),
+                    "manual profile command must not call {forbidden}"
+                );
+            }
         }
     }
 

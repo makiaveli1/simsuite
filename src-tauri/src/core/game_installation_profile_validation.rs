@@ -39,6 +39,14 @@ pub fn game_installation_profile_environment_compatibility(
     environment_compatibility(profile.operating_environment, current_platform())
 }
 
+pub fn current_manual_sims4_environment() -> GameOperatingEnvironment {
+    match current_platform() {
+        PlatformId::Windows => GameOperatingEnvironment::NativeWindows,
+        PlatformId::Macos => GameOperatingEnvironment::NativeMacos,
+        PlatformId::Linux => GameOperatingEnvironment::Unknown,
+    }
+}
+
 fn validate_game_installation_profile_for_platform(
     profile: &GameInstallationProfile,
     platform: PlatformId,
@@ -665,6 +673,17 @@ mod tests {
             report.roots[0].canonical_path_display.as_deref(),
             Some(expected_target.as_str())
         );
+    }
+
+    #[test]
+    fn manual_sims4_environment_does_not_guess_native_linux() {
+        let expected = match current_platform() {
+            PlatformId::Windows => GameOperatingEnvironment::NativeWindows,
+            PlatformId::Macos => GameOperatingEnvironment::NativeMacos,
+            PlatformId::Linux => GameOperatingEnvironment::Unknown,
+        };
+
+        assert_eq!(current_manual_sims4_environment(), expected);
     }
 
     #[test]

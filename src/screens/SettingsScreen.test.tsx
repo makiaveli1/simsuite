@@ -16,8 +16,11 @@ vi.mock("../lib/api", () => ({
     getLibrarySettings: vi.fn(),
     listGameInstallationProfiles: vi.fn(),
     getActiveGameInstallationProfile: vi.fn(),
+    createManualGameInstallationProfile: vi.fn(),
+    confirmManualGameInstallationProfile: vi.fn(),
     setActiveGameInstallationProfile: vi.fn(),
     validateGameInstallationProfile: vi.fn(),
+    pickFolder: vi.fn(),
   },
 }));
 
@@ -87,6 +90,23 @@ const alternateProfile: GameInstallationProfile = {
     ...root,
     profileId: "sims4-alt",
     configuredPath: root.configuredPath.replace("/Users/player", "/Users/alternate"),
+  })),
+};
+
+const manualProfile: GameInstallationProfile = {
+  ...profile,
+  profileId: "sims4-manual",
+  profileName: "Manual Sims 4 setup",
+  status: "draft",
+  detectionMethod: "manual",
+  confirmationState: "unconfirmed",
+  confirmedAt: null,
+  roots: profile.roots.map((root) => ({
+    ...root,
+    profileId: "sims4-manual",
+    validationState: "unvalidated",
+    filesystemCapabilitiesJson: "{}",
+    lastValidatedAt: null,
   })),
 };
 
@@ -174,10 +194,42 @@ beforeEach(() => {
     foreignProfile,
   ]);
   vi.mocked(api.getActiveGameInstallationProfile).mockResolvedValue(profile);
+  vi.mocked(api.createManualGameInstallationProfile).mockResolvedValue(manualProfile);
+  vi.mocked(api.confirmManualGameInstallationProfile).mockResolvedValue({
+    profile: {
+      ...manualProfile,
+      status: "valid",
+      confirmationState: "confirmed",
+      confirmedAt: "2026-08-04T15:00:00Z",
+      lastValidatedAt: "2026-08-04T15:00:00Z",
+    },
+    validation: {
+      ...validation,
+      profileId: manualProfile.profileId,
+      profileName: manualProfile.profileName,
+      roots: manualProfile.roots.map((root) => ({
+        ...validation.roots.find((item) => item.rootId === root.rootId)!,
+        rootId: root.rootId,
+        rootRole: root.rootRole,
+        configuredPath: root.configuredPath,
+        required: root.required,
+      })),
+    },
+  });
+  vi.mocked(api.pickFolder).mockResolvedValue(null);
   vi.mocked(api.setActiveGameInstallationProfile).mockImplementation(
     async (profileId) => {
       if (profileId === alternateProfile.profileId) {
         return alternateProfile;
+      }
+      if (profileId === manualProfile.profileId) {
+        return {
+          ...manualProfile,
+          status: "valid",
+          confirmationState: "confirmed",
+          confirmedAt: "2026-08-04T15:00:00Z",
+          lastValidatedAt: "2026-08-04T15:00:00Z",
+        };
       }
       if (profileId === profile.profileId) {
         return profile;
@@ -187,6 +239,20 @@ beforeEach(() => {
   );
   vi.mocked(api.validateGameInstallationProfile).mockImplementation(
     async (profileId) => {
+      if (profileId === manualProfile.profileId) {
+        return {
+          ...validation,
+          profileId: manualProfile.profileId,
+          profileName: manualProfile.profileName,
+          roots: manualProfile.roots.map((root) => ({
+            ...validation.roots.find((item) => item.rootId === root.rootId)!,
+            rootId: root.rootId,
+            rootRole: root.rootRole,
+            configuredPath: root.configuredPath,
+            required: root.required,
+          })),
+        };
+      }
       if (profileId === alternateProfile.profileId) {
         return {
           ...validation,
@@ -315,6 +381,83 @@ it("switches only after an explicit selection and confirmation click", async () 
   );
   expect(selector).toHaveValue(alternateProfile.profileId);
   expect(screen.getByRole("button", { name: "Already active" })).toBeDisabled();
+});
+
+it("creates, validates, confirms, and activates a manual profile as separate steps", async () => {
+  renderSettings();
+  await openGameSetup();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: /Choose folders manually/i }),
+  );
+  fireEvent.change(
+    screen.getByPlaceholderText("For example, Main Sims 4 setup"),
+    { target: { value: manualProfile.profileName } },
+  );
+  fireEvent.change(screen.getByPlaceholderText("Choose mods folder"), {
+    target: { value: librarySettings.modsPath },
+  });
+  fireEvent.change(screen.getByPlaceholderText("Choose tray folder"), {
+    target: { value: librarySettings.trayPath },
+  });
+
+  expect(api.createManualGameInstallationProfile).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: /Save unconfirmed draft/i }),
+  );
+
+  await waitFor(() => {
+    expect(api.createManualGameInstallationProfile).toHaveBeenCalledWith({
+      profileName: manualProfile.profileName,
+      userDataPath: null,
+      modsPath: librarySettings.modsPath,
+      trayPath: librarySettings.trayPath,
+      downloadsPath: null,
+    });
+  });
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+  expect(
+    await screen.findByText(/was saved as an unconfirmed draft/i),
+  ).toBeInTheDocument();
+  await waitFor(() => {
+    expect(api.validateGameInstallationProfile).toHaveBeenCalledWith(
+      manualProfile.profileId,
+    );
+  });
+  expect(await screen.findByText("Selected draft evidence")).toBeInTheDocument();
+  expect(
+    screen.getByText(`Confirm “${manualProfile.profileName}”`),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Live status")).toBeInTheDocument();
+  expect(
+    screen.getAllByText(librarySettings.modsPath ?? "").length,
+  ).toBeGreaterThan(0);
+
+  const confirmButton = await screen.findByRole("button", {
+    name: /Confirm validated profile/i,
+  });
+  expect(confirmButton).toBeEnabled();
+  fireEvent.click(confirmButton);
+
+  await waitFor(() => {
+    expect(api.confirmManualGameInstallationProfile).toHaveBeenCalledWith(
+      manualProfile.profileId,
+    );
+  });
+  expect(api.setActiveGameInstallationProfile).not.toHaveBeenCalled();
+  expect(
+    await screen.findByText(/is confirmed.*still not active/i),
+  ).toBeInTheDocument();
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Use selected profile/i }),
+  );
+  await waitFor(() => {
+    expect(api.setActiveGameInstallationProfile).toHaveBeenCalledWith(
+      manualProfile.profileId,
+    );
+  });
+  expect(await screen.findByText(/is now the active setup/i)).toBeInTheDocument();
 });
 
 it("keeps a foreign-host profile visible but blocks activation", async () => {
