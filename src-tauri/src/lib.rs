@@ -134,6 +134,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_game_installation_profiles,
             commands::get_active_game_installation_profile,
+            commands::validate_game_installation_profile,
             commands::get_library_settings,
             commands::get_app_behavior_settings,
             commands::save_app_behavior_settings,
@@ -292,6 +293,7 @@ mod tests {
         for command in [
             "commands::list_game_installation_profiles",
             "commands::get_active_game_installation_profile",
+            "commands::validate_game_installation_profile",
         ] {
             assert!(
                 handler_source.contains(command),

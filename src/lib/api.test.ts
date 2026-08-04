@@ -29,6 +29,33 @@ describe("game installation profile read API", () => {
       ),
     ).toBe(true);
   });
+
+  it("returns a clearly read-only validation report without claiming game readiness", async () => {
+    const active = await api.getActiveGameInstallationProfile();
+    const report = await api.validateGameInstallationProfile(
+      active?.profileId ?? "",
+    );
+
+    expect(report.profileId).toBe(active?.profileId);
+    expect(report.readOnly).toBe(true);
+    expect(report.state).toBe("needs_review");
+    expect(report.gameSpecificValidationPending).toBe(true);
+    expect(report.environmentCompatibility).toBe("matches");
+    expect(report.roots.map((root) => root.rootId)).toEqual([
+      "mods",
+      "tray",
+      "downloads",
+    ]);
+    expect(
+      report.roots.every(
+        (root) =>
+          root.blockers.length === 0 &&
+          root.caseSensitivity === "unknown" &&
+          root.state === "needs_review",
+      ),
+    ).toBe(true);
+    expect(report.reviewNotes.join(" ")).toMatch(/simulated/i);
+  });
 });
 
 describe("sorting preview plan API", () => {

@@ -91,6 +91,73 @@ pub struct GameInstallationProfile {
     pub roots: Vec<GameInstallationRoot>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationEnvironmentCompatibility {
+    Matches,
+    Mismatch,
+    RequiresAdapter,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationPathMetadataState {
+    NotChecked,
+    Missing,
+    File,
+    Directory,
+    Symlink,
+    Other,
+    Unreadable,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationCaseSensitivity {
+    NotChecked,
+    Sensitive,
+    Insensitive,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationRootValidationReport {
+    pub root_id: String,
+    pub root_role: String,
+    pub configured_path: String,
+    pub required: bool,
+    pub state: GameInstallationRootValidationState,
+    pub absolute_path: Option<bool>,
+    pub exists: Option<bool>,
+    pub metadata_readable: Option<bool>,
+    pub metadata_state: GameInstallationPathMetadataState,
+    pub canonical_path_display: Option<String>,
+    pub case_sensitivity: GameInstallationCaseSensitivity,
+    pub symlink_observed: Option<bool>,
+    pub blockers: Vec<String>,
+    pub review_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationProfileValidationReport {
+    pub profile_id: String,
+    pub profile_name: String,
+    pub game_id: String,
+    pub stored_environment: GameOperatingEnvironment,
+    pub current_environment: GameOperatingEnvironment,
+    pub environment_compatibility: GameInstallationEnvironmentCompatibility,
+    pub state: GameInstallationProfileStatus,
+    pub generic_root_state: GameInstallationProfileStatus,
+    pub game_specific_validation_pending: bool,
+    pub read_only: bool,
+    pub roots: Vec<GameInstallationRootValidationReport>,
+    pub blockers: Vec<String>,
+    pub review_notes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppBehaviorSettings {

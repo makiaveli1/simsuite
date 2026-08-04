@@ -21,8 +21,8 @@ use crate::{
     core::{
         apply_plan_dry_run, apply_plan_persistence, apply_plan_results, apply_plan_validation,
         bundle_detector, category_audit, content_versions, creator_audit, downloads_watcher,
-        duplicate_detector, install_profile_engine, library_index, move_engine, rule_engine,
-        scanner, snapshot_manager, watch_polling,
+        duplicate_detector, game_installation_profile_validation, install_profile_engine,
+        library_index, move_engine, rule_engine, scanner, snapshot_manager, watch_polling,
     },
     database, ensure_tray,
     error::AppError,
@@ -37,8 +37,9 @@ use crate::{
         DownloadInboxDetail, DownloadsBootstrapResponse, DownloadsInboxQuery,
         DownloadsInboxResponse, DownloadsSelectionResponse, DownloadsWatcherState,
         DownloadsWatcherStatus, DuplicateOverview, DuplicatePair, FileDetail, FolderTreeMetadata,
-        GameInstallationProfile, GenerateSortingPreviewPlanRequest,
-        GenerateSortingPreviewPlanResult, GuidedInstallPlan, HomeOverview, IgnoreItemsResult,
+        GameInstallationProfile, GameInstallationProfileValidationReport,
+        GenerateSortingPreviewPlanRequest, GenerateSortingPreviewPlanResult, GuidedInstallPlan,
+        HomeOverview, IgnoreItemsResult,
         LibraryFacets, LibraryFolderFilesQuery,
         LibraryListResponse, LibraryPreviewDiagnostics, LibraryQuery, LibrarySettings,
         LibrarySummary, LibraryWatchBulkSaveItemResult, LibraryWatchBulkSaveResult,
@@ -414,6 +415,31 @@ pub fn get_active_game_installation_profile(
 ) -> Result<Option<GameInstallationProfile>, String> {
     let connection = state.connection().map_err(map_error)?;
     database::get_active_game_installation_profile(&connection).map_err(map_error)
+}
+
+#[tauri::command]
+pub async fn validate_game_installation_profile(
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<GameInstallationProfileValidationReport, String> {
+    assert_command_allowed(
+        "validate_game_installation_profile",
+        CommandCapability::ReadOnly,
+    )?;
+    if profile_id.trim().is_empty() {
+        return Err("game installation profile ID cannot be empty".to_owned());
+    }
+
+    let state = state.inner().clone();
+    run_blocking_command("validate_game_installation_profile", move || {
+        let connection = state.connection().map_err(map_error)?;
+        let profile = database::get_game_installation_profile(&connection, &profile_id)
+            .map_err(map_error)?;
+        Ok(game_installation_profile_validation::validate_game_installation_profile(
+            &profile,
+        ))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -3916,6 +3942,45 @@ mod tests {
     }
 
     #[test]
+    fn profile_validation_command_is_gated_before_reading_and_contains_no_write_calls() {
+        let source = include_str!("mod.rs");
+        let command_start = source
+            .find("pub async fn validate_game_installation_profile(")
+            .expect("profile validation command");
+        let remaining = &source[command_start..];
+        let command_end = remaining
+            .find("\n#[tauri::command]\npub fn get_library_settings")
+            .expect("next command boundary");
+        let command_source = &remaining[..command_end];
+
+        let gate_position = command_source
+            .find("CommandCapability::ReadOnly")
+            .expect("read-only command gate");
+        let connection_position = command_source
+            .find("state.connection()")
+            .expect("database read");
+        assert!(
+            gate_position < connection_position,
+            "profile validation must pass the read-only gate before opening the database"
+        );
+
+        for forbidden in [
+            "save_app_setting",
+            "save_library_paths",
+            "fs::write",
+            "fs::copy",
+            "fs::rename",
+            "fs::remove",
+            "fs::create_dir",
+        ] {
+            assert!(
+                !command_source.contains(forbidden),
+                "profile validation command must not call {forbidden}"
+            );
+        }
+    }
+
+    #[test]
     fn command_gate_blocks_external_apply_plan_result_writes_by_default() {
         use crate::command_gate::{assert_command_allowed, CommandCapability};
 
@@ -3938,6 +4003,7 @@ mod tests {
 
         for command_name in [
             "generate_sorting_preview_plan",
+            "validate_game_installation_profile",
             "list_saved_apply_plans",
             "get_apply_plan",
             "preview_apply_plan_validation",

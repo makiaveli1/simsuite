@@ -1072,7 +1072,7 @@ pub fn sync_category_override_path(
     Ok(())
 }
 
-fn get_game_installation_profile(
+pub fn get_game_installation_profile(
     connection: &Connection,
     profile_id: &str,
 ) -> AppResult<GameInstallationProfile> {
@@ -1129,7 +1129,7 @@ fn get_game_installation_profile(
     )) = stored_profile
     else {
         return Err(AppError::Message(format!(
-            "active game installation profile `{profile_id}` does not exist"
+            "game installation profile `{profile_id}` does not exist"
         )));
     };
 

@@ -35,6 +35,7 @@ import type {
   DuplicatePair,
   FileDetail,
   GameInstallationProfile,
+  GameInstallationProfileValidationReport,
   GuidedInstallPlan,
   GenerateSortingPreviewPlanRequest,
   GenerateSortingPreviewPlanResult,
@@ -175,6 +176,51 @@ function createMockGameInstallationProfile(): GameInstallationProfile {
           ]
         : [],
     ),
+  };
+}
+
+function createMockGameInstallationProfileValidation(
+  profileId: string,
+): GameInstallationProfileValidationReport {
+  const profile = createMockGameInstallationProfile();
+  if (profile.profileId !== profileId) {
+    throw new Error(`Game installation profile '${profileId}' does not exist.`);
+  }
+
+  return {
+    profileId: profile.profileId,
+    profileName: profile.profileName,
+    gameId: profile.gameId,
+    storedEnvironment: profile.operatingEnvironment,
+    currentEnvironment: "native_windows",
+    environmentCompatibility: "matches",
+    state: "needs_review",
+    genericRootState: "needs_review",
+    gameSpecificValidationPending: true,
+    readOnly: true,
+    roots: profile.roots.map((root) => ({
+      rootId: root.rootId,
+      rootRole: root.rootRole,
+      configuredPath: root.configuredPath,
+      required: root.required,
+      state: "needs_review",
+      absolutePath: true,
+      exists: true,
+      metadataReadable: true,
+      metadataState: "directory",
+      canonicalPathDisplay: root.configuredPath,
+      caseSensitivity: "unknown",
+      symlinkObserved: false,
+      blockers: [],
+      reviewNotes: [
+        "Browser mock validation cannot prove root-local filesystem case behavior.",
+      ],
+    })),
+    blockers: [],
+    reviewNotes: [
+      "Game-specific Sims 4 coherence checks are pending the adapter boundary.",
+      "This browser result is simulated and does not inspect the local filesystem.",
+    ],
   };
 }
 
@@ -7371,6 +7417,10 @@ async function mockInvoke<T>(
       return [structuredClone(createMockGameInstallationProfile())] as T;
     case "get_active_game_installation_profile":
       return structuredClone(createMockGameInstallationProfile()) as T;
+    case "validate_game_installation_profile":
+      return structuredClone(
+        createMockGameInstallationProfileValidation(String(payload?.profileId ?? "")),
+      ) as T;
     case "get_library_settings":
       return structuredClone(mockSettings) as T;
     case "save_library_paths":
@@ -9019,6 +9069,11 @@ export const api = {
     invoke<GameInstallationProfile[]>("list_game_installation_profiles"),
   getActiveGameInstallationProfile: () =>
     invoke<GameInstallationProfile | null>("get_active_game_installation_profile"),
+  validateGameInstallationProfile: (profileId: string) =>
+    invoke<GameInstallationProfileValidationReport>(
+      "validate_game_installation_profile",
+      { profileId },
+    ),
   getLibrarySettings: () => invoke<LibrarySettings>("get_library_settings"),
   getAppBehaviorSettings: () =>
     invoke<AppBehaviorSettings>("get_app_behavior_settings"),

@@ -86,6 +86,58 @@ export interface GameInstallationProfile {
   roots: GameInstallationRoot[];
 }
 
+export type GameInstallationEnvironmentCompatibility =
+  | "matches"
+  | "mismatch"
+  | "requires_adapter"
+  | "unknown";
+export type GameInstallationPathMetadataState =
+  | "not_checked"
+  | "missing"
+  | "file"
+  | "directory"
+  | "symlink"
+  | "other"
+  | "unreadable";
+export type GameInstallationCaseSensitivity =
+  | "not_checked"
+  | "sensitive"
+  | "insensitive"
+  | "unknown";
+
+export interface GameInstallationRootValidationReport {
+  rootId: string;
+  rootRole: string;
+  configuredPath: string;
+  required: boolean;
+  state: GameInstallationRootValidationState;
+  absolutePath: boolean | null;
+  exists: boolean | null;
+  metadataReadable: boolean | null;
+  metadataState: GameInstallationPathMetadataState;
+  canonicalPathDisplay: string | null;
+  caseSensitivity: GameInstallationCaseSensitivity;
+  symlinkObserved: boolean | null;
+  blockers: string[];
+  reviewNotes: string[];
+}
+
+export interface GameInstallationProfileValidationReport {
+  profileId: string;
+  profileName: string;
+  gameId: string;
+  storedEnvironment: GameOperatingEnvironment;
+  currentEnvironment: GameOperatingEnvironment;
+  environmentCompatibility: GameInstallationEnvironmentCompatibility;
+  state: GameInstallationProfileStatus;
+  genericRootState: GameInstallationProfileStatus;
+  gameSpecificValidationPending: boolean;
+  readOnly: boolean;
+  roots: GameInstallationRootValidationReport[];
+  blockers: string[];
+  reviewNotes: string[];
+}
+
 export interface LibrarySettings {
   modsPath: string | null;
   trayPath: string | null;
