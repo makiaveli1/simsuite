@@ -25,6 +25,26 @@ pnpm run desktop:proof:fixtures -- --SkipBuild
 
 If you want it to rebuild the desktop binary first, omit `--SkipBuild`.
 
+## Native Windows game-profile candidate proof
+
+Use this separate read-only lane when validating Windows Documents, OneDrive, case handling, and NTFS redirects for Game Installation Profile suggestions:
+
+```bash
+pnpm run desktop:proof:game-profile:windows
+```
+
+Run it from native Windows PowerShell or from WSL through the repository's guarded PowerShell dispatcher. It runs the complete candidate-detection Rust test module on Windows, including the ignored live detector receipt and a controlled temporary NTFS junction fixture. It does not launch the app, save a profile, activate a profile, create folders inside the player's Sims setup, or run Apply or Restore.
+
+Evidence is written under:
+
+```text
+output/desktop/windows-game-profile-proof/
+```
+
+Each run records `cargo-test.log`, a timestamped `summary.json`, and `latest-summary.json`. The summary contains the Git revision, Windows and PowerShell details, the known-folder and OneDrive sources visible to the detector, and the detector's read-only result. These files can contain local path names, remain ignored by Git, and should be reviewed before sharing.
+
+A passing receipt proves the detector ran on that Windows host. It does not by itself prove every redirection, permission, personal OneDrive, commercial OneDrive, or inaccessible-folder scenario. Those scenarios still need to be exercised on representative Windows machines before candidate refresh or stronger automation is enabled.
+
 ## Baseline validation lane
 
 Run this before claiming a branch is ready for review:

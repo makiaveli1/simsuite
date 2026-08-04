@@ -326,10 +326,7 @@ fn build_native_candidate(
         );
     }
 
-    if fs::symlink_metadata(&user_data_path)
-        .map(|metadata| metadata.file_type().is_symlink())
-        .unwrap_or(false)
-    {
+    if path_is_redirect_or_symlink(&user_data_path) {
         warnings.push(
             "The user-data path is a symbolic link or filesystem redirect. SimSuite will require its normal live validation before confirmation."
                 .to_owned(),
@@ -386,6 +383,28 @@ fn build_native_candidate(
     }
 }
 
+fn path_is_redirect_or_symlink(path: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 fn candidate_identity(path: &Path, operating_environment: GameOperatingEnvironment) -> String {
     let canonical_path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let identity = path_to_string(&canonical_path).replace('\\', "/");
@@ -423,6 +442,19 @@ mod tests {
             root_path,
             source_priority,
         }
+    }
+
+    #[cfg(windows)]
+    fn create_windows_junction(link: &Path, target: &Path) {
+        use std::process::Command;
+
+        let status = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .status()
+            .expect("launch mklink");
+        assert!(status.success(), "create Windows junction");
     }
 
     #[test]
@@ -696,6 +728,102 @@ mod tests {
 
         assert!(result.supported);
         assert!(result.candidates.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_junction_aliases_deduplicate_and_report_redirect() {
+        let temp = TempDir::new().expect("temp dir");
+        let real_documents = temp.path().join("Real Documents");
+        let real_user_data = real_documents
+            .join("Electronic Arts")
+            .join("The Sims 4");
+        create_directory(&real_user_data.join("Mods"));
+        create_directory(&real_user_data.join("Tray"));
+
+        let redirected_documents = temp.path().join("Redirected Documents");
+        let redirected_ea = redirected_documents.join("Electronic Arts");
+        create_directory(&redirected_ea);
+        create_windows_junction(&redirected_ea.join("The Sims 4"), &real_user_data);
+
+        let (candidates, review_notes) = detect_native_sims4_candidates(
+            vec![
+                NativeCandidateSource {
+                    source_code: "windows_redirected_documents".to_owned(),
+                    suggested_name: "Sims 4 in redirected Documents".to_owned(),
+                    documents_path: redirected_documents,
+                    source_evidence: "Controlled Windows junction fixture.".to_owned(),
+                    source_priority: 0,
+                },
+                NativeCandidateSource {
+                    source_code: "windows_real_documents".to_owned(),
+                    suggested_name: "Sims 4 in real Documents".to_owned(),
+                    documents_path: real_documents,
+                    source_evidence: "Controlled Windows target fixture.".to_owned(),
+                    source_priority: 1,
+                },
+            ],
+            None,
+            GameOperatingEnvironment::NativeWindows,
+            "Windows",
+        );
+
+        assert!(review_notes.is_empty());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].candidate_id, "windows_redirected_documents");
+        assert!(candidates[0]
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("filesystem redirect")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "native Windows host evidence; run through the dedicated proof wrapper"]
+    fn windows_native_candidate_probe() {
+        let documents_dir = dirs::document_dir();
+        let home_dir = dirs::home_dir();
+        let downloads_dir = dirs::download_dir();
+        for path in [&documents_dir, &home_dir, &downloads_dir]
+            .into_iter()
+            .flatten()
+        {
+            assert!(path.is_absolute(), "Windows known folders must be absolute");
+        }
+
+        let result = detect_game_installation_candidates();
+        assert_eq!(
+            result.current_environment,
+            GameOperatingEnvironment::NativeWindows
+        );
+        assert!(result.supported);
+        assert!(result.read_only);
+        assert!(result.candidates.iter().all(|candidate| candidate.read_only));
+
+        let one_drive_environment = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+            .into_iter()
+            .map(|name| {
+                (
+                    name,
+                    std::env::var_os(name)
+                        .map(PathBuf::from)
+                        .map(|path| path_to_string(&path)),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let receipt = serde_json::json!({
+            "schemaVersion": "1.0",
+            "proof": "native_windows_game_profile_candidates",
+            "configuredDocuments": documents_dir.map(|path| path_to_string(&path)),
+            "homeDirectory": home_dir.map(|path| path_to_string(&path)),
+            "downloadsDirectory": downloads_dir.map(|path| path_to_string(&path)),
+            "oneDriveEnvironment": one_drive_environment,
+            "detectorResult": result,
+        });
+        println!(
+            "SIMSUITE_WINDOWS_GAME_PROFILE_PROOF_JSON={}",
+            serde_json::to_string(&receipt).expect("serialize proof receipt")
+        );
     }
 
     #[test]

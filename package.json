@@ -20,6 +20,7 @@
         "desktop:smoke:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1",
         "desktop:smoke:apply:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-tauri-smoke.ps1 -IncludeApply",
         "desktop:proof:fixtures": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-desktop-library-proof.ps1",
+        "desktop:proof:game-profile:windows": "node scripts/desktop/run-powershell-script.mjs scripts/desktop/run-windows-game-profile-proof.ps1",
         "test:dev-scripts": "node --test scripts/dev/dev-runtime.test.mjs",
         "test:unit": "node scripts/test/run-vitest.mjs && node --test scripts/dev/dev-runtime.test.mjs && node --test scripts/test/portable-helper-syntax.test.mjs",
         "test:rust": "node scripts/test/run-rust-tests.mjs",

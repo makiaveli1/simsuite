@@ -99,6 +99,19 @@ describe("validation script wrappers", () => {
       expect(source).not.toMatch(/[A-Za-z]:\\Users\\/);
     }
 
+    const gameProfileProofSource = readFileSync(
+      "scripts/desktop/run-windows-game-profile-proof.ps1",
+      "utf8",
+    );
+    expect(gameProfileProofSource).toContain("$ErrorActionPreference = 'Stop'");
+    expect(gameProfileProofSource).toContain("cargo test");
+    expect(gameProfileProofSource).toContain("--include-ignored");
+    expect(gameProfileProofSource).toContain("SIMSUITE_WINDOWS_GAME_PROFILE_PROOF_JSON=");
+    expect(gameProfileProofSource).toContain("output\\desktop\\windows-game-profile-proof");
+    expect(gameProfileProofSource).not.toMatch(/\bnpm run\b/i);
+    expect(gameProfileProofSource).not.toMatch(/[A-Za-z]:\\Users\\/);
+    expect(gameProfileProofSource).not.toMatch(/\b(Remove-Item|Move-Item|Rename-Item)\b/i);
+
     const compatibilitySource = readFileSync(
       "scripts/desktop/run-tauri-smoke-fixed.ps1",
       "utf8",
