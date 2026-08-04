@@ -111,8 +111,9 @@ Notes:
 
 - `pnpm run test:unit` runs the repository-local Vitest CLI, forces `NODE_ENV=test`, and keeps jsdom in control of browser storage through `scripts/test/run-vitest.mjs`.
 - `pnpm run test:rust` uses native Cargo on macOS and Linux. From WSL it deliberately runs Cargo through Windows PowerShell so path-sensitive Tauri tests match the Windows target.
-- `.github/workflows/cross-platform-preflight.yml` runs locked installs, tests, frontend builds, and native Tauri compilation on Windows, macOS, and Linux. Its Windows job also runs the read-only game-profile baseline and retains the generated receipt as a 14-day workflow artifact.
-- The hosted Windows receipt proves the detector and NTFS junction fixture ran on that GitHub runner. It does not replace representative Windows Documents, OneDrive, permission, desktop-app, or real Linux app-launch and file-manager checks. Native desktop and player-environment proof remains platform-specific.
+- `.github/workflows/cross-platform-preflight.yml` runs locked installs, tests, frontend builds, and native Tauri compilation on Windows, macOS, and Linux. Its Windows job also runs the read-only game-profile baseline, reviews the receipt against the exact workflow Git revision, and retains the generated evidence as a 14-day workflow artifact.
+- `pnpm run desktop:review:game-profile:windows -- --summary <receipt> --expected-git <full-sha>` performs the same read-only receipt review locally after an artifact is downloaded.
+- The hosted Windows receipt proves the detector and NTFS junction fixture ran coherently on that GitHub runner. It does not replace representative Windows Documents, OneDrive, permission, desktop-app, or real Linux app-launch and file-manager checks. Native desktop and player-environment proof remains platform-specific.
 
 Desktop proof/smoke lanes on Windows or WSL:
 

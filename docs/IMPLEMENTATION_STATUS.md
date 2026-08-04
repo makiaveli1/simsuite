@@ -24,7 +24,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Read-only Confirmation Design V1 in saved plan details, including persisted custom folder configuration and cross-system context trail snapshots.
 - Fixture-only backend proof work for future backup/restore logic.
 - Windows desktop proof/smoke scripts.
-- Native Windows game-profile candidate proof wrapper that runs the real read-only detector and candidate test module, emits ignored local JSON evidence, and includes a temporary NTFS junction/reparse-point test. The cross-platform preflight is wired to run this lane only on its Windows runner and retain the receipt as a 14-day workflow artifact. The wiring is local in this revision, so no hosted Windows receipt is claimed yet.
+- Native Windows game-profile candidate proof wrapper that runs the real read-only detector and candidate test module, emits ignored local JSON evidence, and includes a temporary NTFS junction/reparse-point test. The published cross-platform preflight runs this lane only on its Windows runner and retains the receipt as a 14-day workflow artifact. A standalone read-only reviewer now validates the receipt schema, UTC timestamp, exact Git revision, Windows host and known-folder evidence, detector environment, and read-only candidate guarantees while explicitly refusing to unlock candidate refresh or file mutation. No hosted Windows result is claimed until the actual workflow artifact is retrieved and reviewed.
 - Validation wrappers for WSL/Windows test reliability.
 - Cross-platform development foundation with pnpm 10.34.5 pinned as the canonical package manager.
 - Portable Tauri development and build wrappers that preserve the existing Windows/WSL PowerShell lane and use native Node/Tauri execution on macOS and Linux.
@@ -43,7 +43,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 
 ## Cross-platform verification remaining
 
-- After explicit push approval, inspect the current Windows, macOS, and Linux preflight and retain the uploaded hosted Windows game-profile artifact. The workflow wiring exists locally, but no hosted run or receipt is claimed for this revision.
+- Inspect the Windows, macOS, and Linux preflight triggered by the published branch and retain the uploaded hosted Windows game-profile artifact. Run the read-only receipt reviewer against the exact workflow revision before treating it as a valid hosted baseline. No hosted run or receipt is claimed until that evidence is retrieved.
 - Run the existing Windows fixture desktop proof and smoke lanes on a real Windows host. The CI Windows runner verifies dependency installation, tests, builds, native compilation, and the read-only game-profile detector baseline, but it does not exercise the webdriver player journey or a player's real Sims folders.
 - Run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and retain the generated JSON receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points. A hosted-runner receipt is only baseline evidence and does not satisfy these player-environment scenarios.
 - Verify Platform Path Semantics V1 and Canonical Destination Validation V2 on native Windows, including root-local case probing, Windows path forms, case-only source drift, duplicate destination detection, and symlink or reparse-point containment.
@@ -110,6 +110,12 @@ For native Windows game-profile candidate evidence:
 pnpm run desktop:proof:game-profile:windows
 ```
 
+To review a downloaded or local Windows game-profile receipt without changing it:
+
+```bash
+pnpm run desktop:review:game-profile:windows -- --summary <path-to-latest-summary.json> --expected-git <full-40-character-sha>
+```
+
 For broader Windows desktop regression proof:
 
 ```bash
@@ -129,8 +135,8 @@ Advance **Game Installation Profile V1** from the verified macOS and code-level 
 The profile foundation preserves existing users' effective Mods, Tray, and Downloads paths through an idempotent compatibility migration. Complete profiles, guarded manual draft creation, fresh validation-backed confirmation, guarded active-profile selection, transient generic root evidence, Sims4Adapter readiness reports, and ranked read-only macOS and Windows candidates are available through backend and TypeScript APIs. Settings presents candidates as temporary suggestions and permits only confirmed, current-host-compatible saved profiles to become active; foreign-native and adapter-dependent environments remain review-only. Candidate review and manual setup never create folders or activate a profile silently. The adapter proves coherent Mods/Tray relationships for matching native profiles and shares its content-extension and placement-depth contract with scanner and validation code.
 
 Next work:
-- after explicit push approval, inspect the Windows preflight result and archive the hosted baseline artifact without treating it as player-environment proof;
-- run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and review the generated receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points;
+- inspect the published Windows preflight result, archive the hosted artifact, and run `pnpm run desktop:review:game-profile:windows` against the exact workflow Git revision without treating a hosted pass as player-environment proof;
+- run `pnpm run desktop:proof:game-profile:windows` on representative Windows hosts and review each generated receipt for normal Documents, redirected Documents, personal and commercial OneDrive, duplicate aliases, inaccessible folders, case variants, and reparse points;
 - add a safe explicit candidate refresh action only after the hosted baseline and representative native Windows proof pass;
 - keep old `LibrarySettings` callers on the compatibility view while migrating one subsystem at a time;
 - design Wine/Proton/Lutris environment identification separately without interpreting native Linux paths as a Sims 4 setup;

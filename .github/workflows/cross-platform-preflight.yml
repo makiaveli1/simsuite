@@ -81,6 +81,11 @@ jobs:
         if: runner.os == 'Windows'
         run: pnpm run desktop:proof:game-profile:windows
 
+      - name: Review hosted Windows game-profile receipt
+        id: windows_game_profile_review
+        if: ${{ runner.os == 'Windows' && steps.windows_game_profile_proof.outcome == 'success' }}
+        run: pnpm run desktop:review:game-profile:windows -- --expected-git ${{ github.sha }}
+
       - name: Upload hosted Windows game-profile evidence
         if: ${{ runner.os == 'Windows' && !cancelled() && steps.windows_game_profile_proof.outcome != 'skipped' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

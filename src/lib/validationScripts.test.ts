@@ -163,6 +163,14 @@ describe("validation script wrappers", () => {
     expect(workflowSource).toContain("id: windows_game_profile_proof");
     expect(workflowSource).toContain("if: runner.os == 'Windows'");
     expect(workflowSource).toContain("run: pnpm run desktop:proof:game-profile:windows");
+    expect(workflowSource).toContain("- name: Review hosted Windows game-profile receipt");
+    expect(workflowSource).toContain("id: windows_game_profile_review");
+    expect(workflowSource).toContain(
+      "if: ${{ runner.os == 'Windows' && steps.windows_game_profile_proof.outcome == 'success' }}",
+    );
+    expect(workflowSource).toContain(
+      "run: pnpm run desktop:review:game-profile:windows -- --expected-git ${{ github.sha }}",
+    );
     expect(workflowSource).toContain("- name: Upload hosted Windows game-profile evidence");
     expect(workflowSource).toContain(
       "if: ${{ runner.os == 'Windows' && !cancelled() && steps.windows_game_profile_proof.outcome != 'skipped' }}",
@@ -174,6 +182,23 @@ describe("validation script wrappers", () => {
     expect(workflowSource).toContain("if-no-files-found: error");
     expect(workflowSource).toContain("retention-days: 14");
     expect(workflowSource.match(/run: pnpm run desktop:proof:game-profile:windows/g)).toHaveLength(1);
+    expect(workflowSource.match(/run: pnpm run desktop:review:game-profile:windows/g)).toHaveLength(1);
+
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(packageJson.scripts["desktop:review:game-profile:windows"]).toBe(
+      "node scripts/desktop/review-windows-game-profile-proof.mjs",
+    );
+
+    const reviewerSource = readFileSync(
+      "scripts/desktop/review-windows-game-profile-proof.mjs",
+      "utf8",
+    );
+    expect(reviewerSource).toContain('evidenceLevel: "hosted_windows_baseline"');
+    expect(reviewerSource).toContain("representativeWindowsProofReady: false");
+    expect(reviewerSource).toContain("unlocksCandidateRefresh: false");
+    expect(reviewerSource).toContain("unlocksFileMutation: false");
+    expect(reviewerSource).toContain("readFileSync");
+    expect(reviewerSource).not.toMatch(/\b(writeFile|appendFile|copyFile|rename|unlink|rm|mkdir)(Sync)?\b/);
   });
 
   it("uses the Windows PowerShell Rust lane from WSL so cargo path semantics match the desktop target", () => {

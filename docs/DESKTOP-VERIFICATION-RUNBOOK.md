@@ -51,6 +51,24 @@ The Windows leg of `.github/workflows/cross-platform-preflight.yml` runs the sam
 
 Treat that artifact as **hosted-runner evidence only**. GitHub's temporary runner does not reproduce a player's redirected Documents folder, signed-in personal or commercial OneDrive layout, custom permissions, existing Sims library, or desktop interaction. A hosted pass must not unlock candidate refresh or stronger automation by itself.
 
+### Review a downloaded receipt
+
+After downloading and extracting the workflow artifact, review its `latest-summary.json` from the repository root:
+
+```bash
+pnpm run desktop:review:game-profile:windows -- --summary <path-to-latest-summary.json> --expected-git <full-40-character-sha>
+```
+
+When the artifact is already under the default ignored output folder, the shorter command is enough:
+
+```bash
+pnpm run desktop:review:game-profile:windows
+```
+
+The reviewer is cross-platform and read-only. It checks the receipt schema, UTC timestamp, exact Git revision, Windows host details, known-folder and OneDrive evidence, detector environment, candidate shape, and the detector's read-only guarantees. It exits unsuccessfully when any required fact is missing or mismatched.
+
+A passing review means the hosted receipt is internally coherent for the named revision. It deliberately reports `representativeWindowsProofReady: false`, `unlocksCandidateRefresh: false`, and `unlocksFileMutation: false`. Representative player-machine proof remains a separate requirement.
+
 ## Baseline validation lane
 
 Run this before claiming a branch is ready for review:
