@@ -17,6 +17,16 @@ use crate::{
     },
 };
 
+use super::game_adapter::{
+    validate_game_readiness, GameAdapterProfileEvidence, GameAdapterRootEvidence,
+};
+
+#[derive(Debug, Clone)]
+struct ValidatedRoot {
+    report: GameInstallationRootValidationReport,
+    adapter_evidence: GameAdapterRootEvidence,
+}
+
 pub fn validate_game_installation_profile(
     profile: &GameInstallationProfile,
 ) -> GameInstallationProfileValidationReport {
@@ -48,7 +58,7 @@ fn validate_game_installation_profile_for_platform(
         ),
     }
 
-    let roots = profile
+    let validated_roots = profile
         .roots
         .iter()
         .map(|root| {
@@ -59,6 +69,14 @@ fn validate_game_installation_profile_for_platform(
             }
         })
         .collect::<Vec<_>>();
+    let roots = validated_roots
+        .iter()
+        .map(|root| root.report.clone())
+        .collect::<Vec<_>>();
+    let adapter_roots = validated_roots
+        .iter()
+        .map(|root| root.adapter_evidence.clone())
+        .collect::<Vec<_>>();
 
     let generic_root_state = derive_generic_root_state(&roots);
     if roots.is_empty() {
@@ -68,22 +86,40 @@ fn validate_game_installation_profile_for_platform(
         );
     }
 
-    if profile.confirmation_state
-        != crate::models::GameInstallationConfirmationState::Confirmed
-    {
+    let player_confirmed = profile.confirmation_state
+        == crate::models::GameInstallationConfirmationState::Confirmed;
+    if !player_confirmed {
         profile_review_notes.push(
             "The profile is not currently confirmed by the player and requires review."
                 .to_owned(),
         );
     }
 
-    let game_specific_validation_pending = true;
-    profile_review_notes.push(format!(
-        "Game-specific coherence checks for '{}' are pending the adapter boundary. Generic root evidence is reported separately and no profile state was persisted.",
-        profile.game_id
-    ));
+    let game_readiness = if environment_compatibility
+        == GameInstallationEnvironmentCompatibility::Matches
+    {
+        validate_game_readiness(GameAdapterProfileEvidence {
+            profile,
+            roots: &adapter_roots,
+        })
+    } else {
+        None
+    };
+    let game_specific_validation_pending = game_readiness
+        .as_ref()
+        .map(|report| !report.complete)
+        .unwrap_or(true);
 
-    let blockers = roots
+    if game_readiness.is_none()
+        && environment_compatibility == GameInstallationEnvironmentCompatibility::Matches
+    {
+        profile_review_notes.push(format!(
+            "No game adapter is registered for '{}', so game-specific readiness was not guessed.",
+            profile.game_id
+        ));
+    }
+
+    let mut blockers = roots
         .iter()
         .flat_map(|root| {
             root.blockers
@@ -91,6 +127,14 @@ fn validate_game_installation_profile_for_platform(
                 .map(move |message| format!("{}: {message}", root.root_id))
         })
         .collect::<Vec<_>>();
+    if let Some(game_readiness) = &game_readiness {
+        blockers.extend(
+            game_readiness
+                .blockers
+                .iter()
+                .map(|message| format!("{}: {message}", game_readiness.adapter_id)),
+        );
+    }
 
     let mut aggregated_review_notes = profile_review_notes;
     aggregated_review_notes.extend(roots.iter().flat_map(|root| {
@@ -98,12 +142,26 @@ fn validate_game_installation_profile_for_platform(
             .iter()
             .map(move |message| format!("{}: {message}", root.root_id))
     }));
+    if let Some(game_readiness) = &game_readiness {
+        aggregated_review_notes.extend(
+            game_readiness
+                .review_notes
+                .iter()
+                .map(|message| format!("{}: {message}", game_readiness.adapter_id)),
+        );
+    }
 
-    let state = if generic_root_state == GameInstallationProfileStatus::Unavailable {
+    let game_state = game_readiness.as_ref().map(|report| report.state);
+    let state = if generic_root_state == GameInstallationProfileStatus::Unavailable
+        || game_state == Some(GameInstallationProfileStatus::Unavailable)
+    {
         GameInstallationProfileStatus::Unavailable
+    } else if generic_root_state == GameInstallationProfileStatus::Valid
+        && game_state == Some(GameInstallationProfileStatus::Valid)
+        && player_confirmed
+    {
+        GameInstallationProfileStatus::Valid
     } else {
-        // The generic filesystem layer must not claim full game readiness before
-        // the game adapter proves root coherence and game-specific rules.
         GameInstallationProfileStatus::NeedsReview
     };
 
@@ -117,6 +175,7 @@ fn validate_game_installation_profile_for_platform(
         state,
         generic_root_state,
         game_specific_validation_pending,
+        game_readiness,
         read_only: true,
         roots,
         blockers,
@@ -127,7 +186,7 @@ fn validate_game_installation_profile_for_platform(
 fn validate_root(
     root: &GameInstallationRoot,
     platform: PlatformId,
-) -> GameInstallationRootValidationReport {
+) -> ValidatedRoot {
     let path = PathBuf::from(&root.configured_path);
     if !path.is_absolute() {
         return failed_root_report(
@@ -214,7 +273,8 @@ fn validate_root(
                         );
                     }
 
-                    GameInstallationRootValidationReport {
+                    let canonical_path = identity.canonical_root;
+                    let report = GameInstallationRootValidationReport {
                         root_id: root.root_id.clone(),
                         root_role: root.root_role.clone(),
                         configured_path: root.configured_path.clone(),
@@ -228,13 +288,21 @@ fn validate_root(
                         } else {
                             GameInstallationPathMetadataState::Directory
                         },
-                        canonical_path_display: Some(
-                            identity.canonical_root.display().to_string(),
-                        ),
+                        canonical_path_display: Some(canonical_path.display().to_string()),
                         case_sensitivity,
                         symlink_observed: Some(symlink_observed),
                         blockers,
                         review_notes,
+                    };
+                    ValidatedRoot {
+                        adapter_evidence: GameAdapterRootEvidence {
+                            root_id: root.root_id.clone(),
+                            required: root.required,
+                            state,
+                            canonical_path: Some(canonical_path),
+                            symlink_observed: Some(symlink_observed),
+                        },
+                        report,
                     }
                 }
                 Err(error) => failed_root_report(
@@ -257,13 +325,14 @@ fn validate_root(
     }
 }
 
-fn skipped_root_report(root: &GameInstallationRoot) -> GameInstallationRootValidationReport {
-    GameInstallationRootValidationReport {
+fn skipped_root_report(root: &GameInstallationRoot) -> ValidatedRoot {
+    let state = GameInstallationRootValidationState::NeedsReview;
+    let report = GameInstallationRootValidationReport {
         root_id: root.root_id.clone(),
         root_role: root.root_role.clone(),
         configured_path: root.configured_path.clone(),
         required: root.required,
-        state: GameInstallationRootValidationState::NeedsReview,
+        state,
         absolute_path: None,
         exists: None,
         metadata_readable: None,
@@ -276,6 +345,16 @@ fn skipped_root_report(root: &GameInstallationRoot) -> GameInstallationRootValid
             "Root probing was skipped because the stored operating environment cannot yet be interpreted safely on this host."
                 .to_owned(),
         ],
+    };
+    ValidatedRoot {
+        adapter_evidence: GameAdapterRootEvidence {
+            root_id: root.root_id.clone(),
+            required: root.required,
+            state,
+            canonical_path: None,
+            symlink_observed: None,
+        },
+        report,
     }
 }
 
@@ -290,7 +369,7 @@ fn failed_root_report(
     case_sensitivity: GameInstallationCaseSensitivity,
     symlink_observed: Option<bool>,
     message: String,
-) -> GameInstallationRootValidationReport {
+) -> ValidatedRoot {
     let state = if root.required {
         GameInstallationRootValidationState::Unavailable
     } else {
@@ -302,7 +381,7 @@ fn failed_root_report(
         (Vec::new(), vec![message])
     };
 
-    GameInstallationRootValidationReport {
+    let report = GameInstallationRootValidationReport {
         root_id: root.root_id.clone(),
         root_role: root.root_role.clone(),
         configured_path: root.configured_path.clone(),
@@ -317,6 +396,16 @@ fn failed_root_report(
         symlink_observed,
         blockers,
         review_notes,
+    };
+    ValidatedRoot {
+        adapter_evidence: GameAdapterRootEvidence {
+            root_id: root.root_id.clone(),
+            required: root.required,
+            state,
+            canonical_path: None,
+            symlink_observed,
+        },
+        report,
     }
 }
 
@@ -439,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn native_roots_can_be_generically_valid_without_claiming_game_readiness() {
+    fn native_coherent_roots_can_be_fully_validated_without_persistence() {
         let directory = tempdir().expect("tempdir");
         let mods = known_case_root(directory.path(), "Mods");
         let tray = known_case_root(directory.path(), "Tray");
@@ -452,8 +541,16 @@ mod tests {
 
         assert_eq!(report.environment_compatibility, GameInstallationEnvironmentCompatibility::Matches);
         assert_eq!(report.generic_root_state, GameInstallationProfileStatus::Valid);
-        assert_eq!(report.state, GameInstallationProfileStatus::NeedsReview);
-        assert!(report.game_specific_validation_pending);
+        assert_eq!(report.state, GameInstallationProfileStatus::Valid);
+        assert!(!report.game_specific_validation_pending);
+        let game_readiness = report.game_readiness.as_ref().expect("Sims 4 readiness");
+        assert_eq!(game_readiness.adapter_id, "sims4_v1");
+        assert_eq!(game_readiness.state, GameInstallationProfileStatus::Valid);
+        assert!(game_readiness.evidence.iter().any(|item| {
+            item.code == "sims4_user_data_inferred"
+                && item.strength
+                    == crate::models::GameInstallationEvidenceStrength::StronglySupported
+        }));
         assert!(report.read_only);
         assert!(report.roots.iter().all(|root| {
             root.state == GameInstallationRootValidationState::Valid

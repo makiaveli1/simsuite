@@ -140,6 +140,39 @@ pub struct GameInstallationRootValidationReport {
     pub review_notes: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameInstallationEvidenceStrength {
+    Confirmed,
+    StronglySupported,
+    Possible,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationReadinessEvidence {
+    pub code: String,
+    pub strength: GameInstallationEvidenceStrength,
+    pub summary: String,
+    pub root_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInstallationAdapterReadinessReport {
+    pub adapter_id: String,
+    pub complete: bool,
+    pub state: GameInstallationProfileStatus,
+    pub supported_mod_extensions: Vec<String>,
+    pub supported_tray_extensions: Vec<String>,
+    pub max_script_folder_depth: usize,
+    pub max_package_folder_depth: usize,
+    pub evidence: Vec<GameInstallationReadinessEvidence>,
+    pub blockers: Vec<String>,
+    pub review_notes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GameInstallationProfileValidationReport {
@@ -152,6 +185,7 @@ pub struct GameInstallationProfileValidationReport {
     pub state: GameInstallationProfileStatus,
     pub generic_root_state: GameInstallationProfileStatus,
     pub game_specific_validation_pending: bool,
+    pub game_readiness: Option<GameInstallationAdapterReadinessReport>,
     pub read_only: bool,
     pub roots: Vec<GameInstallationRootValidationReport>,
     pub blockers: Vec<String>,

@@ -122,6 +122,32 @@ export interface GameInstallationRootValidationReport {
   reviewNotes: string[];
 }
 
+export type GameInstallationEvidenceStrength =
+  | "confirmed"
+  | "strongly_supported"
+  | "possible"
+  | "unknown";
+
+export interface GameInstallationReadinessEvidence {
+  code: string;
+  strength: GameInstallationEvidenceStrength;
+  summary: string;
+  rootIds: string[];
+}
+
+export interface GameInstallationAdapterReadinessReport {
+  adapterId: string;
+  complete: boolean;
+  state: GameInstallationProfileStatus;
+  supportedModExtensions: string[];
+  supportedTrayExtensions: string[];
+  maxScriptFolderDepth: number;
+  maxPackageFolderDepth: number;
+  evidence: GameInstallationReadinessEvidence[];
+  blockers: string[];
+  reviewNotes: string[];
+}
+
 export interface GameInstallationProfileValidationReport {
   profileId: string;
   profileName: string;
@@ -132,6 +158,7 @@ export interface GameInstallationProfileValidationReport {
   state: GameInstallationProfileStatus;
   genericRootState: GameInstallationProfileStatus;
   gameSpecificValidationPending: boolean;
+  gameReadiness: GameInstallationAdapterReadinessReport | null;
   readOnly: boolean;
   roots: GameInstallationRootValidationReport[];
   blockers: string[];

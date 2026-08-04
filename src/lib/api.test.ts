@@ -30,7 +30,7 @@ describe("game installation profile read API", () => {
     ).toBe(true);
   });
 
-  it("returns a clearly read-only validation report without claiming game readiness", async () => {
+  it("returns a clearly read-only Sims 4 readiness report without hiding generic uncertainty", async () => {
     const active = await api.getActiveGameInstallationProfile();
     const report = await api.validateGameInstallationProfile(
       active?.profileId ?? "",
@@ -39,8 +39,22 @@ describe("game installation profile read API", () => {
     expect(report.profileId).toBe(active?.profileId);
     expect(report.readOnly).toBe(true);
     expect(report.state).toBe("needs_review");
-    expect(report.gameSpecificValidationPending).toBe(true);
+    expect(report.gameSpecificValidationPending).toBe(false);
     expect(report.environmentCompatibility).toBe("matches");
+    expect(report.gameReadiness?.adapterId).toBe("sims4_v1");
+    expect(report.gameReadiness?.complete).toBe(true);
+    expect(report.gameReadiness?.state).toBe("needs_review");
+    expect(report.gameReadiness?.supportedModExtensions).toEqual([
+      ".package",
+      ".ts4script",
+    ]);
+    expect(report.gameReadiness?.maxScriptFolderDepth).toBe(1);
+    expect(report.gameReadiness?.evidence).toContainEqual(
+      expect.objectContaining({
+        code: "sims4_user_data_inferred",
+        strength: "strongly_supported",
+      }),
+    );
     expect(report.roots.map((root) => root.rootId)).toEqual([
       "mods",
       "tray",

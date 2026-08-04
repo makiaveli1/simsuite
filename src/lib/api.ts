@@ -196,7 +196,38 @@ function createMockGameInstallationProfileValidation(
     environmentCompatibility: "matches",
     state: "needs_review",
     genericRootState: "needs_review",
-    gameSpecificValidationPending: true,
+    gameSpecificValidationPending: false,
+    gameReadiness: {
+      adapterId: "sims4_v1",
+      complete: true,
+      state: "needs_review",
+      supportedModExtensions: [".package", ".ts4script"],
+      supportedTrayExtensions: [
+        ".trayitem",
+        ".blueprint",
+        ".bpi",
+        ".householdbinary",
+        ".hhi",
+        ".sgi",
+        ".room",
+        ".rmi",
+      ],
+      maxScriptFolderDepth: 1,
+      maxPackageFolderDepth: 5,
+      evidence: [
+        {
+          code: "sims4_user_data_inferred",
+          strength: "strongly_supported",
+          summary:
+            "Mods and Tray share one simulated parent in the browser mock.",
+          rootIds: ["mods", "tray"],
+        },
+      ],
+      blockers: [],
+      reviewNotes: [
+        "Generic browser mock roots still need filesystem capability review.",
+      ],
+    },
     readOnly: true,
     roots: profile.roots.map((root) => ({
       rootId: root.rootId,
@@ -218,7 +249,7 @@ function createMockGameInstallationProfileValidation(
     })),
     blockers: [],
     reviewNotes: [
-      "Game-specific Sims 4 coherence checks are pending the adapter boundary.",
+      "The Sims 4 adapter completed its simulated root-coherence check.",
       "This browser result is simulated and does not inspect the local filesystem.",
     ],
   };

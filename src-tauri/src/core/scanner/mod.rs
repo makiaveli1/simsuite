@@ -24,6 +24,7 @@ use crate::{
             InspectionOutcome, THUMBNAIL_DEFERRED,
         },
         filename_parser::{detect_creator_hint, parse_filename, FilenameClassification},
+        sims4_adapter::{supports_mod_extension, supports_tray_extension},
     },
     database,
     error::{AppError, AppResult},
@@ -1516,30 +1517,12 @@ fn normalize_extension(path: &Path) -> String {
 
 fn is_supported_extension(root_type: RootType, extension: &str) -> bool {
     match root_type {
-        RootType::Mods => matches!(
-            extension,
-            ".package"
-                | ".ts4script"
-                | ".trayitem"
-                | ".blueprint"
-                | ".bpi"
-                | ".householdbinary"
-                | ".hhi"
-                | ".sgi"
-                | ".room"
-                | ".rmi"
-        ),
-        RootType::Tray => matches!(
-            extension,
-            ".trayitem"
-                | ".blueprint"
-                | ".bpi"
-                | ".householdbinary"
-                | ".hhi"
-                | ".sgi"
-                | ".room"
-                | ".rmi"
-        ),
+        // Keep the existing compatibility behavior: misplaced Tray content in
+        // Mods is still indexed so SimSuite can explain and route it safely.
+        RootType::Mods => {
+            supports_mod_extension(extension) || supports_tray_extension(extension)
+        }
+        RootType::Tray => supports_tray_extension(extension),
     }
 }
 

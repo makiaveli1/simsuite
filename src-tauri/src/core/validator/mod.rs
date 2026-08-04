@@ -6,7 +6,13 @@ use std::{
 
 use rusqlite::{params, Connection};
 
-use crate::{error::AppResult, models::LibrarySettings};
+use crate::{
+    core::sims4_adapter::{
+        SIMS4_MAX_PACKAGE_FOLDER_DEPTH, SIMS4_MAX_SCRIPT_FOLDER_DEPTH,
+    },
+    error::AppResult,
+    models::LibrarySettings,
+};
 
 #[derive(Debug, Clone)]
 pub struct ValidationRequest {
@@ -107,10 +113,13 @@ pub fn validate_suggestion(
         .parent()
         .map(|parent| parent.components().count())
         .unwrap_or(0);
-    if request.extension == ".ts4script" && request.guided_install && folder_depth > 1 {
+    if request.extension == ".ts4script"
+        && request.guided_install
+        && folder_depth > SIMS4_MAX_SCRIPT_FOLDER_DEPTH
+    {
         notes.push("guided_script_depth_requires_review".to_owned());
     }
-    if request.extension == ".package" && folder_depth > 5 {
+    if request.extension == ".package" && folder_depth > SIMS4_MAX_PACKAGE_FOLDER_DEPTH {
         final_relative = package_fallback_path(request);
         notes.push("validator_limited_package_depth".to_owned());
     }
