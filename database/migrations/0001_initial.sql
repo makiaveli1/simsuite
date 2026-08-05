@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS files (
   installation_profile_id TEXT,
   installation_root_id TEXT,
   profile_relative_path TEXT,
+  profile_relative_path_key TEXT,
   download_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
   source_origin_path TEXT,
   archive_member_path TEXT,

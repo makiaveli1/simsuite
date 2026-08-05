@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    core::{content_versions, scanner},
+    core::{content_versions, duplicate_detector, scanner},
     database,
     error::AppResult,
     models::{
@@ -1735,50 +1735,7 @@ fn exact_duplicate_for_file_sql(file_expr: &str) -> String {
 }
 
 fn exact_duplicate_pair_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
-    let file_proof = exact_file_duplicate_pair_sql(left_alias, right_alias, pair_alias);
-    let fingerprint_proof = exact_content_fingerprint_pair_sql(left_alias, right_alias, pair_alias);
-    format!("(({file_proof}) OR ({fingerprint_proof}))")
-}
-
-fn exact_file_duplicate_pair_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
-    format!(
-        "{pair}.file_id_a <> {pair}.file_id_b
-         AND TRIM(COALESCE({left}.hash, '')) <> ''
-         AND TRIM(COALESCE({right}.hash, '')) <> ''
-         AND LOWER(TRIM({left}.hash)) = LOWER(TRIM({right}.hash))
-         AND TRIM(COALESCE({left}.path, '')) <> ''
-         AND TRIM(COALESCE({right}.path, '')) <> ''
-         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
-        left = left_alias,
-        right = right_alias,
-        pair = pair_alias
-    )
-}
-
-fn exact_content_fingerprint_pair_sql(
-    left_alias: &str,
-    right_alias: &str,
-    pair_alias: &str,
-) -> String {
-    format!(
-        "{pair}.file_id_a <> {pair}.file_id_b
-         AND TRIM(COALESCE({left}.content_fingerprint, '')) <> ''
-         AND TRIM(COALESCE({right}.content_fingerprint, '')) <> ''
-         AND LOWER(TRIM({left}.content_fingerprint)) = LOWER(TRIM({right}.content_fingerprint))
-         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) = LOWER(TRIM(COALESCE({right}.content_fingerprint_kind, '')))
-         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_kind, ''))) IN ('package', 'script')
-         AND LOWER(TRIM(COALESCE({left}.content_fingerprint_status, ''))) = 'available'
-         AND LOWER(TRIM(COALESCE({right}.content_fingerprint_status, ''))) = 'available'
-         AND TRIM(COALESCE({left}.content_fingerprint_version, '')) <> ''
-         AND TRIM(COALESCE({right}.content_fingerprint_version, '')) <> ''
-         AND LOWER(TRIM({left}.content_fingerprint_version)) = LOWER(TRIM({right}.content_fingerprint_version))
-         AND TRIM(COALESCE({left}.path, '')) <> ''
-         AND TRIM(COALESCE({right}.path, '')) <> ''
-         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
-        left = left_alias,
-        right = right_alias,
-        pair = pair_alias
-    )
+    duplicate_detector::exact_duplicate_proof_sql(left_alias, right_alias, pair_alias)
 }
 
 fn string_list(connection: &Connection, sql: &str) -> AppResult<Vec<String>> {

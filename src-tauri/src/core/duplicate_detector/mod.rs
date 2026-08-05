@@ -17,54 +17,59 @@ const MAX_REVIEW_PAIRS_PER_GROUP: usize = 2_000;
 pub fn rebuild_duplicates(connection: &mut Connection) -> AppResult<usize> {
     let transaction = connection.transaction()?;
     transaction.execute("DELETE FROM duplicates", [])?;
+    let distinct_identity = distinct_file_identity_sql("a", "b");
 
     transaction.execute(
-        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
-         SELECT a.id, b.id, 'exact', 'sha256', CURRENT_TIMESTAMP
-         FROM files a
-         JOIN files b ON LOWER(TRIM(a.hash)) = LOWER(TRIM(b.hash)) AND a.id < b.id
-         WHERE TRIM(COALESCE(a.hash, '')) <> ''
-           AND TRIM(COALESCE(b.hash, '')) <> ''
-           AND TRIM(COALESCE(a.path, '')) <> ''
-           AND TRIM(COALESCE(b.path, '')) <> ''
-           AND LOWER(REPLACE(TRIM(a.path), '/', '\\')) <> LOWER(REPLACE(TRIM(b.path), '/', '\\'))",
+        &format!(
+            "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+             SELECT a.id, b.id, 'exact', 'sha256', CURRENT_TIMESTAMP
+             FROM files a
+             JOIN files b ON LOWER(TRIM(a.hash)) = LOWER(TRIM(b.hash)) AND a.id < b.id
+             WHERE TRIM(COALESCE(a.hash, '')) <> ''
+               AND TRIM(COALESCE(b.hash, '')) <> ''
+               AND TRIM(COALESCE(a.path, '')) <> ''
+               AND TRIM(COALESCE(b.path, '')) <> ''
+               AND ({distinct_identity})"
+        ),
         params![],
     )?;
 
     transaction.execute(
-        "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
-         SELECT a.id,
-                b.id,
-                'exact',
-                CASE LOWER(TRIM(a.content_fingerprint_kind))
-                    WHEN 'package' THEN 'package_fingerprint_v1'
-                    WHEN 'script' THEN 'script_fingerprint_v1'
-                    ELSE 'content_fingerprint_v1'
-                END,
-                CURRENT_TIMESTAMP
-         FROM files a
-         JOIN files b
-            ON LOWER(TRIM(a.content_fingerprint)) = LOWER(TRIM(b.content_fingerprint))
-           AND LOWER(TRIM(a.content_fingerprint_kind)) = LOWER(TRIM(b.content_fingerprint_kind))
-           AND a.id < b.id
-         WHERE TRIM(COALESCE(a.content_fingerprint, '')) <> ''
-           AND TRIM(COALESCE(b.content_fingerprint, '')) <> ''
-           AND LOWER(TRIM(COALESCE(a.content_fingerprint_kind, ''))) IN ('package', 'script')
-           AND LOWER(TRIM(COALESCE(b.content_fingerprint_kind, ''))) IN ('package', 'script')
-           AND LOWER(TRIM(COALESCE(a.content_fingerprint_status, ''))) = 'available'
-           AND LOWER(TRIM(COALESCE(b.content_fingerprint_status, ''))) = 'available'
-           AND TRIM(COALESCE(a.content_fingerprint_version, '')) <> ''
-           AND TRIM(COALESCE(b.content_fingerprint_version, '')) <> ''
-           AND LOWER(TRIM(a.content_fingerprint_version)) = LOWER(TRIM(b.content_fingerprint_version))
-           AND TRIM(COALESCE(a.path, '')) <> ''
-           AND TRIM(COALESCE(b.path, '')) <> ''
-           AND LOWER(REPLACE(TRIM(a.path), '/', '\\')) <> LOWER(REPLACE(TRIM(b.path), '/', '\\'))
-           AND NOT EXISTS (
-                SELECT 1
-                FROM duplicates existing
-                WHERE existing.file_id_a = a.id
-                  AND existing.file_id_b = b.id
-           )",
+        &format!(
+            "INSERT INTO duplicates (file_id_a, file_id_b, duplicate_type, detection_method, created_at)
+             SELECT a.id,
+                    b.id,
+                    'exact',
+                    CASE LOWER(TRIM(a.content_fingerprint_kind))
+                        WHEN 'package' THEN 'package_fingerprint_v1'
+                        WHEN 'script' THEN 'script_fingerprint_v1'
+                        ELSE 'content_fingerprint_v1'
+                    END,
+                    CURRENT_TIMESTAMP
+             FROM files a
+             JOIN files b
+                ON LOWER(TRIM(a.content_fingerprint)) = LOWER(TRIM(b.content_fingerprint))
+               AND LOWER(TRIM(a.content_fingerprint_kind)) = LOWER(TRIM(b.content_fingerprint_kind))
+               AND a.id < b.id
+             WHERE TRIM(COALESCE(a.content_fingerprint, '')) <> ''
+               AND TRIM(COALESCE(b.content_fingerprint, '')) <> ''
+               AND LOWER(TRIM(COALESCE(a.content_fingerprint_kind, ''))) IN ('package', 'script')
+               AND LOWER(TRIM(COALESCE(b.content_fingerprint_kind, ''))) IN ('package', 'script')
+               AND LOWER(TRIM(COALESCE(a.content_fingerprint_status, ''))) = 'available'
+               AND LOWER(TRIM(COALESCE(b.content_fingerprint_status, ''))) = 'available'
+               AND TRIM(COALESCE(a.content_fingerprint_version, '')) <> ''
+               AND TRIM(COALESCE(b.content_fingerprint_version, '')) <> ''
+               AND LOWER(TRIM(a.content_fingerprint_version)) = LOWER(TRIM(b.content_fingerprint_version))
+               AND TRIM(COALESCE(a.path, '')) <> ''
+               AND TRIM(COALESCE(b.path, '')) <> ''
+               AND ({distinct_identity})
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM duplicates existing
+                    WHERE existing.file_id_a = a.id
+                      AND existing.file_id_b = b.id
+               )"
+        ),
         params![],
     )?;
 
@@ -130,6 +135,7 @@ pub fn list_duplicate_pairs(
 ) -> AppResult<Vec<DuplicatePair>> {
     let limit = limit.max(1);
     let exact_proof = exact_duplicate_proof_sql("a", "b", "d");
+    let distinct_identity = distinct_file_identity_sql("a", "b");
     let items = if let Some(duplicate_type) = duplicate_type.filter(|value| !value.is_empty()) {
         let duplicate_type = duplicate_type.trim().to_ascii_lowercase();
         let mut statement = connection.prepare(&format!(
@@ -158,7 +164,8 @@ pub fn list_duplicate_pairs(
                 b.content_fingerprint_kind,
                 b.content_fingerprint,
                 b.content_fingerprint_version,
-                b.content_fingerprint_status
+                b.content_fingerprint_status,
+                ({distinct_identity}) AS distinct_file_identity
              FROM duplicates d
              JOIN files a ON d.file_id_a = a.id
              JOIN files b ON d.file_id_b = b.id
@@ -203,7 +210,8 @@ pub fn list_duplicate_pairs(
                 b.content_fingerprint_kind,
                 b.content_fingerprint,
                 b.content_fingerprint_version,
-                b.content_fingerprint_status
+                b.content_fingerprint_status,
+                ({distinct_identity}) AS distinct_file_identity
              FROM duplicates d
              JOIN files a ON d.file_id_a = a.id
              JOIN files b ON d.file_id_b = b.id
@@ -252,6 +260,7 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
     let secondary_content_fingerprint: Option<String> = row.get(22)?;
     let secondary_content_version: Option<String> = row.get(23)?;
     let secondary_content_status: Option<String> = row.get(24)?;
+    let distinct_file_identity: bool = row.get(25)?;
     let intelligence = classify_duplicate_pair(
         &duplicate_type,
         &detection_method,
@@ -275,6 +284,7 @@ fn map_duplicate_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<DuplicatePair
         secondary_content_fingerprint.as_deref(),
         secondary_content_version.as_deref(),
         secondary_content_status.as_deref(),
+        distinct_file_identity,
     );
 
     Ok(DuplicatePair {
@@ -340,6 +350,7 @@ fn classify_duplicate_pair(
     secondary_content_fingerprint: Option<&str>,
     secondary_content_version: Option<&str>,
     secondary_content_status: Option<&str>,
+    distinct_file_identity: bool,
 ) -> DuplicateIntelligence {
     let same_hash = hashes_match(primary_hash, secondary_hash);
     let exact_file_proof = exact_file_proof(
@@ -349,6 +360,7 @@ fn classify_duplicate_pair(
         secondary_file_id,
         secondary_path,
         secondary_hash,
+        distinct_file_identity,
     );
     let exact_content_fingerprint_proof = exact_content_fingerprint_proof(
         primary_file_id,
@@ -363,11 +375,12 @@ fn classify_duplicate_pair(
         secondary_content_fingerprint,
         secondary_content_version,
         secondary_content_status,
+        distinct_file_identity,
     );
     let malformed_pair =
         primary_file_id <= 0 || secondary_file_id <= 0 || primary_file_id == secondary_file_id;
     let missing_path = path_missing(primary_path, secondary_path);
-    let same_canonical_path = same_canonical_path(primary_path, secondary_path);
+    let identity_ambiguous = !distinct_file_identity;
     let same_filename = primary_filename.eq_ignore_ascii_case(secondary_filename);
     let primary_versions = version_tokens_from_filename(primary_filename);
     let secondary_versions = version_tokens_from_filename(secondary_filename);
@@ -401,7 +414,7 @@ fn classify_duplicate_pair(
                 "Duplicate",
                 "Same script contents",
             )
-        } else if malformed_pair || missing_path || same_canonical_path {
+        } else if malformed_pair || missing_path || identity_ambiguous {
             (
                 false,
                 "unknown",
@@ -470,8 +483,11 @@ fn classify_duplicate_pair(
     if missing_path {
         evidence.push("Path metadata is incomplete".to_owned());
     }
-    if same_canonical_path {
-        evidence.push("Duplicate row points to the same path".to_owned());
+    if identity_ambiguous {
+        evidence.push(
+            "Installed file identity is incomplete, ambiguous, or points to the same file"
+                .to_owned(),
+        );
     }
 
     if same_filename {
@@ -519,7 +535,7 @@ fn classify_duplicate_pair(
     if primary_creator.is_none() || secondary_creator.is_none() {
         cautions.push("Creator metadata is incomplete".to_owned());
     }
-    if malformed_pair || missing_path || same_canonical_path {
+    if malformed_pair || missing_path || identity_ambiguous {
         cautions.push("SimSuite has limited information here".to_owned());
     }
 
@@ -546,12 +562,13 @@ fn exact_file_proof(
     secondary_file_id: i64,
     secondary_path: &str,
     secondary_hash: Option<&str>,
+    distinct_file_identity: bool,
 ) -> bool {
     primary_file_id > 0
         && secondary_file_id > 0
         && primary_file_id != secondary_file_id
         && !path_missing(primary_path, secondary_path)
-        && !same_canonical_path(primary_path, secondary_path)
+        && distinct_file_identity
         && hashes_match(primary_hash, secondary_hash)
 }
 
@@ -569,12 +586,13 @@ fn exact_content_fingerprint_proof(
     secondary_fingerprint: Option<&str>,
     secondary_version: Option<&str>,
     secondary_status: Option<&str>,
+    distinct_file_identity: bool,
 ) -> Option<String> {
     if primary_file_id <= 0
         || secondary_file_id <= 0
         || primary_file_id == secondary_file_id
         || path_missing(primary_path, secondary_path)
-        || same_canonical_path(primary_path, secondary_path)
+        || !distinct_file_identity
     {
         return None;
     }
@@ -633,12 +651,6 @@ fn normalize_content_kind(value: Option<&str>) -> Option<String> {
     }
 }
 
-fn same_canonical_path(primary_path: &str, secondary_path: &str) -> bool {
-    let primary = canonical_path_key(primary_path);
-    let secondary = canonical_path_key(secondary_path);
-    !primary.is_empty() && !secondary.is_empty() && primary == secondary
-}
-
 fn path_missing(primary_path: &str, secondary_path: &str) -> bool {
     canonical_path_key(primary_path).is_empty() || canonical_path_key(secondary_path).is_empty()
 }
@@ -647,7 +659,68 @@ fn canonical_path_key(path: &str) -> String {
     path.trim().replace('/', "\\").to_ascii_lowercase()
 }
 
+fn complete_portable_identity_sql(alias: &str) -> String {
+    format!(
+        "TRIM(COALESCE({alias}.installation_profile_id, '')) <> ''
+         AND TRIM(COALESCE({alias}.installation_root_id, '')) <> ''
+         AND TRIM(COALESCE({alias}.profile_relative_path, '')) <> ''
+         AND TRIM(COALESCE({alias}.profile_relative_path_key, '')) <> ''"
+    )
+}
+
+fn safe_legacy_identity_shape_sql(alias: &str) -> String {
+    format!(
+        "(
+            (
+                TRIM(COALESCE({alias}.installation_profile_id, '')) = ''
+                AND TRIM(COALESCE({alias}.installation_root_id, '')) = ''
+                AND TRIM(COALESCE({alias}.profile_relative_path, '')) = ''
+            )
+            OR
+            (
+                TRIM(COALESCE({alias}.installation_profile_id, '')) <> ''
+                AND TRIM(COALESCE({alias}.installation_root_id, '')) <> ''
+                AND TRIM(COALESCE({alias}.profile_relative_path, '')) <> ''
+            )
+        )"
+    )
+}
+
+pub(crate) fn distinct_file_identity_sql(left_alias: &str, right_alias: &str) -> String {
+    let left_complete = complete_portable_identity_sql(left_alias);
+    let right_complete = complete_portable_identity_sql(right_alias);
+    let left_legacy_shape = safe_legacy_identity_shape_sql(left_alias);
+    let right_legacy_shape = safe_legacy_identity_shape_sql(right_alias);
+    format!(
+        "(
+            (
+                ({left_complete})
+                AND ({right_complete})
+                AND (
+                    TRIM({left}.installation_profile_id) <> TRIM({right}.installation_profile_id)
+                    OR TRIM({left}.installation_root_id) <> TRIM({right}.installation_root_id)
+                    OR TRIM({left}.profile_relative_path_key) <> TRIM({right}.profile_relative_path_key)
+                )
+            )
+            OR
+            (
+                TRIM(COALESCE({left}.profile_relative_path_key, '')) = ''
+                AND TRIM(COALESCE({right}.profile_relative_path_key, '')) = ''
+                AND ({left_legacy_shape})
+                AND ({right_legacy_shape})
+                AND TRIM(COALESCE({left}.path, '')) <> ''
+                AND TRIM(COALESCE({right}.path, '')) <> ''
+                AND LOWER(REPLACE(TRIM({left}.path), '/', '\\'))
+                    <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))
+            )
+        )",
+        left = left_alias,
+        right = right_alias,
+    )
+}
+
 fn exact_file_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+    let distinct_identity = distinct_file_identity_sql(left_alias, right_alias);
     format!(
         "{pair}.file_id_a <> {pair}.file_id_b
          AND TRIM(COALESCE({left}.hash, '')) <> ''
@@ -655,7 +728,7 @@ fn exact_file_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -
          AND LOWER(TRIM({left}.hash)) = LOWER(TRIM({right}.hash))
          AND TRIM(COALESCE({left}.path, '')) <> ''
          AND TRIM(COALESCE({right}.path, '')) <> ''
-         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+         AND ({distinct_identity})",
         left = left_alias,
         right = right_alias,
         pair = pair_alias
@@ -667,6 +740,7 @@ fn exact_content_fingerprint_proof_sql(
     right_alias: &str,
     pair_alias: &str,
 ) -> String {
+    let distinct_identity = distinct_file_identity_sql(left_alias, right_alias);
     format!(
         "{pair}.file_id_a <> {pair}.file_id_b
          AND TRIM(COALESCE({left}.content_fingerprint, '')) <> ''
@@ -681,14 +755,18 @@ fn exact_content_fingerprint_proof_sql(
          AND LOWER(TRIM({left}.content_fingerprint_version)) = LOWER(TRIM({right}.content_fingerprint_version))
          AND TRIM(COALESCE({left}.path, '')) <> ''
          AND TRIM(COALESCE({right}.path, '')) <> ''
-         AND LOWER(REPLACE(TRIM({left}.path), '/', '\\')) <> LOWER(REPLACE(TRIM({right}.path), '/', '\\'))",
+         AND ({distinct_identity})",
         left = left_alias,
         right = right_alias,
         pair = pair_alias
     )
 }
 
-fn exact_duplicate_proof_sql(left_alias: &str, right_alias: &str, pair_alias: &str) -> String {
+pub(crate) fn exact_duplicate_proof_sql(
+    left_alias: &str,
+    right_alias: &str,
+    pair_alias: &str,
+) -> String {
     let file_proof = exact_file_proof_sql(left_alias, right_alias, pair_alias);
     let fingerprint_proof =
         exact_content_fingerprint_proof_sql(left_alias, right_alias, pair_alias);
@@ -1017,6 +1095,36 @@ mod tests {
         connection.last_insert_rowid()
     }
 
+    fn set_installation_identity(
+        connection: &Connection,
+        file_id: i64,
+        path: &str,
+        profile_id: &str,
+        root_id: &str,
+        relative_path: &str,
+        relative_path_key: &str,
+    ) {
+        connection
+            .execute(
+                "UPDATE files
+                 SET path = ?1,
+                     installation_profile_id = ?2,
+                     installation_root_id = ?3,
+                     profile_relative_path = ?4,
+                     profile_relative_path_key = ?5
+                 WHERE id = ?6",
+                params![
+                    path,
+                    profile_id,
+                    root_id,
+                    relative_path,
+                    relative_path_key,
+                    file_id
+                ],
+            )
+            .expect("set installation identity");
+    }
+
     fn insert_duplicate_row(
         connection: &Connection,
         left_id: i64,
@@ -1135,6 +1243,129 @@ mod tests {
         assert!(!pairs[0]
             .cautions
             .contains(&"This is not duplicate proof".to_owned()));
+    }
+
+    #[test]
+    fn same_portable_identity_is_excluded_from_exact_duplicate_proof() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "item.package", Some("same"), 10);
+        let right = insert_file(&connection, "item-copy.package", Some("same"), 10);
+        set_installation_identity(
+            &connection,
+            left,
+            r"C:\Mods\Creator\item.package",
+            "profile-a",
+            "mods-root",
+            "Creator/item.package",
+            "v1|n7:Creator|n12:item.package",
+        );
+        set_installation_identity(
+            &connection,
+            right,
+            "C:/Mods/Creator/item.package",
+            "profile-a",
+            "mods-root",
+            "Creator/item.package",
+            "v1|n7:Creator|n12:item.package",
+        );
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let overview = get_duplicate_overview(&connection).expect("overview");
+
+        assert_eq!(overview.exact_pairs, 0);
+    }
+
+    #[test]
+    fn case_sensitive_portable_keys_preserve_case_distinct_exact_duplicates() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "upper.package", Some("same"), 10);
+        let right = insert_file(&connection, "lower.package", Some("same"), 10);
+        set_installation_identity(
+            &connection,
+            left,
+            r"/mods/Creator/Mod.package",
+            "profile-a",
+            "mods-root",
+            "Creator/Mod.package",
+            "v1|n7:Creator|n11:Mod.package",
+        );
+        set_installation_identity(
+            &connection,
+            right,
+            r"/mods/creator/mod.package",
+            "profile-a",
+            "mods-root",
+            "creator/mod.package",
+            "v1|n7:creator|n11:mod.package",
+        );
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let pairs = list_duplicate_pairs(&connection, Some("exact".to_owned()), 10)
+            .expect("exact pairs");
+
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs[0].is_duplicate);
+        assert_eq!(pairs[0].comparison_kind, "exact_file");
+    }
+
+    #[test]
+    fn case_insensitive_portable_key_excludes_case_alias_of_same_file() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let left = insert_file(&connection, "upper.package", Some("same"), 10);
+        let right = insert_file(&connection, "lower.package", Some("same"), 10);
+        let folded_key = "v1|f7:creator|f11:mod.package";
+        set_installation_identity(
+            &connection,
+            left,
+            r"C:\Mods\Creator\Mod.package",
+            "profile-a",
+            "mods-root",
+            "Creator/Mod.package",
+            folded_key,
+        );
+        set_installation_identity(
+            &connection,
+            right,
+            r"c:\mods\creator\mod.package",
+            "profile-a",
+            "mods-root",
+            "creator/mod.package",
+            folded_key,
+        );
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let overview = get_duplicate_overview(&connection).expect("overview");
+
+        assert_eq!(overview.exact_pairs, 0);
+    }
+
+    #[test]
+    fn mixed_portable_and_legacy_identity_stays_ambiguous() {
+        let mut connection = Connection::open_in_memory().expect("db");
+        database::initialize(&mut connection).expect("schema");
+
+        let keyed = insert_file(&connection, "keyed.package", Some("same"), 10);
+        insert_file(&connection, "legacy.package", Some("same"), 10);
+        set_installation_identity(
+            &connection,
+            keyed,
+            r"C:\Mods\Creator\keyed.package",
+            "profile-a",
+            "mods-root",
+            "Creator/keyed.package",
+            "v1|f7:creator|f13:keyed.package",
+        );
+
+        rebuild_duplicates(&mut connection).expect("rebuild");
+        let overview = get_duplicate_overview(&connection).expect("overview");
+
+        assert_eq!(overview.exact_pairs, 0);
     }
 
     #[test]

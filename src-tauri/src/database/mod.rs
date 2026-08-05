@@ -30,6 +30,8 @@ const GAME_INSTALLATION_PROFILES_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0008_game_installation_profiles_v1.sql");
 const INDEXED_FILE_IDENTITY_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0009_indexed_file_identity_v1.sql");
+const INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0010_indexed_file_comparison_key_v1.sql");
 
 const LEGACY_GAME_INSTALLATION_PROFILE_ID: &str = "legacy-sims4-default";
 const ACTIVE_GAME_INSTALLATION_PROFILE_SETTING: &str =
@@ -200,6 +202,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v10_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 10",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v10_exists.is_none() {
+        ensure_indexed_file_comparison_key_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![10_i64, "indexed_file_comparison_key_v1"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -213,6 +230,12 @@ fn ensure_indexed_file_identity_schema(connection: &Connection) -> AppResult<()>
     ensure_column(connection, "files", "installation_root_id", "TEXT")?;
     ensure_column(connection, "files", "profile_relative_path", "TEXT")?;
     connection.execute_batch(INDEXED_FILE_IDENTITY_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn ensure_indexed_file_comparison_key_schema(connection: &Connection) -> AppResult<()> {
+    ensure_column(connection, "files", "profile_relative_path_key", "TEXT")?;
+    connection.execute_batch(INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -1927,6 +1950,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "source_origin_path", "TEXT")?;
     ensure_column(connection, "files", "archive_member_path", "TEXT")?;
     ensure_indexed_file_identity_schema(connection)?;
+    ensure_indexed_file_comparison_key_schema(connection)?;
     ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
     ensure_column(
         connection,
@@ -2473,6 +2497,106 @@ mod tests {
     }
 
     #[test]
+    fn indexed_file_comparison_key_schema_is_nullable_and_fail_closed() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize schema");
+
+        let column_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('files')
+                 WHERE name = 'profile_relative_path_key'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("comparison key column");
+        assert_eq!(column_count, 1);
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 10 AND name = 'indexed_file_comparison_key_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("comparison key migration");
+        assert_eq!(migration_count, 1);
+
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_files_installation_comparison'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("comparison key index");
+        assert_eq!(index_count, 1);
+
+        let trigger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name IN (
+                       'trg_files_installation_comparison_key_insert',
+                       'trg_files_installation_comparison_key_update'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("comparison key triggers");
+        assert_eq!(trigger_count, 2);
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, size, source_location,
+                    installation_profile_id, installation_root_id, profile_relative_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "/fixture/legacy.package",
+                    "legacy.package",
+                    ".package",
+                    1_i64,
+                    "mods",
+                    "profile-a",
+                    "mods-root",
+                    "Creator/legacy.package"
+                ],
+            )
+            .expect("legacy identity without comparison key");
+        connection
+            .execute(
+                "UPDATE files
+                 SET profile_relative_path_key = ?1
+                 WHERE path = '/fixture/legacy.package'",
+                params!["v1|n7:Creator|n14:legacy.package"],
+            )
+            .expect("assign complete comparison key");
+
+        let missing_identity = connection.execute(
+            "INSERT INTO files (
+                path, filename, extension, size, source_location, profile_relative_path_key
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                "/fixture/missing-identity.package",
+                "missing-identity.package",
+                ".package",
+                1_i64,
+                "mods",
+                "v1|n24:missing-identity.package"
+            ],
+        );
+        assert!(missing_identity.is_err());
+
+        let empty_key = connection.execute(
+            "UPDATE files
+             SET profile_relative_path_key = '   '
+             WHERE path = '/fixture/legacy.package'",
+            [],
+        );
+        assert!(empty_key.is_err());
+    }
+
+    #[test]
     fn indexed_file_identity_migration_preserves_existing_rows_unassigned() {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
         let pre_v9_schema = schema::INITIAL_SCHEMA_SQL
@@ -2481,6 +2605,7 @@ mod tests {
                 !line.contains("installation_profile_id TEXT")
                     && !line.contains("installation_root_id TEXT")
                     && !line.contains("profile_relative_path TEXT")
+                    && !line.contains("profile_relative_path_key TEXT")
                     && !line.contains("idx_files_installation_identity")
             })
             .collect::<Vec<_>>()
@@ -2504,18 +2629,33 @@ mod tests {
 
         initialize(&mut connection).expect("migrate existing database");
 
-        let preserved: (String, Option<String>, Option<String>, Option<String>) = connection
+        let preserved: (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = connection
             .query_row(
-                "SELECT filename, installation_profile_id, installation_root_id, profile_relative_path
+                "SELECT filename, installation_profile_id, installation_root_id,
+                        profile_relative_path, profile_relative_path_key
                  FROM files
                  WHERE path = '/legacy/old.package'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .expect("preserved row");
         assert_eq!(
             preserved,
-            ("old.package".to_owned(), None, None, None)
+            ("old.package".to_owned(), None, None, None, None)
         );
     }
 

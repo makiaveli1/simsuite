@@ -33,6 +33,7 @@ use crate::{
         GameInstallationProfileStatus, GameInstallationRootValidationState, ScanMode, ScanPhase,
         ScanProgress, ScanSummary,
     },
+    platform::path_semantics::{comparison_key, probe_case_sensitivity, CaseSensitivity},
     seed::normalize_key,
 };
 
@@ -48,6 +49,7 @@ struct ScanRoot {
     path: PathBuf,
     installation_profile_id: Option<String>,
     installation_root_id: Option<String>,
+    case_sensitivity: Option<CaseSensitivity>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,7 @@ pub(crate) struct DiscoveredFile {
     pub(crate) installation_profile_id: Option<String>,
     pub(crate) installation_root_id: Option<String>,
     pub(crate) profile_relative_path: Option<String>,
+    pub(crate) profile_relative_path_key: Option<String>,
     pub(crate) source_location: String,
     pub(crate) path: PathBuf,
     pub(crate) filename: String,
@@ -324,10 +327,10 @@ where
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
                 installation_profile_id, installation_root_id, profile_relative_path,
-                scan_session_id, relative_depth, safety_notes, parser_warnings, insights,
-                content_fingerprint, content_fingerprint_kind, content_fingerprint_version,
-                content_fingerprint_status, content_fingerprint_error
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                profile_relative_path_key, scan_session_id, relative_depth, safety_notes,
+                parser_warnings, insights, content_fingerprint, content_fingerprint_kind,
+                content_fingerprint_version, content_fingerprint_status, content_fingerprint_error
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -468,13 +471,14 @@ fn collect_roots(
     if let Some(mods_path) = settings.mods_path.as_deref() {
         let path = PathBuf::from(mods_path);
         if path.exists() {
-            let (installation_profile_id, installation_root_id) =
+            let (installation_profile_id, installation_root_id, case_sensitivity) =
                 matching_profile_root_identity(active_profile, "installed_mods", &path);
             roots.push(ScanRoot {
                 root_type: RootType::Mods,
                 path,
                 installation_profile_id,
                 installation_root_id,
+                case_sensitivity,
             });
         } else {
             return Err(AppError::Message(format!(
@@ -486,13 +490,14 @@ fn collect_roots(
     if let Some(tray_path) = settings.tray_path.as_deref() {
         let path = PathBuf::from(tray_path);
         if path.exists() {
-            let (installation_profile_id, installation_root_id) =
+            let (installation_profile_id, installation_root_id, case_sensitivity) =
                 matching_profile_root_identity(active_profile, "installed_tray", &path);
             roots.push(ScanRoot {
                 root_type: RootType::Tray,
                 path,
                 installation_profile_id,
                 installation_root_id,
+                case_sensitivity,
             });
         } else {
             return Err(AppError::Message(format!(
@@ -508,60 +513,72 @@ fn matching_profile_root_identity(
     active_profile: Option<&GameInstallationProfile>,
     root_role: &str,
     scan_root: &Path,
-) -> (Option<String>, Option<String>) {
+) -> (Option<String>, Option<String>, Option<CaseSensitivity>) {
     let Some(profile) = active_profile else {
-        return (None, None);
+        return (None, None, None);
     };
     if profile.game_id != "sims4"
         || profile.status != GameInstallationProfileStatus::Valid
         || profile.confirmation_state != GameInstallationConfirmationState::Confirmed
     {
-        return (None, None);
+        return (None, None, None);
     }
     let Some(root) = profile.roots.iter().find(|root| root.root_role == root_role) else {
-        return (None, None);
+        return (None, None, None);
     };
     if root.validation_state != GameInstallationRootValidationState::Valid {
-        return (None, None);
+        return (None, None, None);
     }
     let configured_root = PathBuf::from(root.configured_path.trim());
     if !configured_root.is_absolute() {
-        return (None, None);
+        return (None, None, None);
     }
     let Ok(configured_root) = fs::canonicalize(configured_root) else {
-        return (None, None);
+        return (None, None, None);
     };
-    let Ok(scan_root) = fs::canonicalize(scan_root) else {
-        return (None, None);
+    let Ok(canonical_scan_root) = fs::canonicalize(scan_root) else {
+        return (None, None, None);
     };
-    if configured_root != scan_root {
-        return (None, None);
+    if configured_root != canonical_scan_root {
+        return (None, None, None);
     }
 
     (
         Some(profile.profile_id.clone()),
         Some(root.root_id.clone()),
+        probe_case_sensitivity(scan_root).ok(),
     )
 }
 
 fn scan_owned_identity(
     scan_root: &ScanRoot,
     path: &Path,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let (Some(profile_id), Some(root_id)) = (
         scan_root.installation_profile_id.as_ref(),
         scan_root.installation_root_id.as_ref(),
     ) else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
     let Some(relative_path) = profile_relative_path(&scan_root.path, path) else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
+    let relative_path_key = scan_root.case_sensitivity.and_then(|case_sensitivity| {
+        comparison_key(Path::new(&relative_path), case_sensitivity)
+            .ok()
+            .and_then(|key| key.storage_key_v1())
+    });
 
     (
         Some(profile_id.clone()),
         Some(root_id.clone()),
         Some(relative_path),
+        relative_path_key,
     )
 }
 
@@ -645,12 +662,14 @@ where
                         installation_profile_id,
                         installation_root_id,
                         profile_relative_path,
+                        profile_relative_path_key,
                     ) = scan_owned_identity(root, &path);
 
                     content.files.push(DiscoveredFile {
                         installation_profile_id,
                         installation_root_id,
                         profile_relative_path,
+                        profile_relative_path_key,
                         source_location: source_location_for_scan_root(root.root_type).to_owned(),
                         root_path: root.path.clone(),
                         filename: path
@@ -1186,6 +1205,7 @@ fn insert_cached_file(
         file.installation_profile_id.as_deref(),
         file.installation_root_id.as_deref(),
         file.profile_relative_path.as_deref(),
+        file.profile_relative_path_key.as_deref(),
         session_id,
         file.relative_depth,
         &cached.safety_notes_json,
@@ -1277,6 +1297,7 @@ pub(crate) fn insert_parsed_file(
         file.installation_profile_id.as_deref(),
         file.installation_root_id.as_deref(),
         file.profile_relative_path.as_deref(),
+        file.profile_relative_path_key.as_deref(),
         session_id,
         file.relative_depth,
         &safety_notes_json,
@@ -1708,6 +1729,7 @@ mod tests {
             installation_profile_id: None,
             installation_root_id: None,
             profile_relative_path: None,
+            profile_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(name),
             filename: name.to_owned(),
@@ -1800,6 +1822,7 @@ mod tests {
         let other_root = temp.path().join("OtherMods");
         fs::create_dir_all(&mods_root).expect("mods root");
         fs::create_dir_all(&other_root).expect("other root");
+        fs::write(mods_root.join("Probe.package"), b"probe").expect("case probe fixture");
 
         let valid_profile = installation_profile_for_root(
             "sims4",
@@ -1809,48 +1832,49 @@ mod tests {
             "installed_mods",
             &mods_root,
         );
-        assert_eq!(
-            matching_profile_root_identity(Some(&valid_profile), "installed_mods", &mods_root),
-            (
-                Some("profile-a".to_owned()),
-                Some("mods-root".to_owned())
-            )
-        );
+        let (profile_id, root_id, case_sensitivity) =
+            matching_profile_root_identity(Some(&valid_profile), "installed_mods", &mods_root);
+        assert_eq!(profile_id.as_deref(), Some("profile-a"));
+        assert_eq!(root_id.as_deref(), Some("mods-root"));
+        assert!(matches!(
+            case_sensitivity,
+            Some(CaseSensitivity::Sensitive | CaseSensitivity::Insensitive)
+        ));
         assert_eq!(
             matching_profile_root_identity(None, "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
         assert_eq!(
             matching_profile_root_identity(Some(&valid_profile), "installed_tray", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let mut wrong_game = valid_profile.clone();
         wrong_game.game_id = "future-game".to_owned();
         assert_eq!(
             matching_profile_root_identity(Some(&wrong_game), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let mut draft = valid_profile.clone();
         draft.status = GameInstallationProfileStatus::Draft;
         assert_eq!(
             matching_profile_root_identity(Some(&draft), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let mut unconfirmed = valid_profile.clone();
         unconfirmed.confirmation_state = GameInstallationConfirmationState::Unconfirmed;
         assert_eq!(
             matching_profile_root_identity(Some(&unconfirmed), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let mut stale_root = valid_profile.clone();
         stale_root.roots[0].validation_state = GameInstallationRootValidationState::NeedsReview;
         assert_eq!(
             matching_profile_root_identity(Some(&stale_root), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let mismatched_profile = installation_profile_for_root(
@@ -1867,7 +1891,7 @@ mod tests {
                 "installed_mods",
                 &mods_root,
             ),
-            (None, None)
+            (None, None, None)
         );
 
         let relative_profile = installation_profile_for_root(
@@ -1880,7 +1904,7 @@ mod tests {
         );
         assert_eq!(
             matching_profile_root_identity(Some(&relative_profile), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
 
         let missing_profile = installation_profile_for_root(
@@ -1893,7 +1917,7 @@ mod tests {
         );
         assert_eq!(
             matching_profile_root_identity(Some(&missing_profile), "installed_mods", &mods_root),
-            (None, None)
+            (None, None, None)
         );
     }
 
@@ -1910,6 +1934,7 @@ mod tests {
             path: root.clone(),
             installation_profile_id: Some("profile-a".to_owned()),
             installation_root_id: Some("mods".to_owned()),
+            case_sensitivity: Some(CaseSensitivity::Sensitive),
         };
         assert_eq!(
             scan_owned_identity(&assigned_root, &nested),
@@ -1917,6 +1942,7 @@ mod tests {
                 Some("profile-a".to_owned()),
                 Some("mods".to_owned()),
                 Some("Creator/item.package".to_owned()),
+                Some("v1|n7:Creator|n12:item.package".to_owned()),
             )
         );
 
@@ -1927,7 +1953,7 @@ mod tests {
         };
         assert_eq!(
             scan_owned_identity(&unassigned_root, &nested),
-            (None, None, None)
+            (None, None, None, None)
         );
     }
 
@@ -1993,6 +2019,7 @@ mod tests {
             path: mods,
             installation_profile_id: None,
             installation_root_id: None,
+            case_sensitivity: None,
         }];
         let mut errors = Vec::new();
         let seen_counts = RefCell::new(Vec::new());
@@ -2358,6 +2385,7 @@ mod tests {
             installation_profile_id: None,
             installation_root_id: None,
             profile_relative_path: None,
+            profile_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Felixandre ESTATE Part 1/ESTATE_Brick_Wall.package"),
             filename: "ESTATE_Brick_Wall.package".to_owned(),
@@ -2388,6 +2416,7 @@ mod tests {
             installation_profile_id: None,
             installation_root_id: None,
             profile_relative_path: None,
+            profile_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(
                 "C:/Mods/LittleMsSam_Mods/SleepOverhaul/LittleMsSam_SendSimsToBed.package",
@@ -2420,6 +2449,7 @@ mod tests {
             installation_profile_id: None,
             installation_root_id: None,
             profile_relative_path: None,
+            profile_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Deaderpool_Collection/LittleMsSam_SendSimsToBed.package"),
             filename: "LittleMsSam_SendSimsToBed.package".to_owned(),

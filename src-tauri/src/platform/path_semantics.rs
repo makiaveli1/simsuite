@@ -193,6 +193,22 @@ impl PathComparisonKey {
     pub fn components(&self) -> &[ComparisonComponent] {
         &self.components
     }
+
+    pub fn storage_key_v1(&self) -> Option<String> {
+        let mut key = String::from("v1");
+        for component in &self.components {
+            let (kind, value) = match component {
+                ComparisonComponent::Native(value) => ("n", value.to_str()?),
+                ComparisonComponent::Folded(value) => ("f", value.as_str()),
+            };
+            key.push('|');
+            key.push_str(kind);
+            key.push_str(&value.len().to_string());
+            key.push(':');
+            key.push_str(value);
+        }
+        Some(key)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -797,6 +813,51 @@ mod tests {
                 .comparison_key(Path::new("creator/mod.package"))
                 .expect("second insensitive key")
         );
+    }
+
+    #[test]
+    fn comparison_key_storage_preserves_root_case_policy_and_component_boundaries() {
+        let sensitive_upper = comparison_key(
+            Path::new("Creator/Mod.package"),
+            CaseSensitivity::Sensitive,
+        )
+        .expect("sensitive upper key")
+        .storage_key_v1()
+        .expect("sensitive upper storage key");
+        let sensitive_lower = comparison_key(
+            Path::new("creator/mod.package"),
+            CaseSensitivity::Sensitive,
+        )
+        .expect("sensitive lower key")
+        .storage_key_v1()
+        .expect("sensitive lower storage key");
+        assert_ne!(sensitive_upper, sensitive_lower);
+
+        let insensitive_upper = comparison_key(
+            Path::new("Creator/Mod.package"),
+            CaseSensitivity::Insensitive,
+        )
+        .expect("insensitive upper key")
+        .storage_key_v1()
+        .expect("insensitive upper storage key");
+        let insensitive_lower = comparison_key(
+            Path::new("creator/mod.package"),
+            CaseSensitivity::Insensitive,
+        )
+        .expect("insensitive lower key")
+        .storage_key_v1()
+        .expect("insensitive lower storage key");
+        assert_eq!(insensitive_upper, insensitive_lower);
+
+        let first = comparison_key(Path::new("ab/c"), CaseSensitivity::Sensitive)
+            .expect("first key")
+            .storage_key_v1()
+            .expect("first storage key");
+        let second = comparison_key(Path::new("a/bc"), CaseSensitivity::Sensitive)
+            .expect("second key")
+            .storage_key_v1()
+            .expect("second storage key");
+        assert_ne!(first, second);
     }
 
     #[test]
