@@ -3843,6 +3843,14 @@ mod tests {
     };
     use reqwest::Url;
 
+    fn normalize_source_line_endings(source: &str) -> String {
+        source.replace("\r\n", "\n")
+    }
+
+    fn normalized_command_module_source() -> String {
+        normalize_source_line_endings(include_str!("mod.rs"))
+    }
+
     fn review_action(url: Option<&str>) -> ReviewPlanAction {
         ReviewPlanAction {
             kind: ReviewPlanActionKind::OpenOfficialSource,
@@ -3882,6 +3890,14 @@ mod tests {
             updated_at: "2026-08-04T00:00:00Z".to_owned(),
             roots: Vec::new(),
         }
+    }
+
+    #[test]
+    fn command_source_normalization_handles_windows_line_endings() {
+        assert_eq!(
+            normalize_source_line_endings("first\r\nsecond\r\n"),
+            "first\nsecond\n"
+        );
     }
 
     #[test]
@@ -3927,7 +3943,7 @@ mod tests {
 
     #[test]
     fn staging_preview_plan_command_stays_read_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn get_staging_preview_plan")
             .expect("preview command should exist");
@@ -3953,7 +3969,7 @@ mod tests {
 
     #[test]
     fn sorting_preview_plan_command_stays_read_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn generate_sorting_preview_plan")
             .expect("sorting preview command should exist");
@@ -3982,7 +3998,7 @@ mod tests {
 
     #[test]
     fn apply_plan_persistence_commands_stay_db_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn save_apply_plan_preview")
             .expect("ApplyPlan save command should exist");
@@ -4034,7 +4050,7 @@ mod tests {
 
     #[test]
     fn apply_plan_builder_command_stays_backend_owned_and_db_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn build_apply_plan_from_staging_plan")
             .expect("ApplyPlan builder command should exist");
@@ -4078,7 +4094,7 @@ mod tests {
 
     #[test]
     fn apply_plan_validation_preview_command_stays_read_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn preview_apply_plan_validation")
             .expect("ApplyPlan validation preview command should exist");
@@ -4119,7 +4135,7 @@ mod tests {
 
     #[test]
     fn profile_validation_command_is_gated_before_reading_and_contains_no_write_calls() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let command_start = source
             .find("pub async fn validate_game_installation_profile(")
             .expect("profile validation command");
@@ -4158,7 +4174,7 @@ mod tests {
 
     #[test]
     fn candidate_detection_command_is_read_only_and_has_no_state_or_mutation_calls() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let command_start = source
             .find("pub async fn detect_game_installation_candidates(")
             .expect("candidate detection command");
@@ -4193,7 +4209,7 @@ mod tests {
 
     #[test]
     fn manual_profile_commands_are_settings_gated_and_do_not_activate_or_touch_files() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
 
         let create_start = source
             .find("pub fn create_manual_game_installation_profile(")
@@ -4289,7 +4305,7 @@ mod tests {
 
     #[test]
     fn active_profile_selection_is_settings_gated_before_database_and_has_no_file_operations() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let command_start = source
             .find("pub fn set_active_game_installation_profile(")
             .expect("active profile selection command");
@@ -4378,7 +4394,7 @@ mod tests {
 
     #[test]
     fn command_source_gates_risky_external_commands_before_work_with_expected_capability() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         for (command_name, expected_capability) in [
             (
                 "create_apply_plan_run_log",
@@ -4464,7 +4480,7 @@ mod tests {
 
     #[test]
     fn apply_plan_result_restore_commands_stay_db_only() {
-        let source = include_str!("mod.rs");
+        let source = normalized_command_module_source();
         let start = source
             .find("pub async fn create_apply_plan_run_log")
             .expect("ApplyPlan result/restore commands should exist");
