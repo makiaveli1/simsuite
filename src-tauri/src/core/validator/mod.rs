@@ -12,6 +12,7 @@ use crate::{
     },
     error::AppResult,
     models::LibrarySettings,
+    platform::path_semantics::{comparison_key, probe_case_sensitivity, CaseSensitivity},
 };
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,210 @@ enum TargetPathState {
     Unreadable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DestinationRootRole {
+    Mods,
+    Tray,
+}
+
+impl DestinationRootRole {
+    fn for_kind(kind: &str) -> Self {
+        if kind.starts_with("Tray") {
+            Self::Tray
+        } else {
+            Self::Mods
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DestinationRootEvidence {
+    role: DestinationRootRole,
+    configured_root_key: Option<String>,
+    canonical_root: Option<PathBuf>,
+    case_sensitivity: CaseSensitivity,
+}
+
+impl DestinationRootEvidence {
+    fn from_configured(role: DestinationRootRole, configured: Option<&str>) -> Self {
+        let configured = configured
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from);
+        let configured_root_key = configured.as_deref().map(conservative_root_key);
+        let canonical_root = configured
+            .as_deref()
+            .filter(|path| path.is_absolute())
+            .and_then(|path| std::fs::canonicalize(path).ok())
+            .filter(|path| {
+                std::fs::metadata(path)
+                    .map(|metadata| metadata.is_dir())
+                    .unwrap_or(false)
+            });
+        let case_sensitivity = canonical_root
+            .as_deref()
+            .and_then(|root| probe_case_sensitivity(root).ok())
+            .unwrap_or(CaseSensitivity::Unknown);
+
+        Self {
+            role,
+            configured_root_key,
+            canonical_root,
+            case_sensitivity,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DestinationPathKeys {
+    sensitive: String,
+    folded: String,
+}
+
+#[derive(Debug, Clone)]
+struct DestinationRootReservations {
+    evidence: DestinationRootEvidence,
+    sensitive_paths: HashSet<String>,
+    folded_paths: HashSet<String>,
+}
+
+impl DestinationRootReservations {
+    fn new(evidence: DestinationRootEvidence) -> Self {
+        Self {
+            evidence,
+            sensitive_paths: HashSet::new(),
+            folded_paths: HashSet::new(),
+        }
+    }
+
+    fn reserve(&mut self, keys: DestinationPathKeys) {
+        self.sensitive_paths.insert(keys.sensitive);
+        self.folded_paths.insert(keys.folded);
+    }
+
+    fn collides_with(
+        &self,
+        candidate_root: &DestinationRootEvidence,
+        keys: &DestinationPathKeys,
+    ) -> bool {
+        if !destination_roots_may_match(&self.evidence, candidate_root) {
+            return false;
+        }
+        if self.evidence.case_sensitivity == CaseSensitivity::Sensitive
+            && candidate_root.case_sensitivity == CaseSensitivity::Sensitive
+        {
+            self.sensitive_paths.contains(&keys.sensitive)
+        } else {
+            self.folded_paths.contains(&keys.folded)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DestinationReservationStatus {
+    Available,
+    Collision,
+    IdentityUnavailable,
+}
+
+#[derive(Debug, Clone)]
+pub struct DestinationReservations {
+    mods_root: DestinationRootReservations,
+    tray_root: DestinationRootReservations,
+}
+
+impl Default for DestinationReservations {
+    fn default() -> Self {
+        Self::new(&LibrarySettings::default())
+    }
+}
+
+impl DestinationReservations {
+    pub fn new(settings: &LibrarySettings) -> Self {
+        Self {
+            mods_root: DestinationRootReservations::new(
+                DestinationRootEvidence::from_configured(
+                    DestinationRootRole::Mods,
+                    settings.mods_path.as_deref(),
+                ),
+            ),
+            tray_root: DestinationRootReservations::new(
+                DestinationRootEvidence::from_configured(
+                    DestinationRootRole::Tray,
+                    settings.tray_path.as_deref(),
+                ),
+            ),
+        }
+    }
+
+    pub fn reserve(&mut self, kind: &str, relative_path: &str) -> bool {
+        let Some(keys) = destination_path_keys(relative_path) else {
+            return false;
+        };
+        match DestinationRootRole::for_kind(kind) {
+            DestinationRootRole::Mods => self.mods_root.reserve(keys),
+            DestinationRootRole::Tray => self.tray_root.reserve(keys),
+        }
+        true
+    }
+
+    fn status_for(&self, kind: &str, relative_path: &str) -> DestinationReservationStatus {
+        let Some(keys) = destination_path_keys(relative_path) else {
+            return DestinationReservationStatus::IdentityUnavailable;
+        };
+        let role = DestinationRootRole::for_kind(kind);
+        let candidate_root = match role {
+            DestinationRootRole::Mods => &self.mods_root.evidence,
+            DestinationRootRole::Tray => &self.tray_root.evidence,
+        };
+        if self.mods_root.collides_with(candidate_root, &keys)
+            || self.tray_root.collides_with(candidate_root, &keys)
+        {
+            DestinationReservationStatus::Collision
+        } else {
+            DestinationReservationStatus::Available
+        }
+    }
+}
+
+fn destination_path_keys(relative_path: &str) -> Option<DestinationPathKeys> {
+    let relative_path = Path::new(relative_path);
+    Some(DestinationPathKeys {
+        sensitive: comparison_key(relative_path, CaseSensitivity::Sensitive)
+            .ok()?
+            .storage_key_v1()?,
+        folded: comparison_key(relative_path, CaseSensitivity::Insensitive)
+            .ok()?
+            .storage_key_v1()?,
+    })
+}
+
+fn conservative_root_key(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let trimmed = normalized.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_owned()
+    } else {
+        trimmed.to_lowercase()
+    }
+}
+
+fn destination_roots_may_match(
+    left: &DestinationRootEvidence,
+    right: &DestinationRootEvidence,
+) -> bool {
+    if left.role == right.role {
+        return true;
+    }
+    if let (Some(left_root), Some(right_root)) = (&left.canonical_root, &right.canonical_root) {
+        return left_root == right_root;
+    }
+    matches!(
+        (&left.configured_root_key, &right.configured_root_key),
+        (Some(left_key), Some(right_key)) if left_key == right_key
+    )
+}
+
 fn target_path_state_from_error_kind(kind: ErrorKind) -> TargetPathState {
     if kind == ErrorKind::NotFound {
         TargetPathState::Missing
@@ -65,7 +270,7 @@ pub fn validate_suggestion(
     connection: &Connection,
     settings: &LibrarySettings,
     request: &ValidationRequest,
-    reserved_targets: &HashSet<String>,
+    reservations: &DestinationReservations,
 ) -> AppResult<ValidationResult> {
     let mut final_relative = PathBuf::from(&request.suggested_relative_path);
     let mut notes = Vec::new();
@@ -142,6 +347,7 @@ pub fn validate_suggestion(
         settings.mods_path.as_deref()
     };
 
+    let final_relative_path = normalize_relative_path(&final_relative);
     let final_absolute_path = target_root.map(|root| {
         Path::new(root)
             .join(&final_relative)
@@ -154,8 +360,14 @@ pub fn validate_suggestion(
     }
 
     if let Some(path) = &final_absolute_path {
-        if reserved_targets.contains(path) {
-            notes.push("preview_path_collision_detected".to_owned());
+        match reservations.status_for(&request.kind, &final_relative_path) {
+            DestinationReservationStatus::Collision => {
+                notes.push("preview_path_collision_detected".to_owned());
+            }
+            DestinationReservationStatus::IdentityUnavailable => {
+                notes.push("preview_path_identity_unavailable".to_owned());
+            }
+            DestinationReservationStatus::Available => {}
         }
 
         match target_path_state(Path::new(path)) {
@@ -189,13 +401,14 @@ pub fn validate_suggestion(
                 | "low_confidence_requires_review"
                 | "missing_target_root"
                 | "preview_path_collision_detected"
+                | "preview_path_identity_unavailable"
                 | "existing_path_collision_detected"
                 | "guided_script_depth_requires_review"
         )
     });
 
     Ok(ValidationResult {
-        final_relative_path: normalize_relative_path(&final_relative),
+        final_relative_path,
         final_absolute_path,
         corrected: final_relative != PathBuf::from(&request.suggested_relative_path),
         review_required,
@@ -252,15 +465,16 @@ fn normalize_relative_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, io::ErrorKind};
+    use std::{io::ErrorKind, path::PathBuf};
 
     use tempfile::tempdir;
 
     use crate::{database, models::LibrarySettings};
 
     use super::{
-        target_path_state_from_error_kind, validate_suggestion, TargetPathState,
-        ValidationRequest,
+        target_path_state_from_error_kind, validate_suggestion, CaseSensitivity,
+        DestinationReservationStatus, DestinationReservations, DestinationRootEvidence,
+        DestinationRootReservations, DestinationRootRole, TargetPathState, ValidationRequest,
     };
 
     #[test]
@@ -307,7 +521,7 @@ mod tests {
                 guided_install: false,
                 allow_existing_target: false,
             },
-            &HashSet::new(),
+            &DestinationReservations::default(),
         )
         .expect("validated");
 
@@ -370,7 +584,7 @@ mod tests {
                 guided_install: false,
                 allow_existing_target: false,
             },
-            &HashSet::new(),
+            &DestinationReservations::default(),
         )
         .expect("validated");
 
@@ -412,9 +626,13 @@ mod tests {
             ..Default::default()
         };
 
-        let unindexed_result =
-            validate_suggestion(&connection, &settings, &request, &HashSet::new())
-                .expect("unindexed target validation");
+        let unindexed_result = validate_suggestion(
+            &connection,
+            &settings,
+            &request,
+            &DestinationReservations::new(&settings),
+        )
+        .expect("unindexed target validation");
         assert!(unindexed_result.review_required);
         assert!(unindexed_result
             .notes
@@ -437,9 +655,13 @@ mod tests {
             )
             .expect("current file row");
 
-        let current_file_result =
-            validate_suggestion(&connection, &settings, &request, &HashSet::new())
-                .expect("current file validation");
+        let current_file_result = validate_suggestion(
+            &connection,
+            &settings,
+            &request,
+            &DestinationReservations::new(&settings),
+        )
+        .expect("current file validation");
         assert!(!current_file_result.review_required);
         assert!(!current_file_result
             .notes
@@ -493,7 +715,7 @@ mod tests {
                 guided_install: true,
                 allow_existing_target: false,
             },
-            &HashSet::new(),
+            &DestinationReservations::default(),
         )
         .expect("validated");
 
@@ -531,7 +753,7 @@ mod tests {
                 guided_install: true,
                 allow_existing_target: true,
             },
-            &HashSet::new(),
+            &DestinationReservations::default(),
         )
         .expect("validated");
 
@@ -540,5 +762,162 @@ mod tests {
         assert!(!result
             .notes
             .contains(&"validator_flattened_script_depth".to_owned()));
+    }
+
+    fn test_root(
+        role: DestinationRootRole,
+        canonical_root: &str,
+        case_sensitivity: CaseSensitivity,
+    ) -> DestinationRootEvidence {
+        DestinationRootEvidence {
+            role,
+            configured_root_key: Some(canonical_root.to_lowercase()),
+            canonical_root: Some(PathBuf::from(canonical_root)),
+            case_sensitivity,
+        }
+    }
+
+    fn test_reservations(
+        mods_root: &str,
+        mods_case: CaseSensitivity,
+        tray_root: &str,
+        tray_case: CaseSensitivity,
+    ) -> DestinationReservations {
+        DestinationReservations {
+            mods_root: DestinationRootReservations::new(test_root(
+                DestinationRootRole::Mods,
+                mods_root,
+                mods_case,
+            )),
+            tray_root: DestinationRootReservations::new(test_root(
+                DestinationRootRole::Tray,
+                tray_root,
+                tray_case,
+            )),
+        }
+    }
+
+    #[test]
+    fn destination_reservations_preserve_case_distinct_paths_on_sensitive_roots() {
+        let mut reservations = test_reservations(
+            "/fixture/Mods",
+            CaseSensitivity::Sensitive,
+            "/fixture/Tray",
+            CaseSensitivity::Sensitive,
+        );
+        assert!(reservations.reserve("CAS", "Creator/Mod.package"));
+        assert_eq!(
+            reservations.status_for("CAS", "creator/mod.package"),
+            DestinationReservationStatus::Available
+        );
+    }
+
+    #[test]
+    fn destination_reservations_block_case_aliases_on_insensitive_roots() {
+        let mut reservations = test_reservations(
+            "C:/Fixture/Mods",
+            CaseSensitivity::Insensitive,
+            "C:/Fixture/Tray",
+            CaseSensitivity::Insensitive,
+        );
+        assert!(reservations.reserve("CAS", "Creator/Mod.package"));
+        assert_eq!(
+            reservations.status_for("CAS", "creator/mod.package"),
+            DestinationReservationStatus::Collision
+        );
+    }
+
+    #[test]
+    fn destination_reservations_fail_closed_for_unknown_case_policy() {
+        let mut reservations = test_reservations(
+            "/fixture/Mods",
+            CaseSensitivity::Unknown,
+            "/fixture/Tray",
+            CaseSensitivity::Unknown,
+        );
+        assert!(reservations.reserve("CAS", "Creator/Mod.package"));
+        assert_eq!(
+            reservations.status_for("CAS", "creator/mod.package"),
+            DestinationReservationStatus::Collision
+        );
+    }
+
+    #[test]
+    fn destination_reservations_keep_distinct_mods_and_tray_roots_separate() {
+        let mut reservations = test_reservations(
+            "/fixture/Mods",
+            CaseSensitivity::Sensitive,
+            "/fixture/Tray",
+            CaseSensitivity::Sensitive,
+        );
+        assert!(reservations.reserve("CAS", "Shared/item.package"));
+        assert_eq!(
+            reservations.status_for("TrayLot", "Shared/item.package"),
+            DestinationReservationStatus::Available
+        );
+    }
+
+    #[test]
+    fn destination_reservations_detect_shared_physical_root_across_roles() {
+        let mut reservations = test_reservations(
+            "/fixture/Shared",
+            CaseSensitivity::Insensitive,
+            "/fixture/Shared",
+            CaseSensitivity::Insensitive,
+        );
+        assert!(reservations.reserve("CAS", "Shared/item.package"));
+        assert_eq!(
+            reservations.status_for("TrayLot", "shared/ITEM.package"),
+            DestinationReservationStatus::Collision
+        );
+    }
+
+    #[test]
+    fn destination_reservations_reject_unkeyable_relative_paths() {
+        let reservations = test_reservations(
+            "/fixture/Mods",
+            CaseSensitivity::Sensitive,
+            "/fixture/Tray",
+            CaseSensitivity::Sensitive,
+        );
+        assert_eq!(
+            reservations.status_for("CAS", "../escape.package"),
+            DestinationReservationStatus::IdentityUnavailable
+        );
+    }
+
+    #[test]
+    fn validator_keeps_missing_destination_roots_blocked() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        let settings = LibrarySettings::default();
+        let result = validate_suggestion(
+            &connection,
+            &settings,
+            &ValidationRequest {
+                file_id: 1,
+                filename: "missing-root.package".to_owned(),
+                extension: ".package".to_owned(),
+                kind: "CAS".to_owned(),
+                subtype: None,
+                creator: None,
+                bundle_name: None,
+                source_location: "downloads".to_owned(),
+                confidence: 0.9,
+                suggested_relative_path: "CAS/missing-root.package".to_owned(),
+                guided_install: false,
+                allow_existing_target: false,
+            },
+            &DestinationReservations::new(&settings),
+        )
+        .expect("validated");
+
+        assert!(result.review_required);
+        assert!(result
+            .notes
+            .contains(&"missing_target_root".to_owned()));
+        assert!(!result
+            .notes
+            .contains(&"preview_path_identity_unavailable".to_owned()));
     }
 }

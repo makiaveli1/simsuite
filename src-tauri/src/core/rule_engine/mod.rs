@@ -6,7 +6,7 @@ use std::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
-    core::validator::{validate_suggestion, ValidationRequest},
+    core::validator::{validate_suggestion, DestinationReservations, ValidationRequest},
     error::AppResult,
     models::{
         LibrarySettings, OrganizationPreview, PreviewIssueSummary, PreviewSuggestion,
@@ -235,7 +235,7 @@ fn suggest_for_candidates(
     preset_name: &str,
     candidates: Vec<PreviewCandidate>,
 ) -> AppResult<Vec<PreviewSuggestion>> {
-    let mut reserved_targets = HashSet::new();
+    let mut reserved_targets = DestinationReservations::new(settings);
     let mut suggestions = Vec::new();
 
     for candidate in candidates {
@@ -260,8 +260,8 @@ fn suggest_for_candidates(
             &reserved_targets,
         )?;
 
-        if let Some(path) = &validator.final_absolute_path {
-            reserved_targets.insert(path.clone());
+        if validator.final_absolute_path.is_some() {
+            reserved_targets.reserve(&candidate.kind, &validator.final_relative_path);
         }
 
         let suggested_absolute_path = target_root(settings, &candidate.kind).map(|root| {
@@ -759,6 +759,7 @@ fn summarize_preview_issues(suggestions: &[PreviewSuggestion]) -> Vec<PreviewIss
         "unknown_kind_requires_review",
         "existing_path_collision_detected",
         "preview_path_collision_detected",
+        "preview_path_identity_unavailable",
         "tray_file_will_be_relocated_from_mods",
         "validator_routed_tray_content_to_tray_root",
         "validator_flattened_script_depth",
@@ -801,6 +802,9 @@ fn preview_issue_label(code: &str) -> (&'static str, &'static str) {
         }
         "preview_path_collision_detected" => {
             ("Two files in this pass want the same slot", "review")
+        }
+        "preview_path_identity_unavailable" => {
+            ("A destination path could not be compared safely", "review")
         }
         "tray_file_will_be_relocated_from_mods" => ("Tray files were found inside Mods", "warn"),
         "validator_routed_tray_content_to_tray_root" => {
@@ -1044,6 +1048,71 @@ mod tests {
             .find(|suggestion| suggestion.filename == "Breezy.package")
             .expect("item suggestion");
         assert_eq!(item.final_relative_path, "CAS/Hair/Artist/Breezy.package");
+    }
+
+    #[test]
+    fn preview_detects_case_only_destination_collisions_when_root_policy_is_unknown() {
+        let mut connection = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        database::seed_database(
+            &mut connection,
+            &crate::seed::load_seed_pack().expect("seed"),
+        )
+        .expect("seed db");
+
+        for (path, filename) in [
+            ("C:/Mods/Loose/Item.package", "Item.package"),
+            ("C:/Mods/Other/item.package", "item.package"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path, filename, extension, kind, subtype, confidence, source_location
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    rusqlite::params![
+                        path,
+                        filename,
+                        ".package",
+                        "CAS",
+                        "Hair",
+                        0.97_f64,
+                        "mods"
+                    ],
+                )
+                .expect("file");
+        }
+
+        let preview = build_preview(
+            &connection,
+            &LibrarySettings {
+                mods_path: Some("C:/Mods".to_owned()),
+                tray_path: Some("C:/Tray".to_owned()),
+                downloads_path: None,
+                ..Default::default()
+            },
+            Some("Category First".to_owned()),
+            20,
+        )
+        .expect("preview");
+
+        assert_eq!(preview.total_considered, 2);
+        assert_eq!(preview.safe_count, 1);
+        assert_eq!(preview.review_count, 1);
+        assert_eq!(
+            preview
+                .suggestions
+                .iter()
+                .filter(|item| item
+                    .validator_notes
+                    .contains(&"preview_path_collision_detected".to_owned()))
+                .count(),
+            1
+        );
+        assert!(preview.issue_summary.iter().any(|issue| {
+            issue.code == "preview_path_collision_detected"
+                && issue.label == "Two files in this pass want the same slot"
+                && issue.count == 1
+        }));
     }
 
     #[test]

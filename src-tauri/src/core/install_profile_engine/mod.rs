@@ -737,7 +737,7 @@ fn build_guided_plan_internal(
     let mut review_files = Vec::new();
     let mut warnings = layout.warnings.clone();
     let mut evidence = evaluation.assessment.evidence_summary.clone();
-    let mut reserved_targets = HashSet::new();
+    let mut reserved_targets = validator::DestinationReservations::new(settings);
 
     for file in incoming {
         let validation_kind = guided_validation_kind(file, &profile);
@@ -764,8 +764,8 @@ fn build_guided_plan_internal(
             &reserved_targets,
         )?;
 
-        if let Some(path) = validation.final_absolute_path.clone() {
-            reserved_targets.insert(path);
+        if validation.final_absolute_path.is_some() {
+            reserved_targets.reserve(&validation_kind, &validation.final_relative_path);
         }
 
         let entry = GuidedInstallFileEntry {
