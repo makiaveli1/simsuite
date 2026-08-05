@@ -116,8 +116,28 @@ describe("validation script wrappers", () => {
       "utf8",
     );
     expect(gameProfileProofSource).toContain("$ErrorActionPreference = 'Stop'");
-    expect(gameProfileProofSource).toContain("cargo test");
+    expect(gameProfileProofSource).toContain(
+      "(Get-Command cargo -CommandType Application -ErrorAction Stop).Source",
+    );
+    const savedPreference = gameProfileProofSource.indexOf(
+      "$previousErrorActionPreference = $ErrorActionPreference",
+    );
+    const relaxedPreference = gameProfileProofSource.indexOf(
+      "$ErrorActionPreference = 'Continue'",
+    );
+    const cargoInvocation = gameProfileProofSource.indexOf("& $cargoExecutable test");
+    const exitCodeCapture = gameProfileProofSource.indexOf("$testExitCode = $LASTEXITCODE");
+    const restoredPreference = gameProfileProofSource.indexOf(
+      "$ErrorActionPreference = $previousErrorActionPreference",
+    );
+    expect(savedPreference).toBeGreaterThan(-1);
+    expect(relaxedPreference).toBeGreaterThan(savedPreference);
+    expect(cargoInvocation).toBeGreaterThan(relaxedPreference);
+    expect(exitCodeCapture).toBeGreaterThan(cargoInvocation);
+    expect(restoredPreference).toBeGreaterThan(exitCodeCapture);
     expect(gameProfileProofSource).toContain("--include-ignored");
+    expect(gameProfileProofSource).toContain("--nocapture 2>&1");
+    expect(gameProfileProofSource).toContain("if ($testExitCode -ne 0)");
     expect(gameProfileProofSource).toContain("SIMSUITE_WINDOWS_GAME_PROFILE_PROOF_JSON=");
     expect(gameProfileProofSource).toContain("output\\desktop\\windows-game-profile-proof");
     expect(gameProfileProofSource).not.toMatch(/\bnpm run\b/i);

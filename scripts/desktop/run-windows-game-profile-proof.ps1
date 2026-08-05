@@ -21,18 +21,28 @@ $latestSummaryPath = Join-Path $outputRoot 'latest-summary.json'
 
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
+$cargoExecutable = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+$previousErrorActionPreference = $ErrorActionPreference
 Push-Location $repoRoot
 try {
     Write-Output "WINDOWS_GAME_PROFILE_PROOF_START output=$runDir"
-    $testOutput = @(
-        & cargo test `
-            --manifest-path 'src-tauri/Cargo.toml' `
-            'core::game_installation_candidate_detection::tests::' `
-            -- `
-            --include-ignored `
-            --nocapture 2>&1
-    )
-    $testExitCode = $LASTEXITCODE
+    try {
+        # Windows PowerShell 5.1 surfaces normal native stderr as NativeCommandError
+        # when ErrorActionPreference is Stop. Capture both streams, then trust the
+        # native exit code rather than treating Cargo progress output as failure.
+        $ErrorActionPreference = 'Continue'
+        $testOutput = @(
+            & $cargoExecutable test `
+                --manifest-path 'src-tauri/Cargo.toml' `
+                'core::game_installation_candidate_detection::tests::' `
+                -- `
+                --include-ignored `
+                --nocapture 2>&1
+        )
+        $testExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 } finally {
     Pop-Location
 }
