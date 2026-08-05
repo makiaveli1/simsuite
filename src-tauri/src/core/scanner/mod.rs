@@ -78,6 +78,10 @@ struct DiscoveredFolder {
     name: String,
     depth: i64,
     full_path: PathBuf,
+    installation_profile_id: Option<String>,
+    installation_root_id: Option<String>,
+    profile_relative_path: Option<String>,
+    profile_relative_path_key: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -305,14 +309,22 @@ where
                 name,
                 depth,
                 full_path,
+                installation_profile_id,
+                installation_root_id,
+                profile_relative_path,
+                profile_relative_path_key,
                 scan_session_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(source_location, normalized_relative_path) DO UPDATE SET
                 relative_path = excluded.relative_path,
                 parent_normalized_relative_path = excluded.parent_normalized_relative_path,
                 name = excluded.name,
                 depth = excluded.depth,
                 full_path = excluded.full_path,
+                installation_profile_id = excluded.installation_profile_id,
+                installation_root_id = excluded.installation_root_id,
+                profile_relative_path = excluded.profile_relative_path,
+                profile_relative_path_key = excluded.profile_relative_path_key,
                 scan_session_id = excluded.scan_session_id,
                 indexed_at = CURRENT_TIMESTAMP",
         )?;
@@ -582,11 +594,53 @@ fn scan_owned_identity(
     )
 }
 
+fn scan_owned_folder_identity(
+    scan_root: &ScanRoot,
+    path: &Path,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    let (Some(profile_id), Some(root_id)) = (
+        scan_root.installation_profile_id.as_ref(),
+        scan_root.installation_root_id.as_ref(),
+    ) else {
+        return (None, None, None, None);
+    };
+    let Some(relative_path) = profile_relative_path_including_root(&scan_root.path, path) else {
+        return (None, None, None, None);
+    };
+    let relative_path_key = if relative_path.is_empty() {
+        None
+    } else {
+        scan_root.case_sensitivity.and_then(|case_sensitivity| {
+            comparison_key(Path::new(&relative_path), case_sensitivity)
+                .ok()
+                .and_then(|key| key.storage_key_v1())
+        })
+    };
+
+    (
+        Some(profile_id.clone()),
+        Some(root_id.clone()),
+        Some(relative_path),
+        relative_path_key,
+    )
+}
+
 fn profile_relative_path(root: &Path, path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(root).ok()?;
-    if relative.as_os_str().is_empty() {
-        return None;
+    let relative_path = profile_relative_path_including_root(root, path)?;
+    if relative_path.is_empty() {
+        None
+    } else {
+        Some(relative_path)
     }
+}
+
+fn profile_relative_path_including_root(root: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
     let mut components = Vec::new();
     for component in relative.components() {
         match component {
@@ -594,11 +648,7 @@ fn profile_relative_path(root: &Path, path: &Path) -> Option<String> {
             _ => return None,
         }
     }
-    if components.is_empty() {
-        None
-    } else {
-        Some(components.join("/"))
-    }
+    Some(components.join("/"))
 }
 
 fn collect_supported_files_with_progress<F>(
@@ -734,6 +784,12 @@ fn discovered_folder_for_entry(root: &ScanRoot, path: &Path) -> Option<Discovere
     } else {
         normalized_relative_path.split('/').count() as i64
     };
+    let (
+        installation_profile_id,
+        installation_root_id,
+        profile_relative_path,
+        profile_relative_path_key,
+    ) = scan_owned_folder_identity(root, path);
 
     Some(DiscoveredFolder {
         source_location,
@@ -743,6 +799,10 @@ fn discovered_folder_for_entry(root: &ScanRoot, path: &Path) -> Option<Discovere
         name,
         depth,
         full_path: path.to_path_buf(),
+        installation_profile_id,
+        installation_root_id,
+        profile_relative_path,
+        profile_relative_path_key,
     })
 }
 
@@ -1171,6 +1231,10 @@ fn insert_discovered_folder(
         &folder.name,
         folder.depth,
         folder.full_path.to_string_lossy().to_string(),
+        folder.installation_profile_id.as_deref(),
+        folder.installation_root_id.as_deref(),
+        folder.profile_relative_path.as_deref(),
+        folder.profile_relative_path_key.as_deref(),
         session_id,
     ])?;
     Ok(())
@@ -1958,6 +2022,73 @@ mod tests {
     }
 
     #[test]
+    fn scan_owned_folder_identity_preserves_root_and_case_policy() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        let nested = root.join("Creator").join("Nested");
+        fs::create_dir_all(&nested).expect("fixture tree");
+
+        let assigned_root = ScanRoot {
+            root_type: RootType::Mods,
+            path: root.clone(),
+            installation_profile_id: Some("profile-a".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            case_sensitivity: Some(CaseSensitivity::Sensitive),
+        };
+        assert_eq!(
+            scan_owned_folder_identity(&assigned_root, &root),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods-root".to_owned()),
+                Some(String::new()),
+                None,
+            )
+        );
+        assert_eq!(
+            scan_owned_folder_identity(&assigned_root, &nested),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods-root".to_owned()),
+                Some("Creator/Nested".to_owned()),
+                Some("v1|n7:Creator|n6:Nested".to_owned()),
+            )
+        );
+
+        let insensitive_root = ScanRoot {
+            case_sensitivity: Some(CaseSensitivity::Insensitive),
+            ..assigned_root.clone()
+        };
+        assert_eq!(
+            scan_owned_folder_identity(&insensitive_root, &nested).3,
+            Some("v1|f7:creator|f6:nested".to_owned())
+        );
+
+        let unknown_root = ScanRoot {
+            case_sensitivity: Some(CaseSensitivity::Unknown),
+            ..assigned_root.clone()
+        };
+        assert_eq!(
+            scan_owned_folder_identity(&unknown_root, &nested),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods-root".to_owned()),
+                Some("Creator/Nested".to_owned()),
+                None,
+            )
+        );
+
+        let unassigned_root = ScanRoot {
+            installation_profile_id: None,
+            installation_root_id: None,
+            ..assigned_root
+        };
+        assert_eq!(
+            scan_owned_folder_identity(&unassigned_root, &nested),
+            (None, None, None, None)
+        );
+    }
+
+    #[test]
     fn stale_refresh_flag_stays_off_for_a_brand_new_database() {
         let temp = tempdir().expect("tempdir");
         let seed_pack = load_seed_pack().expect("seed");
@@ -2213,6 +2344,131 @@ mod tests {
         assert_eq!(listing.items.len(), 1);
         assert_eq!(listing.items[0].creator.as_deref(), Some("LittleMsSam"));
         assert_eq!(listing.items[0].kind, "Gameplay");
+    }
+
+    #[test]
+    fn scan_persists_folder_identity_for_matching_active_profile() {
+        let temp = tempdir().expect("tempdir");
+        let mods = temp.path().join("Mods");
+        let nested = mods.join("Creator").join("Nested");
+        fs::create_dir_all(&nested).expect("nested folder");
+
+        let seed_pack = load_seed_pack().expect("seed");
+        let state = build_state(&temp, seed_pack, |connection| {
+            database::save_library_paths(
+                connection,
+                &crate::models::LibrarySettings {
+                    mods_path: Some(mods.to_string_lossy().to_string()),
+                    tray_path: None,
+                    downloads_path: None,
+                    ..Default::default()
+                },
+            )
+            .expect("save settings");
+            connection
+                .execute(
+                    "INSERT INTO game_installation_profiles (
+                        profile_id, profile_name, game_id, operating_environment,
+                        status, detection_method, detection_evidence_json,
+                        confirmation_state, confirmed_at, last_validated_at,
+                        created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    params![
+                        "profile-a",
+                        "Fixture profile",
+                        "sims4",
+                        "unknown",
+                        "valid",
+                        "manual",
+                        "{}",
+                        "confirmed",
+                        "2026-08-05T00:00:00Z",
+                        "2026-08-05T00:00:00Z",
+                        "2026-08-05T00:00:00Z",
+                        "2026-08-05T00:00:00Z"
+                    ],
+                )
+                .expect("profile");
+            connection
+                .execute(
+                    "INSERT INTO game_installation_roots (
+                        profile_id, root_id, root_role, configured_path,
+                        required, validation_state, filesystem_capabilities_json,
+                        last_validated_at, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        "profile-a",
+                        "mods",
+                        "installed_mods",
+                        mods.to_string_lossy().to_string(),
+                        1_i64,
+                        "valid",
+                        "{}",
+                        "2026-08-05T00:00:00Z",
+                        "2026-08-05T00:00:00Z",
+                        "2026-08-05T00:00:00Z"
+                    ],
+                )
+                .expect("profile root");
+            database::save_app_setting(
+                connection,
+                "active_game_installation_profile_id",
+                Some("profile-a"),
+                "user",
+            )
+            .expect("active profile");
+        });
+
+        scan_library_with_progress(&state, |_| Ok(())).expect("scan");
+        let connection = state.connection().expect("connection");
+
+        let root_identity: (Option<String>, Option<String>, Option<String>, Option<String>) =
+            connection
+                .query_row(
+                    "SELECT installation_profile_id, installation_root_id,
+                            profile_relative_path, profile_relative_path_key
+                     FROM library_folders
+                     WHERE source_location = 'mods' AND normalized_relative_path = ''",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .expect("root folder identity");
+        assert_eq!(
+            root_identity,
+            (
+                Some("profile-a".to_owned()),
+                Some("mods".to_owned()),
+                Some(String::new()),
+                None,
+            )
+        );
+
+        let nested_identity: (Option<String>, Option<String>, Option<String>, Option<String>) =
+            connection
+                .query_row(
+                    "SELECT installation_profile_id, installation_root_id,
+                            profile_relative_path, profile_relative_path_key
+                     FROM library_folders
+                     WHERE source_location = 'mods'
+                       AND normalized_relative_path = 'creator/nested'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .expect("nested folder identity");
+        let expected_key = probe_case_sensitivity(&mods).ok().and_then(|case_sensitivity| {
+            comparison_key(Path::new("Creator/Nested"), case_sensitivity)
+                .ok()
+                .and_then(|key| key.storage_key_v1())
+        });
+        assert_eq!(
+            nested_identity,
+            (
+                Some("profile-a".to_owned()),
+                Some("mods".to_owned()),
+                Some("Creator/Nested".to_owned()),
+                expected_key,
+            )
+        );
     }
 
     #[test]

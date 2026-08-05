@@ -32,6 +32,8 @@ const INDEXED_FILE_IDENTITY_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0009_indexed_file_identity_v1.sql");
 const INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0010_indexed_file_comparison_key_v1.sql");
+const INDEXED_FOLDER_IDENTITY_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0011_indexed_folder_identity_v1.sql");
 
 const LEGACY_GAME_INSTALLATION_PROFILE_ID: &str = "legacy-sims4-default";
 const ACTIVE_GAME_INSTALLATION_PROFILE_SETTING: &str =
@@ -217,6 +219,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v11_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 11",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v11_exists.is_none() {
+        ensure_indexed_folder_identity_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![11_i64, "indexed_folder_identity_v1"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -236,6 +253,15 @@ fn ensure_indexed_file_identity_schema(connection: &Connection) -> AppResult<()>
 fn ensure_indexed_file_comparison_key_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "profile_relative_path_key", "TEXT")?;
     connection.execute_batch(INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn ensure_indexed_folder_identity_schema(connection: &Connection) -> AppResult<()> {
+    ensure_column(connection, "library_folders", "installation_profile_id", "TEXT")?;
+    ensure_column(connection, "library_folders", "installation_root_id", "TEXT")?;
+    ensure_column(connection, "library_folders", "profile_relative_path", "TEXT")?;
+    ensure_column(connection, "library_folders", "profile_relative_path_key", "TEXT")?;
+    connection.execute_batch(INDEXED_FOLDER_IDENTITY_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -1951,6 +1977,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "archive_member_path", "TEXT")?;
     ensure_indexed_file_identity_schema(connection)?;
     ensure_indexed_file_comparison_key_schema(connection)?;
+    ensure_indexed_folder_identity_schema(connection)?;
     ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
     ensure_column(
         connection,
@@ -2597,16 +2624,251 @@ mod tests {
     }
 
     #[test]
+    fn indexed_folder_identity_schema_is_nullable_and_fail_closed() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize schema");
+
+        let columns = connection
+            .prepare("PRAGMA table_info(library_folders)")
+            .expect("folder columns")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("column rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("columns");
+        for expected in [
+            "installation_profile_id",
+            "installation_root_id",
+            "profile_relative_path",
+            "profile_relative_path_key",
+        ] {
+            assert!(columns.iter().any(|column| column == expected));
+        }
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 11 AND name = 'indexed_folder_identity_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder identity migration");
+        assert_eq!(migration_count, 1);
+
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name IN (
+                       'idx_library_folders_installation_identity',
+                       'idx_library_folders_installation_comparison'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder identity indexes");
+        assert_eq!(index_count, 2);
+
+        let trigger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name IN (
+                       'trg_library_folders_installation_identity_all_or_nothing_insert',
+                       'trg_library_folders_installation_identity_all_or_nothing_update',
+                       'trg_library_folders_installation_comparison_key_insert',
+                       'trg_library_folders_installation_comparison_key_update'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder identity triggers");
+        assert_eq!(trigger_count, 4);
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params!["mods", "", "", "Mods", 0_i64, "/fixture/Mods"],
+            )
+            .expect("legacy unassigned folder");
+
+        let partial_identity = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path, installation_profile_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "mods",
+                "Creator",
+                "creator",
+                "Creator",
+                1_i64,
+                "/fixture/Mods/Creator",
+                "profile-a"
+            ],
+        );
+        assert!(partial_identity.is_err());
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id, profile_relative_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "tray",
+                    "",
+                    "",
+                    "Tray",
+                    0_i64,
+                    "/fixture/Tray",
+                    "profile-a",
+                    "tray-root",
+                    ""
+                ],
+            )
+            .expect("assigned root folder without comparison key");
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "mods",
+                    "Creator",
+                    "creator",
+                    "Creator",
+                    1_i64,
+                    "/fixture/Mods/Creator",
+                    "profile-a",
+                    "mods-root",
+                    "Creator",
+                    "v1|n7:Creator"
+                ],
+            )
+            .expect("assigned nested folder with comparison key");
+
+        let missing_identity = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path, profile_relative_path_key
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "tray",
+                "Lot",
+                "lot",
+                "Lot",
+                1_i64,
+                "/fixture/Tray/Lot",
+                "v1|n3:Lot"
+            ],
+        );
+        assert!(missing_identity.is_err());
+
+        let root_comparison_key = connection.execute(
+            "UPDATE library_folders
+             SET profile_relative_path_key = 'v1|root'
+             WHERE source_location = 'tray' AND normalized_relative_path = ''",
+            [],
+        );
+        assert!(root_comparison_key.is_err());
+    }
+
+    #[test]
+    fn indexed_folder_identity_migration_preserves_existing_rows_unassigned() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        let mut inside_folder_table = false;
+        let pre_v11_schema = schema::INITIAL_SCHEMA_SQL
+            .lines()
+            .filter(|line| {
+                if line.starts_with("CREATE TABLE IF NOT EXISTS library_folders") {
+                    inside_folder_table = true;
+                    return true;
+                }
+                if inside_folder_table && line.trim() == ");" {
+                    inside_folder_table = false;
+                    return true;
+                }
+                if inside_folder_table
+                    && (line.contains("installation_profile_id TEXT")
+                        || line.contains("installation_root_id TEXT")
+                        || line.contains("profile_relative_path TEXT")
+                        || line.contains("profile_relative_path_key TEXT"))
+                {
+                    return false;
+                }
+                !line.contains("idx_library_folders_installation_identity")
+                    && !line.contains("idx_library_folders_installation_comparison")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        connection
+            .execute_batch(&pre_v11_schema)
+            .expect("pre-v11 schema");
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "mods",
+                    "Legacy",
+                    "legacy",
+                    "Legacy",
+                    1_i64,
+                    "/legacy/Mods/Legacy"
+                ],
+            )
+            .expect("legacy folder row");
+
+        initialize(&mut connection).expect("migrate schema");
+
+        let identity: (Option<String>, Option<String>, Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT installation_profile_id, installation_root_id,
+                        profile_relative_path, profile_relative_path_key
+                 FROM library_folders
+                 WHERE source_location = 'mods' AND normalized_relative_path = 'legacy'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("migrated legacy row");
+        assert_eq!(identity, (None, None, None, None));
+    }
+
+    #[test]
     fn indexed_file_identity_migration_preserves_existing_rows_unassigned() {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
+        let mut inside_files_table = false;
         let pre_v9_schema = schema::INITIAL_SCHEMA_SQL
             .lines()
             .filter(|line| {
-                !line.contains("installation_profile_id TEXT")
-                    && !line.contains("installation_root_id TEXT")
-                    && !line.contains("profile_relative_path TEXT")
-                    && !line.contains("profile_relative_path_key TEXT")
-                    && !line.contains("idx_files_installation_identity")
+                if line.starts_with("CREATE TABLE IF NOT EXISTS files") {
+                    inside_files_table = true;
+                    return true;
+                }
+                if inside_files_table && line.trim() == ");" {
+                    inside_files_table = false;
+                    return true;
+                }
+                if inside_files_table
+                    && (line.contains("installation_profile_id TEXT")
+                        || line.contains("installation_root_id TEXT")
+                        || line.contains("profile_relative_path TEXT")
+                        || line.contains("profile_relative_path_key TEXT"))
+                {
+                    return false;
+                }
+                !line.contains("idx_files_installation_identity")
+                    && !line.contains("idx_files_installation_comparison")
             })
             .collect::<Vec<_>>()
             .join("\n");

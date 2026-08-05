@@ -12,7 +12,7 @@ The Library backend is a Rust/Tauri backend over SQLite.
 - Command wrappers live mainly in `src-tauri/src/commands/mod.rs`.
 - SQLite setup and schema repair live in `src-tauri/src/database/mod.rs`, with the initial schema embedded from `src-tauri/src/database/schema/mod.rs`.
 - The Library index/query layer lives in `src-tauri/src/core/library_index/mod.rs`.
-- Scan/indexing lives in `src-tauri/src/core/scanner/mod.rs`.
+- Scan/indexing lives in `src-tauri/src/core/scanner/mod.rs`. Indexed Folder Identity V1 writes nullable active-profile/root-relative identity and a root-policy-aware comparison key into newly scanned `library_folders` rows without extra filesystem probes. Existing lowercased folder keys and Library queries remain the compatibility path until a later bounded adoption batch.
 - Package and Tray inspection lives in `src-tauri/src/core/file_inspector/mod.rs`.
 - Duplicate detection lives in `src-tauri/src/core/duplicate_detector/mod.rs`.
 - Bundle/same-pack grouping lives in `src-tauri/src/core/bundle_detector/mod.rs`.
@@ -92,7 +92,7 @@ Important Library tables:
 | `files` | Main indexed Library/download file rows. Newly scanned Mods/Tray rows can carry nullable `installation_profile_id`, `installation_root_id`, slash-normalized `profile_relative_path`, and a versioned `profile_relative_path_key` derived from the confirmed root's case policy when that policy is provable. | Scanner, downloads/staging flows. | Library list, folder, detail, duplicates, watch, review. | Existing rows gain the comparison key only after a valid rescan; Downloads-only rows remain unassigned. Exact duplicate rebuild, pair classification, and Library counts share one fail-closed identity rule. Complete profile/root/key tuples decide same-file exclusion; legacy rows may prove separation only through clearly different non-case-only paths; mixed, partial, case-only, or same-key identity is not exact duplicate proof. |
 | `creators` / `creator_aliases` / `user_creator_aliases` | Creator metadata and learned aliases. | Seed, scanner, user learning. | Library facets, detail, duplicate display. | Missing creator is common and must remain weak evidence. |
 | `bundles` | Same-pack/bundle grouping. | Bundle detector. | Library relationship hints, folder summaries. | Same pack is not duplicate proof. |
-| `library_folders` | Real Mods/Tray folder metadata, including empty folders. | Scanner during scan/rescan. | Folder tree metadata and real Open Folder path plumbing. | Existing libraries need a scan/rescan before old empty folders appear. |
+| `library_folders` | Real Mods/Tray folder metadata, including empty folders, plus nullable scan-owned profile/root-relative identity for newly scanned rows. | Scanner during scan/rescan. | Current folder tree metadata and Open Folder plumbing still use the legacy source/normalized-path compatibility fields; later bounded work may adopt the new identity fields. | Existing libraries need a scan/rescan before old empty folders or folder identity appear; no migration guesses identity for old rows. |
 | `duplicates` | Stored exact duplicate and comparison rows. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema still stores `exact`, `filename`, `version`; exact rows must validate same file/package/script contents before user-facing Duplicate is shown. |
 | `review_queue` | Files needing manual review. | Scanner/rule engine. | Needs Review, Library problem signals. | Review means manual review, not broken content proof. |
 | `content_watch_sources` / `content_watch_results` | Update/source watch configuration and last results. | Updates/watch commands. | Library update cues, Updates route. | Provider checks are limited; no official-source claim. |
@@ -112,7 +112,8 @@ Important indexes:
 
 - `idx_files_hash`, `idx_files_content_fingerprint`, `idx_files_filename`, `idx_files_creator_id`, `idx_files_bundle_id`, `idx_files_kind`, `idx_files_source_location`.
 - `idx_files_download_item_id`, `idx_files_source_location_kind`, `idx_files_source_location_filename`, `idx_files_relative_depth`, `idx_files_source_location_depth`.
-- `idx_library_folders_source_location`, `idx_library_folders_source_path`, `idx_library_folders_source_parent`, `idx_library_folders_source_depth`.
+- `idx_library_folders_source_location`, `idx_library_folders_source_path`, `idx_library_folders_source_parent`, `idx_library_folders_source_depth` remain the current compatibility indexes.
+- `idx_library_folders_installation_identity` and `idx_library_folders_installation_comparison` support later profile/root-aware folder adoption without changing current Library queries.
 - `idx_duplicates_duplicate_type`, `idx_duplicates_file_id_a`, `idx_duplicates_file_id_b`.
 - `idx_review_queue_created_at`, `idx_review_queue_file_id`.
 - `idx_content_watch_sources_kind`, `idx_content_watch_sources_anchor_file_id`, `idx_content_watch_results_status`.
