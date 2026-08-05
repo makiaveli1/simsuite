@@ -7,7 +7,7 @@ const DEFAULT_BATCH_SIZE = 3;
 const TEST_FILE_PATTERN = /\.test\.(ts|tsx)$/;
 
 function localVitestCliPath(cwd = process.cwd(), platform = process.platform) {
-  const pathApi = platform === "win32" ? path.win32 : path;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
   return pathApi.join(cwd, "node_modules", "vitest", "vitest.mjs");
 }
 

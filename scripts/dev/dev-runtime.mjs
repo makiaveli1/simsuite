@@ -54,7 +54,7 @@ export function normalizeTauriEnvironment(env = process.env) {
 }
 
 function localTauriCliPath(cwd, platform = process.platform) {
-  const pathApi = platform === "win32" ? path.win32 : path;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
   return pathApi.join(cwd, "node_modules", "@tauri-apps", "cli", "tauri.js");
 }
 
