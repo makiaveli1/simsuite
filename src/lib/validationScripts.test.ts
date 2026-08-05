@@ -40,6 +40,18 @@ describe("validation script wrappers", () => {
     );
   });
 
+  it("keeps Vitest-imported Node wrappers free of executable shebangs", () => {
+    const importableWrappers = [
+      "scripts/desktop/run-powershell-script.mjs",
+      "scripts/test/run-vitest.mjs",
+      "scripts/test/run-rust-tests.mjs",
+    ];
+
+    for (const wrapperPath of importableWrappers) {
+      expect(readFileSync(wrapperPath, "utf8")).not.toMatch(/^#!/);
+    }
+  });
+
   it("disables inherited Node Web Storage only on runtimes that support the flag", () => {
     expect(supportsWebStorageDisable("22.3.0")).toBe(false);
     expect(supportsWebStorageDisable("22.4.0")).toBe(true);
@@ -180,6 +192,8 @@ describe("validation script wrappers", () => {
     );
     expect(workflowSource).toContain("path: output/desktop/windows-game-profile-proof/");
     expect(workflowSource).toContain("if-no-files-found: error");
+    expect(workflowSource).toContain("run: pnpm run tauri:build --no-bundle");
+    expect(workflowSource).not.toContain("run: pnpm run tauri:build -- --no-bundle");
     expect(workflowSource).toContain("retention-days: 14");
     expect(workflowSource.match(/run: pnpm run desktop:proof:game-profile:windows/g)).toHaveLength(1);
     expect(workflowSource.match(/run: pnpm run desktop:review:game-profile:windows/g)).toHaveLength(1);
