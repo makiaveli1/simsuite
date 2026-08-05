@@ -84,7 +84,7 @@ jobs:
       - name: Review hosted Windows game-profile receipt
         id: windows_game_profile_review
         if: ${{ runner.os == 'Windows' && steps.windows_game_profile_proof.outcome == 'success' }}
-        run: pnpm run desktop:review:game-profile:windows -- --expected-git ${{ github.sha }}
+        run: pnpm run desktop:review:game-profile:windows --expected-git ${{ github.sha }}
 
       - name: Upload hosted Windows game-profile evidence
         if: ${{ runner.os == 'Windows' && !cancelled() && steps.windows_game_profile_proof.outcome != 'skipped' }}

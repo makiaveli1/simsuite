@@ -201,7 +201,10 @@ describe("validation script wrappers", () => {
       "if: ${{ runner.os == 'Windows' && steps.windows_game_profile_proof.outcome == 'success' }}",
     );
     expect(workflowSource).toContain(
-      "run: pnpm run desktop:review:game-profile:windows -- --expected-git ${{ github.sha }}",
+      "run: pnpm run desktop:review:game-profile:windows --expected-git ${{ github.sha }}",
+    );
+    expect(workflowSource).not.toContain(
+      "run: pnpm run desktop:review:game-profile:windows -- --expected-git",
     );
     expect(workflowSource).toContain("- name: Upload hosted Windows game-profile evidence");
     expect(workflowSource).toContain(
