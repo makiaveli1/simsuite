@@ -11,8 +11,8 @@ The Library backend is a Rust/Tauri backend over SQLite.
 - Tauri command registration lives in `src-tauri/src/lib.rs`.
 - Command wrappers live mainly in `src-tauri/src/commands/mod.rs`.
 - SQLite setup and schema repair live in `src-tauri/src/database/mod.rs`, with the initial schema embedded from `src-tauri/src/database/schema/mod.rs`.
-- The Library index/query layer lives in `src-tauri/src/core/library_index/mod.rs`. Library Folder Content Identity V1 uses current-profile folder identity for read-only selected-folder file scoping, prefers component-safe comparison keys, uses exact observed relative paths when keys are unavailable, blocks stale or incomplete identity, and retains the configured-root query only for legacy folders.
-- Scan/indexing lives in `src-tauri/src/core/scanner/mod.rs`. Indexed Folder Identity V1 writes nullable active-profile/root-relative identity and a root-policy-aware comparison key into newly scanned `library_folders` rows without extra filesystem probes. Existing lowercased folder keys and folder-tree construction remain the compatibility path until a later bounded adoption batch.
+- The Library index/query layer lives in `src-tauri/src/core/library_index/mod.rs`. Library Folder Content Identity V1 uses current-profile folder identity for read-only selected-folder file scoping, prefers component-safe comparison keys, uses exact observed relative paths when keys are unavailable, blocks stale or incomplete identity, and retains the configured-root query only for legacy folders. Library Folder Tree Profile Identity V1 gives each requested source a current-profile, legacy, or blocked mode, derives current nesting from root-relative identity, and counts only matching profile/root files.
+- Scan/indexing lives in `src-tauri/src/core/scanner/mod.rs`. Indexed Folder Identity V1 writes nullable active-profile/root-relative identity and a root-policy-aware comparison key into newly scanned `library_folders` rows without extra filesystem probes. The existing lowercased folder key and uniqueness rule remain the compatibility limitation until a separate schema-focused migration.
 - Package and Tray inspection lives in `src-tauri/src/core/file_inspector/mod.rs`.
 - Duplicate detection lives in `src-tauri/src/core/duplicate_detector/mod.rs`.
 - Bundle/same-pack grouping lives in `src-tauri/src/core/bundle_detector/mod.rs`.
@@ -49,7 +49,7 @@ The normal flow is:
 | `list_library_files` | implemented | Paged Library rows; preview payload is controlled by `include_previews`. |
 | `list_library_folder_files` | implemented, recently hardened | Returns direct or recursive folder contents through SQL-scoped source/depth/path filters, supports Library filters/search/sort, pagination, and preview control. |
 | `list_library_files_for_tree` | compatibility endpoint, bounded | Still registered for older callers, but now caps returned rows at 5,000 and strips previews. `get_folder_tree_metadata` plus `list_library_folder_files` is the preferred path. |
-| `get_folder_tree_metadata` | implemented | Builds folder tree metadata from scan-owned `library_folders` rows plus file-count aggregation, so real empty Mods/Tray folders can appear after scan. |
+| `get_folder_tree_metadata` | implemented, profile-aware | Builds read-only folder tree metadata from scan-owned `library_folders` rows. Each requested Mods or Tray source uses current-profile/root-relative identity when trustworthy, keeps the legacy all-null path/depth fallback, or is omitted when identity is stale, incomplete, or unsafe. File counts use the same source mode, and real empty folders still appear after scan. |
 | `get_file_detail` | implemented | Lazy detail query with watch, duplicate, review, and preview resolution. |
 | `reveal_file_in_folder` | implemented | Opens Explorer for file or parent folder; uses real paths. |
 | `get_duplicate_overview` | implemented | Counts duplicate rows by stored type. |
@@ -92,7 +92,7 @@ Important Library tables:
 | `files` | Main indexed Library/download file rows. Newly scanned Mods/Tray rows can carry nullable `installation_profile_id`, `installation_root_id`, slash-normalized `profile_relative_path`, and a versioned `profile_relative_path_key` derived from the confirmed root's case policy when that policy is provable. | Scanner, downloads/staging flows. | Library list, folder, detail, duplicates, watch, review. | Existing rows gain the comparison key only after a valid rescan; Downloads-only rows remain unassigned. Exact duplicate rebuild, pair classification, and Library counts share one fail-closed identity rule. Complete profile/root/key tuples decide same-file exclusion; legacy rows may prove separation only through clearly different non-case-only paths; mixed, partial, case-only, or same-key identity is not exact duplicate proof. |
 | `creators` / `creator_aliases` / `user_creator_aliases` | Creator metadata and learned aliases. | Seed, scanner, user learning. | Library facets, detail, duplicate display. | Missing creator is common and must remain weak evidence. |
 | `bundles` | Same-pack/bundle grouping. | Bundle detector. | Library relationship hints, folder summaries. | Same pack is not duplicate proof. |
-| `library_folders` | Real Mods/Tray folder metadata, including empty folders, plus nullable scan-owned profile/root-relative identity for newly scanned rows. | Scanner during scan/rescan. | Selected-folder file queries now use current-profile identity when complete; folder tree metadata and Open Folder plumbing still use the legacy source/normalized-path compatibility fields. | Existing libraries need a scan/rescan before old empty folders or folder identity appear; no migration guesses identity for old rows. Stale or incomplete identity is blocked rather than silently falling back. |
+| `library_folders` | Real Mods/Tray folder metadata, including empty folders, plus nullable scan-owned profile/root-relative identity for newly scanned rows. | Scanner during scan/rescan. | Selected-folder file queries and folder-tree construction use current-profile/root-relative identity when complete; Open Folder continues to use the stored real `full_path`. Genuinely legacy all-null rows retain compatibility behaviour. | Existing libraries need a scan/rescan before old empty folders or folder identity appear; no migration guesses identity for old rows. Stale, incomplete, or unsafe identity is blocked rather than silently merged. The current lowercased uniqueness rule still cannot store case-only sibling folders and needs a separate migration. |
 | `duplicates` | Stored exact duplicate and comparison rows. | Duplicate detector after scan. | Duplicate overview, Duplicates route, Library duplicate flags. | Schema still stores `exact`, `filename`, `version`; exact rows must validate same file/package/script contents before user-facing Duplicate is shown. |
 | `review_queue` | Files needing manual review. | Scanner/rule engine. | Needs Review, Library problem signals. | Review means manual review, not broken content proof. |
 | `content_watch_sources` / `content_watch_results` | Update/source watch configuration and last results. | Updates/watch commands. | Library update cues, Updates route. | Provider checks are limited; no official-source claim. |
@@ -176,16 +176,16 @@ What is not proven:
 
 Folder systems:
 
-- `get_folder_tree_metadata` builds a folder tree from scan-owned `library_folders` rows, then applies indexed file rows for direct and total file counts.
-- `list_library_folder_files` returns direct or recursive files under a folder path through SQL-scoped source/depth/path criteria.
-- Mods/Tray source roots are represented through `source_location` and normalized folder paths.
-- Empty folder nodes carry `disk_path` when the scanner has seen the real folder.
-- Open/reveal uses real disk paths. The frontend prefers backend `diskPath` for folder nodes and falls back to configured roots only when needed.
+- `get_folder_tree_metadata` chooses one read-only mode independently for each requested Mods or Tray source.
+- Current-profile mode uses scan-owned profile, root, and root-relative folder identity. File counts include only matching profile/root rows, and nesting comes from `profile_relative_path` rather than absolute paths.
+- Legacy mode keeps the previous absolute-path and `relative_depth` behaviour only for genuinely all-null folder and file identity.
+- Blocked mode omits stale-profile, incomplete, or unsafe identity instead of mixing uncertain rows into the visible tree.
+- `list_library_folder_files` follows its own current-profile, legacy, or blocked identity decision. Empty folders retain `disk_path`, and Open/reveal continues to use real disk paths.
 
 Weak areas:
 
-- `list_library_folder_files` no longer broad-loads the Library before filtering, but path-prefix matching still lacks a dedicated normalized relative path column/index.
-- Folder tree file counts still aggregate from indexed file rows; a future normalized relative path/index could make very large folder trees cheaper.
+- The existing `UNIQUE(source_location, normalized_relative_path)` rule uses a lowercased compatibility key, so it cannot yet store case-only sibling folders on a proven case-sensitive filesystem. Fixing that safely requires a separate schema and migration batch.
+- Folder tree file counts still load filtered indexed file metadata and aggregate it in memory; a future profile/root-relative SQL aggregation and index review could make very large trees cheaper.
 - Folder metadata is scan-time state, not a live filesystem watcher. Users need a scan/rescan for newly created or removed empty folders.
 
 ## 7. Detail / Inspector Backend Map

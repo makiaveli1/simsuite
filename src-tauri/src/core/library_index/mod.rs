@@ -1199,6 +1199,9 @@ struct FolderFileRow {
     path: String,
     source_location: String,
     relative_depth: i64,
+    installation_profile_id: Option<String>,
+    installation_root_id: Option<String>,
+    profile_relative_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1208,6 +1211,26 @@ struct FolderMetadataRow {
     name: String,
     depth: i64,
     disk_path: String,
+    installation_profile_id: Option<String>,
+    installation_root_id: Option<String>,
+    profile_relative_path: Option<String>,
+    profile_relative_path_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum FolderTreeSourceMode {
+    Current {
+        installation_profile_id: String,
+        installation_root_ids: BTreeSet<String>,
+    },
+    Legacy,
+    Blocked,
+}
+
+#[derive(Debug)]
+struct FolderTreeRowSelection {
+    folder_rows: Vec<FolderMetadataRow>,
+    source_modes: HashMap<String, FolderTreeSourceMode>,
 }
 
 #[derive(Debug, Clone)]
@@ -1226,10 +1249,12 @@ pub fn get_folder_tree_metadata(
     connection: &Connection,
     query: &LibraryQuery,
 ) -> AppResult<FolderTreeMetadata> {
-    let folder_rows = load_library_folder_rows(connection, query)?;
+    let selection = load_library_folder_rows(connection, query)?;
     let (filters, params) = build_filters(query);
     let sql = format!(
-        "SELECT f.path, f.source_location, f.relative_depth\n\
+        "SELECT f.path, f.source_location, f.relative_depth,\n\
+                f.installation_profile_id, f.installation_root_id,\n\
+                f.profile_relative_path\n\
          FROM files f\n\
          LEFT JOIN creators c ON f.creator_id = c.id\n\
          LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
@@ -1247,20 +1272,30 @@ pub fn get_folder_tree_metadata(
                 path: row.get(0)?,
                 source_location: row.get(1)?,
                 relative_depth: row.get(2)?,
+                installation_profile_id: row.get(3)?,
+                installation_root_id: row.get(4)?,
+                profile_relative_path: row.get(5)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(build_folder_metadata_from_rows(folder_rows, rows))
+    Ok(build_folder_metadata_from_rows(
+        selection.folder_rows,
+        rows,
+        &selection.source_modes,
+    ))
 }
 
 fn load_library_folder_rows(
     connection: &Connection,
     query: &LibraryQuery,
-) -> AppResult<Vec<FolderMetadataRow>> {
+) -> AppResult<FolderTreeRowSelection> {
     let sources = folder_sources_for_query(query);
     if sources.is_empty() {
-        return Ok(Vec::new());
+        return Ok(FolderTreeRowSelection {
+            folder_rows: Vec::new(),
+            source_modes: HashMap::new(),
+        });
     }
 
     let placeholders = std::iter::repeat("?")
@@ -1268,12 +1303,18 @@ fn load_library_folder_rows(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT source_location, relative_path, name, depth, full_path\n\
+        "SELECT source_location, relative_path, name, depth, full_path,\n\
+                installation_profile_id, installation_root_id,\n\
+                profile_relative_path, profile_relative_path_key\n\
          FROM library_folders\n\
          WHERE source_location IN ({placeholders})\n\
          ORDER BY source_location COLLATE NOCASE, normalized_relative_path COLLATE NOCASE"
     );
-    let params = sources.into_iter().map(Value::Text).collect::<Vec<Value>>();
+    let params = sources
+        .iter()
+        .cloned()
+        .map(Value::Text)
+        .collect::<Vec<Value>>();
 
     let mut statement = connection.prepare(&sql)?;
     let rows = statement
@@ -1284,11 +1325,148 @@ fn load_library_folder_rows(
                 name: row.get(2)?,
                 depth: row.get(3)?,
                 disk_path: row.get(4)?,
+                installation_profile_id: row.get(5)?,
+                installation_root_id: row.get(6)?,
+                profile_relative_path: row.get(7)?,
+                profile_relative_path_key: row.get(8)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(rows)
+    let active_profile_id = database::get_active_game_installation_profile(connection)?
+        .map(|profile| profile.profile_id);
+    let mut rows_by_source: HashMap<String, Vec<FolderMetadataRow>> = HashMap::new();
+    for row in rows {
+        rows_by_source
+            .entry(row.source_location.to_ascii_lowercase())
+            .or_default()
+            .push(row);
+    }
+
+    let mut folder_rows = Vec::new();
+    let mut source_modes = HashMap::new();
+    for source in sources {
+        let rows = rows_by_source.remove(&source).unwrap_or_default();
+        let (mode, selected_rows) =
+            select_folder_tree_source_rows(active_profile_id.as_deref(), rows);
+        folder_rows.extend(selected_rows);
+        source_modes.insert(source, mode);
+    }
+
+    Ok(FolderTreeRowSelection {
+        folder_rows,
+        source_modes,
+    })
+}
+
+fn select_folder_tree_source_rows(
+    active_profile_id: Option<&str>,
+    rows: Vec<FolderMetadataRow>,
+) -> (FolderTreeSourceMode, Vec<FolderMetadataRow>) {
+    let mut current_rows = Vec::new();
+    let mut legacy_rows = Vec::new();
+    let mut has_owned_identity = false;
+    let mut has_malformed_identity = false;
+
+    for mut row in rows {
+        let identity_is_empty = row.installation_profile_id.is_none()
+            && row.installation_root_id.is_none()
+            && row.profile_relative_path.is_none()
+            && row.profile_relative_path_key.is_none();
+        if identity_is_empty {
+            legacy_rows.push(row);
+            continue;
+        }
+
+        has_owned_identity = true;
+        let (Some(profile_id), Some(root_id), Some(relative_path)) = (
+            row.installation_profile_id.as_deref(),
+            row.installation_root_id.as_deref(),
+            row.profile_relative_path.as_deref(),
+        ) else {
+            has_malformed_identity = true;
+            continue;
+        };
+        let comparison_key_is_valid = row
+            .profile_relative_path_key
+            .as_deref()
+            .map(|key| !key.trim().is_empty() && !relative_path.is_empty())
+            .unwrap_or(true);
+        if profile_id.trim().is_empty()
+            || root_id.trim().is_empty()
+            || !comparison_key_is_valid
+            || !is_safe_profile_relative_path(relative_path, true)
+        {
+            has_malformed_identity = true;
+            continue;
+        }
+
+        if active_profile_id == Some(profile_id) {
+            row.relative_path = relative_path.to_owned();
+            row.depth = profile_relative_folder_depth(relative_path);
+            current_rows.push(row);
+        }
+    }
+
+    if has_malformed_identity {
+        return (FolderTreeSourceMode::Blocked, Vec::new());
+    }
+
+    if !current_rows.is_empty() {
+        let installation_profile_id = active_profile_id.unwrap_or_default().to_owned();
+        let installation_root_ids = current_rows
+            .iter()
+            .filter_map(|row| row.installation_root_id.clone())
+            .collect::<BTreeSet<_>>();
+        let root_row_count = current_rows
+            .iter()
+            .filter(|row| row.profile_relative_path.as_deref() == Some(""))
+            .count();
+        if installation_root_ids.len() != 1 || root_row_count != 1 {
+            return (FolderTreeSourceMode::Blocked, Vec::new());
+        }
+        return (
+            FolderTreeSourceMode::Current {
+                installation_profile_id,
+                installation_root_ids,
+            },
+            current_rows,
+        );
+    }
+
+    if has_owned_identity {
+        (FolderTreeSourceMode::Blocked, Vec::new())
+    } else {
+        (FolderTreeSourceMode::Legacy, legacy_rows)
+    }
+}
+
+fn profile_relative_folder_depth(relative_path: &str) -> i64 {
+    relative_path
+        .replace('\\', "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .count() as i64
+}
+
+fn is_safe_profile_relative_path(relative_path: &str, allow_empty: bool) -> bool {
+    let normalized = relative_path.replace('\\', "/");
+    if normalized.is_empty() {
+        return allow_empty;
+    }
+    if normalized.starts_with('/') {
+        return false;
+    }
+
+    let parts = normalized.split('/').map(str::trim).collect::<Vec<_>>();
+    if parts
+        .iter()
+        .any(|part| part.is_empty() || *part == "." || *part == "..")
+    {
+        return false;
+    }
+    !parts[0].contains(':')
 }
 
 fn folder_sources_for_query(query: &LibraryQuery) -> Vec<String> {
@@ -1303,6 +1481,7 @@ fn folder_sources_for_query(query: &LibraryQuery) -> Vec<String> {
 fn build_folder_metadata_from_rows(
     folder_rows: Vec<FolderMetadataRow>,
     file_rows: Vec<FolderFileRow>,
+    source_modes: &HashMap<String, FolderTreeSourceMode>,
 ) -> FolderTreeMetadata {
     let mut nodes: BTreeMap<String, FolderNodeAccumulator> = BTreeMap::new();
 
@@ -1311,9 +1490,7 @@ fn build_folder_metadata_from_rows(
     }
 
     for row in file_rows {
-        let Some(segments) =
-            folder_segments_for_file(&row.path, &row.source_location, row.relative_depth)
-        else {
+        let Some(segments) = folder_segments_for_tree_file(&row, source_modes) else {
             continue;
         };
 
@@ -1481,6 +1658,67 @@ fn source_location_for_folder_root(root: &str) -> Option<String> {
         return Some("tray".to_owned());
     }
     None
+}
+
+fn folder_segments_for_tree_file(
+    row: &FolderFileRow,
+    source_modes: &HashMap<String, FolderTreeSourceMode>,
+) -> Option<Vec<String>> {
+    let source_location = row.source_location.to_ascii_lowercase();
+    let mode = source_modes.get(&source_location)?;
+    match mode {
+        FolderTreeSourceMode::Current {
+            installation_profile_id,
+            installation_root_ids,
+        } => {
+            let (Some(profile_id), Some(root_id), Some(relative_path)) = (
+                row.installation_profile_id.as_deref(),
+                row.installation_root_id.as_deref(),
+                row.profile_relative_path.as_deref(),
+            ) else {
+                return None;
+            };
+            if profile_id != installation_profile_id
+                || !installation_root_ids.contains(root_id)
+                || !is_safe_profile_relative_path(relative_path, false)
+            {
+                return None;
+            }
+            folder_segments_for_profile_file(relative_path, &source_location)
+        }
+        FolderTreeSourceMode::Legacy => {
+            if row.installation_profile_id.is_some()
+                || row.installation_root_id.is_some()
+                || row.profile_relative_path.is_some()
+            {
+                return None;
+            }
+            folder_segments_for_file(&row.path, &source_location, row.relative_depth)
+        }
+        FolderTreeSourceMode::Blocked => None,
+    }
+}
+
+fn folder_segments_for_profile_file(
+    profile_relative_path: &str,
+    source_location: &str,
+) -> Option<Vec<String>> {
+    if !is_safe_profile_relative_path(profile_relative_path, false) {
+        return None;
+    }
+    let mut components = profile_relative_path
+        .replace('\\', "/")
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    components.pop()?;
+
+    let mut segments = Vec::with_capacity(components.len() + 1);
+    segments.push(folder_root_name(source_location)?);
+    segments.extend(components);
+    Some(segments)
 }
 
 fn folder_segments_for_file(
@@ -2008,7 +2246,9 @@ mod tests {
     use super::{
         get_file_detail, get_folder_tree_metadata, get_library_facets,
         get_library_preview_diagnostics, list_library_files, list_library_folder_files,
-        merge_preview_results_into_insights, persist_file_insights, MAX_FOLDER_QUERY_LIMIT,
+        merge_preview_results_into_insights, persist_file_insights,
+        select_folder_tree_source_rows, FolderMetadataRow, FolderTreeSourceMode,
+        MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -3712,6 +3952,245 @@ mod tests {
         .expect("mismatched source");
         assert_eq!(mismatched_source.total, 0);
         assert!(mismatched_source.items.is_empty());
+    }
+
+    #[test]
+    fn folder_tree_metadata_uses_current_profile_identity_for_relocated_paths_and_counts() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        connection
+            .execute(
+                "DELETE FROM files WHERE source_location IN ('mods', 'tray')",
+                [],
+            )
+            .expect("clear fixture files");
+        connection
+            .execute("DELETE FROM library_folders", [])
+            .expect("clear fixture folders");
+
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let root_folder_id =
+            insert_library_folder_row(&connection, "mods", "", "", None, "Mods", 0, "C:/Mods");
+        assign_library_folder_identity(
+            &connection,
+            root_folder_id,
+            &profile_id,
+            &root_id,
+            "",
+            None,
+        );
+        let child_folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "PortableFolder",
+            "portablefolder",
+            Some(""),
+            "PortableFolder",
+            1,
+            "C:/Mods/PortableFolder",
+        );
+        let child_folder_key = sensitive_path_key(&["PortableFolder"]);
+        assign_library_folder_identity(
+            &connection,
+            child_folder_id,
+            &profile_id,
+            &root_id,
+            "PortableFolder",
+            Some(&child_folder_key),
+        );
+
+        let root_file_key = sensitive_path_key(&["root.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "Z:/Relocated/RootAlias/root.package",
+            "root.package",
+            "mods",
+            0,
+            &profile_id,
+            &root_id,
+            "root.package",
+            Some(&root_file_key),
+        );
+        let child_file_key = sensitive_path_key(&["PortableFolder", "current.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "Z:/Misleading/AbsoluteTail/NotPortable/current.package",
+            "current.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "PortableFolder/current.package",
+            Some(&child_file_key),
+        );
+        let foreign_file_key = sensitive_path_key(&["PortableFolder", "foreign.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/PortableFolder/foreign.package",
+            "foreign.package",
+            "mods",
+            1,
+            "foreign-profile",
+            &root_id,
+            "PortableFolder/foreign.package",
+            Some(&foreign_file_key),
+        );
+
+        let metadata = get_folder_tree_metadata(
+            &connection,
+            &LibraryQuery {
+                source: Some("mods".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("profile-aware folder metadata");
+
+        let mods = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        assert_eq!(mods.direct_file_count, 1);
+        assert_eq!(mods.total_file_count, 2);
+        assert_eq!(mods.child_folder_count, 1);
+
+        let portable = mods
+            .children
+            .iter()
+            .find(|node| node.name == "PortableFolder")
+            .expect("portable folder");
+        assert_eq!(portable.path, "Mods/PortableFolder");
+        assert_eq!(portable.disk_path.as_deref(), Some("C:/Mods/PortableFolder"));
+        assert_eq!(portable.direct_file_count, 1);
+        assert_eq!(portable.total_file_count, 1);
+        assert!(mods.children.iter().all(|node| node.name != "NotPortable"));
+    }
+
+    #[test]
+    fn folder_tree_metadata_blocks_a_source_owned_by_a_stale_profile() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        connection
+            .execute(
+                "DELETE FROM files WHERE source_location IN ('mods', 'tray')",
+                [],
+            )
+            .expect("clear fixture files");
+        connection
+            .execute("DELETE FROM library_folders", [])
+            .expect("clear fixture folders");
+
+        let (_profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let root_folder_id =
+            insert_library_folder_row(&connection, "mods", "", "", None, "Mods", 0, "C:/Mods");
+        assign_library_folder_identity(
+            &connection,
+            root_folder_id,
+            "foreign-profile",
+            &root_id,
+            "",
+            None,
+        );
+        insert_library_file_row(
+            &connection,
+            "C:/Mods/legacy-leak.package",
+            "legacy-leak.package",
+            "mods",
+            0,
+            "Gameplay",
+            0.8,
+            None,
+        );
+
+        let metadata = get_folder_tree_metadata(
+            &connection,
+            &LibraryQuery {
+                source: Some("mods".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("stale-profile folder metadata");
+
+        assert_eq!(metadata.total_folders, 0);
+        assert!(metadata.roots.is_empty());
+    }
+
+    #[test]
+    fn folder_tree_source_selection_blocks_incomplete_and_unsafe_identity() {
+        let incomplete = FolderMetadataRow {
+            source_location: "mods".to_owned(),
+            relative_path: "".to_owned(),
+            name: "Mods".to_owned(),
+            depth: 0,
+            disk_path: "C:/Mods".to_owned(),
+            installation_profile_id: Some("active-profile".to_owned()),
+            installation_root_id: None,
+            profile_relative_path: Some("".to_owned()),
+            profile_relative_path_key: None,
+        };
+        let (incomplete_mode, incomplete_rows) =
+            select_folder_tree_source_rows(Some("active-profile"), vec![incomplete]);
+        assert!(matches!(incomplete_mode, FolderTreeSourceMode::Blocked));
+        assert!(incomplete_rows.is_empty());
+
+        let unsafe_row = FolderMetadataRow {
+            source_location: "mods".to_owned(),
+            relative_path: "escape".to_owned(),
+            name: "Escape".to_owned(),
+            depth: 1,
+            disk_path: "C:/Mods/Escape".to_owned(),
+            installation_profile_id: Some("active-profile".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            profile_relative_path: Some("../Escape".to_owned()),
+            profile_relative_path_key: None,
+        };
+        let (unsafe_mode, unsafe_rows) =
+            select_folder_tree_source_rows(Some("active-profile"), vec![unsafe_row]);
+        assert!(matches!(unsafe_mode, FolderTreeSourceMode::Blocked));
+        assert!(unsafe_rows.is_empty());
+
+        let child_without_root = FolderMetadataRow {
+            source_location: "mods".to_owned(),
+            relative_path: "Creator".to_owned(),
+            name: "Creator".to_owned(),
+            depth: 1,
+            disk_path: "C:/Mods/Creator".to_owned(),
+            installation_profile_id: Some("active-profile".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            profile_relative_path: Some("Creator".to_owned()),
+            profile_relative_path_key: None,
+        };
+        let (missing_root_mode, missing_root_rows) =
+            select_folder_tree_source_rows(Some("active-profile"), vec![child_without_root]);
+        assert!(matches!(missing_root_mode, FolderTreeSourceMode::Blocked));
+        assert!(missing_root_rows.is_empty());
+
+        let current_root = FolderMetadataRow {
+            source_location: "mods".to_owned(),
+            relative_path: "".to_owned(),
+            name: "Mods".to_owned(),
+            depth: 0,
+            disk_path: "C:/Mods".to_owned(),
+            installation_profile_id: Some("active-profile".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            profile_relative_path: Some("".to_owned()),
+            profile_relative_path_key: None,
+        };
+        let child_from_second_root = FolderMetadataRow {
+            source_location: "mods".to_owned(),
+            relative_path: "Other".to_owned(),
+            name: "Other".to_owned(),
+            depth: 1,
+            disk_path: "D:/Mods/Other".to_owned(),
+            installation_profile_id: Some("active-profile".to_owned()),
+            installation_root_id: Some("second-mods-root".to_owned()),
+            profile_relative_path: Some("Other".to_owned()),
+            profile_relative_path_key: None,
+        };
+        let (mixed_root_mode, mixed_root_rows) = select_folder_tree_source_rows(
+            Some("active-profile"),
+            vec![current_root, child_from_second_root],
+        );
+        assert!(matches!(mixed_root_mode, FolderTreeSourceMode::Blocked));
+        assert!(mixed_root_rows.is_empty());
     }
 
     #[test]
