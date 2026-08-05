@@ -888,6 +888,21 @@ struct FolderScopeFilter {
     params: Vec<Value>,
 }
 
+#[derive(Debug)]
+struct FolderIdentityScope {
+    installation_profile_id: String,
+    installation_root_id: String,
+    profile_relative_path: String,
+    profile_relative_path_key: Option<String>,
+}
+
+#[derive(Debug)]
+enum FolderIdentityDecision {
+    Current(FolderIdentityScope),
+    Legacy,
+    Blocked,
+}
+
 fn build_folder_scope_filter(
     connection: &Connection,
     source: &str,
@@ -896,6 +911,25 @@ fn build_folder_scope_filter(
 ) -> AppResult<FolderScopeFilter> {
     let child_segments = target_segments.iter().skip(1).cloned().collect::<Vec<_>>();
     let child_depth = child_segments.len() as i64;
+
+    match load_folder_identity_decision(connection, source, &child_segments)? {
+        FolderIdentityDecision::Current(identity) => {
+            return Ok(build_identity_folder_scope_filter(
+                source,
+                child_depth,
+                recursive,
+                identity,
+            ));
+        }
+        FolderIdentityDecision::Blocked => {
+            return Ok(FolderScopeFilter {
+                sql: " AND 1 = 0".to_owned(),
+                params: Vec::new(),
+            });
+        }
+        FolderIdentityDecision::Legacy => {}
+    }
+
     let mut sql = String::from(" AND f.source_location = ?");
     let mut params = vec![Value::Text(source.to_owned())];
 
@@ -920,6 +954,116 @@ fn build_folder_scope_filter(
     )));
 
     Ok(FolderScopeFilter { sql, params })
+}
+
+fn load_folder_identity_decision(
+    connection: &Connection,
+    source: &str,
+    child_segments: &[String],
+) -> AppResult<FolderIdentityDecision> {
+    let profile_relative_path = child_segments.join("/");
+    let normalized_relative_path = normalize_path_for_query(&profile_relative_path);
+    let row = connection
+        .query_row(
+            "SELECT installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+             FROM library_folders
+             WHERE source_location = ?1
+               AND (
+                   profile_relative_path COLLATE BINARY = ?2
+                   OR (
+                       profile_relative_path IS NULL
+                       AND normalized_relative_path = ?3 COLLATE NOCASE
+                   )
+               )
+             ORDER BY CASE WHEN profile_relative_path IS NOT NULL THEN 0 ELSE 1 END
+             LIMIT 1",
+            params![source, profile_relative_path, normalized_relative_path],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((profile_id, root_id, relative_path, relative_path_key)) = row else {
+        return Ok(FolderIdentityDecision::Legacy);
+    };
+
+    match (profile_id, root_id, relative_path, relative_path_key) {
+        (None, None, None, None) => Ok(FolderIdentityDecision::Legacy),
+        (Some(profile_id), Some(root_id), Some(relative_path), relative_path_key)
+            if !profile_id.trim().is_empty() && !root_id.trim().is_empty() =>
+        {
+            let Some(active_profile) = database::get_active_game_installation_profile(connection)?
+            else {
+                return Ok(FolderIdentityDecision::Blocked);
+            };
+            if active_profile.profile_id != profile_id {
+                return Ok(FolderIdentityDecision::Blocked);
+            }
+
+            Ok(FolderIdentityDecision::Current(FolderIdentityScope {
+                installation_profile_id: profile_id,
+                installation_root_id: root_id,
+                profile_relative_path: relative_path,
+                profile_relative_path_key: relative_path_key.filter(|key| !key.trim().is_empty()),
+            }))
+        }
+        _ => Ok(FolderIdentityDecision::Blocked),
+    }
+}
+
+fn build_identity_folder_scope_filter(
+    source: &str,
+    child_depth: i64,
+    recursive: bool,
+    identity: FolderIdentityScope,
+) -> FolderScopeFilter {
+    let mut sql = String::from(
+        " AND f.source_location = ? AND f.installation_profile_id = ? AND f.installation_root_id = ?",
+    );
+    let mut params = vec![
+        Value::Text(source.to_owned()),
+        Value::Text(identity.installation_profile_id),
+        Value::Text(identity.installation_root_id),
+    ];
+
+    if recursive {
+        if child_depth > 0 {
+            sql.push_str(" AND f.relative_depth >= ?");
+            params.push(Value::Integer(child_depth));
+        }
+    } else {
+        sql.push_str(" AND f.relative_depth = ?");
+        params.push(Value::Integer(child_depth));
+    }
+
+    if identity.profile_relative_path.is_empty() {
+        return FolderScopeFilter { sql, params };
+    }
+
+    if let Some(relative_path_key) = identity.profile_relative_path_key {
+        sql.push_str(
+            " AND f.profile_relative_path_key IS NOT NULL AND substr(f.profile_relative_path_key, 1, length(?)) = ? COLLATE BINARY AND substr(f.profile_relative_path_key, length(?) + 1, 1) = '|'",
+        );
+        params.push(Value::Text(relative_path_key.clone()));
+        params.push(Value::Text(relative_path_key.clone()));
+        params.push(Value::Text(relative_path_key));
+    } else {
+        sql.push_str(
+            " AND f.profile_relative_path IS NOT NULL AND substr(f.profile_relative_path, 1, length(?)) = ? COLLATE BINARY AND substr(f.profile_relative_path, length(?) + 1, 1) = '/'",
+        );
+        params.push(Value::Text(identity.profile_relative_path.clone()));
+        params.push(Value::Text(identity.profile_relative_path.clone()));
+        params.push(Value::Text(identity.profile_relative_path));
+    }
+
+    FolderScopeFilter { sql, params }
 }
 
 fn folder_root_disk_path(connection: &Connection, source: &str) -> AppResult<Option<String>> {
@@ -2032,6 +2176,149 @@ mod tests {
         connection.last_insert_rowid()
     }
 
+    fn active_profile_root_identity(
+        connection: &rusqlite::Connection,
+        source_location: &str,
+    ) -> (String, String) {
+        let (root_id, root_role, configured_path) = match source_location {
+            "mods" => ("mods", "installed_mods", "C:/Mods"),
+            "tray" => ("tray", "tray_library", "C:/Tray"),
+            other => panic!("unsupported source fixture: {other}"),
+        };
+        let profile_id = "library-folder-identity-profile";
+        let timestamp = "2026-08-05T00:00:00Z";
+
+        if database::get_active_game_installation_profile(connection)
+            .expect("active profile lookup")
+            .is_none()
+        {
+            connection
+                .execute(
+                    "INSERT INTO game_installation_profiles (
+                        profile_id, profile_name, game_id, operating_environment,
+                        status, detection_method, detection_evidence_json,
+                        confirmation_state, confirmed_at, last_validated_at,
+                        created_at, updated_at
+                     ) VALUES (?1, ?2, 'sims4', 'unknown', 'valid', 'manual', '{}',
+                               'confirmed', ?3, ?3, ?3, ?3)",
+                    params![profile_id, "Library folder identity fixture", timestamp],
+                )
+                .expect("insert active profile fixture");
+            connection
+                .execute(
+                    "INSERT INTO game_installation_roots (
+                        profile_id, root_id, root_role, configured_path,
+                        required, validation_state, filesystem_capabilities_json,
+                        last_validated_at, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, 1, 'valid', '{}', ?5, ?5, ?5)",
+                    params![profile_id, root_id, root_role, configured_path, timestamp],
+                )
+                .expect("insert active profile root fixture");
+            connection
+                .execute(
+                    "INSERT INTO app_settings (key, value, source, updated_at)
+                     VALUES ('active_game_installation_profile_id', ?1, 'user', ?2)
+                     ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        source = excluded.source,
+                        updated_at = excluded.updated_at",
+                    params![profile_id, timestamp],
+                )
+                .expect("activate profile fixture");
+        }
+
+        let profile = database::get_active_game_installation_profile(connection)
+            .expect("active profile lookup")
+            .expect("active profile fixture");
+        let root_id = profile
+            .roots
+            .iter()
+            .find(|root| root.root_role == root_role)
+            .expect("active profile root")
+            .root_id
+            .clone();
+        (profile.profile_id, root_id)
+    }
+
+    fn assign_library_folder_identity(
+        connection: &rusqlite::Connection,
+        folder_id: i64,
+        profile_id: &str,
+        root_id: &str,
+        relative_path: &str,
+        relative_path_key: Option<&str>,
+    ) {
+        connection
+            .execute(
+                "UPDATE library_folders
+                 SET installation_profile_id = ?1,
+                     installation_root_id = ?2,
+                     profile_relative_path = ?3,
+                     profile_relative_path_key = ?4
+                 WHERE id = ?5",
+                params![
+                    profile_id,
+                    root_id,
+                    relative_path,
+                    relative_path_key,
+                    folder_id,
+                ],
+            )
+            .expect("assign folder identity");
+    }
+
+    fn insert_identity_library_file_row(
+        connection: &rusqlite::Connection,
+        path: &str,
+        filename: &str,
+        source_location: &str,
+        relative_depth: i64,
+        profile_id: &str,
+        root_id: &str,
+        relative_path: &str,
+        relative_path_key: Option<&str>,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path,
+                    filename,
+                    extension,
+                    kind,
+                    confidence,
+                    source_location,
+                    relative_depth,
+                    parser_warnings,
+                    insights,
+                    installation_profile_id,
+                    installation_root_id,
+                    profile_relative_path,
+                    profile_relative_path_key
+                 ) VALUES (?1, ?2, '.package', 'Gameplay', 0.8, ?3, ?4, '[]', ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    path,
+                    filename,
+                    source_location,
+                    relative_depth,
+                    default_insights_json(),
+                    profile_id,
+                    root_id,
+                    relative_path,
+                    relative_path_key,
+                ],
+            )
+            .expect("insert identity-owned library file row");
+        connection.last_insert_rowid()
+    }
+
+    fn sensitive_path_key(components: &[&str]) -> String {
+        let mut key = String::from("v1");
+        for component in components {
+            key.push_str(&format!("|n{}:{component}", component.chars().count()));
+        }
+        key
+    }
+
     #[test]
     fn preview_diagnostics_count_available_deferred_and_unsupported_rows() {
         let (connection, _settings, _seed_pack) = setup_library_env();
@@ -2443,8 +2730,252 @@ mod tests {
     }
 
     #[test]
+    fn folder_file_listing_uses_current_profile_identity_instead_of_absolute_path() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "PortableFolder",
+            "portablefolder",
+            Some(""),
+            "PortableFolder",
+            1,
+            "C:/Mods/PortableFolder",
+        );
+        let folder_key = sensitive_path_key(&["PortableFolder"]);
+        assign_library_folder_identity(
+            &connection,
+            folder_id,
+            &profile_id,
+            &root_id,
+            "PortableFolder",
+            Some(&folder_key),
+        );
+
+        let correct_key = sensitive_path_key(&["PortableFolder", "correct.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "Z:/Relocated/PortableFolder/correct.package",
+            "correct.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "PortableFolder/correct.package",
+            Some(&correct_key),
+        );
+        let wrong_key = sensitive_path_key(&["PortableFolder", "wrong.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/PortableFolder/wrong.package",
+            "wrong.package",
+            "mods",
+            1,
+            "foreign-profile",
+            &root_id,
+            "PortableFolder/wrong.package",
+            Some(&wrong_key),
+        );
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/PortableFolder".to_owned(),
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .expect("identity folder listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items[0].filename, "correct.package");
+    }
+
+    #[test]
+    fn folder_file_listing_preserves_case_distinct_identity_keys() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "Creator",
+            "creator",
+            Some(""),
+            "Creator",
+            1,
+            "C:/Mods/Creator",
+        );
+        let folder_key = sensitive_path_key(&["Creator"]);
+        assign_library_folder_identity(
+            &connection,
+            folder_id,
+            &profile_id,
+            &root_id,
+            "Creator",
+            Some(&folder_key),
+        );
+
+        let matching_key = sensitive_path_key(&["Creator", "inside.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/Creator/inside.package",
+            "inside.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "Creator/inside.package",
+            Some(&matching_key),
+        );
+        let alias_key = sensitive_path_key(&["creator", "alias.package"]);
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/creator/alias.package",
+            "alias.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "creator/alias.package",
+            Some(&alias_key),
+        );
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Creator".to_owned(),
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .expect("case-sensitive folder listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items[0].filename, "inside.package");
+    }
+
+    #[test]
+    fn folder_file_listing_uses_exact_observed_path_when_key_is_unknown() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "CaseFolder",
+            "casefolder",
+            Some(""),
+            "CaseFolder",
+            1,
+            "C:/Mods/CaseFolder",
+        );
+        assign_library_folder_identity(
+            &connection,
+            folder_id,
+            &profile_id,
+            &root_id,
+            "CaseFolder",
+            None,
+        );
+
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/CaseFolder/exact.package",
+            "exact.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "CaseFolder/exact.package",
+            None,
+        );
+        insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/casefolder/alias.package",
+            "alias.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "casefolder/alias.package",
+            None,
+        );
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/CaseFolder".to_owned(),
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .expect("unknown-key folder listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items[0].filename, "exact.package");
+    }
+
+    #[test]
+    fn folder_file_listing_blocks_identity_from_a_stale_profile() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let (_profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "StaleFolder",
+            "stalefolder",
+            Some(""),
+            "StaleFolder",
+            1,
+            "C:/Mods/StaleFolder",
+        );
+        let folder_key = sensitive_path_key(&["StaleFolder"]);
+        assign_library_folder_identity(
+            &connection,
+            folder_id,
+            "foreign-profile",
+            &root_id,
+            "StaleFolder",
+            Some(&folder_key),
+        );
+        insert_library_file_row(
+            &connection,
+            "C:/Mods/StaleFolder/legacy.package",
+            "legacy.package",
+            "mods",
+            1,
+            "Gameplay",
+            0.8,
+            None,
+        );
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/StaleFolder".to_owned(),
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .expect("stale-profile folder listing");
+
+        assert_eq!(listing.total, 0);
+        assert!(listing.items.is_empty());
+    }
+
+    #[test]
     fn folder_file_listing_uses_root_scoped_sql_and_avoids_path_tail_false_positive() {
         let (connection, _settings, _seed_pack) = setup_library_env();
+        insert_library_folder_row(
+            &connection,
+            "mods",
+            "TestCreator",
+            "testcreator",
+            Some(""),
+            "TestCreator",
+            1,
+            "C:/Mods/TestCreator",
+        );
 
         insert_library_file_row(
             &connection,
