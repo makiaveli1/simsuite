@@ -88,7 +88,7 @@ Important Library tables:
 
 | Table | Purpose | Writes | Reads | Risks |
 | --- | --- | --- | --- | --- |
-| `files` | Main indexed Library/download file rows. | Scanner, downloads/staging flows. | Library list, folder, detail, duplicates, watch, review. | Large-library query and folder filtering need stress proof. |
+| `files` | Main indexed Library/download file rows. Newly scanned Mods/Tray rows can also carry nullable `installation_profile_id`, `installation_root_id`, and slash-normalized `profile_relative_path` when the scan root safely matches the active confirmed profile. | Scanner, downloads/staging flows. | Library list, folder, detail, duplicates, watch, review. | Existing and Downloads-only rows remain unassigned until a valid rescan. Consumers must fail closed when portable identity is absent; duplicate truth has not switched to these fields yet. |
 | `creators` / `creator_aliases` / `user_creator_aliases` | Creator metadata and learned aliases. | Seed, scanner, user learning. | Library facets, detail, duplicate display. | Missing creator is common and must remain weak evidence. |
 | `bundles` | Same-pack/bundle grouping. | Bundle detector. | Library relationship hints, folder summaries. | Same pack is not duplicate proof. |
 | `library_folders` | Real Mods/Tray folder metadata, including empty folders. | Scanner during scan/rescan. | Folder tree metadata and real Open Folder path plumbing. | Existing libraries need a scan/rescan before old empty folders appear. |
@@ -127,7 +127,7 @@ Scanner behavior:
 - Walks configured Mods and Tray roots.
 - Records real folder metadata for the root, child, and nested directories, including folders with no supported files.
 - Indexes only supported Sims file rows as Library content; folder rows are separate and do not create fake files.
-- Stores real file paths, filename, extension, source location, relative depth, size, timestamps, creator/category metadata, parser warnings, safety notes, optional hash, and optional package/script content fingerprint metadata.
+- Stores real file paths, filename, extension, source location, relative depth, size, timestamps, creator/category metadata, parser warnings, safety notes, optional hash, and optional package/script content fingerprint metadata. For active-profile-matched Mods/Tray scans it also stores scan-owned profile ID, root ID, and root-relative path metadata; mismatches and non-Unicode relative paths remain unassigned rather than guessed.
 - Uses `scanner-v21` cache fingerprints to reuse unchanged file inspection results after package/script content fingerprints have been populated.
 - Hashes only size-candidate duplicate groups instead of every file, which is good for scan performance.
 - Handles inspection errors by recording warnings/default metadata instead of failing the whole scan.

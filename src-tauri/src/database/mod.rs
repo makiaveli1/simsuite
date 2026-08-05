@@ -28,6 +28,8 @@ const APPLY_PLAN_PREVIEW_SNAPSHOTS_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0007_applyplan_preview_snapshots_v2.sql");
 const GAME_INSTALLATION_PROFILES_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0008_game_installation_profiles_v1.sql");
+const INDEXED_FILE_IDENTITY_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0009_indexed_file_identity_v1.sql");
 
 const LEGACY_GAME_INSTALLATION_PROFILE_ID: &str = "legacy-sims4-default";
 const ACTIVE_GAME_INSTALLATION_PROFILE_SETTING: &str =
@@ -183,11 +185,34 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v9_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 9",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v9_exists.is_none() {
+        ensure_indexed_file_identity_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![9_i64, "indexed_file_identity_v1"],
+        )?;
+    }
+
     Ok(())
 }
 
 fn ensure_game_installation_profile_schema(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(GAME_INSTALLATION_PROFILES_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn ensure_indexed_file_identity_schema(connection: &Connection) -> AppResult<()> {
+    ensure_column(connection, "files", "installation_profile_id", "TEXT")?;
+    ensure_column(connection, "files", "installation_root_id", "TEXT")?;
+    ensure_column(connection, "files", "profile_relative_path", "TEXT")?;
+    connection.execute_batch(INDEXED_FILE_IDENTITY_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -1901,6 +1926,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "download_item_id", "INTEGER")?;
     ensure_column(connection, "files", "source_origin_path", "TEXT")?;
     ensure_column(connection, "files", "archive_member_path", "TEXT")?;
+    ensure_indexed_file_identity_schema(connection)?;
     ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
     ensure_column(
         connection,
@@ -2350,6 +2376,148 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn indexed_file_identity_schema_is_nullable_and_migration_owned() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize schema");
+
+        let columns = connection
+            .prepare("PRAGMA table_info(files)")
+            .expect("files columns")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("column rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("columns");
+        for expected in [
+            "installation_profile_id",
+            "installation_root_id",
+            "profile_relative_path",
+        ] {
+            assert!(columns.iter().any(|column| column == expected));
+        }
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 9 AND name = 'indexed_file_identity_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migration row");
+        assert_eq!(migration_count, 1);
+
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_files_installation_identity'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("identity index");
+        assert_eq!(index_count, 1);
+
+        let trigger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name IN (
+                       'trg_files_installation_identity_all_or_nothing_insert',
+                       'trg_files_installation_identity_all_or_nothing_update'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("identity triggers");
+        assert_eq!(trigger_count, 2);
+
+        let partial_insert = connection.execute(
+            "INSERT INTO files (
+                path, filename, extension, size, source_location,
+                installation_profile_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                "/fixture/partial.package",
+                "partial.package",
+                ".package",
+                1_i64,
+                "mods",
+                "profile-a"
+            ],
+        );
+        assert!(partial_insert.is_err());
+
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, size, source_location,
+                    installation_profile_id, installation_root_id, profile_relative_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    "/fixture/complete.package",
+                    "complete.package",
+                    ".package",
+                    1_i64,
+                    "mods",
+                    "profile-a",
+                    "mods-root",
+                    "Creator/complete.package"
+                ],
+            )
+            .expect("complete identity insert");
+        let partial_update = connection.execute(
+            "UPDATE files
+             SET installation_root_id = NULL
+             WHERE path = '/fixture/complete.package'",
+            [],
+        );
+        assert!(partial_update.is_err());
+    }
+
+    #[test]
+    fn indexed_file_identity_migration_preserves_existing_rows_unassigned() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        let pre_v9_schema = schema::INITIAL_SCHEMA_SQL
+            .lines()
+            .filter(|line| {
+                !line.contains("installation_profile_id TEXT")
+                    && !line.contains("installation_root_id TEXT")
+                    && !line.contains("profile_relative_path TEXT")
+                    && !line.contains("idx_files_installation_identity")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        connection
+            .execute_batch(&pre_v9_schema)
+            .expect("pre-v9 schema");
+        connection
+            .execute(
+                "INSERT INTO files (path, filename, extension, size, source_location)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    "/legacy/old.package",
+                    "old.package",
+                    ".package",
+                    42_i64,
+                    "mods"
+                ],
+            )
+            .expect("legacy row");
+
+        initialize(&mut connection).expect("migrate existing database");
+
+        let preserved: (String, Option<String>, Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT filename, installation_profile_id, installation_root_id, profile_relative_path
+                 FROM files
+                 WHERE path = '/legacy/old.package'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("preserved row");
+        assert_eq!(
+            preserved,
+            ("old.package".to_owned(), None, None, None)
+        );
+    }
 
     #[test]
     fn library_settings_overrides_replace_only_present_values() {

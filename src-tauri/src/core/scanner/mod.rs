@@ -1,8 +1,8 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    fs::File,
+    fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{mpsc, Arc, Mutex},
     thread,
 };
@@ -28,7 +28,11 @@ use crate::{
     },
     database,
     error::{AppError, AppResult},
-    models::{ScanMode, ScanPhase, ScanProgress, ScanSummary},
+    models::{
+        GameInstallationConfirmationState, GameInstallationProfile,
+        GameInstallationProfileStatus, GameInstallationRootValidationState, ScanMode, ScanPhase,
+        ScanProgress, ScanSummary,
+    },
     seed::normalize_key,
 };
 
@@ -42,11 +46,16 @@ enum RootType {
 struct ScanRoot {
     root_type: RootType,
     path: PathBuf,
+    installation_profile_id: Option<String>,
+    installation_root_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct DiscoveredFile {
     pub(crate) root_path: PathBuf,
+    pub(crate) installation_profile_id: Option<String>,
+    pub(crate) installation_root_id: Option<String>,
+    pub(crate) profile_relative_path: Option<String>,
     pub(crate) source_location: String,
     pub(crate) path: PathBuf,
     pub(crate) filename: String,
@@ -179,6 +188,7 @@ where
     let base_seed_pack = state.seed_pack();
     let setup_connection = state.connection()?;
     let settings = database::get_library_settings(&setup_connection)?;
+    let active_profile = database::get_active_game_installation_profile(&setup_connection)?;
     let creator_learning_version = database::get_creator_learning_version(&setup_connection)?;
     let category_override_version = database::get_category_override_version(&setup_connection)?;
     let runtime_seed_pack =
@@ -188,7 +198,7 @@ where
         .map(|item| (normalize_override_key(&item.match_path), item))
         .collect::<HashMap<_, _>>();
 
-    let scan_roots = collect_roots(&settings)?;
+    let scan_roots = collect_roots(&settings, active_profile.as_ref())?;
     if scan_roots.is_empty() {
         return Err(AppError::Message(
             "Select a Mods or Tray folder before starting a scan.".to_owned(),
@@ -313,10 +323,11 @@ where
             "INSERT INTO files (
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
+                installation_profile_id, installation_root_id, profile_relative_path,
                 scan_session_id, relative_depth, safety_notes, parser_warnings, insights,
                 content_fingerprint, content_fingerprint_kind, content_fingerprint_version,
                 content_fingerprint_status, content_fingerprint_error
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -448,15 +459,22 @@ where
     })
 }
 
-fn collect_roots(settings: &crate::models::LibrarySettings) -> AppResult<Vec<ScanRoot>> {
+fn collect_roots(
+    settings: &crate::models::LibrarySettings,
+    active_profile: Option<&GameInstallationProfile>,
+) -> AppResult<Vec<ScanRoot>> {
     let mut roots = Vec::new();
 
     if let Some(mods_path) = settings.mods_path.as_deref() {
         let path = PathBuf::from(mods_path);
         if path.exists() {
+            let (installation_profile_id, installation_root_id) =
+                matching_profile_root_identity(active_profile, "installed_mods", &path);
             roots.push(ScanRoot {
                 root_type: RootType::Mods,
                 path,
+                installation_profile_id,
+                installation_root_id,
             });
         } else {
             return Err(AppError::Message(format!(
@@ -468,9 +486,13 @@ fn collect_roots(settings: &crate::models::LibrarySettings) -> AppResult<Vec<Sca
     if let Some(tray_path) = settings.tray_path.as_deref() {
         let path = PathBuf::from(tray_path);
         if path.exists() {
+            let (installation_profile_id, installation_root_id) =
+                matching_profile_root_identity(active_profile, "installed_tray", &path);
             roots.push(ScanRoot {
                 root_type: RootType::Tray,
                 path,
+                installation_profile_id,
+                installation_root_id,
             });
         } else {
             return Err(AppError::Message(format!(
@@ -480,6 +502,86 @@ fn collect_roots(settings: &crate::models::LibrarySettings) -> AppResult<Vec<Sca
     }
 
     Ok(roots)
+}
+
+fn matching_profile_root_identity(
+    active_profile: Option<&GameInstallationProfile>,
+    root_role: &str,
+    scan_root: &Path,
+) -> (Option<String>, Option<String>) {
+    let Some(profile) = active_profile else {
+        return (None, None);
+    };
+    if profile.game_id != "sims4"
+        || profile.status != GameInstallationProfileStatus::Valid
+        || profile.confirmation_state != GameInstallationConfirmationState::Confirmed
+    {
+        return (None, None);
+    }
+    let Some(root) = profile.roots.iter().find(|root| root.root_role == root_role) else {
+        return (None, None);
+    };
+    if root.validation_state != GameInstallationRootValidationState::Valid {
+        return (None, None);
+    }
+    let configured_root = PathBuf::from(root.configured_path.trim());
+    if !configured_root.is_absolute() {
+        return (None, None);
+    }
+    let Ok(configured_root) = fs::canonicalize(configured_root) else {
+        return (None, None);
+    };
+    let Ok(scan_root) = fs::canonicalize(scan_root) else {
+        return (None, None);
+    };
+    if configured_root != scan_root {
+        return (None, None);
+    }
+
+    (
+        Some(profile.profile_id.clone()),
+        Some(root.root_id.clone()),
+    )
+}
+
+fn scan_owned_identity(
+    scan_root: &ScanRoot,
+    path: &Path,
+) -> (Option<String>, Option<String>, Option<String>) {
+    let (Some(profile_id), Some(root_id)) = (
+        scan_root.installation_profile_id.as_ref(),
+        scan_root.installation_root_id.as_ref(),
+    ) else {
+        return (None, None, None);
+    };
+    let Some(relative_path) = profile_relative_path(&scan_root.path, path) else {
+        return (None, None, None);
+    };
+
+    (
+        Some(profile_id.clone()),
+        Some(root_id.clone()),
+        Some(relative_path),
+    )
+}
+
+fn profile_relative_path(root: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    if relative.as_os_str().is_empty() {
+        return None;
+    }
+    let mut components = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(value) => components.push(value.to_str()?.to_owned()),
+            _ => return None,
+        }
+    }
+    if components.is_empty() {
+        None
+    } else {
+        Some(components.join("/"))
+    }
 }
 
 fn collect_supported_files_with_progress<F>(
@@ -539,8 +641,16 @@ where
                         .and_then(|relative| relative.parent().map(component_count))
                         .unwrap_or(0);
                     let progress_path = path.clone();
+                    let (
+                        installation_profile_id,
+                        installation_root_id,
+                        profile_relative_path,
+                    ) = scan_owned_identity(root, &path);
 
                     content.files.push(DiscoveredFile {
+                        installation_profile_id,
+                        installation_root_id,
+                        profile_relative_path,
                         source_location: source_location_for_scan_root(root.root_type).to_owned(),
                         root_path: root.path.clone(),
                         filename: path
@@ -1073,6 +1183,9 @@ fn insert_cached_file(
         cached.subtype.as_deref(),
         cached.confidence,
         &file.source_location,
+        file.installation_profile_id.as_deref(),
+        file.installation_root_id.as_deref(),
+        file.profile_relative_path.as_deref(),
         session_id,
         file.relative_depth,
         &cached.safety_notes_json,
@@ -1161,6 +1274,9 @@ pub(crate) fn insert_parsed_file(
         classification.subtype,
         classification.confidence,
         &file.source_location,
+        file.installation_profile_id.as_deref(),
+        file.installation_root_id.as_deref(),
+        file.profile_relative_path.as_deref(),
         session_id,
         file.relative_depth,
         &safety_notes_json,
@@ -1589,6 +1705,9 @@ mod tests {
     fn discovered_file(name: &str, size: i64) -> DiscoveredFile {
         DiscoveredFile {
             root_path: PathBuf::from("Mods"),
+            installation_profile_id: None,
+            installation_root_id: None,
+            profile_relative_path: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(name),
             filename: name.to_owned(),
@@ -1636,6 +1755,180 @@ mod tests {
             downloads_processing_lock: Arc::new(Mutex::new(())),
             app_data_dir: temp.path().to_path_buf(),
         }
+    }
+
+    fn installation_profile_for_root(
+        game_id: &str,
+        status: GameInstallationProfileStatus,
+        confirmation_state: GameInstallationConfirmationState,
+        root_validation_state: GameInstallationRootValidationState,
+        root_role: &str,
+        configured_path: &Path,
+    ) -> GameInstallationProfile {
+        GameInstallationProfile {
+            profile_id: "profile-a".to_owned(),
+            profile_name: "Fixture profile".to_owned(),
+            game_id: game_id.to_owned(),
+            operating_environment: crate::models::GameOperatingEnvironment::Unknown,
+            status,
+            detection_method: crate::models::GameInstallationDetectionMethod::Manual,
+            detection_evidence_json: "{}".to_owned(),
+            confirmation_state,
+            confirmed_at: None,
+            last_validated_at: None,
+            created_at: "2026-08-05T00:00:00Z".to_owned(),
+            updated_at: "2026-08-05T00:00:00Z".to_owned(),
+            roots: vec![crate::models::GameInstallationRoot {
+                profile_id: "profile-a".to_owned(),
+                root_id: "mods-root".to_owned(),
+                root_role: root_role.to_owned(),
+                configured_path: configured_path.to_string_lossy().into_owned(),
+                required: true,
+                validation_state: root_validation_state,
+                filesystem_capabilities_json: "{}".to_owned(),
+                last_validated_at: None,
+                created_at: "2026-08-05T00:00:00Z".to_owned(),
+                updated_at: "2026-08-05T00:00:00Z".to_owned(),
+            }],
+        }
+    }
+
+    #[test]
+    fn matching_profile_root_identity_fails_closed_until_every_gate_matches() {
+        let temp = tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        let other_root = temp.path().join("OtherMods");
+        fs::create_dir_all(&mods_root).expect("mods root");
+        fs::create_dir_all(&other_root).expect("other root");
+
+        let valid_profile = installation_profile_for_root(
+            "sims4",
+            GameInstallationProfileStatus::Valid,
+            GameInstallationConfirmationState::Confirmed,
+            GameInstallationRootValidationState::Valid,
+            "installed_mods",
+            &mods_root,
+        );
+        assert_eq!(
+            matching_profile_root_identity(Some(&valid_profile), "installed_mods", &mods_root),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods-root".to_owned())
+            )
+        );
+        assert_eq!(
+            matching_profile_root_identity(None, "installed_mods", &mods_root),
+            (None, None)
+        );
+        assert_eq!(
+            matching_profile_root_identity(Some(&valid_profile), "installed_tray", &mods_root),
+            (None, None)
+        );
+
+        let mut wrong_game = valid_profile.clone();
+        wrong_game.game_id = "future-game".to_owned();
+        assert_eq!(
+            matching_profile_root_identity(Some(&wrong_game), "installed_mods", &mods_root),
+            (None, None)
+        );
+
+        let mut draft = valid_profile.clone();
+        draft.status = GameInstallationProfileStatus::Draft;
+        assert_eq!(
+            matching_profile_root_identity(Some(&draft), "installed_mods", &mods_root),
+            (None, None)
+        );
+
+        let mut unconfirmed = valid_profile.clone();
+        unconfirmed.confirmation_state = GameInstallationConfirmationState::Unconfirmed;
+        assert_eq!(
+            matching_profile_root_identity(Some(&unconfirmed), "installed_mods", &mods_root),
+            (None, None)
+        );
+
+        let mut stale_root = valid_profile.clone();
+        stale_root.roots[0].validation_state = GameInstallationRootValidationState::NeedsReview;
+        assert_eq!(
+            matching_profile_root_identity(Some(&stale_root), "installed_mods", &mods_root),
+            (None, None)
+        );
+
+        let mismatched_profile = installation_profile_for_root(
+            "sims4",
+            GameInstallationProfileStatus::Valid,
+            GameInstallationConfirmationState::Confirmed,
+            GameInstallationRootValidationState::Valid,
+            "installed_mods",
+            &other_root,
+        );
+        assert_eq!(
+            matching_profile_root_identity(
+                Some(&mismatched_profile),
+                "installed_mods",
+                &mods_root,
+            ),
+            (None, None)
+        );
+
+        let relative_profile = installation_profile_for_root(
+            "sims4",
+            GameInstallationProfileStatus::Valid,
+            GameInstallationConfirmationState::Confirmed,
+            GameInstallationRootValidationState::Valid,
+            "installed_mods",
+            Path::new("relative/Mods"),
+        );
+        assert_eq!(
+            matching_profile_root_identity(Some(&relative_profile), "installed_mods", &mods_root),
+            (None, None)
+        );
+
+        let missing_profile = installation_profile_for_root(
+            "sims4",
+            GameInstallationProfileStatus::Valid,
+            GameInstallationConfirmationState::Confirmed,
+            GameInstallationRootValidationState::Valid,
+            "installed_mods",
+            &temp.path().join("MissingMods"),
+        );
+        assert_eq!(
+            matching_profile_root_identity(Some(&missing_profile), "installed_mods", &mods_root),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn scan_owned_identity_is_all_or_nothing_and_root_relative() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        let nested = root.join("Creator").join("item.package");
+        fs::create_dir_all(nested.parent().expect("parent")).expect("fixture tree");
+        fs::write(&nested, b"fixture").expect("fixture file");
+
+        let assigned_root = ScanRoot {
+            root_type: RootType::Mods,
+            path: root.clone(),
+            installation_profile_id: Some("profile-a".to_owned()),
+            installation_root_id: Some("mods".to_owned()),
+        };
+        assert_eq!(
+            scan_owned_identity(&assigned_root, &nested),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods".to_owned()),
+                Some("Creator/item.package".to_owned()),
+            )
+        );
+
+        let unassigned_root = ScanRoot {
+            installation_profile_id: None,
+            installation_root_id: None,
+            ..assigned_root
+        };
+        assert_eq!(
+            scan_owned_identity(&unassigned_root, &nested),
+            (None, None, None)
+        );
     }
 
     #[test]
@@ -1698,6 +1991,8 @@ mod tests {
         let roots = vec![ScanRoot {
             root_type: RootType::Mods,
             path: mods,
+            installation_profile_id: None,
+            installation_root_id: None,
         }];
         let mut errors = Vec::new();
         let seen_counts = RefCell::new(Vec::new());
@@ -2060,6 +2355,9 @@ mod tests {
         let mut classification = parse_filename("ESTATE_Brick_Wall.package", &seed_pack);
         let file = DiscoveredFile {
             root_path: PathBuf::from("C:/Mods"),
+            installation_profile_id: None,
+            installation_root_id: None,
+            profile_relative_path: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Felixandre ESTATE Part 1/ESTATE_Brick_Wall.package"),
             filename: "ESTATE_Brick_Wall.package".to_owned(),
@@ -2087,6 +2385,9 @@ mod tests {
         let mut classification = parse_filename("LittleMsSam_SendSimsToBed.package", &seed_pack);
         let file = DiscoveredFile {
             root_path: PathBuf::from("C:/Mods"),
+            installation_profile_id: None,
+            installation_root_id: None,
+            profile_relative_path: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(
                 "C:/Mods/LittleMsSam_Mods/SleepOverhaul/LittleMsSam_SendSimsToBed.package",
@@ -2116,6 +2417,9 @@ mod tests {
         let mut classification = parse_filename("LittleMsSam_SendSimsToBed.package", &seed_pack);
         let file = DiscoveredFile {
             root_path: PathBuf::from("C:/Mods"),
+            installation_profile_id: None,
+            installation_root_id: None,
+            profile_relative_path: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Deaderpool_Collection/LittleMsSam_SendSimsToBed.package"),
             filename: "LittleMsSam_SendSimsToBed.package".to_owned(),
