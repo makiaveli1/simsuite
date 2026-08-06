@@ -1205,6 +1205,22 @@ struct FolderFileRow {
 }
 
 #[derive(Debug)]
+struct FolderDirectCountRow {
+    source_location: String,
+    installation_profile_id: Option<String>,
+    installation_root_id: Option<String>,
+    profile_parent_relative_path: Option<String>,
+    profile_parent_relative_path_key: Option<String>,
+    direct_file_count: i64,
+}
+
+#[derive(Debug)]
+struct FolderTreeFileSelection {
+    direct_count_rows: Vec<FolderDirectCountRow>,
+    fallback_file_rows: Vec<FolderFileRow>,
+}
+
+#[derive(Debug)]
 struct FolderMetadataRow {
     source_location: String,
     relative_path: String,
@@ -1249,9 +1265,58 @@ pub fn get_folder_tree_metadata(
     connection: &Connection,
     query: &LibraryQuery,
 ) -> AppResult<FolderTreeMetadata> {
-    let selection = load_library_folder_rows(connection, query)?;
+    let folder_selection = load_library_folder_rows(connection, query)?;
+    let file_selection = load_folder_tree_file_counts(connection, query)?;
+
+    Ok(build_folder_metadata_from_rows(
+        folder_selection.folder_rows,
+        file_selection.direct_count_rows,
+        file_selection.fallback_file_rows,
+        &folder_selection.source_modes,
+    ))
+}
+
+fn load_folder_tree_file_counts(
+    connection: &Connection,
+    query: &LibraryQuery,
+) -> AppResult<FolderTreeFileSelection> {
     let (filters, params) = build_filters(query);
-    let sql = format!(
+    let grouped_sql = format!(
+        "SELECT f.source_location, f.installation_profile_id,\n\
+                f.installation_root_id, f.profile_parent_relative_path,\n\
+                f.profile_parent_relative_path_key, COUNT(*)\n\
+         FROM files f\n\
+         LEFT JOIN creators c ON f.creator_id = c.id\n\
+         LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+         LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+         WHERE f.source_location <> 'downloads'\n\
+           AND f.profile_parent_relative_path IS NOT NULL\n\
+        {filters}\n\
+         GROUP BY f.source_location, f.installation_profile_id,\n\
+                  f.installation_root_id, f.profile_parent_relative_path,\n\
+                  f.profile_parent_relative_path_key\n\
+         ORDER BY f.source_location COLLATE NOCASE,\n\
+                  f.profile_parent_relative_path COLLATE NOCASE",
+        filters = filters
+    );
+    let direct_count_rows = {
+        let mut statement = connection.prepare(&grouped_sql)?;
+        let rows = statement
+            .query_map(params_from_iter(params.iter()), |row| {
+                Ok(FolderDirectCountRow {
+                    source_location: row.get(0)?,
+                    installation_profile_id: row.get(1)?,
+                    installation_root_id: row.get(2)?,
+                    profile_parent_relative_path: row.get(3)?,
+                    profile_parent_relative_path_key: row.get(4)?,
+                    direct_file_count: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let fallback_sql = format!(
         "SELECT f.path, f.source_location, f.relative_depth,\n\
                 f.installation_profile_id, f.installation_root_id,\n\
                 f.profile_relative_path\n\
@@ -1260,30 +1325,32 @@ pub fn get_folder_tree_metadata(
          LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
          LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
          WHERE f.source_location <> 'downloads'\n\
+           AND f.profile_parent_relative_path IS NULL\n\
         {filters}\n\
          ORDER BY f.source_location COLLATE NOCASE, f.path COLLATE NOCASE",
         filters = filters
     );
+    let fallback_file_rows = {
+        let mut statement = connection.prepare(&fallback_sql)?;
+        let rows = statement
+            .query_map(params_from_iter(params.iter()), |row| {
+                Ok(FolderFileRow {
+                    path: row.get(0)?,
+                    source_location: row.get(1)?,
+                    relative_depth: row.get(2)?,
+                    installation_profile_id: row.get(3)?,
+                    installation_root_id: row.get(4)?,
+                    profile_relative_path: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
 
-    let mut statement = connection.prepare(&sql)?;
-    let rows = statement
-        .query_map(params_from_iter(params.iter()), |row| {
-            Ok(FolderFileRow {
-                path: row.get(0)?,
-                source_location: row.get(1)?,
-                relative_depth: row.get(2)?,
-                installation_profile_id: row.get(3)?,
-                installation_root_id: row.get(4)?,
-                profile_relative_path: row.get(5)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(build_folder_metadata_from_rows(
-        selection.folder_rows,
-        rows,
-        &selection.source_modes,
-    ))
+    Ok(FolderTreeFileSelection {
+        direct_count_rows,
+        fallback_file_rows,
+    })
 }
 
 fn load_library_folder_rows(
@@ -1480,7 +1547,8 @@ fn folder_sources_for_query(query: &LibraryQuery) -> Vec<String> {
 
 fn build_folder_metadata_from_rows(
     folder_rows: Vec<FolderMetadataRow>,
-    file_rows: Vec<FolderFileRow>,
+    direct_count_rows: Vec<FolderDirectCountRow>,
+    fallback_file_rows: Vec<FolderFileRow>,
     source_modes: &HashMap<String, FolderTreeSourceMode>,
 ) -> FolderTreeMetadata {
     let mut nodes: BTreeMap<String, FolderNodeAccumulator> = BTreeMap::new();
@@ -1489,38 +1557,26 @@ fn build_folder_metadata_from_rows(
         add_folder_metadata_row(&mut nodes, row);
     }
 
-    for row in file_rows {
+    for row in direct_count_rows {
+        if row.direct_file_count <= 0 {
+            continue;
+        }
+        let Some(segments) = folder_segments_for_direct_count(&row, source_modes) else {
+            continue;
+        };
+        add_file_segments(
+            &mut nodes,
+            &row.source_location,
+            segments,
+            row.direct_file_count,
+        );
+    }
+
+    for row in fallback_file_rows {
         let Some(segments) = folder_segments_for_tree_file(&row, source_modes) else {
             continue;
         };
-
-        for index in 0..segments.len() {
-            let path = segments[..=index].join("/");
-            let source_location = row.source_location.to_ascii_lowercase();
-            let entry = nodes
-                .entry(path.clone())
-                .or_insert_with(|| FolderNodeAccumulator {
-                    path: path.clone(),
-                    name: segments[index].clone(),
-                    depth: index as i64,
-                    source_location,
-                    disk_path: None,
-                    direct_file_count: 0,
-                    total_file_count: 0,
-                    children: BTreeSet::new(),
-                });
-            entry.total_file_count += 1;
-            if index == segments.len() - 1 {
-                entry.direct_file_count += 1;
-            }
-
-            if index > 0 {
-                let parent_path = segments[..index].join("/");
-                if let Some(parent) = nodes.get_mut(&parent_path) {
-                    parent.children.insert(path.clone());
-                }
-            }
-        }
+        add_file_segments(&mut nodes, &row.source_location, segments, 1);
     }
 
     let mut roots = nodes
@@ -1538,6 +1594,45 @@ fn build_folder_metadata_from_rows(
     FolderTreeMetadata {
         total_folders,
         roots,
+    }
+}
+
+fn add_file_segments(
+    nodes: &mut BTreeMap<String, FolderNodeAccumulator>,
+    source_location: &str,
+    segments: Vec<String>,
+    file_count: i64,
+) {
+    if segments.is_empty() || file_count <= 0 {
+        return;
+    }
+
+    for index in 0..segments.len() {
+        let path = segments[..=index].join("/");
+        let source_location = source_location.to_ascii_lowercase();
+        let entry = nodes
+            .entry(path.clone())
+            .or_insert_with(|| FolderNodeAccumulator {
+                path: path.clone(),
+                name: segments[index].clone(),
+                depth: index as i64,
+                source_location,
+                disk_path: None,
+                direct_file_count: 0,
+                total_file_count: 0,
+                children: BTreeSet::new(),
+            });
+        entry.total_file_count += file_count;
+        if index == segments.len() - 1 {
+            entry.direct_file_count += file_count;
+        }
+
+        if index > 0 {
+            let parent_path = segments[..index].join("/");
+            if let Some(parent) = nodes.get_mut(&parent_path) {
+                parent.children.insert(path.clone());
+            }
+        }
     }
 }
 
@@ -1658,6 +1753,40 @@ fn source_location_for_folder_root(root: &str) -> Option<String> {
         return Some("tray".to_owned());
     }
     None
+}
+
+fn folder_segments_for_direct_count(
+    row: &FolderDirectCountRow,
+    source_modes: &HashMap<String, FolderTreeSourceMode>,
+) -> Option<Vec<String>> {
+    let source_location = row.source_location.to_ascii_lowercase();
+    let FolderTreeSourceMode::Current {
+        installation_profile_id,
+        installation_root_ids,
+    } = source_modes.get(&source_location)?
+    else {
+        return None;
+    };
+    let (Some(profile_id), Some(root_id), Some(parent_relative_path)) = (
+        row.installation_profile_id.as_deref(),
+        row.installation_root_id.as_deref(),
+        row.profile_parent_relative_path.as_deref(),
+    ) else {
+        return None;
+    };
+    if profile_id != installation_profile_id
+        || !installation_root_ids.contains(root_id)
+        || !is_safe_profile_relative_path(parent_relative_path, true)
+    {
+        return None;
+    }
+
+    match row.profile_parent_relative_path_key.as_deref() {
+        Some(key) if key.trim().is_empty() || parent_relative_path.is_empty() => return None,
+        _ => {}
+    }
+
+    folder_segments_for_folder_row(&source_location, parent_relative_path)
 }
 
 fn folder_segments_for_tree_file(
@@ -2246,9 +2375,9 @@ mod tests {
     use super::{
         get_file_detail, get_folder_tree_metadata, get_library_facets,
         get_library_preview_diagnostics, list_library_files, list_library_folder_files,
-        merge_preview_results_into_insights, persist_file_insights,
-        select_folder_tree_source_rows, FolderMetadataRow, FolderTreeSourceMode,
-        MAX_FOLDER_QUERY_LIMIT,
+        load_folder_tree_file_counts, merge_preview_results_into_insights,
+        persist_file_insights, select_folder_tree_source_rows, FolderMetadataRow,
+        FolderTreeSourceMode, MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -2549,6 +2678,23 @@ mod tests {
             )
             .expect("insert identity-owned library file row");
         connection.last_insert_rowid()
+    }
+
+    fn assign_file_parent_identity(
+        connection: &rusqlite::Connection,
+        file_id: i64,
+        parent_relative_path: &str,
+        parent_relative_path_key: Option<&str>,
+    ) {
+        connection
+            .execute(
+                "UPDATE files
+                 SET profile_parent_relative_path = ?1,
+                     profile_parent_relative_path_key = ?2
+                 WHERE id = ?3",
+                params![parent_relative_path, parent_relative_path_key, file_id],
+            )
+            .expect("assign file parent identity");
     }
 
     fn sensitive_path_key(components: &[&str]) -> String {
@@ -4035,6 +4181,17 @@ mod tests {
             Some(&foreign_file_key),
         );
 
+        let file_selection = load_folder_tree_file_counts(
+            &connection,
+            &LibraryQuery {
+                source: Some("mods".to_owned()),
+                ..Default::default()
+            },
+        )
+        .expect("pre-v13 fallback selection");
+        assert!(file_selection.direct_count_rows.is_empty());
+        assert_eq!(file_selection.fallback_file_rows.len(), 3);
+
         let metadata = get_folder_tree_metadata(
             &connection,
             &LibraryQuery {
@@ -4063,6 +4220,221 @@ mod tests {
         assert_eq!(portable.direct_file_count, 1);
         assert_eq!(portable.total_file_count, 1);
         assert!(mods.children.iter().all(|node| node.name != "NotPortable"));
+    }
+
+    #[test]
+    fn folder_tree_counts_group_by_parent_identity_and_preserve_case_distinct_siblings() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        connection
+            .execute(
+                "DELETE FROM files WHERE source_location IN ('mods', 'tray')",
+                [],
+            )
+            .expect("clear fixture files");
+        connection
+            .execute("DELETE FROM library_folders", [])
+            .expect("clear fixture folders");
+
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let root_folder_id =
+            insert_library_folder_row(&connection, "mods", "", "", None, "Mods", 0, "C:/Mods");
+        assign_library_folder_identity(
+            &connection,
+            root_folder_id,
+            &profile_id,
+            &root_id,
+            "",
+            None,
+        );
+
+        let creator_upper_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "Creator",
+            "creator",
+            Some(""),
+            "Creator",
+            1,
+            "C:/Mods/Creator",
+        );
+        let creator_upper_key = sensitive_path_key(&["Creator"]);
+        assign_library_folder_identity(
+            &connection,
+            creator_upper_id,
+            &profile_id,
+            &root_id,
+            "Creator",
+            Some(&creator_upper_key),
+        );
+        let creator_lower_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "creator",
+            "creator",
+            Some(""),
+            "creator",
+            1,
+            "C:/Mods/creator",
+        );
+        let creator_lower_key = sensitive_path_key(&["creator"]);
+        assign_library_folder_identity(
+            &connection,
+            creator_lower_id,
+            &profile_id,
+            &root_id,
+            "creator",
+            Some(&creator_lower_key),
+        );
+
+        let root_file_key = sensitive_path_key(&["root_keep.package"]);
+        let root_file_id = insert_identity_library_file_row(
+            &connection,
+            "Z:/Relocated/root_keep.package",
+            "root_keep.package",
+            "mods",
+            0,
+            &profile_id,
+            &root_id,
+            "root_keep.package",
+            Some(&root_file_key),
+        );
+        assign_file_parent_identity(&connection, root_file_id, "", None);
+
+        for index in 0..120 {
+            let filename = format!("keep_{index:03}.package");
+            let relative_path = format!("Creator/{filename}");
+            let file_key = sensitive_path_key(&["Creator", &filename]);
+            let file_id = insert_identity_library_file_row(
+                &connection,
+                &format!("Z:/Relocated/Creator/{filename}"),
+                &filename,
+                "mods",
+                1,
+                &profile_id,
+                &root_id,
+                &relative_path,
+                Some(&file_key),
+            );
+            assign_file_parent_identity(
+                &connection,
+                file_id,
+                "Creator",
+                Some(&creator_upper_key),
+            );
+        }
+
+        for index in 0..80 {
+            let filename = format!("skip_{index:03}.package");
+            let relative_path = format!("creator/{filename}");
+            let file_key = sensitive_path_key(&["creator", &filename]);
+            let file_id = insert_identity_library_file_row(
+                &connection,
+                &format!("Z:/Relocated/creator/{filename}"),
+                &filename,
+                "mods",
+                1,
+                &profile_id,
+                &root_id,
+                &relative_path,
+                Some(&file_key),
+            );
+            assign_file_parent_identity(
+                &connection,
+                file_id,
+                "creator",
+                Some(&creator_lower_key),
+            );
+        }
+
+        let full_query = LibraryQuery {
+            source: Some("mods".to_owned()),
+            ..Default::default()
+        };
+        let file_selection =
+            load_folder_tree_file_counts(&connection, &full_query).expect("grouped count rows");
+        assert_eq!(file_selection.direct_count_rows.len(), 3);
+        assert!(file_selection.fallback_file_rows.is_empty());
+        assert_eq!(
+            file_selection
+                .direct_count_rows
+                .iter()
+                .map(|row| row.direct_file_count)
+                .sum::<i64>(),
+            201
+        );
+
+        let metadata =
+            get_folder_tree_metadata(&connection, &full_query).expect("grouped folder metadata");
+        let mods = metadata
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("mods root");
+        assert_eq!(mods.direct_file_count, 1);
+        assert_eq!(mods.total_file_count, 201);
+        assert_eq!(mods.child_folder_count, 2);
+        let creator_upper = mods
+            .children
+            .iter()
+            .find(|node| node.name == "Creator")
+            .expect("upper-case creator folder");
+        let creator_lower = mods
+            .children
+            .iter()
+            .find(|node| node.name == "creator")
+            .expect("lower-case creator folder");
+        assert_eq!(creator_upper.path, "Mods/Creator");
+        assert_eq!(creator_upper.direct_file_count, 120);
+        assert_eq!(creator_upper.total_file_count, 120);
+        assert_eq!(creator_lower.path, "Mods/creator");
+        assert_eq!(creator_lower.direct_file_count, 80);
+        assert_eq!(creator_lower.total_file_count, 80);
+
+        let filtered_query = LibraryQuery {
+            source: Some("mods".to_owned()),
+            search: Some("keep".to_owned()),
+            ..Default::default()
+        };
+        let filtered_selection = load_folder_tree_file_counts(&connection, &filtered_query)
+            .expect("filtered grouped count rows");
+        assert_eq!(filtered_selection.direct_count_rows.len(), 2);
+        assert!(filtered_selection.fallback_file_rows.is_empty());
+        assert_eq!(
+            filtered_selection
+                .direct_count_rows
+                .iter()
+                .map(|row| row.direct_file_count)
+                .sum::<i64>(),
+            121
+        );
+
+        let filtered = get_folder_tree_metadata(&connection, &filtered_query)
+            .expect("filtered grouped folder metadata");
+        let filtered_mods = filtered
+            .roots
+            .iter()
+            .find(|node| node.name == "Mods")
+            .expect("filtered mods root");
+        assert_eq!(filtered_mods.direct_file_count, 1);
+        assert_eq!(filtered_mods.total_file_count, 121);
+        assert_eq!(
+            filtered_mods
+                .children
+                .iter()
+                .find(|node| node.name == "Creator")
+                .expect("filtered upper creator")
+                .direct_file_count,
+            120
+        );
+        assert_eq!(
+            filtered_mods
+                .children
+                .iter()
+                .find(|node| node.name == "creator")
+                .expect("filtered lower creator remains visible")
+                .direct_file_count,
+            0
+        );
     }
 
     #[test]

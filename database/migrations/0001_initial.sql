@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS files (
   installation_root_id TEXT,
   profile_relative_path TEXT,
   profile_relative_path_key TEXT,
+  profile_parent_relative_path TEXT,
+  profile_parent_relative_path_key TEXT,
   download_item_id INTEGER REFERENCES download_items (id) ON DELETE SET NULL,
   source_origin_path TEXT,
   archive_member_path TEXT,
@@ -103,6 +105,8 @@ CREATE INDEX IF NOT EXISTS idx_files_bundle_id ON files (bundle_id);
 CREATE INDEX IF NOT EXISTS idx_files_kind ON files (kind);
 CREATE INDEX IF NOT EXISTS idx_files_source_location ON files (source_location);
 CREATE INDEX IF NOT EXISTS idx_files_installation_identity ON files (installation_profile_id, installation_root_id, profile_relative_path);
+CREATE INDEX IF NOT EXISTS idx_files_installation_parent_identity ON files (source_location, installation_profile_id, installation_root_id, profile_parent_relative_path)
+  WHERE profile_parent_relative_path IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
 CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
 

@@ -74,6 +74,8 @@ pub(crate) struct DiscoveredFile {
     pub(crate) installation_root_id: Option<String>,
     pub(crate) profile_relative_path: Option<String>,
     pub(crate) profile_relative_path_key: Option<String>,
+    pub(crate) profile_parent_relative_path: Option<String>,
+    pub(crate) profile_parent_relative_path_key: Option<String>,
     pub(crate) source_location: String,
     pub(crate) path: PathBuf,
     pub(crate) filename: String,
@@ -327,10 +329,11 @@ where
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
                 installation_profile_id, installation_root_id, profile_relative_path,
-                profile_relative_path_key, scan_session_id, relative_depth, safety_notes,
+                profile_relative_path_key, profile_parent_relative_path,
+                profile_parent_relative_path_key, scan_session_id, relative_depth, safety_notes,
                 parser_warnings, insights, content_fingerprint, content_fingerprint_kind,
                 content_fingerprint_version, content_fingerprint_status, content_fingerprint_error
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -558,27 +561,48 @@ fn scan_owned_identity(
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
+    Option<String>,
 ) {
     let (Some(profile_id), Some(root_id)) = (
         scan_root.installation_profile_id.as_ref(),
         scan_root.installation_root_id.as_ref(),
     ) else {
-        return (None, None, None, None);
+        return (None, None, None, None, None, None);
     };
     let Some(relative_path) = profile_relative_path(&scan_root.path, path) else {
-        return (None, None, None, None);
+        return (None, None, None, None, None, None);
+    };
+    let Some(parent_path) = path.parent() else {
+        return (None, None, None, None, None, None);
+    };
+    let Some(parent_relative_path) =
+        profile_relative_path_including_root(&scan_root.path, parent_path)
+    else {
+        return (None, None, None, None, None, None);
     };
     let relative_path_key = scan_root.case_sensitivity.and_then(|case_sensitivity| {
         comparison_key(Path::new(&relative_path), case_sensitivity)
             .ok()
             .and_then(|key| key.storage_key_v1())
     });
+    let parent_relative_path_key = if parent_relative_path.is_empty() {
+        None
+    } else {
+        scan_root.case_sensitivity.and_then(|case_sensitivity| {
+            comparison_key(Path::new(&parent_relative_path), case_sensitivity)
+                .ok()
+                .and_then(|key| key.storage_key_v1())
+        })
+    };
 
     (
         Some(profile_id.clone()),
         Some(root_id.clone()),
         Some(relative_path),
         relative_path_key,
+        Some(parent_relative_path),
+        parent_relative_path_key,
     )
 }
 
@@ -701,6 +725,8 @@ where
                         installation_root_id,
                         profile_relative_path,
                         profile_relative_path_key,
+                        profile_parent_relative_path,
+                        profile_parent_relative_path_key,
                     ) = scan_owned_identity(root, &path);
 
                     content.files.push(DiscoveredFile {
@@ -708,6 +734,8 @@ where
                         installation_root_id,
                         profile_relative_path,
                         profile_relative_path_key,
+                        profile_parent_relative_path,
+                        profile_parent_relative_path_key,
                         source_location: source_location_for_scan_root(root.root_type).to_owned(),
                         root_path: root.path.clone(),
                         filename: path
@@ -1258,6 +1286,8 @@ fn insert_cached_file(
         file.installation_root_id.as_deref(),
         file.profile_relative_path.as_deref(),
         file.profile_relative_path_key.as_deref(),
+        file.profile_parent_relative_path.as_deref(),
+        file.profile_parent_relative_path_key.as_deref(),
         session_id,
         file.relative_depth,
         &cached.safety_notes_json,
@@ -1350,6 +1380,8 @@ pub(crate) fn insert_parsed_file(
         file.installation_root_id.as_deref(),
         file.profile_relative_path.as_deref(),
         file.profile_relative_path_key.as_deref(),
+        file.profile_parent_relative_path.as_deref(),
+        file.profile_parent_relative_path_key.as_deref(),
         session_id,
         file.relative_depth,
         &safety_notes_json,
@@ -1782,6 +1814,8 @@ mod tests {
             installation_root_id: None,
             profile_relative_path: None,
             profile_relative_path_key: None,
+            profile_parent_relative_path: None,
+            profile_parent_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(name),
             filename: name.to_owned(),
@@ -1978,8 +2012,10 @@ mod tests {
         let temp = tempdir().expect("tempdir");
         let root = temp.path().join("Mods");
         let nested = root.join("Creator").join("item.package");
+        let root_file = root.join("root.package");
         fs::create_dir_all(nested.parent().expect("parent")).expect("fixture tree");
         fs::write(&nested, b"fixture").expect("fixture file");
+        fs::write(&root_file, b"root fixture").expect("root fixture file");
 
         let assigned_root = ScanRoot {
             root_type: RootType::Mods,
@@ -1995,6 +2031,19 @@ mod tests {
                 Some("mods".to_owned()),
                 Some("Creator/item.package".to_owned()),
                 Some("v1|n7:Creator|n12:item.package".to_owned()),
+                Some("Creator".to_owned()),
+                Some("v1|n7:Creator".to_owned()),
+            )
+        );
+        assert_eq!(
+            scan_owned_identity(&assigned_root, &root_file),
+            (
+                Some("profile-a".to_owned()),
+                Some("mods".to_owned()),
+                Some("root.package".to_owned()),
+                Some("v1|n12:root.package".to_owned()),
+                Some(String::new()),
+                None,
             )
         );
 
@@ -2005,7 +2054,7 @@ mod tests {
         };
         assert_eq!(
             scan_owned_identity(&unassigned_root, &nested),
-            (None, None, None, None)
+            (None, None, None, None, None, None)
         );
     }
 
@@ -2742,6 +2791,8 @@ mod tests {
             installation_root_id: None,
             profile_relative_path: None,
             profile_relative_path_key: None,
+            profile_parent_relative_path: None,
+            profile_parent_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Felixandre ESTATE Part 1/ESTATE_Brick_Wall.package"),
             filename: "ESTATE_Brick_Wall.package".to_owned(),
@@ -2773,6 +2824,8 @@ mod tests {
             installation_root_id: None,
             profile_relative_path: None,
             profile_relative_path_key: None,
+            profile_parent_relative_path: None,
+            profile_parent_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from(
                 "C:/Mods/LittleMsSam_Mods/SleepOverhaul/LittleMsSam_SendSimsToBed.package",
@@ -2806,6 +2859,8 @@ mod tests {
             installation_root_id: None,
             profile_relative_path: None,
             profile_relative_path_key: None,
+            profile_parent_relative_path: None,
+            profile_parent_relative_path_key: None,
             source_location: "mods".to_owned(),
             path: PathBuf::from("C:/Mods/Deaderpool_Collection/LittleMsSam_SendSimsToBed.package"),
             filename: "LittleMsSam_SendSimsToBed.package".to_owned(),

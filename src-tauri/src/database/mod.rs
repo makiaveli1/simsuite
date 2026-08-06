@@ -37,6 +37,8 @@ const INDEXED_FOLDER_IDENTITY_SCHEMA_SQL: &str =
 const LIBRARY_FOLDER_IDENTITY_UNIQUENESS_SCHEMA_SQL: &str = include_str!(
     "../../../database/migrations/0012_library_folder_identity_uniqueness_v2.sql"
 );
+const INDEXED_FILE_PARENT_IDENTITY_SCHEMA_SQL: &str =
+    include_str!("../../../database/migrations/0013_indexed_file_parent_identity_v1.sql");
 const LIBRARY_FOLDER_IDENTITY_UNIQUENESS_REBUILD_SQL: &str = r#"
 BEGIN IMMEDIATE;
 ALTER TABLE library_folders RENAME TO library_folders_pre_identity_uniqueness_v2;
@@ -306,6 +308,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v13_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 13",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v13_exists.is_none() {
+        ensure_indexed_file_parent_identity_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![13_i64, "indexed_file_parent_identity_v1"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -325,6 +342,23 @@ fn ensure_indexed_file_identity_schema(connection: &Connection) -> AppResult<()>
 fn ensure_indexed_file_comparison_key_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "profile_relative_path_key", "TEXT")?;
     connection.execute_batch(INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn ensure_indexed_file_parent_identity_schema(connection: &Connection) -> AppResult<()> {
+    ensure_column(
+        connection,
+        "files",
+        "profile_parent_relative_path",
+        "TEXT",
+    )?;
+    ensure_column(
+        connection,
+        "files",
+        "profile_parent_relative_path_key",
+        "TEXT",
+    )?;
+    connection.execute_batch(INDEXED_FILE_PARENT_IDENTITY_SCHEMA_SQL)?;
     Ok(())
 }
 
@@ -2087,6 +2121,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_column(connection, "files", "archive_member_path", "TEXT")?;
     ensure_indexed_file_identity_schema(connection)?;
     ensure_indexed_file_comparison_key_schema(connection)?;
+    ensure_indexed_file_parent_identity_schema(connection)?;
     ensure_indexed_folder_identity_schema(connection)?;
     ensure_library_folder_identity_uniqueness_schema(connection)?;
     ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
@@ -2732,6 +2767,155 @@ mod tests {
             [],
         );
         assert!(empty_key.is_err());
+    }
+
+    #[test]
+    fn indexed_file_parent_identity_schema_is_nullable_repairable_and_fail_closed() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize schema");
+
+        let column_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('files')
+                 WHERE name IN (
+                     'profile_parent_relative_path',
+                     'profile_parent_relative_path_key'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("parent identity columns");
+        assert_eq!(column_count, 2);
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 13 AND name = 'indexed_file_parent_identity_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("parent identity migration");
+        assert_eq!(migration_count, 1);
+
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name = 'idx_files_installation_parent_identity'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("parent identity index");
+        assert_eq!(index_count, 1);
+
+        let trigger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name IN (
+                       'files_parent_identity_insert_guard',
+                       'files_parent_identity_update_guard'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("parent identity triggers");
+        assert_eq!(trigger_count, 2);
+
+        connection
+            .execute(
+                "INSERT INTO files (path, filename, extension, size, source_location)
+                 VALUES (?1, ?2, '.package', 1, 'mods')",
+                params!["/fixture/legacy-parent-null.package", "legacy-parent-null.package"],
+            )
+            .expect("legacy row keeps nullable parent identity");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, size, source_location,
+                    installation_profile_id, installation_root_id, profile_relative_path,
+                    profile_parent_relative_path
+                 ) VALUES (?1, ?2, '.package', 1, 'mods', ?3, ?4, ?5, ?6)",
+                params![
+                    "/fixture/root.package",
+                    "root.package",
+                    "profile-a",
+                    "mods-root",
+                    "root.package",
+                    ""
+                ],
+            )
+            .expect("root direct parent identity");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, size, source_location,
+                    installation_profile_id, installation_root_id, profile_relative_path,
+                    profile_parent_relative_path, profile_parent_relative_path_key
+                 ) VALUES (?1, ?2, '.package', 1, 'mods', ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    "/fixture/Creator/nested.package",
+                    "nested.package",
+                    "profile-a",
+                    "mods-root",
+                    "Creator/nested.package",
+                    "Creator",
+                    "v1|n7:Creator"
+                ],
+            )
+            .expect("nested parent identity");
+
+        let parent_without_identity = connection.execute(
+            "INSERT INTO files (
+                path, filename, extension, size, source_location,
+                profile_parent_relative_path
+             ) VALUES (?1, ?2, '.package', 1, 'mods', ?3)",
+            params![
+                "/fixture/no-parent-owner.package",
+                "no-parent-owner.package",
+                "Creator"
+            ],
+        );
+        assert!(parent_without_identity.is_err());
+
+        let key_without_parent = connection.execute(
+            "UPDATE files
+             SET profile_parent_relative_path_key = 'v1|n7:Creator'
+             WHERE path = '/fixture/legacy-parent-null.package'",
+            [],
+        );
+        assert!(key_without_parent.is_err());
+
+        let empty_key = connection.execute(
+            "UPDATE files
+             SET profile_parent_relative_path_key = '   '
+             WHERE path = '/fixture/Creator/nested.package'",
+            [],
+        );
+        assert!(empty_key.is_err());
+
+        connection
+            .execute_batch(
+                "DROP INDEX idx_files_installation_parent_identity;
+                 DROP TRIGGER files_parent_identity_insert_guard;
+                 DROP TRIGGER files_parent_identity_update_guard;",
+            )
+            .expect("remove parent identity guards for repair proof");
+        initialize(&mut connection).expect("repair parent identity schema");
+
+        let repaired_objects: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE name IN (
+                     'idx_files_installation_parent_identity',
+                     'files_parent_identity_insert_guard',
+                     'files_parent_identity_update_guard'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("repaired parent identity objects");
+        assert_eq!(repaired_objects, 3);
     }
 
     #[test]
@@ -3404,12 +3588,16 @@ mod tests {
                     && (line.contains("installation_profile_id TEXT")
                         || line.contains("installation_root_id TEXT")
                         || line.contains("profile_relative_path TEXT")
-                        || line.contains("profile_relative_path_key TEXT"))
+                        || line.contains("profile_relative_path_key TEXT")
+                        || line.contains("profile_parent_relative_path TEXT")
+                        || line.contains("profile_parent_relative_path_key TEXT"))
                 {
                     return false;
                 }
                 !line.contains("idx_files_installation_identity")
                     && !line.contains("idx_files_installation_comparison")
+                    && !line.contains("idx_files_installation_parent_identity")
+                    && !line.contains("WHERE profile_parent_relative_path IS NOT NULL")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -3438,10 +3626,13 @@ mod tests {
             Option<String>,
             Option<String>,
             Option<String>,
+            Option<String>,
+            Option<String>,
         ) = connection
             .query_row(
                 "SELECT filename, installation_profile_id, installation_root_id,
-                        profile_relative_path, profile_relative_path_key
+                        profile_relative_path, profile_relative_path_key,
+                        profile_parent_relative_path, profile_parent_relative_path_key
                  FROM files
                  WHERE path = '/legacy/old.package'",
                 [],
@@ -3452,14 +3643,34 @@ mod tests {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
                     ))
                 },
             )
             .expect("preserved row");
         assert_eq!(
             preserved,
-            ("old.package".to_owned(), None, None, None, None)
+            (
+                "old.package".to_owned(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
         );
+
+        let parent_migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 13 AND name = 'indexed_file_parent_identity_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("parent identity migration record");
+        assert_eq!(parent_migration_count, 1);
     }
 
     #[test]

@@ -2508,10 +2508,11 @@ fn ingest_processed_source(
                 path, filename, extension, hash, size, created_at, modified_at,
                 creator_id, kind, subtype, confidence, source_location,
                 installation_profile_id, installation_root_id, profile_relative_path,
-                profile_relative_path_key, scan_session_id, relative_depth, safety_notes,
+                profile_relative_path_key, profile_parent_relative_path,
+                profile_parent_relative_path_key, scan_session_id, relative_depth, safety_notes,
                 parser_warnings, insights, content_fingerprint, content_fingerprint_kind,
                 content_fingerprint_version, content_fingerprint_status, content_fingerprint_error
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
         )?;
         let mut review_insert = transaction.prepare(
             "INSERT OR IGNORE INTO review_queue (file_id, reason, confidence)
@@ -2938,6 +2939,8 @@ fn build_discovered_file(root_path: &Path, path: &Path) -> AppResult<DiscoveredF
         installation_root_id: None,
         profile_relative_path: None,
         profile_relative_path_key: None,
+        profile_parent_relative_path: None,
+        profile_parent_relative_path_key: None,
         source_location: "downloads".to_owned(),
         path: path.to_path_buf(),
         filename: path
