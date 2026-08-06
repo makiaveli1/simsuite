@@ -7,6 +7,15 @@ CREATE INDEX IF NOT EXISTS idx_files_installation_parent_identity
     )
     WHERE profile_parent_relative_path IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_files_missing_parent_identity
+    ON files (
+        source_location,
+        installation_profile_id,
+        installation_root_id
+    )
+    WHERE profile_relative_path IS NOT NULL
+      AND profile_parent_relative_path IS NULL;
+
 CREATE TRIGGER IF NOT EXISTS files_parent_identity_insert_guard
 BEFORE INSERT ON files
 WHEN

@@ -107,6 +107,8 @@ CREATE INDEX IF NOT EXISTS idx_files_source_location ON files (source_location);
 CREATE INDEX IF NOT EXISTS idx_files_installation_identity ON files (installation_profile_id, installation_root_id, profile_relative_path);
 CREATE INDEX IF NOT EXISTS idx_files_installation_parent_identity ON files (source_location, installation_profile_id, installation_root_id, profile_parent_relative_path)
   WHERE profile_parent_relative_path IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_files_missing_parent_identity ON files (source_location, installation_profile_id, installation_root_id)
+  WHERE profile_relative_path IS NOT NULL AND profile_parent_relative_path IS NULL;
 CREATE INDEX IF NOT EXISTS idx_files_source_location_depth ON files (source_location, relative_depth);
 CREATE INDEX IF NOT EXISTS idx_files_download_item_id ON files (download_item_id);
 

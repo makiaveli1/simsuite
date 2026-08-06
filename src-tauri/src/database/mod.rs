@@ -2801,12 +2801,15 @@ mod tests {
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master
                  WHERE type = 'index'
-                   AND name = 'idx_files_installation_parent_identity'",
+                   AND name IN (
+                       'idx_files_installation_parent_identity',
+                       'idx_files_missing_parent_identity'
+                   )",
                 [],
                 |row| row.get(0),
             )
-            .expect("parent identity index");
-        assert_eq!(index_count, 1);
+            .expect("parent identity indexes");
+        assert_eq!(index_count, 2);
 
         let trigger_count: i64 = connection
             .query_row(
@@ -2897,6 +2900,7 @@ mod tests {
         connection
             .execute_batch(
                 "DROP INDEX idx_files_installation_parent_identity;
+                 DROP INDEX idx_files_missing_parent_identity;
                  DROP TRIGGER files_parent_identity_insert_guard;
                  DROP TRIGGER files_parent_identity_update_guard;",
             )
@@ -2908,6 +2912,7 @@ mod tests {
                 "SELECT COUNT(*) FROM sqlite_master
                  WHERE name IN (
                      'idx_files_installation_parent_identity',
+                     'idx_files_missing_parent_identity',
                      'files_parent_identity_insert_guard',
                      'files_parent_identity_update_guard'
                  )",
@@ -2915,7 +2920,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("repaired parent identity objects");
-        assert_eq!(repaired_objects, 3);
+        assert_eq!(repaired_objects, 4);
     }
 
     #[test]
@@ -3597,7 +3602,11 @@ mod tests {
                 !line.contains("idx_files_installation_identity")
                     && !line.contains("idx_files_installation_comparison")
                     && !line.contains("idx_files_installation_parent_identity")
+                    && !line.contains("idx_files_missing_parent_identity")
                     && !line.contains("WHERE profile_parent_relative_path IS NOT NULL")
+                    && !line.contains(
+                        "WHERE profile_relative_path IS NOT NULL AND profile_parent_relative_path IS NULL",
+                    )
             })
             .collect::<Vec<_>>()
             .join("\n");

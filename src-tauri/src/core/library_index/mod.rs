@@ -914,6 +914,13 @@ fn build_folder_scope_filter(
 
     match load_folder_identity_decision(connection, source, &child_segments)? {
         FolderIdentityDecision::Current(identity) => {
+            if !recursive
+                && current_folder_parent_identity_is_complete(connection, source, &identity)?
+            {
+                return Ok(build_direct_parent_identity_folder_scope_filter(
+                    source, &identity,
+                ));
+            }
             return Ok(build_identity_folder_scope_filter(
                 source,
                 child_depth,
@@ -1015,6 +1022,50 @@ fn load_folder_identity_decision(
             }))
         }
         _ => Ok(FolderIdentityDecision::Blocked),
+    }
+}
+
+fn current_folder_parent_identity_is_complete(
+    connection: &Connection,
+    source: &str,
+    identity: &FolderIdentityScope,
+) -> AppResult<bool> {
+    let has_missing_parent_identity = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1
+             FROM files
+             WHERE source_location = ?1
+               AND installation_profile_id = ?2
+               AND installation_root_id = ?3
+               AND profile_relative_path IS NOT NULL
+               AND profile_parent_relative_path IS NULL
+             LIMIT 1
+         )",
+        params![
+            source,
+            identity.installation_profile_id,
+            identity.installation_root_id,
+        ],
+        |row| row.get::<_, i64>(0),
+    )? != 0;
+
+    Ok(!has_missing_parent_identity)
+}
+
+fn build_direct_parent_identity_folder_scope_filter(
+    source: &str,
+    identity: &FolderIdentityScope,
+) -> FolderScopeFilter {
+    FolderScopeFilter {
+        sql: String::from(
+            " AND f.source_location = ? AND f.installation_profile_id = ? AND f.installation_root_id = ? AND f.profile_parent_relative_path IS NOT NULL AND f.profile_parent_relative_path = ? COLLATE BINARY",
+        ),
+        params: vec![
+            Value::Text(source.to_owned()),
+            Value::Text(identity.installation_profile_id.clone()),
+            Value::Text(identity.installation_root_id.clone()),
+            Value::Text(identity.profile_relative_path.clone()),
+        ],
     }
 }
 
@@ -2834,6 +2885,34 @@ mod tests {
             .expect("collect folder query plan")
     }
 
+    fn explain_missing_parent_identity_plan(
+        connection: &rusqlite::Connection,
+        source: &str,
+        profile_id: &str,
+        root_id: &str,
+    ) -> Vec<String> {
+        let mut statement = connection
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT 1
+                 FROM files
+                 WHERE source_location = ?1
+                   AND installation_profile_id = ?2
+                   AND installation_root_id = ?3
+                   AND profile_relative_path IS NOT NULL
+                   AND profile_parent_relative_path IS NULL
+                 LIMIT 1",
+            )
+            .expect("prepare missing parent identity plan");
+        statement
+            .query_map(params![source, profile_id, root_id], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query missing parent identity plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect missing parent identity plan")
+    }
+
     fn sensitive_path_key(components: &[&str]) -> String {
         let mut key = String::from("v1");
         for component in components {
@@ -3313,6 +3392,10 @@ mod tests {
 
         assert_eq!(listing.total, 1);
         assert_eq!(listing.items[0].filename, "correct.package");
+        let plan =
+            explain_folder_scope_plan(&connection, "Mods/PortableFolder", false).join(" | ");
+        assert!(plan.contains("idx_files_source_location_depth"));
+        assert!(!plan.contains("idx_files_installation_parent_identity"));
     }
 
     #[test]
@@ -3340,7 +3423,7 @@ mod tests {
         );
 
         let matching_key = sensitive_path_key(&["Creator", "inside.package"]);
-        insert_identity_library_file_row(
+        let matching_file_id = insert_identity_library_file_row(
             &connection,
             "C:/Mods/Creator/inside.package",
             "inside.package",
@@ -3351,8 +3434,15 @@ mod tests {
             "Creator/inside.package",
             Some(&matching_key),
         );
+        assign_file_parent_identity(
+            &connection,
+            matching_file_id,
+            "Creator",
+            Some(&folder_key),
+        );
+        let alias_parent_key = sensitive_path_key(&["creator"]);
         let alias_key = sensitive_path_key(&["creator", "alias.package"]);
-        insert_identity_library_file_row(
+        let alias_file_id = insert_identity_library_file_row(
             &connection,
             "C:/Mods/creator/alias.package",
             "alias.package",
@@ -3362,6 +3452,12 @@ mod tests {
             &root_id,
             "creator/alias.package",
             Some(&alias_key),
+        );
+        assign_file_parent_identity(
+            &connection,
+            alias_file_id,
+            "creator",
+            Some(&alias_parent_key),
         );
 
         let listing = list_library_folder_files(
@@ -3401,7 +3497,7 @@ mod tests {
             None,
         );
 
-        insert_identity_library_file_row(
+        let exact_file_id = insert_identity_library_file_row(
             &connection,
             "C:/Mods/CaseFolder/exact.package",
             "exact.package",
@@ -3412,7 +3508,8 @@ mod tests {
             "CaseFolder/exact.package",
             None,
         );
-        insert_identity_library_file_row(
+        assign_file_parent_identity(&connection, exact_file_id, "CaseFolder", None);
+        let alias_file_id = insert_identity_library_file_row(
             &connection,
             "C:/Mods/casefolder/alias.package",
             "alias.package",
@@ -3423,6 +3520,7 @@ mod tests {
             "casefolder/alias.package",
             None,
         );
+        assign_file_parent_identity(&connection, alias_file_id, "casefolder", None);
 
         let listing = list_library_folder_files(
             &connection,
@@ -4106,7 +4204,8 @@ mod tests {
             },
         )
         .expect("empty folder listing");
-        timings.push(("empty_folder_listing", op_started.elapsed().as_millis()));
+        let legacy_empty_elapsed_ms = op_started.elapsed().as_millis();
+        timings.push(("empty_folder_listing_legacy", legacy_empty_elapsed_ms));
         assert_eq!(empty_folder.total, 0);
         assert!(empty_folder.items.is_empty());
 
@@ -4192,6 +4291,18 @@ mod tests {
             serde_json::to_value(&legacy_metadata).expect("serialize legacy folder tree")
         );
 
+        let (active_profile_id, active_mods_root_id) =
+            active_profile_root_identity(&connection, "mods");
+        let missing_parent_plan = explain_missing_parent_identity_plan(
+            &connection,
+            "mods",
+            &active_profile_id,
+            &active_mods_root_id,
+        );
+        assert!(missing_parent_plan
+            .join(" | ")
+            .contains("idx_files_missing_parent_identity"));
+
         let current_direct_plan = explain_folder_scope_plan(&connection, "Mods/HugeDirect", false);
         assert!(!current_direct_plan.is_empty());
         let current_direct_started = Instant::now();
@@ -4212,6 +4323,27 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&current_direct_folder).expect("serialize current direct folder"),
             serde_json::to_value(&direct_folder).expect("serialize legacy direct folder")
+        );
+
+        let current_empty_plan =
+            explain_folder_scope_plan(&connection, "Mods/Empty Stress/Empty 042", false);
+        let current_empty_started = Instant::now();
+        let current_empty_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Empty Stress/Empty 042".to_owned(),
+                recursive: false,
+                limit: Some(25),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("current identity empty folder");
+        let current_empty_elapsed_ms = current_empty_started.elapsed().as_millis();
+        timings.push(("empty_folder_listing_current", current_empty_elapsed_ms));
+        assert_eq!(
+            serde_json::to_value(&current_empty_folder).expect("serialize current empty folder"),
+            serde_json::to_value(&empty_folder).expect("serialize legacy empty folder")
         );
 
         let current_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
@@ -4238,17 +4370,16 @@ mod tests {
 
         let legacy_direct_plan_text = legacy_direct_plan.join(" | ");
         let current_direct_plan_text = current_direct_plan.join(" | ");
+        let current_empty_plan_text = current_empty_plan.join(" | ");
         let legacy_recursive_plan_text = legacy_recursive_plan.join(" | ");
         let current_recursive_plan_text = current_recursive_plan.join(" | ");
-        for plan in [
-            &legacy_direct_plan_text,
-            &current_direct_plan_text,
-            &legacy_recursive_plan_text,
-            &current_recursive_plan_text,
-        ] {
-            assert!(plan.contains("idx_files_source_location_depth"));
-        }
-        assert!(!current_direct_plan_text.contains("idx_files_installation_parent_identity"));
+        assert!(legacy_direct_plan_text.contains("idx_files_source_location_depth"));
+        assert!(current_direct_plan_text.contains("idx_files_installation_parent_identity"));
+        assert!(!current_direct_plan_text.contains("idx_files_source_location_depth"));
+        assert!(current_empty_plan_text.contains("idx_files_installation_parent_identity"));
+        assert!(!current_empty_plan_text.contains("idx_files_source_location_depth"));
+        assert!(legacy_recursive_plan_text.contains("idx_files_source_location_depth"));
+        assert!(current_recursive_plan_text.contains("idx_files_source_location_depth"));
 
         let direct_depth_candidates: i64 = connection
             .query_row(
@@ -4268,8 +4399,10 @@ mod tests {
         assert_eq!(recursive_depth_candidates, 9_000);
 
         eprintln!(
-            "library_folder_content_scope_compare direct_target=5000 direct_depth_candidates={} recursive_target=2000 recursive_depth_candidates={} direct_legacy_ms={} direct_current_ms={} recursive_legacy_ms={} recursive_current_ms={} direct_legacy_plan={:?} direct_current_plan={:?} recursive_legacy_plan={:?} recursive_current_plan={:?} exact_response_match=true",
+            "library_folder_content_scope_compare direct_target=5000 direct_depth_candidates={} empty_target=0 empty_legacy_ms={} empty_current_ms={} recursive_target=2000 recursive_depth_candidates={} direct_legacy_ms={} direct_current_ms={} recursive_legacy_ms={} recursive_current_ms={} direct_legacy_plan={:?} direct_current_plan={:?} current_empty_plan={:?} recursive_legacy_plan={:?} recursive_current_plan={:?} exact_response_match=true",
             direct_depth_candidates,
+            legacy_empty_elapsed_ms,
+            current_empty_elapsed_ms,
             recursive_depth_candidates,
             legacy_direct_elapsed_ms,
             current_direct_elapsed_ms,
@@ -4277,6 +4410,7 @@ mod tests {
             current_recursive_elapsed_ms,
             legacy_direct_plan,
             current_direct_plan,
+            current_empty_plan,
             legacy_recursive_plan,
             current_recursive_plan,
         );
@@ -4375,6 +4509,66 @@ mod tests {
         .expect("mismatched source");
         assert_eq!(mismatched_source.total, 0);
         assert!(mismatched_source.items.is_empty());
+    }
+
+    #[test]
+    fn folder_file_listing_uses_parent_identity_for_current_root_direct_files() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        connection
+            .execute("DELETE FROM files WHERE source_location = 'mods'", [])
+            .expect("clear mods files");
+        connection
+            .execute("DELETE FROM library_folders WHERE source_location = 'mods'", [])
+            .expect("clear mods folders");
+
+        let (profile_id, root_id) = active_profile_root_identity(&connection, "mods");
+        let root_folder_id = insert_library_folder_row(
+            &connection,
+            "mods",
+            "",
+            "",
+            None,
+            "Mods",
+            0,
+            "C:/Mods",
+        );
+        assign_library_folder_identity(
+            &connection,
+            root_folder_id,
+            &profile_id,
+            &root_id,
+            "",
+            None,
+        );
+        let file_key = sensitive_path_key(&["root_current.package"]);
+        let file_id = insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/root_current.package",
+            "root_current.package",
+            "mods",
+            0,
+            &profile_id,
+            &root_id,
+            "root_current.package",
+            Some(&file_key),
+        );
+        assign_file_parent_identity(&connection, file_id, "", None);
+
+        let listing = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods".to_owned(),
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .expect("current root direct listing");
+
+        assert_eq!(listing.total, 1);
+        assert_eq!(listing.items[0].filename, "root_current.package");
+        let plan = explain_folder_scope_plan(&connection, "Mods", false).join(" | ");
+        assert!(plan.contains("idx_files_installation_parent_identity"));
+        assert!(!plan.contains("idx_files_source_location_depth"));
     }
 
     #[test]
