@@ -120,8 +120,7 @@ CREATE TABLE IF NOT EXISTS library_folders (
   profile_relative_path TEXT,
   profile_relative_path_key TEXT,
   scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
-  indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (source_location, normalized_relative_path)
+  indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_library_folders_source_location ON library_folders (source_location);
@@ -130,6 +129,12 @@ CREATE INDEX IF NOT EXISTS idx_library_folders_source_parent ON library_folders 
 CREATE INDEX IF NOT EXISTS idx_library_folders_source_depth ON library_folders (source_location, depth);
 CREATE INDEX IF NOT EXISTS idx_library_folders_installation_identity ON library_folders (installation_profile_id, installation_root_id, profile_relative_path);
 CREATE INDEX IF NOT EXISTS idx_library_folders_installation_comparison ON library_folders (installation_profile_id, installation_root_id, profile_relative_path_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_library_folders_legacy_source_path ON library_folders (source_location, normalized_relative_path)
+  WHERE installation_profile_id IS NULL AND installation_root_id IS NULL AND profile_relative_path IS NULL AND profile_relative_path_key IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_library_folders_unkeyed_installation_path ON library_folders (source_location, installation_profile_id, installation_root_id, normalized_relative_path)
+  WHERE installation_profile_id IS NOT NULL AND installation_root_id IS NOT NULL AND profile_relative_path IS NOT NULL AND profile_relative_path_key IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_library_folders_keyed_installation_path ON library_folders (source_location, installation_profile_id, installation_root_id, profile_relative_path_key)
+  WHERE installation_profile_id IS NOT NULL AND installation_root_id IS NOT NULL AND profile_relative_path IS NOT NULL AND profile_relative_path_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS download_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

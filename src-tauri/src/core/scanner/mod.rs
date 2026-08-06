@@ -37,6 +37,21 @@ use crate::{
     seed::normalize_key,
 };
 
+const LIBRARY_FOLDER_INSERT_SQL: &str = "INSERT INTO library_folders (
+    source_location,
+    relative_path,
+    normalized_relative_path,
+    parent_normalized_relative_path,
+    name,
+    depth,
+    full_path,
+    installation_profile_id,
+    installation_root_id,
+    profile_relative_path,
+    profile_relative_path_key,
+    scan_session_id
+ ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
+
 #[derive(Debug, Clone, Copy)]
 enum RootType {
     Mods,
@@ -300,34 +315,7 @@ where
     {
         let transaction = connection.transaction()?;
         clear_previous_scan_data(&transaction, &scan_roots)?;
-        let mut folder_insert = transaction.prepare(
-            "INSERT INTO library_folders (
-                source_location,
-                relative_path,
-                normalized_relative_path,
-                parent_normalized_relative_path,
-                name,
-                depth,
-                full_path,
-                installation_profile_id,
-                installation_root_id,
-                profile_relative_path,
-                profile_relative_path_key,
-                scan_session_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-             ON CONFLICT(source_location, normalized_relative_path) DO UPDATE SET
-                relative_path = excluded.relative_path,
-                parent_normalized_relative_path = excluded.parent_normalized_relative_path,
-                name = excluded.name,
-                depth = excluded.depth,
-                full_path = excluded.full_path,
-                installation_profile_id = excluded.installation_profile_id,
-                installation_root_id = excluded.installation_root_id,
-                profile_relative_path = excluded.profile_relative_path,
-                profile_relative_path_key = excluded.profile_relative_path_key,
-                scan_session_id = excluded.scan_session_id,
-                indexed_at = CURRENT_TIMESTAMP",
-        )?;
+        let mut folder_insert = transaction.prepare(LIBRARY_FOLDER_INSERT_SQL)?;
         for folder in &discovered_folders {
             insert_discovered_folder(&mut folder_insert, session_id, folder)?;
         }
@@ -2086,6 +2074,118 @@ mod tests {
             scan_owned_folder_identity(&unassigned_root, &nested),
             (None, None, None, None)
         );
+    }
+
+    #[test]
+    fn folder_insert_uses_identity_uniqueness_instead_of_lowercase_upsert() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        database::initialize(&mut connection).expect("schema");
+        connection
+            .execute(
+                "INSERT INTO scan_sessions (scan_type, started_at)
+                 VALUES ('full', '2026-08-06T00:00:00+00:00')",
+                [],
+            )
+            .expect("scan session");
+        let session_id = connection.last_insert_rowid();
+
+        let mut folder_insert = connection
+            .prepare(LIBRARY_FOLDER_INSERT_SQL)
+            .expect("folder insert statement");
+        let root = DiscoveredFolder {
+            source_location: "mods".to_owned(),
+            relative_path: String::new(),
+            normalized_relative_path: String::new(),
+            parent_normalized_relative_path: None,
+            name: "Mods".to_owned(),
+            depth: 0,
+            full_path: PathBuf::from("/fixture/Mods"),
+            installation_profile_id: Some("profile-sensitive".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            profile_relative_path: Some(String::new()),
+            profile_relative_path_key: None,
+        };
+        insert_discovered_folder(&mut folder_insert, session_id, &root)
+            .expect("sensitive root folder");
+
+        let creator_upper = DiscoveredFolder {
+            source_location: "mods".to_owned(),
+            relative_path: "Creator".to_owned(),
+            normalized_relative_path: "creator".to_owned(),
+            parent_normalized_relative_path: Some(String::new()),
+            name: "Creator".to_owned(),
+            depth: 1,
+            full_path: PathBuf::from("/fixture/Mods/Creator"),
+            installation_profile_id: Some("profile-sensitive".to_owned()),
+            installation_root_id: Some("mods-root".to_owned()),
+            profile_relative_path: Some("Creator".to_owned()),
+            profile_relative_path_key: Some("v1|n7:Creator".to_owned()),
+        };
+        insert_discovered_folder(&mut folder_insert, session_id, &creator_upper)
+            .expect("upper-case sensitive folder");
+
+        let creator_lower = DiscoveredFolder {
+            relative_path: "creator".to_owned(),
+            name: "creator".to_owned(),
+            full_path: PathBuf::from("/fixture/Mods/creator"),
+            profile_relative_path: Some("creator".to_owned()),
+            profile_relative_path_key: Some("v1|n7:creator".to_owned()),
+            ..creator_upper.clone()
+        };
+        insert_discovered_folder(&mut folder_insert, session_id, &creator_lower)
+            .expect("lower-case sensitive sibling");
+
+        let insensitive_upper = DiscoveredFolder {
+            source_location: "tray".to_owned(),
+            relative_path: "Alias".to_owned(),
+            normalized_relative_path: "alias".to_owned(),
+            parent_normalized_relative_path: Some(String::new()),
+            name: "Alias".to_owned(),
+            depth: 1,
+            full_path: PathBuf::from("/fixture/Tray/Alias"),
+            installation_profile_id: Some("profile-insensitive".to_owned()),
+            installation_root_id: Some("tray-root".to_owned()),
+            profile_relative_path: Some("Alias".to_owned()),
+            profile_relative_path_key: Some("v1|f5:alias".to_owned()),
+        };
+        insert_discovered_folder(&mut folder_insert, session_id, &insensitive_upper)
+            .expect("first insensitive alias");
+        let insensitive_lower = DiscoveredFolder {
+            relative_path: "alias".to_owned(),
+            name: "alias".to_owned(),
+            full_path: PathBuf::from("/fixture/Tray/alias"),
+            profile_relative_path: Some("alias".to_owned()),
+            ..insensitive_upper
+        };
+        assert!(insert_discovered_folder(
+            &mut folder_insert,
+            session_id,
+            &insensitive_lower,
+        )
+        .is_err());
+        drop(folder_insert);
+
+        let sensitive_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_folders
+                 WHERE source_location = 'mods'
+                   AND installation_profile_id = 'profile-sensitive'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("sensitive folder count");
+        assert_eq!(sensitive_count, 3);
+
+        let insensitive_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_folders
+                 WHERE source_location = 'tray'
+                   AND installation_profile_id = 'profile-insensitive'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("insensitive folder count");
+        assert_eq!(insensitive_count, 1);
     }
 
     #[test]

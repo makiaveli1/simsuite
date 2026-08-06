@@ -34,6 +34,63 @@ const INDEXED_FILE_COMPARISON_KEY_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0010_indexed_file_comparison_key_v1.sql");
 const INDEXED_FOLDER_IDENTITY_SCHEMA_SQL: &str =
     include_str!("../../../database/migrations/0011_indexed_folder_identity_v1.sql");
+const LIBRARY_FOLDER_IDENTITY_UNIQUENESS_SCHEMA_SQL: &str = include_str!(
+    "../../../database/migrations/0012_library_folder_identity_uniqueness_v2.sql"
+);
+const LIBRARY_FOLDER_IDENTITY_UNIQUENESS_REBUILD_SQL: &str = r#"
+BEGIN IMMEDIATE;
+ALTER TABLE library_folders RENAME TO library_folders_pre_identity_uniqueness_v2;
+CREATE TABLE library_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_location TEXT NOT NULL CHECK (source_location IN ('mods', 'tray')),
+    relative_path TEXT NOT NULL DEFAULT '',
+    normalized_relative_path TEXT NOT NULL DEFAULT '',
+    parent_normalized_relative_path TEXT,
+    name TEXT NOT NULL,
+    depth INTEGER NOT NULL DEFAULT 0,
+    full_path TEXT NOT NULL,
+    installation_profile_id TEXT,
+    installation_root_id TEXT,
+    profile_relative_path TEXT,
+    profile_relative_path_key TEXT,
+    scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
+    indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO library_folders (
+    id,
+    source_location,
+    relative_path,
+    normalized_relative_path,
+    parent_normalized_relative_path,
+    name,
+    depth,
+    full_path,
+    installation_profile_id,
+    installation_root_id,
+    profile_relative_path,
+    profile_relative_path_key,
+    scan_session_id,
+    indexed_at
+)
+SELECT
+    id,
+    source_location,
+    relative_path,
+    normalized_relative_path,
+    parent_normalized_relative_path,
+    name,
+    depth,
+    full_path,
+    installation_profile_id,
+    installation_root_id,
+    profile_relative_path,
+    profile_relative_path_key,
+    scan_session_id,
+    indexed_at
+FROM library_folders_pre_identity_uniqueness_v2;
+DROP TABLE library_folders_pre_identity_uniqueness_v2;
+COMMIT;
+"#;
 
 const LEGACY_GAME_INSTALLATION_PROFILE_ID: &str = "legacy-sims4-default";
 const ACTIVE_GAME_INSTALLATION_PROFILE_SETTING: &str =
@@ -234,6 +291,21 @@ pub fn initialize(connection: &mut Connection) -> AppResult<()> {
         )?;
     }
 
+    let v12_exists: Option<i64> = connection
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = 12",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if v12_exists.is_none() {
+        ensure_library_folder_identity_uniqueness_schema(connection)?;
+        connection.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            params![12_i64, "library_folder_identity_uniqueness_v2"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -263,6 +335,45 @@ fn ensure_indexed_folder_identity_schema(connection: &Connection) -> AppResult<(
     ensure_column(connection, "library_folders", "profile_relative_path_key", "TEXT")?;
     connection.execute_batch(INDEXED_FOLDER_IDENTITY_SCHEMA_SQL)?;
     Ok(())
+}
+
+fn ensure_library_folder_identity_uniqueness_schema(
+    connection: &Connection,
+) -> AppResult<()> {
+    if library_folders_has_legacy_source_path_uniqueness(connection)? {
+        if let Err(error) = connection.execute_batch(
+            LIBRARY_FOLDER_IDENTITY_UNIQUENESS_REBUILD_SQL,
+        ) {
+            let _ = connection.execute_batch("ROLLBACK");
+            return Err(error.into());
+        }
+        connection.execute_batch(INDEXED_FOLDER_IDENTITY_SCHEMA_SQL)?;
+    }
+    connection.execute_batch(LIBRARY_FOLDER_IDENTITY_UNIQUENESS_SCHEMA_SQL)?;
+    Ok(())
+}
+
+fn library_folders_has_legacy_source_path_uniqueness(
+    connection: &Connection,
+) -> AppResult<bool> {
+    let table_sql = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'library_folders'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(table_sql) = table_sql else {
+        return Ok(false);
+    };
+    let normalized_sql = table_sql
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    Ok(normalized_sql.contains(
+        "unique (source_location, normalized_relative_path)",
+    ))
 }
 
 fn current_native_operating_environment_storage() -> &'static str {
@@ -1951,8 +2062,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
             depth INTEGER NOT NULL DEFAULT 0,
             full_path TEXT NOT NULL,
             scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
-            indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (source_location, normalized_relative_path)
+            indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );",
     )?;
 
@@ -1978,6 +2088,7 @@ fn ensure_schema(connection: &Connection) -> AppResult<()> {
     ensure_indexed_file_identity_schema(connection)?;
     ensure_indexed_file_comparison_key_schema(connection)?;
     ensure_indexed_folder_identity_schema(connection)?;
+    ensure_library_folder_identity_uniqueness_schema(connection)?;
     ensure_column(connection, "snapshot_items", "backup_path", "TEXT")?;
     ensure_column(
         connection,
@@ -2782,12 +2893,442 @@ mod tests {
     }
 
     #[test]
+    fn library_folder_identity_uniqueness_allows_only_proven_case_distinct_siblings() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize schema");
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 12 AND name = 'library_folder_identity_uniqueness_v2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder uniqueness migration");
+        assert_eq!(migration_count, 1);
+
+        let table_sql: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'table' AND name = 'library_folders'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder table sql");
+        assert!(!table_sql
+            .to_ascii_lowercase()
+            .contains("unique (source_location, normalized_relative_path)"));
+
+        let unique_index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name IN (
+                       'uq_library_folders_legacy_source_path',
+                       'uq_library_folders_unkeyed_installation_path',
+                       'uq_library_folders_keyed_installation_path'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("folder uniqueness indexes");
+        assert_eq!(unique_index_count, 3);
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "mods",
+                    "Creator",
+                    "creator",
+                    "Creator",
+                    1_i64,
+                    "/fixture/Mods/Creator",
+                    "profile-sensitive",
+                    "mods-root",
+                    "Creator",
+                    "v1|n7:Creator"
+                ],
+            )
+            .expect("sensitive Creator folder");
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "mods",
+                    "creator",
+                    "creator",
+                    "creator",
+                    1_i64,
+                    "/fixture/Mods/creator",
+                    "profile-sensitive",
+                    "mods-root",
+                    "creator",
+                    "v1|n7:creator"
+                ],
+            )
+            .expect("case-distinct sensitive sibling");
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    "tray",
+                    "Alias",
+                    "alias",
+                    "Alias",
+                    1_i64,
+                    "/fixture/Tray/Alias",
+                    "profile-insensitive",
+                    "tray-root",
+                    "Alias",
+                    "v1|f5:alias"
+                ],
+            )
+            .expect("insensitive first alias");
+        let insensitive_alias = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path,
+                installation_profile_id, installation_root_id,
+                profile_relative_path, profile_relative_path_key
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                "tray",
+                "alias",
+                "alias",
+                "alias",
+                1_i64,
+                "/fixture/Tray/alias",
+                "profile-insensitive",
+                "tray-root",
+                "alias",
+                "v1|f5:alias"
+            ],
+        );
+        assert!(insensitive_alias.is_err());
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "mods",
+                    "Unknown",
+                    "unknown",
+                    "Unknown",
+                    1_i64,
+                    "/fixture/Unknown/Unknown",
+                    "profile-unknown",
+                    "mods-root",
+                    "Unknown"
+                ],
+            )
+            .expect("unknown-policy first folder");
+        let unknown_alias = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path,
+                installation_profile_id, installation_root_id,
+                profile_relative_path
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "mods",
+                "unknown",
+                "unknown",
+                "unknown",
+                1_i64,
+                "/fixture/Unknown/unknown",
+                "profile-unknown",
+                "mods-root",
+                "unknown"
+            ],
+        );
+        assert!(unknown_alias.is_err());
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "tray",
+                    "Legacy",
+                    "legacy",
+                    "Legacy",
+                    1_i64,
+                    "/fixture/Legacy/Legacy"
+                ],
+            )
+            .expect("legacy first folder");
+        let legacy_alias = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                "tray",
+                "legacy",
+                "legacy",
+                "legacy",
+                1_i64,
+                "/fixture/Legacy/legacy"
+            ],
+        );
+        assert!(legacy_alias.is_err());
+    }
+
+    #[test]
+    fn library_folder_identity_uniqueness_migration_preserves_rows_ids_and_guards() {
+        let mut connection = Connection::open_in_memory().expect("in-memory db");
+        initialize(&mut connection).expect("initialize current schema");
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    id, source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    41_i64,
+                    "mods",
+                    "Legacy",
+                    "legacy",
+                    "Legacy",
+                    1_i64,
+                    "/legacy/Mods/Legacy"
+                ],
+            )
+            .expect("legacy row before old-shape fixture");
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    id, source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    42_i64,
+                    "tray",
+                    "Lot",
+                    "lot",
+                    "Lot",
+                    1_i64,
+                    "/legacy/Tray/Lot",
+                    "profile-a",
+                    "tray-root",
+                    "Lot",
+                    "v1|n3:Lot"
+                ],
+            )
+            .expect("assigned row before old-shape fixture");
+
+        connection
+            .execute_batch(
+                "ALTER TABLE library_folders RENAME TO library_folders_current_v12_fixture;
+                 CREATE TABLE library_folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_location TEXT NOT NULL CHECK (source_location IN ('mods', 'tray')),
+                    relative_path TEXT NOT NULL DEFAULT '',
+                    normalized_relative_path TEXT NOT NULL DEFAULT '',
+                    parent_normalized_relative_path TEXT,
+                    name TEXT NOT NULL,
+                    depth INTEGER NOT NULL DEFAULT 0,
+                    full_path TEXT NOT NULL,
+                    installation_profile_id TEXT,
+                    installation_root_id TEXT,
+                    profile_relative_path TEXT,
+                    profile_relative_path_key TEXT,
+                    scan_session_id INTEGER REFERENCES scan_sessions (id) ON DELETE SET NULL,
+                    indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (source_location, normalized_relative_path)
+                 );
+                 INSERT INTO library_folders (
+                    id, source_location, relative_path, normalized_relative_path,
+                    parent_normalized_relative_path, name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key,
+                    scan_session_id, indexed_at
+                 )
+                 SELECT
+                    id, source_location, relative_path, normalized_relative_path,
+                    parent_normalized_relative_path, name, depth, full_path,
+                    installation_profile_id, installation_root_id,
+                    profile_relative_path, profile_relative_path_key,
+                    scan_session_id, indexed_at
+                 FROM library_folders_current_v12_fixture;
+                 DROP TABLE library_folders_current_v12_fixture;",
+            )
+            .expect("construct pre-v12 table shape");
+
+        initialize(&mut connection).expect("migrate pre-v12 folder table");
+
+        let rows = connection
+            .prepare(
+                "SELECT id, source_location, relative_path,
+                        installation_profile_id, installation_root_id,
+                        profile_relative_path, profile_relative_path_key
+                 FROM library_folders
+                 ORDER BY id",
+            )
+            .expect("migrated folder rows")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            })
+            .expect("folder row query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("migrated rows");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, 41);
+        assert_eq!(rows[0].1, "mods");
+        assert_eq!(rows[0].2, "Legacy");
+        assert_eq!(rows[0].3, None);
+        assert_eq!(rows[1].0, 42);
+        assert_eq!(rows[1].1, "tray");
+        assert_eq!(rows[1].2, "Lot");
+        assert_eq!(rows[1].3.as_deref(), Some("profile-a"));
+        assert_eq!(rows[1].4.as_deref(), Some("tray-root"));
+        assert_eq!(rows[1].5.as_deref(), Some("Lot"));
+        assert_eq!(rows[1].6.as_deref(), Some("v1|n3:Lot"));
+
+        let migration_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations
+                 WHERE version = 12 AND name = 'library_folder_identity_uniqueness_v2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("preserved folder uniqueness migration row");
+        assert_eq!(migration_count, 1);
+
+        let table_sql: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'table' AND name = 'library_folders'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("repaired folder table sql");
+        assert!(!table_sql
+            .to_ascii_lowercase()
+            .contains("unique (source_location, normalized_relative_path)"));
+
+        let unique_index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name IN (
+                       'uq_library_folders_legacy_source_path',
+                       'uq_library_folders_unkeyed_installation_path',
+                       'uq_library_folders_keyed_installation_path'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("repaired uniqueness indexes");
+        assert_eq!(unique_index_count, 3);
+
+        let trigger_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name IN (
+                       'trg_library_folders_installation_identity_all_or_nothing_insert',
+                       'trg_library_folders_installation_identity_all_or_nothing_update',
+                       'trg_library_folders_installation_comparison_key_insert',
+                       'trg_library_folders_installation_comparison_key_update'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("repaired folder triggers");
+        assert_eq!(trigger_count, 4);
+
+        connection
+            .execute(
+                "INSERT INTO library_folders (
+                    source_location, relative_path, normalized_relative_path,
+                    name, depth, full_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "mods",
+                    "AfterMigration",
+                    "aftermigration",
+                    "AfterMigration",
+                    1_i64,
+                    "/legacy/Mods/AfterMigration"
+                ],
+            )
+            .expect("post-migration auto id folder");
+        assert!(connection.last_insert_rowid() > 42);
+
+        let partial_identity = connection.execute(
+            "INSERT INTO library_folders (
+                source_location, relative_path, normalized_relative_path,
+                name, depth, full_path, installation_profile_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "mods",
+                "Broken",
+                "broken",
+                "Broken",
+                1_i64,
+                "/fixture/Mods/Broken",
+                "profile-a"
+            ],
+        );
+        assert!(partial_identity.is_err());
+    }
+
+    #[test]
     fn indexed_folder_identity_migration_preserves_existing_rows_unassigned() {
         let mut connection = Connection::open_in_memory().expect("in-memory db");
         let mut inside_folder_table = false;
+        let mut inside_folder_uniqueness_index = false;
         let pre_v11_schema = schema::INITIAL_SCHEMA_SQL
             .lines()
             .filter(|line| {
+                if line.starts_with(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_library_folders_",
+                ) {
+                    inside_folder_uniqueness_index = !line.trim_end().ends_with(';');
+                    return false;
+                }
+                if inside_folder_uniqueness_index {
+                    if line.trim_end().ends_with(';') {
+                        inside_folder_uniqueness_index = false;
+                    }
+                    return false;
+                }
                 if line.starts_with("CREATE TABLE IF NOT EXISTS library_folders") {
                     inside_folder_table = true;
                     return true;
