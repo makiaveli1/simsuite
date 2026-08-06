@@ -2360,7 +2360,7 @@ fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppRes
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::{params, OptionalExtension};
+    use rusqlite::{params, params_from_iter, OptionalExtension};
 
     use crate::{
         database,
@@ -2373,11 +2373,12 @@ mod tests {
     use std::time::Instant;
 
     use super::{
-        get_file_detail, get_folder_tree_metadata, get_library_facets,
+        build_folder_scope_filter, get_file_detail, get_folder_tree_metadata, get_library_facets,
         get_library_preview_diagnostics, list_library_files, list_library_folder_files,
         load_folder_tree_file_counts, merge_preview_results_into_insights,
-        persist_file_insights, select_folder_tree_source_rows, FolderMetadataRow,
-        FolderTreeSourceMode, MAX_FOLDER_QUERY_LIMIT,
+        normalize_virtual_folder_path, persist_file_insights, select_folder_tree_source_rows,
+        source_location_for_folder_root, FolderMetadataRow, FolderTreeSourceMode,
+        MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -2807,6 +2808,30 @@ mod tests {
 
         transaction.commit().expect("commit stress identity upgrade");
         (folder_count, file_rows.len())
+    }
+
+    fn explain_folder_scope_plan(
+        connection: &rusqlite::Connection,
+        folder_path: &str,
+        recursive: bool,
+    ) -> Vec<String> {
+        let target_segments = normalize_virtual_folder_path(folder_path);
+        let root = target_segments.first().expect("folder plan root");
+        let source = source_location_for_folder_root(root).expect("folder plan source");
+        let scope = build_folder_scope_filter(connection, &source, &target_segments, recursive)
+            .expect("build folder plan scope");
+        let sql = format!(
+            "EXPLAIN QUERY PLAN SELECT f.id FROM files f WHERE f.source_location <> 'downloads'{}",
+            scope.sql
+        );
+        let mut statement = connection.prepare(&sql).expect("prepare folder query plan");
+        statement
+            .query_map(params_from_iter(scope.params.iter()), |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query folder plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect folder query plan")
     }
 
     fn sensitive_path_key(components: &[&str]) -> String {
@@ -4025,6 +4050,9 @@ mod tests {
         assert_eq!(empty_stress.total_file_count, 0);
         assert_eq!(empty_stress.child_folder_count, 150);
 
+        let legacy_direct_plan =
+            explain_folder_scope_plan(&connection, "Mods/HugeDirect", false);
+        assert!(!legacy_direct_plan.is_empty());
         let op_started = Instant::now();
         let direct_folder = list_library_folder_files(
             &connection,
@@ -4038,7 +4066,8 @@ mod tests {
             },
         )
         .expect("large direct folder");
-        timings.push(("folder_direct_page", op_started.elapsed().as_millis()));
+        let legacy_direct_elapsed_ms = op_started.elapsed().as_millis();
+        timings.push(("folder_direct_page_legacy", legacy_direct_elapsed_ms));
         assert_eq!(direct_folder.total, 5_000);
         assert_eq!(direct_folder.items.len(), 75);
         assert!(direct_folder
@@ -4046,6 +4075,8 @@ mod tests {
             .iter()
             .all(|item| item.insights.thumbnail_preview.is_none()));
 
+        let legacy_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
+        assert!(!legacy_recursive_plan.is_empty());
         let op_started = Instant::now();
         let recursive_folder = list_library_folder_files(
             &connection,
@@ -4058,7 +4089,8 @@ mod tests {
             },
         )
         .expect("large recursive folder");
-        timings.push(("folder_recursive_page", op_started.elapsed().as_millis()));
+        let legacy_recursive_elapsed_ms = op_started.elapsed().as_millis();
+        timings.push(("folder_recursive_page_legacy", legacy_recursive_elapsed_ms));
         assert_eq!(recursive_folder.total, 2_000);
         assert_eq!(recursive_folder.items.len(), 80);
 
@@ -4158,6 +4190,95 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&grouped_metadata).expect("serialize grouped folder tree"),
             serde_json::to_value(&legacy_metadata).expect("serialize legacy folder tree")
+        );
+
+        let current_direct_plan = explain_folder_scope_plan(&connection, "Mods/HugeDirect", false);
+        assert!(!current_direct_plan.is_empty());
+        let current_direct_started = Instant::now();
+        let current_direct_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/HugeDirect".to_owned(),
+                recursive: false,
+                limit: Some(75),
+                offset: Some(100),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("current identity direct folder");
+        let current_direct_elapsed_ms = current_direct_started.elapsed().as_millis();
+        timings.push(("folder_direct_page_current", current_direct_elapsed_ms));
+        assert_eq!(
+            serde_json::to_value(&current_direct_folder).expect("serialize current direct folder"),
+            serde_json::to_value(&direct_folder).expect("serialize legacy direct folder")
+        );
+
+        let current_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
+        assert!(!current_recursive_plan.is_empty());
+        let current_recursive_started = Instant::now();
+        let current_recursive_folder = list_library_folder_files(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Deep".to_owned(),
+                recursive: true,
+                limit: Some(80),
+                include_previews: Some(false),
+                ..Default::default()
+            },
+        )
+        .expect("current identity recursive folder");
+        let current_recursive_elapsed_ms = current_recursive_started.elapsed().as_millis();
+        timings.push(("folder_recursive_page_current", current_recursive_elapsed_ms));
+        assert_eq!(
+            serde_json::to_value(&current_recursive_folder)
+                .expect("serialize current recursive folder"),
+            serde_json::to_value(&recursive_folder).expect("serialize legacy recursive folder")
+        );
+
+        let legacy_direct_plan_text = legacy_direct_plan.join(" | ");
+        let current_direct_plan_text = current_direct_plan.join(" | ");
+        let legacy_recursive_plan_text = legacy_recursive_plan.join(" | ");
+        let current_recursive_plan_text = current_recursive_plan.join(" | ");
+        for plan in [
+            &legacy_direct_plan_text,
+            &current_direct_plan_text,
+            &legacy_recursive_plan_text,
+            &current_recursive_plan_text,
+        ] {
+            assert!(plan.contains("idx_files_source_location_depth"));
+        }
+        assert!(!current_direct_plan_text.contains("idx_files_installation_parent_identity"));
+
+        let direct_depth_candidates: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM files WHERE source_location = 'mods' AND relative_depth = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count direct depth candidates");
+        let recursive_depth_candidates: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM files WHERE source_location = 'mods' AND relative_depth >= 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count recursive depth candidates");
+        assert_eq!(direct_depth_candidates, 6_500);
+        assert_eq!(recursive_depth_candidates, 9_000);
+
+        eprintln!(
+            "library_folder_content_scope_compare direct_target=5000 direct_depth_candidates={} recursive_target=2000 recursive_depth_candidates={} direct_legacy_ms={} direct_current_ms={} recursive_legacy_ms={} recursive_current_ms={} direct_legacy_plan={:?} direct_current_plan={:?} recursive_legacy_plan={:?} recursive_current_plan={:?} exact_response_match=true",
+            direct_depth_candidates,
+            recursive_depth_candidates,
+            legacy_direct_elapsed_ms,
+            current_direct_elapsed_ms,
+            legacy_recursive_elapsed_ms,
+            current_recursive_elapsed_ms,
+            legacy_direct_plan,
+            current_direct_plan,
+            legacy_recursive_plan,
+            current_recursive_plan,
         );
 
         let row_reduction = legacy_selection.fallback_file_rows.len() as f64
