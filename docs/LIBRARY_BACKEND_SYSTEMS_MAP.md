@@ -316,13 +316,13 @@ What is already safer:
 - `idx_files_source_location_depth` supports source/depth folder filtering.
 - `idx_files_installation_parent_identity` supports grouped current-profile folder-tree direct counts.
 - `library_folders` indexes support source/path/parent/depth folder tree loading.
-- The opt-in `pnpm run test:library:stress` harness inserts 10,000 synthetic Library rows plus 5,002 duplicate stress rows and prints query timings without committing generated output.
-- Recent 10,000-row synthetic timings were informational: list first page about 103 ms, search about 18 ms, filter about 17 ms, sort about 110 ms, folder tree metadata about 119 ms, large direct folder page about 80 ms, recursive folder page about 67 ms, relationship-heavy page about 29 ms, file detail about 4 ms, duplicate overview about 0 ms, preview diagnostics about 73 ms on this machine.
+- The opt-in `pnpm run test:library:stress` harness inserts 10,000 synthetic Library rows plus 5,002 duplicate stress rows and prints query timings without committing generated output. `pnpm run test:library:folder-tree-stress` runs only the focused 10,000-row Library comparison.
+- The focused same-dataset folder-tree proof first runs all 10,000 files through the legacy fallback lane, then upgrades the in-memory rows to trustworthy profile/root/parent identity and reruns the grouped lane. Recent runs returned 504 grouped rows instead of 10,000 fallback rows, a stable 19.84x row reduction, while serialized `FolderTreeMetadata` remained exactly equal. Informational samples on this machine were about 549 ms versus 196 ms and 296 ms versus 110 ms; no timing threshold is enforced.
 
 Risks:
 
 - Folder path-prefix matching for file listing still needs a normalized relative path/index if 10,000+ file proof shows it is slow.
-- The current 10,000-row stress fixture predates parent identity, so its folder-tree timing still exercises the compatibility lane. A future rescanned-parent fixture should measure the grouped SQL path directly.
+- Legacy and pre-v13 libraries still use the metadata-row fallback until rescan, so their memory and timing profile remains different from the grouped path even though both now have same-dataset stress coverage.
 - `list_library_files_for_tree` is still registered for compatibility, though bounded.
 - Relationship peer counts still aggregate over filtered list sets, but the stress harness showed the relationship-heavy filtered page path remained reasonable at 1,500 related rows. A more advanced SQL/cache pass remains future work if real libraries show broader filtered-set costs.
 - Exact duplicate pair generation can still grow within very large same-hash groups. Non-exact filename/version review groups are now capped.

@@ -2360,7 +2360,7 @@ fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppRes
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::params;
+    use rusqlite::{params, OptionalExtension};
 
     use crate::{
         database,
@@ -2695,6 +2695,118 @@ mod tests {
                 params![parent_relative_path, parent_relative_path_key, file_id],
             )
             .expect("assign file parent identity");
+    }
+
+    fn upgrade_large_library_stress_fixture_to_parent_identity(
+        connection: &mut rusqlite::Connection,
+    ) -> (usize, usize) {
+        let (profile_id, mods_root_id) = active_profile_root_identity(connection, "mods");
+        let timestamp = "2026-08-06T00:00:00Z";
+        let tray_root_id = connection
+            .query_row(
+                "SELECT root_id
+                 FROM game_installation_roots
+                 WHERE profile_id = ?1 AND root_role = 'installed_tray'
+                 ORDER BY root_id
+                 LIMIT 1",
+                params![profile_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .expect("look up stress tray root")
+            .unwrap_or_else(|| {
+                let root_id = "tray";
+                connection
+                    .execute(
+                        "INSERT INTO game_installation_roots (
+                            profile_id, root_id, root_role, configured_path,
+                            required, validation_state, filesystem_capabilities_json,
+                            last_validated_at, created_at, updated_at
+                         ) VALUES (?1, ?2, 'installed_tray', 'C:/Tray', 1, 'valid', '{}', ?3, ?3, ?3)",
+                        params![profile_id, root_id, timestamp],
+                    )
+                    .expect("insert stress tray root");
+                root_id.to_owned()
+            });
+
+        let transaction = connection.transaction().expect("identity upgrade transaction");
+        let folder_count = transaction
+            .execute(
+                "UPDATE library_folders
+                 SET installation_profile_id = ?1,
+                     installation_root_id = CASE source_location
+                         WHEN 'mods' THEN ?2
+                         WHEN 'tray' THEN ?3
+                     END,
+                     profile_relative_path = relative_path,
+                     profile_relative_path_key = NULL
+                 WHERE source_location IN ('mods', 'tray')",
+                params![profile_id, mods_root_id, tray_root_id],
+            )
+            .expect("upgrade stress folder identity");
+
+        let file_rows = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT id, path, source_location
+                     FROM files
+                     WHERE source_location IN ('mods', 'tray')
+                     ORDER BY id",
+                )
+                .expect("prepare stress file identity rows");
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .expect("query stress file identity rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect stress file identity rows")
+        };
+
+        {
+            let mut update_statement = transaction
+                .prepare(
+                    "UPDATE files
+                     SET installation_profile_id = ?1,
+                         installation_root_id = ?2,
+                         profile_relative_path = ?3,
+                         profile_relative_path_key = NULL,
+                         profile_parent_relative_path = ?4,
+                         profile_parent_relative_path_key = NULL
+                     WHERE id = ?5",
+                )
+                .expect("prepare stress file identity update");
+            for (file_id, path, source_location) in &file_rows {
+                let (root_id, prefix) = match source_location.as_str() {
+                    "mods" => (mods_root_id.as_str(), "C:/Mods/"),
+                    "tray" => (tray_root_id.as_str(), "C:/Tray/"),
+                    other => panic!("unsupported stress source: {other}"),
+                };
+                let relative_path = path
+                    .strip_prefix(prefix)
+                    .unwrap_or_else(|| panic!("stress path is outside {prefix}: {path}"));
+                let parent_relative_path = relative_path
+                    .rsplit_once('/')
+                    .map(|(parent, _)| parent)
+                    .unwrap_or("");
+                update_statement
+                    .execute(params![
+                        profile_id,
+                        root_id,
+                        relative_path,
+                        parent_relative_path,
+                        file_id,
+                    ])
+                    .expect("upgrade stress file parent identity");
+            }
+        }
+
+        transaction.commit().expect("commit stress identity upgrade");
+        (folder_count, file_rows.len())
     }
 
     fn sensitive_path_key(components: &[&str]) -> String {
@@ -3807,7 +3919,7 @@ mod tests {
                             Option::<String>::None,
                             0.41_f64,
                             "mods",
-                            1_i64,
+                            2_i64,
                             &empty_insights,
                         ])
                         .expect("insert missing metadata file");
@@ -3882,12 +3994,18 @@ mod tests {
         assert_eq!(sorted.total, 10_000);
         assert_eq!(sorted.items.len(), 100);
 
-        let op_started = Instant::now();
-        let metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
-            .expect("large folder tree");
-        timings.push(("folder_tree_metadata", op_started.elapsed().as_millis()));
-        assert!(metadata.total_folders >= 160);
-        let mods = metadata
+        let legacy_selection = load_folder_tree_file_counts(&connection, &LibraryQuery::default())
+            .expect("legacy stress count selection");
+        assert!(legacy_selection.direct_count_rows.is_empty());
+        assert_eq!(legacy_selection.fallback_file_rows.len(), 10_000);
+
+        let legacy_started = Instant::now();
+        let legacy_metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
+            .expect("large legacy folder tree");
+        let legacy_elapsed_ms = legacy_started.elapsed().as_millis();
+        timings.push(("folder_tree_legacy_metadata", legacy_elapsed_ms));
+        assert!(legacy_metadata.total_folders >= 160);
+        let mods = legacy_metadata
             .roots
             .iter()
             .find(|node| node.name == "Mods")
@@ -4014,6 +4132,44 @@ mod tests {
         assert_eq!(preview_diagnostics.script_rows, 500);
         assert_eq!(preview_diagnostics.tray_rows, 1_000);
 
+        let (upgraded_folder_count, upgraded_file_count) =
+            upgrade_large_library_stress_fixture_to_parent_identity(&mut connection);
+        assert_eq!(upgraded_folder_count, 160);
+        assert_eq!(upgraded_file_count, 10_000);
+
+        let grouped_selection = load_folder_tree_file_counts(&connection, &LibraryQuery::default())
+            .expect("grouped stress count selection");
+        assert!(grouped_selection.fallback_file_rows.is_empty());
+        assert_eq!(grouped_selection.direct_count_rows.len(), 504);
+        assert_eq!(
+            grouped_selection
+                .direct_count_rows
+                .iter()
+                .map(|row| row.direct_file_count)
+                .sum::<i64>(),
+            10_000
+        );
+
+        let grouped_started = Instant::now();
+        let grouped_metadata = get_folder_tree_metadata(&connection, &LibraryQuery::default())
+            .expect("large grouped folder tree");
+        let grouped_elapsed_ms = grouped_started.elapsed().as_millis();
+        timings.push(("folder_tree_grouped_metadata", grouped_elapsed_ms));
+        assert_eq!(
+            serde_json::to_value(&grouped_metadata).expect("serialize grouped folder tree"),
+            serde_json::to_value(&legacy_metadata).expect("serialize legacy folder tree")
+        );
+
+        let row_reduction = legacy_selection.fallback_file_rows.len() as f64
+            / grouped_selection.direct_count_rows.len() as f64;
+        eprintln!(
+            "library_folder_tree_count_path_compare files=10000 legacy_rows={} grouped_rows={} row_reduction={:.2}x legacy_ms={} grouped_ms={} exact_tree_match=true",
+            legacy_selection.fallback_file_rows.len(),
+            grouped_selection.direct_count_rows.len(),
+            row_reduction,
+            legacy_elapsed_ms,
+            grouped_elapsed_ms,
+        );
         eprintln!(
             "library_large_backend_stress rows=10000 total_elapsed_ms={} timings={:?}",
             started_at.elapsed().as_millis(),

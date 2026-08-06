@@ -25,7 +25,8 @@
         "test:dev-scripts": "node --test scripts/dev/dev-runtime.test.mjs",
         "test:unit": "node scripts/test/run-vitest.mjs && node --test scripts/dev/dev-runtime.test.mjs && node --test scripts/desktop/review-windows-game-profile-proof.test.mjs && node --test scripts/test/portable-helper-syntax.test.mjs",
         "test:rust": "node scripts/test/run-rust-tests.mjs",
-        "test:library:stress": "node scripts/test/run-rust-tests.mjs large_ -- --ignored --nocapture"
+        "test:library:stress": "node scripts/test/run-rust-tests.mjs large_ -- --ignored --nocapture",
+        "test:library:folder-tree-stress": "node scripts/test/run-rust-tests.mjs large_library_backend_stress_queries_remain_bounded_and_truthful -- --ignored --nocapture"
     },
     "dependencies": {
         "@tauri-apps/api": "^2.10.1",
