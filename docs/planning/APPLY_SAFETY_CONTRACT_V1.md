@@ -101,9 +101,22 @@ backup -> move -> verify -> undo chain. The coordinator is not a Tauri command,
 is not compiled into normal builds, does not create confirmation tokens, does
 not refresh the production Library index, and does not enable real Apply,
 Restore, user-file mutation, cleanup, delete, quarantine, or replacement.
-Interruption/failure injection, destination race hardening, incremental
-only-affected index refresh, multi-file transactions, golden content fixtures,
-and native player-environment proof remain future gates.
+Deterministic fixture-only interruption tests now cover the transaction phase
+boundaries. An interruption before backup is cleanly retryable. An interruption
+after verified backup leaves the source untouched and recovery material intact,
+but a full transaction retry is correctly blocked by the backup no-overwrite
+rule, so a future resume-from-existing-backup protocol is required. Interrupting
+after the move but before its result log leaves a verified backup plus a moved
+file with no move-result link; interrupting after the move result but before its
+restore-map entry leaves an incomplete recovery link. Interrupting undo after
+the source has been restored but before moved-copy cleanup leaves two verified
+copies and an ordinary undo retry is blocked because the restore target already
+exists. Tampering with the moved destination also blocks undo while retaining
+the backup. These are deliberate, now-proven recovery blockers rather than
+reasons to relax overwrite or scope checks. A resumable/reconciliation protocol,
+destination race hardening, incremental only-affected index refresh, multi-file
+transactions, golden content fixtures, and native player-environment proof
+remain future gates before any real Apply or Restore surface is considered.
 
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and

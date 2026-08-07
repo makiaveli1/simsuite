@@ -103,9 +103,31 @@ struct IndexedSourceScope {
     hash: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FixtureFaultPoint {
+    None,
+    BeforeBackup,
+    AfterVerifiedBackupBeforeMove,
+    AfterMoveBeforeResult,
+    AfterMoveResultBeforeRestoreEntry,
+    UndoAfterRestoreBeforeCleanup,
+}
+
+fn injected_interruption(point: FixtureFaultPoint) -> AppError {
+    AppError::Message(format!("Injected fixture interruption at {point:?}."))
+}
+
 pub(crate) fn run_fixture_move_transaction(
     connection: &Connection,
     request: FixtureMoveTransactionRequest,
+) -> AppResult<FixtureMoveTransactionOutcome> {
+    run_fixture_move_transaction_with_fault(connection, request, FixtureFaultPoint::None)
+}
+
+fn run_fixture_move_transaction_with_fault(
+    connection: &Connection,
+    request: FixtureMoveTransactionRequest,
+    fault_point: FixtureFaultPoint,
 ) -> AppResult<FixtureMoveTransactionOutcome> {
     if !request.fixture_mode {
         return Err(AppError::Message(
@@ -235,6 +257,10 @@ pub(crate) fn run_fixture_move_transaction(
         );
     }
 
+    if fault_point == FixtureFaultPoint::BeforeBackup {
+        return Err(injected_interruption(fault_point));
+    }
+
     let backup = run_fixture_backup_prototype(
         connection,
         FixtureBackupPrototypeRequest {
@@ -261,6 +287,10 @@ pub(crate) fn run_fixture_move_transaction(
             },
         ));
     };
+
+    if fault_point == FixtureFaultPoint::AfterVerifiedBackupBeforeMove {
+        return Err(injected_interruption(fault_point));
+    }
 
     let current_source_metadata = fs::metadata(&source_path).map_err(|error| {
         AppError::Message(format!(
@@ -336,6 +366,10 @@ pub(crate) fn run_fixture_move_transaction(
         ));
     }
 
+    if fault_point == FixtureFaultPoint::AfterMoveBeforeResult {
+        return Err(injected_interruption(fault_point));
+    }
+
     let move_result = apply_plan_results::record_apply_plan_result_log(
         connection,
         RecordApplyPlanResultLogRequest {
@@ -351,6 +385,10 @@ pub(crate) fn run_fixture_move_transaction(
             user_summary: MOVE_SUCCESS_SUMMARY.to_owned(),
         },
     )?;
+    if fault_point == FixtureFaultPoint::AfterMoveResultBeforeRestoreEntry {
+        return Err(injected_interruption(fault_point));
+    }
+
     let move_restore_entry = apply_plan_results::record_apply_plan_restore_entry(
         connection,
         RecordApplyPlanRestoreEntryRequest {
@@ -390,6 +428,14 @@ pub(crate) fn run_fixture_move_transaction(
 pub(crate) fn run_fixture_move_undo(
     connection: &Connection,
     request: FixtureMoveUndoRequest,
+) -> AppResult<FixtureMoveUndoSuccess> {
+    run_fixture_move_undo_with_fault(connection, request, FixtureFaultPoint::None)
+}
+
+fn run_fixture_move_undo_with_fault(
+    connection: &Connection,
+    request: FixtureMoveUndoRequest,
+    fault_point: FixtureFaultPoint,
 ) -> AppResult<FixtureMoveUndoSuccess> {
     if !request.fixture_mode {
         return Err(AppError::Message(
@@ -529,6 +575,10 @@ pub(crate) fn run_fixture_move_undo(
                 .to_owned(),
         ));
     }
+    if fault_point == FixtureFaultPoint::UndoAfterRestoreBeforeCleanup {
+        return Err(injected_interruption(fault_point));
+    }
+
     fs::remove_file(&destination_path).map_err(|error| {
         AppError::Message(format!(
             "Fixture source was restored, but the verified moved destination could not be removed: {error}"
@@ -1012,6 +1062,279 @@ mod tests {
         .expect("correctly scoped undo");
         assert!(context.source_path.exists());
         assert!(!context.destination_path.exists());
+    }
+
+    #[test]
+    fn interruption_before_backup_is_cleanly_retryable() {
+        let connection = memory_connection();
+        let source_bytes = b"before backup bytes";
+        let context = setup_fixture(&connection, source_bytes);
+
+        let error = run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::BeforeBackup,
+        )
+        .expect_err("injected interruption before backup");
+        assert!(error.to_string().contains("BeforeBackup"));
+        assert!(context.source_path.exists());
+        assert!(!context.destination_path.exists());
+        assert!(fs::read_dir(&context.backup_root)
+            .expect("backup root")
+            .next()
+            .is_none());
+        assert!(list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("result logs")
+        .is_empty());
+        assert!(list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("restore entries")
+        .is_empty());
+
+        let retry = run_fixture_move_transaction(&connection, move_request(&context))
+            .expect("retry after pre-backup interruption");
+        assert!(matches!(retry, FixtureMoveTransactionOutcome::Verified(_)));
+    }
+
+    #[test]
+    fn interruption_after_verified_backup_preserves_recovery_material_but_full_retry_is_blocked() {
+        let connection = memory_connection();
+        let source_bytes = b"after backup bytes";
+        let context = setup_fixture(&connection, source_bytes);
+
+        let error = run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("injected interruption after backup");
+        assert!(error
+            .to_string()
+            .contains("AfterVerifiedBackupBeforeMove"));
+        assert!(context.source_path.exists());
+        assert!(!context.destination_path.exists());
+
+        let results = list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("result logs");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].operation_kind, BACKUP_OPERATION_KIND);
+        let entries = list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("restore entries");
+        assert_eq!(entries.len(), 1);
+        let backup_path = PathBuf::from(
+            entries[0]
+                .backup_path
+                .as_deref()
+                .expect("verified backup path"),
+        );
+        assert!(backup_path.exists());
+        assert_eq!(fs::read(&backup_path).expect("verified backup"), source_bytes);
+
+        let retry = run_fixture_move_transaction(&connection, move_request(&context))
+            .expect("retry after verified-backup interruption");
+        let FixtureMoveTransactionOutcome::FailedBeforeChange(retry_failure) = retry else {
+            panic!("full retry should remain blocked once the verified backup already exists");
+        };
+        assert_eq!(retry_failure.error_code, "backup_destination_exists");
+        assert!(!retry_failure.backup_created);
+        assert!(context.source_path.exists());
+        assert!(!context.destination_path.exists());
+        assert!(backup_path.exists());
+    }
+
+    #[test]
+    fn interruption_after_move_before_result_exposes_orphaned_move_recovery_gap() {
+        let connection = memory_connection();
+        let source_bytes = b"orphaned move bytes";
+        let context = setup_fixture(&connection, source_bytes);
+
+        let error = run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterMoveBeforeResult,
+        )
+        .expect_err("injected interruption after move");
+        assert!(error.to_string().contains("AfterMoveBeforeResult"));
+        assert!(!context.source_path.exists());
+        assert!(context.destination_path.exists());
+        assert_eq!(
+            fs::read(&context.destination_path).expect("moved destination"),
+            source_bytes
+        );
+
+        let results = list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("result logs");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].operation_kind, BACKUP_OPERATION_KIND);
+        assert!(!results
+            .iter()
+            .any(|result| result.operation_kind == MOVE_OPERATION_KIND));
+        let entries = list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("restore entries");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].operation_kind, BACKUP_OPERATION_KIND);
+        let backup_path = PathBuf::from(
+            entries[0]
+                .backup_path
+                .as_deref()
+                .expect("verified backup path"),
+        );
+        assert!(backup_path.exists());
+        assert_eq!(fs::read(&backup_path).expect("verified backup"), source_bytes);
+    }
+
+    #[test]
+    fn interruption_after_move_result_before_restore_entry_exposes_incomplete_recovery_link() {
+        let connection = memory_connection();
+        let source_bytes = b"incomplete restore link bytes";
+        let context = setup_fixture(&connection, source_bytes);
+
+        let error = run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterMoveResultBeforeRestoreEntry,
+        )
+        .expect_err("injected interruption after move result");
+        assert!(error
+            .to_string()
+            .contains("AfterMoveResultBeforeRestoreEntry"));
+        assert!(!context.source_path.exists());
+        assert!(context.destination_path.exists());
+
+        let results = list_apply_plan_result_logs(
+            &connection,
+            ListApplyPlanResultLogsRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("result logs");
+        assert_eq!(results.len(), 2);
+        let move_result = results
+            .iter()
+            .find(|result| result.operation_kind == MOVE_OPERATION_KIND)
+            .expect("move result exists");
+        assert_eq!(move_result.result_status, ApplyPlanResultLogStatus::PendingLog);
+        let entries = list_apply_plan_restore_entries(
+            &connection,
+            ListApplyPlanRestoreEntriesRequest {
+                apply_plan_run_id: context.run_id,
+            },
+        )
+        .expect("restore entries");
+        assert_eq!(entries.len(), 1);
+        assert!(entries
+            .iter()
+            .all(|entry| entry.operation_kind == BACKUP_OPERATION_KIND));
+        assert!(!entries.iter().any(|entry| {
+            entry.apply_plan_result_id == Some(move_result.id)
+                && entry.operation_kind == MOVE_OPERATION_KIND
+        }));
+    }
+
+    #[test]
+    fn interruption_during_undo_after_restore_exposes_verified_duplicate_state_and_retry_block() {
+        let connection = memory_connection();
+        let source_bytes = b"undo interruption bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        let outcome = run_fixture_move_transaction(&connection, move_request(&context))
+            .expect("fixture move transaction");
+        let FixtureMoveTransactionOutcome::Verified(success) = outcome else {
+            panic!("expected verified fixture move");
+        };
+        let undo_request = FixtureMoveUndoRequest {
+            fixture_mode: true,
+            apply_plan_id: context.plan_id,
+            apply_plan_item_id: context.item_id,
+            run_id: context.run_id,
+            fixture_root: context.fixture_root.clone(),
+            move_result_log_id: success.move_result_log_id,
+            move_restore_entry_id: success.move_restore_entry_id,
+        };
+
+        let error = run_fixture_move_undo_with_fault(
+            &connection,
+            undo_request.clone(),
+            FixtureFaultPoint::UndoAfterRestoreBeforeCleanup,
+        )
+        .expect_err("injected interruption during undo");
+        assert!(error
+            .to_string()
+            .contains("UndoAfterRestoreBeforeCleanup"));
+        assert!(context.source_path.exists());
+        assert!(context.destination_path.exists());
+        assert_eq!(fs::read(&context.source_path).expect("restored source"), source_bytes);
+        assert_eq!(
+            fs::read(&context.destination_path).expect("still moved destination"),
+            source_bytes
+        );
+
+        let retry_error = run_fixture_move_undo(&connection, undo_request)
+            .expect_err("ordinary retry remains blocked by no-overwrite guard");
+        assert!(retry_error
+            .to_string()
+            .contains("undo target already exists"));
+    }
+
+    #[test]
+    fn undo_blocks_when_moved_destination_was_tampered_after_execution() {
+        let connection = memory_connection();
+        let context = setup_fixture(&connection, b"original move bytes");
+        let outcome = run_fixture_move_transaction(&connection, move_request(&context))
+            .expect("fixture move transaction");
+        let FixtureMoveTransactionOutcome::Verified(success) = outcome else {
+            panic!("expected verified fixture move");
+        };
+        fs::write(&context.destination_path, b"tampered destination bytes")
+            .expect("tamper moved destination");
+
+        let error = run_fixture_move_undo(
+            &connection,
+            FixtureMoveUndoRequest {
+                fixture_mode: true,
+                apply_plan_id: context.plan_id,
+                apply_plan_item_id: context.item_id,
+                run_id: context.run_id,
+                fixture_root: context.fixture_root.clone(),
+                move_result_log_id: success.move_result_log_id,
+                move_restore_entry_id: success.move_restore_entry_id,
+            },
+        )
+        .expect_err("tampered destination blocks undo");
+        assert!(error
+            .to_string()
+            .contains("changed after execution"));
+        assert!(!context.source_path.exists());
+        assert!(context.destination_path.exists());
+        assert!(success.backup_path.exists());
     }
 
     #[test]
