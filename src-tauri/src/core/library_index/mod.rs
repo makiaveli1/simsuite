@@ -1084,19 +1084,39 @@ fn build_identity_folder_scope_filter(
         Value::Text(identity.installation_root_id),
     ];
 
-    if recursive {
-        if child_depth > 0 {
-            sql.push_str(" AND f.relative_depth >= ?");
+    if identity.profile_relative_path.is_empty() {
+        if !recursive {
+            sql.push_str(" AND f.relative_depth = ?");
             params.push(Value::Integer(child_depth));
         }
-    } else {
-        sql.push_str(" AND f.relative_depth = ?");
-        params.push(Value::Integer(child_depth));
-    }
-
-    if identity.profile_relative_path.is_empty() {
         return FolderScopeFilter { sql, params };
     }
+
+    if recursive {
+        if let Some(relative_path_key) = identity.profile_relative_path_key {
+            let mut lower_bound = relative_path_key.clone();
+            lower_bound.push('|');
+            let mut upper_bound = relative_path_key;
+            upper_bound.push('}');
+            sql.push_str(
+                " AND f.profile_relative_path_key IS NOT NULL AND f.profile_relative_path_key >= ? COLLATE BINARY AND f.profile_relative_path_key < ? COLLATE BINARY",
+            );
+            params.push(Value::Text(lower_bound));
+            params.push(Value::Text(upper_bound));
+        } else {
+            let lower_bound = format!("{}/", identity.profile_relative_path);
+            let upper_bound = format!("{}0", identity.profile_relative_path);
+            sql.push_str(
+                " AND f.profile_relative_path IS NOT NULL AND f.profile_relative_path >= ? COLLATE BINARY AND f.profile_relative_path < ? COLLATE BINARY",
+            );
+            params.push(Value::Text(lower_bound));
+            params.push(Value::Text(upper_bound));
+        }
+        return FolderScopeFilter { sql, params };
+    }
+
+    sql.push_str(" AND f.relative_depth = ?");
+    params.push(Value::Integer(child_depth));
 
     if let Some(relative_path_key) = identity.profile_relative_path_key {
         sql.push_str(
@@ -2411,25 +2431,27 @@ fn list_creator_aliases(connection: &Connection, canonical_name: &str) -> AppRes
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::{params, params_from_iter, OptionalExtension};
+    use rusqlite::{params, params_from_iter, types::Value, OptionalExtension};
 
     use crate::{
         database,
         models::{
-            LibraryFolderFilesQuery, LibraryQuery, LibrarySettings, LibrarySortField,
-            LibraryWatchFilter,
+            LibraryFolderFilesQuery, LibraryListResponse, LibraryQuery, LibrarySettings,
+            LibrarySortField, LibraryWatchFilter,
         },
         seed::load_seed_pack,
     };
     use std::time::Instant;
 
     use super::{
-        build_folder_scope_filter, get_file_detail, get_folder_tree_metadata, get_library_facets,
-        get_library_preview_diagnostics, list_library_files, list_library_folder_files,
+        bounded_folder_query_limit, build_folder_scope_filter, build_identity_folder_scope_filter,
+        empty_library_list_response, get_file_detail, get_folder_tree_metadata,
+        get_library_facets, get_library_preview_diagnostics, list_library_files,
+        list_library_files_scoped, list_library_folder_files, load_folder_identity_decision,
         load_folder_tree_file_counts, merge_preview_results_into_insights,
         normalize_virtual_folder_path, persist_file_insights, select_folder_tree_source_rows,
-        source_location_for_folder_root, FolderMetadataRow, FolderTreeSourceMode,
-        MAX_FOLDER_QUERY_LIMIT,
+        source_location_for_folder_root, FolderIdentityDecision, FolderIdentityScope,
+        FolderMetadataRow, FolderScopeFilter, FolderTreeSourceMode, MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -2919,6 +2941,202 @@ mod tests {
             key.push_str(&format!("|n{}:{component}", component.chars().count()));
         }
         key
+    }
+
+    fn sensitive_path_key_from_relative_path(relative_path: &str) -> String {
+        sensitive_path_key(
+            &relative_path
+                .split('/')
+                .filter(|component| !component.is_empty())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn build_recursive_range_candidate_scope_filter(
+        connection: &rusqlite::Connection,
+        source: &str,
+        target_segments: &[String],
+    ) -> super::AppResult<FolderScopeFilter> {
+        let child_segments = target_segments.iter().skip(1).cloned().collect::<Vec<_>>();
+        let child_depth = child_segments.len() as i64;
+
+        let FolderIdentityDecision::Current(identity) =
+            load_folder_identity_decision(connection, source, &child_segments)?
+        else {
+            return build_folder_scope_filter(connection, source, target_segments, true);
+        };
+
+        if identity.profile_relative_path.is_empty() {
+            return Ok(build_identity_folder_scope_filter(
+                source,
+                child_depth,
+                true,
+                identity,
+            ));
+        }
+
+        let FolderIdentityScope {
+            installation_profile_id,
+            installation_root_id,
+            profile_relative_path,
+            profile_relative_path_key,
+        } = identity;
+        let mut sql = String::from(
+            " AND f.source_location = ? AND f.installation_profile_id = ? AND f.installation_root_id = ?",
+        );
+        let mut params = vec![
+            Value::Text(source.to_owned()),
+            Value::Text(installation_profile_id),
+            Value::Text(installation_root_id),
+        ];
+
+        if let Some(relative_path_key) = profile_relative_path_key {
+            let mut lower_bound = relative_path_key.clone();
+            lower_bound.push('|');
+            let mut upper_bound = relative_path_key;
+            upper_bound.push('}');
+            sql.push_str(
+                " AND f.profile_relative_path_key IS NOT NULL AND f.profile_relative_path_key >= ? COLLATE BINARY AND f.profile_relative_path_key < ? COLLATE BINARY",
+            );
+            params.push(Value::Text(lower_bound));
+            params.push(Value::Text(upper_bound));
+        } else {
+            let lower_bound = format!("{profile_relative_path}/");
+            let upper_bound = format!("{profile_relative_path}0");
+            sql.push_str(
+                " AND f.profile_relative_path IS NOT NULL AND f.profile_relative_path >= ? COLLATE BINARY AND f.profile_relative_path < ? COLLATE BINARY",
+            );
+            params.push(Value::Text(lower_bound));
+            params.push(Value::Text(upper_bound));
+        }
+
+        Ok(FolderScopeFilter { sql, params })
+    }
+
+    fn list_library_folder_files_with_recursive_range_candidate(
+        connection: &rusqlite::Connection,
+        query: LibraryFolderFilesQuery,
+    ) -> super::AppResult<LibraryListResponse> {
+        assert!(query.recursive, "range candidate is recursive-only");
+        let target_segments = normalize_virtual_folder_path(&query.folder_path);
+        let Some(root) = target_segments.first() else {
+            return Ok(empty_library_list_response());
+        };
+        let Some(source) = source_location_for_folder_root(root) else {
+            return Ok(empty_library_list_response());
+        };
+
+        let mut filters = query.filters;
+        if filters
+            .source
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .is_some_and(|filter_source| !filter_source.eq_ignore_ascii_case(&source))
+        {
+            return Ok(empty_library_list_response());
+        }
+        filters.source = None;
+        filters.limit = Some(bounded_folder_query_limit(query.limit));
+        filters.offset = Some(query.offset.unwrap_or(0).max(0));
+        filters.include_previews = query.include_previews.or(filters.include_previews);
+
+        let scope =
+            build_recursive_range_candidate_scope_filter(connection, &source, &target_segments)?;
+        list_library_files_scoped(connection, filters, &scope.sql, scope.params)
+    }
+
+    fn explain_recursive_range_candidate_plan(
+        connection: &rusqlite::Connection,
+        folder_path: &str,
+    ) -> Vec<String> {
+        let target_segments = normalize_virtual_folder_path(folder_path);
+        let root = target_segments.first().expect("range plan root");
+        let source = source_location_for_folder_root(root).expect("range plan source");
+        let scope =
+            build_recursive_range_candidate_scope_filter(connection, &source, &target_segments)
+                .expect("build recursive range plan scope");
+        let sql = format!(
+            "EXPLAIN QUERY PLAN SELECT f.id FROM files f WHERE f.source_location <> 'downloads'{}",
+            scope.sql
+        );
+        let mut statement = connection
+            .prepare(&sql)
+            .expect("prepare recursive range query plan");
+        statement
+            .query_map(params_from_iter(scope.params.iter()), |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query recursive range plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect recursive range query plan")
+    }
+
+    fn upgrade_deep_stress_fixture_to_comparison_keys(
+        connection: &mut rusqlite::Connection,
+    ) -> usize {
+        let transaction = connection
+            .transaction()
+            .expect("deep comparison-key transaction");
+        let folder_key = sensitive_path_key(&["Deep"]);
+        transaction
+            .execute(
+                "UPDATE library_folders
+                 SET profile_relative_path_key = ?1
+                 WHERE source_location = 'mods'
+                   AND profile_relative_path = 'Deep' COLLATE BINARY",
+                params![folder_key],
+            )
+            .expect("upgrade deep folder comparison key");
+
+        let file_rows = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT id, profile_relative_path, profile_parent_relative_path
+                     FROM files
+                     WHERE source_location = 'mods'
+                       AND profile_relative_path >= 'Deep/' COLLATE BINARY
+                       AND profile_relative_path < 'Deep0' COLLATE BINARY
+                     ORDER BY id",
+                )
+                .expect("prepare deep comparison-key rows");
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .expect("query deep comparison-key rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect deep comparison-key rows")
+        };
+
+        {
+            let mut update_statement = transaction
+                .prepare(
+                    "UPDATE files
+                     SET profile_relative_path_key = ?1,
+                         profile_parent_relative_path_key = ?2
+                     WHERE id = ?3",
+                )
+                .expect("prepare deep comparison-key update");
+            for (file_id, relative_path, parent_relative_path) in &file_rows {
+                update_statement
+                    .execute(params![
+                        sensitive_path_key_from_relative_path(relative_path),
+                        sensitive_path_key_from_relative_path(parent_relative_path),
+                        file_id,
+                    ])
+                    .expect("upgrade deep file comparison key");
+            }
+        }
+
+        transaction
+            .commit()
+            .expect("commit deep comparison-key upgrade");
+        file_rows.len()
     }
 
     #[test]
@@ -3472,6 +3690,47 @@ mod tests {
 
         assert_eq!(listing.total, 1);
         assert_eq!(listing.items[0].filename, "inside.package");
+
+        let recursive_query = LibraryFolderFilesQuery {
+            folder_path: "Mods/Creator".to_owned(),
+            recursive: true,
+            filters: LibraryQuery {
+                source: Some("mods".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let recursive_current = list_library_folder_files(&connection, recursive_query.clone())
+            .expect("case-sensitive recursive listing");
+        let recursive_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            recursive_query,
+        )
+        .expect("case-sensitive recursive range candidate");
+        assert_eq!(
+            serde_json::to_value(&recursive_range)
+                .expect("serialize case-sensitive recursive range"),
+            serde_json::to_value(&recursive_current)
+                .expect("serialize case-sensitive recursive current")
+        );
+        assert_eq!(recursive_range.total, 1);
+        assert_eq!(recursive_range.items[0].filename, "inside.package");
+
+        let mismatched_source = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            LibraryFolderFilesQuery {
+                folder_path: "Mods/Creator".to_owned(),
+                recursive: true,
+                filters: LibraryQuery {
+                    source: Some("tray".to_owned()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .expect("case-sensitive recursive mismatched source");
+        assert_eq!(mismatched_source.total, 0);
+        assert!(mismatched_source.items.is_empty());
     }
 
     #[test]
@@ -3521,6 +3780,18 @@ mod tests {
             None,
         );
         assign_file_parent_identity(&connection, alias_file_id, "casefolder", None);
+        let lookalike_file_id = insert_identity_library_file_row(
+            &connection,
+            "C:/Mods/CaseFolder2/lookalike.package",
+            "lookalike.package",
+            "mods",
+            1,
+            &profile_id,
+            &root_id,
+            "CaseFolder2/lookalike.package",
+            None,
+        );
+        assign_file_parent_identity(&connection, lookalike_file_id, "CaseFolder2", None);
 
         let listing = list_library_folder_files(
             &connection,
@@ -3534,6 +3805,31 @@ mod tests {
 
         assert_eq!(listing.total, 1);
         assert_eq!(listing.items[0].filename, "exact.package");
+
+        let recursive_query = LibraryFolderFilesQuery {
+            folder_path: "Mods/CaseFolder".to_owned(),
+            recursive: true,
+            ..Default::default()
+        };
+        let recursive_current = list_library_folder_files(&connection, recursive_query.clone())
+            .expect("unknown-key recursive listing");
+        let recursive_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            recursive_query,
+        )
+        .expect("unknown-key recursive range candidate");
+        assert_eq!(
+            serde_json::to_value(&recursive_range)
+                .expect("serialize unknown-key recursive range"),
+            serde_json::to_value(&recursive_current)
+                .expect("serialize unknown-key recursive current")
+        );
+        assert_eq!(recursive_range.total, 1);
+        assert_eq!(recursive_range.items[0].filename, "exact.package");
+        assert!(recursive_range
+            .items
+            .iter()
+            .all(|item| item.filename != "lookalike.package"));
     }
 
     #[test]
@@ -3582,6 +3878,27 @@ mod tests {
 
         assert_eq!(listing.total, 0);
         assert!(listing.items.is_empty());
+
+        let recursive_query = LibraryFolderFilesQuery {
+            folder_path: "Mods/StaleFolder".to_owned(),
+            recursive: true,
+            ..Default::default()
+        };
+        let recursive_current = list_library_folder_files(&connection, recursive_query.clone())
+            .expect("stale-profile recursive listing");
+        let recursive_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            recursive_query,
+        )
+        .expect("stale-profile recursive range candidate");
+        assert_eq!(
+            serde_json::to_value(&recursive_range)
+                .expect("serialize stale-profile recursive range"),
+            serde_json::to_value(&recursive_current)
+                .expect("serialize stale-profile recursive current")
+        );
+        assert_eq!(recursive_range.total, 0);
+        assert!(recursive_range.items.is_empty());
     }
 
     #[test]
@@ -4175,22 +4492,45 @@ mod tests {
 
         let legacy_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
         assert!(!legacy_recursive_plan.is_empty());
-        let op_started = Instant::now();
-        let recursive_folder = list_library_folder_files(
-            &connection,
-            LibraryFolderFilesQuery {
-                folder_path: "Mods/Deep".to_owned(),
-                recursive: true,
-                limit: Some(80),
-                include_previews: Some(false),
+        let recursive_query = LibraryFolderFilesQuery {
+            folder_path: "Mods/Deep".to_owned(),
+            recursive: true,
+            limit: Some(80),
+            offset: Some(40),
+            include_previews: Some(false),
+            filters: LibraryQuery {
+                kind: Some("Gameplay".to_owned()),
+                sort_by: Some(LibrarySortField::Name),
                 ..Default::default()
             },
-        )
-        .expect("large recursive folder");
+        };
+        let op_started = Instant::now();
+        let recursive_folder = list_library_folder_files(&connection, recursive_query.clone())
+            .expect("large recursive folder");
         let legacy_recursive_elapsed_ms = op_started.elapsed().as_millis();
         timings.push(("folder_recursive_page_legacy", legacy_recursive_elapsed_ms));
         assert_eq!(recursive_folder.total, 2_000);
         assert_eq!(recursive_folder.items.len(), 80);
+
+        let legacy_recursive_range_plan =
+            explain_recursive_range_candidate_plan(&connection, "Mods/Deep");
+        let legacy_range_started = Instant::now();
+        let legacy_recursive_range =
+            list_library_folder_files_with_recursive_range_candidate(
+                &connection,
+                recursive_query.clone(),
+            )
+            .expect("legacy recursive range candidate");
+        let legacy_range_elapsed_ms = legacy_range_started.elapsed().as_millis();
+        timings.push((
+            "folder_recursive_range_candidate_legacy",
+            legacy_range_elapsed_ms,
+        ));
+        assert_eq!(
+            serde_json::to_value(&legacy_recursive_range)
+                .expect("serialize legacy recursive range candidate"),
+            serde_json::to_value(&recursive_folder).expect("serialize legacy recursive folder")
+        );
 
         let op_started = Instant::now();
         let empty_folder = list_library_folder_files(
@@ -4349,17 +4689,9 @@ mod tests {
         let current_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
         assert!(!current_recursive_plan.is_empty());
         let current_recursive_started = Instant::now();
-        let current_recursive_folder = list_library_folder_files(
-            &connection,
-            LibraryFolderFilesQuery {
-                folder_path: "Mods/Deep".to_owned(),
-                recursive: true,
-                limit: Some(80),
-                include_previews: Some(false),
-                ..Default::default()
-            },
-        )
-        .expect("current identity recursive folder");
+        let current_recursive_folder =
+            list_library_folder_files(&connection, recursive_query.clone())
+                .expect("current identity recursive folder");
         let current_recursive_elapsed_ms = current_recursive_started.elapsed().as_millis();
         timings.push(("folder_recursive_page_current", current_recursive_elapsed_ms));
         assert_eq!(
@@ -4368,18 +4700,133 @@ mod tests {
             serde_json::to_value(&recursive_folder).expect("serialize legacy recursive folder")
         );
 
+        let current_recursive_range_plan =
+            explain_recursive_range_candidate_plan(&connection, "Mods/Deep");
+        let current_range_started = Instant::now();
+        let current_recursive_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            recursive_query.clone(),
+        )
+        .expect("current observed-path recursive range candidate");
+        let current_range_elapsed_ms = current_range_started.elapsed().as_millis();
+        timings.push((
+            "folder_recursive_range_candidate_observed",
+            current_range_elapsed_ms,
+        ));
+        assert_eq!(
+            serde_json::to_value(&current_recursive_range)
+                .expect("serialize current observed-path range candidate"),
+            serde_json::to_value(&current_recursive_folder)
+                .expect("serialize current observed-path recursive folder")
+        );
+
+        let keyed_recursive_rows =
+            upgrade_deep_stress_fixture_to_comparison_keys(&mut connection);
+        assert_eq!(keyed_recursive_rows, 2_000);
+        let keyed_recursive_plan = explain_folder_scope_plan(&connection, "Mods/Deep", true);
+        let keyed_recursive_started = Instant::now();
+        let keyed_recursive_folder = list_library_folder_files(&connection, recursive_query.clone())
+            .expect("current comparison-key recursive folder");
+        let keyed_recursive_elapsed_ms = keyed_recursive_started.elapsed().as_millis();
+        timings.push((
+            "folder_recursive_page_current_keyed",
+            keyed_recursive_elapsed_ms,
+        ));
+        assert_eq!(
+            serde_json::to_value(&keyed_recursive_folder)
+                .expect("serialize current comparison-key recursive folder"),
+            serde_json::to_value(&current_recursive_folder)
+                .expect("serialize current observed-path recursive folder")
+        );
+
+        let keyed_recursive_range_plan =
+            explain_recursive_range_candidate_plan(&connection, "Mods/Deep");
+        let keyed_range_started = Instant::now();
+        let keyed_recursive_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            recursive_query.clone(),
+        )
+        .expect("current comparison-key recursive range candidate");
+        let keyed_range_elapsed_ms = keyed_range_started.elapsed().as_millis();
+        timings.push((
+            "folder_recursive_range_candidate_keyed",
+            keyed_range_elapsed_ms,
+        ));
+        assert_eq!(
+            serde_json::to_value(&keyed_recursive_range)
+                .expect("serialize current comparison-key range candidate"),
+            serde_json::to_value(&keyed_recursive_folder)
+                .expect("serialize current comparison-key recursive folder")
+        );
+
+        let preview_insights = serde_json::to_string(&crate::models::FileInsights {
+            thumbnail_preview: Some("deep-preview".to_owned()),
+            ..Default::default()
+        })
+        .expect("deep preview insights");
+        connection
+            .execute(
+                "UPDATE files SET insights = ?1 WHERE filename = 'deep_nested_00042.package'",
+                params![preview_insights],
+            )
+            .expect("add deep preview fixture");
+        let preview_query = LibraryFolderFilesQuery {
+            folder_path: "Mods/Deep".to_owned(),
+            recursive: true,
+            limit: Some(1),
+            offset: Some(0),
+            include_previews: Some(true),
+            filters: LibraryQuery {
+                search: Some("deep_nested_00042".to_owned()),
+                kind: Some("Gameplay".to_owned()),
+                sort_by: Some(LibrarySortField::RecentlyModified),
+                ..Default::default()
+            },
+        };
+        let preview_current = list_library_folder_files(&connection, preview_query.clone())
+            .expect("current recursive preview query");
+        let preview_range = list_library_folder_files_with_recursive_range_candidate(
+            &connection,
+            preview_query,
+        )
+        .expect("recursive range preview query");
+        assert_eq!(
+            serde_json::to_value(&preview_range).expect("serialize recursive range preview"),
+            serde_json::to_value(&preview_current).expect("serialize current recursive preview")
+        );
+        assert_eq!(preview_current.total, 1);
+        assert_eq!(
+            preview_current.items[0]
+                .insights
+                .thumbnail_preview
+                .as_deref(),
+            Some("deep-preview")
+        );
+
         let legacy_direct_plan_text = legacy_direct_plan.join(" | ");
         let current_direct_plan_text = current_direct_plan.join(" | ");
         let current_empty_plan_text = current_empty_plan.join(" | ");
         let legacy_recursive_plan_text = legacy_recursive_plan.join(" | ");
+        let legacy_recursive_range_plan_text = legacy_recursive_range_plan.join(" | ");
         let current_recursive_plan_text = current_recursive_plan.join(" | ");
+        let current_recursive_range_plan_text = current_recursive_range_plan.join(" | ");
+        let keyed_recursive_plan_text = keyed_recursive_plan.join(" | ");
+        let keyed_recursive_range_plan_text = keyed_recursive_range_plan.join(" | ");
         assert!(legacy_direct_plan_text.contains("idx_files_source_location_depth"));
         assert!(current_direct_plan_text.contains("idx_files_installation_parent_identity"));
         assert!(!current_direct_plan_text.contains("idx_files_source_location_depth"));
         assert!(current_empty_plan_text.contains("idx_files_installation_parent_identity"));
         assert!(!current_empty_plan_text.contains("idx_files_source_location_depth"));
         assert!(legacy_recursive_plan_text.contains("idx_files_source_location_depth"));
-        assert!(current_recursive_plan_text.contains("idx_files_source_location_depth"));
+        assert!(legacy_recursive_range_plan_text.contains("idx_files_source_location_depth"));
+        assert!(current_recursive_plan_text.contains("idx_files_installation_identity"));
+        assert!(!current_recursive_plan_text.contains("idx_files_source_location_depth"));
+        assert!(current_recursive_range_plan_text.contains("idx_files_installation_identity"));
+        assert!(!current_recursive_range_plan_text.contains("idx_files_source_location_depth"));
+        assert!(keyed_recursive_plan_text.contains("idx_files_installation_comparison"));
+        assert!(!keyed_recursive_plan_text.contains("idx_files_source_location_depth"));
+        assert!(keyed_recursive_range_plan_text.contains("idx_files_installation_comparison"));
+        assert!(!keyed_recursive_range_plan_text.contains("idx_files_source_location_depth"));
 
         let direct_depth_candidates: i64 = connection
             .query_row(
@@ -4398,6 +4845,45 @@ mod tests {
         assert_eq!(direct_depth_candidates, 6_500);
         assert_eq!(recursive_depth_candidates, 9_000);
 
+        let observed_range_candidates: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM files
+                 WHERE source_location = 'mods'
+                   AND installation_profile_id = ?1
+                   AND installation_root_id = ?2
+                   AND profile_relative_path >= 'Deep/' COLLATE BINARY
+                   AND profile_relative_path < 'Deep0' COLLATE BINARY",
+                params![active_profile_id, active_mods_root_id],
+                |row| row.get(0),
+            )
+            .expect("count observed-path recursive range candidates");
+        let deep_key = sensitive_path_key(&["Deep"]);
+        let mut deep_key_lower = deep_key.clone();
+        deep_key_lower.push('|');
+        let mut deep_key_upper = deep_key;
+        deep_key_upper.push('}');
+        let keyed_range_candidates: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM files
+                 WHERE source_location = 'mods'
+                   AND installation_profile_id = ?1
+                   AND installation_root_id = ?2
+                   AND profile_relative_path_key >= ?3 COLLATE BINARY
+                   AND profile_relative_path_key < ?4 COLLATE BINARY",
+                params![
+                    active_profile_id,
+                    active_mods_root_id,
+                    deep_key_lower,
+                    deep_key_upper,
+                ],
+                |row| row.get(0),
+            )
+            .expect("count comparison-key recursive range candidates");
+        assert_eq!(observed_range_candidates, 2_000);
+        assert_eq!(keyed_range_candidates, 2_000);
+
         eprintln!(
             "library_folder_content_scope_compare direct_target=5000 direct_depth_candidates={} empty_target=0 empty_legacy_ms={} empty_current_ms={} recursive_target=2000 recursive_depth_candidates={} direct_legacy_ms={} direct_current_ms={} recursive_legacy_ms={} recursive_current_ms={} direct_legacy_plan={:?} direct_current_plan={:?} current_empty_plan={:?} recursive_legacy_plan={:?} recursive_current_plan={:?} exact_response_match=true",
             direct_depth_candidates,
@@ -4413,6 +4899,23 @@ mod tests {
             current_empty_plan,
             legacy_recursive_plan,
             current_recursive_plan,
+        );
+        eprintln!(
+            "library_recursive_descendant_strategy_compare target=2000 depth_candidates={} observed_range_candidates={} keyed_range_candidates={} legacy_current_ms={} legacy_candidate_ms={} observed_current_ms={} observed_candidate_ms={} keyed_current_ms={} keyed_candidate_ms={} legacy_plan={:?} observed_current_plan={:?} observed_candidate_plan={:?} keyed_current_plan={:?} keyed_candidate_plan={:?} filters_sort_paging_preview_match=true exact_response_match=true",
+            recursive_depth_candidates,
+            observed_range_candidates,
+            keyed_range_candidates,
+            legacy_recursive_elapsed_ms,
+            legacy_range_elapsed_ms,
+            current_recursive_elapsed_ms,
+            current_range_elapsed_ms,
+            keyed_recursive_elapsed_ms,
+            keyed_range_elapsed_ms,
+            legacy_recursive_range_plan,
+            current_recursive_plan,
+            current_recursive_range_plan,
+            keyed_recursive_plan,
+            keyed_recursive_range_plan,
         );
 
         let row_reduction = legacy_selection.fallback_file_rows.len() as f64
