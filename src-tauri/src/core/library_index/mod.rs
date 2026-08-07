@@ -2444,11 +2444,12 @@ mod tests {
     use std::time::Instant;
 
     use super::{
-        bounded_folder_query_limit, build_folder_scope_filter, build_identity_folder_scope_filter,
-        empty_library_list_response, get_file_detail, get_folder_tree_metadata,
-        get_library_facets, get_library_preview_diagnostics, list_library_files,
-        list_library_files_scoped, list_library_folder_files, load_folder_identity_decision,
-        load_folder_tree_file_counts, merge_preview_results_into_insights,
+        bounded_folder_query_limit, build_filters, build_folder_scope_filter,
+        build_identity_folder_scope_filter, build_order_by, empty_library_list_response,
+        exact_duplicate_exists_sql, get_file_detail, get_folder_tree_metadata, get_library_facets,
+        get_library_preview_diagnostics, list_library_files, list_library_files_scoped,
+        list_library_folder_files, load_folder_identity_decision, load_folder_tree_file_counts,
+        load_relationship_peer_counts, merge_preview_results_into_insights,
         normalize_virtual_folder_path, persist_file_insights, select_folder_tree_source_rows,
         source_location_for_folder_root, FolderIdentityDecision, FolderIdentityScope,
         FolderMetadataRow, FolderScopeFilter, FolderTreeSourceMode, MAX_FOLDER_QUERY_LIMIT,
@@ -2941,6 +2942,108 @@ mod tests {
             key.push_str(&format!("|n{}:{component}", component.chars().count()));
         }
         key
+    }
+
+    fn general_listing_total_count(
+        connection: &rusqlite::Connection,
+        query: &LibraryQuery,
+    ) -> i64 {
+        let (filters, params) = build_filters(query);
+        let sql = format!(
+            "SELECT COUNT(*)\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}",
+        );
+        connection
+            .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
+            .expect("general listing total count")
+    }
+
+    fn general_listing_relationship_materialized_rows(
+        connection: &rusqlite::Connection,
+        query: &LibraryQuery,
+    ) -> i64 {
+        let (filters, params) = build_filters(query);
+        let sql = format!(
+            "SELECT COUNT(*) FROM (\n\
+               SELECT DISTINCT f.id, f.path, f.source_location, f.relative_depth, f.bundle_id\n\
+               FROM files f\n\
+               LEFT JOIN creators c ON f.creator_id = c.id\n\
+               LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+               LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+               WHERE f.source_location <> 'downloads'\n\
+              {filters}\n\
+             )",
+        );
+        connection
+            .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
+            .expect("general listing relationship materialized row count")
+    }
+
+    fn build_general_listing_row_probe(
+        query: &LibraryQuery,
+    ) -> (String, Vec<Value>) {
+        let (filters, mut params) = build_filters(query);
+        let order_by = build_order_by(query.sort_by);
+        let exact_duplicate_exists = exact_duplicate_exists_sql("f.id");
+        let limit = query.limit.unwrap_or(100);
+        let offset = query.offset.unwrap_or(0);
+        params.push(Value::Integer(limit));
+        params.push(Value::Integer(offset));
+        let sql = format!(
+            "SELECT\n\
+             f.id,\n\
+             {exact_duplicate_exists} AS has_duplicate,\n\
+             EXISTS (SELECT 1 FROM review_queue rq WHERE rq.file_id = f.id) AS has_review_queue\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN bundles b ON f.bundle_id = b.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}\n\
+             {order_by}\n\
+             LIMIT ? OFFSET ?",
+        );
+        (sql, params)
+    }
+
+    fn run_general_listing_row_probe(
+        connection: &rusqlite::Connection,
+        query: &LibraryQuery,
+    ) -> Vec<(i64, i64, i64)> {
+        let (sql, params) = build_general_listing_row_probe(query);
+        let mut statement = connection
+            .prepare(&sql)
+            .expect("prepare general listing row probe");
+        statement
+            .query_map(params_from_iter(params.iter()), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .expect("query general listing row probe")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect general listing row probe")
+    }
+
+    fn explain_general_listing_row_probe(
+        connection: &rusqlite::Connection,
+        query: &LibraryQuery,
+    ) -> Vec<String> {
+        let (sql, params) = build_general_listing_row_probe(query);
+        let explain_sql = format!("EXPLAIN QUERY PLAN {sql}");
+        let mut statement = connection
+            .prepare(&explain_sql)
+            .expect("prepare general listing row probe plan");
+        statement
+            .query_map(params_from_iter(params.iter()), |row| row.get::<_, String>(3))
+            .expect("query general listing row probe plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect general listing row probe plan")
     }
 
     fn sensitive_path_key_from_relative_path(relative_path: &str) -> String {
@@ -4369,19 +4472,38 @@ mod tests {
             transaction.commit().expect("commit stress fixture");
         }
 
+        let first_page_query = LibraryQuery {
+            limit: Some(50),
+            offset: Some(0),
+            include_previews: Some(false),
+            sort_by: Some(LibrarySortField::Name),
+            ..Default::default()
+        };
+        let first_total_started = Instant::now();
+        let first_total = general_listing_total_count(&connection, &first_page_query);
+        let first_total_elapsed_ms = first_total_started.elapsed().as_millis();
+        let (first_filters, first_params) = build_filters(&first_page_query);
+        let first_relationship_rows =
+            general_listing_relationship_materialized_rows(&connection, &first_page_query);
+        let first_relationship_started = Instant::now();
+        let first_relationship_counts =
+            load_relationship_peer_counts(&connection, &first_filters, &first_params)
+                .expect("large first-page relationship counts");
+        let first_relationship_elapsed_ms = first_relationship_started.elapsed().as_millis();
+        let first_row_plan = explain_general_listing_row_probe(&connection, &first_page_query);
+        let first_row_started = Instant::now();
+        let first_row_probe = run_general_listing_row_probe(&connection, &first_page_query);
+        let first_row_elapsed_ms = first_row_started.elapsed().as_millis();
+
         let op_started = Instant::now();
-        let first_page = list_library_files(
-            &connection,
-            LibraryQuery {
-                limit: Some(50),
-                offset: Some(0),
-                include_previews: Some(false),
-                sort_by: Some(LibrarySortField::Name),
-                ..Default::default()
-            },
-        )
-        .expect("large library first page");
-        timings.push(("list_first_page", op_started.elapsed().as_millis()));
+        let first_page = list_library_files(&connection, first_page_query.clone())
+            .expect("large library first page");
+        let first_page_elapsed_ms = op_started.elapsed().as_millis();
+        timings.push(("list_first_page", first_page_elapsed_ms));
+        assert_eq!(first_total, 10_000);
+        assert_eq!(first_relationship_rows, 10_000);
+        assert_eq!(first_relationship_counts.len(), 10_000);
+        assert_eq!(first_row_probe.len(), 50);
         assert_eq!(first_page.total, 10_000);
         assert_eq!(first_page.items.len(), 50);
         assert!(first_page
@@ -4419,18 +4541,37 @@ mod tests {
         assert!(filtered.total > 1_000);
         assert_eq!(filtered.items.len(), 75);
 
+        let recent_query = LibraryQuery {
+            sort_by: Some(LibrarySortField::RecentlyModified),
+            limit: Some(100),
+            include_previews: Some(false),
+            ..Default::default()
+        };
+        let recent_total_started = Instant::now();
+        let recent_total = general_listing_total_count(&connection, &recent_query);
+        let recent_total_elapsed_ms = recent_total_started.elapsed().as_millis();
+        let (recent_filters, recent_params) = build_filters(&recent_query);
+        let recent_relationship_rows =
+            general_listing_relationship_materialized_rows(&connection, &recent_query);
+        let recent_relationship_started = Instant::now();
+        let recent_relationship_counts =
+            load_relationship_peer_counts(&connection, &recent_filters, &recent_params)
+                .expect("large recent-sort relationship counts");
+        let recent_relationship_elapsed_ms = recent_relationship_started.elapsed().as_millis();
+        let recent_row_plan = explain_general_listing_row_probe(&connection, &recent_query);
+        let recent_row_started = Instant::now();
+        let recent_row_probe = run_general_listing_row_probe(&connection, &recent_query);
+        let recent_row_elapsed_ms = recent_row_started.elapsed().as_millis();
+
         let op_started = Instant::now();
-        let sorted = list_library_files(
-            &connection,
-            LibraryQuery {
-                sort_by: Some(LibrarySortField::RecentlyModified),
-                limit: Some(100),
-                include_previews: Some(false),
-                ..Default::default()
-            },
-        )
-        .expect("large library sort");
-        timings.push(("list_sort", op_started.elapsed().as_millis()));
+        let sorted = list_library_files(&connection, recent_query.clone())
+            .expect("large library sort");
+        let recent_full_elapsed_ms = op_started.elapsed().as_millis();
+        timings.push(("list_sort", recent_full_elapsed_ms));
+        assert_eq!(recent_total, 10_000);
+        assert_eq!(recent_relationship_rows, 10_000);
+        assert_eq!(recent_relationship_counts.len(), 10_000);
+        assert_eq!(recent_row_probe.len(), 100);
         assert_eq!(sorted.total, 10_000);
         assert_eq!(sorted.items.len(), 100);
 
@@ -4883,6 +5024,32 @@ mod tests {
             .expect("count comparison-key recursive range candidates");
         assert_eq!(observed_range_candidates, 2_000);
         assert_eq!(keyed_range_candidates, 2_000);
+
+        let first_name_temp_sort = first_row_plan
+            .iter()
+            .any(|line| line.contains("USE TEMP B-TREE FOR ORDER BY"));
+        let recent_temp_sort = recent_row_plan
+            .iter()
+            .any(|line| line.contains("USE TEMP B-TREE FOR ORDER BY"));
+        assert!(!first_row_plan.is_empty());
+        assert!(!recent_row_plan.is_empty());
+        eprintln!(
+            "library_general_listing_cost_breakdown rows=10000 name_page=50 name_total_ms={} name_relationship_ms={} name_relationship_materialized={} name_row_probe_ms={} name_full_ms={} name_temp_sort={} name_plan={:?} recent_page=100 recent_total_ms={} recent_relationship_ms={} recent_relationship_materialized={} recent_row_probe_ms={} recent_full_ms={} recent_temp_sort={} recent_plan={:?}",
+            first_total_elapsed_ms,
+            first_relationship_elapsed_ms,
+            first_relationship_rows,
+            first_row_elapsed_ms,
+            first_page_elapsed_ms,
+            first_name_temp_sort,
+            first_row_plan,
+            recent_total_elapsed_ms,
+            recent_relationship_elapsed_ms,
+            recent_relationship_rows,
+            recent_row_elapsed_ms,
+            recent_full_elapsed_ms,
+            recent_temp_sort,
+            recent_row_plan,
+        );
 
         eprintln!(
             "library_folder_content_scope_compare direct_target=5000 direct_depth_candidates={} empty_target=0 empty_legacy_ms={} empty_current_ms={} recursive_target=2000 recursive_depth_candidates={} direct_legacy_ms={} direct_current_ms={} recursive_legacy_ms={} recursive_current_ms={} direct_legacy_plan={:?} direct_current_plan={:?} current_empty_plan={:?} recursive_legacy_plan={:?} recursive_current_plan={:?} exact_response_match=true",
