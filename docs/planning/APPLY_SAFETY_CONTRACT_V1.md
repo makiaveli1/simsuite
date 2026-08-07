@@ -102,21 +102,32 @@ is not compiled into normal builds, does not create confirmation tokens, does
 not refresh the production Library index, and does not enable real Apply,
 Restore, user-file mutation, cleanup, delete, quarantine, or replacement.
 Deterministic fixture-only interruption tests now cover the transaction phase
-boundaries. An interruption before backup is cleanly retryable. An interruption
-after verified backup leaves the source untouched and recovery material intact,
-but a full transaction retry is correctly blocked by the backup no-overwrite
-rule, so a future resume-from-existing-backup protocol is required. Interrupting
-after the move but before its result log leaves a verified backup plus a moved
-file with no move-result link; interrupting after the move result but before its
-restore-map entry leaves an incomplete recovery link. Interrupting undo after
-the source has been restored but before moved-copy cleanup leaves two verified
-copies and an ordinary undo retry is blocked because the restore target already
-exists. Tampering with the moved destination also blocks undo while retaining
-the backup. These are deliberate, now-proven recovery blockers rather than
-reasons to relax overwrite or scope checks. A resumable/reconciliation protocol,
-destination race hardening, incremental only-affected index refresh, multi-file
-transactions, golden content fixtures, and native player-environment proof
-remain future gates before any real Apply or Restore surface is considered.
+boundaries. A hidden read-only reconciliation classifier uses only the existing
+ApplyPlan item, indexed source evidence, run/result/restore records, verified
+backup bytes, and current fixture bytes; no new schema was required. It fails
+closed unless all plan/run/item paths, hash/size evidence, fixture containment,
+and record links agree exactly. The classifier distinguishes a clean start,
+verified-backup resume requirement, moved file missing its result log, move
+result missing its restore-map entry, fully recorded move awaiting undo,
+interrupted undo cleanup, completed undo, and ambiguous/tampered states.
+
+The hidden reconciler is intentionally narrower than a transaction executor.
+When a verified move already happened but its metadata was interrupted, it can
+repair only the missing `pending_log` / `design_only` result or restore-map
+record after proving the destination still exactly matches the verified backup;
+it never moves the file a second time. When undo already restored the exact
+source but cleanup was interrupted, it can re-verify both identical copies and
+remove only the moved duplicate; a second reconciliation is then a no-op. The
+backup-only/source-unmoved state remains `ResumeFromVerifiedBackupRequired` and
+does not automatically perform a fresh move. Tampered bytes, conflicting or
+multiple records, missing evidence, and cross-scope requests remain blocked or
+ambiguous. The first classifier run exposed a macOS `/var` versus `/private/var`
+path-spelling mismatch; the fix compares resolved canonical paths while keeping
+the same fixture-root containment checks. Destination race hardening, an
+explicit resume-from-verified-backup execution protocol, incremental
+only-affected index refresh, multi-file transactions, golden content fixtures,
+and native player-environment proof remain future gates before any real Apply
+or Restore surface is considered.
 
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and
