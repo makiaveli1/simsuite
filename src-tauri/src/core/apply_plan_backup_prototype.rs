@@ -492,7 +492,7 @@ fn record_restore_failed_before_change(
     ))
 }
 
-fn ensure_run_matches_plan(
+pub(super) fn ensure_run_matches_plan(
     connection: &Connection,
     run_id: i64,
     apply_plan_id: i64,
@@ -577,7 +577,7 @@ fn load_scoped_restore_entry(
     Ok(restore_entry)
 }
 
-fn canonicalize_existing_dir(path: &Path, field_name: &str) -> AppResult<PathBuf> {
+pub(super) fn canonicalize_existing_dir(path: &Path, field_name: &str) -> AppResult<PathBuf> {
     let canonical = fs::canonicalize(path)
         .map_err(|error| AppError::Message(format!("{field_name} is not available: {error}")))?;
     if !canonical.is_dir() {
@@ -588,7 +588,7 @@ fn canonicalize_existing_dir(path: &Path, field_name: &str) -> AppResult<PathBuf
     Ok(canonical)
 }
 
-fn resolve_fixture_candidate(path: &Path, field_name: &str) -> AppResult<PathBuf> {
+pub(super) fn resolve_fixture_candidate(path: &Path, field_name: &str) -> AppResult<PathBuf> {
     if !path.is_absolute() {
         return Err(AppError::Message(format!("{field_name} must be absolute.")));
     }
@@ -613,7 +613,7 @@ fn resolve_fixture_candidate(path: &Path, field_name: &str) -> AppResult<PathBuf
     Ok(parent.join(file_name))
 }
 
-fn ensure_under_root(path: &Path, root: &Path, field_name: &str) -> AppResult<()> {
+pub(super) fn ensure_under_root(path: &Path, root: &Path, field_name: &str) -> AppResult<()> {
     if path.starts_with(root) {
         Ok(())
     } else {
@@ -623,7 +623,7 @@ fn ensure_under_root(path: &Path, root: &Path, field_name: &str) -> AppResult<()
     }
 }
 
-fn hash_file(path: &Path) -> AppResult<String> {
+pub(super) fn hash_file(path: &Path) -> AppResult<String> {
     let mut file = fs::File::open(path)
         .map_err(|error| AppError::Message(format!("Fixture file could not be opened: {error}")))?;
     let mut hasher = Sha256::new();

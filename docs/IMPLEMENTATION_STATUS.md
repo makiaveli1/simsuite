@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-08-05
+Last updated: 2026-08-07
 
 ## Current product state
 
@@ -22,7 +22,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 - Read-only Recovery history metadata display.
 - Read-only dry-run preview in saved plan details.
 - Read-only Confirmation Design V1 in saved plan details, including persisted custom folder configuration and cross-system context trail snapshots.
-- Fixture-only backend proof work for future backup/restore logic.
+- Fixture-only backend proof work for future transaction safety: verified copy-backup and restore prototypes plus a Rust-test-only one-file transaction coordinator that loads persisted ApplyPlan/run/item scope, requires an isolated fixture root and indexed source hash/size match, verifies backup before reusing the existing move primitive, verifies the moved bytes, records only non-execution result/restore metadata, and proves scoped undo restores the exact previous temporary-file state before removing the matching moved fixture copy. It is not compiled into normal builds and does not enable real Apply or Restore.
 - Windows desktop proof/smoke scripts.
 - Native Windows game-profile candidate proof wrapper that runs the real read-only detector and candidate test module, emits ignored local JSON evidence, and includes a temporary NTFS junction/reparse-point test. GitHub Actions run `30989399771` passed on Windows, macOS, and Ubuntu for exact commit `4412f76e2a86694b13145498310bfb56a9d3ab66`. Its Windows receipt artifact was downloaded and passed the standalone reviewer for schema, UTC timestamp, exact Git revision, Windows host and known-folder evidence, detector environment, and read-only candidate guarantees. This is hosted-runner baseline evidence only and explicitly does not unlock representative player-machine proof, candidate refresh, or file mutation.
 - Validation wrappers for WSL/Windows test reliability.
@@ -145,7 +145,7 @@ Next work:
 - preserve Backend Command Gating V1: legacy file-changing commands and client-forged ApplyPlan run/result/restore writes must keep failing closed;
 - keep Apply, Restore, backup execution, result logs, restore logs, delete, quarantine, replace, cleanup, and automatic mutation unavailable.
 
-The product hierarchy and golden fixture journey are defined in `docs/planning/SIMSUITE_APP_DIRECTION_EXECUTION_PLAN_V1.md`. The profile migration and API contract are defined in `docs/planning/GAME_INSTALLATION_PROFILE_V1_DESIGN.md`. A hidden fixture-only executor and undo prototype remain later work, after profile UX, adapter boundaries, and native proof.
+The product hierarchy and golden fixture journey are defined in `docs/planning/SIMSUITE_APP_DIRECTION_EXECUTION_PLAN_V1.md`. The profile migration and API contract are defined in `docs/planning/GAME_INSTALLATION_PROFILE_V1_DESIGN.md`. The first hidden transaction proof now exists only inside Rust tests for one temporary file. The next Phase D work should remain fixture-only and add interruption/failure injection, destination-race hardening, only-affected index refresh, multi-file rollback behavior, and the golden `.package`, `.ts4script`, archive, Tray, and curated special-mod fixtures before any real Apply or Restore surface is considered.
 
 ## Recent backend safety gate
 

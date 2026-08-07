@@ -82,6 +82,29 @@ run/plan/item/result context, records only safe DB metadata, and still does not
 execute real Apply, user-file backup, user-file Restore, movement, deletion,
 cleanup, quarantine, replacement, or AI decisions.
 
+Current implementation note: the first hidden fixture transaction coordinator
+is now compiled only for Rust tests. It loads one persisted unblocked `move`
+ApplyPlan item and its indexed source row, requires `fixtureMode=true`, confines
+source, destination, backup, and undo paths to one supplied temporary fixture
+root, and requires the live source path, size, and SHA-256 hash to match the
+indexed evidence. It then reuses the existing fixture backup prototype, requires
+the backup to verify before calling the existing single-file move primitive,
+rechecks source and destination state immediately before the move, verifies the
+moved destination against the pre-move hash and size, and records only
+`pending_log` / `design_only` metadata. Its bounded undo path accepts only the
+same recorded plan/run/item/result scope, verifies the moved destination has
+not changed, restores the original source from the recorded verified backup,
+verifies that restored source, and only then removes the matching temporary
+moved copy. Tests cover fixture-mode gating, fixture-root escape, destination
+collision, missing or changed source, recovery-scope mismatch, and the full
+backup -> move -> verify -> undo chain. The coordinator is not a Tauri command,
+is not compiled into normal builds, does not create confirmation tokens, does
+not refresh the production Library index, and does not enable real Apply,
+Restore, user-file mutation, cleanup, delete, quarantine, or replacement.
+Interruption/failure injection, destination race hardening, incremental
+only-affected index refresh, multi-file transactions, golden content fixtures,
+and native player-environment proof remain future gates.
+
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and
 restore-map records. It keeps `No files changed`, `Apply is not ready yet`, and
