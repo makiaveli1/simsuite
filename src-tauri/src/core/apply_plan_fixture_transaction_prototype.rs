@@ -148,13 +148,15 @@ enum ObservedFileState {
     Different,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct FixtureReconciliationEvidence {
     source_path: PathBuf,
     destination_path: PathBuf,
     backup_path: PathBuf,
     expected_hash: String,
     expected_size: u64,
+    backup_result_id: i64,
+    backup_restore_entry_id: i64,
     move_result_id: Option<i64>,
 }
 
@@ -238,6 +240,194 @@ pub(crate) fn reconcile_fixture_transaction(
             classify_fixture_reconciliation_state(connection, request)
         }
         _ => Ok(state),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FixtureResumeRacePoint {
+    None,
+    DestinationAppearsAfterClassification,
+    SourceChangesAfterClassification,
+    BackupChangesAfterClassification,
+    MoveMetadataAppearsAfterClassification,
+}
+
+pub(crate) fn resume_fixture_transaction_from_verified_backup(
+    connection: &Connection,
+    request: &FixtureReconciliationRequest,
+) -> AppResult<FixtureReconciliationState> {
+    resume_fixture_transaction_from_verified_backup_with_race(
+        connection,
+        request,
+        FixtureResumeRacePoint::None,
+    )
+}
+
+fn resume_fixture_transaction_from_verified_backup_with_race(
+    connection: &Connection,
+    request: &FixtureReconciliationRequest,
+    race_point: FixtureResumeRacePoint,
+) -> AppResult<FixtureReconciliationState> {
+    let initial_assessment = assess_fixture_reconciliation_state(connection, request)?;
+    if initial_assessment.state != FixtureReconciliationState::ResumeFromVerifiedBackupRequired {
+        return Ok(initial_assessment.state);
+    }
+    let initial_evidence = initial_assessment.evidence.ok_or_else(|| {
+        AppError::Message(
+            "Fixture resume lost the verified backup evidence required for execution.".to_owned(),
+        )
+    })?;
+
+    inject_fixture_resume_race(connection, request, &initial_evidence, race_point)?;
+
+    // Re-read the complete DB + filesystem evidence after the possible race and immediately
+    // before the final mutation preflight. This intentionally does not trust the first snapshot.
+    let final_assessment = assess_fixture_reconciliation_state(connection, request)?;
+    if final_assessment.state != FixtureReconciliationState::ResumeFromVerifiedBackupRequired {
+        return Ok(final_assessment.state);
+    }
+    let final_evidence = final_assessment.evidence.ok_or_else(|| {
+        AppError::Message(
+            "Fixture resume lost the final verified backup evidence required for execution."
+                .to_owned(),
+        )
+    })?;
+    if final_evidence != initial_evidence {
+        return Ok(FixtureReconciliationState::Ambiguous(
+            "Verified backup-chain evidence changed between resume classification and execution."
+                .to_owned(),
+        ));
+    }
+
+    // Keep these checks adjacent to the move primitive. They deliberately re-hash both source
+    // and backup and require the destination to still be absent after the full reclassification.
+    if observe_expected_file(
+        &final_evidence.backup_path,
+        final_evidence.expected_size,
+        &final_evidence.expected_hash,
+    )? != ObservedFileState::Exact
+    {
+        return Ok(FixtureReconciliationState::Ambiguous(
+            "Verified backup bytes changed before resume execution.".to_owned(),
+        ));
+    }
+    // Hash source after the backup check, then make destination absence the final filesystem
+    // probe immediately before the move call. This avoids widening the no-overwrite race window
+    // with another potentially expensive file hash after the destination check.
+    if observe_expected_file(
+        &final_evidence.source_path,
+        final_evidence.expected_size,
+        &final_evidence.expected_hash,
+    )? != ObservedFileState::Exact
+    {
+        return Ok(FixtureReconciliationState::Ambiguous(
+            "Fixture source bytes changed before resume execution.".to_owned(),
+        ));
+    }
+    if observe_expected_file(
+        &final_evidence.destination_path,
+        final_evidence.expected_size,
+        &final_evidence.expected_hash,
+    )? != ObservedFileState::Missing
+    {
+        return Ok(FixtureReconciliationState::Ambiguous(
+            "Fixture destination appeared before resume execution; no overwrite was attempted."
+                .to_owned(),
+        ));
+    }
+
+    if let Err(error) = move_engine::move_single_file(
+        &final_evidence.source_path,
+        &final_evidence.destination_path,
+    ) {
+        return Err(AppError::Message(format!(
+            "Fixture resume move primitive failed; reconciliation must inspect the isolated fixture before another attempt: {error}"
+        )));
+    }
+
+    if observe_expected_file(
+        &final_evidence.source_path,
+        final_evidence.expected_size,
+        &final_evidence.expected_hash,
+    )? != ObservedFileState::Missing
+        || observe_expected_file(
+            &final_evidence.destination_path,
+            final_evidence.expected_size,
+            &final_evidence.expected_hash,
+        )? != ObservedFileState::Exact
+    {
+        return Err(AppError::Message(
+            "Fixture resume move completed with an unexpected source/destination state."
+                .to_owned(),
+        ));
+    }
+
+    let move_result = apply_plan_results::record_apply_plan_result_log(
+        connection,
+        RecordApplyPlanResultLogRequest {
+            apply_plan_run_id: request.run_id,
+            apply_plan_item_id: Some(request.apply_plan_item_id),
+            operation_kind: MOVE_OPERATION_KIND.to_owned(),
+            result_status: "pending_log".to_owned(),
+            source_path_at_execution: Some(
+                final_evidence.source_path.to_string_lossy().to_string(),
+            ),
+            destination_path_at_execution: Some(
+                final_evidence.destination_path.to_string_lossy().to_string(),
+            ),
+            backup_path: Some(final_evidence.backup_path.to_string_lossy().to_string()),
+            error_code: None,
+            error_message: None,
+            user_summary: MOVE_SUCCESS_SUMMARY.to_owned(),
+        },
+    )?;
+    record_move_restore_entry(connection, request, &final_evidence, move_result.id)?;
+
+    classify_fixture_reconciliation_state(connection, request)
+}
+
+fn inject_fixture_resume_race(
+    connection: &Connection,
+    request: &FixtureReconciliationRequest,
+    evidence: &FixtureReconciliationEvidence,
+    race_point: FixtureResumeRacePoint,
+) -> AppResult<()> {
+    match race_point {
+        FixtureResumeRacePoint::None => Ok(()),
+        FixtureResumeRacePoint::DestinationAppearsAfterClassification => {
+            fs::write(&evidence.destination_path, b"fixture destination race bytes")?;
+            Ok(())
+        }
+        FixtureResumeRacePoint::SourceChangesAfterClassification => {
+            fs::write(&evidence.source_path, b"fixture source race bytes")?;
+            Ok(())
+        }
+        FixtureResumeRacePoint::BackupChangesAfterClassification => {
+            fs::write(&evidence.backup_path, b"fixture backup race bytes")?;
+            Ok(())
+        }
+        FixtureResumeRacePoint::MoveMetadataAppearsAfterClassification => {
+            apply_plan_results::record_apply_plan_result_log(
+                connection,
+                RecordApplyPlanResultLogRequest {
+                    apply_plan_run_id: request.run_id,
+                    apply_plan_item_id: Some(request.apply_plan_item_id),
+                    operation_kind: MOVE_OPERATION_KIND.to_owned(),
+                    result_status: "pending_log".to_owned(),
+                    source_path_at_execution: Some(
+                        evidence.source_path.to_string_lossy().to_string(),
+                    ),
+                    destination_path_at_execution: Some(
+                        evidence.destination_path.to_string_lossy().to_string(),
+                    ),
+                    backup_path: Some(evidence.backup_path.to_string_lossy().to_string()),
+                    error_code: None,
+                    error_message: None,
+                    user_summary: "Injected fixture metadata race for resume proof.".to_owned(),
+                },
+            )?;
+            Ok(())
+        }
     }
 }
 
@@ -541,6 +731,8 @@ fn assess_fixture_reconciliation_state(
         backup_path,
         expected_hash: expected_hash.to_owned(),
         expected_size,
+        backup_result_id,
+        backup_restore_entry_id: backup_entry.id,
         move_result_id: move_result.map(|result| result.id),
     };
     let state = match (source_state, destination_state) {
@@ -1880,6 +2072,284 @@ mod tests {
     }
 
     #[test]
+    fn resume_from_verified_backup_moves_once_records_metadata_and_remains_undoable() {
+        let connection = memory_connection();
+        let source_bytes = b"resume verified backup bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+        let initial = assess_fixture_reconciliation_state(&connection, &request)
+            .expect("initial resume assessment");
+        let backup_path = initial
+            .evidence
+            .as_ref()
+            .expect("verified backup evidence")
+            .backup_path
+            .clone();
+
+        assert_eq!(
+            resume_fixture_transaction_from_verified_backup(&connection, &request)
+                .expect("resume from verified backup"),
+            FixtureReconciliationState::MoveRecordedAwaitingUndo
+        );
+        assert!(!context.source_path.exists());
+        assert_eq!(
+            fs::read(&context.destination_path).expect("resumed destination"),
+            source_bytes
+        );
+        assert_eq!(fs::read(&backup_path).expect("verified backup"), source_bytes);
+
+        let detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("run detail")
+            .expect("run");
+        let move_results = detail
+            .results
+            .iter()
+            .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+            .collect::<Vec<_>>();
+        let move_entries = detail
+            .restore_entries
+            .iter()
+            .filter(|entry| entry.operation_kind == MOVE_OPERATION_KIND)
+            .collect::<Vec<_>>();
+        assert_eq!(move_results.len(), 1);
+        assert_eq!(move_entries.len(), 1);
+
+        assert_eq!(
+            resume_fixture_transaction_from_verified_backup(&connection, &request)
+                .expect("repeated resume stays a no-op"),
+            FixtureReconciliationState::MoveRecordedAwaitingUndo
+        );
+        let repeated_detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("repeated run detail")
+            .expect("run");
+        assert_eq!(
+            repeated_detail
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            1
+        );
+        assert_eq!(
+            repeated_detail
+                .restore_entries
+                .iter()
+                .filter(|entry| entry.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            1
+        );
+
+        run_fixture_move_undo(
+            &connection,
+            FixtureMoveUndoRequest {
+                fixture_mode: true,
+                apply_plan_id: context.plan_id,
+                apply_plan_item_id: context.item_id,
+                run_id: context.run_id,
+                fixture_root: context.fixture_root.clone(),
+                move_result_log_id: move_results[0].id,
+                move_restore_entry_id: move_entries[0].id,
+            },
+        )
+        .expect("undo resumed move");
+        assert_eq!(fs::read(&context.source_path).expect("restored source"), source_bytes);
+        assert!(!context.destination_path.exists());
+        assert_eq!(
+            classify_fixture_reconciliation_state(&connection, &request)
+                .expect("classify completed resumed undo"),
+            FixtureReconciliationState::UndoComplete
+        );
+    }
+
+    #[test]
+    fn resume_blocks_destination_that_appears_after_classification_without_overwrite() {
+        let connection = memory_connection();
+        let source_bytes = b"destination race source bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+
+        let state = resume_fixture_transaction_from_verified_backup_with_race(
+            &connection,
+            &request,
+            FixtureResumeRacePoint::DestinationAppearsAfterClassification,
+        )
+        .expect("destination race classification");
+        assert!(matches!(state, FixtureReconciliationState::Ambiguous(_)));
+        assert_eq!(fs::read(&context.source_path).expect("source untouched"), source_bytes);
+        assert_eq!(
+            fs::read(&context.destination_path).expect("competing destination untouched"),
+            b"fixture destination race bytes"
+        );
+        let detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("run detail")
+            .expect("run");
+        assert_eq!(
+            detail
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn resume_blocks_source_change_after_classification_without_moving_it() {
+        let connection = memory_connection();
+        let context = setup_fixture(&connection, b"source race original bytes");
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+
+        let state = resume_fixture_transaction_from_verified_backup_with_race(
+            &connection,
+            &request,
+            FixtureResumeRacePoint::SourceChangesAfterClassification,
+        )
+        .expect("source race classification");
+        assert!(matches!(state, FixtureReconciliationState::Ambiguous(_)));
+        assert_eq!(
+            fs::read(&context.source_path).expect("changed source remains in place"),
+            b"fixture source race bytes"
+        );
+        assert!(!context.destination_path.exists());
+        let detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("run detail")
+            .expect("run");
+        assert_eq!(
+            detail
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn resume_blocks_backup_change_after_classification_without_moving_source() {
+        let connection = memory_connection();
+        let source_bytes = b"backup race original bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+        let initial = assess_fixture_reconciliation_state(&connection, &request)
+            .expect("initial resume assessment");
+        let backup_path = initial
+            .evidence
+            .as_ref()
+            .expect("verified backup evidence")
+            .backup_path
+            .clone();
+
+        let state = resume_fixture_transaction_from_verified_backup_with_race(
+            &connection,
+            &request,
+            FixtureResumeRacePoint::BackupChangesAfterClassification,
+        )
+        .expect("backup race classification");
+        assert!(matches!(state, FixtureReconciliationState::Ambiguous(_)));
+        assert_eq!(fs::read(&context.source_path).expect("source untouched"), source_bytes);
+        assert!(!context.destination_path.exists());
+        assert_eq!(
+            fs::read(&backup_path).expect("changed backup remains for inspection"),
+            b"fixture backup race bytes"
+        );
+        let detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("run detail")
+            .expect("run");
+        assert_eq!(
+            detail
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn resume_blocks_move_metadata_that_appears_after_classification_without_moving_bytes() {
+        let connection = memory_connection();
+        let source_bytes = b"metadata race original bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+
+        let state = resume_fixture_transaction_from_verified_backup_with_race(
+            &connection,
+            &request,
+            FixtureResumeRacePoint::MoveMetadataAppearsAfterClassification,
+        )
+        .expect("metadata race classification");
+        assert!(matches!(state, FixtureReconciliationState::Ambiguous(_)));
+        assert_eq!(fs::read(&context.source_path).expect("source untouched"), source_bytes);
+        assert!(!context.destination_path.exists());
+        let detail = apply_plan_results::get_apply_plan_run_log(&connection, context.run_id)
+            .expect("run detail")
+            .expect("run");
+        assert_eq!(
+            detail
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            1,
+            "only the injected competing metadata record should exist"
+        );
+        assert_eq!(
+            detail
+                .restore_entries
+                .iter()
+                .filter(|entry| entry.operation_kind == MOVE_OPERATION_KIND)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn resume_from_clean_start_is_a_noop() {
+        let connection = memory_connection();
+        let source_bytes = b"clean start resume bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        let request = reconciliation_request(&context);
+
+        assert_eq!(
+            resume_fixture_transaction_from_verified_backup(&connection, &request)
+                .expect("clean start remains a no-op"),
+            FixtureReconciliationState::CleanStart
+        );
+        assert_eq!(fs::read(&context.source_path).expect("source untouched"), source_bytes);
+        assert!(!context.destination_path.exists());
+    }
+
+    #[test]
     fn reconciliation_repairs_missing_move_result_and_restore_entry_without_moving_bytes_again() {
         let connection = memory_connection();
         let source_bytes = b"repair missing move metadata";
@@ -2075,6 +2545,7 @@ mod tests {
         assert!(!commands_source.contains("run_fixture_move_undo"));
         assert!(!commands_source.contains("classify_fixture_reconciliation_state"));
         assert!(!commands_source.contains("reconcile_fixture_transaction"));
+        assert!(!commands_source.contains("resume_fixture_transaction_from_verified_backup"));
         assert!(!commands_source.contains("fixture_move_transaction"));
 
         let core_source = include_str!("mod.rs");

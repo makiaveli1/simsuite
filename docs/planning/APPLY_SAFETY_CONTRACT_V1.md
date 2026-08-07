@@ -111,23 +111,42 @@ verified-backup resume requirement, moved file missing its result log, move
 result missing its restore-map entry, fully recorded move awaiting undo,
 interrupted undo cleanup, completed undo, and ambiguous/tampered states.
 
-The hidden reconciler is intentionally narrower than a transaction executor.
+The hidden reconciler remains narrower than a normal transaction executor.
 When a verified move already happened but its metadata was interrupted, it can
 repair only the missing `pending_log` / `design_only` result or restore-map
 record after proving the destination still exactly matches the verified backup;
 it never moves the file a second time. When undo already restored the exact
 source but cleanup was interrupted, it can re-verify both identical copies and
-remove only the moved duplicate; a second reconciliation is then a no-op. The
-backup-only/source-unmoved state remains `ResumeFromVerifiedBackupRequired` and
-does not automatically perform a fresh move. Tampered bytes, conflicting or
-multiple records, missing evidence, and cross-scope requests remain blocked or
-ambiguous. The first classifier run exposed a macOS `/var` versus `/private/var`
-path-spelling mismatch; the fix compares resolved canonical paths while keeping
-the same fixture-root containment checks. Destination race hardening, an
-explicit resume-from-verified-backup execution protocol, incremental
-only-affected index refresh, multi-file transactions, golden content fixtures,
-and native player-environment proof remain future gates before any real Apply
-or Restore surface is considered.
+remove only the moved duplicate; a second reconciliation is then a no-op.
+Tampered bytes, conflicting or multiple records, missing evidence, and
+cross-scope requests remain blocked or ambiguous. The first classifier run
+exposed a macOS `/var` versus `/private/var` path-spelling mismatch; resolved
+canonical paths are now compared while keeping the same fixture-root containment
+checks.
+
+A separate hidden fixture-only resume proof now consumes only the exact
+`ResumeFromVerifiedBackupRequired` state. It requires the same plan/run/item,
+the same verified backup result and restore-entry identities, the same indexed
+source hash/size, an exact source and backup, an absent destination, and no move
+or undo metadata. After the first classification it deliberately re-reads the
+complete database and filesystem evidence, then re-hashes backup/source and
+rechecks destination immediately beside the existing single-file move call.
+Deterministic tests prove that a destination, source change, backup change, or
+competing move metadata appearing after the first classification blocks the
+resume without moving or overwriting the observed fixture bytes. A successful
+resume moves exactly once, verifies destination bytes before recording the same
+`pending_log` / `design_only` metadata, becomes `MoveRecordedAwaitingUndo`, is a
+no-op on repeated resume, and remains undoable through the existing verified
+fixture undo path.
+
+This is destination-race hardening, not an atomic no-overwrite guarantee. The
+existing production `move_single_file` helper still has a small operating-system
+check-to-rename window; on platforms where rename can replace a destination, a
+file appearing after the last explicit check could still race the primitive.
+An atomic no-replace execution primitive (or equivalent platform-safe design),
+incremental only-affected index refresh, multi-file transactions, golden content
+fixtures, and native player-environment proof remain future gates before any
+real Apply or Restore surface is considered.
 
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and
