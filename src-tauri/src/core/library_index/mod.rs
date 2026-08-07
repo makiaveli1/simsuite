@@ -645,7 +645,15 @@ fn list_library_files_scoped(
         connection.query_row(&total_sql, params_from_iter(scoped_params.iter()), |row| {
             row.get(0)
         })?;
-    let peer_counts = load_relationship_peer_counts(connection, &scoped_filters, &scoped_params)?;
+    let unpaged_peer_counts = if query.limit.is_none() {
+        Some(load_relationship_peer_counts(
+            connection,
+            &scoped_filters,
+            &scoped_params,
+        )?)
+    } else {
+        None
+    };
 
     // Pagination: only apply LIMIT/OFFSET when query.limit is explicitly set.
     // When limit is None (tree-mode), return all filtered rows without LIMIT/OFFSET.
@@ -683,7 +691,8 @@ fn list_library_files_scoped(
                WHERE rq.file_id = f.id\n\
              ) AS has_review_queue,
 \
-             0 AS same_pack_peer_count
+             0 AS same_pack_peer_count,\n\
+             f.bundle_id AS relationship_bundle_id
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -727,7 +736,8 @@ fn list_library_files_scoped(
                WHERE rq.file_id = f.id\n\
              ) AS has_review_queue,
 \
-             0 AS same_pack_peer_count
+             0 AS same_pack_peer_count,\n\
+             f.bundle_id AS relationship_bundle_id
 \
              FROM files f\n\
              LEFT JOIN creators c ON f.creator_id = c.id\n\
@@ -755,11 +765,14 @@ fn list_library_files_scoped(
     };
 
     let mut statement = connection.prepare(&rows_sql)?;
-    let items = statement
+    let mut mapped_rows = statement
         .query_map(params_from_iter(row_params.iter()), |row| {
             let id = row.get::<_, i64>(0)?;
-            let (same_folder_peer_count, same_pack_peer_count) =
-                peer_counts.get(&id).copied().unwrap_or_default();
+            let (same_folder_peer_count, same_pack_peer_count) = unpaged_peer_counts
+                .as_ref()
+                .and_then(|counts| counts.get(&id))
+                .copied()
+                .unwrap_or_default();
             let watch_status_str: Option<String> = row.get(18)?;
             let watch_status = watch_status_str
                 .map(|s| match s.as_str() {
@@ -775,6 +788,9 @@ fn list_library_files_scoped(
             let kind: String = row.get(4)?;
             let confidence: f64 = row.get(6)?;
             let source_location: String = row.get(7)?;
+            let path: String = row.get(2)?;
+            let relative_depth: i64 = row.get(14)?;
+            let bundle_id: Option<i64> = row.get(22)?;
             let creator: Option<String> = row.get(10)?;
             let safety_notes = parse_string_array(row.get::<_, String>(15)?);
             let parser_warnings = parse_string_array(row.get::<_, String>(16)?);
@@ -798,22 +814,22 @@ fn list_library_files_scoped(
                 has_duplicate,
                 watch_status: Some(watch_status.clone()),
             });
-            Ok(LibraryFileRow {
+            let item = LibraryFileRow {
                 id,
                 filename: row.get(1)?,
-                path: row.get(2)?,
+                path: path.clone(),
                 extension: row.get(3)?,
                 kind,
                 subtype: row.get(5)?,
                 confidence,
-                source_location,
+                source_location: source_location.clone(),
                 size: row.get(8)?,
                 modified_at: row.get(9)?,
                 creator,
                 bundle_name: row.get(11)?,
                 bundle_type: row.get(12)?,
                 grouped_file_count: row.get(13)?,
-                relative_depth: row.get(14)?,
+                relative_depth,
                 safety_notes,
                 parser_warnings,
                 insights,
@@ -823,10 +839,41 @@ fn list_library_files_scoped(
                 same_folder_peer_count,
                 same_pack_peer_count,
                 primary_problem_signal,
-            })
+            };
+            let relationship_target = RelationshipPeerRow {
+                id,
+                path,
+                source_location,
+                relative_depth,
+                bundle_id,
+            };
+            Ok((item, relationship_target))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
+    if query.limit.is_some() {
+        let targets = mapped_rows
+            .iter()
+            .map(|(_, target)| target.clone())
+            .collect::<Vec<_>>();
+        let peer_counts = load_paged_relationship_peer_counts(
+            connection,
+            &scoped_filters,
+            &scoped_params,
+            &targets,
+        )?;
+        for (item, target) in &mut mapped_rows {
+            let (same_folder_peer_count, same_pack_peer_count) =
+                peer_counts.get(&target.id).copied().unwrap_or_default();
+            item.same_folder_peer_count = same_folder_peer_count;
+            item.same_pack_peer_count = same_pack_peer_count;
+        }
+    }
+
+    let items = mapped_rows
+        .into_iter()
+        .map(|(item, _)| item)
+        .collect::<Vec<_>>();
     Ok(LibraryListResponse { total, items })
 }
 
@@ -1190,7 +1237,7 @@ fn escape_like(value: &str) -> String {
         .replace('_', "~_")
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RelationshipPeerRow {
     id: i64,
     path: String,
@@ -1259,6 +1306,155 @@ fn load_relationship_peer_counts(
         let peer_count = ids.len().saturating_sub(1) as i64;
         for id in ids {
             counts.entry(*id).or_insert((0, 0)).1 = peer_count;
+        }
+    }
+
+    Ok(counts)
+}
+
+fn load_paged_relationship_peer_counts(
+    connection: &Connection,
+    filters: &str,
+    params: &[Value],
+    targets: &[RelationshipPeerRow],
+) -> AppResult<HashMap<i64, (i64, i64)>> {
+    if targets.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut counts = targets
+        .iter()
+        .map(|target| (target.id, (0_i64, 0_i64)))
+        .collect::<HashMap<_, _>>();
+    let mut target_folder_groups: HashMap<(String, String), Vec<i64>> = HashMap::new();
+    let mut folder_candidate_lanes = BTreeSet::new();
+    let mut target_bundle_ids = BTreeSet::new();
+
+    for target in targets {
+        if let Some(folder_segments) = folder_segments_for_file(
+            &target.path,
+            &target.source_location,
+            target.relative_depth,
+        ) {
+            let source_key = target.source_location.to_ascii_lowercase();
+            target_folder_groups
+                .entry((source_key.clone(), folder_segments.join("/")))
+                .or_default()
+                .push(target.id);
+            folder_candidate_lanes.insert((source_key, target.relative_depth.max(0)));
+        }
+        if let Some(bundle_id) = target.bundle_id {
+            target_bundle_ids.insert(bundle_id);
+        }
+    }
+
+    if !folder_candidate_lanes.is_empty() {
+        let mut lane_sql = Vec::new();
+        let mut folder_params = params.to_vec();
+        for (source_key, effective_depth) in &folder_candidate_lanes {
+            if *effective_depth == 0 {
+                lane_sql.push(
+                    "(f.source_location = ? COLLATE NOCASE AND f.relative_depth <= 0)"
+                        .to_owned(),
+                );
+                folder_params.push(Value::Text(source_key.clone()));
+            } else {
+                lane_sql.push(
+                    "(f.source_location = ? COLLATE NOCASE AND f.relative_depth = ?)"
+                        .to_owned(),
+                );
+                folder_params.push(Value::Text(source_key.clone()));
+                folder_params.push(Value::Integer(*effective_depth));
+            }
+        }
+
+        let folder_sql = format!(
+            "SELECT DISTINCT f.id, f.path, f.source_location, f.relative_depth\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}\n\
+             AND ({lanes})",
+            filters = filters,
+            lanes = lane_sql.join(" OR "),
+        );
+        let mut statement = connection.prepare(&folder_sql)?;
+        let mut folder_group_counts: HashMap<(String, String), i64> = HashMap::new();
+        let rows = statement.query_map(params_from_iter(folder_params.iter()), |row| {
+            Ok(RelationshipPeerRow {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                source_location: row.get(2)?,
+                relative_depth: row.get(3)?,
+                bundle_id: None,
+            })
+        })?;
+        for row in rows {
+            let row = row?;
+            if let Some(folder_segments) =
+                folder_segments_for_file(&row.path, &row.source_location, row.relative_depth)
+            {
+                let key = (
+                    row.source_location.to_ascii_lowercase(),
+                    folder_segments.join("/"),
+                );
+                if target_folder_groups.contains_key(&key) {
+                    *folder_group_counts.entry(key).or_default() += 1;
+                }
+            }
+        }
+
+        for (key, target_ids) in &target_folder_groups {
+            let peer_count = folder_group_counts
+                .get(key)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(1);
+            for target_id in target_ids {
+                counts.entry(*target_id).or_insert((0, 0)).0 = peer_count;
+            }
+        }
+    }
+
+    if !target_bundle_ids.is_empty() {
+        let placeholders = std::iter::repeat("?")
+            .take(target_bundle_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut bundle_params = params.to_vec();
+        bundle_params.extend(target_bundle_ids.iter().copied().map(Value::Integer));
+        let bundle_sql = format!(
+            "SELECT f.bundle_id, COUNT(DISTINCT f.id)\n\
+             FROM files f\n\
+             LEFT JOIN creators c ON f.creator_id = c.id\n\
+             LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+             LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+             WHERE f.source_location <> 'downloads'\n\
+            {filters}\n\
+             AND f.bundle_id IN ({placeholders})\n\
+             GROUP BY f.bundle_id",
+            filters = filters,
+            placeholders = placeholders,
+        );
+        let mut statement = connection.prepare(&bundle_sql)?;
+        let bundle_counts = statement
+            .query_map(params_from_iter(bundle_params.iter()), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        for target in targets {
+            let Some(bundle_id) = target.bundle_id else {
+                continue;
+            };
+            let peer_count = bundle_counts
+                .get(&bundle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(1);
+            counts.entry(target.id).or_insert((0, 0)).1 = peer_count;
         }
     }
 
@@ -2441,7 +2637,7 @@ mod tests {
         },
         seed::load_seed_pack,
     };
-    use std::time::Instant;
+    use std::{collections::BTreeSet, time::Instant};
 
     use super::{
         bounded_folder_query_limit, build_filters, build_folder_scope_filter,
@@ -2449,10 +2645,11 @@ mod tests {
         exact_duplicate_exists_sql, get_file_detail, get_folder_tree_metadata, get_library_facets,
         get_library_preview_diagnostics, list_library_files, list_library_files_scoped,
         list_library_folder_files, load_folder_identity_decision, load_folder_tree_file_counts,
-        load_relationship_peer_counts, merge_preview_results_into_insights,
-        normalize_virtual_folder_path, persist_file_insights, select_folder_tree_source_rows,
-        source_location_for_folder_root, FolderIdentityDecision, FolderIdentityScope,
-        FolderMetadataRow, FolderScopeFilter, FolderTreeSourceMode, MAX_FOLDER_QUERY_LIMIT,
+        load_paged_relationship_peer_counts, load_relationship_peer_counts,
+        merge_preview_results_into_insights, normalize_virtual_folder_path, persist_file_insights,
+        select_folder_tree_source_rows, source_location_for_folder_root, FolderIdentityDecision,
+        FolderIdentityScope, FolderMetadataRow, FolderScopeFilter, FolderTreeSourceMode,
+        RelationshipPeerRow, MAX_FOLDER_QUERY_LIMIT,
     };
 
     fn setup_library_env() -> (rusqlite::Connection, LibrarySettings, crate::seed::SeedPack) {
@@ -2983,6 +3180,98 @@ mod tests {
         connection
             .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
             .expect("general listing relationship materialized row count")
+    }
+
+    fn relationship_targets_for_listing(
+        connection: &rusqlite::Connection,
+        listing: &LibraryListResponse,
+    ) -> Vec<RelationshipPeerRow> {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, path, source_location, relative_depth, bundle_id\n\
+                 FROM files\n\
+                 WHERE id = ?1",
+            )
+            .expect("prepare relationship target lookup");
+        listing
+            .items
+            .iter()
+            .map(|item| {
+                statement
+                    .query_row(params![item.id], |row| {
+                        Ok(RelationshipPeerRow {
+                            id: row.get(0)?,
+                            path: row.get(1)?,
+                            source_location: row.get(2)?,
+                            relative_depth: row.get(3)?,
+                            bundle_id: row.get(4)?,
+                        })
+                    })
+                    .expect("load relationship target")
+            })
+            .collect()
+    }
+
+    fn paged_relationship_folder_candidate_rows(
+        connection: &rusqlite::Connection,
+        query: &LibraryQuery,
+        targets: &[RelationshipPeerRow],
+    ) -> i64 {
+        if targets.is_empty() {
+            return 0;
+        }
+
+        let (filters, mut params) = build_filters(query);
+        let mut candidate_lanes = BTreeSet::new();
+        for target in targets {
+            candidate_lanes.insert((
+                target.source_location.to_ascii_lowercase(),
+                target.relative_depth.max(0),
+            ));
+        }
+
+        let mut lane_sql = Vec::new();
+        for (source_key, effective_depth) in candidate_lanes {
+            if effective_depth == 0 {
+                lane_sql.push(
+                    "(f.source_location = ? COLLATE NOCASE AND f.relative_depth <= 0)"
+                        .to_owned(),
+                );
+                params.push(Value::Text(source_key));
+            } else {
+                lane_sql.push(
+                    "(f.source_location = ? COLLATE NOCASE AND f.relative_depth = ?)"
+                        .to_owned(),
+                );
+                params.push(Value::Text(source_key));
+                params.push(Value::Integer(effective_depth));
+            }
+        }
+
+        let sql = format!(
+            "SELECT COUNT(*) FROM (\n\
+               SELECT DISTINCT f.id\n\
+               FROM files f\n\
+               LEFT JOIN creators c ON f.creator_id = c.id\n\
+               LEFT JOIN content_watch_sources cws ON cws.anchor_file_id = f.id\n\
+               LEFT JOIN content_watch_results cwr ON cwr.subject_key = cws.subject_key\n\
+               WHERE f.source_location <> 'downloads'\n\
+              {filters}\n\
+               AND ({lanes})\n\
+             )",
+            lanes = lane_sql.join(" OR "),
+        );
+        connection
+            .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
+            .expect("paged relationship folder candidate row count")
+    }
+
+    fn paged_relationship_bundle_group_count(targets: &[RelationshipPeerRow]) -> usize {
+        targets
+            .iter()
+            .filter_map(|target| target.bundle_id)
+            .collect::<BTreeSet<_>>()
+            .len()
     }
 
     fn build_general_listing_row_probe(
@@ -4500,9 +4789,37 @@ mod tests {
             .expect("large library first page");
         let first_page_elapsed_ms = op_started.elapsed().as_millis();
         timings.push(("list_first_page", first_page_elapsed_ms));
+        let first_targets = relationship_targets_for_listing(&connection, &first_page);
+        let first_paged_folder_candidates = paged_relationship_folder_candidate_rows(
+            &connection,
+            &first_page_query,
+            &first_targets,
+        );
+        let first_paged_bundle_groups = paged_relationship_bundle_group_count(&first_targets);
+        let first_paged_relationship_started = Instant::now();
+        let first_paged_relationship_counts = load_paged_relationship_peer_counts(
+            &connection,
+            &first_filters,
+            &first_params,
+            &first_targets,
+        )
+        .expect("large first-page paged relationship counts");
+        let first_paged_relationship_elapsed_ms =
+            first_paged_relationship_started.elapsed().as_millis();
         assert_eq!(first_total, 10_000);
         assert_eq!(first_relationship_rows, 10_000);
         assert_eq!(first_relationship_counts.len(), 10_000);
+        assert_eq!(first_targets.len(), 50);
+        assert!(first_paged_folder_candidates < first_relationship_rows);
+        assert!(first_paged_bundle_groups <= first_targets.len());
+        for target in &first_targets {
+            assert_eq!(
+                first_paged_relationship_counts.get(&target.id),
+                first_relationship_counts.get(&target.id),
+                "first-page paged relationship counts must match the old full-map semantics for file {}",
+                target.id,
+            );
+        }
         assert_eq!(first_row_probe.len(), 50);
         assert_eq!(first_page.total, 10_000);
         assert_eq!(first_page.items.len(), 50);
@@ -4568,9 +4885,37 @@ mod tests {
             .expect("large library sort");
         let recent_full_elapsed_ms = op_started.elapsed().as_millis();
         timings.push(("list_sort", recent_full_elapsed_ms));
+        let recent_targets = relationship_targets_for_listing(&connection, &sorted);
+        let recent_paged_folder_candidates = paged_relationship_folder_candidate_rows(
+            &connection,
+            &recent_query,
+            &recent_targets,
+        );
+        let recent_paged_bundle_groups = paged_relationship_bundle_group_count(&recent_targets);
+        let recent_paged_relationship_started = Instant::now();
+        let recent_paged_relationship_counts = load_paged_relationship_peer_counts(
+            &connection,
+            &recent_filters,
+            &recent_params,
+            &recent_targets,
+        )
+        .expect("large recent-sort paged relationship counts");
+        let recent_paged_relationship_elapsed_ms =
+            recent_paged_relationship_started.elapsed().as_millis();
         assert_eq!(recent_total, 10_000);
         assert_eq!(recent_relationship_rows, 10_000);
         assert_eq!(recent_relationship_counts.len(), 10_000);
+        assert_eq!(recent_targets.len(), 100);
+        assert!(recent_paged_folder_candidates < recent_relationship_rows);
+        assert!(recent_paged_bundle_groups <= recent_targets.len());
+        for target in &recent_targets {
+            assert_eq!(
+                recent_paged_relationship_counts.get(&target.id),
+                recent_relationship_counts.get(&target.id),
+                "recent-sort paged relationship counts must match the old full-map semantics for file {}",
+                target.id,
+            );
+        }
         assert_eq!(recent_row_probe.len(), 100);
         assert_eq!(sorted.total, 10_000);
         assert_eq!(sorted.items.len(), 100);
@@ -5034,10 +5379,13 @@ mod tests {
         assert!(!first_row_plan.is_empty());
         assert!(!recent_row_plan.is_empty());
         eprintln!(
-            "library_general_listing_cost_breakdown rows=10000 name_page=50 name_total_ms={} name_relationship_ms={} name_relationship_materialized={} name_row_probe_ms={} name_full_ms={} name_temp_sort={} name_plan={:?} recent_page=100 recent_total_ms={} recent_relationship_ms={} recent_relationship_materialized={} recent_row_probe_ms={} recent_full_ms={} recent_temp_sort={} recent_plan={:?}",
+            "library_general_listing_cost_breakdown rows=10000 name_page=50 name_total_ms={} name_relationship_full_ms={} name_relationship_full_materialized={} name_relationship_paged_ms={} name_relationship_paged_folder_candidates={} name_relationship_paged_bundle_groups={} name_row_probe_ms={} name_full_ms={} name_temp_sort={} name_plan={:?} recent_page=100 recent_total_ms={} recent_relationship_full_ms={} recent_relationship_full_materialized={} recent_relationship_paged_ms={} recent_relationship_paged_folder_candidates={} recent_relationship_paged_bundle_groups={} recent_row_probe_ms={} recent_full_ms={} recent_temp_sort={} recent_plan={:?} paged_relationship_exact_visible_match=true",
             first_total_elapsed_ms,
             first_relationship_elapsed_ms,
             first_relationship_rows,
+            first_paged_relationship_elapsed_ms,
+            first_paged_folder_candidates,
+            first_paged_bundle_groups,
             first_row_elapsed_ms,
             first_page_elapsed_ms,
             first_name_temp_sort,
@@ -5045,6 +5393,9 @@ mod tests {
             recent_total_elapsed_ms,
             recent_relationship_elapsed_ms,
             recent_relationship_rows,
+            recent_paged_relationship_elapsed_ms,
+            recent_paged_folder_candidates,
+            recent_paged_bundle_groups,
             recent_row_elapsed_ms,
             recent_full_elapsed_ms,
             recent_temp_sort,
@@ -5989,7 +6340,7 @@ mod tests {
                     "C:/Mods/TestCreator/sibling.package",
                     "sibling.package",
                     ".package",
-                    "Gameplay",
+                    "CAS",
                     0.8_f64,
                     "mods",
                     1_i64,
@@ -6015,7 +6366,7 @@ mod tests {
                     "C:/Mods/Other/other.package",
                     "other.package",
                     ".package",
-                    "Gameplay",
+                    "CAS",
                     0.8_f64,
                     "mods",
                     1_i64,
@@ -6025,6 +6376,20 @@ mod tests {
                 ],
             )
             .expect("different folder file");
+        connection
+            .execute(
+                "INSERT INTO bundles (bundle_name, bundle_type, file_count, confidence)
+                 VALUES ('Relationship Test Pack', 'package_set', 2, 0.9)",
+                [],
+            )
+            .expect("relationship test bundle");
+        let bundle_id = connection.last_insert_rowid();
+        connection
+            .execute(
+                "UPDATE files SET bundle_id = ?1 WHERE filename IN ('installed.package', 'other.package')",
+                params![bundle_id],
+            )
+            .expect("assign relationship test bundle");
 
         let listing =
             list_library_files(&connection, LibraryQuery::default()).expect("library listing");
@@ -6041,8 +6406,108 @@ mod tests {
 
         assert_eq!(installed.same_folder_peer_count, 1);
         assert_eq!(other.same_folder_peer_count, 0);
-        assert_eq!(installed.same_pack_peer_count, 0);
-        assert_eq!(other.same_pack_peer_count, 0);
+        assert_eq!(installed.same_pack_peer_count, 1);
+        assert_eq!(other.same_pack_peer_count, 1);
+
+        let paged = list_library_files(
+            &connection,
+            LibraryQuery {
+                limit: Some(1),
+                offset: Some(0),
+                sort_by: Some(LibrarySortField::Name),
+                ..Default::default()
+            },
+        )
+        .expect("paged relationship listing");
+        assert_eq!(paged.total, 3);
+        assert_eq!(paged.items.len(), 1);
+        assert_eq!(paged.items[0].filename, "installed.package");
+        assert_eq!(paged.items[0].same_folder_peer_count, 1);
+        assert_eq!(paged.items[0].same_pack_peer_count, 1);
+
+        let filtered = list_library_files(
+            &connection,
+            LibraryQuery {
+                kind: Some("Gameplay".to_owned()),
+                limit: Some(1),
+                offset: Some(0),
+                sort_by: Some(LibrarySortField::Name),
+                ..Default::default()
+            },
+        )
+        .expect("filtered paged relationship listing");
+        assert_eq!(filtered.total, 1);
+        assert_eq!(filtered.items.len(), 1);
+        assert_eq!(filtered.items[0].filename, "installed.package");
+        assert_eq!(filtered.items[0].same_folder_peer_count, 0);
+        assert_eq!(filtered.items[0].same_pack_peer_count, 0);
+    }
+
+    #[test]
+    fn paged_relationship_peer_counts_preserve_effective_root_depth_semantics() {
+        let (connection, _settings, _seed_pack) = setup_library_env();
+        let insights_json =
+            serde_json::to_string(&crate::models::FileInsights::default()).expect("insights json");
+
+        for (path, filename, relative_depth) in [
+            ("C:/Mods/root_peer_v1_a.package", "root_peer_v1_a.package", 0_i64),
+            (
+                "C:/Mods/Unexpected/Nesting/root_peer_v1_z.package",
+                "root_peer_v1_z.package",
+                -2_i64,
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path,
+                        filename,
+                        extension,
+                        kind,
+                        confidence,
+                        source_location,
+                        relative_depth,
+                        parser_warnings,
+                        insights
+                     ) VALUES (?1, ?2, '.package', 'Gameplay', 0.8, 'mods', ?3, '[]', ?4)",
+                    params![path, filename, relative_depth, insights_json],
+                )
+                .expect("root-depth relationship file");
+        }
+
+        let unpaged = list_library_files(
+            &connection,
+            LibraryQuery {
+                search: Some("root_peer_v1".to_owned()),
+                sort_by: Some(LibrarySortField::Name),
+                ..Default::default()
+            },
+        )
+        .expect("unpaged effective-root relationship listing");
+        assert_eq!(unpaged.total, 2);
+        assert_eq!(unpaged.items.len(), 2);
+        assert!(unpaged
+            .items
+            .iter()
+            .all(|item| item.same_folder_peer_count == 1));
+
+        let paged = list_library_files(
+            &connection,
+            LibraryQuery {
+                search: Some("root_peer_v1".to_owned()),
+                limit: Some(1),
+                offset: Some(0),
+                sort_by: Some(LibrarySortField::Name),
+                ..Default::default()
+            },
+        )
+        .expect("paged effective-root relationship listing");
+        assert_eq!(paged.total, 2);
+        assert_eq!(paged.items.len(), 1);
+        assert_eq!(paged.items[0].filename, "root_peer_v1_a.package");
+        assert_eq!(paged.items[0].relative_depth, 0);
+        assert_eq!(paged.items[0].same_folder_peer_count, 1);
+        assert_eq!(paged.items[0].same_pack_peer_count, 0);
     }
 
     #[test]
