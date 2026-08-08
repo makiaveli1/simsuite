@@ -42,6 +42,32 @@ struct RetrievalScore {
     mean_reciprocal_rank: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueryClass {
+    Typo,
+    Partial,
+    VagueLexical,
+    Short,
+    Ambiguous,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HoldoutCase {
+    query: &'static str,
+    expected_ids: &'static [i64],
+    class: QueryClass,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FuzzySearchDiagnostics {
+    ids: Vec<i64>,
+    candidate_count: usize,
+}
+
+const TRIGRAM_CANDIDATE_LIMIT: usize = 80;
+const STRICT_CANDIDATE_LIMIT: usize = 20;
+const FUZZY_MIN_SCORE: f64 = 0.72;
+
 fn join_values(values: &[String]) -> String {
     values
         .iter()
@@ -71,6 +97,23 @@ fn search_document(fixture: &SearchFixture) -> SearchDocument {
     }
 }
 
+fn flattened_search_document(document: &SearchDocument) -> String {
+    [
+        document.filename.as_str(),
+        document.creator.as_str(),
+        document.aliases.as_str(),
+        document.kind_subtype.as_str(),
+        document.embedded_names.as_str(),
+        document.family_hints.as_str(),
+        document.resource_summary.as_str(),
+        document.script_namespaces.as_str(),
+    ]
+    .into_iter()
+    .filter(|value| !value.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join(" | ")
+}
+
 fn create_search_schema(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
         "CREATE TABLE library_current_like (
@@ -90,6 +133,10 @@ fn create_search_schema(connection: &Connection) -> AppResult<()> {
             resource_summary,
             script_namespaces,
             tokenize = 'unicode61 remove_diacritics 2'
+        );
+        CREATE VIRTUAL TABLE library_smart_search_trigram USING fts5(
+            search_text,
+            tokenize = 'trigram'
         );",
     )?;
     Ok(())
@@ -116,6 +163,10 @@ fn index_fixtures(connection: &mut Connection, fixtures: &[SearchFixture]) -> Ap
                 script_namespaces
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
+        let mut trigram_statement = transaction.prepare(
+            "INSERT INTO library_smart_search_trigram (rowid, search_text)
+             VALUES (?1, ?2)",
+        )?;
         for fixture in fixtures {
             current_statement.execute(params![
                 fixture.id,
@@ -126,6 +177,7 @@ fn index_fixtures(connection: &mut Connection, fixtures: &[SearchFixture]) -> Ap
             ])?;
 
             let document = search_document(fixture);
+            let flattened = flattened_search_document(&document);
             fts_statement.execute(params![
                 fixture.id,
                 document.filename,
@@ -137,6 +189,29 @@ fn index_fixtures(connection: &mut Connection, fixtures: &[SearchFixture]) -> Ap
                 document.resource_summary,
                 document.script_namespaces,
             ])?;
+            trigram_statement.execute(params![fixture.id, flattened])?;
+        }
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn index_trigram_only(connection: &mut Connection, fixtures: &[SearchFixture]) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE VIRTUAL TABLE library_smart_search_trigram_only USING fts5(
+            search_text,
+            tokenize = 'trigram'
+        );",
+    )?;
+    let transaction = connection.transaction()?;
+    {
+        let mut statement = transaction.prepare(
+            "INSERT INTO library_smart_search_trigram_only (rowid, search_text)
+             VALUES (?1, ?2)",
+        )?;
+        for fixture in fixtures {
+            let document = search_document(fixture);
+            statement.execute(params![fixture.id, flattened_search_document(&document)])?;
         }
     }
     transaction.commit()?;
@@ -222,6 +297,221 @@ fn fts_search(connection: &Connection, query: &str, limit: usize) -> AppResult<V
         .query_map(params![query, limit as i64], |row| row.get::<_, i64>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ids)
+}
+
+fn normalized_search_tokens(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut previous_was_lower_or_digit = false;
+
+    for character in value.chars() {
+        if !character.is_alphanumeric() {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            previous_was_lower_or_digit = false;
+            continue;
+        }
+
+        if !current.is_empty() && character.is_uppercase() && previous_was_lower_or_digit {
+            tokens.push(std::mem::take(&mut current));
+        }
+        current.extend(character.to_lowercase());
+        previous_was_lower_or_digit = character.is_lowercase() || character.is_numeric();
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens.retain(|token| !token.is_empty());
+    tokens
+}
+
+fn token_trigrams(token: &str) -> Vec<String> {
+    let characters = token.chars().collect::<Vec<_>>();
+    if characters.len() < 3 {
+        return Vec::new();
+    }
+
+    characters
+        .windows(3)
+        .map(|window| window.iter().collect::<String>())
+        .collect()
+}
+
+fn normalized_trigram_query(query: &str) -> Option<String> {
+    let mut trigrams = normalized_search_tokens(query)
+        .into_iter()
+        .flat_map(|token| token_trigrams(&token))
+        .collect::<Vec<_>>();
+    trigrams.sort();
+    trigrams.dedup();
+    if trigrams.is_empty() {
+        return None;
+    }
+
+    Some(
+        trigrams
+            .into_iter()
+            .map(|trigram| format!("\"{trigram}\""))
+            .collect::<Vec<_>>()
+            .join(" OR "),
+    )
+}
+
+fn benchmark_authority_query(query: &str) -> bool {
+    let normalized = normalized_search_tokens(query).join(" ");
+    (normalized.contains("safe to delete") || normalized.contains("safe to remove"))
+        || (normalized.contains("remove")
+            && normalized.contains("without")
+            && normalized.contains("breaking"))
+        || (normalized.contains("compatible")
+            && (normalized.contains("patch") || normalized.contains("update")))
+        || normalized.contains("malware")
+        || normalized.contains("virus")
+        || normalized.contains("missing mesh")
+        || (normalized.contains("broken")
+            && (normalized.contains("patch") || normalized.contains("update")))
+}
+
+fn levenshtein_distance(left: &str, right: &str) -> usize {
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
+
+    for (left_index, left_character) in left.chars().enumerate() {
+        let mut current = Vec::with_capacity(right_chars.len() + 1);
+        current.push(left_index + 1);
+        for (right_index, right_character) in right_chars.iter().enumerate() {
+            let substitution = previous[right_index]
+                + usize::from(left_character != *right_character);
+            let insertion = current[right_index] + 1;
+            let deletion = previous[right_index + 1] + 1;
+            current.push(substitution.min(insertion).min(deletion));
+        }
+        previous = current;
+    }
+
+    previous[right_chars.len()]
+}
+
+fn token_similarity(left: &str, right: &str) -> f64 {
+    if left == right {
+        return 1.0;
+    }
+    let left_len = left.chars().count();
+    let right_len = right.chars().count();
+    let longest = left_len.max(right_len);
+    if longest == 0 {
+        return 1.0;
+    }
+
+    if left_len.min(right_len) >= 3 && (left.starts_with(right) || right.starts_with(left)) {
+        let coverage = left_len.min(right_len) as f64 / longest as f64;
+        return 0.82 + (0.18 * coverage);
+    }
+
+    1.0 - (levenshtein_distance(left, right) as f64 / longest as f64)
+}
+
+fn document_similarity(query: &str, document: &str) -> f64 {
+    let query_tokens = normalized_search_tokens(query);
+    let document_tokens = normalized_search_tokens(document);
+    if query_tokens.is_empty() || document_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let total = query_tokens
+        .iter()
+        .map(|query_token| {
+            document_tokens
+                .iter()
+                .map(|document_token| token_similarity(query_token, document_token))
+                .fold(0.0_f64, f64::max)
+        })
+        .sum::<f64>();
+    total / query_tokens.len() as f64
+}
+
+fn trigram_candidate_rows(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<(i64, String)>> {
+    let Some(query) = normalized_trigram_query(query) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(
+        "SELECT rowid, search_text
+         FROM library_smart_search_trigram
+         WHERE library_smart_search_trigram MATCH ?1
+         ORDER BY bm25(library_smart_search_trigram) ASC, rowid ASC
+         LIMIT ?2",
+    )?;
+    let rows = statement
+        .query_map(params![query, limit as i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn fuzzy_trigram_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<FuzzySearchDiagnostics> {
+    if benchmark_authority_query(query) {
+        return Ok(FuzzySearchDiagnostics {
+            ids: Vec::new(),
+            candidate_count: 0,
+        });
+    }
+
+    let strict_ids = fts_search(connection, query, STRICT_CANDIDATE_LIMIT)?;
+    let mut candidates = trigram_candidate_rows(connection, query, TRIGRAM_CANDIDATE_LIMIT)?;
+
+    for strict_id in &strict_ids {
+        if candidates.iter().any(|(id, _)| id == strict_id) {
+            continue;
+        }
+        let document = connection.query_row(
+            "SELECT search_text FROM library_smart_search_trigram WHERE rowid = ?1",
+            params![strict_id],
+            |row| row.get::<_, String>(0),
+        )?;
+        candidates.push((*strict_id, document));
+    }
+
+    let candidate_count = candidates.len();
+    let mut ranked = candidates
+        .into_iter()
+        .filter_map(|(id, document)| {
+            let strict_rank = strict_ids.iter().position(|strict_id| *strict_id == id);
+            let fuzzy_score = document_similarity(query, &document);
+            if strict_rank.is_none() && fuzzy_score < FUZZY_MIN_SCORE {
+                return None;
+            }
+            let score = strict_rank
+                .map(|rank| 2.0 - (rank as f64 * 0.01))
+                .unwrap_or(fuzzy_score);
+            Some((id, score))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|(left_id, left_score), (right_id, right_score)| {
+        right_score
+            .total_cmp(left_score)
+            .then_with(|| left_id.cmp(right_id))
+    });
+    ranked.dedup_by_key(|(id, _)| *id);
+
+    Ok(FuzzySearchDiagnostics {
+        ids: ranked
+            .into_iter()
+            .take(limit)
+            .map(|(id, _)| id)
+            .collect(),
+        candidate_count,
+    })
 }
 
 fn score_cases<F>(cases: &[QueryCase], mut search: F) -> RetrievalScore
@@ -408,6 +698,161 @@ fn representative_cases() -> Vec<QueryCase> {
     ]
 }
 
+fn holdout_cases() -> Vec<HoldoutCase> {
+    vec![
+        HoldoutCase {
+            query: "simplcity jolie hir",
+            expected_ids: &[1],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "hey harie baysic kitchn",
+            expected_ids: &[2],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "mc comand cnter",
+            expected_ids: &[3],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "pandasam chldbirth",
+            expected_ids: &[4],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "twistd mexi exceptions",
+            expected_ids: &[5],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "minmal main menue",
+            expected_ids: &[6],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "thi transltion strings",
+            expected_ids: &[7],
+            class: QueryClass::Typo,
+        },
+        HoldoutCase {
+            query: "jolie simplic",
+            expected_ids: &[1],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "baysic harr",
+            expected_ids: &[2],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "cmd center",
+            expected_ids: &[3],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "panda birth",
+            expected_ids: &[4],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "tmex exceptions",
+            expected_ids: &[5],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "menu replac",
+            expected_ids: &[6],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "thai str",
+            expected_ids: &[7],
+            class: QueryClass::Partial,
+        },
+        HoldoutCase {
+            query: "clutter kitchen harrie",
+            expected_ids: &[2],
+            class: QueryClass::VagueLexical,
+        },
+        HoldoutCase {
+            query: "toddler pink jolie",
+            expected_ids: &[1],
+            class: QueryClass::VagueLexical,
+        },
+        HoldoutCase {
+            query: "exceptions diagnostic",
+            expected_ids: &[5],
+            class: QueryClass::VagueLexical,
+        },
+        HoldoutCase {
+            query: "minimal replacement menu",
+            expected_ids: &[6],
+            class: QueryClass::VagueLexical,
+        },
+        HoldoutCase {
+            query: "mccc",
+            expected_ids: &[3],
+            class: QueryClass::Short,
+        },
+        HoldoutCase {
+            query: "tmex",
+            expected_ids: &[5],
+            class: QueryClass::Short,
+        },
+        HoldoutCase {
+            query: "baysic",
+            expected_ids: &[2],
+            class: QueryClass::Short,
+        },
+        HoldoutCase {
+            query: "script mod",
+            expected_ids: &[3, 5],
+            class: QueryClass::Ambiguous,
+        },
+        HoldoutCase {
+            query: "gameplay mod",
+            expected_ids: &[3, 4, 5],
+            class: QueryClass::Ambiguous,
+        },
+    ]
+}
+
+fn score_holdout_cases<F>(
+    cases: &[HoldoutCase],
+    class: Option<QueryClass>,
+    mut search: F,
+) -> RetrievalScore
+where
+    F: FnMut(&str) -> Vec<i64>,
+{
+    let selected = cases
+        .iter()
+        .filter(|case| class.is_none_or(|wanted| case.class == wanted))
+        .collect::<Vec<_>>();
+    let mut hits_at_five = 0usize;
+    let mut reciprocal_rank = 0.0f64;
+
+    for case in &selected {
+        let results = search(case.query);
+        if let Some(position) = results
+            .iter()
+            .position(|id| case.expected_ids.contains(id))
+        {
+            if position < 5 {
+                hits_at_five += 1;
+            }
+            reciprocal_rank += 1.0 / (position as f64 + 1.0);
+        }
+    }
+
+    let denominator = selected.len().max(1) as f64;
+    RetrievalScore {
+        recall_at_five: hits_at_five as f64 / denominator,
+        mean_reciprocal_rank: reciprocal_rank / denominator,
+    }
+}
+
 fn filler_fixture(id: i64) -> SearchFixture {
     SearchFixture {
         id,
@@ -490,12 +935,95 @@ mod tests {
                     .is_empty(),
                 "unsupported safety query must not be turned into a positive retrieval: {query}"
             );
+            assert!(
+                fuzzy_trigram_search(&connection, query, 5)
+                    .expect("fuzzy negative-control query")
+                    .ids
+                    .is_empty(),
+                "fuzzy retrieval must stay behind the benchmark authority gate: {query}"
+            );
         }
         assert!(
             fts_search(&connection, "---", 5)
                 .expect("punctuation-only query")
                 .is_empty(),
             "empty normalized query must not broaden into all rows"
+        );
+        assert!(
+            fuzzy_trigram_search(&connection, "---", 5)
+                .expect("punctuation-only fuzzy query")
+                .ids
+                .is_empty(),
+            "empty fuzzy query must not broaden into all rows"
+        );
+    }
+
+    #[test]
+    fn bundled_sqlite_trigram_candidates_are_available_and_bounded() {
+        let fixtures = representative_fixtures();
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        index_fixtures(&mut connection, &fixtures).expect("index fixtures with trigram");
+
+        let candidates = trigram_candidate_rows(&connection, "baysc", 3)
+            .expect("trigram candidate query");
+        assert!(candidates.len() <= 3);
+        assert!(
+            candidates.iter().any(|(id, _)| *id == 2),
+            "bundled trigram tokenizer should recover a near-spelling candidate"
+        );
+    }
+
+    #[test]
+    fn deterministic_fuzzy_search_recovers_holdout_typos_without_losing_strict_matches() {
+        let fixtures = representative_fixtures();
+        let holdout = holdout_cases();
+        let representative = representative_cases();
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        index_fixtures(&mut connection, &fixtures).expect("index fixtures");
+
+        let strict_holdout = score_holdout_cases(&holdout, None, |query| {
+            fts_search(&connection, query, 5).expect("strict holdout query")
+        });
+        let fuzzy_holdout = score_holdout_cases(&holdout, None, |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("fuzzy holdout query")
+                .ids
+        });
+        let strict_typos = score_holdout_cases(&holdout, Some(QueryClass::Typo), |query| {
+            fts_search(&connection, query, 5).expect("strict typo query")
+        });
+        let fuzzy_typos = score_holdout_cases(&holdout, Some(QueryClass::Typo), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("fuzzy typo query")
+                .ids
+        });
+        let fuzzy_representative = score_cases(&representative, |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("fuzzy representative query")
+                .ids
+        });
+
+        assert!(fuzzy_holdout.recall_at_five > strict_holdout.recall_at_five);
+        assert!(fuzzy_typos.recall_at_five > strict_typos.recall_at_five);
+        assert_eq!(fuzzy_representative.recall_at_five, 1.0);
+        assert_eq!(fuzzy_representative.mean_reciprocal_rank, 1.0);
+
+        for case in &holdout {
+            let result = fuzzy_trigram_search(&connection, case.query, 5)
+                .expect("bounded fuzzy holdout query");
+            assert!(
+                result.candidate_count <= TRIGRAM_CANDIDATE_LIMIT + STRICT_CANDIDATE_LIMIT,
+                "fuzzy candidate set must remain bounded: {} -> {}",
+                case.query,
+                result.candidate_count
+            );
+        }
+        assert!(
+            fuzzy_trigram_search(&connection, "totally unrelated spaceship", 5)
+                .expect("low-confidence query")
+                .ids
+                .is_empty(),
+            "low-confidence fuzzy search should preserve a real no-answer outcome"
         );
     }
 
@@ -514,6 +1042,12 @@ mod tests {
             assert!(
                 !results.contains(&expected_semantic_target),
                 "deterministic FTS should not be credited with semantic understanding it does not have: {query}"
+            );
+            let fuzzy = fuzzy_trigram_search(&connection, query, 5)
+                .expect("fuzzy semantic-gap query");
+            assert!(
+                !fuzzy.ids.contains(&expected_semantic_target),
+                "spelling similarity must not be credited with semantic understanding it does not have: {query}"
             );
         }
     }
@@ -551,6 +1085,7 @@ mod tests {
         let commands_source = include_str!("../commands/mod.rs");
         assert!(!commands_source.contains("library_smart_search_prototype"));
         assert!(!commands_source.contains("library_smart_search_fts"));
+        assert!(!commands_source.contains("library_smart_search_trigram"));
 
         let core_source = include_str!("mod.rs");
         assert!(core_source.contains(
@@ -564,9 +1099,16 @@ mod tests {
     #[ignore = "10k synthetic search benchmark; run pnpm run test:library:stress"]
     fn large_library_smart_search_baseline_reports_relevance_and_latency() {
         let cases = representative_cases();
+        let holdout = holdout_cases();
         let mut fixtures = representative_fixtures();
         fixtures.extend((100..10_093).map(filler_fixture));
         assert_eq!(fixtures.len(), 10_000);
+
+        let mut trigram_only_connection = Connection::open_in_memory().expect("trigram memory sqlite");
+        let trigram_only_started = Instant::now();
+        index_trigram_only(&mut trigram_only_connection, &fixtures)
+            .expect("index standalone trigram fixtures");
+        let trigram_only_elapsed = trigram_only_started.elapsed();
 
         let mut connection = Connection::open_in_memory().expect("memory sqlite");
         let index_started = Instant::now();
@@ -585,19 +1127,106 @@ mod tests {
         });
         let fts_elapsed = fts_started.elapsed();
 
+        let holdout_fts_started = Instant::now();
+        let holdout_fts = score_holdout_cases(&holdout, None, |query| {
+            fts_search(&connection, query, 5).expect("holdout FTS query")
+        });
+        let holdout_fts_elapsed = holdout_fts_started.elapsed();
+
+        let holdout_fuzzy_started = Instant::now();
+        let holdout_fuzzy = score_holdout_cases(&holdout, None, |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("holdout fuzzy query")
+                .ids
+        });
+        let holdout_fuzzy_elapsed = holdout_fuzzy_started.elapsed();
+
+        let typo_fts = score_holdout_cases(&holdout, Some(QueryClass::Typo), |query| {
+            fts_search(&connection, query, 5).expect("typo FTS query")
+        });
+        let typo_fuzzy = score_holdout_cases(&holdout, Some(QueryClass::Typo), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("typo fuzzy query")
+                .ids
+        });
+        let partial_fts = score_holdout_cases(&holdout, Some(QueryClass::Partial), |query| {
+            fts_search(&connection, query, 5).expect("partial FTS query")
+        });
+        let partial_fuzzy = score_holdout_cases(&holdout, Some(QueryClass::Partial), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("partial fuzzy query")
+                .ids
+        });
+        let vague_fts = score_holdout_cases(&holdout, Some(QueryClass::VagueLexical), |query| {
+            fts_search(&connection, query, 5).expect("vague FTS query")
+        });
+        let vague_fuzzy = score_holdout_cases(&holdout, Some(QueryClass::VagueLexical), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("vague fuzzy query")
+                .ids
+        });
+        let short_fts = score_holdout_cases(&holdout, Some(QueryClass::Short), |query| {
+            fts_search(&connection, query, 5).expect("short FTS query")
+        });
+        let short_fuzzy = score_holdout_cases(&holdout, Some(QueryClass::Short), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("short fuzzy query")
+                .ids
+        });
+        let ambiguous_fts = score_holdout_cases(&holdout, Some(QueryClass::Ambiguous), |query| {
+            fts_search(&connection, query, 5).expect("ambiguous FTS query")
+        });
+        let ambiguous_fuzzy = score_holdout_cases(&holdout, Some(QueryClass::Ambiguous), |query| {
+            fuzzy_trigram_search(&connection, query, 5)
+                .expect("ambiguous fuzzy query")
+                .ids
+        });
+
+        let mut candidate_total = 0usize;
+        let mut candidate_max = 0usize;
+        for case in &holdout {
+            let result = fuzzy_trigram_search(&connection, case.query, 5)
+                .expect("candidate diagnostic query");
+            candidate_total += result.candidate_count;
+            candidate_max = candidate_max.max(result.candidate_count);
+        }
+        let candidate_average = candidate_total as f64 / holdout.len() as f64;
+
         println!(
-            "smart-search-10k index_ms={} current_like_ms={} fts_ms={} current_recall_at_5={:.3} current_mrr={:.3} fts_recall_at_5={:.3} fts_mrr={:.3}",
+            "smart-search-10k index_ms={} trigram_only_index_ms={} current_like_ms={} fts_ms={} current_recall_at_5={:.3} current_mrr={:.3} fts_recall_at_5={:.3} fts_mrr={:.3} holdout_fts_ms={} holdout_fuzzy_ms={} holdout_fts_recall_at_5={:.3} holdout_fts_mrr={:.3} holdout_fuzzy_recall_at_5={:.3} holdout_fuzzy_mrr={:.3} typo_fts_recall_at_5={:.3} typo_fuzzy_recall_at_5={:.3} partial_fts_recall_at_5={:.3} partial_fuzzy_recall_at_5={:.3} vague_fts_recall_at_5={:.3} vague_fuzzy_recall_at_5={:.3} short_fts_recall_at_5={:.3} short_fuzzy_recall_at_5={:.3} ambiguous_fts_recall_at_5={:.3} ambiguous_fuzzy_recall_at_5={:.3} fuzzy_candidate_avg={:.1} fuzzy_candidate_max={}",
             index_elapsed.as_millis(),
+            trigram_only_elapsed.as_millis(),
             like_elapsed.as_millis(),
             fts_elapsed.as_millis(),
             current.recall_at_five,
             current.mean_reciprocal_rank,
             fts.recall_at_five,
             fts.mean_reciprocal_rank,
+            holdout_fts_elapsed.as_millis(),
+            holdout_fuzzy_elapsed.as_millis(),
+            holdout_fts.recall_at_five,
+            holdout_fts.mean_reciprocal_rank,
+            holdout_fuzzy.recall_at_five,
+            holdout_fuzzy.mean_reciprocal_rank,
+            typo_fts.recall_at_five,
+            typo_fuzzy.recall_at_five,
+            partial_fts.recall_at_five,
+            partial_fuzzy.recall_at_five,
+            vague_fts.recall_at_five,
+            vague_fuzzy.recall_at_five,
+            short_fts.recall_at_five,
+            short_fuzzy.recall_at_five,
+            ambiguous_fts.recall_at_five,
+            ambiguous_fuzzy.recall_at_five,
+            candidate_average,
+            candidate_max,
         );
 
         assert_eq!(fts.recall_at_five, 1.0);
         assert_eq!(fts.mean_reciprocal_rank, 1.0);
         assert!(fts.recall_at_five > current.recall_at_five);
+        assert!(holdout_fuzzy.recall_at_five > holdout_fts.recall_at_five);
+        assert!(typo_fuzzy.recall_at_five > typo_fts.recall_at_five);
+        assert!(candidate_max <= TRIGRAM_CANDIDATE_LIMIT + STRICT_CANDIDATE_LIMIT);
     }
 }

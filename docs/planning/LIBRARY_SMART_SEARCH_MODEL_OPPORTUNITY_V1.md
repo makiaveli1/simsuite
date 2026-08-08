@@ -308,7 +308,7 @@ On this deliberately controlled synthetic fixture:
 
 These values are **capability evidence, not product accuracy**. The meaningful documents and queries were handcrafted in the same benchmark design, which can make semantic relationships cleaner than real libraries. The result proves that a small embedding model can recover semantic wording that exact-token FTS misses; it does not prove that every player query will be understood correctly.
 
-There is also an unfinished deterministic comparison: the current FTS benchmark does not yet include a trigram/fuzzy spelling layer. Therefore typo recovery must not be credited to embeddings alone until a stronger deterministic fuzzy baseline is measured.
+The deterministic spelling comparison was subsequently completed in the same test-only search laboratory; see the next section. That follow-up recovered the controlled typo/partial-name cases without a model, so typo recovery is **not** evidence that embeddings are required. The remaining model-specific opportunity is semantic wording whose useful concepts are not lexically close to the indexed metadata.
 
 ### Authority/safety result
 
@@ -333,10 +333,10 @@ A separate deterministic benchmark gate returned no answer for all six controls.
 
 The model is small enough and the semantic gain is large enough to justify one more benchmark stage, especially for vague Library search. The current evidence is not sufficient to bundle or download a model in SimSuite.
 
-Before any production decision, the next benchmark must:
+Before any production model decision, the remaining evaluation must:
 
-1. add a stronger deterministic FTS5 + trigram/fuzzy baseline;
-2. use a larger independently authored query set rather than queries written alongside the documents;
+1. use a larger independently authored query set rather than queries written with knowledge of the fixture contents;
+2. compare embeddings only against the now-stronger deterministic FTS + fuzzy/trigram stack on genuinely semantic misses;
 3. test native Windows and Linux runtime/packaging paths;
 4. test representative low-spec player hardware;
 5. obtain a trustworthy total process/WASM memory measurement;
@@ -344,7 +344,80 @@ Before any production decision, the next benchmark must:
 7. preserve a deterministic no-model fallback and a hard authority router;
 8. reverify model licence, artifact provenance, and distribution terms immediately before any shipping decision.
 
-## 12. LLM position
+## 12. Measured deterministic fuzzy/trigram benchmark
+
+A second follow-up stayed inside the existing doubly test-gated Rust search laboratory. It added no production Library table, migration, command, UI, dependency, model, network path, or player-file access.
+
+### Strategy
+
+The prototype keeps strict FTS5 as the first retrieval signal, then adds a bounded spelling-recovery lane:
+
+1. the same privacy-bounded rich metadata is flattened into a test-only FTS5 `trigram` index;
+2. query character trigrams retrieve at most `80` candidate rows from SQLite;
+3. up to `20` strict FTS candidates are preserved so known-good exact/alias retrieval cannot be displaced;
+4. only that bounded candidate set is reranked in Rust using camel-case-aware tokenization plus deterministic normalized Levenshtein/prefix similarity;
+5. non-strict candidates below a `0.72` prototype similarity floor are discarded;
+6. an explicit benchmark-only authority gate keeps safety/dependency/update/security questions outside fuzzy retrieval.
+
+The candidate design is important for low-spec behavior: it does **not** scan or edit-distance-score all `10,000` records for each query.
+
+### Holdout-style query set
+
+The follow-up added `23` queries after the original seven meaningful fixture documents were already established:
+
+- `7` realistic typo cases;
+- `7` partial-name cases;
+- `4` reordered/vague-but-lexical cases;
+- `3` short creator/mod-name cases;
+- `2` ambiguous queries where more than one target is acceptable.
+
+Examples include misspellings such as `pandasam chldbirth`, `twistd mexi exceptions`, `minmal main menue`, and partial forms such as `baysic harr` and `menu replac`.
+
+This is a stronger separation than writing the original metadata and exact queries together, but it is still **not independent player research**: the benchmark author knew the fixture contents while writing the holdout queries. The scores remain capability evidence rather than expected real-player accuracy.
+
+### 10,000-item measured run
+
+On the current macOS development machine, in the existing Library stress lane:
+
+- complete temporary search-lab indexing (`%LIKE%` table + unicode FTS + trigram FTS): about `392 ms`;
+- standalone `10,000`-row trigram index build: about `263 ms`;
+- current-style `%LIKE%` representative queries: about `37 ms` total;
+- strict FTS representative queries: about `1 ms` total;
+- strict FTS over all `23` holdout queries: about `2 ms` total;
+- bounded fuzzy/trigram over all `23` holdout queries: about `129 ms` total, roughly `5.6 ms/query`;
+- fuzzy candidate rows inspected: `16.0` average, `80` maximum.
+
+The standalone trigram timing and complete search-lab timing were separate runs and are not additive production-startup estimates. A production design would also maintain its search representation incrementally rather than rebuild it for every query.
+
+### Retrieval result
+
+On this controlled holdout set:
+
+- strict FTS overall recall@5 / MRR: `0.435 / 0.435`;
+- fuzzy/trigram overall recall@5 / MRR: `1.000 / 1.000`;
+- typo recall@5: `0.000` strict -> `1.000` fuzzy;
+- partial-name recall@5: `0.286` strict -> `1.000` fuzzy;
+- vague-but-lexical recall@5: `0.750` strict -> `1.000` fuzzy;
+- short-name recall@5: `1.000` for both;
+- ambiguous-query recall@5: `1.000` for both.
+
+The original exact/alias representative set remained `1.000` recall@5 and MRR through the fuzzy path, so this prototype did not trade away the stronger strict-search cases to gain typo recovery.
+
+The semantic controls also remained unresolved by the fuzzy layer: it still did not recover the intended targets for `rose kids hairstyle`, `pregnancy delivery gameplay`, or `game error helper`. That is the desired distinction. Trigram/edit similarity helps when the player is *spelling or abbreviating known words differently*; it does not supply semantic knowledge when the wording changes conceptually.
+
+### Decision after deterministic fuzzy V1
+
+**A production search foundation should be model-free first.**
+
+The current evidence supports this order:
+
+1. rich deterministic FTS for exact metadata, aliases, and ordinary keyword search;
+2. bounded deterministic fuzzy/trigram recovery for misspellings, partial names, and near lexical matches;
+3. optional local embeddings only for the remaining semantic-retrieval problem, if a larger independent evaluation still justifies their footprint and trust cost.
+
+This materially narrows the model opportunity. Embeddings no longer need to solve normal typos or partial creator/mod names; their case rests on genuinely semantic retrieval and later visual similarity.
+
+## 13. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -352,17 +425,17 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 13. Recommended next sequence
+## 14. Recommended next sequence
 
-1. Keep production Library search unchanged while the retrieval foundation is still being compared.
-2. Add a **deterministic fuzzy/trigram benchmark** on top of the richer FTS metadata so typo and near-spelling recovery have a fair non-model baseline.
-3. Build a larger query set that is authored independently from the indexed fixture descriptions, with more realistic vague and mixed-intent player phrasing.
-4. Re-run FTS, fuzzy deterministic retrieval, embedding-only, and any justified hybrid against that independent set; retire the hybrid if it still adds no measurable value.
-5. Only after that, design a test-only production-shape prototype for background/incremental local semantic indexing, with explicit optional download and deterministic fallback.
+1. Keep production Library search unchanged until the test-only search design is translated into a reviewed production shape.
+2. Expand the retrieval evaluation with a larger query set authored independently from the indexed fixture descriptions, ideally including real player phrasing collected without using private Library paths/content.
+3. Design a production-feasibility proof for incrementally maintained rich FTS + bounded deterministic fuzzy search, still behind tests and without silently replacing the current Library path.
+4. Re-run the local embedding comparison only against semantic cases that the stronger deterministic stack genuinely misses; do not make the model pay for typo/partial-name work that deterministic search already handles well.
+5. If semantic embeddings still justify themselves, design them as an optional local background index with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and a hard authority router.
 6. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
 7. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 14. What this work does not do
+## 15. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 
