@@ -239,28 +239,110 @@ Recommended default posture:
 - local embeddings should never include absolute local paths when those paths are not necessary for retrieval;
 - cloud-assisted features, if ever offered, require explicit opt-in and a precise data-boundary explanation.
 
-## 11. Candidate text-embedding benchmark ladder
+## 11. Measured local text-embedding benchmark
 
-No model is selected by this document. Model specifications and licenses must be reverified immediately before any implementation decision.
+A separate benchmark was run after the deterministic FTS milestone. This was **not** a SimSuite integration. The harness lived outside the repository, used synthetic records only, and added no SimSuite package dependency, model binary, cache, schema, command, UI, network service, or player-file access.
 
-Useful future benchmark classes include:
+### Candidate and runtime
 
-- a very small English sentence-transformer baseline such as MiniLM-class models;
-- a compact retrieval-focused BGE-class model;
-- a multilingual small model if player-language coverage proves important;
-- a larger device-oriented model only as a quality ceiling, not as the default assumption.
+The first floor candidate was `Xenova/all-MiniLM-L6-v2`, the Transformers.js-compatible ONNX conversion of `sentence-transformers/all-MiniLM-L6-v2`.
 
-Selection criteria should include:
+For this benchmark:
 
-- relevance gain over FTS5 and hybrid FTS5;
-- model/package download size;
-- resident memory;
-- CPU latency on low-spec machines;
-- macOS/Windows/Linux runtime packaging complexity;
-- licence/distribution constraints;
-- offline operation;
-- deterministic fallback when the model is unavailable;
-- vector storage size and incremental re-index cost.
+- licence: Apache-2.0;
+- runtime: Transformers.js 3.8.1 in Chrome/WASM;
+- inference location: local browser only;
+- dtype: q8;
+- embedding dimension: `384`;
+- measured model/tokenizer artifact set: `23,685,047` bytes, about `22.59 MiB`;
+- no cloud inference was used.
+
+Model specifications and licence still need to be reverified immediately before any future distribution decision.
+
+### Corpus and comparison
+
+The benchmark used `10,000` synthetic Library documents:
+
+- `30` meaningful Sims-style records;
+- `9,970` generic distractors;
+- `43` positive queries across lexical, alias, semantic-paraphrase, typo, and ambiguous classes;
+- `6` explicit authority/safety negative controls.
+
+The same metadata classes used by the deterministic prototype were embedded: filename, creator/alias text, kind/subtype, embedded names, family hints, resource-summary labels, and script namespaces. Absolute player paths were not part of the embedding text.
+
+The deterministic comparison used an in-memory SQLite FTS5 index with the same strict normalized `AND` token semantics as the committed prototype. The embedding and a simple FTS+embedding hybrid were scored with recall@5 and MRR.
+
+### Measured performance on the current macOS development machine
+
+Deterministic FTS side:
+
+- FTS construction for `10,000` rows: about `250 ms` in this isolated run;
+- all benchmark FTS queries: about `38 ms` total.
+
+Local MiniLM side:
+
+- first model load/download: about `3.66 s`;
+- warm cached model load: about `0.92 s` on the latest warm run;
+- first `10,000`-document embedding build: about `280.7 s` (`4 min 41 s`);
+- warm query embedding: about `9 ms` per query;
+- warm incremental embedding of `100` changed items: about `3.41 s`, or `34 ms` per item in this browser/WASM harness.
+
+Vector storage at `10,000 × 384` dimensions:
+
+- float32: about `14.65 MiB`;
+- theoretical int8 vector payload: about `3.66 MiB`, before any index/metadata overhead.
+
+Chrome exposed only partial JavaScript-heap measurements. It did **not** expose a trustworthy total WASM/native resident-memory figure, so this benchmark does not establish a production RAM requirement.
+
+### Retrieval result
+
+On this deliberately controlled synthetic fixture:
+
+- FTS overall recall@5: `0.512`;
+- FTS semantic recall@5: `0.280`;
+- FTS typo recall@5: `0.000`;
+- embedding overall recall@5: `1.000`;
+- embedding semantic recall@5: `1.000` with semantic MRR `0.980`;
+- embedding typo recall@5: `1.000`;
+- the simple hybrid matched embedding-only on this fixture and added no measurable relevance benefit.
+
+These values are **capability evidence, not product accuracy**. The meaningful documents and queries were handcrafted in the same benchmark design, which can make semantic relationships cleaner than real libraries. The result proves that a small embedding model can recover semantic wording that exact-token FTS misses; it does not prove that every player query will be understood correctly.
+
+There is also an unfinished deterministic comparison: the current FTS benchmark does not yet include a trigram/fuzzy spelling layer. Therefore typo recovery must not be credited to embeddings alone until a stronger deterministic fuzzy baseline is measured.
+
+### Authority/safety result
+
+This was the most important trust finding.
+
+Raw dense retrieval returned a nearest-neighbour file for **every** authority-seeking negative query, including requests equivalent to:
+
+- safe to delete;
+- remove without breaking anything;
+- compatible with the current patch;
+- malware free;
+- missing-mesh proof;
+- broken after the latest patch.
+
+That behaviour is normal for nearest-neighbour retrieval: it finds the closest item even when the correct product response is `unknown` or `this requires deterministic evidence`.
+
+A separate deterministic benchmark gate returned no answer for all six controls. This demonstrates a required architecture rule rather than validating that exact gate for production: semantic retrieval must never be allowed to become the authority layer for safety, dependency, update, compatibility, security, or mutation decisions.
+
+### Decision after V1
+
+**Proceed with further R&D, not production integration.**
+
+The model is small enough and the semantic gain is large enough to justify one more benchmark stage, especially for vague Library search. The current evidence is not sufficient to bundle or download a model in SimSuite.
+
+Before any production decision, the next benchmark must:
+
+1. add a stronger deterministic FTS5 + trigram/fuzzy baseline;
+2. use a larger independently authored query set rather than queries written alongside the documents;
+3. test native Windows and Linux runtime/packaging paths;
+4. test representative low-spec player hardware;
+5. obtain a trustworthy total process/WASM memory measurement;
+6. design and measure background incremental indexing rather than blocking first-run UI;
+7. preserve a deterministic no-model fallback and a hard authority router;
+8. reverify model licence, artifact provenance, and distribution terms immediately before any shipping decision.
 
 ## 12. LLM position
 
@@ -272,25 +354,29 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 
 ## 13. Recommended next sequence
 
-1. Keep this milestone test-only and commit it only after the normal project verification gate passes.
-2. Design the production feasibility of an incrementally maintained FTS search representation; do not silently replace Library search yet.
-3. Build a separate **embedding benchmark**, not an integration, against a larger query set containing both lexical and genuinely semantic cases.
-4. Proceed with embeddings only if the measured relevance improvement is meaningful relative to footprint and runtime cost.
-5. Later, separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
-6. Keep LLM work behind both of those because it currently has less direct product value.
+1. Keep production Library search unchanged while the retrieval foundation is still being compared.
+2. Add a **deterministic fuzzy/trigram benchmark** on top of the richer FTS metadata so typo and near-spelling recovery have a fair non-model baseline.
+3. Build a larger query set that is authored independently from the indexed fixture descriptions, with more realistic vague and mixed-intent player phrasing.
+4. Re-run FTS, fuzzy deterministic retrieval, embedding-only, and any justified hybrid against that independent set; retire the hybrid if it still adds no measurable value.
+5. Only after that, design a test-only production-shape prototype for background/incremental local semantic indexing, with explicit optional download and deterministic fallback.
+6. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
+7. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 14. What this milestone does not do
+## 14. What this work does not do
 
-It does not:
+It does not change SimSuite production behavior. In particular, it does not:
 
 - change production Library search;
-- create a production FTS table or migration;
-- download or bundle a model;
-- add an inference runtime;
-- add embeddings;
+- create a production FTS/vector table or migration;
+- bundle, silently download, or ship a model with SimSuite;
+- add a SimSuite inference runtime or package dependency;
+- add production embeddings;
 - add an LLM;
 - add an AI setting or UI;
-- send any player data to a network service;
+- send player data to a model or network service;
+- read real player files for the embedding benchmark;
 - mutate any player file;
 - enable Apply or Restore;
 - change the standing SimSuite trust boundary.
+
+The isolated developer benchmark did temporarily download the q8 MiniLM artifacts into the browser cache outside the SimSuite repository. Those artifacts are not part of SimSuite and must not be committed or treated as a product dependency.
