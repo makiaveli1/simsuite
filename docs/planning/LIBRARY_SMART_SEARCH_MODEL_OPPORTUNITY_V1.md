@@ -536,12 +536,81 @@ Before turning this into a real migration, SimSuite still needs:
 4. a compact searchable-insight projection that reads only embedded names, family hints, resource-summary labels, and script namespaces instead of deserializing/copying thumbnail or other media payloads during search-index maintenance;
 5. a batched source-document reconstruction design for fuzzy candidate IDs, rather than relying on one source lookup per candidate indefinitely;
 6. explicit combination of seeded creator aliases plus user-learned aliases, with seed-version changes forcing a repair/rebuild when needed;
-7. independent player-query evaluation and realistic concurrency/locked-database testing;
+7. a broader representative non-private metadata corpus with independently supplied/public player queries, plus realistic concurrency/locked-database testing;
 8. schema upgrade/rollback and self-repair tests before any production migration is accepted.
 
 No production migration, command, UI, or search replacement is enabled by this feasibility milestone.
 
-## 14. LLM position
+## 14. Independent player-phrasing evaluation V1
+
+The earlier deterministic retrieval sets were useful capability probes, but their author knew the synthetic search documents while writing most of the queries. A fourth follow-up therefore froze a separate player-side query file **before** mapping any expected fixture IDs. The wording was derived from a separate Sims mod-management/player-problem research brief rather than from `representative_fixtures()` or the search-document fields.
+
+The frozen V1 set contains `36` immutable queries, six in each class:
+
+- exact mod names;
+- creator names/aliases;
+- misspelled or partial names;
+- vague-but-lexical player wording;
+- genuinely semantic natural-language paraphrases;
+- authority questions that retrieval must not answer.
+
+The query file contains only query IDs, classes, wording, and player intent. It deliberately contains no expected fixture IDs. A second mapping file was created only after the wording was frozen. Because the existing representative corpus contains only seven meaningful subjects, that mapping classified the `36` questions as:
+
+- `15` fair positive targets;
+- `15` unsupported because the requested subject is absent from the seven-item corpus;
+- `6` authority/no-answer cases.
+
+The corpus was **not** expanded after seeing the query set. For example, UI Cheats, XML Injector, TOOL, WonderfulWhims, Lumpinou, and Lot 51 remain unsupported rather than being added to make the benchmark look stronger.
+
+### Blind relevance result
+
+Against the unchanged seven-item representative corpus:
+
+- strict FTS positive-target recall@5 / MRR: `0.400 / 0.400`;
+- bounded fuzzy positive-target recall@5 / MRR: `0.667 / 0.667`;
+- exact-name recall@5: `1.000` strict and fuzzy;
+- creator/alias recall@5: `1.000` strict and fuzzy;
+- typo/partial recall@5: `0.000` strict -> `1.000` fuzzy;
+- vague lexical recall@5: `0.000` strict -> `0.333` fuzzy;
+- semantic paraphrase recall@5: `0.000` strict and fuzzy;
+- authority/no-answer behavior: `1.000` for both paths in this controlled corpus.
+
+The misses were retained as evidence. The fuzzy layer found `pregnancy gameplay mod`, but it did not recover targets for player wording such as an `error report helper`, `cas hair for kids`, or the three supported semantic paraphrases. No threshold, indexed text, target mapping, or search rule was changed to improve those results.
+
+### 10,000-item scale check
+
+The same frozen evaluation was then rerun after adding neutral synthetic filler rows to reach `10,000` indexed items. The relevance scores were unchanged:
+
+- strict recall@5 / MRR: `0.400 / 0.400`;
+- fuzzy recall@5 / MRR: `0.667 / 0.667`;
+- exact names: `1.000` fuzzy recall@5;
+- creator/alias: `1.000`;
+- typo/partial: `1.000`;
+- vague lexical: `0.333`;
+- semantic paraphrase: `0.000`;
+- authority/no-answer: `1.000` in this controlled run.
+
+On the current macOS development machine the 10k in-memory index built in about `506 ms`. Across the `21` measurable target/no-answer queries, strict retrieval averaged about `283 µs/query`. Bounded fuzzy retrieval averaged about `12.2 ms/query` and inspected about `24.4` candidates per measured query. Class-level fuzzy latency ranged from about `1.2 ms/query` for creator/alias wording to about `18.1 ms/query` for semantic paraphrases in this run. These are local synthetic timings, not player-device guarantees.
+
+### Authority nuance
+
+The `1.000` no-answer score must not be read as proof of a complete safety router. The current explicit benchmark authority guard directly recognizes four of the six frozen authority intents. The definitive-crash-attribution and definitive-current-update questions also returned no answer here, but only because ordinary retrieval/fuzzy scoring produced no surviving result. A production smart-search router must classify authority intent explicitly rather than relying on a similarity threshold to happen to return nothing.
+
+### Decision after the independent evaluation
+
+The independent result strengthens, rather than weakens, the case for a layered design:
+
+1. deterministic FTS is strong for exact names and creator identity;
+2. bounded trigram/edit similarity earns its place for misspellings and partial names;
+3. fuzzy lexical similarity should **not** be presented as natural-language semantic understanding;
+4. genuinely semantic search remains the narrow case where optional local embeddings may add real value;
+5. authority/safety intent must be routed away from retrieval before either deterministic fuzzy search or embeddings can answer.
+
+This is still not real-player accuracy evidence. The query wording was independently frozen relative to the search fixtures, but the indexed corpus is only seven meaningful synthetic subjects plus neutral fillers, and half of the frozen questions were therefore unsupported. A broader evaluation should use independently supplied/public player phrasing against a much more representative non-private mod metadata corpus before production thresholds are chosen.
+
+No production search path, FTS migration, command, UI, model dependency, or player-file behavior changed in this evaluation.
+
+## 15. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -549,17 +618,17 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 15. Recommended next sequence
+## 16. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Expand retrieval evaluation with a larger query set authored independently from indexed fixture descriptions, ideally using voluntarily supplied/public player phrasing rather than private Library content.
-3. Do a migration-design-only review for explicit contentless search synchronization at scanner, creator-learning, category-override, and searchable-insight update boundaries, including lock/concurrency and schema-repair behavior.
-4. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses.
+2. Do a migration-design-only review for explicit contentless search synchronization at scanner, creator-learning, category-override, and searchable-insight update boundaries, including lock/concurrency, repair, and authority-intent routing.
+3. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production thresholds.
+4. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
 5. If semantic embeddings still justify themselves, keep them optional/local with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and a hard authority router.
 6. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
 7. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 16. What this work does not do
+## 17. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 

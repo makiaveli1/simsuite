@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "query_file": "library-smart-search-player-queries-v1.json",
+  "purpose": "Target mapping created only after the player-side query wording was frozen. Unsupported means the existing representative corpus has no fair target and the corpus must not be changed to manufacture one.",
+  "targets": [
+    {"id":"exact_01","status":"target","expected_ids":[5],"rationale":"Representative corpus contains Better Exceptions."},
+    {"id":"exact_02","status":"target","expected_ids":[3],"rationale":"Representative corpus contains MC Command Center."},
+    {"id":"exact_03","status":"unsupported","expected_ids":[],"rationale":"UI Cheats is absent from the representative corpus."},
+    {"id":"exact_04","status":"unsupported","expected_ids":[],"rationale":"XML Injector is absent from the representative corpus."},
+    {"id":"exact_05","status":"unsupported","expected_ids":[],"rationale":"The representative corpus does not contain the TOOL object-placement mod."},
+    {"id":"exact_06","status":"unsupported","expected_ids":[],"rationale":"WonderfulWhims is absent from the representative corpus."},
+
+    {"id":"creator_01","status":"target","expected_ids":[5],"rationale":"Better Exceptions is attributed to TwistedMexi."},
+    {"id":"creator_02","status":"target","expected_ids":[5],"rationale":"Better Exceptions carries the TMex creator alias."},
+    {"id":"creator_03","status":"target","expected_ids":[3],"rationale":"MC Command Center is attributed to Deaderpool."},
+    {"id":"creator_04","status":"target","expected_ids":[4],"rationale":"ChildBirth content is attributed to PandaSama."},
+    {"id":"creator_05","status":"unsupported","expected_ids":[],"rationale":"Lumpinou is absent from the representative corpus."},
+    {"id":"creator_06","status":"unsupported","expected_ids":[],"rationale":"Lot 51 is absent from the representative corpus."},
+
+    {"id":"typo_01","status":"target","expected_ids":[5],"rationale":"Misspelled Better Exceptions should resolve to the existing Better Exceptions fixture."},
+    {"id":"typo_02","status":"target","expected_ids":[3],"rationale":"Misspelled partial MCCC wording should resolve to MC Command Center."},
+    {"id":"typo_03","status":"unsupported","expected_ids":[],"rationale":"UI Cheats is absent from the representative corpus."},
+    {"id":"typo_04","status":"unsupported","expected_ids":[],"rationale":"XML Injector is absent from the representative corpus."},
+    {"id":"typo_05","status":"unsupported","expected_ids":[],"rationale":"TOOL is absent; TwistedMexi alone is not a fair substitute for a TOOL-specific intent."},
+    {"id":"typo_06","status":"target","expected_ids":[4],"rationale":"Shortened Panda/birth wording maps fairly to PandaSama ChildBirth."},
+
+    {"id":"lexical_01","status":"target","expected_ids":[4],"rationale":"ChildBirth is the corpus item representing pregnancy/childbirth gameplay intent."},
+    {"id":"lexical_02","status":"target","expected_ids":[5],"rationale":"Better Exceptions is the corpus troubleshooting/error-diagnostics item."},
+    {"id":"lexical_03","status":"unsupported","expected_ids":[],"rationale":"No object-placement utility exists in the representative corpus."},
+    {"id":"lexical_04","status":"unsupported","expected_ids":[],"rationale":"No shared core-library dependency exists in the representative corpus."},
+    {"id":"lexical_05","status":"target","expected_ids":[1],"rationale":"Jolie Toddler Hair is the corpus child/toddler CAS hair item."},
+    {"id":"lexical_06","status":"unsupported","expected_ids":[],"rationale":"No UI/menu cheat mod exists in the representative corpus."},
+
+    {"id":"semantic_01","status":"target","expected_ids":[5],"rationale":"Better Exceptions is the corpus item intended to help diagnose what broke."},
+    {"id":"semantic_02","status":"target","expected_ids":[4],"rationale":"PandaSama ChildBirth represents pregnancy and birth gameplay."},
+    {"id":"semantic_03","status":"unsupported","expected_ids":[],"rationale":"No object-placement utility exists in the representative corpus."},
+    {"id":"semantic_04","status":"unsupported","expected_ids":[],"rationale":"No shared dependency/core-library item exists in the representative corpus."},
+    {"id":"semantic_05","status":"target","expected_ids":[1],"rationale":"Jolie Toddler Hair is the corpus child/toddler hair item."},
+    {"id":"semantic_06","status":"unsupported","expected_ids":[],"rationale":"No UI cheat mod exists in the representative corpus."},
+
+    {"id":"authority_01","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not claim safe-delete authority."},
+    {"id":"authority_02","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not claim malware authority."},
+    {"id":"authority_03","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not claim current-patch compatibility authority."},
+    {"id":"authority_04","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not definitively attribute a crash."},
+    {"id":"authority_05","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not claim dependency-safe removal authority."},
+    {"id":"authority_06","status":"no_answer","expected_ids":[],"rationale":"Retrieval must not claim current update status authority."}
+  ]
+}

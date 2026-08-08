@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "purpose": "Frozen player-side query wording for independent smart-search evaluation. This file intentionally contains no expected fixture IDs and must not be edited to improve benchmark scores.",
+  "provenance": "Derived from separate Sims mod-management player-problem research and product evidence before target mapping.",
+  "queries": [
+    {"id":"exact_01","class":"exact_name","query":"better exceptions","intent":"Find a specifically named troubleshooting mod."},
+    {"id":"exact_02","class":"exact_name","query":"mc command center","intent":"Find a specifically named gameplay utility."},
+    {"id":"exact_03","class":"exact_name","query":"ui cheats extension","intent":"Find a specifically named UI cheat mod."},
+    {"id":"exact_04","class":"exact_name","query":"xml injector","intent":"Find a specifically named shared dependency."},
+    {"id":"exact_05","class":"exact_name","query":"tool mod","intent":"Find the object-placement utility commonly called TOOL."},
+    {"id":"exact_06","class":"exact_name","query":"wonderful whims","intent":"Find a specifically named gameplay mod if the corpus contains it."},
+
+    {"id":"creator_01","class":"creator_alias","query":"twisted mexi","intent":"Find files associated with the creator TwistedMexi."},
+    {"id":"creator_02","class":"creator_alias","query":"tmex","intent":"Find TwistedMexi files using a common short creator alias."},
+    {"id":"creator_03","class":"creator_alias","query":"deaderpool","intent":"Find files associated with the creator of MCCC."},
+    {"id":"creator_04","class":"creator_alias","query":"pandasama","intent":"Find files associated with PandaSama."},
+    {"id":"creator_05","class":"creator_alias","query":"lumpinou","intent":"Find files associated with Lumpinou."},
+    {"id":"creator_06","class":"creator_alias","query":"lot 51","intent":"Find files associated with Lot 51."},
+
+    {"id":"typo_01","class":"typo_partial","query":"bettr exceptions","intent":"Find Better Exceptions despite a spelling mistake."},
+    {"id":"typo_02","class":"typo_partial","query":"mcc comand","intent":"Find MCCC despite an incomplete misspelled name."},
+    {"id":"typo_03","class":"typo_partial","query":"ui cheets","intent":"Find UI Cheats despite a spelling mistake."},
+    {"id":"typo_04","class":"typo_partial","query":"xml inject","intent":"Find XML Injector from a partial name."},
+    {"id":"typo_05","class":"typo_partial","query":"twistd mexi tool","intent":"Find a TwistedMexi TOOL file despite misspelling the creator."},
+    {"id":"typo_06","class":"typo_partial","query":"panda birth","intent":"Find PandaSama childbirth content from shortened wording."},
+
+    {"id":"lexical_01","class":"vague_lexical","query":"pregnancy gameplay mod","intent":"Find installed content whose visible metadata directly uses pregnancy/gameplay language."},
+    {"id":"lexical_02","class":"vague_lexical","query":"error report helper","intent":"Find troubleshooting content whose metadata directly mentions errors, reports, or helper behavior."},
+    {"id":"lexical_03","class":"vague_lexical","query":"object placement tool","intent":"Find content whose metadata directly mentions object placement or a tool utility."},
+    {"id":"lexical_04","class":"vague_lexical","query":"core library mod","intent":"Find a shared core/library dependency when those words are present in metadata."},
+    {"id":"lexical_05","class":"vague_lexical","query":"cas hair for kids","intent":"Find child/kid CAS hair when those lexical clues are present."},
+    {"id":"lexical_06","class":"vague_lexical","query":"menu cheat mod","intent":"Find a UI/menu cheat mod when those words are present."},
+
+    {"id":"semantic_01","class":"semantic_paraphrase","query":"the mod that helps me figure out what broke my game","intent":"Find a troubleshooting mod from a conceptual description rather than its name."},
+    {"id":"semantic_02","class":"semantic_paraphrase","query":"something that adds pregnancy and giving birth gameplay","intent":"Find childbirth/pregnancy gameplay content from natural-language purpose."},
+    {"id":"semantic_03","class":"semantic_paraphrase","query":"the thing that lets me place objects more freely","intent":"Find an object-placement utility from natural-language purpose."},
+    {"id":"semantic_04","class":"semantic_paraphrase","query":"a helper file other mods need in order to work","intent":"Find a shared dependency/core library from conceptual dependency language."},
+    {"id":"semantic_05","class":"semantic_paraphrase","query":"hair for a child sim","intent":"Find child CAS hair from natural-language intent."},
+    {"id":"semantic_06","class":"semantic_paraphrase","query":"the mod that lets me click the ui to cheat needs and money","intent":"Find a UI cheat mod from a conceptual description."},
+
+    {"id":"authority_01","class":"authority_no_answer","query":"which of these files is definitely safe to delete","intent":"Must not convert retrieval similarity into safe-delete authority."},
+    {"id":"authority_02","class":"authority_no_answer","query":"which mod is malware","intent":"Must not convert retrieval similarity into malware determination."},
+    {"id":"authority_03","class":"authority_no_answer","query":"what is guaranteed compatible with the latest patch","intent":"Must not convert retrieval similarity into patch-compatibility authority."},
+    {"id":"authority_04","class":"authority_no_answer","query":"which file is definitely causing my game to crash","intent":"Must not convert retrieval similarity into definitive crash attribution."},
+    {"id":"authority_05","class":"authority_no_answer","query":"what can i remove without breaking any other mod","intent":"Must not convert retrieval similarity into dependency-safe removal authority."},
+    {"id":"authority_06","class":"authority_no_answer","query":"which installed mod definitely needs an update right now","intent":"Must not convert retrieval similarity into update-status authority."}
+  ]
+}

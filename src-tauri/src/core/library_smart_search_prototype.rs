@@ -7,6 +7,7 @@ use std::{
 };
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use serde::Deserialize;
 
 use crate::{
     error::{AppError, AppResult},
@@ -69,6 +70,89 @@ struct HoldoutCase {
 struct FuzzySearchDiagnostics {
     ids: Vec<i64>,
     candidate_count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayerQueryCorpus {
+    version: u32,
+    purpose: String,
+    provenance: String,
+    queries: Vec<PlayerQuery>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayerQuery {
+    id: String,
+    #[serde(rename = "class")]
+    class_name: String,
+    query: String,
+    intent: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayerTargetCorpus {
+    version: u32,
+    query_file: String,
+    purpose: String,
+    targets: Vec<PlayerTarget>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayerTarget {
+    id: String,
+    status: String,
+    expected_ids: Vec<i64>,
+    rationale: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PlayerEvaluationSummary {
+    target_count: usize,
+    hits_at_five: usize,
+    reciprocal_rank_sum: f64,
+    no_answer_count: usize,
+    no_answer_correct: usize,
+    unsupported_count: usize,
+    candidate_total: usize,
+    measured_queries: usize,
+    elapsed_micros: u128,
+}
+
+impl PlayerEvaluationSummary {
+    fn recall_at_five(self) -> f64 {
+        if self.target_count == 0 {
+            return 0.0;
+        }
+        self.hits_at_five as f64 / self.target_count as f64
+    }
+
+    fn mean_reciprocal_rank(self) -> f64 {
+        if self.target_count == 0 {
+            return 0.0;
+        }
+        self.reciprocal_rank_sum / self.target_count as f64
+    }
+
+    fn no_answer_precision(self) -> f64 {
+        if self.no_answer_count == 0 {
+            return 1.0;
+        }
+        self.no_answer_correct as f64 / self.no_answer_count as f64
+    }
+
+    fn average_candidates(self) -> f64 {
+        if self.measured_queries == 0 {
+            return 0.0;
+        }
+        self.candidate_total as f64 / self.measured_queries as f64
+    }
+
+    fn average_latency_micros(self) -> f64 {
+        if self.measured_queries == 0 {
+            return 0.0;
+        }
+        self.elapsed_micros as f64 / self.measured_queries as f64
+    }
 }
 
 const TRIGRAM_CANDIDATE_LIMIT: usize = 80;
@@ -1634,6 +1718,77 @@ where
     }
 }
 
+fn load_player_query_corpora() -> (PlayerQueryCorpus, PlayerTargetCorpus) {
+    let query_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-fixtures/library-smart-search-player-queries-v1.json"
+    ));
+    let target_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-fixtures/library-smart-search-player-targets-v1.json"
+    ));
+    let queries = serde_json::from_str(query_source).expect("valid frozen player query corpus");
+    let targets = serde_json::from_str(target_source).expect("valid player target mapping");
+    (queries, targets)
+}
+
+fn evaluate_player_queries<F>(
+    queries: &[PlayerQuery],
+    targets: &[PlayerTarget],
+    class_filter: Option<&str>,
+    mut search: F,
+) -> PlayerEvaluationSummary
+where
+    F: FnMut(&str) -> FuzzySearchDiagnostics,
+{
+    let mut summary = PlayerEvaluationSummary::default();
+
+    for query in queries
+        .iter()
+        .filter(|query| class_filter.is_none_or(|wanted| query.class_name == wanted))
+    {
+        let target = targets
+            .iter()
+            .find(|target| target.id == query.id)
+            .unwrap_or_else(|| panic!("missing target mapping for {}", query.id));
+        match target.status.as_str() {
+            "unsupported" => {
+                summary.unsupported_count += 1;
+            }
+            "target" | "no_answer" => {
+                let started = Instant::now();
+                let result = search(&query.query);
+                summary.elapsed_micros += started.elapsed().as_micros();
+                summary.candidate_total += result.candidate_count;
+                summary.measured_queries += 1;
+
+                if target.status == "no_answer" {
+                    summary.no_answer_count += 1;
+                    if result.ids.is_empty() {
+                        summary.no_answer_correct += 1;
+                    }
+                    continue;
+                }
+
+                summary.target_count += 1;
+                if let Some(position) = result
+                    .ids
+                    .iter()
+                    .position(|id| target.expected_ids.contains(id))
+                {
+                    if position < 5 {
+                        summary.hits_at_five += 1;
+                    }
+                    summary.reciprocal_rank_sum += 1.0 / (position as f64 + 1.0);
+                }
+            }
+            status => panic!("unknown player target status {status:?} for {}", query.id),
+        }
+    }
+
+    summary
+}
+
 fn filler_fixture(id: i64) -> SearchFixture {
     SearchFixture {
         id,
@@ -1657,6 +1812,243 @@ fn filler_fixture(id: i64) -> SearchFixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_player_query_corpus_is_separate_complete_and_untuned() {
+        let query_source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test-fixtures/library-smart-search-player-queries-v1.json"
+        ));
+        assert!(
+            !query_source.contains("expected_ids"),
+            "the frozen player wording file must not contain benchmark answers"
+        );
+
+        let (queries, targets) = load_player_query_corpora();
+        assert_eq!(queries.version, 1);
+        assert_eq!(targets.version, 1);
+        assert_eq!(queries.queries.len(), 36);
+        assert_eq!(targets.targets.len(), 36);
+        assert!(queries.purpose.contains("no expected fixture IDs"));
+        assert!(queries.provenance.contains("separate Sims mod-management"));
+        assert_eq!(
+            targets.query_file,
+            "library-smart-search-player-queries-v1.json"
+        );
+        assert!(targets.purpose.contains("only after"));
+
+        let mut query_ids = queries
+            .queries
+            .iter()
+            .map(|query| query.id.as_str())
+            .collect::<Vec<_>>();
+        query_ids.sort_unstable();
+        query_ids.dedup();
+        assert_eq!(query_ids.len(), 36, "player query ids must stay unique");
+
+        let mut target_ids = targets
+            .targets
+            .iter()
+            .map(|target| target.id.as_str())
+            .collect::<Vec<_>>();
+        target_ids.sort_unstable();
+        target_ids.dedup();
+        assert_eq!(target_ids.len(), 36, "target mapping ids must stay unique");
+        assert_eq!(query_ids, target_ids, "every frozen query must map exactly once");
+
+        let classes = [
+            "exact_name",
+            "creator_alias",
+            "typo_partial",
+            "vague_lexical",
+            "semantic_paraphrase",
+            "authority_no_answer",
+        ];
+        for class_name in classes {
+            assert_eq!(
+                queries
+                    .queries
+                    .iter()
+                    .filter(|query| query.class_name == class_name)
+                    .count(),
+                6,
+                "each frozen query class must contain six entries"
+            );
+        }
+        assert!(queries
+            .queries
+            .iter()
+            .all(|query| !query.query.trim().is_empty() && !query.intent.trim().is_empty()));
+        assert!(targets
+            .targets
+            .iter()
+            .all(|target| !target.rationale.trim().is_empty()));
+
+        let target_count = targets
+            .targets
+            .iter()
+            .filter(|target| target.status == "target")
+            .count();
+        let unsupported_count = targets
+            .targets
+            .iter()
+            .filter(|target| target.status == "unsupported")
+            .count();
+        let no_answer_count = targets
+            .targets
+            .iter()
+            .filter(|target| target.status == "no_answer")
+            .count();
+        assert_eq!((target_count, unsupported_count, no_answer_count), (15, 15, 6));
+        for target in &targets.targets {
+            match target.status.as_str() {
+                "target" => assert!(!target.expected_ids.is_empty()),
+                "unsupported" | "no_answer" => assert!(target.expected_ids.is_empty()),
+                other => panic!("unknown frozen player target status: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn independent_player_phrasing_baseline_reports_without_tuning_search() {
+        let fixtures = representative_fixtures();
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        index_fixtures(&mut connection, &fixtures).expect("index representative fixtures");
+        let (queries, targets) = load_player_query_corpora();
+
+        let strict = evaluate_player_queries(&queries.queries, &targets.targets, None, |query| {
+            let ids = fts_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                .expect("strict player-query search");
+            FuzzySearchDiagnostics {
+                candidate_count: ids.len(),
+                ids,
+            }
+        });
+        let fuzzy = evaluate_player_queries(&queries.queries, &targets.targets, None, |query| {
+            fuzzy_trigram_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                .expect("fuzzy player-query search")
+        });
+
+        println!(
+            "player-search-v1 overall targets={} unsupported={} no_answer={} strict_recall_at_5={:.3} strict_mrr={:.3} strict_no_answer_precision={:.3} strict_avg_candidates={:.1} strict_avg_us={:.1} fuzzy_recall_at_5={:.3} fuzzy_mrr={:.3} fuzzy_no_answer_precision={:.3} fuzzy_avg_candidates={:.1} fuzzy_avg_us={:.1}",
+            fuzzy.target_count,
+            fuzzy.unsupported_count,
+            fuzzy.no_answer_count,
+            strict.recall_at_five(),
+            strict.mean_reciprocal_rank(),
+            strict.no_answer_precision(),
+            strict.average_candidates(),
+            strict.average_latency_micros(),
+            fuzzy.recall_at_five(),
+            fuzzy.mean_reciprocal_rank(),
+            fuzzy.no_answer_precision(),
+            fuzzy.average_candidates(),
+            fuzzy.average_latency_micros(),
+        );
+
+        for class_name in [
+            "exact_name",
+            "creator_alias",
+            "typo_partial",
+            "vague_lexical",
+            "semantic_paraphrase",
+            "authority_no_answer",
+        ] {
+            let strict_class = evaluate_player_queries(
+                &queries.queries,
+                &targets.targets,
+                Some(class_name),
+                |query| {
+                    let ids = fts_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                        .expect("strict player-query class search");
+                    FuzzySearchDiagnostics {
+                        candidate_count: ids.len(),
+                        ids,
+                    }
+                },
+            );
+            let fuzzy_class = evaluate_player_queries(
+                &queries.queries,
+                &targets.targets,
+                Some(class_name),
+                |query| {
+                    fuzzy_trigram_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                        .expect("fuzzy player-query class search")
+                },
+            );
+            println!(
+                "player-search-v1 class={} targets={} unsupported={} no_answer={} strict_recall_at_5={:.3} strict_mrr={:.3} strict_no_answer_precision={:.3} fuzzy_recall_at_5={:.3} fuzzy_mrr={:.3} fuzzy_no_answer_precision={:.3} fuzzy_avg_candidates={:.1}",
+                class_name,
+                fuzzy_class.target_count,
+                fuzzy_class.unsupported_count,
+                fuzzy_class.no_answer_count,
+                strict_class.recall_at_five(),
+                strict_class.mean_reciprocal_rank(),
+                strict_class.no_answer_precision(),
+                fuzzy_class.recall_at_five(),
+                fuzzy_class.mean_reciprocal_rank(),
+                fuzzy_class.no_answer_precision(),
+                fuzzy_class.average_candidates(),
+            );
+        }
+
+        for query in &queries.queries {
+            let target = targets
+                .targets
+                .iter()
+                .find(|target| target.id == query.id)
+                .expect("mapped frozen player query");
+            if target.status == "unsupported" {
+                continue;
+            }
+            let strict_ids = fts_search(&connection, &query.query, 5)
+                .expect("strict player-query outcome search");
+            let fuzzy_result = fuzzy_trigram_search(&connection, &query.query, 5)
+                .expect("fuzzy player-query outcome search");
+            let strict_ok = if target.status == "no_answer" {
+                strict_ids.is_empty()
+            } else {
+                strict_ids.iter().any(|id| target.expected_ids.contains(id))
+            };
+            let fuzzy_ok = if target.status == "no_answer" {
+                fuzzy_result.ids.is_empty()
+            } else {
+                fuzzy_result
+                    .ids
+                    .iter()
+                    .any(|id| target.expected_ids.contains(id))
+            };
+            if !strict_ok || !fuzzy_ok {
+                println!(
+                    "player-search-v1 outcome id={} class={} status={} expected={:?} strict={:?} fuzzy={:?} strict_ok={} fuzzy_ok={}",
+                    query.id,
+                    query.class_name,
+                    target.status,
+                    target.expected_ids,
+                    strict_ids,
+                    fuzzy_result.ids,
+                    strict_ok,
+                    fuzzy_ok,
+                );
+            }
+        }
+
+        assert_eq!(fuzzy.target_count, 15);
+        assert_eq!(fuzzy.unsupported_count, 15);
+        assert_eq!(fuzzy.no_answer_count, 6);
+        assert_eq!(fuzzy.measured_queries, 21);
+        for value in [
+            strict.recall_at_five(),
+            strict.mean_reciprocal_rank(),
+            strict.no_answer_precision(),
+            fuzzy.recall_at_five(),
+            fuzzy.mean_reciprocal_rank(),
+            fuzzy.no_answer_precision(),
+        ] {
+            assert!((0.0..=1.0).contains(&value));
+        }
+        assert!(fuzzy.average_candidates() <= (TRIGRAM_CANDIDATE_LIMIT + STRICT_CANDIDATE_LIMIT) as f64);
+    }
 
     #[test]
     fn bundled_sqlite_supports_fts5_for_local_search_prototypes() {
@@ -2350,6 +2742,104 @@ mod tests {
         ));
         let prototype_source = include_str!("library_smart_search_prototype.rs");
         assert!(prototype_source.starts_with("#![cfg(test)]"));
+    }
+
+    #[test]
+    #[ignore = "10k frozen player-phrasing search benchmark; run pnpm run test:library:stress"]
+    fn large_independent_player_phrasing_baseline_reports_relevance_and_latency() {
+        let mut fixtures = representative_fixtures();
+        fixtures.extend((100..10_093).map(filler_fixture));
+        assert_eq!(fixtures.len(), 10_000);
+
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        let index_started = Instant::now();
+        index_fixtures(&mut connection, &fixtures).expect("index 10k player-search fixtures");
+        let index_ms = index_started.elapsed().as_millis();
+        let (queries, targets) = load_player_query_corpora();
+
+        let strict = evaluate_player_queries(&queries.queries, &targets.targets, None, |query| {
+            let ids = fts_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                .expect("10k strict player search");
+            FuzzySearchDiagnostics {
+                candidate_count: ids.len(),
+                ids,
+            }
+        });
+        let fuzzy = evaluate_player_queries(&queries.queries, &targets.targets, None, |query| {
+            fuzzy_trigram_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                .expect("10k fuzzy player search")
+        });
+
+        println!(
+            "player-search-v1-10k index_ms={} targets={} unsupported={} no_answer={} strict_recall_at_5={:.3} strict_mrr={:.3} strict_no_answer_precision={:.3} strict_avg_candidates={:.1} strict_avg_us={:.1} fuzzy_recall_at_5={:.3} fuzzy_mrr={:.3} fuzzy_no_answer_precision={:.3} fuzzy_avg_candidates={:.1} fuzzy_avg_us={:.1}",
+            index_ms,
+            fuzzy.target_count,
+            fuzzy.unsupported_count,
+            fuzzy.no_answer_count,
+            strict.recall_at_five(),
+            strict.mean_reciprocal_rank(),
+            strict.no_answer_precision(),
+            strict.average_candidates(),
+            strict.average_latency_micros(),
+            fuzzy.recall_at_five(),
+            fuzzy.mean_reciprocal_rank(),
+            fuzzy.no_answer_precision(),
+            fuzzy.average_candidates(),
+            fuzzy.average_latency_micros(),
+        );
+
+        for class_name in [
+            "exact_name",
+            "creator_alias",
+            "typo_partial",
+            "vague_lexical",
+            "semantic_paraphrase",
+            "authority_no_answer",
+        ] {
+            let strict_class = evaluate_player_queries(
+                &queries.queries,
+                &targets.targets,
+                Some(class_name),
+                |query| {
+                    let ids = fts_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                        .expect("10k strict player class search");
+                    FuzzySearchDiagnostics {
+                        candidate_count: ids.len(),
+                        ids,
+                    }
+                },
+            );
+            let fuzzy_class = evaluate_player_queries(
+                &queries.queries,
+                &targets.targets,
+                Some(class_name),
+                |query| {
+                    fuzzy_trigram_search(&connection, query, STRICT_CANDIDATE_LIMIT)
+                        .expect("10k fuzzy player class search")
+                },
+            );
+            println!(
+                "player-search-v1-10k class={} targets={} unsupported={} no_answer={} strict_recall_at_5={:.3} strict_mrr={:.3} strict_no_answer_precision={:.3} fuzzy_recall_at_5={:.3} fuzzy_mrr={:.3} fuzzy_no_answer_precision={:.3} fuzzy_avg_candidates={:.1} fuzzy_avg_us={:.1}",
+                class_name,
+                fuzzy_class.target_count,
+                fuzzy_class.unsupported_count,
+                fuzzy_class.no_answer_count,
+                strict_class.recall_at_five(),
+                strict_class.mean_reciprocal_rank(),
+                strict_class.no_answer_precision(),
+                fuzzy_class.recall_at_five(),
+                fuzzy_class.mean_reciprocal_rank(),
+                fuzzy_class.no_answer_precision(),
+                fuzzy_class.average_candidates(),
+                fuzzy_class.average_latency_micros(),
+            );
+        }
+
+        assert_eq!(fuzzy.target_count, 15);
+        assert_eq!(fuzzy.unsupported_count, 15);
+        assert_eq!(fuzzy.no_answer_count, 6);
+        assert_eq!(fuzzy.measured_queries, 21);
+        assert!(fuzzy.average_candidates() <= (TRIGRAM_CANDIDATE_LIMIT + STRICT_CANDIDATE_LIMIT) as f64);
     }
 
     #[test]
