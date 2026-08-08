@@ -856,9 +856,39 @@ If this deterministic search index is implemented later:
 
 ### Limits
 
-The search-index integration evidence remains hidden/test-only on macOS with bundled SQLite, while the follow-on special-mod insight persistence work is now production database behavior: indexed insight changes are prepared before any write transaction, committed atomically as one short compare-and-set batch, and reflected in caller memory only after commit. This does not enable search, and it does not yet prove native Windows/Linux search behavior, real process termination between filesystem and database phases, high-contention scanner startup, or the concrete move/restore record synchronization contract. The current special-mod call sites were audited as outside another SQLite transaction; the shared-connection batch therefore remains short and fail-closed rather than silently nesting.
+The search-index integration evidence remains hidden/test-only on macOS with bundled SQLite, while the follow-on special-mod insight persistence work is now production database behavior: indexed insight changes are prepared before any write transaction, committed atomically as one short compare-and-set batch, and reflected in caller memory only after commit. This does not enable search, and it does not yet prove native Windows/Linux search behavior, real process termination between filesystem and database phases, high-contention scanner startup, or production move/restore database integration. The current special-mod call sites were audited as outside another SQLite transaction; the shared-connection batch therefore remains short and fail-closed rather than silently nesting.
 
 No production FTS migration/table, Library search behavior, Tauri search command, UI, ranking threshold, model/runtime dependency, player-file access, or Apply/Restore authority changed.
+
+### Follow-on move/restore membership transaction proof
+
+The next database-side ownership question has now been modeled separately from the real file-moving engine. `src-tauri/src/core/move_engine_membership_prototype.rs` is test-only at both levels: the file starts with `#![cfg(test)]`, `core/mod.rs` registers it only under `#[cfg(test)]`, and a regression guard confirms it is not registered as a Tauri command or allowed to call the real file-moving, restore, hashing, or `std::fs` helpers.
+
+The proof uses `database::initialize` with SimSuite's real SQLite schema in memory and deliberately narrows the state it owns to the membership evidence relevant to a future search integration:
+
+- current file ID;
+- current path;
+- current Library location (`mods`, `tray`, or `downloads`);
+- current `download_item_id` ownership.
+
+A transition requires the current row to still match all four pieces of prepared evidence. The final compare-and-set `UPDATE` / `DELETE` repeats those ownership checks inside the same SQLite transaction so a stale caller cannot overwrite a newer row. An already-completed exact transition, already-deleted row, or already-restored exact row is accepted as an idempotent repeat.
+
+The test matrix now proves:
+
+- a Downloads row moved into Mods/Tray keeps its existing row ID and becomes installed membership;
+- an installed Mods/Tray row moved back to Downloads leaves installed membership without disturbing unrelated rows;
+- exact deletion removes only the intended row;
+- an old installed row deleted during replacement may later be recreated at the same semantic path with a new database ID, matching the current production restore behavior where deleted rows can be re-inspected and inserted again;
+- several membership operations commit as one database transaction;
+- an injected failure on the second membership write rolls the first one back;
+- stale prepared evidence fails closed when a newer row has changed its path, Library location, and Downloads ownership together, and the complete newer state survives;
+- repeating the already-completed forward/reverse reconciliation does not duplicate or drift membership.
+
+This establishes an important future search identity rule: search synchronization must follow the **current Library rows**, not assume a historical file ID is permanent across replacement and restore.
+
+The production audit was intentionally left unchanged. The current move flows still perform real filesystem changes first and then repair `files` records one operation at a time through helpers such as `update_file_record_after_move`, `delete_file_record`, `update_file_record_on_restore`, and `restore_deleted_file_record`. The proof does not join those file operations to a new transaction, does not change backup/rollback behavior, and does not enable any file-changing command. It only demonstrates the database reconciliation semantics that a later production refactor would need to preserve.
+
+Latest Rust evidence after tightening the stale-state regression registers `552` tests: `547` pass and the same `5` large synthetic stress tests remain intentionally ignored. No production FTS migration/table, Library search behavior, Tauri search command, model/runtime dependency, player-file operation, or real Apply/Restore authority changed.
 
 ## 18. LLM position
 
@@ -871,7 +901,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 ## 19. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Keep the migration itself unimplemented. The special-mod insight source-write boundary is now prepared for future search integration through one short atomic multi-file batch, so the next production ownership gap is the database-side membership contract for move/restore without weakening file rollback safety. Separately prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are proven only in the hidden macOS temporary-database lane.
+2. Keep the migration itself unimplemented. The special-mod insight source-write boundary is now prepared for future search integration through one short atomic multi-file batch, and the move/restore membership semantics now have a separate database-only test proof. The next move/restore step, if pursued, is a production database-record integration design that preserves the existing filesystem backup/rollback boundary; do not attach search or refactor the real move engine merely because the hidden coordinator passes. Separately prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, future-version fail-closed behavior, and move/restore membership reconciliation are still proven only in bounded test lanes until their production owners are deliberately integrated.
 3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
 4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
 5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
@@ -881,9 +911,10 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 
 ## 20. What this work does not do
 
-The search feature itself still does not change production Library behavior. The follow-on production hardening recorded here is limited to special-mod insight persistence: it now prepares changes before any write transaction, commits indexed changes atomically with stale-row checks, propagates persistence failures, and updates caller memory only after commit. In particular, this work still does not:
+The search feature itself still does not change production Library behavior. The follow-on **production** hardening recorded here remains limited to special-mod insight persistence: it prepares changes before any write transaction, commits indexed changes atomically with stale-row checks, propagates persistence failures, and updates caller memory only after commit. The move/restore follow-on is a separate hidden database-only test proof and changes no production move/restore behavior. In particular, this work still does not:
 
 - change production Library search;
+- refactor the real move/restore engine or make its database membership writes atomic;
 - create a production FTS/vector table or migration;
 - bundle, silently download, or ship a model with SimSuite;
 - add a SimSuite inference runtime or package dependency;

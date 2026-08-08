@@ -23,6 +23,8 @@ pub mod sims4_adapter;
 pub mod library_index;
 #[cfg(test)]
 pub mod library_smart_search_prototype;
+#[cfg(test)]
+pub mod move_engine_membership_prototype;
 pub mod move_engine;
 pub mod rule_engine;
 pub mod scanner;
