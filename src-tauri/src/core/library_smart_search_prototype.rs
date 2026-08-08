@@ -1251,6 +1251,63 @@ fn disable_contentless_search_objects(connection: &mut Connection) -> AppResult<
     Ok(())
 }
 
+fn resolve_contentless_refresh_scope(
+    transaction: &Transaction<'_>,
+    explicit_file_ids: &[i64],
+    creator_ids: &[i64],
+) -> AppResult<Vec<i64>> {
+    let mut file_ids = explicit_file_ids.to_vec();
+    let mut unique_creator_ids = creator_ids.to_vec();
+    unique_creator_ids.sort_unstable();
+    unique_creator_ids.dedup();
+
+    for creator_id in unique_creator_ids {
+        let mut statement = transaction.prepare(
+            "SELECT id
+             FROM production_files
+             WHERE creator_id = ?1
+               AND source_location IN ('mods', 'tray')
+             ORDER BY id",
+        )?;
+        let creator_file_ids = statement
+            .query_map(params![creator_id], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        file_ids.extend(creator_file_ids);
+    }
+
+    file_ids.sort_unstable();
+    file_ids.dedup();
+    Ok(file_ids)
+}
+
+fn refresh_contentless_search_scope_in_transaction(
+    transaction: &Transaction<'_>,
+    explicit_file_ids: &[i64],
+    creator_ids: &[i64],
+) -> AppResult<Vec<i64>> {
+    let file_ids = resolve_contentless_refresh_scope(transaction, explicit_file_ids, creator_ids)?;
+    for file_id in &file_ids {
+        refresh_contentless_search_file_in_transaction(transaction, *file_id)?;
+    }
+    Ok(file_ids)
+}
+
+fn contentless_alias_owner(
+    transaction: &Transaction<'_>,
+    alias_name: &str,
+) -> AppResult<Option<i64>> {
+    transaction
+        .query_row(
+            "SELECT creator_id
+             FROM production_user_creator_aliases
+             WHERE alias_name = ?1",
+            params![alias_name],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
 fn delete_contentless_search_row(
     transaction: &Transaction<'_>,
     file_id: i64,
@@ -3845,6 +3902,463 @@ mod tests {
     }
 
     #[test]
+    fn contentless_creator_learning_scope_is_exact_old_new_and_explicit_union() {
+        let temp = tempfile::tempdir().expect("temporary creator-scope proof directory");
+        let path = temp.path().join("search-creator-scope.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let fingerprint_v1 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v1"),
+        );
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint_v1)
+                .expect("initial search install"),
+            SearchEnsureOutcome::Installed
+        );
+
+        let twisted_mexi_id: i64 = connection
+            .query_row(
+                "SELECT id FROM production_creators WHERE canonical_name = 'TwistedMexi'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("TwistedMexi creator id");
+        let simpliciaty_id: i64 = connection
+            .query_row(
+                "SELECT id FROM production_creators WHERE canonical_name = 'Simpliciaty'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Simpliciaty creator id");
+
+        {
+            let transaction = connection.transaction().expect("initial alias transaction");
+            transaction
+                .execute(
+                    "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                     VALUES (?1, 'MexiWorkshop')",
+                    params![twisted_mexi_id],
+                )
+                .expect("add initial learned alias");
+            let refreshed = refresh_contentless_search_scope_in_transaction(
+                &transaction,
+                &[],
+                &[twisted_mexi_id],
+            )
+            .expect("refresh initial creator scope");
+            assert_eq!(refreshed, vec![5]);
+            write_search_state(&transaction, &fingerprint_v1, "ready")
+                .expect("advance search state only after complete initial scope refresh");
+            transaction.commit().expect("commit initial alias scope");
+        }
+        assert_eq!(
+            contentless_fts_search(&connection, "MexiWorkshop", 10)
+                .expect("initial alias search"),
+            vec![5]
+        );
+
+        let fingerprint_v2 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v2"),
+            Some("category-v1"),
+        );
+        let refreshed = {
+            let transaction = connection.transaction().expect("alias reassignment transaction");
+            let old_alias_owner = contentless_alias_owner(&transaction, "MexiWorkshop")
+                .expect("read old alias owner before upsert")
+                .expect("old alias owner exists");
+            assert_eq!(old_alias_owner, twisted_mexi_id);
+
+            transaction
+                .execute(
+                    "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                     VALUES (?1, 'MexiWorkshop')
+                     ON CONFLICT(alias_name) DO UPDATE SET creator_id = excluded.creator_id",
+                    params![simpliciaty_id],
+                )
+                .expect("reassign learned alias");
+            transaction
+                .execute(
+                    "UPDATE production_files SET creator_id = ?1 WHERE id = 2",
+                    params![simpliciaty_id],
+                )
+                .expect("mirror explicit creator reassignment for selected file");
+
+            let refreshed = refresh_contentless_search_scope_in_transaction(
+                &transaction,
+                &[2, 2],
+                &[old_alias_owner, simpliciaty_id, simpliciaty_id],
+            )
+            .expect("refresh exact old/new creator plus explicit file union");
+            assert_eq!(refreshed, vec![1, 2, 5]);
+            write_search_state(&transaction, &fingerprint_v2, "ready")
+                .expect("advance search state only after complete creator-learning scope refresh");
+            transaction.commit().expect("commit creator-learning-like boundary");
+            refreshed
+        };
+        assert_eq!(refreshed, vec![1, 2, 5]);
+
+        let reassigned_alias_matches = contentless_fts_search(&connection, "MexiWorkshop", 10)
+            .expect("reassigned alias search");
+        assert!(reassigned_alias_matches.contains(&1));
+        assert!(reassigned_alias_matches.contains(&2));
+        assert!(!reassigned_alias_matches.contains(&5));
+        assert_eq!(
+            read_search_state(&connection).expect("search state after creator learning"),
+            Some((SEARCH_SCHEMA_VERSION, fingerprint_v2.clone(), "ready".to_owned()))
+        );
+
+        let untouched_terms = [
+            (3_i64, "MCCC"),
+            (4_i64, "Realistic Childbirth"),
+            (6_i64, "Minimal Main Menu"),
+            (7_i64, "Thai Translation"),
+        ];
+        for (id, term) in untouched_terms {
+            assert_eq!(
+                contentless_fts_search(&connection, term, 10)
+                    .expect("unrelated search row remains intact"),
+                vec![id]
+            );
+        }
+
+        let row_count_before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_contentless_fts", [], |row| row.get(0))
+            .expect("contentless row count before idempotent refresh");
+        {
+            let transaction = connection.transaction().expect("repeat creator scope transaction");
+            let repeated = refresh_contentless_search_scope_in_transaction(
+                &transaction,
+                &[2],
+                &[twisted_mexi_id, simpliciaty_id],
+            )
+            .expect("repeat exact creator scope");
+            assert_eq!(repeated, vec![1, 2, 5]);
+            write_search_state(&transaction, &fingerprint_v2, "ready")
+                .expect("re-assert ready only after repeated complete creator scope refresh");
+            transaction.commit().expect("commit repeated creator scope");
+        }
+        let row_count_after: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_contentless_fts", [], |row| row.get(0))
+            .expect("contentless row count after idempotent refresh");
+        assert_eq!(row_count_after, row_count_before);
+    }
+
+    #[test]
+    fn contentless_scoped_metadata_membership_and_rollback_stay_exact() {
+        let temp = tempfile::tempdir().expect("temporary scoped-boundary proof directory");
+        let path = temp.path().join("search-scoped-boundaries.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let fingerprint_v1 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v1"),
+        );
+        ensure_contentless_search_ready(&mut connection, &fingerprint_v1)
+            .expect("initial search install");
+
+        let searchable_insights = FileInsights {
+            embedded_names: vec!["Aurora Catalog Name".to_owned()],
+            family_hints: vec!["Aurora family".to_owned()],
+            resource_summary: vec!["Aurora surface resource".to_owned()],
+            script_namespaces: vec!["aurora.catalog".to_owned()],
+            ..FileInsights::default()
+        };
+        let fingerprint_v2 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v2"),
+        );
+        {
+            let transaction = connection.transaction().expect("category/insight transaction");
+            transaction
+                .execute(
+                    "UPDATE production_files
+                     SET kind = 'BuildBuy', subtype = 'Reclassified Surface', insights = ?1
+                     WHERE id = 1",
+                    params![serde_json::to_string(&searchable_insights).expect("serialize insights")],
+                )
+                .expect("update exact searchable metadata row");
+            let refreshed = refresh_contentless_search_scope_in_transaction(
+                &transaction,
+                &[1, 1],
+                &[],
+            )
+            .expect("refresh exact changed file");
+            assert_eq!(refreshed, vec![1]);
+            write_search_state(&transaction, &fingerprint_v2, "ready")
+                .expect("advance search state only after exact metadata refresh completes");
+            transaction.commit().expect("commit exact metadata boundary");
+        }
+        assert_eq!(
+            contentless_fts_search(&connection, "Reclassified Surface", 5)
+                .expect("category term search"),
+            vec![1]
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "Aurora Catalog", 5)
+                .expect("searchable insight term search"),
+            vec![1]
+        );
+
+        let rows_before_repeat: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_contentless_fts", [], |row| row.get(0))
+            .expect("row count before repeated exact file refresh");
+        {
+            let transaction = connection.transaction().expect("repeat exact-file transaction");
+            let repeated = refresh_contentless_search_scope_in_transaction(
+                &transaction,
+                &[1, 1, 1],
+                &[],
+            )
+            .expect("repeat exact file refresh");
+            assert_eq!(repeated, vec![1]);
+            write_search_state(&transaction, &fingerprint_v2, "ready")
+                .expect("re-assert ready only after repeated exact-file refresh");
+            transaction.commit().expect("commit repeated exact-file refresh");
+        }
+        let rows_after_repeat: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_contentless_fts", [], |row| row.get(0))
+            .expect("row count after repeated exact file refresh");
+        assert_eq!(rows_after_repeat, rows_before_repeat);
+
+        {
+            let transaction = connection.transaction().expect("membership transition transaction");
+            transaction
+                .execute(
+                    "UPDATE production_files SET source_location = 'downloads' WHERE id = 7",
+                    [],
+                )
+                .expect("move exact source row outside installed search scope");
+            assert_eq!(
+                refresh_contentless_search_scope_in_transaction(&transaction, &[7], &[])
+                    .expect("remove exact out-of-scope search row"),
+                vec![7]
+            );
+            transaction.commit().expect("commit membership transition");
+        }
+        assert!(contentless_fts_search(&connection, "Thai Translation", 5)
+            .expect("downloads transition removes search membership")
+            .is_empty());
+
+        {
+            let transaction = connection.transaction().expect("delete boundary transaction");
+            transaction
+                .execute("DELETE FROM production_files WHERE id = 2", [])
+                .expect("delete exact source row");
+            assert_eq!(
+                refresh_contentless_search_scope_in_transaction(&transaction, &[2], &[])
+                    .expect("remove exact deleted search row"),
+                vec![2]
+            );
+            transaction.commit().expect("commit delete boundary");
+        }
+        assert!(contentless_fts_search(&connection, "Baysic", 5)
+            .expect("deleted source no longer searchable")
+            .is_empty());
+
+        let state_before_rollback = read_search_state(&connection)
+            .expect("search state before rollback")
+            .expect("ready search state");
+        {
+            let transaction = connection.transaction().expect("interrupted scoped transaction");
+            transaction
+                .execute(
+                    "UPDATE production_files
+                     SET subtype = 'Transient Search State'
+                     WHERE id = 1",
+                    [],
+                )
+                .expect("temporary category change");
+            transaction
+                .execute(
+                    "UPDATE production_files SET source_location = 'downloads' WHERE id = 3",
+                    [],
+                )
+                .expect("temporary membership change");
+            let interrupted_fingerprint = future_search_document_fingerprint(
+                "seed-v1",
+                Some("creator-v1"),
+                Some("category-interrupted"),
+            );
+            assert_eq!(
+                refresh_contentless_search_scope_in_transaction(
+                    &transaction,
+                    &[1, 3],
+                    &[],
+                )
+                .expect("refresh temporary scoped changes"),
+                vec![1, 3]
+            );
+            write_search_state(&transaction, &interrupted_fingerprint, "ready")
+                .expect("advance temporary search state only after temporary scope refresh");
+            assert_eq!(
+                contentless_fts_search(&transaction, "Transient Search State", 5)
+                    .expect("temporary search state visible only inside transaction"),
+                vec![1]
+            );
+            transaction.rollback().expect("simulate interruption before commit");
+        }
+
+        let restored_subtype: Option<String> = connection
+            .query_row("SELECT subtype FROM production_files WHERE id = 1", [], |row| row.get(0))
+            .expect("rolled-back subtype");
+        assert_eq!(restored_subtype.as_deref(), Some("Reclassified Surface"));
+        let restored_source: String = connection
+            .query_row("SELECT source_location FROM production_files WHERE id = 3", [], |row| row.get(0))
+            .expect("rolled-back source location");
+        assert_eq!(restored_source, "mods");
+        assert!(contentless_fts_search(&connection, "Transient Search State", 5)
+            .expect("rolled-back search row is invisible")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&connection, "MCCC", 5)
+                .expect("pre-interruption search row remains"),
+            vec![3]
+        );
+        assert_eq!(
+            read_search_state(&connection)
+                .expect("search state after rollback")
+                .expect("ready state after rollback"),
+            state_before_rollback
+        );
+    }
+
+    #[test]
+    fn contentless_scan_replacement_and_search_state_share_one_wal_transaction() {
+        let temp = tempfile::tempdir().expect("temporary scanner-boundary proof directory");
+        let path = temp.path().join("search-scan-boundary.sqlite");
+        let mut writer = setup_source_only_migration_database(&path);
+        let fingerprint = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v1"),
+        );
+        ensure_contentless_search_ready(&mut writer, &fingerprint)
+            .expect("initial search install");
+        let observer = open_production_like_search_connection(&path)
+            .expect("separate WAL observer connection");
+        observer.execute_batch("BEGIN").expect("open observer snapshot");
+        assert_eq!(
+            contentless_fts_search(&observer, "MCCC", 5).expect("pin old search snapshot"),
+            vec![3]
+        );
+
+        let replacement = SearchFixture {
+            id: 501,
+            filename: "ReplacementScanItem.package".to_owned(),
+            path: "/fixture/Mods/ReplacementScanItem.package".to_owned(),
+            creator: Some("ReplacementCreator".to_owned()),
+            creator_aliases: Vec::new(),
+            kind: "BuildBuy".to_owned(),
+            subtype: Some("Furniture".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["Replacement Scan Sofa".to_owned()],
+                family_hints: vec!["replacement scan family".to_owned()],
+                ..FileInsights::default()
+            },
+        };
+        {
+            let transaction = writer.transaction().expect("scanner replacement transaction");
+            transaction
+                .execute(
+                    "DELETE FROM production_files WHERE source_location IN ('mods', 'tray')",
+                    [],
+                )
+                .expect("clear installed source truth");
+            insert_production_source_fixture(&transaction, &replacement, "mods")
+                .expect("insert replacement installed source");
+            assert_eq!(
+                rebuild_contentless_search_in_transaction(&transaction, None)
+                    .expect("full contentless rebuild inside scanner transaction"),
+                1
+            );
+            write_search_state(&transaction, &fingerprint, "ready")
+                .expect("keep search state in scanner transaction");
+            transaction.commit().expect("commit source+search+state together");
+        }
+
+        assert_eq!(
+            contentless_fts_search(&observer, "MCCC", 5)
+                .expect("old reader stays on old complete snapshot"),
+            vec![3]
+        );
+        assert!(contentless_fts_search(&observer, "Replacement Scan Sofa", 5)
+            .expect("old reader cannot see new snapshot yet")
+            .is_empty());
+        observer.execute_batch("COMMIT").expect("end old observer snapshot");
+        assert!(contentless_fts_search(&observer, "MCCC", 5)
+            .expect("fresh observer view drops old scan rows")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&observer, "Replacement Scan Sofa", 5)
+                .expect("fresh observer view sees replacement scan"),
+            vec![501]
+        );
+
+        let interrupted = SearchFixture {
+            id: 601,
+            filename: "InterruptedScanItem.package".to_owned(),
+            path: "/fixture/Mods/InterruptedScanItem.package".to_owned(),
+            creator: Some("InterruptedCreator".to_owned()),
+            creator_aliases: Vec::new(),
+            kind: "Gameplay".to_owned(),
+            subtype: Some("Script Mod".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["Interrupted Scan Marker".to_owned()],
+                ..FileInsights::default()
+            },
+        };
+        {
+            let transaction = writer.transaction().expect("interrupted scanner transaction");
+            transaction
+                .execute(
+                    "DELETE FROM production_files WHERE source_location IN ('mods', 'tray')",
+                    [],
+                )
+                .expect("clear installed source before interrupted replacement");
+            insert_production_source_fixture(&transaction, &interrupted, "mods")
+                .expect("insert interrupted replacement source");
+            rebuild_contentless_search_in_transaction(&transaction, None)
+                .expect("rebuild temporary interrupted search state");
+            write_search_state(
+                &transaction,
+                &future_search_document_fingerprint(
+                    "seed-v1",
+                    Some("creator-interrupted"),
+                    Some("category-v1"),
+                ),
+                "ready",
+            )
+            .expect("write temporary interrupted search state");
+            transaction.rollback().expect("simulate scanner interruption before commit");
+        }
+        assert_eq!(
+            contentless_fts_search(&writer, "Replacement Scan Sofa", 5)
+                .expect("last committed replacement survives interruption"),
+            vec![501]
+        );
+        assert!(contentless_fts_search(&writer, "Interrupted Scan Marker", 5)
+            .expect("interrupted replacement never becomes visible")
+            .is_empty());
+        assert_eq!(
+            writer
+                .query_row(
+                    "SELECT COUNT(*) FROM production_files WHERE source_location IN ('mods', 'tray')",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("committed installed source count"),
+            1
+        );
+        assert_eq!(
+            read_search_state(&writer).expect("search state after interrupted scan"),
+            Some((SEARCH_SCHEMA_VERSION, fingerprint, "ready".to_owned()))
+        );
+    }
+
+    #[test]
     fn smart_search_prototype_stays_out_of_normal_command_registration() {
         let commands_source = include_str!("../commands/mod.rs");
         assert!(!commands_source.contains("library_smart_search_prototype"));
@@ -3859,6 +4373,9 @@ mod tests {
         assert!(!commands_source.contains("ensure_contentless_search_ready"));
         assert!(!commands_source.contains("install_contentless_search_structure"));
         assert!(!commands_source.contains("disable_contentless_search_objects"));
+        assert!(!commands_source.contains("resolve_contentless_refresh_scope"));
+        assert!(!commands_source.contains("refresh_contentless_search_scope_in_transaction"));
+        assert!(!commands_source.contains("contentless_alias_owner"));
 
         let core_source = include_str!("mod.rs");
         assert!(core_source.contains(

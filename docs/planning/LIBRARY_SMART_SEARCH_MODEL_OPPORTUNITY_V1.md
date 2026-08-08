@@ -773,7 +773,94 @@ If the contentless deterministic index is later migrated into production, the ev
 
 This remains hidden Rust-test-only design evidence on the current macOS/bundled-SQLite runtime. It does not prove native Windows/Linux migration semantics, a real Tauri startup migration, real process termination at arbitrary migration points, production write-boundary integration, high-contention startup behavior, or a user-visible rollback/repair workflow. No production migration file, `database::initialize` / `ensure_schema`, FTS table, search command, Library UI, retrieval threshold, model/runtime dependency, player-file behavior, or Apply/Restore authority changed.
 
-## 17. LLM position
+## 17. Write-boundary integration proof V1
+
+A seventh hidden follow-up audited where the proven contentless search index would have to stay synchronized with current SimSuite writes, then reproduced those ownership boundaries in temporary on-disk SQLite tests. It still does **not** wire search into production.
+
+### What actually makes a search row stale
+
+The current search document contains only:
+
+- filename;
+- canonical creator name;
+- learned creator aliases;
+- kind and subtype;
+- embedded names;
+- family hints;
+- resource summary;
+- script namespaces;
+- and installed membership (`mods` / `tray`).
+
+Absolute paths, hashes, duplicate state, bundle IDs, update-watch state, and thumbnail payloads are deliberately outside this search document. This matters because production should refresh search only when searchable meaning changes, not every time a `files` row is touched.
+
+### Production write-boundary audit
+
+The audit found five different synchronization responsibilities rather than one generic hook.
+
+**Scanner replacement:** `scanner::scan_library_with_progress` already clears and reinserts the configured Mods/Tray source rows inside one SQLite transaction. Bundle and duplicate rebuilding happens after that transaction and does not currently affect search-document fields. The future full search rebuild therefore belongs inside the existing scanner source transaction before commit.
+
+**Creator learning:** `database::save_creator_learning_batch` already owns one transaction and knows the explicit selected file IDs. The important edge case is learned-alias reassignment: `user_creator_aliases` can move an alias from one creator to another. A future integration must read the alias's old owner before the upsert, then refresh the union of (a) explicit reassigned file IDs, (b) currently installed files owned by the old creator, and (c) currently installed files owned by the new creator. Only after that complete scope has refreshed should the derived search fingerprint advance to the new creator-learning version.
+
+**Category overrides:** `database::save_category_override_batch` already owns one transaction, deduplicates exact file IDs, updates only those rows' kind/subtype, and advances `category_override_version`. That gives a safe exact-file refresh boundary.
+
+**Insights:** selected Library detail persistence only adds deferred thumbnail payloads. Thumbnails are not indexed, so that write should trigger **no search refresh**. In contrast, the special-mod/profile engine can lazily change searchable embedded names, family hints, resource summaries, and script namespaces. Those helpers currently perform best-effort standalone `UPDATE files SET insights = ...` writes through `&Connection` and intentionally ignore database-write errors. That is not a safe production synchronization point. Before smart search can attach there, searchable-insight persistence needs explicit transaction ownership and propagated database errors so source metadata and its search row cannot diverge.
+
+**Membership changes:** move/restore helpers know exact file IDs when a row moves between `downloads` and installed `mods`/`tray`, is deleted, or is restored. Search membership can therefore be refreshed by exact ID. Those production file-operation flows are not changed here; a future integration must make the SQLite source-row update and search-membership update atomic without weakening the existing user-file safety/rollback boundary.
+
+### Exact scope proof
+
+The test-only scope calculator accepts two caller-owned inputs:
+
+- explicit file IDs, which stay explicit even if the source row has just been deleted or moved outside installed scope so a stale search row can be removed;
+- creator IDs, which expand only to currently installed Mods/Tray rows owned by those creators.
+
+The result is sorted and deduplicated. In the alias-reassignment fixture, an alias moved from TwistedMexi to Simpliciaty while file `2` was explicitly reassigned. Duplicate inputs were intentionally supplied. The exact refresh union resolved to `[1, 2, 5]`: the current Simpliciaty file, the explicitly reassigned file, and the old TwistedMexi file. Unrelated MCCC, PandaSama, UI, and translation rows stayed untouched. Repeating the same scope did not increase FTS row count.
+
+The review pass deliberately removed a convenience helper that both refreshed an arbitrary scope and marked the index `ready`. The final proof keeps those operations separate: the write owner first refreshes the complete audited scope, then explicitly advances the search fingerprint inside the same transaction. This prevents a partial caller-supplied scope from automatically claiming the whole index is synchronized.
+
+### Exact file and membership proof
+
+A category plus searchable-insight change for file `1` refreshed only file `1`, even when the caller supplied duplicate IDs. The new category and embedded-name terms became searchable and repeated refresh stayed idempotent.
+
+When file `7` changed from installed to `downloads`, refreshing explicit ID `7` removed its search row. When file `2` was deleted, refreshing explicit ID `2` removed its stale FTS row even though the source row no longer existed. This is why explicit mutation IDs must not be filtered out merely because they are absent or out of installed scope after the write.
+
+A deliberate interruption then changed file metadata, moved another file out of installed scope, refreshed both affected search rows, and advanced a temporary fingerprint inside one transaction. Rolling that transaction back restored the source metadata, installed membership, previous search rows, and previous fingerprint together. No partial source/search state escaped the transaction.
+
+### Scanner/WAL atomic-visibility proof
+
+A separate on-disk WAL test pinned an old reader snapshot while a writer transaction replaced all installed source rows with a new scan result, rebuilt both contentless search tables, and kept the search state in the same transaction.
+
+The old reader continued to see the old complete MCCC result and could not see the replacement while its snapshot remained open. After ending the snapshot, the same reader saw the new complete replacement and no old MCCC row. A second deliberately interrupted scanner replacement was rolled back; the previous committed source row, search row, row count, and fingerprint remained intact.
+
+This proves the desired future scanner property on the current bundled SQLite/macOS runtime: readers may briefly see an older complete snapshot, but not a half-replaced Library/search mix.
+
+### Fingerprint limitation
+
+The derived fingerprint is **not a generic mutation detector**. Its creator/category components track semantic version inputs, and scanner/search-document versions track broader meaning changes, but ordinary membership changes and lazy searchable-insight writes do not necessarily change those version strings.
+
+Therefore production must not rely on startup fingerprint comparison to discover missed synchronization. Scanner replacement, creator/category edits, searchable-insight persistence, and membership changes must update source + search atomically at their owning write boundaries. Startup full rebuild remains a repair mechanism, not the normal consistency strategy.
+
+### Smallest future production integration contract
+
+If this deterministic search index is implemented later:
+
+1. keep the scanner's existing source-replacement transaction and add the full search rebuild plus search-state update before that transaction commits;
+2. for creator learning, capture any old alias owner before alias upsert, calculate the exact explicit + old-owner + new-owner union, refresh it, then advance the fingerprint in the same transaction;
+3. refresh category changes only for the exact deduplicated IDs already owned by `save_category_override_batch`, then advance the fingerprint in the same transaction;
+4. do not refresh search for thumbnail-only insight persistence;
+5. refactor searchable special-mod insight persistence to explicit transaction/error ownership before attaching search synchronization;
+6. for delete or installed/downloads membership transitions, keep the affected ID explicit so refresh can remove stale FTS rows even after the source row disappeared or left installed scope;
+7. keep refresh-scope calculation and search-state readiness as separate responsibilities; only the audited write owner may advance `ready` after its complete scope refresh succeeds;
+8. preserve the full rebuild as deterministic repair and startup recovery, not as compensation for split transaction ownership;
+9. attach any future move/restore search synchronization only to the database-record side of the existing guarded file-operation flow; do not weaken backup, rollback, or Apply/Restore safety rules.
+
+### Limits
+
+This remains hidden Rust-test-only evidence on macOS with bundled SQLite. It does not change any production write path. It does not yet prove native Windows/Linux behavior, real process termination between filesystem and database phases, high-contention scanner startup, or the concrete production refactors required for lazy searchable-insight persistence and move/restore record synchronization.
+
+No production FTS migration/table, Library search behavior, Tauri command, UI, ranking threshold, model/runtime dependency, player-file access, or Apply/Restore authority changed in this milestone.
+
+## 18. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -781,10 +868,10 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 18. Recommended next sequence
+## 19. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Keep the migration itself unimplemented while proving the remaining production-integration mechanics: scanner/creator/category/insight write-boundary synchronization, real-process interruption/restart behavior, and startup contention around the repair path. Schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are now proven only in the hidden macOS temporary-database lane.
+2. Keep the migration itself unimplemented while preparing the production write owners that are still unsafe to attach: give searchable special-mod insight persistence explicit transaction/error ownership, define the database-side source+search membership contract for move/restore without weakening file rollback safety, and separately prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are proven only in the hidden macOS temporary-database lane.
 3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
 4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
 5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
@@ -792,7 +879,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 7. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
 8. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 19. What this work does not do
+## 20. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 
