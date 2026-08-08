@@ -684,7 +684,96 @@ This remains a macOS temporary-database proof. It does not yet establish native 
 
 No production database helper, FTS table, migration, command, UI, model/runtime dependency, retrieval threshold, player-file behavior, or Apply/Restore authority changed in this milestone.
 
-## 16. LLM position
+## 16. Migration mechanics and startup-repair proof V1
+
+A sixth follow-up tested the smallest safe lifecycle for a future contentless-search migration without adding any production migration or touching the real `database::initialize` / `ensure_schema` path.
+
+### Existing SimSuite ownership model
+
+The production audit established that SimSuite already has two different versioning responsibilities and they should stay separate:
+
+- `schema_migrations` is the structural database-history ledger. On this branch, the real production ledger currently ends at version `13`.
+- derived scanner meaning is invalidated separately through versioned fingerprints such as `scanner-v21:<seed-version>:<creator-learning-version>:<category-override-version>`.
+
+The test-only migration proof follows that pattern rather than inventing a second migration ledger. It uses candidate structural version `14` only because `13` is the highest version on this branch today. That number is **provisional**: if another real migration claims `14` before smart search ships, the eventual search migration must use the next free production version.
+
+The derived search state is a separate singleton record containing:
+
+- supported search schema version;
+- search-document fingerprint;
+- readiness state.
+
+The fingerprint contains the search-document version plus seed, creator-learning, and category-override meaning. It answers whether the disposable index still represents current metadata semantics; it does not replace structural migration history.
+
+### Transactional DDL and backfill proof
+
+The temporary on-disk databases use the same production-like SQLite shape already proven in the concurrency milestone: `WAL`, `foreign_keys=ON`, and a `5000 ms` busy timeout.
+
+A candidate install creates the contentless Unicode FTS table, contentless trigram FTS table, derived search-state table, complete backfill, and structural migration marker inside one SQLite transaction. Two deterministic interruption points were injected:
+
+1. immediately after search-owned schema creation;
+2. after complete search backfill but before the derived state and migration marker can commit.
+
+In both cases the bundled SQLite runtime rolled back the FTS5 virtual-table DDL, backfill, and migration marker together. No search-owned object remained, and the authoritative source row count was unchanged. A later complete install succeeded and the structural migration marker appeared only after the whole transaction committed.
+
+This is direct empirical evidence for the current bundled SQLite/macOS runtime; it is not yet native Windows/Linux migration proof.
+
+### Startup ensure and repair proof
+
+The test-only startup ensure is idempotent when all search-owned objects, state, schema version, and fingerprint are already healthy.
+
+For known supported versions, it treats the Unicode FTS table, trigram FTS table, and search-state record as disposable derived objects. The repair path was tested against:
+
+- a missing trigram table;
+- an ordinary non-FTS table created under the Unicode FTS name;
+- a superficially valid Unicode FTS5/contentless/tokenizer table whose declared search columns are incomplete;
+- a missing derived search-state table.
+
+The validator checks FTS5/contentless/tokenizer properties **and the exact required declared column order**. That order matters because the current `bm25(...)` weights are positional. When a known-version search object is missing, malformed, missing fields, or has the weighted fields reordered, repair drops and rebuilds only the search-owned objects from authoritative source rows, preserves the structural migration record, and leaves source metadata untouched.
+
+### Fingerprint invalidation and feature disable
+
+A learned creator alias was inserted into authoritative source metadata without updating the search index. The old fingerprint correctly left search stale. Changing the creator-learning component of the derived fingerprint caused a deterministic full rebuild, after which the newly learned alias became searchable. A second ensure with the same fingerprint returned the ready/idempotent state.
+
+The feature-disable proof then dropped only:
+
+- the contentless Unicode FTS table;
+- the contentless trigram FTS table;
+- the derived search-state table.
+
+It deliberately preserved both authoritative source rows and structural migration history. A later ensure recreated the derived index from source truth. This is the preferred future downgrade/feature-disable model: do not attempt to downgrade Library source schema merely because a disposable search feature is disabled.
+
+### Future-version and ownership fail-closed proof
+
+The fail-closed cases now cover both version and shape uncertainty:
+
+- if the current-shape search-state record reports a future schema version (`99` in the fixture), startup returns an error and does **not** destructively repair or replace the existing search objects;
+- if a future-version state table still exposes `schema_version = 99` but its other columns no longer match today's schema, startup reads the version **before** shape repair and still refuses destructive repair;
+- if an existing state table no longer exposes a recognizable `schema_version` field at all, startup treats the state as unrecognized and fails closed instead of guessing that it is safe to rebuild;
+- if the candidate structural migration number is already owned by another migration name, insertion of the search migration marker fails and the same transaction rolls back the newly created search-owned objects.
+
+This keeps unknown future state reviewable rather than silently destroying it. Auto-repair is reserved for missing search state or malformed search-owned objects whose state can still be identified as the supported known version.
+
+### Smallest future production contract
+
+If the contentless deterministic index is later migrated into production, the evidence now supports this minimum lifecycle:
+
+1. use the existing `schema_migrations` ledger for the one-time structural migration; do not create a search-specific migration ledger;
+2. assign the real migration number only when implementation begins, using the next free production version at that time;
+3. create search-owned schema, backfill, derived state, and migration marker transactionally where supported;
+4. keep Library/source metadata authoritative and search objects disposable;
+5. keep a separate derived search fingerprint for search-document/seed/creator/category meaning changes;
+6. make startup ensure idempotent and capable of rebuilding missing or malformed **known-version** search-owned objects;
+7. validate the exact FTS column order, not merely the fact that a virtual table uses FTS5 and the expected tokenizer, because the current BM25 field weights are positional;
+8. fail closed on future search schema versions, unrecognized state-table shapes that cannot expose a trustworthy schema version, or structural migration ownership conflicts;
+9. feature disable should drop only search-owned derived objects and should not rewrite structural migration history or source schema;
+10. integrate source+search refresh into the same owning write transactions proven in the concurrency milestone, rather than relying on startup repair for normal operation.
+
+### Limits
+
+This remains hidden Rust-test-only design evidence on the current macOS/bundled-SQLite runtime. It does not prove native Windows/Linux migration semantics, a real Tauri startup migration, real process termination at arbitrary migration points, production write-boundary integration, high-contention startup behavior, or a user-visible rollback/repair workflow. No production migration file, `database::initialize` / `ensure_schema`, FTS table, search command, Library UI, retrieval threshold, model/runtime dependency, player-file behavior, or Apply/Restore authority changed.
+
+## 17. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -692,10 +781,10 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 17. Recommended next sequence
+## 18. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Prove the remaining migration mechanics before implementing them: schema upgrade/rollback, startup self-repair, transaction integration at scanner/creator/category/insight write boundaries, and process-interruption behavior. Keep this design/test-only until those failure paths are explicit.
+2. Keep the migration itself unimplemented while proving the remaining production-integration mechanics: scanner/creator/category/insight write-boundary synchronization, real-process interruption/restart behavior, and startup contention around the repair path. Schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are now proven only in the hidden macOS temporary-database lane.
 3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
 4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
 5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
@@ -703,7 +792,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 7. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
 8. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 18. What this work does not do
+## 19. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 

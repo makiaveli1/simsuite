@@ -182,6 +182,24 @@ const TRIGRAM_CANDIDATE_LIMIT: usize = 80;
 const STRICT_CANDIDATE_LIMIT: usize = 20;
 const FUZZY_MIN_SCORE: f64 = 0.72;
 const PRODUCTION_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const SEARCH_STRUCTURE_MIGRATION_VERSION: i64 = 14;
+const SEARCH_STRUCTURE_MIGRATION_NAME: &str = "library_contentless_search_v1";
+const SEARCH_SCHEMA_VERSION: i64 = 1;
+const SEARCH_DOCUMENT_VERSION: &str = "library-search-doc-v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchMigrationInterrupt {
+    AfterSchemaCreation,
+    AfterBackfill,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchEnsureOutcome {
+    Installed,
+    Ready,
+    Rebuilt,
+    Repaired,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProductionSearchShape {
@@ -899,6 +917,337 @@ fn create_contentless_search_schema(connection: &Connection) -> AppResult<()> {
             contentless_delete = 1
         );",
     )?;
+    Ok(())
+}
+
+fn ensure_search_migration_table(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );",
+    )?;
+    Ok(())
+}
+
+fn create_search_state_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE TABLE production_search_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            schema_version INTEGER NOT NULL,
+            document_fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('ready', 'rebuild_required'))
+        );",
+    )?;
+    Ok(())
+}
+
+fn sqlite_object_sql(connection: &Connection, name: &str) -> AppResult<Option<String>> {
+    connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name = ?1 AND type IN ('table', 'view')",
+            params![name],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten())
+        .map_err(Into::into)
+}
+
+fn search_state_columns(connection: &Connection) -> AppResult<Option<Vec<String>>> {
+    if sqlite_object_sql(connection, "production_search_state")?.is_none() {
+        return Ok(None);
+    }
+    let mut statement = connection.prepare("PRAGMA table_info(production_search_state)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(columns))
+}
+
+fn search_state_shape_is_valid(connection: &Connection) -> AppResult<bool> {
+    let Some(columns) = search_state_columns(connection)? else {
+        return Ok(false);
+    };
+    Ok([
+        "id",
+        "schema_version",
+        "document_fingerprint",
+        "status",
+    ]
+    .into_iter()
+    .all(|required| columns.iter().any(|column| column == required)))
+}
+
+fn read_declared_search_schema_version(connection: &Connection) -> AppResult<Option<i64>> {
+    let Some(columns) = search_state_columns(connection)? else {
+        return Ok(None);
+    };
+    if !columns.iter().any(|column| column == "schema_version") {
+        return Err(AppError::Message(
+            "unrecognized search-state schema without schema_version; refusing destructive repair"
+                .to_owned(),
+        ));
+    }
+    if !columns.iter().any(|column| column == "id") {
+        return Err(AppError::Message(
+            "unrecognized search-state schema without id; refusing destructive repair".to_owned(),
+        ));
+    }
+    connection
+        .query_row(
+            "SELECT schema_version FROM production_search_state WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn contentless_virtual_table_shape_is_valid(
+    connection: &Connection,
+    name: &str,
+    tokenizer_marker: &str,
+    required_columns: &[&str],
+) -> AppResult<bool> {
+    let Some(sql) = sqlite_object_sql(connection, name)? else {
+        return Ok(false);
+    };
+    let compact = sql
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    if !(compact.contains("createvirtualtable")
+        && compact.contains("usingfts5")
+        && compact.contains("content=''")
+        && compact.contains("contentless_delete=1")
+        && compact.contains(tokenizer_marker))
+    {
+        return Ok(false);
+    }
+
+    let pragma = format!("PRAGMA table_info({name})");
+    let mut statement = connection.prepare(&pragma)?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(columns
+        .iter()
+        .map(String::as_str)
+        .eq(required_columns.iter().copied()))
+}
+
+fn contentless_search_owned_schema_is_valid(connection: &Connection) -> AppResult<bool> {
+    Ok(contentless_virtual_table_shape_is_valid(
+        connection,
+        "production_contentless_fts",
+        "unicode61",
+        &[
+            "filename",
+            "creator",
+            "aliases",
+            "kind_subtype",
+            "embedded_names",
+            "family_hints",
+            "resource_summary",
+            "script_namespaces",
+        ],
+    )? && contentless_virtual_table_shape_is_valid(
+        connection,
+        "production_contentless_trigram",
+        "trigram",
+        &["search_text"],
+    )? && search_state_shape_is_valid(connection)?)
+}
+
+fn any_search_owned_object_exists(connection: &Connection) -> AppResult<bool> {
+    for name in [
+        "production_contentless_fts",
+        "production_contentless_trigram",
+        "production_search_state",
+    ] {
+        if sqlite_object_sql(connection, name)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn search_structure_migration_recorded(connection: &Connection) -> AppResult<bool> {
+    ensure_search_migration_table(connection)?;
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM schema_migrations
+                WHERE version = ?1 AND name = ?2
+            )",
+            params![SEARCH_STRUCTURE_MIGRATION_VERSION, SEARCH_STRUCTURE_MIGRATION_NAME],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(Into::into)
+}
+
+fn read_search_state(connection: &Connection) -> AppResult<Option<(i64, String, String)>> {
+    if !search_state_shape_is_valid(connection)? {
+        return Ok(None);
+    }
+    connection
+        .query_row(
+            "SELECT schema_version, document_fingerprint, status
+             FROM production_search_state
+             WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn write_search_state(
+    transaction: &Transaction<'_>,
+    fingerprint: &str,
+    status: &str,
+) -> AppResult<()> {
+    transaction.execute(
+        "INSERT INTO production_search_state(
+            id, schema_version, document_fingerprint, status
+         ) VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(id) DO UPDATE SET
+            schema_version = excluded.schema_version,
+            document_fingerprint = excluded.document_fingerprint,
+            status = excluded.status",
+        params![SEARCH_SCHEMA_VERSION, fingerprint, status],
+    )?;
+    Ok(())
+}
+
+fn future_search_document_fingerprint(
+    seed_version: &str,
+    creator_learning_version: Option<&str>,
+    category_override_version: Option<&str>,
+) -> String {
+    format!(
+        "{SEARCH_DOCUMENT_VERSION}:{seed_version}:{}:{}",
+        creator_learning_version.unwrap_or("none"),
+        category_override_version.unwrap_or("none")
+    )
+}
+
+fn drop_search_owned_objects_in_transaction(transaction: &Transaction<'_>) -> AppResult<()> {
+    transaction.execute_batch(
+        "DROP TABLE IF EXISTS production_contentless_fts;
+         DROP TABLE IF EXISTS production_contentless_trigram;
+         DROP TABLE IF EXISTS production_search_state;",
+    )?;
+    Ok(())
+}
+
+fn create_and_backfill_search_owned_objects(
+    transaction: &Transaction<'_>,
+    fingerprint: &str,
+    interrupt: Option<SearchMigrationInterrupt>,
+) -> AppResult<()> {
+    create_contentless_search_schema(transaction)?;
+    create_search_state_schema(transaction)?;
+    if interrupt == Some(SearchMigrationInterrupt::AfterSchemaCreation) {
+        return Err(AppError::Message(
+            "synthetic search migration interruption after schema creation".to_owned(),
+        ));
+    }
+    rebuild_contentless_search_in_transaction(transaction, None)?;
+    if interrupt == Some(SearchMigrationInterrupt::AfterBackfill) {
+        return Err(AppError::Message(
+            "synthetic search migration interruption after backfill".to_owned(),
+        ));
+    }
+    write_search_state(transaction, fingerprint, "ready")?;
+    Ok(())
+}
+
+fn install_contentless_search_structure(
+    connection: &mut Connection,
+    fingerprint: &str,
+    interrupt: Option<SearchMigrationInterrupt>,
+) -> AppResult<()> {
+    ensure_search_migration_table(connection)?;
+    let transaction = connection.transaction()?;
+    if any_search_owned_object_exists(&transaction)? {
+        drop_search_owned_objects_in_transaction(&transaction)?;
+    }
+    create_and_backfill_search_owned_objects(&transaction, fingerprint, interrupt)?;
+    transaction.execute(
+        "INSERT INTO schema_migrations(version, name) VALUES (?1, ?2)",
+        params![SEARCH_STRUCTURE_MIGRATION_VERSION, SEARCH_STRUCTURE_MIGRATION_NAME],
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn repair_contentless_search_owned_objects(
+    connection: &mut Connection,
+    fingerprint: &str,
+) -> AppResult<()> {
+    let transaction = connection.transaction()?;
+    drop_search_owned_objects_in_transaction(&transaction)?;
+    create_and_backfill_search_owned_objects(&transaction, fingerprint, None)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn rebuild_contentless_search_for_fingerprint(
+    connection: &mut Connection,
+    fingerprint: &str,
+) -> AppResult<()> {
+    let transaction = connection.transaction()?;
+    rebuild_contentless_search_in_transaction(&transaction, None)?;
+    write_search_state(&transaction, fingerprint, "ready")?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn ensure_contentless_search_ready(
+    connection: &mut Connection,
+    fingerprint: &str,
+) -> AppResult<SearchEnsureOutcome> {
+    ensure_search_migration_table(connection)?;
+    let migration_recorded = search_structure_migration_recorded(connection)?;
+    let declared_schema_version = read_declared_search_schema_version(connection)?;
+    if let Some(schema_version) = declared_schema_version {
+        if schema_version > SEARCH_SCHEMA_VERSION {
+            return Err(AppError::Message(format!(
+                "unsupported future search schema version {schema_version}; refusing destructive repair"
+            )));
+        }
+    }
+    let state = read_search_state(connection)?;
+
+    if !migration_recorded {
+        install_contentless_search_structure(connection, fingerprint, None)?;
+        return Ok(SearchEnsureOutcome::Installed);
+    }
+
+    if !contentless_search_owned_schema_is_valid(connection)?
+        || state.as_ref().is_none_or(|(version, _, _)| *version != SEARCH_SCHEMA_VERSION)
+    {
+        repair_contentless_search_owned_objects(connection, fingerprint)?;
+        return Ok(SearchEnsureOutcome::Repaired);
+    }
+
+    let (_, saved_fingerprint, status) = state.expect("validated search state");
+    if saved_fingerprint != fingerprint || status != "ready" {
+        rebuild_contentless_search_for_fingerprint(connection, fingerprint)?;
+        return Ok(SearchEnsureOutcome::Rebuilt);
+    }
+
+    Ok(SearchEnsureOutcome::Ready)
+}
+
+fn disable_contentless_search_objects(connection: &mut Connection) -> AppResult<()> {
+    let transaction = connection.transaction()?;
+    drop_search_owned_objects_in_transaction(&transaction)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -1962,6 +2311,27 @@ fn filler_fixture(id: i64) -> SearchFixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn setup_source_only_migration_database(path: &std::path::Path) -> Connection {
+        let fixtures = representative_fixtures();
+        let mut connection =
+            open_production_like_search_connection(path).expect("production-like migration database");
+        create_production_shape_schema(&connection, ProductionSearchShape::SOURCE_ONLY)
+            .expect("source-only schema");
+        seed_production_source(&mut connection, &fixtures).expect("seed source truth");
+        ensure_search_migration_table(&connection).expect("migration ledger");
+        connection
+    }
+
+    fn installed_source_row_count(connection: &Connection) -> i64 {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM production_files WHERE source_location IN ('mods', 'tray')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("installed source row count")
+    }
 
     #[test]
     fn frozen_player_query_corpus_is_separate_complete_and_untuned() {
@@ -3127,6 +3497,354 @@ mod tests {
     }
 
     #[test]
+    fn contentless_search_structure_and_backfill_rollback_together_under_wal() {
+        let temp = tempfile::tempdir().expect("temporary migration proof directory");
+        let path = temp.path().join("search-migration-rollback.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let source_count = installed_source_row_count(&connection);
+        let fingerprint = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v1"),
+        );
+        assert_eq!(
+            production_like_connection_settings(&connection).expect("production-like settings"),
+            ("wal".to_owned(), 5_000)
+        );
+
+        for interrupt in [
+            SearchMigrationInterrupt::AfterSchemaCreation,
+            SearchMigrationInterrupt::AfterBackfill,
+        ] {
+            let error = install_contentless_search_structure(
+                &mut connection,
+                &fingerprint,
+                Some(interrupt),
+            )
+            .expect_err("deliberately interrupted migration must roll back");
+            assert!(error.to_string().contains("synthetic search migration interruption"));
+            assert!(
+                !any_search_owned_object_exists(&connection)
+                    .expect("search objects absent after rollback"),
+                "SQLite DDL and backfill must roll back with the migration transaction"
+            );
+            assert!(
+                !search_structure_migration_recorded(&connection)
+                    .expect("migration marker absent after rollback")
+            );
+            assert_eq!(installed_source_row_count(&connection), source_count);
+        }
+
+        install_contentless_search_structure(&mut connection, &fingerprint, None)
+            .expect("complete structural install");
+        assert!(contentless_search_owned_schema_is_valid(&connection)
+            .expect("installed search schema valid"));
+        assert!(search_structure_migration_recorded(&connection)
+            .expect("structural migration recorded only after complete install"));
+        assert_eq!(
+            read_search_state(&connection).expect("search state"),
+            Some((SEARCH_SCHEMA_VERSION, fingerprint.clone(), "ready".to_owned()))
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("installed search query"),
+            vec![5]
+        );
+        assert_eq!(installed_source_row_count(&connection), source_count);
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("idempotent startup ensure"),
+            SearchEnsureOutcome::Ready
+        );
+    }
+
+    #[test]
+    fn contentless_search_startup_ensure_repairs_missing_and_malformed_owned_objects() {
+        let temp = tempfile::tempdir().expect("temporary repair proof directory");
+        let path = temp.path().join("search-startup-repair.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let source_count = installed_source_row_count(&connection);
+        let fingerprint = future_search_document_fingerprint("seed-v1", None, None);
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("first startup ensure installs search"),
+            SearchEnsureOutcome::Installed
+        );
+
+        connection
+            .execute_batch("DROP TABLE production_contentless_trigram;")
+            .expect("simulate missing trigram table");
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("repair missing trigram table"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert!(contentless_search_owned_schema_is_valid(&connection)
+            .expect("repaired schema valid"));
+
+        connection
+            .execute_batch(
+                "DROP TABLE production_contentless_fts;
+                 CREATE TABLE production_contentless_fts (not_an_fts_column TEXT);",
+            )
+            .expect("simulate malformed ordinary table under search-owned name");
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("repair malformed search-owned table"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("search works after malformed-object repair"),
+            vec![5]
+        );
+
+        connection
+            .execute_batch(
+                "DROP TABLE production_contentless_fts;
+                 CREATE VIRTUAL TABLE production_contentless_fts USING fts5(
+                    filename,
+                    tokenize = 'unicode61 remove_diacritics 2',
+                    content = '',
+                    contentless_delete = 1
+                 );",
+            )
+            .expect("simulate superficially valid FTS table with missing search columns");
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("repair malformed FTS column shape"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("search works after malformed FTS-column repair"),
+            vec![5]
+        );
+
+        connection
+            .execute_batch(
+                "DROP TABLE production_contentless_fts;
+                 CREATE VIRTUAL TABLE production_contentless_fts USING fts5(
+                    creator,
+                    filename,
+                    aliases,
+                    kind_subtype,
+                    embedded_names,
+                    family_hints,
+                    resource_summary,
+                    script_namespaces,
+                    tokenize = 'unicode61 remove_diacritics 2',
+                    content = '',
+                    contentless_delete = 1
+                 );",
+            )
+            .expect("simulate FTS table with the right names in the wrong weighted order");
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("repair FTS column-order drift"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("search works after FTS column-order repair"),
+            vec![5]
+        );
+
+        connection
+            .execute_batch("DROP TABLE production_search_state;")
+            .expect("simulate missing derived state marker");
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint)
+                .expect("repair missing state marker"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert!(search_structure_migration_recorded(&connection)
+            .expect("repair never rewrites structural history"));
+        assert_eq!(installed_source_row_count(&connection), source_count);
+    }
+
+    #[test]
+    fn contentless_search_fingerprint_rebuild_and_feature_disable_preserve_source_truth() {
+        let temp = tempfile::tempdir().expect("temporary fingerprint proof directory");
+        let path = temp.path().join("search-fingerprint-disable.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let source_count = installed_source_row_count(&connection);
+        let fingerprint_v1 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v1"),
+            Some("category-v1"),
+        );
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint_v1)
+                .expect("initial search install"),
+            SearchEnsureOutcome::Installed
+        );
+
+        let twistedmexi_id: i64 = connection
+            .query_row(
+                "SELECT id FROM production_creators WHERE canonical_name = 'TwistedMexi'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("TwistedMexi creator id");
+        connection
+            .execute(
+                "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                 VALUES (?1, 'ExceptionDoctor')",
+                params![twistedmexi_id],
+            )
+            .expect("simulate learned alias meaning change");
+        assert!(contentless_fts_search(&connection, "ExceptionDoctor", 5)
+            .expect("stale search before fingerprint rebuild")
+            .is_empty());
+
+        let fingerprint_v2 = future_search_document_fingerprint(
+            "seed-v1",
+            Some("creator-v2"),
+            Some("category-v1"),
+        );
+        assert_ne!(fingerprint_v1, fingerprint_v2);
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint_v2)
+                .expect("fingerprint mismatch rebuild"),
+            SearchEnsureOutcome::Rebuilt
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "ExceptionDoctor", 5)
+                .expect("learned alias visible after rebuild"),
+            vec![5]
+        );
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint_v2)
+                .expect("second ensure is idempotent"),
+            SearchEnsureOutcome::Ready
+        );
+
+        disable_contentless_search_objects(&mut connection)
+            .expect("feature-disable drops only search-owned objects");
+        assert!(!any_search_owned_object_exists(&connection)
+            .expect("search objects disabled"));
+        assert!(search_structure_migration_recorded(&connection)
+            .expect("feature disable preserves migration history"));
+        assert_eq!(installed_source_row_count(&connection), source_count);
+
+        assert_eq!(
+            ensure_contentless_search_ready(&mut connection, &fingerprint_v2)
+                .expect("re-enable repairs disposable search objects"),
+            SearchEnsureOutcome::Repaired
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "ExceptionDoctor", 5)
+                .expect("rebuilt search after re-enable"),
+            vec![5]
+        );
+        assert_eq!(installed_source_row_count(&connection), source_count);
+    }
+
+    #[test]
+    fn contentless_search_future_versions_fail_closed_without_destructive_repair() {
+        let temp = tempfile::tempdir().expect("temporary future-version proof directory");
+        let path = temp.path().join("search-future-version.sqlite");
+        let mut connection = setup_source_only_migration_database(&path);
+        let source_count = installed_source_row_count(&connection);
+        let fingerprint = future_search_document_fingerprint("seed-v1", None, None);
+        ensure_contentless_search_ready(&mut connection, &fingerprint)
+            .expect("initial search install");
+        connection
+            .execute(
+                "UPDATE production_search_state SET schema_version = 99 WHERE id = 1",
+                [],
+            )
+            .expect("simulate future search schema version");
+
+        let error = ensure_contentless_search_ready(&mut connection, &fingerprint)
+            .expect_err("unknown future search schema must fail closed");
+        assert!(error
+            .to_string()
+            .contains("unsupported future search schema version 99"));
+        assert_eq!(
+            read_search_state(&connection)
+                .expect("future search state remains readable")
+                .expect("future state row")
+                .0,
+            99
+        );
+        assert!(contentless_search_owned_schema_is_valid(&connection)
+            .expect("future-owned schema was not destructively altered"));
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("existing future-version search remains untouched"),
+            vec![5]
+        );
+        assert_eq!(installed_source_row_count(&connection), source_count);
+        assert!(search_structure_migration_recorded(&connection)
+            .expect("future-version block preserves migration history"));
+
+        connection
+            .execute_batch(
+                "DROP TABLE production_search_state;
+                 CREATE TABLE production_search_state (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INTEGER NOT NULL
+                 );
+                 INSERT INTO production_search_state(id, schema_version) VALUES (1, 99);",
+            )
+            .expect("simulate future state shape that differs from the current schema");
+        assert!(!search_state_shape_is_valid(&connection)
+            .expect("future changed state shape is not current-version valid"));
+        let changed_shape_error = ensure_contentless_search_ready(&mut connection, &fingerprint)
+            .expect_err("future version must block repair even when other state columns changed");
+        assert!(changed_shape_error
+            .to_string()
+            .contains("unsupported future search schema version 99"));
+        assert_eq!(
+            read_declared_search_schema_version(&connection)
+                .expect("future version remains readable"),
+            Some(99)
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterExceptions", 5)
+                .expect("future changed state shape does not destroy search objects"),
+            vec![5]
+        );
+
+        connection
+            .execute_batch(
+                "DROP TABLE production_search_state;
+                 CREATE TABLE production_search_state (id INTEGER PRIMARY KEY);",
+            )
+            .expect("simulate unrecognized state shape with no readable schema version");
+        let unrecognized_error = ensure_contentless_search_ready(&mut connection, &fingerprint)
+            .expect_err("unrecognized state shape must fail closed instead of guessing repair");
+        assert!(unrecognized_error
+            .to_string()
+            .contains("without schema_version; refusing destructive repair"));
+        assert!(sqlite_object_sql(&connection, "production_search_state")
+            .expect("unrecognized state table remains inspectable")
+            .is_some());
+        assert_eq!(installed_source_row_count(&connection), source_count);
+
+        let second_path = temp.path().join("search-structural-version-conflict.sqlite");
+        let mut conflicting = setup_source_only_migration_database(&second_path);
+        conflicting
+            .execute(
+                "INSERT INTO schema_migrations(version, name) VALUES (?1, 'unknown_future_owner')",
+                params![SEARCH_STRUCTURE_MIGRATION_VERSION],
+            )
+            .expect("simulate conflicting future structural ownership");
+        let conflict_error = ensure_contentless_search_ready(&mut conflicting, &fingerprint)
+            .expect_err("migration-version ownership conflict must not be overwritten");
+        assert!(conflict_error.to_string().to_ascii_lowercase().contains("unique")
+            || conflict_error.to_string().to_ascii_lowercase().contains("constraint"));
+        assert!(!any_search_owned_object_exists(&conflicting)
+            .expect("failed conflicting install rolls back search-owned DDL"));
+        assert_eq!(
+            installed_source_row_count(&conflicting),
+            representative_fixtures().len() as i64
+        );
+    }
+
+    #[test]
     fn smart_search_prototype_stays_out_of_normal_command_registration() {
         let commands_source = include_str!("../commands/mod.rs");
         assert!(!commands_source.contains("library_smart_search_prototype"));
@@ -3138,6 +3856,9 @@ mod tests {
         assert!(!commands_source.contains("production_contentless_trigram"));
         assert!(!commands_source.contains("route_search_intent"));
         assert!(!commands_source.contains("open_production_like_search_connection"));
+        assert!(!commands_source.contains("ensure_contentless_search_ready"));
+        assert!(!commands_source.contains("install_contentless_search_structure"));
+        assert!(!commands_source.contains("disable_contentless_search_objects"));
 
         let core_source = include_str!("mod.rs");
         assert!(core_source.contains(
