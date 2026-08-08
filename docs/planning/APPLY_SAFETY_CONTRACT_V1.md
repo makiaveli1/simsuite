@@ -143,10 +143,40 @@ This is destination-race hardening, not an atomic no-overwrite guarantee. The
 existing production `move_single_file` helper still has a small operating-system
 check-to-rename window; on platforms where rename can replace a destination, a
 file appearing after the last explicit check could still race the primitive.
-An atomic no-replace execution primitive (or equivalent platform-safe design),
-incremental only-affected index refresh, multi-file transactions, golden content
-fixtures, and native player-environment proof remain future gates before any
-real Apply or Restore surface is considered.
+
+A separate standalone fixture proof now explores one no-replace candidate
+without routing any transaction through it: `std::fs::hard_link` claims the
+planned destination name first, the claimed destination is verified against the
+expected hash/size, and only then is the source name unlinked. On the current
+macOS fixture filesystem, an already-existing destination is refused without
+changing either file, and a 16-contender simultaneous claim test produces exactly
+one winner while preserving the source/destination bytes. A successful proof
+verifies the destination before source unlink. A forced verification failure
+removes only the newly-created destination link after confirming both names still
+refer to the same physical file, leaving the source intact.
+
+The hard-link proof also exposes a new interruption state rather than hiding it.
+If execution stops after the destination link is created but before the source
+name is removed, source and destination are two names for the same physical file.
+On the current macOS run, the fixture classifier proves that identity using Unix
+device/inode metadata and reports `ExactHardLinkPairNeedsReview`; the reconciler
+deliberately does nothing. An ordinary byte-for-byte copy uses a different
+physical identity, and a symlink alias is also rejected from this special state;
+both remain `Ambiguous`. Equal content alone is therefore not treated as proof
+of an interrupted hard-link claim. This distinction is important because the current
+records still do not prove that SimSuite, rather than another process/user,
+created the hard-link pair.
+
+This is a macOS runtime proof of an exclusive destination-claim technique, not a
+chosen cross-platform production move primitive. Hard links require filesystem
+support and normally require both names on the same filesystem. Windows and
+Linux have not received equivalent native runtime proof in this development
+environment. The candidate also has a deliberate two-name interval and still
+needs durable transaction-intent evidence before automatic recovery could safely
+remove either name. Cross-platform capability gating/native proof, concurrent
+content-write handling, incremental only-affected index refresh, multi-file
+transactions, golden content fixtures, and native player-environment proof
+remain future gates before any real Apply or Restore surface is considered.
 
 Current implementation note: Organize `Saved plans` now shows read-only
 `Recovery history` metadata from DB-only ApplyPlan run logs, result logs, and

@@ -133,6 +133,7 @@ pub(crate) struct FixtureReconciliationRequest {
 pub(crate) enum FixtureReconciliationState {
     CleanStart,
     ResumeFromVerifiedBackupRequired,
+    ExactHardLinkPairNeedsReview,
     MovedMissingResult,
     MoveResultMissingRestoreEntry,
     MoveRecordedAwaitingUndo,
@@ -431,6 +432,120 @@ fn inject_fixture_resume_race(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FixtureHardLinkMoveFault {
+    None,
+    InterruptAfterDestinationClaim,
+    ForceVerificationFailureAfterDestinationClaim,
+}
+
+fn claim_fixture_destination_no_replace(source: &Path, destination: &Path) -> AppResult<()> {
+    fs::hard_link(source, destination).map_err(|error| {
+        AppError::Message(format!(
+            "Fixture no-replace destination claim failed for {} -> {}: {error}",
+            source.display(),
+            destination.display()
+        ))
+    })
+}
+
+fn move_fixture_file_via_hard_link_no_replace(
+    source: &Path,
+    destination: &Path,
+    expected_size: u64,
+    expected_hash: &str,
+    fault: FixtureHardLinkMoveFault,
+) -> AppResult<()> {
+    if observe_expected_file(source, expected_size, expected_hash)? != ObservedFileState::Exact {
+        return Err(AppError::Message(
+            "Fixture hard-link move requires an exact verified source before claiming a destination."
+                .to_owned(),
+        ));
+    }
+
+    claim_fixture_destination_no_replace(source, destination)?;
+
+    if fault == FixtureHardLinkMoveFault::InterruptAfterDestinationClaim {
+        return Err(AppError::Message(
+            "Injected fixture interruption after exclusive hard-link destination claim.".to_owned(),
+        ));
+    }
+
+    let destination_verified = fault != FixtureHardLinkMoveFault::ForceVerificationFailureAfterDestinationClaim
+        && observe_expected_file(destination, expected_size, expected_hash)? == ObservedFileState::Exact;
+    if !destination_verified {
+        if same_physical_file_identity(source, destination)? == Some(true) {
+            fs::remove_file(destination).map_err(|error| {
+                AppError::Message(format!(
+                    "Fixture hard-link verification failed and the claimed destination link could not be removed safely: {error}"
+                ))
+            })?;
+        }
+        return Err(AppError::Message(
+            "Fixture hard-link destination verification failed; source was retained and no move was completed."
+                .to_owned(),
+        ));
+    }
+
+    fs::remove_file(source).map_err(|error| {
+        AppError::Message(format!(
+            "Fixture hard-link destination verified but source unlink failed; reconciliation must inspect both names: {error}"
+        ))
+    })?;
+
+    if observe_expected_file(source, expected_size, expected_hash)? != ObservedFileState::Missing
+        || observe_expected_file(destination, expected_size, expected_hash)?
+            != ObservedFileState::Exact
+    {
+        return Err(AppError::Message(
+            "Fixture hard-link move finished with an unexpected source/destination state."
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn existing_path_entry_is_symlink(path: &Path) -> AppResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(metadata.file_type().is_symlink()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(AppError::Message(format!(
+            "Fixture path-entry type could not inspect {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
+fn same_physical_file_identity(first: &Path, second: &Path) -> AppResult<Option<bool>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let first_metadata = fs::symlink_metadata(first).map_err(|error| {
+            AppError::Message(format!(
+                "Fixture physical-file identity could not inspect {}: {error}",
+                first.display()
+            ))
+        })?;
+        let second_metadata = fs::symlink_metadata(second).map_err(|error| {
+            AppError::Message(format!(
+                "Fixture physical-file identity could not inspect {}: {error}",
+                second.display()
+            ))
+        })?;
+        return Ok(Some(
+            first_metadata.dev() == second_metadata.dev()
+                && first_metadata.ino() == second_metadata.ino(),
+        ));
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (first, second);
+        Ok(None)
+    }
+}
+
 fn record_move_restore_entry(
     connection: &Connection,
     request: &FixtureReconciliationRequest,
@@ -478,6 +593,9 @@ fn assess_fixture_reconciliation_state(
         ));
     }
 
+    let source_entry_is_symlink = existing_path_entry_is_symlink(Path::new(&item.current_path))?;
+    let destination_entry_is_symlink =
+        existing_path_entry_is_symlink(Path::new(&item.destination_path))?;
     let source_path = resolve_fixture_candidate(Path::new(&item.current_path), "currentPath")?;
     let destination_path =
         resolve_fixture_candidate(Path::new(&item.destination_path), "destinationPath")?;
@@ -725,6 +843,14 @@ fn assess_fixture_reconciliation_state(
         ));
     }
 
+    let exact_pair_same_physical_file = if source_state == ObservedFileState::Exact
+        && destination_state == ObservedFileState::Exact
+    {
+        same_physical_file_identity(&source_path, &destination_path)?
+    } else {
+        None
+    };
+
     let evidence = FixtureReconciliationEvidence {
         source_path,
         destination_path,
@@ -736,6 +862,16 @@ fn assess_fixture_reconciliation_state(
         move_result_id: move_result.map(|result| result.id),
     };
     let state = match (source_state, destination_state) {
+        (ObservedFileState::Exact, ObservedFileState::Exact)
+            if move_result.is_none()
+                && move_entry.is_none()
+                && undo_result.is_none()
+                && !source_entry_is_symlink
+                && !destination_entry_is_symlink
+                && exact_pair_same_physical_file == Some(true) =>
+        {
+            FixtureReconciliationState::ExactHardLinkPairNeedsReview
+        }
         (ObservedFileState::Exact, ObservedFileState::Missing)
             if move_result.is_none() && move_entry.is_none() && undo_result.is_none() =>
         {
@@ -2347,6 +2483,212 @@ mod tests {
         );
         assert_eq!(fs::read(&context.source_path).expect("source untouched"), source_bytes);
         assert!(!context.destination_path.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn hard_link_destination_claim_refuses_existing_destination_without_overwrite() {
+        let temp = tempdir().expect("temp fixture");
+        let source = temp.path().join("source.package");
+        let destination = temp.path().join("destination.package");
+        fs::write(&source, b"source bytes").expect("source");
+        fs::write(&destination, b"existing destination bytes").expect("destination");
+
+        claim_fixture_destination_no_replace(&source, &destination)
+            .expect_err("existing destination must be refused");
+
+        assert_eq!(fs::read(&source).expect("source unchanged"), b"source bytes");
+        assert_eq!(
+            fs::read(&destination).expect("destination unchanged"),
+            b"existing destination bytes"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn concurrent_hard_link_destination_claims_allow_exactly_one_winner() {
+        use std::sync::{Arc, Barrier};
+
+        let temp = tempdir().expect("temp fixture");
+        let source = temp.path().join("source.package");
+        let destination = temp.path().join("destination.package");
+        let source_bytes = b"concurrent hard-link bytes";
+        fs::write(&source, source_bytes).expect("source");
+
+        const CONTENDERS: usize = 16;
+        let barrier = Arc::new(Barrier::new(CONTENDERS));
+        let handles = (0..CONTENDERS)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                let source = source.clone();
+                let destination = destination.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    claim_fixture_destination_no_replace(&source, &destination).is_ok()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let successful_claims = handles
+            .into_iter()
+            .map(|handle| usize::from(handle.join().expect("claim thread")))
+            .sum::<usize>();
+
+        assert_eq!(successful_claims, 1);
+        assert_eq!(fs::read(&source).expect("source remains"), source_bytes);
+        assert_eq!(fs::read(&destination).expect("claimed destination"), source_bytes);
+        assert_eq!(
+            same_physical_file_identity(&source, &destination)
+                .expect("physical identity"),
+            Some(true)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn hard_link_no_replace_move_verifies_destination_before_unlinking_source() {
+        let temp = tempdir().expect("temp fixture");
+        let source = temp.path().join("source.package");
+        let destination = temp.path().join("destination.package");
+        let source_bytes = b"verified hard-link move bytes";
+        let expected_hash = bytes_hash(source_bytes);
+        fs::write(&source, source_bytes).expect("source");
+
+        move_fixture_file_via_hard_link_no_replace(
+            &source,
+            &destination,
+            source_bytes.len() as u64,
+            &expected_hash,
+            FixtureHardLinkMoveFault::None,
+        )
+        .expect("hard-link no-replace move");
+
+        assert!(!source.exists());
+        assert_eq!(fs::read(&destination).expect("destination"), source_bytes);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn hard_link_verification_failure_removes_only_claimed_link_and_retains_source() {
+        let temp = tempdir().expect("temp fixture");
+        let source = temp.path().join("source.package");
+        let destination = temp.path().join("destination.package");
+        let source_bytes = b"verification failure source bytes";
+        let expected_hash = bytes_hash(source_bytes);
+        fs::write(&source, source_bytes).expect("source");
+
+        move_fixture_file_via_hard_link_no_replace(
+            &source,
+            &destination,
+            source_bytes.len() as u64,
+            &expected_hash,
+            FixtureHardLinkMoveFault::ForceVerificationFailureAfterDestinationClaim,
+        )
+        .expect_err("forced verification failure");
+
+        assert_eq!(fs::read(&source).expect("source retained"), source_bytes);
+        assert!(!destination.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn interrupted_forward_hard_link_claim_is_explicit_but_not_auto_reconciled() {
+        let connection = memory_connection();
+        let source_bytes = b"forward hard-link interruption bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        let request = reconciliation_request(&context);
+        let initial = assess_fixture_reconciliation_state(&connection, &request)
+            .expect("initial assessment");
+        let evidence = initial.evidence.expect("verified backup evidence");
+
+        move_fixture_file_via_hard_link_no_replace(
+            &evidence.source_path,
+            &evidence.destination_path,
+            evidence.expected_size,
+            &evidence.expected_hash,
+            FixtureHardLinkMoveFault::InterruptAfterDestinationClaim,
+        )
+        .expect_err("interrupt after destination claim");
+
+        assert_eq!(
+            same_physical_file_identity(&context.source_path, &context.destination_path)
+                .expect("physical identity"),
+            Some(true)
+        );
+        assert_eq!(
+            classify_fixture_reconciliation_state(&connection, &request)
+                .expect("classify interrupted hard-link claim"),
+            FixtureReconciliationState::ExactHardLinkPairNeedsReview
+        );
+        assert_eq!(
+            reconcile_fixture_transaction(&connection, &request)
+                .expect("reconciler must leave forward claim untouched"),
+            FixtureReconciliationState::ExactHardLinkPairNeedsReview
+        );
+        assert_eq!(fs::read(&context.source_path).expect("source retained"), source_bytes);
+        assert_eq!(
+            fs::read(&context.destination_path).expect("destination retained"),
+            source_bytes
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn equal_copied_files_are_not_misclassified_as_forward_hard_link_claim() {
+        let connection = memory_connection();
+        let source_bytes = b"equal copy negative control bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        fs::copy(&context.source_path, &context.destination_path).expect("ordinary copy");
+        let request = reconciliation_request(&context);
+
+        assert_eq!(
+            same_physical_file_identity(&context.source_path, &context.destination_path)
+                .expect("physical identity"),
+            Some(false)
+        );
+        assert!(matches!(
+            classify_fixture_reconciliation_state(&connection, &request)
+                .expect("classify equal copied files"),
+            FixtureReconciliationState::Ambiguous(_)
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn symlink_alias_is_not_misclassified_as_exact_hard_link_pair() {
+        use std::os::unix::fs::symlink;
+
+        let connection = memory_connection();
+        let source_bytes = b"symlink alias negative control bytes";
+        let context = setup_fixture(&connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            &connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        symlink(&context.source_path, &context.destination_path).expect("destination symlink");
+        let request = reconciliation_request(&context);
+
+        assert!(existing_path_entry_is_symlink(&context.destination_path)
+            .expect("destination entry type"));
+        assert!(matches!(
+            classify_fixture_reconciliation_state(&connection, &request)
+                .expect("classify symlink alias"),
+            FixtureReconciliationState::Ambiguous(_)
+        ));
     }
 
     #[test]
