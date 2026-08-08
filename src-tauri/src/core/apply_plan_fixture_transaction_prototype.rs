@@ -546,6 +546,490 @@ fn same_physical_file_identity(first: &Path, second: &Path) -> AppResult<Option<
     }
 }
 
+const FIXTURE_ATTEMPT_STRATEGY_HARD_LINK: &str = "hard_link_no_replace";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FixtureAttemptCapabilityProof {
+    strategy: String,
+    platform: String,
+    same_filesystem: bool,
+    hard_link_supported: bool,
+    native_runtime_proven: bool,
+    evidence_label: String,
+}
+
+impl FixtureAttemptCapabilityProof {
+    fn validate_for_fixture_attempt(&self) -> AppResult<()> {
+        if self.strategy != FIXTURE_ATTEMPT_STRATEGY_HARD_LINK
+            || self.platform.trim().is_empty()
+            || !self.same_filesystem
+            || !self.hard_link_supported
+            || !self.native_runtime_proven
+            || self.evidence_label.trim().is_empty()
+        {
+            return Err(AppError::Message(
+                "Fixture attempt requires complete explicit no-replace capability evidence."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FixtureAttemptState {
+    PreparedBeforeChange,
+    DestinationClaimObserved,
+    DestinationVerified,
+    SourceReleaseCompleted,
+    Committed,
+    BlockedBeforeChange,
+    FailedBeforeChange,
+    RecoveryRequired,
+}
+
+impl FixtureAttemptState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PreparedBeforeChange => "prepared_before_change",
+            Self::DestinationClaimObserved => "destination_claim_observed",
+            Self::DestinationVerified => "destination_verified",
+            Self::SourceReleaseCompleted => "source_release_completed",
+            Self::Committed => "committed",
+            Self::BlockedBeforeChange => "blocked_before_change",
+            Self::FailedBeforeChange => "failed_before_change",
+            Self::RecoveryRequired => "recovery_required",
+        }
+    }
+
+    fn parse(value: &str) -> AppResult<Self> {
+        match value {
+            "prepared_before_change" => Ok(Self::PreparedBeforeChange),
+            "destination_claim_observed" => Ok(Self::DestinationClaimObserved),
+            "destination_verified" => Ok(Self::DestinationVerified),
+            "source_release_completed" => Ok(Self::SourceReleaseCompleted),
+            "committed" => Ok(Self::Committed),
+            "blocked_before_change" => Ok(Self::BlockedBeforeChange),
+            "failed_before_change" => Ok(Self::FailedBeforeChange),
+            "recovery_required" => Ok(Self::RecoveryRequired),
+            other => Err(AppError::Message(format!(
+                "Unknown fixture attempt state: {other}"
+            ))),
+        }
+    }
+
+    fn transition_allowed(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (
+                Self::PreparedBeforeChange,
+                Self::DestinationClaimObserved
+                    | Self::BlockedBeforeChange
+                    | Self::FailedBeforeChange
+            ) | (
+                Self::DestinationClaimObserved,
+                Self::DestinationVerified | Self::RecoveryRequired
+            ) | (
+                Self::DestinationVerified,
+                Self::SourceReleaseCompleted | Self::RecoveryRequired
+            ) | (
+                Self::SourceReleaseCompleted,
+                Self::Committed | Self::RecoveryRequired
+            )
+        )
+    }
+
+    fn is_nonterminal(self) -> bool {
+        matches!(
+            self,
+            Self::PreparedBeforeChange
+                | Self::DestinationClaimObserved
+                | Self::DestinationVerified
+                | Self::SourceReleaseCompleted
+                | Self::RecoveryRequired
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FixtureAttemptRecord {
+    attempt_id: String,
+    apply_plan_run_id: i64,
+    apply_plan_id: i64,
+    apply_plan_item_id: i64,
+    source_path: String,
+    destination_path: String,
+    expected_hash: String,
+    expected_size: u64,
+    backup_result_id: i64,
+    backup_restore_entry_id: i64,
+    capability: FixtureAttemptCapabilityProof,
+    source_regular_file: bool,
+    source_entry_non_symlink: bool,
+    destination_entry_non_symlink: bool,
+    state: FixtureAttemptState,
+}
+
+fn ensure_fixture_attempt_journal_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS fixture_apply_plan_attempts (
+            attempt_id TEXT PRIMARY KEY NOT NULL,
+            apply_plan_run_id INTEGER NOT NULL,
+            apply_plan_id INTEGER NOT NULL,
+            apply_plan_item_id INTEGER NOT NULL,
+            source_path TEXT NOT NULL,
+            destination_path TEXT NOT NULL,
+            expected_hash TEXT NOT NULL,
+            expected_size INTEGER NOT NULL CHECK(expected_size >= 0),
+            backup_result_id INTEGER NOT NULL,
+            backup_restore_entry_id INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            capability_platform TEXT NOT NULL,
+            same_filesystem INTEGER NOT NULL CHECK(same_filesystem IN (0, 1)),
+            hard_link_supported INTEGER NOT NULL CHECK(hard_link_supported IN (0, 1)),
+            native_runtime_proven INTEGER NOT NULL CHECK(native_runtime_proven IN (0, 1)),
+            capability_evidence_label TEXT NOT NULL,
+            source_regular_file INTEGER NOT NULL CHECK(source_regular_file IN (0, 1)),
+            source_entry_non_symlink INTEGER NOT NULL CHECK(source_entry_non_symlink IN (0, 1)),
+            destination_entry_non_symlink INTEGER NOT NULL CHECK(destination_entry_non_symlink IN (0, 1)),
+            state TEXT NOT NULL CHECK(state IN (
+                'prepared_before_change',
+                'destination_claim_observed',
+                'destination_verified',
+                'source_release_completed',
+                'committed',
+                'blocked_before_change',
+                'failed_before_change',
+                'recovery_required'
+            )),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fixture_apply_attempt_active_item
+        ON fixture_apply_plan_attempts(apply_plan_run_id, apply_plan_item_id)
+        WHERE state IN (
+            'prepared_before_change',
+            'destination_claim_observed',
+            'destination_verified',
+            'source_release_completed',
+            'recovery_required'
+        );",
+    )?;
+    Ok(())
+}
+
+fn load_fixture_attempt(
+    connection: &Connection,
+    attempt_id: &str,
+) -> AppResult<Option<FixtureAttemptRecord>> {
+    ensure_fixture_attempt_journal_schema(connection)?;
+    let row = connection
+        .query_row(
+            "SELECT
+                attempt_id,
+                apply_plan_run_id,
+                apply_plan_id,
+                apply_plan_item_id,
+                source_path,
+                destination_path,
+                expected_hash,
+                expected_size,
+                backup_result_id,
+                backup_restore_entry_id,
+                strategy,
+                capability_platform,
+                same_filesystem,
+                hard_link_supported,
+                native_runtime_proven,
+                capability_evidence_label,
+                source_regular_file,
+                source_entry_non_symlink,
+                destination_entry_non_symlink,
+                state
+             FROM fixture_apply_plan_attempts
+             WHERE attempt_id = ?1",
+            params![attempt_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, String>(11)?,
+                    row.get::<_, i64>(12)?,
+                    row.get::<_, i64>(13)?,
+                    row.get::<_, i64>(14)?,
+                    row.get::<_, String>(15)?,
+                    row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
+                    row.get::<_, i64>(18)?,
+                    row.get::<_, String>(19)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((
+        attempt_id,
+        apply_plan_run_id,
+        apply_plan_id,
+        apply_plan_item_id,
+        source_path,
+        destination_path,
+        expected_hash,
+        expected_size,
+        backup_result_id,
+        backup_restore_entry_id,
+        strategy,
+        capability_platform,
+        same_filesystem,
+        hard_link_supported,
+        native_runtime_proven,
+        capability_evidence_label,
+        source_regular_file,
+        source_entry_non_symlink,
+        destination_entry_non_symlink,
+        state,
+    )) = row
+    else {
+        return Ok(None);
+    };
+    if expected_size < 0 {
+        return Err(AppError::Message(
+            "Fixture attempt stored a negative expected size.".to_owned(),
+        ));
+    }
+
+    Ok(Some(FixtureAttemptRecord {
+        attempt_id,
+        apply_plan_run_id,
+        apply_plan_id,
+        apply_plan_item_id,
+        source_path,
+        destination_path,
+        expected_hash,
+        expected_size: expected_size as u64,
+        backup_result_id,
+        backup_restore_entry_id,
+        capability: FixtureAttemptCapabilityProof {
+            strategy,
+            platform: capability_platform,
+            same_filesystem: same_filesystem != 0,
+            hard_link_supported: hard_link_supported != 0,
+            native_runtime_proven: native_runtime_proven != 0,
+            evidence_label: capability_evidence_label,
+        },
+        source_regular_file: source_regular_file != 0,
+        source_entry_non_symlink: source_entry_non_symlink != 0,
+        destination_entry_non_symlink: destination_entry_non_symlink != 0,
+        state: FixtureAttemptState::parse(&state)?,
+    }))
+}
+
+fn prepare_fixture_attempt(
+    connection: &Connection,
+    request: &FixtureReconciliationRequest,
+    attempt_id: &str,
+    capability: &FixtureAttemptCapabilityProof,
+) -> AppResult<FixtureAttemptRecord> {
+    if attempt_id.trim().is_empty() {
+        return Err(AppError::Message(
+            "Fixture attempt id must not be empty.".to_owned(),
+        ));
+    }
+    capability.validate_for_fixture_attempt()?;
+
+    let assessment = assess_fixture_reconciliation_state(connection, request)?;
+    if assessment.state != FixtureReconciliationState::ResumeFromVerifiedBackupRequired {
+        return Err(AppError::Message(format!(
+            "Fixture attempt can only be prepared from ResumeFromVerifiedBackupRequired, found {:?}.",
+            assessment.state
+        )));
+    }
+    let evidence = assessment.evidence.ok_or_else(|| {
+        AppError::Message("Fixture attempt lost verified backup evidence.".to_owned())
+    })?;
+    let item = load_plan_item_scope(connection, request.apply_plan_id, request.apply_plan_item_id)?;
+    let source_path = Path::new(&item.current_path);
+    let destination_path = Path::new(&item.destination_path);
+    let source_metadata = fs::symlink_metadata(source_path).map_err(|error| {
+        AppError::Message(format!(
+            "Fixture attempt could not inspect source path entry: {error}"
+        ))
+    })?;
+    let source_regular_file = source_metadata.file_type().is_file();
+    let source_entry_non_symlink = !source_metadata.file_type().is_symlink();
+    let destination_entry_non_symlink = !existing_path_entry_is_symlink(destination_path)?;
+    if !source_regular_file || !source_entry_non_symlink || !destination_entry_non_symlink {
+        return Err(AppError::Message(
+            "Fixture attempt requires a regular non-symlink source and non-symlink destination entry."
+                .to_owned(),
+        ));
+    }
+
+    ensure_fixture_attempt_journal_schema(connection)?;
+    let existing_active = connection
+        .query_row(
+            "SELECT attempt_id
+             FROM fixture_apply_plan_attempts
+             WHERE apply_plan_run_id = ?1
+               AND apply_plan_item_id = ?2
+               AND state IN (
+                   'prepared_before_change',
+                   'destination_claim_observed',
+                   'destination_verified',
+                   'source_release_completed',
+                   'recovery_required'
+               )
+             LIMIT 1",
+            params![request.run_id, request.apply_plan_item_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if let Some(existing_attempt_id) = existing_active {
+        return Err(AppError::Message(format!(
+            "Fixture item already has an active attempt: {existing_attempt_id}"
+        )));
+    }
+
+    connection.execute(
+        "INSERT INTO fixture_apply_plan_attempts (
+            attempt_id,
+            apply_plan_run_id,
+            apply_plan_id,
+            apply_plan_item_id,
+            source_path,
+            destination_path,
+            expected_hash,
+            expected_size,
+            backup_result_id,
+            backup_restore_entry_id,
+            strategy,
+            capability_platform,
+            same_filesystem,
+            hard_link_supported,
+            native_runtime_proven,
+            capability_evidence_label,
+            source_regular_file,
+            source_entry_non_symlink,
+            destination_entry_non_symlink,
+            state
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+            ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+        )",
+        params![
+            attempt_id,
+            request.run_id,
+            request.apply_plan_id,
+            request.apply_plan_item_id,
+            evidence.source_path.to_string_lossy().to_string(),
+            evidence.destination_path.to_string_lossy().to_string(),
+            evidence.expected_hash,
+            evidence.expected_size as i64,
+            evidence.backup_result_id,
+            evidence.backup_restore_entry_id,
+            capability.strategy,
+            capability.platform,
+            i64::from(capability.same_filesystem),
+            i64::from(capability.hard_link_supported),
+            i64::from(capability.native_runtime_proven),
+            capability.evidence_label,
+            i64::from(source_regular_file),
+            i64::from(source_entry_non_symlink),
+            i64::from(destination_entry_non_symlink),
+            FixtureAttemptState::PreparedBeforeChange.as_str(),
+        ],
+    )?;
+
+    load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+        AppError::Message("Fixture attempt was not readable after preparation.".to_owned())
+    })
+}
+
+fn transition_fixture_attempt(
+    connection: &Connection,
+    attempt_id: &str,
+    next: FixtureAttemptState,
+) -> AppResult<FixtureAttemptRecord> {
+    let current = load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+        AppError::Message(format!("Fixture attempt not found: {attempt_id}"))
+    })?;
+    if !current.state.transition_allowed(next) {
+        return Err(AppError::Message(format!(
+            "Fixture attempt transition is not allowed: {} -> {}",
+            current.state.as_str(),
+            next.as_str()
+        )));
+    }
+
+    let changed = connection.execute(
+        "UPDATE fixture_apply_plan_attempts
+         SET state = ?1, updated_at = CURRENT_TIMESTAMP
+         WHERE attempt_id = ?2 AND state = ?3",
+        params![next.as_str(), attempt_id, current.state.as_str()],
+    )?;
+    if changed != 1 {
+        return Err(AppError::Message(
+            "Fixture attempt changed concurrently before transition.".to_owned(),
+        ));
+    }
+
+    load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+        AppError::Message("Fixture attempt disappeared after transition.".to_owned())
+    })
+}
+
+fn fixture_attempt_owns_exact_hard_link_pair(
+    connection: &Connection,
+    request: &FixtureReconciliationRequest,
+    attempt_id: &str,
+) -> AppResult<bool> {
+    let Some(attempt) = load_fixture_attempt(connection, attempt_id)? else {
+        return Ok(false);
+    };
+    if attempt.apply_plan_run_id != request.run_id
+        || attempt.apply_plan_id != request.apply_plan_id
+        || attempt.apply_plan_item_id != request.apply_plan_item_id
+        || !attempt.state.is_nonterminal()
+    {
+        return Ok(false);
+    }
+
+    let assessment = assess_fixture_reconciliation_state(connection, request)?;
+    if assessment.state != FixtureReconciliationState::ExactHardLinkPairNeedsReview {
+        return Ok(false);
+    }
+    let Some(evidence) = assessment.evidence else {
+        return Ok(false);
+    };
+    if attempt.source_path != evidence.source_path.to_string_lossy()
+        || attempt.destination_path != evidence.destination_path.to_string_lossy()
+        || attempt.expected_hash != evidence.expected_hash
+        || attempt.expected_size != evidence.expected_size
+        || attempt.backup_result_id != evidence.backup_result_id
+        || attempt.backup_restore_entry_id != evidence.backup_restore_entry_id
+        || !attempt.source_regular_file
+        || !attempt.source_entry_non_symlink
+        || !attempt.destination_entry_non_symlink
+    {
+        return Ok(false);
+    }
+    attempt.capability.validate_for_fixture_attempt()?;
+
+    Ok(same_physical_file_identity(
+        Path::new(&attempt.source_path),
+        Path::new(&attempt.destination_path),
+    )? == Some(true))
+}
+
 fn record_move_restore_entry(
     connection: &Connection,
     request: &FixtureReconciliationRequest,
@@ -1684,6 +2168,36 @@ mod tests {
         }
     }
 
+    fn fixture_attempt_capability_proof() -> FixtureAttemptCapabilityProof {
+        FixtureAttemptCapabilityProof {
+            strategy: FIXTURE_ATTEMPT_STRATEGY_HARD_LINK.to_owned(),
+            platform: std::env::consts::OS.to_owned(),
+            same_filesystem: true,
+            hard_link_supported: true,
+            native_runtime_proven: true,
+            evidence_label: "explicit-fixture-capability-proof-v1".to_owned(),
+        }
+    }
+
+    fn setup_verified_backup_only_state(
+        connection: &Connection,
+        source_bytes: &[u8],
+    ) -> FixtureContext {
+        let context = setup_fixture(connection, source_bytes);
+        run_fixture_move_transaction_with_fault(
+            connection,
+            move_request(&context),
+            FixtureFaultPoint::AfterVerifiedBackupBeforeMove,
+        )
+        .expect_err("interrupt after verified backup");
+        assert_eq!(
+            classify_fixture_reconciliation_state(connection, &reconciliation_request(&context))
+                .expect("classify verified-backup state"),
+            FixtureReconciliationState::ResumeFromVerifiedBackupRequired
+        );
+        context
+    }
+
     #[test]
     fn fixture_move_transaction_backs_up_moves_verifies_logs_and_undoes_exact_file_state() {
         let connection = memory_connection();
@@ -2485,6 +2999,314 @@ mod tests {
         assert!(!context.destination_path.exists());
     }
 
+    #[test]
+    fn attempt_journal_prepares_exact_record_and_rejects_duplicate_active_attempt() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(&connection, b"attempt journal exact bytes");
+        let request = reconciliation_request(&context);
+        let capability = fixture_attempt_capability_proof();
+        let assessment = assess_fixture_reconciliation_state(&connection, &request)
+            .expect("verified-backup assessment");
+        let evidence = assessment.evidence.expect("verified-backup evidence");
+
+        let attempt = prepare_fixture_attempt(&connection, &request, "attempt-exact-1", &capability)
+            .expect("prepare fixture attempt");
+        assert_eq!(attempt.attempt_id, "attempt-exact-1");
+        assert_eq!(attempt.apply_plan_run_id, context.run_id);
+        assert_eq!(attempt.apply_plan_id, context.plan_id);
+        assert_eq!(attempt.apply_plan_item_id, context.item_id);
+        assert_eq!(attempt.source_path, evidence.source_path.to_string_lossy().to_string());
+        assert_eq!(
+            attempt.destination_path,
+            evidence.destination_path.to_string_lossy().to_string()
+        );
+        assert_eq!(attempt.expected_hash, evidence.expected_hash);
+        assert_eq!(attempt.expected_size, evidence.expected_size);
+        assert_eq!(attempt.backup_result_id, evidence.backup_result_id);
+        assert_eq!(
+            attempt.backup_restore_entry_id,
+            evidence.backup_restore_entry_id
+        );
+        assert_eq!(attempt.capability, capability);
+        assert!(attempt.source_regular_file);
+        assert!(attempt.source_entry_non_symlink);
+        assert!(attempt.destination_entry_non_symlink);
+        assert_eq!(attempt.state, FixtureAttemptState::PreparedBeforeChange);
+
+        let duplicate = prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-exact-2",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect_err("second active attempt must be rejected");
+        assert!(duplicate.to_string().contains("already has an active attempt"));
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_apply_plan_attempts",
+                [],
+                |row| row.get(0),
+            )
+            .expect("attempt row count");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn attempt_journal_rejects_incomplete_capability_scope_and_evidence_drift() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(&connection, b"capability rejection bytes");
+        let request = reconciliation_request(&context);
+        let mut incomplete = fixture_attempt_capability_proof();
+        incomplete.hard_link_supported = false;
+        prepare_fixture_attempt(&connection, &request, "attempt-bad-capability", &incomplete)
+            .expect_err("incomplete capability must fail");
+        assert!(load_fixture_attempt(&connection, "attempt-bad-capability")
+            .expect("load rejected attempt")
+            .is_none());
+
+        let other = setup_fixture(&connection, b"other run bytes");
+        let mut cross_scoped = request.clone();
+        cross_scoped.run_id = other.run_id;
+        prepare_fixture_attempt(
+            &connection,
+            &cross_scoped,
+            "attempt-cross-scope",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect_err("cross-scoped run must fail");
+        assert!(load_fixture_attempt(&connection, "attempt-cross-scope")
+            .expect("load cross-scope attempt")
+            .is_none());
+
+        let drift_connection = memory_connection();
+        let drift_context =
+            setup_verified_backup_only_state(&drift_connection, b"source drift original bytes");
+        fs::write(&drift_context.source_path, b"source drift changed bytes")
+            .expect("tamper source after backup");
+        prepare_fixture_attempt(
+            &drift_connection,
+            &reconciliation_request(&drift_context),
+            "attempt-drift",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect_err("drifted source must fail preparation");
+        assert!(load_fixture_attempt(&drift_connection, "attempt-drift")
+            .expect("load drifted attempt")
+            .is_none());
+    }
+
+    #[test]
+    fn attempt_journal_enforces_monotonic_transitions_and_terminal_immutability() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(&connection, b"state-machine bytes");
+        let request = reconciliation_request(&context);
+        prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-state-1",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("prepare state-machine attempt");
+
+        transition_fixture_attempt(
+            &connection,
+            "attempt-state-1",
+            FixtureAttemptState::DestinationVerified,
+        )
+        .expect_err("state skipping must fail");
+        assert_eq!(
+            load_fixture_attempt(&connection, "attempt-state-1")
+                .expect("load after rejected skip")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::PreparedBeforeChange
+        );
+
+        for next in [
+            FixtureAttemptState::DestinationClaimObserved,
+            FixtureAttemptState::DestinationVerified,
+            FixtureAttemptState::SourceReleaseCompleted,
+            FixtureAttemptState::Committed,
+        ] {
+            let record = transition_fixture_attempt(&connection, "attempt-state-1", next)
+                .expect("allowed monotonic transition");
+            assert_eq!(record.state, next);
+        }
+
+        transition_fixture_attempt(
+            &connection,
+            "attempt-state-1",
+            FixtureAttemptState::RecoveryRequired,
+        )
+        .expect_err("committed attempt must be immutable");
+        transition_fixture_attempt(
+            &connection,
+            "attempt-state-1",
+            FixtureAttemptState::PreparedBeforeChange,
+        )
+        .expect_err("backward transition must fail");
+        assert_eq!(
+            load_fixture_attempt(&connection, "attempt-state-1")
+                .expect("load committed attempt")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::Committed
+        );
+    }
+
+    #[test]
+    fn attempt_journal_terminal_before_change_allows_later_historical_attempt() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(&connection, b"historical attempt bytes");
+        let request = reconciliation_request(&context);
+        prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-history-1",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("prepare first historical attempt");
+        let blocked = transition_fixture_attempt(
+            &connection,
+            "attempt-history-1",
+            FixtureAttemptState::BlockedBeforeChange,
+        )
+        .expect("block first attempt before change");
+        assert_eq!(blocked.state, FixtureAttemptState::BlockedBeforeChange);
+
+        let second = prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-history-2",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("terminal historical attempt must allow later retry");
+        assert_eq!(second.state, FixtureAttemptState::PreparedBeforeChange);
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_apply_plan_attempts
+                 WHERE apply_plan_run_id = ?1 AND apply_plan_item_id = ?2",
+                params![context.run_id, context.item_id],
+                |row| row.get(0),
+            )
+            .expect("historical attempt count");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn attempt_journal_recovery_required_blocks_replacement_and_is_frozen() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(&connection, b"recovery-required bytes");
+        let request = reconciliation_request(&context);
+        prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-recovery-1",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("prepare recovery attempt");
+        transition_fixture_attempt(
+            &connection,
+            "attempt-recovery-1",
+            FixtureAttemptState::DestinationClaimObserved,
+        )
+        .expect("record destination claim");
+        let recovery = transition_fixture_attempt(
+            &connection,
+            "attempt-recovery-1",
+            FixtureAttemptState::RecoveryRequired,
+        )
+        .expect("enter recovery-required state");
+        assert_eq!(recovery.state, FixtureAttemptState::RecoveryRequired);
+
+        prepare_fixture_attempt(
+            &connection,
+            &request,
+            "attempt-recovery-2",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect_err("recovery-required attempt must block replacement");
+        transition_fixture_attempt(
+            &connection,
+            "attempt-recovery-1",
+            FixtureAttemptState::Committed,
+        )
+        .expect_err("recovery-required state is frozen in this prototype");
+        assert_eq!(
+            load_fixture_attempt(&connection, "attempt-recovery-1")
+                .expect("load recovery attempt")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::RecoveryRequired
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn attempt_journal_requires_matching_prepared_attempt_to_attribute_hard_link_pair() {
+        let unowned_connection = memory_connection();
+        let unowned_context = setup_verified_backup_only_state(
+            &unowned_connection,
+            b"unowned hard-link pair bytes",
+        );
+        claim_fixture_destination_no_replace(
+            &unowned_context.source_path,
+            &unowned_context.destination_path,
+        )
+        .expect("create unowned hard-link pair");
+        let unowned_request = reconciliation_request(&unowned_context);
+        assert_eq!(
+            classify_fixture_reconciliation_state(&unowned_connection, &unowned_request)
+                .expect("classify unowned pair"),
+            FixtureReconciliationState::ExactHardLinkPairNeedsReview
+        );
+        assert!(!fixture_attempt_owns_exact_hard_link_pair(
+            &unowned_connection,
+            &unowned_request,
+            "missing-attempt",
+        )
+        .expect("unowned pair attribution"));
+
+        let owned_connection = memory_connection();
+        let owned_context =
+            setup_verified_backup_only_state(&owned_connection, b"owned hard-link pair bytes");
+        let owned_request = reconciliation_request(&owned_context);
+        prepare_fixture_attempt(
+            &owned_connection,
+            &owned_request,
+            "attempt-owned-1",
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("prepare ownership attempt");
+        claim_fixture_destination_no_replace(
+            &owned_context.source_path,
+            &owned_context.destination_path,
+        )
+        .expect("create owned hard-link pair after durable intent");
+        assert!(fixture_attempt_owns_exact_hard_link_pair(
+            &owned_connection,
+            &owned_request,
+            "attempt-owned-1",
+        )
+        .expect("prepared attempt should attribute exact pair"));
+        let claim_observed = transition_fixture_attempt(
+            &owned_connection,
+            "attempt-owned-1",
+            FixtureAttemptState::DestinationClaimObserved,
+        )
+        .expect("record claim observation");
+        assert_eq!(
+            claim_observed.state,
+            FixtureAttemptState::DestinationClaimObserved
+        );
+        assert!(fixture_attempt_owns_exact_hard_link_pair(
+            &owned_connection,
+            &owned_request,
+            "attempt-owned-1",
+        )
+        .expect("claim-observed attempt should retain attribution"));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn hard_link_destination_claim_refuses_existing_destination_without_overwrite() {
@@ -2888,6 +3710,10 @@ mod tests {
         assert!(!commands_source.contains("classify_fixture_reconciliation_state"));
         assert!(!commands_source.contains("reconcile_fixture_transaction"));
         assert!(!commands_source.contains("resume_fixture_transaction_from_verified_backup"));
+        assert!(!commands_source.contains("prepare_fixture_attempt"));
+        assert!(!commands_source.contains("transition_fixture_attempt"));
+        assert!(!commands_source.contains("fixture_attempt_owns_exact_hard_link_pair"));
+        assert!(!commands_source.contains("fixture_apply_plan_attempts"));
         assert!(!commands_source.contains("fixture_move_transaction"));
 
         let core_source = include_str!("mod.rs");

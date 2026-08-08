@@ -185,8 +185,40 @@ a dedicated per-item attempt identity written before the first user-file change,
 bound to run/plan/item, exact validated paths, expected hash/size, verified backup
 record identities, selected claim strategy, and the capability evidence that
 allowed it. The attempt lifecycle must explicitly distinguish prepared-before-
-change from later claimed/verified/committed/failed/recovery states. No schema or
-sidecar journal is introduced by this audit.
+change from later claimed/verified/committed/failed/recovery states. No production
+schema or sidecar journal was introduced by that audit.
+
+A hidden Rust-test-only attempt-journal prototype now validates that contract in
+an in-memory fixture database. It creates no production migration and is still
+compiled only under the doubly `#[cfg(test)]` fixture transaction module. A
+prepared attempt is accepted only from the exact
+`ResumeFromVerifiedBackupRequired` state and binds one unique attempt id to the
+run/plan/item, canonical source/destination, expected source hash/size, verified
+backup result/restore identities, selected hard-link strategy, explicit
+caller-supplied fixture capability evidence, and source/destination entry safety
+facts. Both a partial unique index and application checks permit only one
+nonterminal attempt for one run/item.
+
+The prototype proves a conservative monotonic lifecycle:
+`prepared_before_change` -> `destination_claim_observed` ->
+`destination_verified` -> `source_release_completed` -> `committed`. Direct
+skips and backward moves are refused. `blocked_before_change` and
+`failed_before_change` are terminal history states. `recovery_required` stays
+nonterminal for uniqueness but is deliberately frozen in this prototype, so an
+unresolved recovery state blocks a replacement attempt and cannot quietly advance
+to committed. A terminal before-change attempt may remain as history while a
+later attempt is prepared.
+
+On the current macOS fixture, the journal also closes the ownership-evidence gap
+without adding recovery authority. An exact hard-link pair is attributable to a
+specific SimSuite attempt only when a matching nonterminal attempt record agrees
+with the same run/plan/item, paths, hash/size, backup identities, and capability
+evidence. The same hard-link pair without that prepared record remains
+`ExactHardLinkPairNeedsReview` but unowned by SimSuite. Attribution does not mean
+"safe to delete": the prototype performs no journal-driven cleanup, recovery
+transition, move, unlink, or transaction integration. The capability evidence is
+explicit fixture input; production capability acquisition is still a separate
+gate.
 
 The existing `FilesystemCapabilities` model is also not enough to select the
 hard-link strategy. It tracks items such as case sensitivity, symlink support,

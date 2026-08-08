@@ -343,9 +343,13 @@ Why existing tables are not enough:
 Purpose: one durable per-item execution-intent/journal row written after all
 preflight and backup gates pass but before the first user-file mutation.
 
-This is a future design requirement only. No table or migration exists yet.
-A later schema design should prefer a dedicated row over overloading result or
-restore records.
+This remains a future production design requirement. No production table or
+migration exists yet. A hidden Rust-test-only prototype now creates an
+`fixture_apply_plan_attempts` table only inside the in-memory fixture database to
+validate the proposed semantics before any migration is considered. The fixture
+proof does not modify user databases and is not registered in the normal app.
+A later production schema design should still prefer a dedicated row over
+overloading result or restore records.
 
 Minimum candidate fields:
 
@@ -376,6 +380,28 @@ item execution attempt. Its lifecycle state, not the row's mere existence, must
 show whether filesystem mutation actually began. The record is not by itself
 permission to delete or overwrite an observed path. Recovery must still prove the
 recorded attempt and current filesystem state agree exactly.
+
+The fixture prototype now validates the core state-machine shape. Preparation is
+accepted only from the exact verified-backup/source-unmoved reconciliation state
+and persists the run/plan/item, canonical source/destination, expected hash/size,
+verified backup result/restore identities, selected strategy, explicit fixture
+capability evidence, and file-entry safety facts. A partial unique index plus
+application checks allow only one nonterminal attempt per run/item. The proven
+forward path is `prepared_before_change` -> `destination_claim_observed` ->
+`destination_verified` -> `source_release_completed` -> `committed`. Direct
+skips and backward transitions fail, committed/blocked/failed rows are immutable,
+and `recovery_required` deliberately remains active and frozen so another
+attempt cannot replace unresolved recovery work. A terminal before-change row can
+remain as history while a later attempt is prepared.
+
+On the current macOS fixture, an exact hard-link pair is attributable to SimSuite
+only when a matching nonterminal attempt record agrees with the same run/plan/item,
+paths, hash/size, verified backup identities, and explicit capability evidence.
+The same physical pair without that attempt remains review-only and unowned. This
+ownership proof still does not authorize cleanup; recovery transitions and file
+changes are intentionally absent from the journal prototype. The capability
+record in this prototype is caller-supplied fixture evidence, not a production
+filesystem probe.
 
 ### `apply_plan_results`
 
