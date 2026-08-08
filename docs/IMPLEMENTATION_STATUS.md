@@ -1,6 +1,6 @@
 # SimSuite implementation status
 
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 ## Current product state
 
@@ -11,6 +11,7 @@ The product is **not** ready to execute real user-file Apply or Restore operatio
 ## Implemented
 
 - Library path setup, scanning, indexing, folder metadata, and detail views.
+- Hidden Rust-test-only Library smart-search baseline proving bundled FTS5 availability on the current macOS runtime and measuring a richer deterministic search document against today's four-field `%LIKE%` semantics. The synthetic 10k proof searches filename, creator/representative alias input, kind/subtype, embedded names, family hints, resource-summary labels, and script namespaces while deliberately excluding absolute paths; its final SQLite-vs-SQLite benchmark measured `256 ms` total for nine current-style queries versus `108 ms` for FTS5, with the deliberately difficult fixture recall@5 improving from `0.222` to `1.000`. Separate tests preserve no-answer controls for authority-seeking safety queries and explicitly record semantic wording that FTS does not understand. This is capability evidence only: production Library search, schema, commands, UI, and model/runtime dependencies are unchanged. `docs/planning/LIBRARY_SMART_SEARCH_MODEL_OPPORTUNITY_V1.md` defines the next decision boundary: deterministic search first, then a separate optional local embedding benchmark only where semantic/visual matching proves enough added value.
 - Package/script inspection and evidence extraction.
 - Duplicate review using exact hashes and content fingerprints.
 - Downloads/Inbox intake and review state, with visible file-changing actions blocked.

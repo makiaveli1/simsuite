@@ -21,6 +21,8 @@ pub mod game_installation_profile_validation;
 pub mod install_profile_engine;
 pub mod sims4_adapter;
 pub mod library_index;
+#[cfg(test)]
+pub mod library_smart_search_prototype;
 pub mod move_engine;
 pub mod rule_engine;
 pub mod scanner;
