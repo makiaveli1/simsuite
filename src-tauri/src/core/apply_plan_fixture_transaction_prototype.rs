@@ -2784,9 +2784,573 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FixtureSortingDirectoryState {
+        PreparedBeforeCreate,
+        CreatedVerified,
+        OwnershipUnknownKeep,
+        RetainedNonEmpty,
+        RetainedIdentityChanged,
+        CleanupComplete,
+    }
+
+    #[cfg(target_os = "macos")]
+    impl FixtureSortingDirectoryState {
+        fn as_str(self) -> &'static str {
+            match self {
+                Self::PreparedBeforeCreate => "prepared_before_create",
+                Self::CreatedVerified => "created_verified",
+                Self::OwnershipUnknownKeep => "ownership_unknown_keep",
+                Self::RetainedNonEmpty => "retained_non_empty",
+                Self::RetainedIdentityChanged => "retained_identity_changed",
+                Self::CleanupComplete => "cleanup_complete",
+            }
+        }
+
+        fn from_db(value: &str) -> AppResult<Self> {
+            match value {
+                "prepared_before_create" => Ok(Self::PreparedBeforeCreate),
+                "created_verified" => Ok(Self::CreatedVerified),
+                "ownership_unknown_keep" => Ok(Self::OwnershipUnknownKeep),
+                "retained_non_empty" => Ok(Self::RetainedNonEmpty),
+                "retained_identity_changed" => Ok(Self::RetainedIdentityChanged),
+                "cleanup_complete" => Ok(Self::CleanupComplete),
+                other => Err(AppError::Message(format!(
+                    "Unknown fixture sorting directory state: {other}"
+                ))),
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingDirectoryRecord {
+        plan_hash: String,
+        backup_result_id: i64,
+        backup_restore_entry_id: i64,
+        directory_path: PathBuf,
+        parent_path: PathBuf,
+        device_id: Option<u64>,
+        inode: Option<u64>,
+        state: FixtureSortingDirectoryState,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FixtureSortingDirectoryFaultPoint {
+        None,
+        AfterCreateBeforeOwnershipFinalize,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FixtureSortingDirectoryCreateOutcome {
+        ExistingNotOwned,
+        CreatedOwned,
+        OwnershipUnknownKeep,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FixtureSortingDirectoryCleanupOutcome {
+        NotOwned,
+        Removed,
+        AlreadyAbsent,
+        OwnershipUnknownKeep,
+        RetainedNonEmpty,
+        RetainedIdentityChanged,
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_fixture_sorting_directory_schema(connection: &Connection) -> AppResult<()> {
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS fixture_sorting_created_directories (
+                apply_plan_id INTEGER NOT NULL,
+                apply_plan_item_id INTEGER NOT NULL,
+                plan_hash TEXT NOT NULL,
+                backup_result_id INTEGER NOT NULL,
+                backup_restore_entry_id INTEGER NOT NULL,
+                directory_path TEXT NOT NULL,
+                parent_path TEXT NOT NULL,
+                device_id INTEGER,
+                inode INTEGER,
+                state TEXT NOT NULL CHECK(state IN (
+                    'prepared_before_create',
+                    'created_verified',
+                    'ownership_unknown_keep',
+                    'retained_non_empty',
+                    'retained_identity_changed',
+                    'cleanup_complete'
+                )),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (apply_plan_id, apply_plan_item_id)
+            );",
+        )?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn checked_sqlite_identity(value: u64, label: &str) -> AppResult<i64> {
+        i64::try_from(value).map_err(|_| {
+            AppError::Message(format!(
+                "Fixture sorting directory {label} is too large for SQLite evidence."
+            ))
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_fixture_sorting_directory_record(
+        connection: &Connection,
+        plan_id: i64,
+        item_id: i64,
+    ) -> AppResult<Option<FixtureSortingDirectoryRecord>> {
+        ensure_fixture_sorting_directory_schema(connection)?;
+        connection
+            .query_row(
+                "SELECT plan_hash, backup_result_id, backup_restore_entry_id,
+                        directory_path, parent_path, device_id, inode, state
+                 FROM fixture_sorting_created_directories
+                 WHERE apply_plan_id = ?1 AND apply_plan_item_id = ?2",
+                params![plan_id, item_id],
+                |row| {
+                    let device_id = row.get::<_, Option<i64>>(5)?;
+                    let inode = row.get::<_, Option<i64>>(6)?;
+                    if let Some(value) = device_id.filter(|value| *value < 0) {
+                        return Err(rusqlite::Error::IntegralValueOutOfRange(5, value));
+                    }
+                    if let Some(value) = inode.filter(|value| *value < 0) {
+                        return Err(rusqlite::Error::IntegralValueOutOfRange(6, value));
+                    }
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        device_id.map(|value| value as u64),
+                        inode.map(|value| value as u64),
+                        row.get::<_, String>(7)?,
+                    ))
+                },
+            )
+            .optional()?
+            .map(
+                |(
+                    plan_hash,
+                    backup_result_id,
+                    backup_restore_entry_id,
+                    directory_path,
+                    parent_path,
+                    device_id,
+                    inode,
+                    state,
+                )| {
+                    Ok(FixtureSortingDirectoryRecord {
+                        plan_hash,
+                        backup_result_id,
+                        backup_restore_entry_id,
+                        directory_path: PathBuf::from(directory_path),
+                        parent_path: PathBuf::from(parent_path),
+                        device_id,
+                        inode,
+                        state: FixtureSortingDirectoryState::from_db(&state)?,
+                    })
+                },
+            )
+            .transpose()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mark_fixture_sorting_directory_state(
+        connection: &Connection,
+        plan_id: i64,
+        item_id: i64,
+        expected: FixtureSortingDirectoryState,
+        next: FixtureSortingDirectoryState,
+    ) -> AppResult<()> {
+        let changed = connection.execute(
+            "UPDATE fixture_sorting_created_directories
+             SET state = ?1, updated_at = CURRENT_TIMESTAMP
+             WHERE apply_plan_id = ?2 AND apply_plan_item_id = ?3 AND state = ?4",
+            params![next.as_str(), plan_id, item_id, expected.as_str()],
+        )?;
+        if changed != 1 {
+            return Err(AppError::Message(
+                "Fixture sorting directory state changed unexpectedly.".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fixture_directory_identity(path: &Path) -> AppResult<(u64, u64)> {
+        use std::os::unix::fs::MetadataExt;
+
+        let metadata = fs::symlink_metadata(path).map_err(|error| {
+            AppError::Message(format!(
+                "Fixture sorting directory could not be inspected: {error}"
+            ))
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(AppError::Message(
+                "Fixture sorting destination parent must be a real directory, not a symlink or other entry."
+                    .to_owned(),
+            ));
+        }
+        Ok((metadata.dev(), metadata.ino()))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_destination_directory_scope(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+    ) -> AppResult<(String, PathBuf, PathBuf)> {
+        let context = &sorting.context;
+        let hash_check = apply_plan_persistence::verify_apply_plan_hash(connection, context.plan_id)?;
+        if !hash_check.is_valid {
+            return Err(AppError::Message(
+                "Fixture sorting directory requires an unchanged ApplyPlan fingerprint."
+                    .to_owned(),
+            ));
+        }
+        let plan = apply_plan_persistence::get_apply_plan(connection, context.plan_id)?
+            .ok_or_else(|| AppError::Message("Fixture sorting ApplyPlan disappeared.".to_owned()))?;
+        let plan_hash = plan
+            .plan_hash
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::Message("Fixture sorting ApplyPlan has no fingerprint.".to_owned())
+            })?;
+        let item = load_plan_item_scope(connection, context.plan_id, context.item_id)?;
+        if item.blocked || item.review_only || item.action_kind != "suggest_move" {
+            return Err(AppError::Message(
+                "Fixture sorting directory requires one unblocked suggest_move item.".to_owned(),
+            ));
+        }
+        let mods_root_text = sorting
+            .settings
+            .mods_path
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| AppError::Message("Fixture sorting Mods root is missing.".to_owned()))?;
+        let mods_root = canonicalize_existing_dir(Path::new(mods_root_text), "sorting Mods root")?;
+        let fixture_root = canonicalize_existing_dir(&context.fixture_root, "sorting fixture root")?;
+        let destination_path = PathBuf::from(&item.destination_path);
+        let raw_directory = destination_path.parent().ok_or_else(|| {
+            AppError::Message("Fixture sorting destination has no parent directory.".to_owned())
+        })?;
+        let directory_path =
+            resolve_fixture_candidate(raw_directory, "sorting destination directory")?;
+        ensure_under_root(&directory_path, &mods_root, "sorting destination directory")?;
+        ensure_under_root(&directory_path, &fixture_root, "sorting destination directory")?;
+        let parent_path = directory_path.parent().ok_or_else(|| {
+            AppError::Message("Fixture sorting destination directory has no parent.".to_owned())
+        })?;
+        if parent_path != mods_root {
+            return Err(AppError::Message(
+                "Fixture sorting folder proof only permits one immediate organization folder under Mods."
+                    .to_owned(),
+            ));
+        }
+        Ok((plan_hash, directory_path, mods_root))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_fixture_sorting_destination_directory_with_fault(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+        backup: &FixtureBackupPrototypeSuccess,
+        fault: FixtureSortingDirectoryFaultPoint,
+    ) -> AppResult<FixtureSortingDirectoryCreateOutcome> {
+        ensure_fixture_sorting_directory_schema(connection)?;
+        let context = &sorting.context;
+        let (plan_hash, directory_path, parent_path) =
+            sorting_destination_directory_scope(connection, sorting)?;
+
+        if let Some(record) = load_fixture_sorting_directory_record(
+            connection,
+            context.plan_id,
+            context.item_id,
+        )? {
+            if record.plan_hash != plan_hash
+                || record.backup_result_id != backup.result_log_id
+                || record.backup_restore_entry_id != backup.restore_entry_id
+                || record.directory_path != directory_path
+                || record.parent_path != parent_path
+            {
+                return Err(AppError::Message(
+                    "Fixture sorting directory evidence no longer matches this plan and backup."
+                        .to_owned(),
+                ));
+            }
+            match record.state {
+                FixtureSortingDirectoryState::PreparedBeforeCreate => {
+                    if directory_path.exists() {
+                        fixture_directory_identity(&directory_path)?;
+                        mark_fixture_sorting_directory_state(
+                            connection,
+                            context.plan_id,
+                            context.item_id,
+                            FixtureSortingDirectoryState::PreparedBeforeCreate,
+                            FixtureSortingDirectoryState::OwnershipUnknownKeep,
+                        )?;
+                        return Ok(FixtureSortingDirectoryCreateOutcome::OwnershipUnknownKeep);
+                    }
+                }
+                FixtureSortingDirectoryState::CreatedVerified => {
+                    let (device_id, inode) = fixture_directory_identity(&directory_path)?;
+                    if record.device_id == Some(device_id) && record.inode == Some(inode) {
+                        return Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned);
+                    }
+                    return Err(AppError::Message(
+                        "Fixture sorting directory identity changed before move execution."
+                            .to_owned(),
+                    ));
+                }
+                FixtureSortingDirectoryState::OwnershipUnknownKeep
+                | FixtureSortingDirectoryState::RetainedNonEmpty
+                | FixtureSortingDirectoryState::RetainedIdentityChanged => {
+                    fixture_directory_identity(&directory_path)?;
+                    return Ok(FixtureSortingDirectoryCreateOutcome::OwnershipUnknownKeep);
+                }
+                FixtureSortingDirectoryState::CleanupComplete => {
+                    return Err(AppError::Message(
+                        "Fixture sorting directory cleanup already completed for this plan item."
+                            .to_owned(),
+                    ));
+                }
+            }
+        } else if directory_path.exists() {
+            fixture_directory_identity(&directory_path)?;
+            return Ok(FixtureSortingDirectoryCreateOutcome::ExistingNotOwned);
+        } else {
+            let inserted = connection.execute(
+                "INSERT INTO fixture_sorting_created_directories (
+                    apply_plan_id, apply_plan_item_id, plan_hash, backup_result_id,
+                    backup_restore_entry_id, directory_path, parent_path, state
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    context.plan_id,
+                    context.item_id,
+                    plan_hash,
+                    backup.result_log_id,
+                    backup.restore_entry_id,
+                    directory_path.to_string_lossy().to_string(),
+                    parent_path.to_string_lossy().to_string(),
+                    FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
+                ],
+            )?;
+            if inserted != 1 {
+                return Err(AppError::Message(
+                    "Fixture sorting directory intent could not be recorded exactly once."
+                        .to_owned(),
+                ));
+            }
+        }
+
+        if directory_path.exists() {
+            return Err(AppError::Message(
+                "Fixture sorting destination directory appeared before guarded creation."
+                    .to_owned(),
+            ));
+        }
+        fs::create_dir(&directory_path).map_err(|error| {
+            AppError::Message(format!(
+                "Fixture sorting destination directory could not be created: {error}"
+            ))
+        })?;
+        if fault == FixtureSortingDirectoryFaultPoint::AfterCreateBeforeOwnershipFinalize {
+            return Err(AppError::Message(
+                "Injected interruption after fixture sorting directory creation before ownership finalization."
+                    .to_owned(),
+            ));
+        }
+
+        let (device_id, inode) = fixture_directory_identity(&directory_path)?;
+        let changed = connection.execute(
+            "UPDATE fixture_sorting_created_directories
+             SET device_id = ?1, inode = ?2, state = ?3, updated_at = CURRENT_TIMESTAMP
+             WHERE apply_plan_id = ?4 AND apply_plan_item_id = ?5 AND state = ?6",
+            params![
+                checked_sqlite_identity(device_id, "device id")?,
+                checked_sqlite_identity(inode, "inode")?,
+                FixtureSortingDirectoryState::CreatedVerified.as_str(),
+                context.plan_id,
+                context.item_id,
+                FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(AppError::Message(
+                "Fixture sorting directory ownership could not be finalized exactly once."
+                    .to_owned(),
+            ));
+        }
+        Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fixture_directory_has_indexed_children(
+        connection: &Connection,
+        directory_path: &Path,
+    ) -> AppResult<bool> {
+        let mut statement = connection.prepare("SELECT path FROM files")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            let path = PathBuf::from(row?);
+            if path.starts_with(directory_path) {
+                return Ok(true);
+            }
+            if let Ok(resolved_path) =
+                resolve_fixture_candidate(&path, "sorting indexed child path")
+            {
+                if resolved_path.starts_with(directory_path) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn cleanup_fixture_sorting_destination_directory(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+    ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
+        let context = &sorting.context;
+        let Some(record) = load_fixture_sorting_directory_record(
+            connection,
+            context.plan_id,
+            context.item_id,
+        )? else {
+            return Ok(FixtureSortingDirectoryCleanupOutcome::NotOwned);
+        };
+        let (plan_hash, directory_path, parent_path) =
+            sorting_destination_directory_scope(connection, sorting)?;
+        if record.plan_hash != plan_hash
+            || record.directory_path != directory_path
+            || record.parent_path != parent_path
+        {
+            return Err(AppError::Message(
+                "Fixture sorting directory cleanup evidence no longer matches the saved plan."
+                    .to_owned(),
+            ));
+        }
+
+        match record.state {
+            FixtureSortingDirectoryState::PreparedBeforeCreate
+            | FixtureSortingDirectoryState::OwnershipUnknownKeep => {
+                return Ok(FixtureSortingDirectoryCleanupOutcome::OwnershipUnknownKeep);
+            }
+            FixtureSortingDirectoryState::RetainedNonEmpty => {
+                return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty);
+            }
+            FixtureSortingDirectoryState::RetainedIdentityChanged => {
+                return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
+            }
+            FixtureSortingDirectoryState::CleanupComplete => {
+                return Ok(FixtureSortingDirectoryCleanupOutcome::AlreadyAbsent);
+            }
+            FixtureSortingDirectoryState::CreatedVerified => {}
+        }
+
+        if !directory_path.exists() {
+            mark_fixture_sorting_directory_state(
+                connection,
+                context.plan_id,
+                context.item_id,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::CleanupComplete,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::AlreadyAbsent);
+        }
+
+        let current_identity = fixture_directory_identity(&directory_path)?;
+        if record.device_id != Some(current_identity.0) || record.inode != Some(current_identity.1) {
+            mark_fixture_sorting_directory_state(
+                connection,
+                context.plan_id,
+                context.item_id,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedIdentityChanged,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
+        }
+        if fixture_directory_has_indexed_children(connection, &directory_path)?
+            || fs::read_dir(&directory_path)
+                .map_err(|error| {
+                    AppError::Message(format!(
+                        "Fixture sorting destination directory could not be read for cleanup: {error}"
+                    ))
+                })?
+                .next()
+                .is_some()
+        {
+            mark_fixture_sorting_directory_state(
+                connection,
+                context.plan_id,
+                context.item_id,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedNonEmpty,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty);
+        }
+
+        let final_identity = fixture_directory_identity(&directory_path)?;
+        if final_identity != current_identity {
+            mark_fixture_sorting_directory_state(
+                connection,
+                context.plan_id,
+                context.item_id,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedIdentityChanged,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
+        }
+        if let Err(error) = fs::remove_dir(&directory_path) {
+            if fs::read_dir(&directory_path)
+                .ok()
+                .and_then(|mut entries| entries.next())
+                .is_some()
+            {
+                mark_fixture_sorting_directory_state(
+                    connection,
+                    context.plan_id,
+                    context.item_id,
+                    FixtureSortingDirectoryState::CreatedVerified,
+                    FixtureSortingDirectoryState::RetainedNonEmpty,
+                )?;
+                return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty);
+            }
+            return Err(AppError::Message(format!(
+                "Fixture sorting destination directory could not be removed safely: {error}"
+            )));
+        }
+        mark_fixture_sorting_directory_state(
+            connection,
+            context.plan_id,
+            context.item_id,
+            FixtureSortingDirectoryState::CreatedVerified,
+            FixtureSortingDirectoryState::CleanupComplete,
+        )?;
+        Ok(FixtureSortingDirectoryCleanupOutcome::Removed)
+    }
+
+    #[cfg(target_os = "macos")]
     fn setup_sorting_fixture(
         connection: &mut Connection,
         source_bytes: &[u8],
+    ) -> SortingFixtureContext {
+        setup_sorting_fixture_with_destination_folder(connection, source_bytes, true)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn setup_sorting_fixture_with_destination_folder(
+        connection: &mut Connection,
+        source_bytes: &[u8],
+        destination_folder_exists: bool,
     ) -> SortingFixtureContext {
         let temp = tempdir().expect("sorting tempdir");
         let fixture_root = temp.path().to_path_buf();
@@ -2795,7 +3359,9 @@ mod tests {
         let destination_dir = mods_root.join("Gameplay");
         let backup_root = fixture_root.join("backup");
         fs::create_dir_all(&source_dir).expect("sorting source dir");
-        fs::create_dir_all(&destination_dir).expect("sorting destination dir");
+        if destination_folder_exists {
+            fs::create_dir(&destination_dir).expect("sorting destination dir");
+        }
         fs::create_dir_all(&backup_root).expect("sorting backup dir");
         let source_path = source_dir.join("sample.package");
         fs::write(&source_path, source_bytes).expect("sorting source fixture");
@@ -2859,12 +3425,7 @@ mod tests {
         );
         let expected_destination = mods_root.join("Gameplay").join("sample.package");
         let destination_path = PathBuf::from(&item.destination_path);
-        assert_eq!(
-            resolve_fixture_candidate(&destination_path, "sorting destination")
-                .expect("resolve sorting destination"),
-            resolve_fixture_candidate(&expected_destination, "expected sorting destination")
-                .expect("resolve expected sorting destination")
-        );
+        assert_eq!(destination_path, expected_destination);
 
         let run_id = create_apply_plan_run_log(
             connection,
@@ -2899,7 +3460,7 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn run_verified_sorting_backup_gate(
+    fn run_verified_sorting_preflight_and_backup(
         connection: &Connection,
         sorting: &SortingFixtureContext,
     ) -> AppResult<FixtureBackupPrototypeSuccess> {
@@ -3038,19 +3599,32 @@ mod tests {
                 operation_kind: BACKUP_OPERATION_KIND.to_owned(),
             },
         )? {
-            FixtureBackupPrototypeOutcome::Verified(success) => {
-                record_fixture_sorting_authorization(
-                    connection,
-                    &reconciliation_request(context),
-                    success.result_log_id,
-                    success.restore_entry_id,
-                )?;
-                Ok(success)
-            }
+            FixtureBackupPrototypeOutcome::Verified(success) => Ok(success),
             FixtureBackupPrototypeOutcome::FailedBeforeChange(failure) => Err(AppError::Message(
                 format!("Sorting fixture backup failed before change: {}", failure.error_message),
             )),
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_verified_sorting_backup_gate(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+    ) -> AppResult<FixtureBackupPrototypeSuccess> {
+        let backup = run_verified_sorting_preflight_and_backup(connection, sorting)?;
+        ensure_fixture_sorting_destination_directory_with_fault(
+            connection,
+            sorting,
+            &backup,
+            FixtureSortingDirectoryFaultPoint::None,
+        )?;
+        record_fixture_sorting_authorization(
+            connection,
+            &reconciliation_request(&sorting.context),
+            backup.result_log_id,
+            backup.restore_entry_id,
+        )?;
+        Ok(backup)
     }
 
     fn setup_fixture(connection: &Connection, source_bytes: &[u8]) -> FixtureContext {
@@ -3388,6 +3962,69 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn sorting_fixture_membership_states(
+        sorting: &SortingFixtureContext,
+    ) -> (FixtureMembershipState, FixtureMembershipState) {
+        let context = &sorting.context;
+        (
+            FixtureMembershipState {
+                file_id: sorting.file_id,
+                path: context.source_path.to_string_lossy().to_string(),
+                source_location: "mods".to_owned(),
+                download_item_id: None,
+            },
+            FixtureMembershipState {
+                file_id: sorting.file_id,
+                path: context.destination_path.to_string_lossy().to_string(),
+                source_location: "mods".to_owned(),
+                download_item_id: None,
+            },
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    fn apply_sorting_fixture_membership(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+        attempt_id: &str,
+    ) -> (FixtureMembershipState, FixtureMembershipState) {
+        release_fixture_attempt(connection, &sorting.context, attempt_id);
+        let (original_membership, sorted_membership) = sorting_fixture_membership_states(sorting);
+        let handoff = FixtureMembershipHandoff {
+            attempt_id: attempt_id.to_owned(),
+            action: FixtureMembershipAction::Transition {
+                expected: original_membership.clone(),
+                final_state: sorted_membership.clone(),
+            },
+        };
+        commit_fixture_membership_handoffs(connection, std::slice::from_ref(&handoff))
+            .expect("commit fixture sorting Library membership");
+        (original_membership, sorted_membership)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn undo_sorting_fixture_membership(
+        connection: &Connection,
+        sorting: &SortingFixtureContext,
+        backup: &FixtureBackupPrototypeSuccess,
+        attempt_id: &str,
+        original_membership: FixtureMembershipState,
+        sorted_membership: FixtureMembershipState,
+    ) {
+        undo_sorting_fixture_files_from_backup(connection, &sorting.context, backup)
+            .expect("restore fixture sorting bytes from verified backup");
+        let handoff = FixtureReverseMembershipHandoff {
+            attempt_id: attempt_id.to_owned(),
+            action: FixtureMembershipAction::Transition {
+                expected: sorted_membership,
+                final_state: original_membership,
+            },
+        };
+        commit_fixture_reverse_membership_handoffs(connection, std::slice::from_ref(&handoff))
+            .expect("restore fixture sorting Library membership");
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn backend_sorting_plan_applies_and_undoes_through_verified_fixture_journal() {
         let mut connection = memory_connection();
@@ -3470,6 +4107,354 @@ mod tests {
         )
         .expect("recheck original sorting plan provenance after Undo");
         assert!(final_hash_check.is_valid);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn backend_sorting_missing_folder_is_owned_and_removed_only_after_verified_undo() {
+        let mut connection = memory_connection();
+        let source_bytes = b"sorting fixture creates gameplay folder";
+        let sorting = setup_sorting_fixture_with_destination_folder(
+            &mut connection,
+            source_bytes,
+            false,
+        );
+        let destination_dir = sorting
+            .context
+            .destination_path
+            .parent()
+            .expect("sorting destination parent")
+            .to_path_buf();
+        assert!(!destination_dir.exists());
+
+        let backup = run_verified_sorting_backup_gate(&connection, &sorting)
+            .expect("sorting gate should create and own the missing organization folder");
+        assert!(destination_dir.is_dir());
+        let directory_record = load_fixture_sorting_directory_record(
+            &connection,
+            sorting.context.plan_id,
+            sorting.context.item_id,
+        )
+        .expect("load sorting directory record")
+        .expect("sorting directory record");
+        assert_eq!(
+            directory_record.state,
+            FixtureSortingDirectoryState::CreatedVerified
+        );
+        assert!(directory_record.device_id.is_some());
+        assert!(directory_record.inode.is_some());
+
+        let attempt_id = "attempt-sorting-created-folder";
+        let (original_membership, sorted_membership) =
+            apply_sorting_fixture_membership(&connection, &sorting, attempt_id);
+        assert_eq!(
+            load_fixture_membership_state(&connection, sorting.file_id)
+                .expect("sorted membership after created-folder move"),
+            Some(sorted_membership.clone())
+        );
+        undo_sorting_fixture_membership(
+            &connection,
+            &sorting,
+            &backup,
+            attempt_id,
+            original_membership.clone(),
+            sorted_membership,
+        );
+        assert_eq!(
+            load_fixture_membership_state(&connection, sorting.file_id)
+                .expect("restored membership after created-folder Undo"),
+            Some(original_membership)
+        );
+
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("remove exact empty SimSuite-owned sorting folder"),
+            FixtureSortingDirectoryCleanupOutcome::Removed
+        );
+        assert!(!destination_dir.exists());
+        assert_eq!(
+            fs::read(&sorting.context.source_path).expect("restored source after folder cleanup"),
+            source_bytes
+        );
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("repeat folder cleanup"),
+            FixtureSortingDirectoryCleanupOutcome::AlreadyAbsent
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_undo_keeps_owned_folder_when_player_added_content() {
+        let mut connection = memory_connection();
+        let sorting = setup_sorting_fixture_with_destination_folder(
+            &mut connection,
+            b"sorting fixture player content guard",
+            false,
+        );
+        let destination_dir = sorting
+            .context
+            .destination_path
+            .parent()
+            .expect("sorting destination parent")
+            .to_path_buf();
+        let backup = run_verified_sorting_backup_gate(&connection, &sorting)
+            .expect("sorting gate with missing folder");
+        let attempt_id = "attempt-sorting-player-content";
+        let (original_membership, sorted_membership) =
+            apply_sorting_fixture_membership(&connection, &sorting, attempt_id);
+        undo_sorting_fixture_membership(
+            &connection,
+            &sorting,
+            &backup,
+            attempt_id,
+            original_membership,
+            sorted_membership,
+        );
+
+        let player_file = destination_dir.join("player-added.txt");
+        fs::write(&player_file, b"player content").expect("player-added fixture content");
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("cleanup should preserve non-empty folder"),
+            FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty
+        );
+        assert!(destination_dir.is_dir());
+        assert_eq!(
+            fs::read(&player_file).expect("player-added content survives"),
+            b"player content"
+        );
+        assert_eq!(
+            load_fixture_sorting_directory_record(
+                &connection,
+                sorting.context.plan_id,
+                sorting.context.item_id,
+            )
+            .expect("load retained directory record")
+            .expect("retained directory record")
+            .state,
+            FixtureSortingDirectoryState::RetainedNonEmpty
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_undo_keeps_owned_empty_folder_when_library_still_claims_a_child() {
+        let mut connection = memory_connection();
+        let sorting = setup_sorting_fixture_with_destination_folder(
+            &mut connection,
+            b"sorting fixture indexed child guard",
+            false,
+        );
+        let destination_dir = sorting
+            .context
+            .destination_path
+            .parent()
+            .expect("sorting destination parent")
+            .to_path_buf();
+        let backup = run_verified_sorting_backup_gate(&connection, &sorting)
+            .expect("sorting gate with missing folder");
+        let attempt_id = "attempt-sorting-indexed-child";
+        let (original_membership, sorted_membership) =
+            apply_sorting_fixture_membership(&connection, &sorting, attempt_id);
+        undo_sorting_fixture_membership(
+            &connection,
+            &sorting,
+            &backup,
+            attempt_id,
+            original_membership,
+            sorted_membership,
+        );
+        assert!(fs::read_dir(&destination_dir)
+            .expect("empty destination directory")
+            .next()
+            .is_none());
+
+        let indexed_child = destination_dir.join("library-owned.package");
+        connection
+            .execute(
+                "INSERT INTO files (
+                    path, filename, extension, hash, size, kind, confidence,
+                    source_location, relative_depth, safety_notes, parser_warnings, insights
+                 ) VALUES (?1, 'library-owned.package', 'package', ?2, 1,
+                    'Gameplay', 1.0, 'mods', 1, '[]', '[]', '{}')",
+                params![
+                    indexed_child.to_string_lossy().to_string(),
+                    bytes_hash(b"x"),
+                ],
+            )
+            .expect("insert Library-only child claim");
+
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("Library-owned child must veto folder cleanup"),
+            FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty
+        );
+        assert!(destination_dir.is_dir());
+        assert!(fs::read_dir(&destination_dir)
+            .expect("destination remains physically empty")
+            .next()
+            .is_none());
+        assert_eq!(
+            load_fixture_sorting_directory_record(
+                &connection,
+                sorting.context.plan_id,
+                sorting.context.item_id,
+            )
+            .expect("load Library-vetoed directory record")
+            .expect("Library-vetoed directory record")
+            .state,
+            FixtureSortingDirectoryState::RetainedNonEmpty
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_undo_keeps_replacement_folder_with_same_name() {
+        let mut connection = memory_connection();
+        let sorting = setup_sorting_fixture_with_destination_folder(
+            &mut connection,
+            b"sorting fixture replacement folder guard",
+            false,
+        );
+        let destination_dir = sorting
+            .context
+            .destination_path
+            .parent()
+            .expect("sorting destination parent")
+            .to_path_buf();
+        let backup = run_verified_sorting_backup_gate(&connection, &sorting)
+            .expect("sorting gate with owned destination folder");
+        let attempt_id = "attempt-sorting-replaced-folder";
+        let (original_membership, sorted_membership) =
+            apply_sorting_fixture_membership(&connection, &sorting, attempt_id);
+        undo_sorting_fixture_membership(
+            &connection,
+            &sorting,
+            &backup,
+            attempt_id,
+            original_membership,
+            sorted_membership,
+        );
+
+        let displaced_owned_dir = destination_dir
+            .parent()
+            .expect("Mods root")
+            .join("Gameplay-original-owned");
+        fs::rename(&destination_dir, &displaced_owned_dir)
+            .expect("move exact owned directory out of expected path");
+        fs::create_dir(&destination_dir).expect("create replacement directory with same name");
+        assert_ne!(
+            fixture_directory_identity(&destination_dir).expect("replacement identity"),
+            fixture_directory_identity(&displaced_owned_dir).expect("original owned identity")
+        );
+
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("cleanup should preserve replacement directory"),
+            FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged
+        );
+        assert!(destination_dir.is_dir());
+        assert!(displaced_owned_dir.is_dir());
+        assert_eq!(
+            load_fixture_sorting_directory_record(
+                &connection,
+                sorting.context.plan_id,
+                sorting.context.item_id,
+            )
+            .expect("load identity-changed directory record")
+            .expect("identity-changed directory record")
+            .state,
+            FixtureSortingDirectoryState::RetainedIdentityChanged
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn interrupted_sorting_folder_create_never_recovers_delete_ownership_by_guessing() {
+        let mut connection = memory_connection();
+        let sorting = setup_sorting_fixture_with_destination_folder(
+            &mut connection,
+            b"sorting fixture interrupted folder ownership",
+            false,
+        );
+        let destination_dir = sorting
+            .context
+            .destination_path
+            .parent()
+            .expect("sorting destination parent")
+            .to_path_buf();
+        let backup = run_verified_sorting_preflight_and_backup(&connection, &sorting)
+            .expect("sorting preflight and backup before folder interruption");
+
+        let error = ensure_fixture_sorting_destination_directory_with_fault(
+            &connection,
+            &sorting,
+            &backup,
+            FixtureSortingDirectoryFaultPoint::AfterCreateBeforeOwnershipFinalize,
+        )
+        .expect_err("injected interruption after folder creation");
+        assert!(error.to_string().contains("ownership finalization"));
+        assert!(destination_dir.is_dir());
+        let prepared = load_fixture_sorting_directory_record(
+            &connection,
+            sorting.context.plan_id,
+            sorting.context.item_id,
+        )
+        .expect("load interrupted directory intent")
+        .expect("interrupted directory intent");
+        assert_eq!(
+            prepared.state,
+            FixtureSortingDirectoryState::PreparedBeforeCreate
+        );
+        assert_eq!(prepared.device_id, None);
+        assert_eq!(prepared.inode, None);
+
+        assert_eq!(
+            ensure_fixture_sorting_destination_directory_with_fault(
+                &connection,
+                &sorting,
+                &backup,
+                FixtureSortingDirectoryFaultPoint::None,
+            )
+            .expect("retry interrupted folder creation conservatively"),
+            FixtureSortingDirectoryCreateOutcome::OwnershipUnknownKeep
+        );
+        let recovered = load_fixture_sorting_directory_record(
+            &connection,
+            sorting.context.plan_id,
+            sorting.context.item_id,
+        )
+        .expect("load conservatively recovered directory")
+        .expect("conservatively recovered directory");
+        assert_eq!(
+            recovered.state,
+            FixtureSortingDirectoryState::OwnershipUnknownKeep
+        );
+        assert_eq!(recovered.device_id, None);
+        assert_eq!(recovered.inode, None);
+
+        record_fixture_sorting_authorization(
+            &connection,
+            &reconciliation_request(&sorting.context),
+            backup.result_log_id,
+            backup.restore_entry_id,
+        )
+        .expect("sorting authorization can proceed while folder remains non-owned");
+        assert_eq!(
+            classify_fixture_reconciliation_state(
+                &connection,
+                &reconciliation_request(&sorting.context),
+            )
+            .expect("reconciliation after conservative folder recovery"),
+            FixtureReconciliationState::ResumeFromVerifiedBackupRequired
+        );
+        assert_eq!(
+            cleanup_fixture_sorting_destination_directory(&connection, &sorting)
+                .expect("cleanup must not claim interrupted folder"),
+            FixtureSortingDirectoryCleanupOutcome::OwnershipUnknownKeep
+        );
+        assert!(destination_dir.is_dir());
     }
 
     #[cfg(target_os = "macos")]
