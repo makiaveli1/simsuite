@@ -24,6 +24,7 @@ The Library backend is a Rust/Tauri backend over SQLite.
 - DB-only ApplyPlan run/result/restore metadata helpers live in `src-tauri/src/core/apply_plan_results.rs`.
 - Read-only ApplyPlan dry-run classification logic lives in `src-tauri/src/core/apply_plan_dry_run.rs`.
 - Fixture-only ApplyPlan backup, restore, and integrated recovery proof logic lives in `src-tauri/src/core/apply_plan_backup_prototype.rs`; it is private backend test/prototype code and is not registered as a command.
+- Fixture-only transaction/recovery, Library-membership handoff, replacement/new-ID restore, and sorting-to-Apply/Undo bridge proof logic lives in `src-tauri/src/core/apply_plan_fixture_transaction_prototype.rs`. The module is compiled only under Rust tests. Its sorting bridge starts from the real backend sorting generator and real saved ApplyPlan snapshot, but a `suggest_move` remains non-executable until a test-only authorization receipt proves the exact plan/item fingerprint, physical source hash/size, source/destination paths, and verified backup chain. Current sorting execution proof is limited to one macOS throwaway-file move into an already-existing Mods organization folder; it does not enable a production executor, folder creation, real confirmation, or user-file Apply/Restore.
 - Frontend API wrappers and mock fallback data live in `src/lib/api.ts` and `src/lib/types.ts`.
 
 The normal flow is:
