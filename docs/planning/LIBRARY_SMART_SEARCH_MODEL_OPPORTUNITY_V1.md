@@ -803,7 +803,7 @@ The audit found five different synchronization responsibilities rather than one 
 
 **Category overrides:** `database::save_category_override_batch` already owns one transaction, deduplicates exact file IDs, updates only those rows' kind/subtype, and advances `category_override_version`. That gives a safe exact-file refresh boundary.
 
-**Insights:** selected Library detail persistence only adds deferred thumbnail payloads. Thumbnails are not indexed, so that write should trigger **no search refresh**. In contrast, the special-mod/profile engine can lazily change searchable embedded names, family hints, resource summaries, and script namespaces. Those helpers currently perform best-effort standalone `UPDATE files SET insights = ...` writes through `&Connection` and intentionally ignore database-write errors. That is not a safe production synchronization point. Before smart search can attach there, searchable-insight persistence needs explicit transaction ownership and propagated database errors so source metadata and its search row cannot diverge.
+**Insights:** selected Library detail persistence only adds deferred thumbnail payloads. Thumbnails are not indexed, so that write should trigger **no search refresh**. In contrast, the special-mod/profile engine can lazily change searchable embedded names, family hints, resource summaries, and script namespaces. The production persistence path is now fail-closed at the individual-file boundary: refreshed insights are serialized first, an indexed file must update exactly one `files` row, SQLite/serialization failures propagate through the existing `AppResult` call chain, and the caller's in-memory insights are changed only after a database-backed save succeeds. Disk-only existing-install files with no indexed row remain in-memory-only. Regression triggers prove a changed row writes once, an unchanged repeat adds no write, and forced database failures leave both database and in-memory insight state unchanged for download/profile and installed-file refresh paths. This is safer and truthful, but several refreshed files are still not grouped into one caller-owned SQLite transaction. Before smart search can attach here, the owning special-mod flow must group source insight persistence, scoped search refresh, and readiness advancement in one transaction rather than performing a sequence of individually safe writes.
 
 **Membership changes:** move/restore helpers know exact file IDs when a row moves between `downloads` and installed `mods`/`tray`, is deleted, or is restored. Search membership can therefore be refreshed by exact ID. Those production file-operation flows are not changed here; a future integration must make the SQLite source-row update and search-membership update atomic without weakening the existing user-file safety/rollback boundary.
 
@@ -848,7 +848,7 @@ If this deterministic search index is implemented later:
 2. for creator learning, capture any old alias owner before alias upsert, calculate the exact explicit + old-owner + new-owner union, refresh it, then advance the fingerprint in the same transaction;
 3. refresh category changes only for the exact deduplicated IDs already owned by `save_category_override_batch`, then advance the fingerprint in the same transaction;
 4. do not refresh search for thumbnail-only insight persistence;
-5. refactor searchable special-mod insight persistence to explicit transaction/error ownership before attaching search synchronization;
+5. keep the new fallible per-file special-mod insight persistence, but move a multi-file refresh batch under one caller-owned transaction before attaching scoped search refresh and readiness advancement;
 6. for delete or installed/downloads membership transitions, keep the affected ID explicit so refresh can remove stale FTS rows even after the source row disappeared or left installed scope;
 7. keep refresh-scope calculation and search-state readiness as separate responsibilities; only the audited write owner may advance `ready` after its complete scope refresh succeeds;
 8. preserve the full rebuild as deterministic repair and startup recovery, not as compensation for split transaction ownership;
@@ -856,9 +856,9 @@ If this deterministic search index is implemented later:
 
 ### Limits
 
-This remains hidden Rust-test-only evidence on macOS with bundled SQLite. It does not change any production write path. It does not yet prove native Windows/Linux behavior, real process termination between filesystem and database phases, high-contention scanner startup, or the concrete production refactors required for lazy searchable-insight persistence and move/restore record synchronization.
+The search-index integration evidence remains hidden/test-only on macOS with bundled SQLite, but the follow-on special-mod insight persistence hardening now changes one existing production database error path: indexed insight refreshes fail instead of silently pretending success when serialization/SQLite persistence fails. It still does not group a multi-file insight refresh under one caller-owned transaction, and it does not yet prove native Windows/Linux search behavior, real process termination between filesystem and database phases, high-contention scanner startup, or the concrete move/restore record synchronization contract.
 
-No production FTS migration/table, Library search behavior, Tauri command, UI, ranking threshold, model/runtime dependency, player-file access, or Apply/Restore authority changed in this milestone.
+No production FTS migration/table, Library search behavior, Tauri search command, UI, ranking threshold, model/runtime dependency, player-file access, or Apply/Restore authority changed.
 
 ## 18. LLM position
 
@@ -871,7 +871,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 ## 19. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Keep the migration itself unimplemented while preparing the production write owners that are still unsafe to attach: give searchable special-mod insight persistence explicit transaction/error ownership, define the database-side source+search membership contract for move/restore without weakening file rollback safety, and separately prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are proven only in the hidden macOS temporary-database lane.
+2. Keep the migration itself unimplemented while finishing the production write ownership that is still unsafe to attach: the special-mod insight path now propagates per-file persistence errors truthfully, so the remaining step is to group multi-file insight refresh under one caller-owned transaction; separately define the database-side source+search membership contract for move/restore without weakening file rollback safety, and prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, and future-version fail-closed behavior are proven only in the hidden macOS temporary-database lane.
 3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
 4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
 5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
@@ -881,7 +881,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 
 ## 20. What this work does not do
 
-It does not change SimSuite production behavior. In particular, it does not:
+The search feature itself still does not change production Library behavior. The only follow-on production hardening recorded here is that special-mod insight persistence now propagates database/serialization failures instead of silently continuing. In particular, this work still does not:
 
 - change production Library search;
 - create a production FTS/vector table or migration;

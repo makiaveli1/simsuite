@@ -224,22 +224,40 @@ fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileIns
     }
 }
 
+fn persist_refreshed_file_insights(
+    connection: &Connection,
+    file_id: i64,
+    insights: &FileInsights,
+) -> AppResult<()> {
+    let serialized = serde_json::to_string(insights)?;
+    let updated = connection.execute(
+        "UPDATE files SET insights = ?2 WHERE id = ?1",
+        params![file_id, serialized],
+    )?;
+    if updated != 1 {
+        return Err(AppError::Message(format!(
+            "Expected to persist refreshed insights for one indexed file, but file {file_id} updated {updated} rows."
+        )));
+    }
+    Ok(())
+}
+
 fn refresh_profile_file_insights_if_needed(
     connection: &Connection,
     seed_pack: &SeedPack,
     file: &mut ProfileFile,
-) {
+) -> AppResult<()> {
     if !special_insights_need_refresh(&file.extension, &file.insights) {
-        return;
+        return Ok(());
     }
 
     let path = Path::new(&file.path);
     if !path.exists() {
-        return;
+        return Ok(());
     }
 
     let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
-        return;
+        return Ok(());
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);
     if merged.version_hints == file.insights.version_hints
@@ -251,35 +269,30 @@ fn refresh_profile_file_insights_if_needed(
         && merged.resource_summary == file.insights.resource_summary
         && merged.format == file.insights.format
     {
-        return;
+        return Ok(());
     }
 
-    file.insights = merged.clone();
-    let _ = connection.execute(
-        "UPDATE files SET insights = ?2 WHERE id = ?1",
-        params![
-            file.file_id,
-            serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_owned())
-        ],
-    );
+    persist_refreshed_file_insights(connection, file.file_id, &merged)?;
+    file.insights = merged;
+    Ok(())
 }
 
 fn refresh_existing_install_file_insights_if_needed(
     connection: &Connection,
     seed_pack: &SeedPack,
     file: &mut ExistingInstallFile,
-) {
+) -> AppResult<()> {
     if !special_insights_need_refresh(&file.extension, &file.insights) {
-        return;
+        return Ok(());
     }
 
     let path = Path::new(&file.path);
     if !path.exists() {
-        return;
+        return Ok(());
     }
 
     let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
-        return;
+        return Ok(());
     };
     let merged = merge_file_insights(&file.insights, &outcome.insights);
     if merged.version_hints == file.insights.version_hints
@@ -291,19 +304,14 @@ fn refresh_existing_install_file_insights_if_needed(
         && merged.resource_summary == file.insights.resource_summary
         && merged.format == file.insights.format
     {
-        return;
+        return Ok(());
     }
 
-    file.insights = merged.clone();
     if let Some(file_id) = file.file_id {
-        let _ = connection.execute(
-            "UPDATE files SET insights = ?2 WHERE id = ?1",
-            params![
-                file_id,
-                serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_owned())
-            ],
-        );
+        persist_refreshed_file_insights(connection, file_id, &merged)?;
     }
+    file.insights = merged;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -3846,10 +3854,10 @@ fn detect_existing_layout_with_inventory(
     }
 
     for file in &mut existing_candidates {
-        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file);
+        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file)?;
     }
     for file in &mut preserve_candidates {
-        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file);
+        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file)?;
     }
 
     let target_folder = select_existing_target_folder(
@@ -4095,7 +4103,7 @@ fn load_profile_files(
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
     for file in &mut rows {
-        refresh_profile_file_insights_if_needed(connection, seed_pack, file);
+        refresh_profile_file_insights_if_needed(connection, seed_pack, file)?;
     }
     log_slow_install_profile_step("load_profile_files", started_at, || {
         format!(
@@ -4861,8 +4869,10 @@ mod tests {
     use super::{
         assess_download_item, build_evidence_summary, build_guided_plan, build_review_plan,
         build_special_mod_decision, incoming_signature_for_profile,
-        installed_signature_for_profile, normalized, reconcile_special_mod_family,
-        store_download_item_assessment, ExistingInstallFile, ExistingInstallLayout, ProfileFile,
+        installed_signature_for_profile, load_profile_files, normalized,
+        reconcile_special_mod_family, refresh_existing_install_file_insights_if_needed,
+        refresh_profile_file_insights_if_needed, store_download_item_assessment,
+        ExistingInstallFile, ExistingInstallLayout, ProfileFile,
     };
     use crate::{
         core::{scanner, special_mod_versions},
@@ -7137,6 +7147,218 @@ mod tests {
             .comparison_evidence
             .iter()
             .any(|line| line.contains("fingerprint")));
+    }
+
+    fn persistence_test_profile_file(file_id: i64, path: &Path) -> ProfileFile {
+        ProfileFile {
+            file_id,
+            filename: path
+                .file_name()
+                .expect("fixture filename")
+                .to_string_lossy()
+                .to_string(),
+            path: path.to_string_lossy().to_string(),
+            archive_member_path: Some("mc_cmd_center.ts4script".to_owned()),
+            extension: ".ts4script".to_owned(),
+            kind: "Script Mods".to_owned(),
+            subtype: None,
+            creator: None,
+            confidence: 0.94,
+            source_location: "downloads".to_owned(),
+            size: fs::metadata(path).expect("fixture metadata").len() as i64,
+            hash: None,
+            insights: FileInsights::default(),
+        }
+    }
+
+    #[test]
+    fn refreshed_profile_insights_write_once_and_skip_unchanged_repeat() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let downloads = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let item_id = 910_i64;
+        let file_id = 91001_i64;
+        let item_root = downloads.join(item_id.to_string());
+        fs::create_dir_all(&item_root).expect("item root");
+        let path = item_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0supports patch 1.113.277 and version 2026_1_1",
+        );
+        insert_download_item(&connection, item_id, "MCCC fixture", &item_root);
+        insert_download_file(
+            &connection,
+            item_id,
+            file_id,
+            &path,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        connection
+            .execute_batch(
+                "CREATE TABLE insight_write_audit (file_id INTEGER NOT NULL);
+                 CREATE TRIGGER count_insight_update
+                 AFTER UPDATE OF insights ON files
+                 BEGIN
+                    INSERT INTO insight_write_audit(file_id) VALUES (NEW.id);
+                 END;",
+            )
+            .expect("install insight write counter");
+
+        let mut file = persistence_test_profile_file(file_id, &path);
+        refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
+            .expect("first insight refresh");
+        assert!(file
+            .insights
+            .version_hints
+            .iter()
+            .any(|value| value == "2026.1.1"));
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM insight_write_audit WHERE file_id = ?1",
+                    params![file_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("first write count"),
+            1
+        );
+
+        refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
+            .expect("unchanged repeat refresh");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM insight_write_audit WHERE file_id = ?1",
+                    params![file_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("repeat write count"),
+            1
+        );
+    }
+
+    #[test]
+    fn refreshed_profile_insight_persistence_failure_propagates_without_memory_drift() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let downloads = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let item_id = 911_i64;
+        let file_id = 91101_i64;
+        let item_root = downloads.join(item_id.to_string());
+        fs::create_dir_all(&item_root).expect("item root");
+        let path = item_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0supports patch 1.113.277 and version 2026_2_0",
+        );
+        insert_download_item(&connection, item_id, "MCCC failure fixture", &item_root);
+        insert_download_file(
+            &connection,
+            item_id,
+            file_id,
+            &path,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        connection
+            .execute_batch(&format!(
+                "CREATE TRIGGER reject_insight_update
+                 BEFORE UPDATE OF insights ON files
+                 WHEN OLD.id = {file_id}
+                 BEGIN
+                    SELECT RAISE(ABORT, 'forced insight persistence failure');
+                 END;"
+            ))
+            .expect("install forced persistence failure");
+
+        let mut file = persistence_test_profile_file(file_id, &path);
+        let error = refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
+            .expect_err("direct refresh must propagate database failure");
+        assert!(error
+            .to_string()
+            .contains("forced insight persistence failure"));
+        assert!(file.insights.version_hints.is_empty());
+        assert!(file.insights.family_hints.is_empty());
+
+        let stored_insights: String = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored insights after failed refresh");
+        let stored: FileInsights = serde_json::from_str(&stored_insights).expect("stored json");
+        assert!(stored.version_hints.is_empty());
+        assert!(stored.family_hints.is_empty());
+
+        let load_error = load_profile_files(&connection, &seed_pack, item_id, true)
+            .expect_err("real load path must propagate insight persistence failure");
+        assert!(load_error
+            .to_string()
+            .contains("forced insight persistence failure"));
+    }
+
+    #[test]
+    fn installed_profile_insight_persistence_failure_keeps_memory_and_database_unchanged() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let mods = PathBuf::from(settings.mods_path.clone().expect("mods"));
+        let install_root = mods.join("MCCC");
+        fs::create_dir_all(&install_root).expect("install root");
+        let path = install_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0supports patch 1.113.277 and version 2026_3_0",
+        );
+        insert_installed_file(&connection, &path, "Script Mods");
+        let file_id = connection.last_insert_rowid();
+        connection
+            .execute_batch(&format!(
+                "CREATE TRIGGER reject_installed_insight_update
+                 BEFORE UPDATE OF insights ON files
+                 WHEN OLD.id = {file_id}
+                 BEGIN
+                    SELECT RAISE(ABORT, 'forced installed insight persistence failure');
+                 END;"
+            ))
+            .expect("install forced installed persistence failure");
+
+        let mut file = ExistingInstallFile {
+            file_id: Some(file_id),
+            filename: "mc_cmd_center.ts4script".to_owned(),
+            path: path.to_string_lossy().to_string(),
+            extension: ".ts4script".to_owned(),
+            kind: "Script Mods".to_owned(),
+            subtype: None,
+            creator: None,
+            size: fs::metadata(&path).expect("installed metadata").len() as i64,
+            hash: None,
+            insights: FileInsights::default(),
+            in_target_folder: true,
+        };
+        let error = refresh_existing_install_file_insights_if_needed(
+            &connection,
+            &seed_pack,
+            &mut file,
+        )
+        .expect_err("installed refresh must propagate database failure");
+        assert!(error
+            .to_string()
+            .contains("forced installed insight persistence failure"));
+        assert!(file.insights.version_hints.is_empty());
+        assert!(file.insights.family_hints.is_empty());
+
+        let stored_insights: String = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("stored installed insights after failed refresh");
+        let stored: FileInsights = serde_json::from_str(&stored_insights).expect("stored json");
+        assert!(stored.version_hints.is_empty());
+        assert!(stored.family_hints.is_empty());
     }
 
     #[test]
