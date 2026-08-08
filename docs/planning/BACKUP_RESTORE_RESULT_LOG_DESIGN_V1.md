@@ -252,6 +252,49 @@ The result log must clearly distinguish:
 - items that failed after a backup or partial move.
 - items that were restored later.
 
+### Pre-mutation attempt journal requirement
+
+The existing result/restore foundation is not a sufficient ownership journal for
+a future no-replace filesystem claim. `apply_plan_runs` identifies one run but
+not which item has actually begun mutation. `apply_plan_results` is designed to
+record an operation attempted/result and its execution paths. Restore entries
+record recovery evidence. A saved ApplyPlan item plus a verified backup proves
+what was planned and that recovery material exists, but it does not prove that
+this run actually started or created an observed destination claim.
+
+Do not overload `pending_log` as a hidden pre-mutation ownership marker merely
+because the current schema accepts the value before a real executor exists. That
+would mix two different meanings in one row: "this operation is about to start"
+and "this operation/result is being logged." It would also leave recovery code
+without an explicit attempt lifecycle.
+
+Before any exclusive/no-replace primitive is adopted, SimSuite needs durable
+per-item attempt evidence written before the first user-file mutation. The
+smallest coherent future contract should bind one attempt identity to:
+
+- Apply run id, plan id, and item id.
+- exact source and destination paths after validation.
+- expected source hash and size.
+- the verified backup result and restore-entry identities.
+- the selected move/claim strategy.
+- the filesystem capability evidence that allowed that strategy.
+- a state that explicitly means `prepared_before_change`.
+- later states for claim observed, destination verified, source release
+  completed, committed, blocked, failed, or recovery required.
+- created/updated timestamps and a unique attempt identity suitable for
+  reconciliation.
+
+A dedicated future per-item attempt/journal record is the preferred direction.
+An app-owned sidecar journal could be explored only if it provides the same
+scope, durability, and crash-recovery guarantees; it must not place unexplained
+control files in the player's Mods/Tray folders. No migration or sidecar is
+introduced by this design note.
+
+The attempt record still would not make arbitrary filesystem evidence safe by
+itself. Recovery must compare the recorded attempt with the observed filesystem
+state and fail closed when another process could have created or changed that
+state.
+
 ## 8. Future Schema Design
 
 These tables started as design-only and now have a DB-only foundation in
@@ -294,6 +337,45 @@ Why existing tables are not enough:
 - `apply_plans` stores the draft/reviewed plan, not an execution attempt.
 - `snapshots` do not record confirmation, summary counts, or ApplyPlan item
   linkage.
+
+### Future `apply_plan_attempts` candidate — not implemented
+
+Purpose: one durable per-item execution-intent/journal row written after all
+preflight and backup gates pass but before the first user-file mutation.
+
+This is a future design requirement only. No table or migration exists yet.
+A later schema design should prefer a dedicated row over overloading result or
+restore records.
+
+Minimum candidate fields:
+
+- unique attempt id.
+- `apply_plan_run_id`.
+- `apply_plan_id`.
+- `apply_plan_item_id`.
+- exact validated source path.
+- exact validated destination path.
+- expected pre-change source hash and size.
+- verified backup result id.
+- verified backup restore-entry id.
+- selected operation/claim strategy.
+- serialized or normalized filesystem capability proof sufficient for that
+  strategy.
+- lifecycle state beginning with `prepared_before_change`.
+- created and updated timestamps.
+
+Future lifecycle states must be designed as a crash-recovery state machine, not
+as user-facing result labels. At minimum, the design must distinguish prepared,
+destination claim observed, destination verified, source release completed,
+committed, blocked/failed, and recovery-required states. Allowed transitions,
+idempotence rules, uniqueness constraints, retention, and recovery authority
+must be specified before migration work begins.
+
+The attempt identity is evidence that SimSuite prepared and owns one particular
+item execution attempt. Its lifecycle state, not the row's mere existence, must
+show whether filesystem mutation actually began. The record is not by itself
+permission to delete or overwrite an observed path. Recovery must still prove the
+recorded attempt and current filesystem state agree exactly.
 
 ### `apply_plan_results`
 

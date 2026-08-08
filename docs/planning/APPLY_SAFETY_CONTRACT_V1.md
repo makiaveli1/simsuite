@@ -171,9 +171,40 @@ This is a macOS runtime proof of an exclusive destination-claim technique, not a
 chosen cross-platform production move primitive. Hard links require filesystem
 support and normally require both names on the same filesystem. Windows and
 Linux have not received equivalent native runtime proof in this development
-environment. The candidate also has a deliberate two-name interval and still
-needs durable transaction-intent evidence before automatic recovery could safely
-remove either name. Cross-platform capability gating/native proof, concurrent
+environment. The candidate also has a deliberate two-name interval.
+
+A follow-up persistence/capability audit found that the current DB foundation is
+not sufficient to claim ownership of that interrupted pair automatically without
+stretching existing record semantics. `apply_plan_runs` is run-level, while a
+saved ApplyPlan item and verified backup prove planned paths/recovery material but
+not that this run actually began mutating that item. `apply_plan_results` is the
+per-file attempted/result log and restore entries are recovery records; using a
+`pending_log` result as an undocumented pre-mutation ownership journal would mix
+intent and outcome semantics. Before adoption, a future executor therefore needs
+a dedicated per-item attempt identity written before the first user-file change,
+bound to run/plan/item, exact validated paths, expected hash/size, verified backup
+record identities, selected claim strategy, and the capability evidence that
+allowed it. The attempt lifecycle must explicitly distinguish prepared-before-
+change from later claimed/verified/committed/failed/recovery states. No schema or
+sidecar journal is introduced by this audit.
+
+The existing `FilesystemCapabilities` model is also not enough to select the
+hard-link strategy. It tracks items such as case sensitivity, symlink support,
+and atomic-rename support, but it does not currently prove hard-link support or
+that one source/destination pair is on the same filesystem/volume. A future
+strategy gate must also require a regular-file source, non-symlink path entries,
+a safe destination parent, same-filesystem evidence, hard-link capability, and
+native platform/runtime proof. Capability probing must be performed in controlled
+app-owned space rather than by experimenting on player files.
+
+Hard links also do not freeze file contents. During the two-name interval both
+names reference the same underlying file, so a writer modifying either name can
+change what the other name observes. Exclusive destination naming therefore does
+not solve concurrent content-write safety. A future executor still needs a source
+stability protocol around claim/verification/commit and must fail closed when the
+content changes.
+
+Durable per-item intent, cross-platform capability/native proof, concurrent
 content-write handling, incremental only-affected index refresh, multi-file
 transactions, golden content fixtures, and native player-environment proof
 remain future gates before any real Apply or Restore surface is considered.
