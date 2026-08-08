@@ -417,7 +417,131 @@ The current evidence supports this order:
 
 This materially narrows the model opportunity. Embeddings no longer need to solve normal typos or partial creator/mod names; their case rests on genuinely semantic retrieval and later visual similarity.
 
-## 13. LLM position
+## 13. Production-shape deterministic index feasibility
+
+A third follow-up tested how the model-free search foundation could be maintained against a production-shaped SQLite lifecycle without changing the real SimSuite schema or Library query path. The proof remains inside the doubly test-gated Rust laboratory and uses temporary synthetic databases only.
+
+### Why explicit synchronization is the leading design
+
+The current Library lifecycle has a small number of meaningful metadata-change boundaries rather than one simple append-only table:
+
+- scanner refreshes replace installed Mods/Tray `files` rows inside one transaction;
+- creator learning can change a creator association and a creator alias applies to every installed file owned by that creator;
+- a user-learned alias can be reassigned from one creator to another, so both the previous and new creator scopes must be refreshed;
+- category overrides can change `kind`/`subtype` for selected file rows;
+- deferred detail inspection can later enrich searchable `insights`;
+- the real creator vocabulary includes both seeded aliases and user-learned aliases, so a production search document must combine both sources and rebuild when seed-owned alias meaning changes;
+- `downloads` rows are not installed Library search content.
+
+The feasibility proof therefore avoids broad SQLite triggers. The smallest understandable future synchronization surface is:
+
+1. rebuild the installed search index inside the scanner's existing replacement transaction;
+2. refresh a bounded list of file IDs when searchable file metadata changes;
+3. refresh all installed file IDs for every affected creator when learned alias ownership changes, including both the old and new creator when an alias is reassigned.
+
+This keeps synchronization explicit at the existing transaction boundaries and gives SimSuite one obvious full-repair operation if the search index ever becomes stale.
+
+### Privacy and scope proof
+
+The production-shaped search document deliberately never reads `files.path` into searchable text. Tests use a path containing a synthetic private username and prove that username is absent from both Unicode and trigram search. A separate downloads-only fixture with unique searchable words is also excluded.
+
+The indexed text remains limited to the same player-useful local metadata classes already proven in the earlier search work:
+
+- filename;
+- canonical creator and learned creator aliases;
+- kind/subtype;
+- embedded names;
+- family hints;
+- resource-summary labels;
+- script namespaces.
+
+### Lifecycle and repair proof
+
+The temporary production-shaped database proves:
+
+- initial backfill from installed Mods/Tray source rows;
+- source-row insert plus search-row insert in one transaction;
+- selected-file category and `insights` refresh;
+- creator-wide alias refresh across every installed file for that creator;
+- source deletion and out-of-installed-scope movement remove the search row;
+- scan-style delete/reinsert plus full search rebuild can commit atomically;
+- injected stale search rows are removed by a full rebuild;
+- full rebuild is idempotent;
+- a deliberately interrupted rebuild rolls back and leaves the previous complete index queryable rather than exposing a partial new index.
+
+These proofs passed for both ordinary FTS tables and the leaner contentless-delete strategy described below.
+
+### Ordinary FTS storage baseline
+
+A `10,000`-row on-disk synthetic production-shape comparison measured:
+
+- source tables only: `4,722,688` bytes, about `4.50 MiB`;
+- source + Unicode FTS: `7,135,232` bytes;
+- source + trigram FTS: `10,153,984` bytes;
+- source + both ordinary FTS indexes: `12,566,528` bytes, about `11.98 MiB`.
+
+Relative to the synthetic source database, the two ordinary FTS indexes added `7,843,840` bytes, about `7.48 MiB`. Ordinary FTS is simple and fast, but it stores another readable copy of indexed text internally.
+
+Measured ordinary dual-index operations on the current macOS development machine:
+
+- initial `10,000`-row dual-index backfill: about `897 ms`;
+- `100` source+search refreshes in one transaction: about `26 ms` total;
+- `100` source deletes plus search cleanup: about `6 ms` total;
+- full repair/rebuild after `100` removals (`9,900` indexed rows): about `1,156 ms`;
+- warm strict retrieval: about `203 µs/query` averaged over `100` queries;
+- warm bounded fuzzy retrieval: about `25.2 ms/query` averaged over `100` queries.
+
+### Contentless-delete comparison
+
+The bundled SQLite runtime also successfully creates and mutates FTS5 `contentless_delete=1` Unicode and trigram tables. In this shape the FTS tables retain the search index but do not expose a second readable copy of the source text. Search returns row IDs/rank; bounded fuzzy reranking reconstructs the candidate document from the authoritative source tables.
+
+The correctness proof verifies normal delete/reinsert synchronization, stale-row repair, and rollback of a deliberately interrupted full rebuild. It also confirms that selecting an indexed user column from the contentless table returns no stored source text.
+
+On the same `10,000`-row synthetic source database:
+
+- source + both contentless indexes: `9,424,896` bytes, about `8.99 MiB`;
+- contentless search overhead above source-only: `4,702,208` bytes, about `4.48 MiB`.
+
+Compared with the ordinary dual-index database, contentless-delete reduced total database size by exactly `25%` in this fixture and reduced the search-index overhead by about `40%`.
+
+Measured contentless operations:
+
+- initial `10,000`-row backfill: about `815 ms`;
+- `100` source+search refreshes in one transaction: about `80 ms` total, still below `1 ms` per changed item in this local run;
+- warm strict retrieval: about `206 µs/query`, effectively the same order as ordinary FTS;
+- warm bounded fuzzy retrieval: about `11.8 ms/query` in this run.
+
+The faster contentless fuzzy timing should **not** be interpreted as an inherent contentless advantage from one local run. It reconstructs metadata through bounded source lookups and needs broader profiling before any production latency claim. Likewise, the roughly `3.1×` slower `100`-item incremental refresh than ordinary FTS is real in this run even though the absolute time remained small.
+
+### Leading future schema recommendation
+
+**Contentless-delete Unicode FTS + contentless-delete trigram FTS with explicit synchronization is the leading migration candidate, not an implemented migration.**
+
+Why it currently leads:
+
+- source Library tables stay the only readable metadata authority;
+- absolute paths never need to enter the search representation;
+- installed-only scope is explicit;
+- full repair is straightforward and idempotent;
+- source replacement and index rebuild can share one transaction;
+- per-file and creator-wide metadata refreshes are explicit;
+- measured storage overhead is materially lower than ordinary FTS;
+- strict and fuzzy retrieval remain comfortably interactive in the synthetic macOS proof.
+
+Before turning this into a real migration, SimSuite still needs:
+
+1. native Windows and Linux proof of the bundled FTS5/contentless-delete behavior;
+2. measurements against a database whose row sizes and metadata distribution resemble real SimSuite data more closely;
+3. a production implementation review of transaction ownership and error propagation at scanner/creator/category/insight update boundaries, including alias reassignment refreshing both old and new creator scopes;
+4. a compact searchable-insight projection that reads only embedded names, family hints, resource-summary labels, and script namespaces instead of deserializing/copying thumbnail or other media payloads during search-index maintenance;
+5. a batched source-document reconstruction design for fuzzy candidate IDs, rather than relying on one source lookup per candidate indefinitely;
+6. explicit combination of seeded creator aliases plus user-learned aliases, with seed-version changes forcing a repair/rebuild when needed;
+7. independent player-query evaluation and realistic concurrency/locked-database testing;
+8. schema upgrade/rollback and self-repair tests before any production migration is accepted.
+
+No production migration, command, UI, or search replacement is enabled by this feasibility milestone.
+
+## 14. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -425,17 +549,17 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 14. Recommended next sequence
+## 15. Recommended next sequence
 
-1. Keep production Library search unchanged until the test-only search design is translated into a reviewed production shape.
-2. Expand the retrieval evaluation with a larger query set authored independently from the indexed fixture descriptions, ideally including real player phrasing collected without using private Library paths/content.
-3. Design a production-feasibility proof for incrementally maintained rich FTS + bounded deterministic fuzzy search, still behind tests and without silently replacing the current Library path.
-4. Re-run the local embedding comparison only against semantic cases that the stronger deterministic stack genuinely misses; do not make the model pay for typo/partial-name work that deterministic search already handles well.
-5. If semantic embeddings still justify themselves, design them as an optional local background index with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and a hard authority router.
+1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
+2. Expand retrieval evaluation with a larger query set authored independently from indexed fixture descriptions, ideally using voluntarily supplied/public player phrasing rather than private Library content.
+3. Do a migration-design-only review for explicit contentless search synchronization at scanner, creator-learning, category-override, and searchable-insight update boundaries, including lock/concurrency and schema-repair behavior.
+4. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses.
+5. If semantic embeddings still justify themselves, keep them optional/local with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and a hard authority router.
 6. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
 7. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 15. What this work does not do
+## 16. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 

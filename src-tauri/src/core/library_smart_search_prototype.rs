@@ -1,10 +1,17 @@
 #![cfg(test)]
 
-use std::time::Instant;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-use crate::{error::AppResult, models::FileInsights};
+use crate::{
+    error::{AppError, AppResult},
+    models::FileInsights,
+};
 
 #[derive(Debug, Clone)]
 struct SearchFixture {
@@ -67,6 +74,31 @@ struct FuzzySearchDiagnostics {
 const TRIGRAM_CANDIDATE_LIMIT: usize = 80;
 const STRICT_CANDIDATE_LIMIT: usize = 20;
 const FUZZY_MIN_SCORE: f64 = 0.72;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProductionSearchShape {
+    unicode_fts: bool,
+    trigram_fts: bool,
+}
+
+impl ProductionSearchShape {
+    const SOURCE_ONLY: Self = Self {
+        unicode_fts: false,
+        trigram_fts: false,
+    };
+    const UNICODE_ONLY: Self = Self {
+        unicode_fts: true,
+        trigram_fts: false,
+    };
+    const TRIGRAM_ONLY: Self = Self {
+        unicode_fts: false,
+        trigram_fts: true,
+    };
+    const BOTH: Self = Self {
+        unicode_fts: true,
+        trigram_fts: true,
+    };
+}
 
 fn join_values(values: &[String]) -> String {
     values
@@ -216,6 +248,755 @@ fn index_trigram_only(connection: &mut Connection, fixtures: &[SearchFixture]) -
     }
     transaction.commit()?;
     Ok(())
+}
+
+fn create_production_shape_schema(
+    connection: &Connection,
+    shape: ProductionSearchShape,
+) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE TABLE production_creators (
+            id INTEGER PRIMARY KEY,
+            canonical_name TEXT NOT NULL UNIQUE
+        );
+        CREATE TABLE production_user_creator_aliases (
+            creator_id INTEGER NOT NULL,
+            alias_name TEXT NOT NULL UNIQUE,
+            FOREIGN KEY (creator_id) REFERENCES production_creators(id) ON DELETE CASCADE
+        );
+        CREATE INDEX production_alias_creator_idx
+            ON production_user_creator_aliases(creator_id);
+        CREATE TABLE production_files (
+            id INTEGER PRIMARY KEY,
+            path TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            source_location TEXT NOT NULL,
+            creator_id INTEGER,
+            kind TEXT NOT NULL,
+            subtype TEXT,
+            insights TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (creator_id) REFERENCES production_creators(id)
+        );
+        CREATE INDEX production_files_source_idx
+            ON production_files(source_location);",
+    )?;
+    if shape.unicode_fts {
+        connection.execute_batch(
+            "CREATE VIRTUAL TABLE production_search_fts USING fts5(
+                filename,
+                creator,
+                aliases,
+                kind_subtype,
+                embedded_names,
+                family_hints,
+                resource_summary,
+                script_namespaces,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );",
+        )?;
+    }
+    if shape.trigram_fts {
+        connection.execute_batch(
+            "CREATE VIRTUAL TABLE production_search_trigram USING fts5(
+                search_text,
+                tokenize = 'trigram'
+            );",
+        )?;
+    }
+    Ok(())
+}
+
+fn ensure_production_creator(
+    transaction: &Transaction<'_>,
+    creator_name: &str,
+) -> AppResult<i64> {
+    transaction.execute(
+        "INSERT OR IGNORE INTO production_creators(canonical_name) VALUES (?1)",
+        params![creator_name],
+    )?;
+    transaction
+        .query_row(
+            "SELECT id FROM production_creators WHERE canonical_name = ?1",
+            params![creator_name],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+}
+
+fn insert_production_source_fixture(
+    transaction: &Transaction<'_>,
+    fixture: &SearchFixture,
+    source_location: &str,
+) -> AppResult<()> {
+    let creator_id = match fixture.creator.as_deref().filter(|name| !name.trim().is_empty()) {
+        Some(creator_name) => {
+            let creator_id = ensure_production_creator(transaction, creator_name)?;
+            for alias in &fixture.creator_aliases {
+                let alias = alias.trim();
+                if alias.is_empty() {
+                    continue;
+                }
+                transaction.execute(
+                    "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                     VALUES (?1, ?2)
+                     ON CONFLICT(alias_name) DO UPDATE SET creator_id = excluded.creator_id",
+                    params![creator_id, alias],
+                )?;
+            }
+            Some(creator_id)
+        }
+        None => None,
+    };
+
+    transaction.execute(
+        "INSERT INTO production_files(
+            id, path, filename, source_location, creator_id, kind, subtype, insights
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            fixture.id,
+            fixture.path,
+            fixture.filename,
+            source_location,
+            creator_id,
+            fixture.kind,
+            fixture.subtype,
+            serde_json::to_string(&fixture.insights)?,
+        ],
+    )?;
+    Ok(())
+}
+
+fn seed_production_source(
+    connection: &mut Connection,
+    fixtures: &[SearchFixture],
+) -> AppResult<()> {
+    let transaction = connection.transaction()?;
+    for fixture in fixtures {
+        insert_production_source_fixture(&transaction, fixture, "mods")?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn production_search_document(
+    connection: &Connection,
+    file_id: i64,
+) -> AppResult<Option<SearchDocument>> {
+    let row = connection
+        .query_row(
+            "SELECT
+                f.filename,
+                COALESCE(c.canonical_name, ''),
+                f.creator_id,
+                f.kind,
+                f.subtype,
+                f.insights
+             FROM production_files f
+             LEFT JOIN production_creators c ON c.id = f.creator_id
+             WHERE f.id = ?1
+               AND f.source_location IN ('mods', 'tray')",
+            params![file_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((filename, creator, creator_id, kind, subtype, insights_json)) = row else {
+        return Ok(None);
+    };
+
+    let aliases = if let Some(creator_id) = creator_id {
+        let mut statement = connection.prepare(
+            "SELECT alias_name
+             FROM production_user_creator_aliases
+             WHERE creator_id = ?1
+             ORDER BY alias_name COLLATE NOCASE",
+        )?;
+        let aliases = statement
+            .query_map(params![creator_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        aliases
+    } else {
+        Vec::new()
+    };
+    let insights: FileInsights = serde_json::from_str(&insights_json).unwrap_or_default();
+
+    Ok(Some(SearchDocument {
+        filename,
+        creator,
+        aliases: join_values(&aliases),
+        kind_subtype: [kind.trim(), subtype.as_deref().unwrap_or_default().trim()]
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>()
+            .join(" "),
+        embedded_names: join_values(&insights.embedded_names),
+        family_hints: join_values(&insights.family_hints),
+        resource_summary: join_values(&insights.resource_summary),
+        script_namespaces: join_values(&insights.script_namespaces),
+    }))
+}
+
+fn delete_production_search_row(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+    shape: ProductionSearchShape,
+) -> AppResult<()> {
+    if shape.unicode_fts {
+        transaction.execute(
+            "DELETE FROM production_search_fts WHERE rowid = ?1",
+            params![file_id],
+        )?;
+    }
+    if shape.trigram_fts {
+        transaction.execute(
+            "DELETE FROM production_search_trigram WHERE rowid = ?1",
+            params![file_id],
+        )?;
+    }
+    Ok(())
+}
+
+fn insert_production_search_document(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+    document: &SearchDocument,
+    shape: ProductionSearchShape,
+) -> AppResult<()> {
+    if shape.unicode_fts {
+        transaction.execute(
+            "INSERT INTO production_search_fts(
+                rowid, filename, creator, aliases, kind_subtype,
+                embedded_names, family_hints, resource_summary, script_namespaces
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                file_id,
+                document.filename,
+                document.creator,
+                document.aliases,
+                document.kind_subtype,
+                document.embedded_names,
+                document.family_hints,
+                document.resource_summary,
+                document.script_namespaces,
+            ],
+        )?;
+    }
+    if shape.trigram_fts {
+        transaction.execute(
+            "INSERT INTO production_search_trigram(rowid, search_text) VALUES (?1, ?2)",
+            params![file_id, flattened_search_document(document)],
+        )?;
+    }
+    Ok(())
+}
+
+fn refresh_production_search_file_in_transaction(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+    shape: ProductionSearchShape,
+) -> AppResult<()> {
+    delete_production_search_row(transaction, file_id, shape)?;
+    if let Some(document) = production_search_document(transaction, file_id)? {
+        insert_production_search_document(transaction, file_id, &document, shape)?;
+    }
+    Ok(())
+}
+
+fn refresh_production_search_files(
+    connection: &mut Connection,
+    file_ids: &[i64],
+    shape: ProductionSearchShape,
+) -> AppResult<()> {
+    let transaction = connection.transaction()?;
+    for file_id in file_ids {
+        refresh_production_search_file_in_transaction(&transaction, *file_id, shape)?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn refresh_production_search_creators(
+    connection: &mut Connection,
+    creator_ids: &[i64],
+    shape: ProductionSearchShape,
+) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    let mut unique_creator_ids = creator_ids.to_vec();
+    unique_creator_ids.sort_unstable();
+    unique_creator_ids.dedup();
+    let mut refreshed = 0usize;
+    for creator_id in unique_creator_ids {
+        let file_ids = {
+            let mut statement = transaction.prepare(
+                "SELECT id
+                 FROM production_files
+                 WHERE creator_id = ?1
+                   AND source_location IN ('mods', 'tray')
+                 ORDER BY id",
+            )?;
+            let file_ids = statement
+                .query_map(params![creator_id], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            file_ids
+        };
+        for file_id in &file_ids {
+            refresh_production_search_file_in_transaction(&transaction, *file_id, shape)?;
+        }
+        refreshed += file_ids.len();
+    }
+    transaction.commit()?;
+    Ok(refreshed)
+}
+
+fn refresh_production_search_creator(
+    connection: &mut Connection,
+    creator_id: i64,
+    shape: ProductionSearchShape,
+) -> AppResult<usize> {
+    refresh_production_search_creators(connection, &[creator_id], shape)
+}
+
+fn rebuild_production_search_in_transaction(
+    transaction: &Transaction<'_>,
+    shape: ProductionSearchShape,
+    interrupt_after: Option<usize>,
+) -> AppResult<usize> {
+    if shape.unicode_fts {
+        transaction.execute("DELETE FROM production_search_fts", [])?;
+    }
+    if shape.trigram_fts {
+        transaction.execute("DELETE FROM production_search_trigram", [])?;
+    }
+
+    let file_ids = {
+        let mut statement = transaction.prepare(
+            "SELECT id
+             FROM production_files
+             WHERE source_location IN ('mods', 'tray')
+             ORDER BY id",
+        )?;
+        let file_ids = statement
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        file_ids
+    };
+
+    for (index, file_id) in file_ids.iter().enumerate() {
+        refresh_production_search_file_in_transaction(transaction, *file_id, shape)?;
+        if interrupt_after.is_some_and(|limit| index + 1 == limit) {
+            return Err(AppError::Message(
+                "synthetic search-index rebuild interruption".to_owned(),
+            ));
+        }
+    }
+    Ok(file_ids.len())
+}
+
+fn rebuild_production_search(
+    connection: &mut Connection,
+    shape: ProductionSearchShape,
+) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    let count = rebuild_production_search_in_transaction(&transaction, shape, None)?;
+    transaction.commit()?;
+    Ok(count)
+}
+
+fn rebuild_production_search_with_interrupt(
+    connection: &mut Connection,
+    shape: ProductionSearchShape,
+    interrupt_after: usize,
+) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    let result = rebuild_production_search_in_transaction(
+        &transaction,
+        shape,
+        Some(interrupt_after),
+    );
+    match result {
+        Ok(count) => {
+            transaction.commit()?;
+            Ok(count)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn production_fts_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<i64>> {
+    let Some(query) = normalized_fts_query(query) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(
+        "SELECT rowid
+         FROM production_search_fts
+         WHERE production_search_fts MATCH ?1
+         ORDER BY bm25(
+             production_search_fts,
+             8.0, 7.0, 6.0, 4.0, 5.0, 5.0, 3.0, 4.0
+         ) ASC, rowid ASC
+         LIMIT ?2",
+    )?;
+    let ids = statement
+        .query_map(params![query, limit as i64], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+fn production_trigram_candidate_rows(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<(i64, String)>> {
+    let Some(query) = normalized_trigram_query(query) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(
+        "SELECT rowid, search_text
+         FROM production_search_trigram
+         WHERE production_search_trigram MATCH ?1
+         ORDER BY bm25(production_search_trigram) ASC, rowid ASC
+         LIMIT ?2",
+    )?;
+    let rows = statement
+        .query_map(params![query, limit as i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn production_fuzzy_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<FuzzySearchDiagnostics> {
+    if benchmark_authority_query(query) {
+        return Ok(FuzzySearchDiagnostics {
+            ids: Vec::new(),
+            candidate_count: 0,
+        });
+    }
+    let strict_ids = production_fts_search(connection, query, STRICT_CANDIDATE_LIMIT)?;
+    let mut candidates =
+        production_trigram_candidate_rows(connection, query, TRIGRAM_CANDIDATE_LIMIT)?;
+    for strict_id in &strict_ids {
+        if candidates.iter().any(|(id, _)| id == strict_id) {
+            continue;
+        }
+        let document = connection.query_row(
+            "SELECT search_text FROM production_search_trigram WHERE rowid = ?1",
+            params![strict_id],
+            |row| row.get::<_, String>(0),
+        )?;
+        candidates.push((*strict_id, document));
+    }
+    let candidate_count = candidates.len();
+    let mut ranked = candidates
+        .into_iter()
+        .filter_map(|(id, document)| {
+            let strict_rank = strict_ids.iter().position(|strict_id| *strict_id == id);
+            let fuzzy_score = document_similarity(query, &document);
+            if strict_rank.is_none() && fuzzy_score < FUZZY_MIN_SCORE {
+                return None;
+            }
+            let score = strict_rank
+                .map(|rank| 2.0 - (rank as f64 * 0.01))
+                .unwrap_or(fuzzy_score);
+            Some((id, score))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|(left_id, left_score), (right_id, right_score)| {
+        right_score
+            .total_cmp(left_score)
+            .then_with(|| left_id.cmp(right_id))
+    });
+    ranked.dedup_by_key(|(id, _)| *id);
+    Ok(FuzzySearchDiagnostics {
+        ids: ranked.into_iter().take(limit).map(|(id, _)| id).collect(),
+        candidate_count,
+    })
+}
+
+fn build_production_shape_database(
+    path: &Path,
+    fixtures: &[SearchFixture],
+    shape: ProductionSearchShape,
+) -> AppResult<(u64, u128)> {
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    let mut connection = Connection::open(path)?;
+    create_production_shape_schema(&connection, shape)?;
+    seed_production_source(&mut connection, fixtures)?;
+    let started = Instant::now();
+    if shape != ProductionSearchShape::SOURCE_ONLY {
+        rebuild_production_search(&mut connection, shape)?;
+    }
+    let backfill_ms = started.elapsed().as_millis();
+    connection.execute_batch("VACUUM")?;
+    drop(connection);
+    Ok((fs::metadata(path)?.len(), backfill_ms))
+}
+
+fn production_shape_path(root: &Path, name: &str) -> PathBuf {
+    root.join(format!("{name}.sqlite"))
+}
+
+fn create_contentless_search_schema(connection: &Connection) -> AppResult<()> {
+    connection.execute_batch(
+        "CREATE VIRTUAL TABLE production_contentless_fts USING fts5(
+            filename,
+            creator,
+            aliases,
+            kind_subtype,
+            embedded_names,
+            family_hints,
+            resource_summary,
+            script_namespaces,
+            tokenize = 'unicode61 remove_diacritics 2',
+            content = '',
+            contentless_delete = 1
+        );
+        CREATE VIRTUAL TABLE production_contentless_trigram USING fts5(
+            search_text,
+            tokenize = 'trigram',
+            content = '',
+            contentless_delete = 1
+        );",
+    )?;
+    Ok(())
+}
+
+fn delete_contentless_search_row(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+) -> AppResult<()> {
+    transaction.execute(
+        "DELETE FROM production_contentless_fts WHERE rowid = ?1",
+        params![file_id],
+    )?;
+    transaction.execute(
+        "DELETE FROM production_contentless_trigram WHERE rowid = ?1",
+        params![file_id],
+    )?;
+    Ok(())
+}
+
+fn insert_contentless_search_document(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+    document: &SearchDocument,
+) -> AppResult<()> {
+    transaction.execute(
+        "INSERT INTO production_contentless_fts(
+            rowid, filename, creator, aliases, kind_subtype,
+            embedded_names, family_hints, resource_summary, script_namespaces
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            file_id,
+            document.filename,
+            document.creator,
+            document.aliases,
+            document.kind_subtype,
+            document.embedded_names,
+            document.family_hints,
+            document.resource_summary,
+            document.script_namespaces,
+        ],
+    )?;
+    transaction.execute(
+        "INSERT INTO production_contentless_trigram(rowid, search_text) VALUES (?1, ?2)",
+        params![file_id, flattened_search_document(document)],
+    )?;
+    Ok(())
+}
+
+fn refresh_contentless_search_file_in_transaction(
+    transaction: &Transaction<'_>,
+    file_id: i64,
+) -> AppResult<()> {
+    delete_contentless_search_row(transaction, file_id)?;
+    if let Some(document) = production_search_document(transaction, file_id)? {
+        insert_contentless_search_document(transaction, file_id, &document)?;
+    }
+    Ok(())
+}
+
+fn rebuild_contentless_search_in_transaction(
+    transaction: &Transaction<'_>,
+    interrupt_after: Option<usize>,
+) -> AppResult<usize> {
+    transaction.execute("DELETE FROM production_contentless_fts", [])?;
+    transaction.execute("DELETE FROM production_contentless_trigram", [])?;
+    let file_ids = {
+        let mut statement = transaction.prepare(
+            "SELECT id
+             FROM production_files
+             WHERE source_location IN ('mods', 'tray')
+             ORDER BY id",
+        )?;
+        let file_ids = statement
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        file_ids
+    };
+    for (index, file_id) in file_ids.iter().enumerate() {
+        refresh_contentless_search_file_in_transaction(transaction, *file_id)?;
+        if interrupt_after.is_some_and(|limit| index + 1 == limit) {
+            return Err(AppError::Message(
+                "synthetic contentless search-index rebuild interruption".to_owned(),
+            ));
+        }
+    }
+    Ok(file_ids.len())
+}
+
+fn rebuild_contentless_search(connection: &mut Connection) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    let count = rebuild_contentless_search_in_transaction(&transaction, None)?;
+    transaction.commit()?;
+    Ok(count)
+}
+
+fn rebuild_contentless_search_with_interrupt(
+    connection: &mut Connection,
+    interrupt_after: usize,
+) -> AppResult<usize> {
+    let transaction = connection.transaction()?;
+    let result = rebuild_contentless_search_in_transaction(
+        &transaction,
+        Some(interrupt_after),
+    );
+    match result {
+        Ok(count) => {
+            transaction.commit()?;
+            Ok(count)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn contentless_fts_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<i64>> {
+    let Some(query) = normalized_fts_query(query) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(
+        "SELECT rowid
+         FROM production_contentless_fts
+         WHERE production_contentless_fts MATCH ?1
+         ORDER BY bm25(
+             production_contentless_fts,
+             8.0, 7.0, 6.0, 4.0, 5.0, 5.0, 3.0, 4.0
+         ) ASC, rowid ASC
+         LIMIT ?2",
+    )?;
+    let ids = statement
+        .query_map(params![query, limit as i64], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+fn contentless_trigram_candidate_ids(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<i64>> {
+    let Some(query) = normalized_trigram_query(query) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(
+        "SELECT rowid
+         FROM production_contentless_trigram
+         WHERE production_contentless_trigram MATCH ?1
+         ORDER BY bm25(production_contentless_trigram) ASC, rowid ASC
+         LIMIT ?2",
+    )?;
+    let ids = statement
+        .query_map(params![query, limit as i64], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+fn contentless_fuzzy_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<FuzzySearchDiagnostics> {
+    if benchmark_authority_query(query) {
+        return Ok(FuzzySearchDiagnostics {
+            ids: Vec::new(),
+            candidate_count: 0,
+        });
+    }
+    let strict_ids = contentless_fts_search(connection, query, STRICT_CANDIDATE_LIMIT)?;
+    let mut candidate_ids =
+        contentless_trigram_candidate_ids(connection, query, TRIGRAM_CANDIDATE_LIMIT)?;
+    for strict_id in &strict_ids {
+        if !candidate_ids.contains(strict_id) {
+            candidate_ids.push(*strict_id);
+        }
+    }
+    let candidate_count = candidate_ids.len();
+    let mut ranked = Vec::new();
+    for id in candidate_ids {
+        let strict_rank = strict_ids.iter().position(|strict_id| *strict_id == id);
+        let Some(document) = production_search_document(connection, id)? else {
+            continue;
+        };
+        let fuzzy_score = document_similarity(query, &flattened_search_document(&document));
+        if strict_rank.is_none() && fuzzy_score < FUZZY_MIN_SCORE {
+            continue;
+        }
+        let score = strict_rank
+            .map(|rank| 2.0 - (rank as f64 * 0.01))
+            .unwrap_or(fuzzy_score);
+        ranked.push((id, score));
+    }
+    ranked.sort_by(|(left_id, left_score), (right_id, right_score)| {
+        right_score
+            .total_cmp(left_score)
+            .then_with(|| left_id.cmp(right_id))
+    });
+    ranked.dedup_by_key(|(id, _)| *id);
+    Ok(FuzzySearchDiagnostics {
+        ids: ranked.into_iter().take(limit).map(|(id, _)| id).collect(),
+        candidate_count,
+    })
+}
+
+fn build_contentless_production_database(
+    path: &Path,
+    fixtures: &[SearchFixture],
+) -> AppResult<(u64, u128)> {
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    let mut connection = Connection::open(path)?;
+    create_production_shape_schema(&connection, ProductionSearchShape::SOURCE_ONLY)?;
+    create_contentless_search_schema(&connection)?;
+    seed_production_source(&mut connection, fixtures)?;
+    let started = Instant::now();
+    rebuild_contentless_search(&mut connection)?;
+    let backfill_ms = started.elapsed().as_millis();
+    connection.execute_batch("VACUUM")?;
+    drop(connection);
+    Ok((fs::metadata(path)?.len(), backfill_ms))
 }
 
 fn current_like_search(connection: &Connection, query: &str, limit: usize) -> AppResult<Vec<i64>> {
@@ -1081,11 +1862,487 @@ mod tests {
     }
 
     #[test]
+    fn production_shape_explicit_sync_tracks_metadata_scope_and_privacy() {
+        let mut fixtures = representative_fixtures();
+        fixtures.push(SearchFixture {
+            id: 8,
+            filename: "Tmex_TOOL.ts4script".to_owned(),
+            path: "/Users/demo/Documents/Electronic Arts/The Sims 4/Mods/TwistedMexi/Tmex_TOOL.ts4script"
+                .to_owned(),
+            creator: Some("TwistedMexi".to_owned()),
+            creator_aliases: Vec::new(),
+            kind: "BuildBuy".to_owned(),
+            subtype: Some("Script Mod".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["T.O.O.L.".to_owned()],
+                family_hints: vec!["object placement utility".to_owned()],
+                script_namespaces: vec!["tmex_tool".to_owned()],
+                ..FileInsights::default()
+            },
+        });
+
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        create_production_shape_schema(&connection, ProductionSearchShape::BOTH)
+            .expect("production-shape schema");
+        seed_production_source(&mut connection, &fixtures).expect("seed installed source");
+
+        let downloads_only = SearchFixture {
+            id: 90,
+            filename: "PrivateDownloadOnly.package".to_owned(),
+            path: "/Users/privateusername/Downloads/PrivateDownloadOnly.package".to_owned(),
+            creator: Some("DownloadCreator".to_owned()),
+            creator_aliases: vec!["downloadsecretalias".to_owned()],
+            kind: "CAS".to_owned(),
+            subtype: Some("Accessory".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["downloadonlysecretterm".to_owned()],
+                ..FileInsights::default()
+            },
+        };
+        {
+            let transaction = connection.transaction().expect("download fixture transaction");
+            insert_production_source_fixture(&transaction, &downloads_only, "downloads")
+                .expect("insert downloads-only source");
+            transaction.commit().expect("commit downloads fixture");
+        }
+        connection
+            .execute(
+                "UPDATE production_files
+                 SET path = '/Users/privateusername/Documents/Electronic Arts/The Sims 4/Mods/JolieHair.package'
+                 WHERE id = 1",
+                [],
+            )
+            .expect("make installed path privacy-sensitive");
+
+        assert_eq!(
+            rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+                .expect("initial backfill"),
+            fixtures.len()
+        );
+        assert!(production_fts_search(&connection, "privateusername", 5)
+            .expect("private path search")
+            .is_empty());
+        assert!(production_fts_search(&connection, "downloadonlysecretterm", 5)
+            .expect("downloads-only search")
+            .is_empty());
+        let indexed_private_paths: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM production_search_trigram
+                 WHERE lower(search_text) LIKE '%privateusername%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("inspect trigram privacy boundary");
+        assert_eq!(indexed_private_paths, 0);
+
+        connection
+            .execute(
+                "UPDATE production_files
+                 SET kind = 'BuildBuy', subtype = 'Reclassified Surface'
+                 WHERE id = 1",
+                [],
+            )
+            .expect("update category metadata");
+        refresh_production_search_files(&mut connection, &[1], ProductionSearchShape::BOTH)
+            .expect("refresh category search row");
+        assert_eq!(
+            production_fts_search(&connection, "reclassified surface", 5)
+                .expect("category search"),
+            vec![1]
+        );
+
+        let refreshed_insights = FileInsights {
+            embedded_names: vec!["Aurora Catalog Name".to_owned()],
+            family_hints: vec!["pink swatches".to_owned()],
+            ..FileInsights::default()
+        };
+        connection
+            .execute(
+                "UPDATE production_files SET insights = ?1 WHERE id = 1",
+                params![serde_json::to_string(&refreshed_insights).expect("serialize insights")],
+            )
+            .expect("refresh searchable insights");
+        refresh_production_search_files(&mut connection, &[1], ProductionSearchShape::BOTH)
+            .expect("refresh insight search row");
+        assert_eq!(
+            production_fts_search(&connection, "aurora catalog", 5)
+                .expect("insight search"),
+            vec![1]
+        );
+
+        let twisted_mexi_id: i64 = connection
+            .query_row(
+                "SELECT id FROM production_creators WHERE canonical_name = 'TwistedMexi'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("TwistedMexi creator id");
+        connection
+            .execute(
+                "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                 VALUES (?1, 'MexiWorkshop')",
+                params![twisted_mexi_id],
+            )
+            .expect("insert learned creator alias");
+        assert_eq!(
+            refresh_production_search_creator(
+                &mut connection,
+                twisted_mexi_id,
+                ProductionSearchShape::BOTH,
+            )
+            .expect("refresh creator-wide search rows"),
+            2
+        );
+        let alias_matches = production_fts_search(&connection, "MexiWorkshop", 10)
+            .expect("creator-wide alias search");
+        assert!(alias_matches.contains(&5));
+        assert!(alias_matches.contains(&8));
+
+        let simpliciaty_id: i64 = connection
+            .query_row(
+                "SELECT id FROM production_creators WHERE canonical_name = 'Simpliciaty'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Simpliciaty creator id");
+        connection
+            .execute(
+                "INSERT INTO production_user_creator_aliases(creator_id, alias_name)
+                 VALUES (?1, 'MexiWorkshop')
+                 ON CONFLICT(alias_name) DO UPDATE SET creator_id = excluded.creator_id",
+                params![simpliciaty_id],
+            )
+            .expect("reassign learned creator alias");
+        assert_eq!(
+            refresh_production_search_creators(
+                &mut connection,
+                &[twisted_mexi_id, simpliciaty_id],
+                ProductionSearchShape::BOTH,
+            )
+            .expect("refresh old and new alias owner search rows"),
+            3
+        );
+        let reassigned_alias_matches = production_fts_search(&connection, "MexiWorkshop", 10)
+            .expect("reassigned creator alias search");
+        assert!(reassigned_alias_matches.contains(&1));
+        assert!(!reassigned_alias_matches.contains(&5));
+        assert!(!reassigned_alias_matches.contains(&8));
+
+        connection
+            .execute("DELETE FROM production_files WHERE id = 2", [])
+            .expect("delete installed source row");
+        refresh_production_search_files(&mut connection, &[2], ProductionSearchShape::BOTH)
+            .expect("remove stale search row");
+        assert!(production_fts_search(&connection, "Baysic", 5)
+            .expect("removed file search")
+            .is_empty());
+
+        connection
+            .execute(
+                "UPDATE production_files SET source_location = 'downloads' WHERE id = 7",
+                [],
+            )
+            .expect("move source outside installed Library scope");
+        refresh_production_search_files(&mut connection, &[7], ProductionSearchShape::BOTH)
+            .expect("remove out-of-scope search row");
+        assert!(production_fts_search(&connection, "Thai Translation", 5)
+            .expect("out-of-scope file search")
+            .is_empty());
+
+        let new_fixture = SearchFixture {
+            id: 50,
+            filename: "NewlyIndexed.package".to_owned(),
+            path: "/Users/demo/Documents/Electronic Arts/The Sims 4/Mods/NewlyIndexed.package"
+                .to_owned(),
+            creator: Some("FreshCreator".to_owned()),
+            creator_aliases: Vec::new(),
+            kind: "CAS".to_owned(),
+            subtype: Some("Hair".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["Fresh Search Insert".to_owned()],
+                ..FileInsights::default()
+            },
+        };
+        {
+            let transaction = connection.transaction().expect("new source transaction");
+            insert_production_source_fixture(&transaction, &new_fixture, "mods")
+                .expect("insert new source row");
+            refresh_production_search_file_in_transaction(
+                &transaction,
+                new_fixture.id,
+                ProductionSearchShape::BOTH,
+            )
+            .expect("index new source row in same transaction");
+            transaction.commit().expect("commit new source and search row");
+        }
+        assert_eq!(
+            production_fuzzy_search(&connection, "fresh serch insert", 5)
+                .expect("fuzzy new-row search")
+                .ids,
+            vec![50]
+        );
+    }
+
+    #[test]
+    fn production_shape_rebuild_is_atomic_repairable_and_scan_replace_safe() {
+        let fixtures = representative_fixtures();
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        create_production_shape_schema(&connection, ProductionSearchShape::BOTH)
+            .expect("production-shape schema");
+        seed_production_source(&mut connection, &fixtures).expect("seed source");
+        rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+            .expect("initial search rebuild");
+
+        connection
+            .execute(
+                "INSERT INTO production_search_fts(rowid, filename) VALUES (99999, 'staleghost')",
+                [],
+            )
+            .expect("inject stale unicode row");
+        connection
+            .execute(
+                "INSERT INTO production_search_trigram(rowid, search_text) VALUES (99999, 'staleghost')",
+                [],
+            )
+            .expect("inject stale trigram row");
+        assert_eq!(
+            production_fts_search(&connection, "staleghost", 5).expect("stale row visible"),
+            vec![99999]
+        );
+        rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+            .expect("repair stale index");
+        assert!(production_fts_search(&connection, "staleghost", 5)
+            .expect("stale row repaired")
+            .is_empty());
+
+        connection
+            .execute(
+                "UPDATE production_files SET filename = 'UniqueFreshRename.package' WHERE id = 5",
+                [],
+            )
+            .expect("change source before interrupted rebuild");
+        let error = rebuild_production_search_with_interrupt(
+            &mut connection,
+            ProductionSearchShape::BOTH,
+            2,
+        )
+        .expect_err("interrupted rebuild should roll back");
+        assert!(error
+            .to_string()
+            .contains("synthetic search-index rebuild interruption"));
+        assert!(production_fts_search(&connection, "UniqueFreshRename", 5)
+            .expect("interrupted rebuild must not expose partial new index")
+            .is_empty());
+        assert_eq!(
+            production_fts_search(&connection, "MCCC", 5)
+                .expect("previous complete index remains queryable"),
+            vec![3]
+        );
+
+        rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+            .expect("successful rebuild after interruption");
+        assert_eq!(
+            production_fts_search(&connection, "UniqueFreshRename", 5)
+                .expect("fresh source visible after repair"),
+            vec![5]
+        );
+
+        let replacement = SearchFixture {
+            id: 501,
+            filename: "ReplacementScanItem.package".to_owned(),
+            path: "/Users/demo/Documents/Electronic Arts/The Sims 4/Mods/ReplacementScanItem.package"
+                .to_owned(),
+            creator: Some("ReplacementCreator".to_owned()),
+            creator_aliases: Vec::new(),
+            kind: "BuildBuy".to_owned(),
+            subtype: Some("Furniture".to_owned()),
+            insights: FileInsights {
+                embedded_names: vec!["Replacement Scan Sofa".to_owned()],
+                ..FileInsights::default()
+            },
+        };
+        {
+            let transaction = connection.transaction().expect("scan replacement transaction");
+            transaction
+                .execute(
+                    "DELETE FROM production_files WHERE source_location IN ('mods', 'tray')",
+                    [],
+                )
+                .expect("clear installed source rows");
+            insert_production_source_fixture(&transaction, &replacement, "mods")
+                .expect("insert replacement scan row");
+            assert_eq!(
+                rebuild_production_search_in_transaction(
+                    &transaction,
+                    ProductionSearchShape::BOTH,
+                    None,
+                )
+                .expect("rebuild inside scan replacement transaction"),
+                1
+            );
+            transaction.commit().expect("commit scan replacement and search together");
+        }
+        assert!(production_fts_search(&connection, "MCCC", 5)
+            .expect("old scan result removed")
+            .is_empty());
+        assert_eq!(
+            production_fts_search(&connection, "Replacement Scan Sofa", 5)
+                .expect("replacement scan search"),
+            vec![501]
+        );
+
+        let unicode_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_search_fts", [], |row| row.get(0))
+            .expect("unicode count");
+        let trigram_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM production_search_trigram",
+                [],
+                |row| row.get(0),
+            )
+            .expect("trigram count");
+        assert_eq!(unicode_count, 1);
+        assert_eq!(trigram_count, 1);
+        rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+            .expect("idempotent rebuild");
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM production_search_fts", [], |row| row.get::<_, i64>(0))
+                .expect("idempotent unicode count"),
+            1
+        );
+    }
+
+    #[test]
+    fn contentless_delete_indexes_support_explicit_sync_repair_and_bounded_fuzzy_lookup() {
+        let fixtures = representative_fixtures();
+        let mut connection = Connection::open_in_memory().expect("memory sqlite");
+        create_production_shape_schema(&connection, ProductionSearchShape::SOURCE_ONLY)
+            .expect("source schema");
+        create_contentless_search_schema(&connection)
+            .expect("bundled SQLite must support contentless-delete FTS5");
+        seed_production_source(&mut connection, &fixtures).expect("seed source");
+        assert_eq!(
+            rebuild_contentless_search(&mut connection).expect("contentless rebuild"),
+            fixtures.len()
+        );
+        assert_eq!(
+            contentless_fts_search(&connection, "MCCC", 5).expect("contentless strict search"),
+            vec![3]
+        );
+        assert_eq!(
+            contentless_fuzzy_search(&connection, "twistd mexi exceptions", 5)
+                .expect("contentless fuzzy search")
+                .ids,
+            vec![5]
+        );
+
+        let stored_filename: Option<String> = connection
+            .query_row(
+                "SELECT filename FROM production_contentless_fts WHERE rowid = 3",
+                [],
+                |row| row.get(0),
+            )
+            .expect("contentless user column query");
+        assert!(
+            stored_filename.is_none(),
+            "contentless index must not retain a second readable copy of source text"
+        );
+
+        {
+            let transaction = connection.transaction().expect("contentless refresh transaction");
+            transaction
+                .execute(
+                    "UPDATE production_files SET filename = 'BetterDiagnosticsRenamed.ts4script' WHERE id = 5",
+                    [],
+                )
+                .expect("update source filename");
+            refresh_contentless_search_file_in_transaction(&transaction, 5)
+                .expect("refresh contentless row");
+            transaction.commit().expect("commit source and contentless refresh");
+        }
+        assert!(contentless_fts_search(&connection, "BetterExceptions", 5)
+            .expect("old contentless term")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterDiagnosticsRenamed", 5)
+                .expect("new contentless term"),
+            vec![5]
+        );
+
+        connection
+            .execute(
+                "INSERT INTO production_contentless_fts(rowid, filename) VALUES (99999, 'contentlessghost')",
+                [],
+            )
+            .expect("inject stale contentless unicode row");
+        connection
+            .execute(
+                "INSERT INTO production_contentless_trigram(rowid, search_text) VALUES (99999, 'contentlessghost')",
+                [],
+            )
+            .expect("inject stale contentless trigram row");
+        assert_eq!(
+            contentless_fts_search(&connection, "contentlessghost", 5)
+                .expect("stale contentless row visible"),
+            vec![99999]
+        );
+        rebuild_contentless_search(&mut connection).expect("repair contentless index");
+        assert!(contentless_fts_search(&connection, "contentlessghost", 5)
+            .expect("stale contentless row repaired")
+            .is_empty());
+
+        connection
+            .execute(
+                "UPDATE production_files SET filename = 'InterruptedContentlessRename.ts4script' WHERE id = 5",
+                [],
+            )
+            .expect("change source before interrupted contentless rebuild");
+        let interrupted = rebuild_contentless_search_with_interrupt(&mut connection, 2)
+            .expect_err("interrupted contentless rebuild should roll back");
+        assert!(interrupted
+            .to_string()
+            .contains("synthetic contentless search-index rebuild interruption"));
+        assert!(contentless_fts_search(&connection, "InterruptedContentlessRename", 5)
+            .expect("partial contentless rebuild must stay invisible")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&connection, "BetterDiagnosticsRenamed", 5)
+                .expect("previous complete contentless index remains visible"),
+            vec![5]
+        );
+        rebuild_contentless_search(&mut connection).expect("repair after interrupted rebuild");
+        assert_eq!(
+            contentless_fts_search(&connection, "InterruptedContentlessRename", 5)
+                .expect("new contentless source visible after complete rebuild"),
+            vec![5]
+        );
+
+        {
+            let transaction = connection.transaction().expect("contentless delete transaction");
+            transaction
+                .execute("DELETE FROM production_files WHERE id = 4", [])
+                .expect("delete source row");
+            refresh_contentless_search_file_in_transaction(&transaction, 4)
+                .expect("delete contentless search row");
+            transaction.commit().expect("commit source/index deletion");
+        }
+        assert!(contentless_fts_search(&connection, "Childbirth", 5)
+            .expect("deleted contentless row search")
+            .is_empty());
+    }
+
+    #[test]
     fn smart_search_prototype_stays_out_of_normal_command_registration() {
         let commands_source = include_str!("../commands/mod.rs");
         assert!(!commands_source.contains("library_smart_search_prototype"));
         assert!(!commands_source.contains("library_smart_search_fts"));
         assert!(!commands_source.contains("library_smart_search_trigram"));
+        assert!(!commands_source.contains("production_search_fts"));
+        assert!(!commands_source.contains("production_search_trigram"));
+        assert!(!commands_source.contains("production_contentless_fts"));
+        assert!(!commands_source.contains("production_contentless_trigram"));
 
         let core_source = include_str!("mod.rs");
         assert!(core_source.contains(
@@ -1228,5 +2485,235 @@ mod tests {
         assert!(holdout_fuzzy.recall_at_five > holdout_fts.recall_at_five);
         assert!(typo_fuzzy.recall_at_five > typo_fts.recall_at_five);
         assert!(candidate_max <= TRIGRAM_CANDIDATE_LIMIT + STRICT_CANDIDATE_LIMIT);
+    }
+
+    #[test]
+    #[ignore = "10k production-shape search storage benchmark; run pnpm run test:library:stress"]
+    fn large_production_shape_search_index_lifecycle_reports_costs() {
+        let mut fixtures = representative_fixtures();
+        fixtures.extend((100..10_093).map(filler_fixture));
+        assert_eq!(fixtures.len(), 10_000);
+
+        let temp = tempfile::tempdir().expect("temporary benchmark directory");
+        let source_path = production_shape_path(temp.path(), "source-only");
+        let unicode_path = production_shape_path(temp.path(), "unicode-only");
+        let trigram_path = production_shape_path(temp.path(), "trigram-only");
+        let both_path = production_shape_path(temp.path(), "both-indexes");
+        let contentless_path = production_shape_path(temp.path(), "contentless-both-indexes");
+
+        let (source_bytes, source_backfill_ms) = build_production_shape_database(
+            &source_path,
+            &fixtures,
+            ProductionSearchShape::SOURCE_ONLY,
+        )
+        .expect("build source-only database");
+        let (unicode_bytes, unicode_backfill_ms) = build_production_shape_database(
+            &unicode_path,
+            &fixtures,
+            ProductionSearchShape::UNICODE_ONLY,
+        )
+        .expect("build unicode FTS database");
+        let (trigram_bytes, trigram_backfill_ms) = build_production_shape_database(
+            &trigram_path,
+            &fixtures,
+            ProductionSearchShape::TRIGRAM_ONLY,
+        )
+        .expect("build trigram FTS database");
+        let (both_bytes, both_backfill_ms) = build_production_shape_database(
+            &both_path,
+            &fixtures,
+            ProductionSearchShape::BOTH,
+        )
+        .expect("build dual-index database");
+        let (contentless_bytes, contentless_backfill_ms) =
+            build_contentless_production_database(&contentless_path, &fixtures)
+                .expect("build contentless dual-index database");
+
+        let unicode_overhead = unicode_bytes.saturating_sub(source_bytes);
+        let trigram_overhead = trigram_bytes.saturating_sub(source_bytes);
+        let both_overhead = both_bytes.saturating_sub(source_bytes);
+        let contentless_overhead = contentless_bytes.saturating_sub(source_bytes);
+        assert!(unicode_bytes > source_bytes);
+        assert!(trigram_bytes > source_bytes);
+        assert!(both_bytes >= unicode_bytes.max(trigram_bytes));
+        assert!(
+            contentless_bytes < both_bytes,
+            "contentless indexes should reduce duplicate-text storage before they are recommended"
+        );
+
+        let mut connection = Connection::open(&both_path).expect("open dual-index database");
+        let changed_ids = (100_i64..200_i64).collect::<Vec<_>>();
+        let incremental_started = Instant::now();
+        {
+            let transaction = connection.transaction().expect("incremental update transaction");
+            for file_id in &changed_ids {
+                let insights = FileInsights {
+                    embedded_names: vec![format!("Incremental Refresh Item {file_id}")],
+                    family_hints: vec!["incremental lifecycle marker".to_owned()],
+                    ..FileInsights::default()
+                };
+                transaction
+                    .execute(
+                        "UPDATE production_files SET insights = ?1 WHERE id = ?2",
+                        params![
+                            serde_json::to_string(&insights).expect("serialize incremental insights"),
+                            file_id
+                        ],
+                    )
+                    .expect("update source insight");
+                refresh_production_search_file_in_transaction(
+                    &transaction,
+                    *file_id,
+                    ProductionSearchShape::BOTH,
+                )
+                .expect("refresh changed search row");
+            }
+            transaction.commit().expect("commit 100 source/search updates");
+        }
+        let incremental_100_ms = incremental_started.elapsed().as_millis();
+        assert!(!production_fts_search(&connection, "incremental refresh", 5)
+            .expect("incremental strict search")
+            .is_empty());
+        assert!(!production_fuzzy_search(&connection, "incremntal refrsh", 5)
+            .expect("incremental fuzzy search")
+            .ids
+            .is_empty());
+
+        let strict_query_started = Instant::now();
+        for _ in 0..100 {
+            production_fts_search(&connection, "incremental refresh", 5)
+                .expect("warm strict query");
+        }
+        let strict_query_100_us = strict_query_started.elapsed().as_micros();
+        let fuzzy_query_started = Instant::now();
+        for _ in 0..100 {
+            production_fuzzy_search(&connection, "incremntal refrsh", 5)
+                .expect("warm fuzzy query");
+        }
+        let fuzzy_query_100_us = fuzzy_query_started.elapsed().as_micros();
+
+        let cleanup_started = Instant::now();
+        {
+            let transaction = connection.transaction().expect("cleanup transaction");
+            for file_id in &changed_ids {
+                transaction
+                    .execute("DELETE FROM production_files WHERE id = ?1", params![file_id])
+                    .expect("delete source row");
+                refresh_production_search_file_in_transaction(
+                    &transaction,
+                    *file_id,
+                    ProductionSearchShape::BOTH,
+                )
+                .expect("remove stale search row");
+            }
+            transaction.commit().expect("commit cleanup");
+        }
+        let cleanup_100_ms = cleanup_started.elapsed().as_millis();
+        let unicode_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM production_search_fts", [], |row| row.get(0))
+            .expect("unicode row count after cleanup");
+        let trigram_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM production_search_trigram",
+                [],
+                |row| row.get(0),
+            )
+            .expect("trigram row count after cleanup");
+        assert_eq!(unicode_count, 9_900);
+        assert_eq!(trigram_count, 9_900);
+
+        let repair_started = Instant::now();
+        let repaired = rebuild_production_search(&mut connection, ProductionSearchShape::BOTH)
+            .expect("idempotent repair rebuild");
+        let repair_ms = repair_started.elapsed().as_millis();
+        assert_eq!(repaired, 9_900);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM production_search_fts", [], |row| row.get::<_, i64>(0))
+                .expect("unicode count after repair"),
+            9_900
+        );
+
+        let mut contentless_connection =
+            Connection::open(&contentless_path).expect("open contentless dual-index database");
+        let contentless_incremental_started = Instant::now();
+        {
+            let transaction = contentless_connection
+                .transaction()
+                .expect("contentless incremental transaction");
+            for file_id in &changed_ids {
+                let insights = FileInsights {
+                    embedded_names: vec![format!("Contentless Refresh Item {file_id}")],
+                    family_hints: vec!["contentless lifecycle marker".to_owned()],
+                    ..FileInsights::default()
+                };
+                transaction
+                    .execute(
+                        "UPDATE production_files SET insights = ?1 WHERE id = ?2",
+                        params![
+                            serde_json::to_string(&insights)
+                                .expect("serialize contentless incremental insights"),
+                            file_id
+                        ],
+                    )
+                    .expect("update contentless source insight");
+                refresh_contentless_search_file_in_transaction(&transaction, *file_id)
+                    .expect("refresh contentless changed search row");
+            }
+            transaction
+                .commit()
+                .expect("commit 100 contentless source/search updates");
+        }
+        let contentless_incremental_100_ms = contentless_incremental_started.elapsed().as_millis();
+        assert!(!contentless_fts_search(&contentless_connection, "contentless refresh", 5)
+            .expect("contentless incremental strict search")
+            .is_empty());
+        assert!(!contentless_fuzzy_search(&contentless_connection, "contentles refrsh", 5)
+            .expect("contentless incremental fuzzy search")
+            .ids
+            .is_empty());
+
+        let contentless_strict_started = Instant::now();
+        for _ in 0..100 {
+            contentless_fts_search(&contentless_connection, "contentless refresh", 5)
+                .expect("warm contentless strict query");
+        }
+        let contentless_strict_query_100_us = contentless_strict_started.elapsed().as_micros();
+        let contentless_fuzzy_started = Instant::now();
+        for _ in 0..100 {
+            contentless_fuzzy_search(&contentless_connection, "contentles refrsh", 5)
+                .expect("warm contentless fuzzy query");
+        }
+        let contentless_fuzzy_query_100_us = contentless_fuzzy_started.elapsed().as_micros();
+
+        println!(
+            "production-search-10k source_bytes={} unicode_bytes={} trigram_bytes={} both_bytes={} contentless_bytes={} unicode_overhead_bytes={} trigram_overhead_bytes={} both_overhead_bytes={} contentless_overhead_bytes={} source_backfill_ms={} unicode_backfill_ms={} trigram_backfill_ms={} both_backfill_ms={} contentless_backfill_ms={} incremental_100_ms={} contentless_incremental_100_ms={} cleanup_100_ms={} repair_9900_ms={} strict_query_100_us={} fuzzy_query_100_us={} contentless_strict_query_100_us={} contentless_fuzzy_query_100_us={} strict_query_avg_us={:.1} fuzzy_query_avg_us={:.1} contentless_strict_query_avg_us={:.1} contentless_fuzzy_query_avg_us={:.1}",
+            source_bytes,
+            unicode_bytes,
+            trigram_bytes,
+            both_bytes,
+            contentless_bytes,
+            unicode_overhead,
+            trigram_overhead,
+            both_overhead,
+            contentless_overhead,
+            source_backfill_ms,
+            unicode_backfill_ms,
+            trigram_backfill_ms,
+            both_backfill_ms,
+            contentless_backfill_ms,
+            incremental_100_ms,
+            contentless_incremental_100_ms,
+            cleanup_100_ms,
+            repair_ms,
+            strict_query_100_us,
+            fuzzy_query_100_us,
+            contentless_strict_query_100_us,
+            contentless_fuzzy_query_100_us,
+            strict_query_100_us as f64 / 100.0,
+            fuzzy_query_100_us as f64 / 100.0,
+            contentless_strict_query_100_us as f64 / 100.0,
+            contentless_fuzzy_query_100_us as f64 / 100.0,
+        );
     }
 }
