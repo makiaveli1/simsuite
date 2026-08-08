@@ -3,10 +3,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Transaction};
 use serde::Deserialize;
 
 use crate::{
@@ -57,6 +57,29 @@ enum QueryClass {
     VagueLexical,
     Short,
     Ambiguous,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthorityIntent {
+    SafeRemoval,
+    Malware,
+    Compatibility,
+    CrashAttribution,
+    DependencySafety,
+    UpdateStatus,
+    UncertainAuthority,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchIntentRoute {
+    RetrievalSafe,
+    AuthorityBlocked(AuthorityIntent),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RoutedRetrieval<T> {
+    Results(T),
+    AuthorityBlocked(AuthorityIntent),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -158,6 +181,7 @@ impl PlayerEvaluationSummary {
 const TRIGRAM_CANDIDATE_LIMIT: usize = 80;
 const STRICT_CANDIDATE_LIMIT: usize = 20;
 const FUZZY_MIN_SCORE: f64 = 0.72;
+const PRODUCTION_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProductionSearchShape {
@@ -838,6 +862,21 @@ fn production_shape_path(root: &Path, name: &str) -> PathBuf {
     root.join(format!("{name}.sqlite"))
 }
 
+fn open_production_like_search_connection(path: &Path) -> AppResult<Connection> {
+    let connection = Connection::open(path)?;
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    connection.busy_timeout(PRODUCTION_DB_BUSY_TIMEOUT)?;
+    Ok(connection)
+}
+
+fn production_like_connection_settings(connection: &Connection) -> AppResult<(String, i64)> {
+    let journal_mode = connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
+    let busy_timeout_ms =
+        connection.query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))?;
+    Ok((journal_mode, busy_timeout_ms))
+}
+
 fn create_contentless_search_schema(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
         "CREATE VIRTUAL TABLE production_contentless_fts USING fts5(
@@ -1237,6 +1276,117 @@ fn benchmark_authority_query(query: &str) -> bool {
         || normalized.contains("missing mesh")
         || (normalized.contains("broken")
             && (normalized.contains("patch") || normalized.contains("update")))
+}
+
+fn route_search_intent(query: &str) -> SearchIntentRoute {
+    let tokens = normalized_search_tokens(query);
+    let normalized = tokens.join(" ");
+    let has = |needle: &str| tokens.iter().any(|token| token == needle);
+    let has_any = |needles: &[&str]| needles.iter().any(|needle| has(needle));
+
+    if has_any(&["malware", "virus", "trojan", "ransomware"]) {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::Malware);
+    }
+
+    let removal = has_any(&["delete", "deleting", "deleted", "remove", "removing", "removed"]);
+    let dependency_language = has_any(&["dependency", "dependencies", "dependent", "dependents"])
+        || normalized.contains("other mod")
+        || normalized.contains("other mods")
+        || normalized.contains("without breaking")
+        || normalized.contains("break another")
+        || normalized.contains("break any other");
+    if removal && dependency_language {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::DependencySafety);
+    }
+
+    if removal
+        && (has_any(&["safe", "safely", "okay", "ok", "should", "can", "definitely"])
+            || normalized.contains("without risk"))
+    {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::SafeRemoval);
+    }
+
+    if has_any(&["compatible", "compatibility", "incompatible"])
+        && has_any(&["patch", "update", "version", "latest", "current"])
+    {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::Compatibility);
+    }
+
+    if has_any(&["crash", "crashes", "crashing", "crashed"])
+        && (has_any(&[
+            "cause",
+            "causes",
+            "caused",
+            "causing",
+            "culprit",
+            "responsible",
+            "definitely",
+            "which",
+        ]) || normalized.contains("making my game"))
+    {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::CrashAttribution);
+    }
+
+    if has_any(&["update", "updates", "updated", "updating", "outdated"])
+        && (has_any(&[
+            "need",
+            "needs",
+            "needed",
+            "require",
+            "requires",
+            "required",
+            "definitely",
+            "current",
+            "latest",
+            "now",
+            "which",
+        ]) || normalized.contains("right now"))
+    {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::UpdateStatus);
+    }
+
+    let certainty = has_any(&[
+        "definitely",
+        "guaranteed",
+        "guarantee",
+        "certain",
+        "certainly",
+        "safe",
+        "safely",
+        "unsafe",
+    ]);
+    let risky_subject = removal
+        || has_any(&[
+            "break",
+            "breaking",
+            "broken",
+            "crash",
+            "crashing",
+            "compatible",
+            "compatibility",
+            "update",
+            "outdated",
+            "dependency",
+            "mesh",
+            "patch",
+            "safe",
+            "unsafe",
+        ]);
+    if certainty && risky_subject {
+        return SearchIntentRoute::AuthorityBlocked(AuthorityIntent::UncertainAuthority);
+    }
+
+    SearchIntentRoute::RetrievalSafe
+}
+
+fn route_before_retrieval<T, F>(query: &str, retrieve: F) -> RoutedRetrieval<T>
+where
+    F: FnOnce() -> T,
+{
+    match route_search_intent(query) {
+        SearchIntentRoute::RetrievalSafe => RoutedRetrieval::Results(retrieve()),
+        SearchIntentRoute::AuthorityBlocked(intent) => RoutedRetrieval::AuthorityBlocked(intent),
+    }
 }
 
 fn levenshtein_distance(left: &str, right: &str) -> usize {
@@ -2726,6 +2876,257 @@ mod tests {
     }
 
     #[test]
+    fn production_like_wal_contentless_sync_is_atomic_across_connections() {
+        let temp = tempfile::tempdir().expect("temporary WAL proof directory");
+        let path = temp.path().join("contentless-wal-atomic.sqlite");
+        let fixtures = representative_fixtures();
+
+        let mut setup =
+            open_production_like_search_connection(&path).expect("production-like setup connection");
+        create_production_shape_schema(&setup, ProductionSearchShape::SOURCE_ONLY)
+            .expect("source schema");
+        create_contentless_search_schema(&setup).expect("contentless schema");
+        seed_production_source(&mut setup, &fixtures).expect("seed source");
+        rebuild_contentless_search(&mut setup).expect("initial contentless rebuild");
+        assert_eq!(
+            production_like_connection_settings(&setup).expect("setup connection settings"),
+            ("wal".to_owned(), 5_000)
+        );
+        drop(setup);
+
+        let mut reader =
+            open_production_like_search_connection(&path).expect("production-like reader");
+        let mut writer =
+            open_production_like_search_connection(&path).expect("production-like writer");
+        let fresh_reader =
+            open_production_like_search_connection(&path).expect("production-like fresh reader");
+
+        let reader_transaction = reader.transaction().expect("reader snapshot");
+        assert!(contentless_fts_search(&reader_transaction, "ConcurrencyMarker", 5)
+            .expect("old snapshot before writer")
+            .is_empty());
+
+        {
+            let writer_transaction = writer.transaction().expect("writer transaction");
+            writer_transaction
+                .execute(
+                    "UPDATE production_files SET subtype = 'ConcurrencyMarker' WHERE id = 5",
+                    [],
+                )
+                .expect("update source inside writer transaction");
+            refresh_contentless_search_file_in_transaction(&writer_transaction, 5)
+                .expect("refresh search in same writer transaction");
+
+            assert!(contentless_fts_search(&reader_transaction, "ConcurrencyMarker", 5)
+                .expect("old reader must not see uncommitted search state")
+                .is_empty());
+            writer_transaction
+                .commit()
+                .expect("commit source and search atomically");
+        }
+
+        assert!(contentless_fts_search(&reader_transaction, "ConcurrencyMarker", 5)
+            .expect("open WAL reader snapshot stays on previous complete state")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&fresh_reader, "ConcurrencyMarker", 5)
+                .expect("fresh reader sees committed complete state"),
+            vec![5]
+        );
+
+        reader_transaction.commit().expect("finish old reader snapshot");
+        assert_eq!(
+            contentless_fts_search(&reader, "ConcurrencyMarker", 5)
+                .expect("reader sees new state after ending old snapshot"),
+            vec![5]
+        );
+    }
+
+    #[test]
+    fn production_like_single_writer_contention_and_contentless_repair_are_bounded() {
+        let temp = tempfile::tempdir().expect("temporary writer proof directory");
+        let path = temp.path().join("contentless-writer-repair.sqlite");
+        let fixtures = representative_fixtures();
+
+        let mut setup =
+            open_production_like_search_connection(&path).expect("production-like setup connection");
+        create_production_shape_schema(&setup, ProductionSearchShape::SOURCE_ONLY)
+            .expect("source schema");
+        create_contentless_search_schema(&setup).expect("contentless schema");
+        seed_production_source(&mut setup, &fixtures).expect("seed source");
+        rebuild_contentless_search(&mut setup).expect("initial contentless rebuild");
+        drop(setup);
+
+        let mut writer =
+            open_production_like_search_connection(&path).expect("production-like first writer");
+        let contender =
+            open_production_like_search_connection(&path).expect("production-like contender");
+        let observer =
+            open_production_like_search_connection(&path).expect("production-like observer");
+        assert_eq!(
+            production_like_connection_settings(&contender).expect("contender connection settings"),
+            ("wal".to_owned(), 5_000)
+        );
+
+        let writer_transaction = writer.transaction().expect("first writer transaction");
+        writer_transaction
+            .execute("UPDATE production_files SET path = path WHERE id = 4", [])
+            .expect("first writer acquires SQLite write lock");
+
+        contender
+            .busy_timeout(Duration::ZERO)
+            .expect("bounded zero-timeout contention probe");
+        let contention_error = contender
+            .execute("UPDATE production_files SET path = path WHERE id = 5", [])
+            .expect_err("second writer must not bypass SQLite single-writer lock");
+        match contention_error {
+            rusqlite::Error::SqliteFailure(error, _) => assert!(matches!(
+                error.code,
+                ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked
+            )),
+            other => panic!("expected SQLite busy/locked error, got {other:?}"),
+        }
+        writer_transaction
+            .rollback()
+            .expect("release first writer lock without changing source");
+        contender
+            .busy_timeout(PRODUCTION_DB_BUSY_TIMEOUT)
+            .expect("restore production-like busy timeout after bounded probe");
+        contender
+            .execute("UPDATE production_files SET path = path WHERE id = 5", [])
+            .expect("second writer succeeds after first writer releases lock");
+
+        writer
+            .execute(
+                "UPDATE production_files SET subtype = 'RepairMarker' WHERE id = 5",
+                [],
+            )
+            .expect("commit source change before simulated interrupted search refresh");
+        assert!(contentless_fts_search(&observer, "RepairMarker", 5)
+            .expect("observer sees previous complete search index before repair")
+            .is_empty());
+
+        let interrupted = rebuild_contentless_search_with_interrupt(&mut writer, 2)
+            .expect_err("interrupted search rebuild should roll back");
+        assert!(interrupted
+            .to_string()
+            .contains("synthetic contentless search-index rebuild interruption"));
+        assert!(contentless_fts_search(&observer, "RepairMarker", 5)
+            .expect("interrupted rebuild remains invisible to another connection")
+            .is_empty());
+        assert_eq!(
+            contentless_fts_search(&observer, "BetterExceptions", 5)
+                .expect("previous complete index remains readable after interruption"),
+            vec![5]
+        );
+
+        rebuild_contentless_search(&mut writer).expect("deterministic full repair");
+        assert_eq!(
+            contentless_fts_search(&observer, "RepairMarker", 5)
+                .expect("observer sees repaired complete index"),
+            vec![5]
+        );
+    }
+
+    #[test]
+    fn authority_router_blocks_before_retrieval_and_keeps_lookup_intent_separate() {
+        let (queries, _) = load_player_query_corpora();
+        let expected_authority = [
+            ("authority_01", AuthorityIntent::SafeRemoval),
+            ("authority_02", AuthorityIntent::Malware),
+            ("authority_03", AuthorityIntent::Compatibility),
+            ("authority_04", AuthorityIntent::CrashAttribution),
+            ("authority_05", AuthorityIntent::DependencySafety),
+            ("authority_06", AuthorityIntent::UpdateStatus),
+        ];
+
+        for (query_id, expected_intent) in expected_authority {
+            let query = queries
+                .queries
+                .iter()
+                .find(|query| query.id == query_id)
+                .expect("frozen authority query");
+            assert_eq!(
+                route_search_intent(&query.query),
+                SearchIntentRoute::AuthorityBlocked(expected_intent),
+                "authority routing must be explicit for {}",
+                query.query
+            );
+
+            let retrieval_called = std::cell::Cell::new(false);
+            let routed = route_before_retrieval(&query.query, || {
+                retrieval_called.set(true);
+                vec![999_i64]
+            });
+            assert_eq!(routed, RoutedRetrieval::AuthorityBlocked(expected_intent));
+            assert!(
+                !retrieval_called.get(),
+                "blocked authority intent must never invoke retrieval"
+            );
+        }
+
+        for query in queries
+            .queries
+            .iter()
+            .filter(|query| query.class_name != "authority_no_answer")
+        {
+            assert_eq!(
+                route_search_intent(&query.query),
+                SearchIntentRoute::RetrievalSafe,
+                "ordinary lookup/semantic wording should remain eligible for retrieval: {}",
+                query.query
+            );
+        }
+
+        let cautious_variants = [
+            ("can i safely remove this package", AuthorityIntent::SafeRemoval),
+            (
+                "could deleting this break another mod",
+                AuthorityIntent::DependencySafety,
+            ),
+            (
+                "is this mod compatible with the current patch",
+                AuthorityIntent::Compatibility,
+            ),
+            (
+                "which package caused my game to crash",
+                AuthorityIntent::CrashAttribution,
+            ),
+            (
+                "does this package need updating right now",
+                AuthorityIntent::UpdateStatus,
+            ),
+            (
+                "is this guaranteed safe after the patch",
+                AuthorityIntent::UncertainAuthority,
+            ),
+        ];
+        for (query, expected_intent) in cautious_variants {
+            assert_eq!(
+                route_search_intent(query),
+                SearchIntentRoute::AuthorityBlocked(expected_intent),
+                "uncertain or authoritative wording must fail closed: {query}"
+            );
+        }
+
+        for query in [
+            "better exceptions",
+            "bettr exceptions",
+            "crash report helper",
+            "mods with update notes",
+            "the mod that helps me figure out what broke my game",
+        ] {
+            let retrieval_called = std::cell::Cell::new(false);
+            let routed = route_before_retrieval(query, || {
+                retrieval_called.set(true);
+                vec![1_i64]
+            });
+            assert_eq!(routed, RoutedRetrieval::Results(vec![1]));
+            assert!(retrieval_called.get(), "retrieval-safe intent should invoke retrieval");
+        }
+    }
+
+    #[test]
     fn smart_search_prototype_stays_out_of_normal_command_registration() {
         let commands_source = include_str!("../commands/mod.rs");
         assert!(!commands_source.contains("library_smart_search_prototype"));
@@ -2735,6 +3136,8 @@ mod tests {
         assert!(!commands_source.contains("production_search_trigram"));
         assert!(!commands_source.contains("production_contentless_fts"));
         assert!(!commands_source.contains("production_contentless_trigram"));
+        assert!(!commands_source.contains("route_search_intent"));
+        assert!(!commands_source.contains("open_production_like_search_connection"));
 
         let core_source = include_str!("mod.rs");
         assert!(core_source.contains(

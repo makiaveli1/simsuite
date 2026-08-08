@@ -536,7 +536,7 @@ Before turning this into a real migration, SimSuite still needs:
 4. a compact searchable-insight projection that reads only embedded names, family hints, resource-summary labels, and script namespaces instead of deserializing/copying thumbnail or other media payloads during search-index maintenance;
 5. a batched source-document reconstruction design for fuzzy candidate IDs, rather than relying on one source lookup per candidate indefinitely;
 6. explicit combination of seeded creator aliases plus user-learned aliases, with seed-version changes forcing a repair/rebuild when needed;
-7. a broader representative non-private metadata corpus with independently supplied/public player queries, plus realistic concurrency/locked-database testing;
+7. a broader representative non-private metadata corpus with independently supplied/public player queries, plus native cross-platform and higher-contention/process-interruption database testing;
 8. schema upgrade/rollback and self-repair tests before any production migration is accepted.
 
 No production migration, command, UI, or search replacement is enabled by this feasibility milestone.
@@ -610,7 +610,81 @@ This is still not real-player accuracy evidence. The query wording was independe
 
 No production search path, FTS migration, command, UI, model dependency, or player-file behavior changed in this evaluation.
 
-## 15. LLM position
+## 15. Concurrency and authority-routing proof V1
+
+A fifth follow-up tested two prerequisites that must be true before the contentless deterministic design can become a production migration: database coordination under SimSuite's real SQLite connection policy, and explicit routing of authority questions before retrieval.
+
+### Current production SQLite ownership
+
+The current application does not share one long-lived SQLite connection across commands. `AppState::connection()` opens a fresh connection and applies:
+
+- `foreign_keys = ON`;
+- `journal_mode = WAL`;
+- a `5 second` SQLite busy timeout.
+
+Library reads therefore normally use separate connections from scanner and metadata writes. The scanner performs its installed-row clear/reinsert work inside one explicit transaction and commits that source replacement before later bundle/duplicate rebuilds. Creator learning and category overrides also own explicit transactions. Selected-detail preview persistence is a smaller direct `UPDATE` to `files.insights`.
+
+The command layer already contains a bounded locked-read retry helper for some Downloads reads (`60 ms`, `120 ms`, `240 ms` backoff), but Library reads do not currently use it. A future search migration should reuse/generalize that established transient-read pattern if needed rather than inventing a search-only lock policy.
+
+### WAL atomic-visibility proof
+
+A temporary on-disk contentless database was opened through a test helper that mirrors the production connection policy above. Three separate SQLite connections represented an existing Library reader, a writer, and a fresh reader.
+
+The proof establishes:
+
+1. an existing reader opens a WAL snapshot and sees the old complete search state;
+2. another connection changes source metadata and refreshes the matching contentless Unicode/trigram rows **inside the same transaction**;
+3. the old reader cannot see the writer's uncommitted search state;
+4. after the writer commits, that already-open reader remains on its old complete snapshot;
+5. a fresh reader sees the newly committed complete source+search state;
+6. when the old reader ends its snapshot, its next read sees the new complete state.
+
+This is the desired future invariant: ordinary readers may briefly observe an older complete Library/search snapshot, but not a half-rebuilt mix of old source rows and new search rows.
+
+### Single-writer and repair proof
+
+The test also confirms the connection reports `WAL` and `5000 ms` busy timeout before contention is introduced. To keep the test deterministic rather than sleeping for five seconds, the second writer's timeout is then **explicitly changed to zero only for the contention probe**. While the first transaction owns SQLite's write lock, the second writer receives SQLite `BUSY`/`LOCKED`; after the first writer rolls back and the production-like timeout is restored, the second write succeeds.
+
+This does not measure how long the real app waits under contention. It establishes the important behavior: WAL allows concurrent readers but SQLite still serializes writers, so a future search migration must keep search-index maintenance inside the existing source-data write transaction instead of creating a competing second writer.
+
+A separate repair case deliberately commits a source metadata change without refreshing search, then interrupts a contentless rebuild. Another connection continues to see the previous complete search index; the partial rebuild is not exposed. A later full rebuild deterministically converges search to the committed source truth. The preferred production path is still to avoid this divergence by updating source+search atomically, while retaining full rebuild as the repair mechanism.
+
+### Pre-retrieval authority router proof
+
+The previous independent evaluation exposed two authority questions that happened to return no retrieval result without being explicitly recognized. The new test-only router closes that design gap **before retrieval**. It classifies these authority families:
+
+- safe removal/delete claims;
+- malware/virus claims;
+- current patch/version compatibility claims;
+- definitive crash attribution;
+- dependency-safe removal;
+- definitive current update requirement;
+- uncertain high-certainty safety wording, which fails closed rather than being guessed.
+
+All six frozen authority queries now map to an explicit blocked authority intent. Additional cautious variants such as `could deleting this break another mod`, `which package caused my game to crash`, and `does this package need updating right now` also block. A provider-agnostic wrapper proves the retrieval callback is **not invoked at all** for blocked intent, so the same contract can sit in front of FTS, fuzzy matching, or any future local embedding provider.
+
+The router also preserves the retrieval boundary: all `30` frozen non-authority player queries remain retrieval-eligible, including typo searches, `crash report helper`, `mods with update notes`, and the semantic wording `the mod that helps me figure out what broke my game`. The router does not answer authority questions itself; it only says that search retrieval is not the system allowed to answer them.
+
+### Smallest future production contract
+
+If deterministic smart search is later migrated into production, the current evidence supports this minimum contract:
+
+1. route query intent **before** any lexical, fuzzy, or embedding retrieval;
+2. authority/safety questions leave the search path and must be answered only by the appropriate evidence subsystem, or remain unknown;
+3. keep Unicode/trigram search rows synchronized in the **same SQLite transaction** as the source metadata they represent;
+4. scanner source replacement and full search rebuild should share one transaction so WAL readers see old-complete or new-complete state;
+5. creator/category/insight changes should refresh only affected search IDs/scopes inside their owning transaction;
+6. retain an idempotent full rebuild as the deterministic repair path for stale/divergent search state;
+7. reuse/generalize the existing bounded locked-read retry pattern only for genuinely transient lock failures; do not use retries to compensate for split transaction ownership;
+8. keep source Library tables authoritative and contentless search tables disposable/rebuildable.
+
+### Limits
+
+This remains a macOS temporary-database proof. It does not yet establish native Windows/Linux lock behavior, high-contention workloads, schema-migration locking, process-crash durability during a real migration, or production command integration. The zero-timeout second-writer check is deliberately a bounded lock-classification probe and must not be presented as a production wait-time measurement.
+
+No production database helper, FTS table, migration, command, UI, model/runtime dependency, retrieval threshold, player-file behavior, or Apply/Restore authority changed in this milestone.
+
+## 16. LLM position
 
 A general-purpose LLM is not currently justified as a core SimSuite dependency.
 
@@ -618,17 +692,18 @@ Most safety explanations can already be generated from deterministic proof objec
 
 A small optional local LLM could be revisited later for narrowly bounded tasks such as rewriting proven evidence for a casual player or translating an already-determined explanation. It should receive structured evidence rather than raw unrestricted file context and should never be allowed to emit an executable file action directly.
 
-## 16. Recommended next sequence
+## 17. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Do a migration-design-only review for explicit contentless search synchronization at scanner, creator-learning, category-override, and searchable-insight update boundaries, including lock/concurrency, repair, and authority-intent routing.
-3. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production thresholds.
-4. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
-5. If semantic embeddings still justify themselves, keep them optional/local with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and a hard authority router.
-6. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
-7. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
+2. Prove the remaining migration mechanics before implementing them: schema upgrade/rollback, startup self-repair, transaction integration at scanner/creator/category/insight write boundaries, and process-interruption behavior. Keep this design/test-only until those failure paths are explicit.
+3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
+4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
+5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.
+6. If semantic embeddings still justify themselves, keep them optional/local with explicit model download, deterministic fallback, native Windows/Linux proof, low-spec testing, and the same pre-retrieval authority router.
+7. Separately benchmark local image embeddings for screenshot-to-CC similarity if thumbnail coverage is good enough.
+8. Keep LLM work behind both retrieval tracks because it currently has less direct product value and a larger trust surface.
 
-## 17. What this work does not do
+## 18. What this work does not do
 
 It does not change SimSuite production behavior. In particular, it does not:
 
