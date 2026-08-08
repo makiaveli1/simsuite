@@ -2784,6 +2784,76 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct SortingBatchFixtureItem {
+        file_id: i64,
+        item_id: i64,
+        source_path: PathBuf,
+        destination_path: PathBuf,
+        source_hash: String,
+        source_size: u64,
+    }
+
+    #[cfg(target_os = "macos")]
+    struct SortingBatchFixtureContext {
+        _temp: TempDir,
+        fixture_root: PathBuf,
+        mods_root: PathBuf,
+        backup_root: PathBuf,
+        destination_dir: PathBuf,
+        settings: LibrarySettings,
+        plan_id: i64,
+        run_id: i64,
+        items: Vec<SortingBatchFixtureItem>,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingBatchReceiptItem {
+        item_order: usize,
+        apply_plan_item_id: i64,
+        file_id: i64,
+        source_path: PathBuf,
+        destination_path: PathBuf,
+        source_hash: String,
+        source_size: u64,
+        backup_result_id: i64,
+        backup_restore_entry_id: i64,
+        backup_path: PathBuf,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingBatchReceipt {
+        run_id: i64,
+        apply_plan_id: i64,
+        plan_hash: String,
+        batch_hash: String,
+        items: Vec<FixtureSortingBatchReceiptItem>,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingBatchApplyOutcome {
+        completed_item_ids: Vec<i64>,
+        pending_item_ids: Vec<i64>,
+        stopped_before_item_id: Option<i64>,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingBatchDirectoryRecord {
+        apply_plan_run_id: i64,
+        apply_plan_id: i64,
+        batch_hash: String,
+        directory_path: PathBuf,
+        parent_path: PathBuf,
+        device_id: u64,
+        inode: u64,
+        state: FixtureSortingDirectoryState,
+    }
+
+    #[cfg(target_os = "macos")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum FixtureSortingDirectoryState {
         PreparedBeforeCreate,
@@ -3627,6 +3697,1805 @@ mod tests {
         Ok(backup)
     }
 
+    #[cfg(target_os = "macos")]
+    fn sorting_batch_reconciliation_request(
+        batch: &SortingBatchFixtureContext,
+        item: &SortingBatchFixtureItem,
+    ) -> FixtureReconciliationRequest {
+        FixtureReconciliationRequest {
+            fixture_mode: true,
+            apply_plan_id: batch.plan_id,
+            apply_plan_item_id: item.item_id,
+            run_id: batch.run_id,
+            fixture_root: batch.fixture_root.clone(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn setup_sorting_batch_fixture(connection: &mut Connection) -> SortingBatchFixtureContext {
+        let temp = tempdir().expect("sorting batch tempdir");
+        let fixture_root = temp.path().to_path_buf();
+        let mods_root = fixture_root.join("Mods");
+        let source_dir = mods_root.join("Unsorted");
+        let destination_dir = mods_root.join("Gameplay");
+        let backup_root = fixture_root.join("backup");
+        fs::create_dir_all(&source_dir).expect("sorting batch source dir");
+        fs::create_dir_all(&backup_root).expect("sorting batch backup dir");
+        assert!(!destination_dir.exists());
+
+        let fixtures: [(&str, &[u8]); 3] = [
+            ("alpha.package", b"sorting batch alpha gameplay package"),
+            ("bravo.package", b"sorting batch bravo gameplay package"),
+            ("charlie.package", b"sorting batch charlie gameplay package"),
+        ];
+        let mut source_rows = Vec::new();
+        for (filename, bytes) in fixtures {
+            let source_path = source_dir.join(filename);
+            fs::write(&source_path, bytes).expect("sorting batch source fixture");
+            let source_hash = bytes_hash(bytes);
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path, filename, extension, hash, size, modified_at, kind, confidence,
+                        source_location, relative_depth, safety_notes, parser_warnings, insights
+                     ) VALUES (?1, ?2, 'package', ?3, ?4, '2026-08-09T00:00:00Z',
+                        'Gameplay', 0.95, 'mods', 1, '[]', '[]', '{}')",
+                    params![
+                        source_path.to_string_lossy().to_string(),
+                        filename,
+                        source_hash,
+                        bytes.len() as i64,
+                    ],
+                )
+                .expect("insert sorting batch source");
+            source_rows.push((
+                connection.last_insert_rowid(),
+                source_path,
+                source_hash,
+                bytes.len() as u64,
+            ));
+        }
+
+        let settings = LibrarySettings {
+            mods_path: Some(mods_root.to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        let saved = apply_plan_persistence::build_apply_plan_from_staging_plan(
+            connection,
+            &settings,
+            BuildApplyPlanFromStagingPlanRequest {
+                preview_request: GenerateSortingPreviewPlanRequest {
+                    scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                        file_ids: source_rows.iter().map(|row| row.0).collect(),
+                    },
+                    folder_config: None,
+                    context_trail: Vec::new(),
+                },
+                source_plan_kind: None,
+                folder_config: None,
+                context_trail: Vec::new(),
+            },
+        )
+        .expect("build sorting batch ApplyPlan");
+        let plan_id = saved.plan_id;
+        let hash_check = apply_plan_persistence::verify_apply_plan_hash(connection, plan_id)
+            .expect("verify sorting batch plan hash");
+        assert!(hash_check.is_valid);
+
+        let item_ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id FROM apply_plan_items WHERE apply_plan_id = ?1 ORDER BY id ASC",
+                )
+                .expect("prepare sorting batch item ids");
+            statement
+                .query_map(params![plan_id], |row| row.get::<_, i64>(0))
+                .expect("query sorting batch item ids")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect sorting batch item ids")
+        };
+        assert_eq!(item_ids.len(), source_rows.len());
+
+        let mut items = Vec::new();
+        for item_id in item_ids {
+            let item = load_plan_item_scope(connection, plan_id, item_id)
+                .expect("sorting batch plan item scope");
+            assert_eq!(item.action_kind, "suggest_move");
+            assert!(!item.blocked);
+            assert!(!item.review_only);
+            let (file_id, source_path, source_hash, source_size) = source_rows
+                .iter()
+                .find(|row| row.0 == item.file_id)
+                .cloned()
+                .expect("sorting batch plan item maps to fixture source");
+            assert_eq!(PathBuf::from(&item.current_path), source_path);
+            let filename = source_path.file_name().expect("sorting batch filename");
+            let destination_path = destination_dir.join(filename);
+            assert_eq!(PathBuf::from(&item.destination_path), destination_path);
+            items.push(SortingBatchFixtureItem {
+                file_id,
+                item_id,
+                source_path,
+                destination_path,
+                source_hash,
+                source_size,
+            });
+        }
+
+        let run_id = create_apply_plan_run_log(
+            connection,
+            CreateApplyPlanRunLogRequest {
+                apply_plan_id: plan_id,
+                status: None,
+                backup_strategy: None,
+                confirmation_token: None,
+                total_items: Some(items.len() as i64),
+                skipped_items: None,
+                failed_items: None,
+                summary: Some("Fixture-only multi-file sorting safety proof.".to_owned()),
+            },
+        )
+        .expect("create sorting batch run")
+        .id;
+
+        SortingBatchFixtureContext {
+            _temp: temp,
+            fixture_root,
+            mods_root,
+            backup_root,
+            destination_dir,
+            settings,
+            plan_id,
+            run_id,
+            items,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn verify_sorting_batch_read_only_preflight(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<()> {
+        let plan = apply_plan_persistence::get_apply_plan(connection, batch.plan_id)?
+            .ok_or_else(|| AppError::Message("Sorting batch ApplyPlan disappeared.".to_owned()))?;
+        if plan.source_plan_kind
+            != apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND
+            || plan.preview_snapshot_id.is_none()
+            || plan
+                .preview_snapshot_hash
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(AppError::Message(
+                "Sorting batch requires one backend-generated preview snapshot.".to_owned(),
+            ));
+        }
+        let hash_check = apply_plan_persistence::verify_apply_plan_hash(connection, batch.plan_id)?;
+        if !hash_check.is_valid {
+            return Err(AppError::Message(format!(
+                "Sorting batch ApplyPlan provenance is stale: {}",
+                hash_check.message
+            )));
+        }
+        if plan.items.len() != batch.items.len() {
+            return Err(AppError::Message(
+                "Sorting batch item count changed after the preview was saved.".to_owned(),
+            ));
+        }
+
+        let validation = apply_plan_validation::preview_apply_plan_validation(
+            connection,
+            &batch.settings,
+            PreviewApplyPlanValidationRequest {
+                plan_id: batch.plan_id,
+            },
+        )?;
+        let expected_count = batch.items.len() as i64;
+        if validation.status != ApplyPlanValidationPreviewStatus::Blocked
+            || validation.can_proceed_to_confirmation
+            || validation.summary.total_items != expected_count
+            || validation.summary.blocked_items != 0
+            || validation.summary.review_only_items != 0
+            || validation.summary.conflict_items != 0
+            || validation.summary.stale_items != 0
+            || validation.summary.missing_source_items != 0
+            || validation.summary.destination_conflict_items != 0
+            || validation.summary.backup_blocked_items != expected_count
+            || validation.items.iter().any(|item| {
+                item.validation_status != ApplyPlanValidationStatus::ValidPreviewOnly
+                    || item.blocked
+                    || item.review_only
+            })
+        {
+            return Err(AppError::Message(format!(
+                "Sorting batch did not reach the expected all-items backup-only validation stop: preview={:?}, summary=blocked:{} review:{} conflicts:{} stale:{} missing:{} destination:{} backup:{}",
+                validation.status,
+                validation.summary.blocked_items,
+                validation.summary.review_only_items,
+                validation.summary.conflict_items,
+                validation.summary.stale_items,
+                validation.summary.missing_source_items,
+                validation.summary.destination_conflict_items,
+                validation.summary.backup_blocked_items,
+            )));
+        }
+
+        let dry_run = apply_plan_dry_run::preview_apply_plan_dry_run(
+            connection,
+            &batch.settings,
+            PreviewApplyPlanDryRunRequest {
+                plan_id: batch.plan_id,
+            },
+        )?;
+        if dry_run.items.len() != batch.items.len()
+            || dry_run.items.iter().any(|item| {
+                item.dry_run_status != ApplyPlanDryRunItemStatus::WouldRequireBackup
+                    || item.can_apply
+            })
+        {
+            return Err(AppError::Message(
+                "Sorting batch dry-run must keep every item blocked on backup before execution."
+                    .to_owned(),
+            ));
+        }
+
+        let canonical_mods_root = canonicalize_existing_dir(&batch.mods_root, "sorting batch Mods root")?;
+        let destination_parent = batch.destination_dir.parent().ok_or_else(|| {
+            AppError::Message(
+                "Sorting batch destination directory has no parent folder.".to_owned(),
+            )
+        })?;
+        let canonical_destination_parent =
+            canonicalize_existing_dir(destination_parent, "sorting batch destination parent")?;
+        if canonical_destination_parent != canonical_mods_root {
+            return Err(AppError::Message(
+                "Sorting batch proof only permits one immediate organization folder under Mods."
+                    .to_owned(),
+            ));
+        }
+
+        let mut source_paths = Vec::new();
+        let mut destination_paths = Vec::new();
+        for expected in &batch.items {
+            let item = load_plan_item_scope(connection, batch.plan_id, expected.item_id)?;
+            if item.file_id != expected.file_id
+                || item.action_kind != "suggest_move"
+                || item.blocked
+                || item.review_only
+                || PathBuf::from(&item.current_path) != expected.source_path
+                || PathBuf::from(&item.destination_path) != expected.destination_path
+                || expected.destination_path.parent() != Some(batch.destination_dir.as_path())
+            {
+                return Err(AppError::Message(
+                    "Sorting batch saved item evidence changed before execution.".to_owned(),
+                ));
+            }
+
+            let indexed = load_indexed_source_scope(connection, expected.file_id)?;
+            let indexed_hash = indexed.hash.as_deref().ok_or_else(|| {
+                AppError::Message("Sorting batch requires an indexed source hash.".to_owned())
+            })?;
+            if indexed.size < 0
+                || PathBuf::from(&indexed.path) != expected.source_path
+                || indexed.size as u64 != expected.source_size
+                || indexed_hash != expected.source_hash
+            {
+                return Err(AppError::Message(
+                    "Sorting batch Library evidence changed after the preview; regenerate before applying."
+                        .to_owned(),
+                ));
+            }
+
+            let source_metadata = fs::symlink_metadata(&expected.source_path).map_err(|error| {
+                AppError::Message(format!(
+                    "Sorting batch source could not be inspected before execution: {error}"
+                ))
+            })?;
+            if !source_metadata.file_type().is_file()
+                || source_metadata.file_type().is_symlink()
+                || source_metadata.len() != expected.source_size
+                || hash_file(&expected.source_path)? != expected.source_hash
+            {
+                return Err(AppError::Message(
+                    "Sorting batch source bytes changed after the preview; regenerate before applying."
+                        .to_owned(),
+                ));
+            }
+            if expected.destination_path.exists()
+                || existing_path_entry_is_symlink(&expected.destination_path)?
+            {
+                return Err(AppError::Message(
+                    "Sorting batch destination is no longer empty; no batch changes were started."
+                        .to_owned(),
+                ));
+            }
+
+            if source_paths.contains(&expected.source_path)
+                || destination_paths.contains(&expected.destination_path)
+            {
+                return Err(AppError::Message(
+                    "Sorting batch contains a duplicate source or destination path.".to_owned(),
+                ));
+            }
+            source_paths.push(expected.source_path.clone());
+            destination_paths.push(expected.destination_path.clone());
+        }
+
+        if destination_paths
+            .iter()
+            .any(|destination| source_paths.contains(destination))
+        {
+            return Err(AppError::Message(
+                "Sorting batch source/destination chains are not supported by this safety proof."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_existing_sorting_batch_backup(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        item: &SortingBatchFixtureItem,
+    ) -> AppResult<Option<FixtureBackupPrototypeSuccess>> {
+        let detail = apply_plan_results::get_apply_plan_run_log(connection, batch.run_id)?
+            .ok_or_else(|| AppError::Message("Sorting batch run log disappeared.".to_owned()))?;
+        let entries = detail
+            .restore_entries
+            .iter()
+            .filter(|entry| {
+                entry.apply_plan_item_id == Some(item.item_id)
+                    && entry.operation_kind == BACKUP_OPERATION_KIND
+                    && entry.operation_result_status == ApplyPlanResultLogStatus::PendingLog
+                    && entry.restore_status == ApplyPlanRestoreEntryStatus::DesignOnly
+            })
+            .collect::<Vec<_>>();
+        if entries.is_empty() {
+            return Ok(None);
+        }
+        if entries.len() != 1 {
+            return Err(AppError::Message(
+                "Sorting batch found more than one verified backup chain for one item."
+                    .to_owned(),
+            ));
+        }
+        let entry = entries[0];
+        let result_id = entry.apply_plan_result_id.ok_or_else(|| {
+            AppError::Message("Sorting batch backup restore entry lost its result id.".to_owned())
+        })?;
+        let result = detail
+            .results
+            .iter()
+            .find(|result| result.id == result_id)
+            .ok_or_else(|| {
+                AppError::Message("Sorting batch backup result disappeared.".to_owned())
+            })?;
+        if result.apply_plan_item_id != Some(item.item_id)
+            || result.operation_kind != BACKUP_OPERATION_KIND
+            || result.result_status != ApplyPlanResultLogStatus::PendingLog
+            || entry.file_hash_before.as_deref() != Some(item.source_hash.as_str())
+            || entry.file_size_before != Some(item.source_size as i64)
+        {
+            return Err(AppError::Message(
+                "Sorting batch existing backup metadata no longer matches the saved item."
+                    .to_owned(),
+            ));
+        }
+        let recorded_source = resolve_fixture_candidate(
+            Path::new(&entry.original_source_path),
+            "sorting batch recorded backup source",
+        )?;
+        let expected_source = resolve_fixture_candidate(
+            &item.source_path,
+            "sorting batch expected backup source",
+        )?;
+        if recorded_source != expected_source
+            || resolve_optional_recorded_path(
+                result.source_path_at_execution.as_deref(),
+                "sorting batch backup result source",
+            )? != Some(expected_source)
+        {
+            return Err(AppError::Message(
+                "Sorting batch existing backup source path no longer matches the saved item."
+                    .to_owned(),
+            ));
+        }
+        let backup_path = resolve_fixture_candidate(
+            Path::new(entry.backup_path.as_deref().ok_or_else(|| {
+                AppError::Message("Sorting batch backup entry lost its backup path.".to_owned())
+            })?),
+            "sorting batch existing backup path",
+        )?;
+        let canonical_backup_root = canonicalize_existing_dir(&batch.backup_root, "sorting batch backup root")?;
+        ensure_under_root(&backup_path, &canonical_backup_root, "sorting batch existing backup")?;
+        if resolve_optional_recorded_path(
+            result.backup_path.as_deref(),
+            "sorting batch backup result path",
+        )? != Some(backup_path.clone())
+            || observe_expected_file(&backup_path, item.source_size, &item.source_hash)?
+                != ObservedFileState::Exact
+        {
+            return Err(AppError::Message(
+                "Sorting batch existing backup path or bytes changed; it will not be reused."
+                    .to_owned(),
+            ));
+        }
+        Ok(Some(FixtureBackupPrototypeSuccess {
+            backup_path,
+            source_size: item.source_size,
+            backup_size: item.source_size,
+            source_hash: item.source_hash.clone(),
+            backup_hash: item.source_hash.clone(),
+            backup_verified: true,
+            result_log_id: result.id,
+            restore_entry_id: entry.id,
+        }))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_backups(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Vec<FixtureBackupPrototypeSuccess>> {
+        let mut backups = Vec::with_capacity(batch.items.len());
+        for item in &batch.items {
+            if let Some(existing) = load_existing_sorting_batch_backup(connection, batch, item)? {
+                backups.push(existing);
+                continue;
+            }
+            let outcome = run_fixture_backup_prototype(
+                connection,
+                FixtureBackupPrototypeRequest {
+                    fixture_mode: true,
+                    apply_plan_id: batch.plan_id,
+                    apply_plan_item_id: Some(item.item_id),
+                    run_id: batch.run_id,
+                    fixture_root: batch.fixture_root.clone(),
+                    source_path: item.source_path.clone(),
+                    backup_root: batch.backup_root.clone(),
+                    operation_kind: BACKUP_OPERATION_KIND.to_owned(),
+                },
+            )?;
+            match outcome {
+                FixtureBackupPrototypeOutcome::Verified(success) => backups.push(success),
+                FixtureBackupPrototypeOutcome::FailedBeforeChange(failure) => {
+                    return Err(AppError::Message(format!(
+                        "Sorting batch backup failed before source changes: {}",
+                        failure.error_message
+                    )));
+                }
+            }
+        }
+        Ok(backups)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_receipt_schema(connection: &Connection) -> AppResult<()> {
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS fixture_sorting_batch_items (
+                apply_plan_run_id INTEGER NOT NULL,
+                apply_plan_id INTEGER NOT NULL,
+                item_order INTEGER NOT NULL CHECK(item_order >= 0),
+                apply_plan_item_id INTEGER NOT NULL,
+                file_id INTEGER NOT NULL,
+                plan_hash TEXT NOT NULL,
+                batch_hash TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                destination_path TEXT NOT NULL,
+                source_hash TEXT NOT NULL,
+                source_size INTEGER NOT NULL CHECK(source_size >= 0),
+                backup_result_id INTEGER NOT NULL,
+                backup_restore_entry_id INTEGER NOT NULL,
+                backup_path TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (apply_plan_run_id, apply_plan_item_id),
+                UNIQUE (apply_plan_run_id, item_order)
+            );",
+        )?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_batch_hash(plan_hash: &str, items: &[FixtureSortingBatchReceiptItem]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"simsuite-sorting-batch-receipt-v1\0");
+        hasher.update(plan_hash.as_bytes());
+        hasher.update(b"\0");
+        for item in items {
+            for field in [
+                item.item_order.to_string(),
+                item.apply_plan_item_id.to_string(),
+                item.file_id.to_string(),
+                item.source_path.to_string_lossy().to_string(),
+                item.destination_path.to_string_lossy().to_string(),
+                item.source_hash.clone(),
+                item.source_size.to_string(),
+                item.backup_result_id.to_string(),
+                item.backup_restore_entry_id.to_string(),
+                item.backup_path.to_string_lossy().to_string(),
+            ] {
+                hasher.update(field.as_bytes());
+                hasher.update(b"\0");
+            }
+        }
+        hex::encode(hasher.finalize())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_sorting_batch_receipt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Option<FixtureSortingBatchReceipt>> {
+        ensure_sorting_batch_receipt_schema(connection)?;
+        let mut statement = connection.prepare(
+            "SELECT item_order, apply_plan_item_id, file_id, plan_hash, batch_hash,
+                    source_path, destination_path, source_hash, source_size,
+                    backup_result_id, backup_restore_entry_id, backup_path, apply_plan_id
+             FROM fixture_sorting_batch_items
+             WHERE apply_plan_run_id = ?1
+             ORDER BY item_order ASC",
+        )?;
+        let rows = statement
+            .query_map(params![batch.run_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, i64>(10)?,
+                    row.get::<_, String>(11)?,
+                    row.get::<_, i64>(12)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let first_plan_hash = rows[0].3.clone();
+        let first_batch_hash = rows[0].4.clone();
+        let first_plan_id = rows[0].12;
+        let mut items = Vec::with_capacity(rows.len());
+        for (
+            item_order,
+            apply_plan_item_id,
+            file_id,
+            plan_hash,
+            batch_hash,
+            source_path,
+            destination_path,
+            source_hash,
+            source_size,
+            backup_result_id,
+            backup_restore_entry_id,
+            backup_path,
+            apply_plan_id,
+        ) in rows
+        {
+            if item_order < 0
+                || source_size < 0
+                || plan_hash != first_plan_hash
+                || batch_hash != first_batch_hash
+                || apply_plan_id != first_plan_id
+            {
+                return Err(AppError::Message(
+                    "Sorting batch receipt rows disagree with each other.".to_owned(),
+                ));
+            }
+            items.push(FixtureSortingBatchReceiptItem {
+                item_order: item_order as usize,
+                apply_plan_item_id,
+                file_id,
+                source_path: PathBuf::from(source_path),
+                destination_path: PathBuf::from(destination_path),
+                source_hash,
+                source_size: source_size as u64,
+                backup_result_id,
+                backup_restore_entry_id,
+                backup_path: PathBuf::from(backup_path),
+            });
+        }
+        Ok(Some(FixtureSortingBatchReceipt {
+            run_id: batch.run_id,
+            apply_plan_id: first_plan_id,
+            plan_hash: first_plan_hash,
+            batch_hash: first_batch_hash,
+            items,
+        }))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn validate_sorting_batch_receipt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<()> {
+        if receipt.run_id != batch.run_id
+            || receipt.apply_plan_id != batch.plan_id
+            || receipt.items.len() != batch.items.len()
+        {
+            return Err(AppError::Message(
+                "Sorting batch receipt no longer matches the requested run and item count."
+                    .to_owned(),
+            ));
+        }
+        let plan = apply_plan_persistence::get_apply_plan(connection, batch.plan_id)?
+            .ok_or_else(|| AppError::Message("Sorting batch ApplyPlan disappeared.".to_owned()))?;
+        let stored_provenance_bytes = serde_json::to_vec(&plan.plan_provenance)?;
+        let stored_provenance_hash = hex::encode(Sha256::digest(stored_provenance_bytes));
+        if plan.plan_hash.as_deref() != Some(receipt.plan_hash.as_str())
+            || stored_provenance_hash != receipt.plan_hash
+            || plan.source_plan_kind
+                != apply_plan_provenance::BACKEND_GENERATED_SORTING_PREVIEW_SOURCE_KIND
+            || plan.preview_snapshot_id.is_none()
+            || plan
+                .preview_snapshot_hash
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(AppError::Message(
+                "Sorting batch receipt is bound to a different or damaged saved ApplyPlan fingerprint."
+                    .to_owned(),
+            ));
+        }
+        if sorting_batch_hash(&receipt.plan_hash, &receipt.items) != receipt.batch_hash {
+            return Err(AppError::Message(
+                "Sorting batch receipt fingerprint no longer matches its item evidence."
+                    .to_owned(),
+            ));
+        }
+
+        for (expected, recorded) in batch.items.iter().zip(receipt.items.iter()) {
+            if recorded.apply_plan_item_id != expected.item_id
+                || recorded.file_id != expected.file_id
+                || recorded.source_path != expected.source_path
+                || recorded.destination_path != expected.destination_path
+                || recorded.source_hash != expected.source_hash
+                || recorded.source_size != expected.source_size
+            {
+                return Err(AppError::Message(
+                    "Sorting batch receipt item identity changed after authorization.".to_owned(),
+                ));
+            }
+            let item = load_plan_item_scope(connection, batch.plan_id, expected.item_id)?;
+            if item.file_id != expected.file_id
+                || item.action_kind != "suggest_move"
+                || item.blocked
+                || item.review_only
+                || PathBuf::from(item.current_path) != expected.source_path
+                || PathBuf::from(item.destination_path) != expected.destination_path
+            {
+                return Err(AppError::Message(
+                    "Sorting batch persisted plan item changed after receipt creation.".to_owned(),
+                ));
+            }
+            let indexed = load_indexed_source_scope(connection, expected.file_id)?;
+            if indexed.size < 0
+                || indexed.size as u64 != expected.source_size
+                || indexed.hash.as_deref() != Some(expected.source_hash.as_str())
+                || !matches!(
+                    PathBuf::from(indexed.path),
+                    path if path == expected.source_path || path == expected.destination_path
+                )
+            {
+                return Err(AppError::Message(
+                    "Sorting batch Library identity moved somewhere outside the authorized source/destination pair."
+                        .to_owned(),
+                ));
+            }
+            let canonical_backup_root = canonicalize_existing_dir(&batch.backup_root, "sorting batch backup root")?;
+            let backup_path = resolve_fixture_candidate(&recorded.backup_path, "sorting batch receipt backup")?;
+            ensure_under_root(&backup_path, &canonical_backup_root, "sorting batch receipt backup")?;
+            if backup_path != recorded.backup_path
+                || observe_expected_file(&backup_path, expected.source_size, &expected.source_hash)?
+                    != ObservedFileState::Exact
+            {
+                return Err(AppError::Message(
+                    "Sorting batch receipt backup bytes changed after authorization.".to_owned(),
+                ));
+            }
+            let existing_backup = load_existing_sorting_batch_backup(connection, batch, expected)?
+                .ok_or_else(|| {
+                    AppError::Message(
+                        "Sorting batch receipt lost its verified backup chain.".to_owned(),
+                    )
+                })?;
+            if existing_backup.result_log_id != recorded.backup_result_id
+                || existing_backup.restore_entry_id != recorded.backup_restore_entry_id
+                || existing_backup.backup_path != recorded.backup_path
+            {
+                return Err(AppError::Message(
+                    "Sorting batch receipt backup identifiers changed after authorization."
+                        .to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_receipt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<FixtureSortingBatchReceipt> {
+        if let Some(receipt) = load_sorting_batch_receipt(connection, batch)? {
+            validate_sorting_batch_receipt(connection, batch, &receipt)?;
+            return Ok(receipt);
+        }
+
+        verify_sorting_batch_read_only_preflight(connection, batch)?;
+        let backups = ensure_sorting_batch_backups(connection, batch)?;
+        verify_sorting_batch_read_only_preflight(connection, batch)?;
+        if backups.len() != batch.items.len() {
+            return Err(AppError::Message(
+                "Sorting batch did not produce exactly one verified backup per item."
+                    .to_owned(),
+            ));
+        }
+        let plan = apply_plan_persistence::get_apply_plan(connection, batch.plan_id)?
+            .ok_or_else(|| AppError::Message("Sorting batch ApplyPlan disappeared.".to_owned()))?;
+        let plan_hash = plan
+            .plan_hash
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| AppError::Message("Sorting batch ApplyPlan has no fingerprint.".to_owned()))?;
+        let receipt_items = batch
+            .items
+            .iter()
+            .zip(backups.iter())
+            .enumerate()
+            .map(|(item_order, (item, backup))| FixtureSortingBatchReceiptItem {
+                item_order,
+                apply_plan_item_id: item.item_id,
+                file_id: item.file_id,
+                source_path: item.source_path.clone(),
+                destination_path: item.destination_path.clone(),
+                source_hash: item.source_hash.clone(),
+                source_size: item.source_size,
+                backup_result_id: backup.result_log_id,
+                backup_restore_entry_id: backup.restore_entry_id,
+                backup_path: backup.backup_path.clone(),
+            })
+            .collect::<Vec<_>>();
+        let batch_hash = sorting_batch_hash(&plan_hash, &receipt_items);
+
+        ensure_sorting_batch_receipt_schema(connection)?;
+        let transaction = connection.unchecked_transaction()?;
+        for item in &receipt_items {
+            transaction.execute(
+                "INSERT INTO fixture_sorting_batch_items (
+                    apply_plan_run_id, apply_plan_id, item_order, apply_plan_item_id,
+                    file_id, plan_hash, batch_hash, source_path, destination_path,
+                    source_hash, source_size, backup_result_id, backup_restore_entry_id,
+                    backup_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    batch.run_id,
+                    batch.plan_id,
+                    item.item_order as i64,
+                    item.apply_plan_item_id,
+                    item.file_id,
+                    plan_hash,
+                    batch_hash,
+                    item.source_path.to_string_lossy().to_string(),
+                    item.destination_path.to_string_lossy().to_string(),
+                    item.source_hash,
+                    item.source_size as i64,
+                    item.backup_result_id,
+                    item.backup_restore_entry_id,
+                    item.backup_path.to_string_lossy().to_string(),
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        let receipt = load_sorting_batch_receipt(connection, batch)?.ok_or_else(|| {
+            AppError::Message("Sorting batch receipt disappeared after commit.".to_owned())
+        })?;
+        validate_sorting_batch_receipt(connection, batch, &receipt)?;
+        Ok(receipt)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_directory_schema(connection: &Connection) -> AppResult<()> {
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS fixture_sorting_batch_directories (
+                apply_plan_run_id INTEGER NOT NULL,
+                apply_plan_id INTEGER NOT NULL,
+                batch_hash TEXT NOT NULL,
+                directory_path TEXT NOT NULL,
+                parent_path TEXT NOT NULL,
+                device_id INTEGER NOT NULL CHECK(device_id >= 0),
+                inode INTEGER NOT NULL CHECK(inode >= 0),
+                state TEXT NOT NULL CHECK(state IN (
+                    'prepared_before_create',
+                    'created_verified',
+                    'ownership_unknown_keep',
+                    'retained_non_empty',
+                    'retained_identity_changed',
+                    'cleanup_complete'
+                )),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (apply_plan_run_id, directory_path)
+            );",
+        )?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_sorting_batch_directory_record(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Option<FixtureSortingBatchDirectoryRecord>> {
+        ensure_sorting_batch_directory_schema(connection)?;
+        let row = connection
+            .query_row(
+                "SELECT apply_plan_run_id, apply_plan_id, batch_hash, directory_path,
+                        parent_path, device_id, inode, state
+                 FROM fixture_sorting_batch_directories
+                 WHERE apply_plan_run_id = ?1 AND directory_path = ?2",
+                params![
+                    batch.run_id,
+                    batch.destination_dir.to_string_lossy().to_string(),
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, String>(7)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((run_id, plan_id, batch_hash, directory_path, parent_path, device_id, inode, state)) = row else {
+            return Ok(None);
+        };
+        if device_id < 0 || inode < 0 {
+            return Err(AppError::Message(
+                "Sorting batch directory identity contains a negative filesystem id.".to_owned(),
+            ));
+        }
+        Ok(Some(FixtureSortingBatchDirectoryRecord {
+            apply_plan_run_id: run_id,
+            apply_plan_id: plan_id,
+            batch_hash,
+            directory_path: PathBuf::from(directory_path),
+            parent_path: PathBuf::from(parent_path),
+            device_id: device_id as u64,
+            inode: inode as u64,
+            state: FixtureSortingDirectoryState::from_db(&state)?,
+        }))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn update_sorting_batch_directory_state(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        expected: FixtureSortingDirectoryState,
+        next: FixtureSortingDirectoryState,
+    ) -> AppResult<()> {
+        let changed = connection.execute(
+            "UPDATE fixture_sorting_batch_directories
+             SET state = ?1, updated_at = CURRENT_TIMESTAMP
+             WHERE apply_plan_run_id = ?2 AND directory_path = ?3 AND state = ?4",
+            params![
+                next.as_str(),
+                batch.run_id,
+                batch.destination_dir.to_string_lossy().to_string(),
+                expected.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(AppError::Message(
+                "Sorting batch directory ownership state changed unexpectedly.".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_destination_directory(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<FixtureSortingDirectoryCreateOutcome> {
+        validate_sorting_batch_receipt(connection, batch, receipt)?;
+        let parent = canonicalize_existing_dir(&batch.mods_root, "sorting batch Mods root")?;
+        let destination_parent = batch.destination_dir.parent().ok_or_else(|| {
+            AppError::Message(
+                "Sorting batch destination directory has no parent folder.".to_owned(),
+            )
+        })?;
+        let canonical_destination_parent =
+            canonicalize_existing_dir(destination_parent, "sorting batch destination parent")?;
+        if canonical_destination_parent != parent {
+            return Err(AppError::Message(
+                "Sorting batch destination directory must be one immediate child of Mods."
+                    .to_owned(),
+            ));
+        }
+        if receipt
+            .items
+            .iter()
+            .any(|item| item.destination_path.parent() != Some(batch.destination_dir.as_path()))
+        {
+            return Err(AppError::Message(
+                "Sorting batch receipt contains destinations outside its one shared folder."
+                    .to_owned(),
+            ));
+        }
+
+        if let Some(record) = load_sorting_batch_directory_record(connection, batch)? {
+            if record.apply_plan_run_id != batch.run_id
+                || record.apply_plan_id != batch.plan_id
+                || record.batch_hash != receipt.batch_hash
+                || record.directory_path != batch.destination_dir
+                || record.parent_path != parent
+            {
+                return Err(AppError::Message(
+                    "Sorting batch directory ownership record no longer matches the batch receipt."
+                        .to_owned(),
+                ));
+            }
+            return match record.state {
+                FixtureSortingDirectoryState::PreparedBeforeCreate => {
+                    if batch.destination_dir.exists() {
+                        update_sorting_batch_directory_state(
+                            connection,
+                            batch,
+                            FixtureSortingDirectoryState::PreparedBeforeCreate,
+                            FixtureSortingDirectoryState::OwnershipUnknownKeep,
+                        )?;
+                        Ok(FixtureSortingDirectoryCreateOutcome::OwnershipUnknownKeep)
+                    } else {
+                        Err(AppError::Message(
+                            "Sorting batch directory creation was prepared but never completed; retry must explicitly reconcile it."
+                                .to_owned(),
+                        ))
+                    }
+                }
+                FixtureSortingDirectoryState::CreatedVerified => {
+                    let (device_id, inode) = fixture_directory_identity(&batch.destination_dir)?;
+                    if device_id == record.device_id && inode == record.inode {
+                        Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned)
+                    } else {
+                        Err(AppError::Message(
+                            "Sorting batch destination folder identity changed after SimSuite created it."
+                                .to_owned(),
+                        ))
+                    }
+                }
+                FixtureSortingDirectoryState::OwnershipUnknownKeep => {
+                    Ok(FixtureSortingDirectoryCreateOutcome::OwnershipUnknownKeep)
+                }
+                FixtureSortingDirectoryState::RetainedNonEmpty
+                | FixtureSortingDirectoryState::RetainedIdentityChanged
+                | FixtureSortingDirectoryState::CleanupComplete => Err(AppError::Message(
+                    "Sorting batch directory ownership is already in a post-Undo state."
+                        .to_owned(),
+                )),
+            };
+        }
+
+        if batch.destination_dir.exists() {
+            let metadata = fs::symlink_metadata(&batch.destination_dir).map_err(|error| {
+                AppError::Message(format!(
+                    "Sorting batch existing destination folder could not be inspected: {error}"
+                ))
+            })?;
+            if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                return Err(AppError::Message(
+                    "Sorting batch existing destination entry is not a safe real directory."
+                        .to_owned(),
+                ));
+            }
+            return Ok(FixtureSortingDirectoryCreateOutcome::ExistingNotOwned);
+        }
+
+        ensure_sorting_batch_directory_schema(connection)?;
+        connection.execute(
+            "INSERT INTO fixture_sorting_batch_directories (
+                apply_plan_run_id, apply_plan_id, batch_hash, directory_path, parent_path,
+                device_id, inode, state
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, ?6)",
+            params![
+                batch.run_id,
+                batch.plan_id,
+                receipt.batch_hash,
+                batch.destination_dir.to_string_lossy().to_string(),
+                parent.to_string_lossy().to_string(),
+                FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
+            ],
+        )?;
+        fs::create_dir(&batch.destination_dir).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting batch destination folder could not be created non-recursively: {error}"
+            ))
+        })?;
+        let (device_id, inode) = fixture_directory_identity(&batch.destination_dir)?;
+        let changed = connection.execute(
+            "UPDATE fixture_sorting_batch_directories
+             SET device_id = ?1, inode = ?2, state = ?3, updated_at = CURRENT_TIMESTAMP
+             WHERE apply_plan_run_id = ?4 AND directory_path = ?5 AND state = ?6",
+            params![
+                device_id as i64,
+                inode as i64,
+                FixtureSortingDirectoryState::CreatedVerified.as_str(),
+                batch.run_id,
+                batch.destination_dir.to_string_lossy().to_string(),
+                FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(AppError::Message(
+                "Sorting batch created its destination folder but could not finalize ownership evidence."
+                    .to_owned(),
+            ));
+        }
+        Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_sorting_batch_authorization_row(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        item: &SortingBatchFixtureItem,
+    ) -> AppResult<Option<FixtureSortingAuthorization>> {
+        ensure_fixture_sorting_authorization_schema(connection)?;
+        connection
+            .query_row(
+                "SELECT plan_hash, source_path, destination_path, source_hash, source_size,
+                        backup_result_id, backup_restore_entry_id
+                 FROM fixture_sorting_authorizations
+                 WHERE apply_plan_id = ?1 AND apply_plan_item_id = ?2",
+                params![batch.plan_id, item.item_id],
+                |row| {
+                    let source_size = row.get::<_, i64>(4)?;
+                    if source_size < 0 {
+                        return Err(rusqlite::Error::IntegralValueOutOfRange(4, source_size));
+                    }
+                    Ok(FixtureSortingAuthorization {
+                        plan_hash: row.get(0)?,
+                        source_path: row.get(1)?,
+                        destination_path: row.get(2)?,
+                        source_hash: row.get(3)?,
+                        source_size: source_size as u64,
+                        backup_result_id: row.get(5)?,
+                        backup_restore_entry_id: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_item_authorization(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+        item: &SortingBatchFixtureItem,
+        receipt_item: &FixtureSortingBatchReceiptItem,
+    ) -> AppResult<()> {
+        if let Some(authorization) = load_sorting_batch_authorization_row(connection, batch, item)? {
+            let authorized_source = resolve_fixture_candidate(
+                Path::new(&authorization.source_path),
+                "sorting batch recorded authorization source",
+            )?;
+            let expected_source = resolve_fixture_candidate(
+                &item.source_path,
+                "sorting batch expected authorization source",
+            )?;
+            let authorized_destination = resolve_fixture_candidate(
+                Path::new(&authorization.destination_path),
+                "sorting batch recorded authorization destination",
+            )?;
+            let expected_destination = resolve_fixture_candidate(
+                &item.destination_path,
+                "sorting batch expected authorization destination",
+            )?;
+            if authorization.plan_hash == receipt.plan_hash
+                && authorization.source_hash == item.source_hash
+                && authorization.source_size == item.source_size
+                && authorized_source == expected_source
+                && authorized_destination == expected_destination
+                && authorization.backup_result_id == receipt_item.backup_result_id
+                && authorization.backup_restore_entry_id == receipt_item.backup_restore_entry_id
+            {
+                return Ok(());
+            }
+            return Err(AppError::Message(
+                "Sorting batch existing item authorization no longer matches the sealed batch receipt."
+                    .to_owned(),
+            ));
+        }
+
+        // A missing row can only be created through the original strict single-item gate.
+        // That gate re-verifies the live ApplyPlan, so after any batch membership has moved a
+        // missing authorization fails closed instead of being minted from partial state.
+        let request = sorting_batch_reconciliation_request(batch, item);
+        let authorization = record_fixture_sorting_authorization(
+            connection,
+            &request,
+            receipt_item.backup_result_id,
+            receipt_item.backup_restore_entry_id,
+        )?;
+        if authorization.plan_hash != receipt.plan_hash
+            || authorization.source_hash != item.source_hash
+            || authorization.source_size != item.source_size
+            || authorization.backup_result_id != receipt_item.backup_result_id
+            || authorization.backup_restore_entry_id != receipt_item.backup_restore_entry_id
+        {
+            return Err(AppError::Message(
+                "Sorting batch item authorization did not bind the sealed receipt evidence."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_batch_attempt_id(batch: &SortingBatchFixtureContext, item: &SortingBatchFixtureItem) -> String {
+        format!("sorting-batch-run-{}-item-{}", batch.run_id, item.item_id)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn prepare_sorting_batch_attempt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+        item: &SortingBatchFixtureItem,
+        receipt_item: &FixtureSortingBatchReceiptItem,
+        attempt_id: &str,
+        capability: &FixtureAttemptCapabilityProof,
+    ) -> AppResult<FixtureAttemptRecord> {
+        if attempt_id.trim().is_empty() {
+            return Err(AppError::Message(
+                "Sorting batch attempt id must not be empty.".to_owned(),
+            ));
+        }
+        capability.validate_for_fixture_attempt()?;
+        ensure_run_matches_plan(connection, batch.run_id, batch.plan_id)?;
+        validate_sorting_batch_receipt(connection, batch, receipt)?;
+        ensure_sorting_batch_item_authorization(
+            connection,
+            batch,
+            receipt,
+            item,
+            receipt_item,
+        )?;
+
+        let plan_item = load_plan_item_scope(connection, batch.plan_id, item.item_id)?;
+        if plan_item.file_id != item.file_id
+            || plan_item.action_kind != "suggest_move"
+            || plan_item.blocked
+            || plan_item.review_only
+        {
+            return Err(AppError::Message(
+                "Sorting batch attempt requires the same unblocked suggest_move item sealed in the receipt."
+                    .to_owned(),
+            ));
+        }
+        let source_path = resolve_fixture_candidate(
+            &item.source_path,
+            "sorting batch attempt source",
+        )?;
+        let destination_path = resolve_fixture_candidate(
+            &item.destination_path,
+            "sorting batch attempt destination",
+        )?;
+        let initial_membership = load_fixture_membership_state(connection, item.file_id)?
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch attempt requires current Library membership evidence."
+                        .to_owned(),
+                )
+            })?;
+        let initial_membership_path = resolve_fixture_candidate(
+            Path::new(&initial_membership.path),
+            "sorting batch attempt initial membership",
+        )?;
+        if initial_membership.file_id != item.file_id || initial_membership_path != source_path {
+            return Err(AppError::Message(
+                "Sorting batch pending item Library membership is no longer at its authorized source."
+                    .to_owned(),
+            ));
+        }
+        if observe_expected_file(&source_path, item.source_size, &item.source_hash)?
+            != ObservedFileState::Exact
+            || observe_expected_file(
+                &destination_path,
+                item.source_size,
+                &item.source_hash,
+            )? != ObservedFileState::Missing
+        {
+            return Err(AppError::Message(
+                "Sorting batch pending item changed after authorization; retry is blocked."
+                    .to_owned(),
+            ));
+        }
+        let source_metadata = fs::symlink_metadata(&source_path).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting batch attempt could not inspect source path entry: {error}"
+            ))
+        })?;
+        let source_regular_file = source_metadata.file_type().is_file();
+        let source_entry_non_symlink = !source_metadata.file_type().is_symlink();
+        let destination_entry_non_symlink = !existing_path_entry_is_symlink(&destination_path)?;
+        if !source_regular_file || !source_entry_non_symlink || !destination_entry_non_symlink {
+            return Err(AppError::Message(
+                "Sorting batch attempt requires a regular non-symlink source and empty non-symlink destination."
+                    .to_owned(),
+            ));
+        }
+        let backup = load_existing_sorting_batch_backup(connection, batch, item)?
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch attempt lost the verified backup sealed in its receipt."
+                        .to_owned(),
+                )
+            })?;
+        if backup.result_log_id != receipt_item.backup_result_id
+            || backup.restore_entry_id != receipt_item.backup_restore_entry_id
+            || backup.backup_path != receipt_item.backup_path
+        {
+            return Err(AppError::Message(
+                "Sorting batch attempt backup evidence no longer matches the sealed receipt."
+                    .to_owned(),
+            ));
+        }
+
+        ensure_fixture_attempt_journal_schema(connection)?;
+        let existing_active = connection
+            .query_row(
+                "SELECT attempt_id
+                 FROM fixture_apply_plan_attempts
+                 WHERE apply_plan_run_id = ?1
+                   AND apply_plan_item_id = ?2
+                   AND state IN (
+                       'prepared_before_change',
+                       'destination_claim_observed',
+                       'destination_verified',
+                       'source_release_completed',
+                       'recovery_required'
+                   )
+                 LIMIT 1",
+                params![batch.run_id, item.item_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(existing_attempt_id) = existing_active {
+            return Err(AppError::Message(format!(
+                "Sorting batch item already has an active attempt: {existing_attempt_id}"
+            )));
+        }
+
+        connection.execute(
+            "INSERT INTO fixture_apply_plan_attempts (
+                attempt_id,
+                apply_plan_run_id,
+                apply_plan_id,
+                apply_plan_item_id,
+                source_path,
+                destination_path,
+                expected_hash,
+                expected_size,
+                initial_source_location,
+                initial_download_item_id,
+                backup_result_id,
+                backup_restore_entry_id,
+                strategy,
+                capability_platform,
+                same_filesystem,
+                hard_link_supported,
+                native_runtime_proven,
+                capability_evidence_label,
+                source_regular_file,
+                source_entry_non_symlink,
+                destination_entry_non_symlink,
+                state
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22
+            )",
+            params![
+                attempt_id,
+                batch.run_id,
+                batch.plan_id,
+                item.item_id,
+                source_path.to_string_lossy().to_string(),
+                destination_path.to_string_lossy().to_string(),
+                item.source_hash,
+                item.source_size as i64,
+                initial_membership.source_location,
+                initial_membership.download_item_id,
+                receipt_item.backup_result_id,
+                receipt_item.backup_restore_entry_id,
+                capability.strategy,
+                capability.platform,
+                i64::from(capability.same_filesystem),
+                i64::from(capability.hard_link_supported),
+                i64::from(capability.native_runtime_proven),
+                capability.evidence_label,
+                i64::from(source_regular_file),
+                i64::from(source_entry_non_symlink),
+                i64::from(destination_entry_non_symlink),
+                FixtureAttemptState::PreparedBeforeChange.as_str(),
+            ],
+        )?;
+        load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+            AppError::Message(
+                "Sorting batch attempt was not readable after preparation.".to_owned(),
+            )
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn release_sorting_batch_item_attempt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+        item: &SortingBatchFixtureItem,
+        receipt_item: &FixtureSortingBatchReceiptItem,
+        attempt_id: &str,
+    ) -> AppResult<()> {
+        let attempt = prepare_sorting_batch_attempt(
+            connection,
+            batch,
+            receipt,
+            item,
+            receipt_item,
+            attempt_id,
+            &fixture_attempt_capability_proof(),
+        )?;
+        claim_fixture_destination_no_replace(&item.source_path, &item.destination_path)?;
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::DestinationClaimObserved,
+        )?;
+        if observe_expected_file(
+            &item.destination_path,
+            attempt.expected_size,
+            &attempt.expected_hash,
+        )? != ObservedFileState::Exact
+        {
+            return Err(AppError::Message(
+                "Sorting batch destination did not match the prepared attempt after claim."
+                    .to_owned(),
+            ));
+        }
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::DestinationVerified,
+        )?;
+        fs::remove_file(&item.source_path).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting batch destination was verified but source release failed: {error}"
+            ))
+        })?;
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::SourceReleaseCompleted,
+        )?;
+        if observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?
+            != ObservedFileState::Missing
+            || observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)?
+                != ObservedFileState::Exact
+        {
+            return Err(AppError::Message(
+                "Sorting batch item ended source release in an unexpected filesystem state."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_batch_forward_handoff(
+        item: &SortingBatchFixtureItem,
+        attempt_id: &str,
+    ) -> FixtureMembershipHandoff {
+        FixtureMembershipHandoff {
+            attempt_id: attempt_id.to_owned(),
+            action: FixtureMembershipAction::Transition {
+                expected: FixtureMembershipState {
+                    file_id: item.file_id,
+                    path: item.source_path.to_string_lossy().to_string(),
+                    source_location: "mods".to_owned(),
+                    download_item_id: None,
+                },
+                final_state: FixtureMembershipState {
+                    file_id: item.file_id,
+                    path: item.destination_path.to_string_lossy().to_string(),
+                    source_location: "mods".to_owned(),
+                    download_item_id: None,
+                },
+            },
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_batch_apply(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        stop_before_index: Option<usize>,
+    ) -> AppResult<FixtureSortingBatchApplyOutcome> {
+        let receipt = ensure_sorting_batch_receipt(connection, batch)?;
+        ensure_sorting_batch_destination_directory(connection, batch, &receipt)?;
+
+        for (item, receipt_item) in batch.items.iter().zip(receipt.items.iter()) {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            let already_finished = load_fixture_attempt(connection, &attempt_id)?
+                .is_some_and(|attempt| {
+                    matches!(
+                        attempt.state,
+                        FixtureAttemptState::SourceReleaseCompleted | FixtureAttemptState::Committed
+                    )
+                });
+            if !already_finished {
+                ensure_sorting_batch_item_authorization(
+                    connection,
+                    batch,
+                    &receipt,
+                    item,
+                    receipt_item,
+                )?;
+            }
+        }
+
+        let mut handoffs = Vec::new();
+        let mut stopped_before_item_id = None;
+        for (index, item) in batch.items.iter().enumerate() {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            match load_fixture_attempt(connection, &attempt_id)? {
+                Some(attempt) if attempt.state == FixtureAttemptState::Committed => {
+                    if observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?
+                        != ObservedFileState::Missing
+                        || observe_expected_file(
+                            &item.destination_path,
+                            item.source_size,
+                            &item.source_hash,
+                        )? != ObservedFileState::Exact
+                    {
+                        return Err(AppError::Message(
+                            "Sorting batch committed item no longer matches its durable filesystem evidence."
+                                .to_owned(),
+                        ));
+                    }
+                    let membership = load_fixture_membership_state(connection, item.file_id)?
+                        .ok_or_else(|| {
+                            AppError::Message(
+                                "Sorting batch committed item disappeared from Library membership."
+                                    .to_owned(),
+                            )
+                        })?;
+                    if PathBuf::from(membership.path) != item.destination_path
+                        || membership.source_location != "mods"
+                    {
+                        return Err(AppError::Message(
+                            "Sorting batch committed item Library membership is not at its destination."
+                                .to_owned(),
+                        ));
+                    }
+                    continue;
+                }
+                Some(attempt) if attempt.state == FixtureAttemptState::SourceReleaseCompleted => {
+                    handoffs.push(sorting_batch_forward_handoff(item, &attempt_id));
+                    continue;
+                }
+                Some(attempt) => {
+                    return Err(AppError::Message(format!(
+                        "Sorting batch item requires per-file recovery before batch retry: {}",
+                        attempt.state.as_str()
+                    )));
+                }
+                None => {}
+            }
+
+            if stop_before_index == Some(index) {
+                stopped_before_item_id = Some(item.item_id);
+                break;
+            }
+            release_sorting_batch_item_attempt(
+                connection,
+                batch,
+                &receipt,
+                item,
+                &receipt.items[index],
+                &attempt_id,
+            )?;
+            handoffs.push(sorting_batch_forward_handoff(item, &attempt_id));
+        }
+
+        if !handoffs.is_empty() {
+            commit_fixture_membership_handoffs(connection, &handoffs)?;
+        }
+
+        let mut completed_item_ids = Vec::new();
+        let mut pending_item_ids = Vec::new();
+        for item in &batch.items {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            match load_fixture_attempt(connection, &attempt_id)? {
+                Some(attempt) if attempt.state == FixtureAttemptState::Committed => {
+                    completed_item_ids.push(item.item_id)
+                }
+                _ => pending_item_ids.push(item.item_id),
+            }
+        }
+        Ok(FixtureSortingBatchApplyOutcome {
+            completed_item_ids,
+            pending_item_ids,
+            stopped_before_item_id,
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_batch_reverse_handoff(
+        item: &SortingBatchFixtureItem,
+        attempt_id: &str,
+    ) -> FixtureReverseMembershipHandoff {
+        FixtureReverseMembershipHandoff {
+            attempt_id: attempt_id.to_owned(),
+            action: FixtureMembershipAction::Transition {
+                expected: FixtureMembershipState {
+                    file_id: item.file_id,
+                    path: item.destination_path.to_string_lossy().to_string(),
+                    source_location: "mods".to_owned(),
+                    download_item_id: None,
+                },
+                final_state: FixtureMembershipState {
+                    file_id: item.file_id,
+                    path: item.source_path.to_string_lossy().to_string(),
+                    source_location: "mods".to_owned(),
+                    download_item_id: None,
+                },
+            },
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn restore_sorting_batch_item_from_receipt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        item: &SortingBatchFixtureItem,
+        receipt_item: &FixtureSortingBatchReceiptItem,
+    ) -> AppResult<()> {
+        match run_fixture_restore_prototype(
+            connection,
+            FixtureRestorePrototypeRequest {
+                fixture_mode: true,
+                fixture_root: batch.fixture_root.clone(),
+                backup_path: receipt_item.backup_path.clone(),
+                restore_target_path: item.source_path.clone(),
+                apply_plan_id: batch.plan_id,
+                apply_plan_item_id: Some(item.item_id),
+                run_id: batch.run_id,
+                result_id: Some(receipt_item.backup_result_id),
+                restore_entry_id: Some(receipt_item.backup_restore_entry_id),
+                operation_kind: UNDO_OPERATION_KIND.to_owned(),
+            },
+        )? {
+            FixtureRestorePrototypeOutcome::Verified(_) => {}
+            FixtureRestorePrototypeOutcome::FailedBeforeChange(failure) => {
+                return Err(AppError::Message(format!(
+                    "Sorting batch Undo restore failed before change: {}",
+                    failure.error_message
+                )));
+            }
+        }
+        if observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?
+            != ObservedFileState::Exact
+            || observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)?
+                != ObservedFileState::Exact
+        {
+            return Err(AppError::Message(
+                "Sorting batch Undo could not verify restored source and moved copy before cleanup."
+                    .to_owned(),
+            ));
+        }
+        fs::remove_file(&item.destination_path).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting batch Undo restored source but could not remove moved copy: {error}"
+            ))
+        })?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn cleanup_sorting_batch_destination_directory(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
+        let Some(record) = load_sorting_batch_directory_record(connection, batch)? else {
+            return Ok(FixtureSortingDirectoryCleanupOutcome::NotOwned);
+        };
+        if record.state != FixtureSortingDirectoryState::CreatedVerified {
+            return Ok(FixtureSortingDirectoryCleanupOutcome::NotOwned);
+        }
+        validate_sorting_batch_receipt(connection, batch, receipt)?;
+        for item in &batch.items {
+            if observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?
+                != ObservedFileState::Exact
+                || observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )? != ObservedFileState::Missing
+            {
+                return Err(AppError::Message(
+                    "Sorting batch folder cleanup requires every batch file to be fully undone first."
+                        .to_owned(),
+                ));
+            }
+            let membership = load_fixture_membership_state(connection, item.file_id)?
+                .ok_or_else(|| {
+                    AppError::Message(
+                        "Sorting batch folder cleanup requires restored Library membership."
+                            .to_owned(),
+                    )
+                })?;
+            let membership_path = resolve_fixture_candidate(
+                Path::new(&membership.path),
+                "sorting batch cleanup membership path",
+            )?;
+            let source_path = resolve_fixture_candidate(
+                &item.source_path,
+                "sorting batch cleanup source path",
+            )?;
+            if membership_path != source_path || membership.source_location != "mods" {
+                return Err(AppError::Message(
+                    "Sorting batch folder cleanup requires Library membership back at every original source."
+                        .to_owned(),
+                ));
+            }
+        }
+
+        let current_identity = fixture_directory_identity(&batch.destination_dir)?;
+        if current_identity != (record.device_id, record.inode) {
+            update_sorting_batch_directory_state(
+                connection,
+                batch,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedIdentityChanged,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
+        }
+        if fixture_directory_has_indexed_children(connection, &batch.destination_dir)?
+            || fs::read_dir(&batch.destination_dir)
+                .map_err(|error| {
+                    AppError::Message(format!(
+                        "Sorting batch destination folder could not be read for cleanup: {error}"
+                    ))
+                })?
+                .next()
+                .is_some()
+        {
+            update_sorting_batch_directory_state(
+                connection,
+                batch,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedNonEmpty,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty);
+        }
+        if fixture_directory_identity(&batch.destination_dir)? != current_identity {
+            update_sorting_batch_directory_state(
+                connection,
+                batch,
+                FixtureSortingDirectoryState::CreatedVerified,
+                FixtureSortingDirectoryState::RetainedIdentityChanged,
+            )?;
+            return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
+        }
+        fs::remove_dir(&batch.destination_dir).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting batch destination folder could not be removed safely: {error}"
+            ))
+        })?;
+        update_sorting_batch_directory_state(
+            connection,
+            batch,
+            FixtureSortingDirectoryState::CreatedVerified,
+            FixtureSortingDirectoryState::CleanupComplete,
+        )?;
+        Ok(FixtureSortingDirectoryCleanupOutcome::Removed)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_batch_undo(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
+        let receipt = ensure_sorting_batch_receipt(connection, batch)?;
+        let mut reverse_handoffs = Vec::new();
+
+        // Preflight every committed item before restoring the first one. Known tampering therefore
+        // blocks the whole Undo before this helper changes any file.
+        for item in &batch.items {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            let Some(attempt) = load_fixture_attempt(connection, &attempt_id)? else {
+                continue;
+            };
+            if attempt.state != FixtureAttemptState::Committed {
+                return Err(AppError::Message(
+                    "Sorting batch Undo requires every started item to have committed Library membership first."
+                        .to_owned(),
+                ));
+            }
+            let source_state = observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?;
+            let destination_state =
+                observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)?;
+            if !matches!(
+                (source_state, destination_state),
+                (ObservedFileState::Missing, ObservedFileState::Exact)
+                    | (ObservedFileState::Exact, ObservedFileState::Missing)
+            ) {
+                return Err(AppError::Message(
+                    "Sorting batch Undo found changed or ambiguous file bytes; no batch Undo changes were started."
+                        .to_owned(),
+                ));
+            }
+        }
+
+        for (item, receipt_item) in batch.items.iter().zip(receipt.items.iter()) {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            let Some(attempt) = load_fixture_attempt(connection, &attempt_id)? else {
+                continue;
+            };
+            let source_state = observe_expected_file(&item.source_path, item.source_size, &item.source_hash)?;
+            let destination_state =
+                observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)?;
+            if source_state == ObservedFileState::Missing
+                && destination_state == ObservedFileState::Exact
+            {
+                restore_sorting_batch_item_from_receipt(
+                    connection,
+                    batch,
+                    item,
+                    receipt_item,
+                )?;
+            }
+            let membership = load_fixture_membership_state(connection, item.file_id)?
+                .ok_or_else(|| {
+                    AppError::Message("Sorting batch Undo lost Library membership.".to_owned())
+                })?;
+            if PathBuf::from(&membership.path) == item.destination_path {
+                reverse_handoffs.push(sorting_batch_reverse_handoff(item, &attempt_id));
+            } else if PathBuf::from(&membership.path) != item.source_path {
+                return Err(AppError::Message(
+                    "Sorting batch Undo Library membership moved outside its authorized pair."
+                        .to_owned(),
+                ));
+            }
+            if attempt.state != FixtureAttemptState::Committed {
+                return Err(AppError::Message(
+                    "Sorting batch Undo attempt state changed unexpectedly.".to_owned(),
+                ));
+            }
+        }
+
+        if !reverse_handoffs.is_empty() {
+            commit_fixture_reverse_membership_handoffs(connection, &reverse_handoffs)?;
+        }
+        cleanup_sorting_batch_destination_directory(connection, batch, &receipt)
+    }
+
     fn setup_fixture(connection: &Connection, source_bytes: &[u8]) -> FixtureContext {
         let temp = tempdir().expect("tempdir");
         let fixture_root = temp.path().to_path_buf();
@@ -4022,6 +5891,362 @@ mod tests {
         };
         commit_fixture_reverse_membership_handoffs(connection, std::slice::from_ref(&handoff))
             .expect("restore fixture sorting Library membership");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_existing_destination_collision_blocks_before_backups_or_moves() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        fs::create_dir(&batch.destination_dir).expect("create pre-existing Gameplay folder");
+        let collision_path = batch.items[1].destination_path.clone();
+        fs::write(&collision_path, b"pre-existing player file")
+            .expect("create destination collision before batch Apply");
+
+        let error = run_sorting_batch_apply(&connection, &batch, None)
+            .expect_err("existing destination collision must block whole batch preflight");
+        assert!(format!("{error:?}").contains("expected all-items backup-only validation stop"));
+        assert_eq!(
+            fs::read(&collision_path).expect("collision file remains untouched"),
+            b"pre-existing player file"
+        );
+        for item in &batch.items {
+            assert!(item.source_path.exists());
+            if item.destination_path != collision_path {
+                assert!(!item.destination_path.exists());
+            }
+        }
+        let run = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load collision batch run")
+            .expect("collision batch run exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0
+        );
+        assert_eq!(
+            run.restore_entries
+                .iter()
+                .filter(|entry| entry.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0
+        );
+        assert!(
+            load_sorting_batch_receipt(&connection, &batch)
+                .expect("load absent collision batch receipt")
+                .is_none()
+        );
+        assert!(
+            load_sorting_batch_directory_record(&connection, &batch)
+                .expect("load absent collision folder ownership")
+                .is_none()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_stale_source_blocks_before_backups_folder_or_moves() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        let stale_item = &batch.items[1];
+        fs::write(&stale_item.source_path, b"changed after sorting preview")
+            .expect("change one batch source after preview");
+
+        let error = run_sorting_batch_apply(&connection, &batch, None)
+            .expect_err("stale batch source must block before execution");
+        assert!(format!("{error:?}").contains("changed"));
+        assert!(!batch.destination_dir.exists());
+        for item in &batch.items {
+            assert!(item.source_path.exists());
+            assert!(!item.destination_path.exists());
+        }
+        let run = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load stale batch run")
+            .expect("stale batch run exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0
+        );
+        assert_eq!(
+            run.restore_entries
+                .iter()
+                .filter(|entry| entry.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0
+        );
+        assert!(
+            load_sorting_batch_receipt(&connection, &batch)
+                .expect("load absent stale batch receipt")
+                .is_none()
+        );
+        assert!(
+            load_sorting_batch_directory_record(&connection, &batch)
+                .expect("load absent stale batch folder record")
+                .is_none()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_partial_prefix_retry_reuses_backups_and_skips_completed_item() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+
+        let partial = run_sorting_batch_apply(&connection, &batch, Some(1))
+            .expect("stop sorting batch before second item");
+        assert_eq!(partial.completed_item_ids, vec![batch.items[0].item_id]);
+        assert_eq!(partial.pending_item_ids.len(), 2);
+        assert_eq!(partial.stopped_before_item_id, Some(batch.items[1].item_id));
+        assert_eq!(
+            observe_expected_file(
+                &batch.items[0].destination_path,
+                batch.items[0].source_size,
+                &batch.items[0].source_hash,
+            )
+            .expect("partial first destination"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(
+                &batch.items[1].source_path,
+                batch.items[1].source_size,
+                &batch.items[1].source_hash,
+            )
+            .expect("partial second source"),
+            ObservedFileState::Exact
+        );
+        let first_attempt_id = sorting_batch_attempt_id(&batch, &batch.items[0]);
+        let first_attempt_before = load_fixture_attempt(&connection, &first_attempt_id)
+            .expect("load partial first attempt")
+            .expect("partial first attempt exists");
+        assert_eq!(first_attempt_before.state, FixtureAttemptState::Committed);
+        let before_retry = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load partial batch run")
+            .expect("partial batch run exists");
+        let backup_ids_before = before_retry
+            .results
+            .iter()
+            .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+            .map(|result| result.id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_before.len(), 3);
+
+        let completed = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("resume sorting batch without duplicating first item");
+        assert_eq!(completed.completed_item_ids.len(), 3);
+        assert!(completed.pending_item_ids.is_empty());
+        assert_eq!(completed.stopped_before_item_id, None);
+        let after_retry = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load resumed batch run")
+            .expect("resumed batch run exists");
+        let backup_ids_after = after_retry
+            .results
+            .iter()
+            .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+            .map(|result| result.id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_after, backup_ids_before);
+        let first_attempt_after = load_fixture_attempt(&connection, &first_attempt_id)
+            .expect("reload first attempt after retry")
+            .expect("first attempt still exists after retry");
+        assert_eq!(first_attempt_after.attempt_id, first_attempt_before.attempt_id);
+        assert_eq!(first_attempt_after.state, FixtureAttemptState::Committed);
+        assert_eq!(
+            run_sorting_batch_undo(&connection, &batch).expect("undo resumed sorting batch"),
+            FixtureSortingDirectoryCleanupOutcome::Removed
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_undo_restores_files_but_keeps_folder_with_player_content() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply batch before player-content Undo test");
+        let player_path = batch.destination_dir.join("player-added.package");
+        fs::write(&player_path, b"player content SimSuite does not own")
+            .expect("add player content to batch-owned folder");
+
+        assert_eq!(
+            run_sorting_batch_undo(&connection, &batch)
+                .expect("undo batch while preserving player content"),
+            FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty
+        );
+        assert!(batch.destination_dir.is_dir());
+        assert_eq!(
+            fs::read(&player_path).expect("player content survives Undo"),
+            b"player content SimSuite does not own"
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("player-content restored source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("player-content cleaned destination"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load player-content restored membership")
+                .expect("player-content membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_undo_tamper_blocks_before_restoring_any_other_file() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply batch before tamper Undo test");
+        fs::write(&batch.items[1].destination_path, b"tampered moved package")
+            .expect("tamper one moved batch destination");
+
+        let error = run_sorting_batch_undo(&connection, &batch)
+            .expect_err("tampered batch Undo must fail before restoring any source");
+        assert!(format!("{error:?}").contains("changed or ambiguous"));
+        for (index, item) in batch.items.iter().enumerate() {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("tamper test source remains absent"),
+                ObservedFileState::Missing
+            );
+            let destination_state = observe_expected_file(
+                &item.destination_path,
+                item.source_size,
+                &item.source_hash,
+            )
+            .expect("tamper test destination state");
+            if index == 1 {
+                assert_eq!(destination_state, ObservedFileState::Different);
+            } else {
+                assert_eq!(destination_state, ObservedFileState::Exact);
+            }
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load tamper test membership")
+                .expect("tamper test membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.destination_path);
+        }
+        assert!(batch.destination_dir.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn backend_sorting_batch_three_files_share_one_folder_and_undo_exactly() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        assert_eq!(batch.items.len(), 3);
+        assert!(!batch.destination_dir.exists());
+        verify_sorting_batch_read_only_preflight(&connection, &batch)
+            .expect("batch read-only preflight");
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("initial batch source"),
+                ObservedFileState::Exact
+            );
+            assert!(!item.destination_path.exists());
+        }
+
+        let outcome = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply sorting batch through fixture journal");
+        assert_eq!(outcome.completed_item_ids.len(), 3);
+        assert!(outcome.pending_item_ids.is_empty());
+        assert_eq!(outcome.stopped_before_item_id, None);
+        assert!(batch.destination_dir.is_dir());
+
+        let receipt = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load batch receipt")
+            .expect("batch receipt exists");
+        assert_eq!(receipt.items.len(), 3);
+        assert!(!receipt.batch_hash.is_empty());
+        validate_sorting_batch_receipt(&connection, &batch, &receipt)
+            .expect("validate sealed batch receipt");
+        let directory_rows: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count batch directory ownership rows");
+        assert_eq!(directory_rows, 1);
+        let directory = load_sorting_batch_directory_record(&connection, &batch)
+            .expect("load batch directory record")
+            .expect("batch directory record exists");
+        assert_eq!(directory.state, FixtureSortingDirectoryState::CreatedVerified);
+
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("moved batch source"),
+                ObservedFileState::Missing
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("moved batch destination"),
+                ObservedFileState::Exact
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load moved batch membership")
+                .expect("moved batch membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.destination_path);
+            assert_eq!(membership.source_location, "mods");
+            let attempt = load_fixture_attempt(
+                &connection,
+                &sorting_batch_attempt_id(&batch, item),
+            )
+            .expect("load batch attempt")
+            .expect("batch attempt exists");
+            assert_eq!(attempt.state, FixtureAttemptState::Committed);
+        }
+
+        assert_eq!(
+            run_sorting_batch_undo(&connection, &batch).expect("undo sorting batch"),
+            FixtureSortingDirectoryCleanupOutcome::Removed
+        );
+        assert!(!batch.destination_dir.exists());
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("restored batch source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("cleaned batch destination"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load restored batch membership")
+                .expect("restored batch membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+            assert_eq!(membership.source_location, "mods");
+        }
+        assert_eq!(
+            run_sorting_batch_undo(&connection, &batch).expect("repeat batch Undo safely"),
+            FixtureSortingDirectoryCleanupOutcome::NotOwned
+        );
     }
 
     #[cfg(target_os = "macos")]
