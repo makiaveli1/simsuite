@@ -888,7 +888,31 @@ This establishes an important future search identity rule: search synchronizatio
 
 The production audit was intentionally left unchanged. The current move flows still perform real filesystem changes first and then repair `files` records one operation at a time through helpers such as `update_file_record_after_move`, `delete_file_record`, `update_file_record_on_restore`, and `restore_deleted_file_record`. The proof does not join those file operations to a new transaction, does not change backup/rollback behavior, and does not enable any file-changing command. It only demonstrates the database reconciliation semantics that a later production refactor would need to preserve.
 
-Latest Rust evidence after tightening the stale-state regression registers `552` tests: `547` pass and the same `5` large synthetic stress tests remain intentionally ignored. No production FTS migration/table, Library search behavior, Tauri search command, model/runtime dependency, player-file operation, or real Apply/Restore authority changed.
+Latest Rust evidence after tightening the stale-state regression registered `552` tests: `547` passed and the same `5` large synthetic stress tests remained intentionally ignored. No production FTS migration/table, Library search behavior, Tauri search command, model/runtime dependency, player-file operation, or real Apply/Restore authority changed.
+
+### Follow-on file-operation to membership handoff proof
+
+The next hidden proof reuses that database-only membership coordinator inside the existing fixture-only move/recovery laboratory rather than creating a second file-operation design. It currently proves only a same-row move handoff, such as a Downloads row moving into Mods; replacement deletion and restore-as-new-ID remain separate.
+
+The intended ordering is explicit:
+
+1. the durable fixture attempt is prepared before file mutation by the existing recovery journal;
+2. the destination is claimed and verified, then the source is released;
+3. before any SQLite write transaction opens, the handoff resolves the recorded and membership paths to their physical fixture locations, verifies the source is absent, and verifies the destination still matches the attempt's expected size and hash;
+4. only then does one short SQLite transaction open;
+5. inside that transaction the previously prepared attempt record and ApplyPlan-item evidence are re-read and must still match exactly, without filesystem I/O;
+6. the stale-safe Library membership compare-and-set and the attempt's `source_release_completed -> committed` change are saved together;
+7. if either database write fails, both database claims roll back while the durable unfinished attempt remains available for recovery/retry.
+
+The generic attempt-state transition helper no longer permits `source_release_completed -> committed`; that terminal success marker is reserved for the membership handoff. This prevents another hidden test caller from bypassing the database ownership check and falsely declaring the file operation complete.
+
+The regression matrix proves a successful handoff, idempotent repeat after commit, a changed destination that blocks before any database claim, stale/newer Library ownership that survives without a false commit, and a two-file batch where a forced failure while committing the second attempt rolls back both membership changes and both final attempt markers. After the injected failure is removed, the same already-moved fixture files can complete the database handoff successfully.
+
+One macOS-specific issue was found by the test rather than hidden: the same temporary file can be represented as `/var/...` and `/private/var/...`. Literal path-string comparison falsely rejected the handoff, so the proof now resolves both paths before deciding whether they identify the same fixture location. That is a test-lab finding, not yet a production path-policy change.
+
+This still does **not** make filesystem and SQLite changes one indivisible transaction. There is an unavoidable small interval between the final pre-transaction filesystem verification and the database commit where an external process could change a file. A production design must therefore retain durable attempt evidence and define post-crash/restart verification/recovery rather than treating that interval as solved. The hidden proof also does not yet connect replacement deletion/new-ID restore membership to the attempt journal, change the real move engine, register a command, enable Apply/Restore, or attach smart search.
+
+Latest Rust evidence after this handoff proof registers `556` tests: `551` pass and the same `5` large synthetic stress tests remain intentionally ignored.
 
 ## 18. LLM position
 
@@ -901,7 +925,7 @@ A small optional local LLM could be revisited later for narrowly bounded tasks s
 ## 19. Recommended next sequence
 
 1. Keep production Library search unchanged while the contentless deterministic design remains a proven candidate rather than a migration.
-2. Keep the migration itself unimplemented. The special-mod insight source-write boundary is now prepared for future search integration through one short atomic multi-file batch, and the move/restore membership semantics now have a separate database-only test proof. The next move/restore step, if pursued, is a production database-record integration design that preserves the existing filesystem backup/rollback boundary; do not attach search or refactor the real move engine merely because the hidden coordinator passes. Separately prove real-process interruption/restart behavior plus startup contention around the repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, future-version fail-closed behavior, and move/restore membership reconciliation are still proven only in bounded test lanes until their production owners are deliberately integrated.
+2. Keep the migration itself unimplemented. The special-mod insight source-write boundary is prepared for future search integration, the move/restore membership semantics have a database-only proof, and same-row file-operation -> membership handoff now has a separate fixture-only proof. Before any production move-engine refactor, extend the handoff/recovery evidence to the harder replacement case where an installed row is deleted and a restored file may return under a new database ID, and prove restart/recovery behavior around an unfinished `source_release_completed` handoff. Preserve the existing backup/rollback boundary and the explicit filesystem-vs-database gap rather than pretending SQLite can make player-file changes atomic. Separately prove real-process interruption/restart behavior plus startup contention around the search repair path. Scanner replacement, creator/category scope calculation, schema install/rollback, known-version startup self-repair, fingerprint rebuild, feature disable, future-version fail-closed behavior, membership reconciliation, and the same-row handoff are still bounded evidence until their production owners are deliberately integrated.
 3. Obtain native Windows and Linux proof for FTS5 `contentless_delete=1`, WAL reader/writer behavior, and the proposed repair contract before treating the macOS results as cross-platform evidence.
 4. Expand the independent evaluation onto a broader representative non-private metadata corpus with voluntarily supplied/public player phrasing before choosing production ranking thresholds.
 5. Re-run local embeddings only against genuinely semantic cases that the deterministic FTS + fuzzy stack still misses; do not make embeddings pay for names, aliases, typos, or partial names.

@@ -8,15 +8,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FixtureMembershipState {
-    file_id: i64,
-    path: String,
-    source_location: String,
-    download_item_id: Option<i64>,
+pub(crate) struct FixtureMembershipState {
+    pub(crate) file_id: i64,
+    pub(crate) path: String,
+    pub(crate) source_location: String,
+    pub(crate) download_item_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
-enum FixtureMembershipAction {
+pub(crate) enum FixtureMembershipAction {
     Transition {
         expected: FixtureMembershipState,
         final_state: FixtureMembershipState,
@@ -29,7 +29,7 @@ enum FixtureMembershipAction {
     },
 }
 
-fn load_fixture_membership_state(
+pub(crate) fn load_fixture_membership_state(
     connection: &Connection,
     file_id: i64,
 ) -> AppResult<Option<FixtureMembershipState>> {
@@ -88,7 +88,7 @@ fn require_same_file_id(
     Ok(())
 }
 
-fn apply_fixture_membership_action(
+pub(crate) fn apply_fixture_membership_action(
     transaction: &Transaction<'_>,
     action: &FixtureMembershipAction,
 ) -> AppResult<()> {

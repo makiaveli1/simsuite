@@ -15,7 +15,12 @@ use crate::{
             FixtureBackupPrototypeOutcome, FixtureBackupPrototypeRequest,
             FixtureRestorePrototypeOutcome, FixtureRestorePrototypeRequest,
         },
-        apply_plan_results, move_engine,
+        apply_plan_results,
+        move_engine,
+        move_engine_membership_prototype::{
+            apply_fixture_membership_action, load_fixture_membership_state,
+            FixtureMembershipAction, FixtureMembershipState,
+        },
     },
     error::{AppError, AppResult},
     models::{
@@ -89,7 +94,7 @@ pub(crate) struct FixtureMoveUndoSuccess {
     pub restore_entry_id: i64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct FixtureMovePlanItemScope {
     file_id: i64,
     current_path: String,
@@ -634,7 +639,7 @@ impl FixtureAttemptState {
                 Self::SourceReleaseCompleted | Self::RecoveryRequired
             ) | (
                 Self::SourceReleaseCompleted,
-                Self::Committed | Self::RecoveryRequired
+                Self::RecoveryRequired
             )
         )
     }
@@ -984,6 +989,209 @@ fn transition_fixture_attempt(
 
     load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
         AppError::Message("Fixture attempt disappeared after transition.".to_owned())
+    })
+}
+
+#[derive(Debug, Clone)]
+struct FixtureMembershipHandoff {
+    attempt_id: String,
+    action: FixtureMembershipAction,
+}
+
+fn fixture_membership_transition(
+    action: &FixtureMembershipAction,
+) -> AppResult<(&FixtureMembershipState, &FixtureMembershipState)> {
+    match action {
+        FixtureMembershipAction::Transition {
+            expected,
+            final_state,
+        } => Ok((expected, final_state)),
+        _ => Err(AppError::Message(
+            "Fixture file-operation handoff currently proves only same-row membership transitions."
+                .to_owned(),
+        )),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PreparedFixtureMembershipHandoff {
+    handoff: FixtureMembershipHandoff,
+    attempt: FixtureAttemptRecord,
+    item: FixtureMovePlanItemScope,
+}
+
+fn prepare_fixture_membership_handoff(
+    connection: &Connection,
+    handoff: &FixtureMembershipHandoff,
+) -> AppResult<PreparedFixtureMembershipHandoff> {
+    let attempt = load_fixture_attempt(connection, &handoff.attempt_id)?.ok_or_else(|| {
+        AppError::Message(format!(
+            "Fixture membership handoff attempt not found: {}",
+            handoff.attempt_id
+        ))
+    })?;
+    if !matches!(
+        attempt.state,
+        FixtureAttemptState::SourceReleaseCompleted | FixtureAttemptState::Committed
+    ) {
+        return Err(AppError::Message(format!(
+            "Fixture membership handoff requires source_release_completed or committed attempt state, found {}.",
+            attempt.state.as_str()
+        )));
+    }
+
+    let item = load_plan_item_scope(
+        connection,
+        attempt.apply_plan_id,
+        attempt.apply_plan_item_id,
+    )?;
+    let (expected, final_state) = fixture_membership_transition(&handoff.action)?;
+    let expected_path =
+        resolve_fixture_candidate(Path::new(&expected.path), "membership expected path")?;
+    let final_path =
+        resolve_fixture_candidate(Path::new(&final_state.path), "membership final path")?;
+    let attempt_source =
+        resolve_fixture_candidate(Path::new(&attempt.source_path), "attempt source path")?;
+    let attempt_destination =
+        resolve_fixture_candidate(Path::new(&attempt.destination_path), "attempt destination path")?;
+    if expected.file_id != item.file_id
+        || final_state.file_id != item.file_id
+        || expected_path != attempt_source
+        || final_path != attempt_destination
+    {
+        return Err(AppError::Message(
+            "Fixture membership handoff does not match the durable attempt file identity and paths."
+                .to_owned(),
+        ));
+    }
+
+    if observe_expected_file(
+        Path::new(&attempt.source_path),
+        attempt.expected_size,
+        &attempt.expected_hash,
+    )? != ObservedFileState::Missing
+        || observe_expected_file(
+            Path::new(&attempt.destination_path),
+            attempt.expected_size,
+            &attempt.expected_hash,
+        )? != ObservedFileState::Exact
+    {
+        return Err(AppError::Message(
+            "Fixture membership handoff requires the source to be released and the destination bytes to match the durable attempt evidence."
+                .to_owned(),
+        ));
+    }
+
+    Ok(PreparedFixtureMembershipHandoff {
+        handoff: handoff.clone(),
+        attempt,
+        item,
+    })
+}
+
+fn revalidate_prepared_membership_handoff_in_transaction(
+    connection: &Connection,
+    prepared: &PreparedFixtureMembershipHandoff,
+) -> AppResult<FixtureAttemptRecord> {
+    let current_attempt = load_fixture_attempt(connection, &prepared.handoff.attempt_id)?
+        .ok_or_else(|| {
+            AppError::Message(format!(
+                "Fixture membership handoff attempt disappeared: {}",
+                prepared.handoff.attempt_id
+            ))
+        })?;
+    if current_attempt != prepared.attempt {
+        return Err(AppError::Message(
+            "Fixture membership handoff attempt evidence changed before database commit."
+                .to_owned(),
+        ));
+    }
+
+    let current_item = load_plan_item_scope(
+        connection,
+        prepared.attempt.apply_plan_id,
+        prepared.attempt.apply_plan_item_id,
+    )?;
+    if current_item != prepared.item {
+        return Err(AppError::Message(
+            "Fixture membership handoff plan evidence changed before database commit."
+                .to_owned(),
+        ));
+    }
+
+    let (expected, final_state) = fixture_membership_transition(&prepared.handoff.action)?;
+    if expected.file_id != current_item.file_id || final_state.file_id != current_item.file_id {
+        return Err(AppError::Message(
+            "Fixture membership handoff file identity changed before database commit."
+                .to_owned(),
+        ));
+    }
+
+    Ok(current_attempt)
+}
+
+fn commit_fixture_membership_handoffs(
+    connection: &Connection,
+    handoffs: &[FixtureMembershipHandoff],
+) -> AppResult<()> {
+    let prepared = handoffs
+        .iter()
+        .map(|handoff| prepare_fixture_membership_handoff(connection, handoff))
+        .collect::<AppResult<Vec<_>>>()?;
+
+    let transaction = connection.unchecked_transaction()?;
+    for prepared_handoff in &prepared {
+        let attempt = revalidate_prepared_membership_handoff_in_transaction(
+            &transaction,
+            prepared_handoff,
+        )?;
+        apply_fixture_membership_action(&transaction, &prepared_handoff.handoff.action)?;
+        if attempt.state == FixtureAttemptState::SourceReleaseCompleted {
+            commit_fixture_attempt_after_membership(
+                &transaction,
+                &prepared_handoff.handoff.attempt_id,
+            )?;
+        }
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn commit_fixture_attempt_after_membership(
+    connection: &Connection,
+    attempt_id: &str,
+) -> AppResult<FixtureAttemptRecord> {
+    let current = load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+        AppError::Message(format!("Fixture attempt not found: {attempt_id}"))
+    })?;
+    if current.state == FixtureAttemptState::Committed {
+        return Ok(current);
+    }
+    if current.state != FixtureAttemptState::SourceReleaseCompleted {
+        return Err(AppError::Message(format!(
+            "Fixture membership commit requires source_release_completed attempt state, found {}.",
+            current.state.as_str()
+        )));
+    }
+
+    let changed = connection.execute(
+        "UPDATE fixture_apply_plan_attempts
+         SET state = ?1, updated_at = CURRENT_TIMESTAMP
+         WHERE attempt_id = ?2 AND state = ?3",
+        params![
+            FixtureAttemptState::Committed.as_str(),
+            attempt_id,
+            FixtureAttemptState::SourceReleaseCompleted.as_str(),
+        ],
+    )?;
+    if changed != 1 {
+        return Err(AppError::Message(
+            "Fixture attempt changed concurrently before membership commit.".to_owned(),
+        ));
+    }
+
+    load_fixture_attempt(connection, attempt_id)?.ok_or_else(|| {
+        AppError::Message("Fixture attempt disappeared after membership commit.".to_owned())
     })
 }
 
@@ -2198,6 +2406,121 @@ mod tests {
         context
     }
 
+    #[cfg(target_os = "macos")]
+    fn attach_fixture_download_owner(
+        connection: &Connection,
+        context: &FixtureContext,
+        download_item_id: i64,
+    ) -> i64 {
+        connection
+            .execute(
+                "INSERT INTO download_items (
+                    id, source_path, display_name, source_kind, source_size,
+                    detected_file_count, status, notes
+                 ) VALUES (?1, ?2, ?3, 'archive', 100, 0, 'pending', '[]')",
+                params![
+                    download_item_id,
+                    format!("/fixture/download-{download_item_id}.zip"),
+                    format!("Fixture download {download_item_id}"),
+                ],
+            )
+            .expect("fixture download owner");
+        let file_id = load_plan_item_scope(connection, context.plan_id, context.item_id)
+            .expect("fixture plan item")
+            .file_id;
+        connection
+            .execute(
+                "UPDATE files SET download_item_id = ?1 WHERE id = ?2",
+                params![download_item_id, file_id],
+            )
+            .expect("attach fixture download owner");
+        file_id
+    }
+
+    #[cfg(target_os = "macos")]
+    fn release_fixture_attempt(
+        connection: &Connection,
+        context: &FixtureContext,
+        attempt_id: &str,
+    ) {
+        let request = reconciliation_request(context);
+        let attempt = prepare_fixture_attempt(
+            connection,
+            &request,
+            attempt_id,
+            &fixture_attempt_capability_proof(),
+        )
+        .expect("prepare fixture handoff attempt");
+
+        claim_fixture_destination_no_replace(&context.source_path, &context.destination_path)
+            .expect("claim fixture handoff destination");
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::DestinationClaimObserved,
+        )
+        .expect("record destination claim");
+        assert_eq!(
+            observe_expected_file(
+                &context.destination_path,
+                attempt.expected_size,
+                &attempt.expected_hash,
+            )
+            .expect("verify claimed destination"),
+            ObservedFileState::Exact
+        );
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::DestinationVerified,
+        )
+        .expect("record verified destination");
+        fs::remove_file(&context.source_path).expect("release fixture source");
+        transition_fixture_attempt(
+            connection,
+            attempt_id,
+            FixtureAttemptState::SourceReleaseCompleted,
+        )
+        .expect("record released source");
+
+        assert!(!context.source_path.exists());
+        assert_eq!(
+            observe_expected_file(
+                &context.destination_path,
+                attempt.expected_size,
+                &attempt.expected_hash,
+            )
+            .expect("verify released destination"),
+            ObservedFileState::Exact
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fixture_membership_handoff(
+        context: &FixtureContext,
+        file_id: i64,
+        download_item_id: i64,
+        attempt_id: &str,
+    ) -> FixtureMembershipHandoff {
+        FixtureMembershipHandoff {
+            attempt_id: attempt_id.to_owned(),
+            action: FixtureMembershipAction::Transition {
+                expected: FixtureMembershipState {
+                    file_id,
+                    path: context.source_path.to_string_lossy().to_string(),
+                    source_location: "downloads".to_owned(),
+                    download_item_id: Some(download_item_id),
+                },
+                final_state: FixtureMembershipState {
+                    file_id,
+                    path: context.destination_path.to_string_lossy().to_string(),
+                    source_location: "mods".to_owned(),
+                    download_item_id: Some(download_item_id),
+                },
+            },
+        }
+    }
+
     #[test]
     fn fixture_move_transaction_backs_up_moves_verifies_logs_and_undoes_exact_file_state() {
         let connection = memory_connection();
@@ -2999,6 +3322,297 @@ mod tests {
         assert!(!context.destination_path.exists());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn membership_handoff_commits_only_after_verified_release_and_repeats_safely() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(
+            &connection,
+            b"membership handoff success bytes",
+        );
+        let download_item_id = 7_001;
+        let file_id = attach_fixture_download_owner(&connection, &context, download_item_id);
+        let attempt_id = "attempt-membership-success";
+        let handoff = fixture_membership_handoff(
+            &context,
+            file_id,
+            download_item_id,
+            attempt_id,
+        );
+        let expected = match &handoff.action {
+            FixtureMembershipAction::Transition { expected, .. } => expected.clone(),
+            _ => unreachable!(),
+        };
+        let final_state = match &handoff.action {
+            FixtureMembershipAction::Transition { final_state, .. } => final_state.clone(),
+            _ => unreachable!(),
+        };
+
+        release_fixture_attempt(&connection, &context, attempt_id);
+        assert_eq!(
+            load_fixture_membership_state(&connection, file_id).expect("membership before handoff"),
+            Some(expected)
+        );
+        assert_eq!(
+            load_fixture_attempt(&connection, attempt_id)
+                .expect("attempt before handoff")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::SourceReleaseCompleted
+        );
+
+        commit_fixture_membership_handoffs(&connection, std::slice::from_ref(&handoff))
+            .expect("commit fixture membership handoff");
+        assert_eq!(
+            load_fixture_membership_state(&connection, file_id).expect("membership after handoff"),
+            Some(final_state.clone())
+        );
+        assert_eq!(
+            load_fixture_attempt(&connection, attempt_id)
+                .expect("attempt after handoff")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::Committed
+        );
+
+        commit_fixture_membership_handoffs(&connection, std::slice::from_ref(&handoff))
+            .expect("repeat committed handoff");
+        assert_eq!(
+            load_fixture_membership_state(&connection, file_id).expect("repeated membership"),
+            Some(final_state)
+        );
+        assert_eq!(
+            load_fixture_attempt(&connection, attempt_id)
+                .expect("repeated attempt")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::Committed
+        );
+        transition_fixture_attempt(
+            &connection,
+            attempt_id,
+            FixtureAttemptState::RecoveryRequired,
+        )
+        .expect_err("committed handoff attempt must remain immutable");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn membership_handoff_second_commit_failure_rolls_back_all_database_claims() {
+        let connection = memory_connection();
+        let first = setup_verified_backup_only_state(
+            &connection,
+            b"membership handoff batch first bytes",
+        );
+        let second = setup_verified_backup_only_state(
+            &connection,
+            b"membership handoff batch second bytes",
+        );
+        let first_download_id = 7_101;
+        let second_download_id = 7_102;
+        let first_file_id =
+            attach_fixture_download_owner(&connection, &first, first_download_id);
+        let second_file_id =
+            attach_fixture_download_owner(&connection, &second, second_download_id);
+        let first_attempt_id = "attempt-membership-batch-first";
+        let second_attempt_id = "attempt-membership-batch-second";
+        let first_handoff = fixture_membership_handoff(
+            &first,
+            first_file_id,
+            first_download_id,
+            first_attempt_id,
+        );
+        let second_handoff = fixture_membership_handoff(
+            &second,
+            second_file_id,
+            second_download_id,
+            second_attempt_id,
+        );
+        let first_expected = match &first_handoff.action {
+            FixtureMembershipAction::Transition { expected, .. } => expected.clone(),
+            _ => unreachable!(),
+        };
+        let second_expected = match &second_handoff.action {
+            FixtureMembershipAction::Transition { expected, .. } => expected.clone(),
+            _ => unreachable!(),
+        };
+
+        release_fixture_attempt(&connection, &first, first_attempt_id);
+        release_fixture_attempt(&connection, &second, second_attempt_id);
+        connection
+            .execute_batch(
+                "CREATE TRIGGER reject_second_membership_handoff_commit
+                 BEFORE UPDATE OF state ON fixture_apply_plan_attempts
+                 WHEN OLD.attempt_id = 'attempt-membership-batch-second'
+                  AND NEW.state = 'committed'
+                 BEGIN
+                    SELECT RAISE(ABORT, 'forced second membership handoff failure');
+                 END;",
+            )
+            .expect("install second handoff failure");
+
+        let error = commit_fixture_membership_handoffs(
+            &connection,
+            &[first_handoff.clone(), second_handoff.clone()],
+        )
+        .expect_err("second handoff DB failure must roll back the full DB batch");
+        assert!(error
+            .to_string()
+            .contains("forced second membership handoff failure"));
+        assert_eq!(
+            load_fixture_membership_state(&connection, first_file_id)
+                .expect("first membership rolled back"),
+            Some(first_expected)
+        );
+        assert_eq!(
+            load_fixture_membership_state(&connection, second_file_id)
+                .expect("second membership rolled back"),
+            Some(second_expected)
+        );
+        for attempt_id in [first_attempt_id, second_attempt_id] {
+            assert_eq!(
+                load_fixture_attempt(&connection, attempt_id)
+                    .expect("rolled-back attempt")
+                    .expect("attempt")
+                    .state,
+                FixtureAttemptState::SourceReleaseCompleted
+            );
+        }
+        assert!(!first.source_path.exists());
+        assert!(first.destination_path.exists());
+        assert!(!second.source_path.exists());
+        assert!(second.destination_path.exists());
+
+        connection
+            .execute_batch("DROP TRIGGER reject_second_membership_handoff_commit;")
+            .expect("remove forced handoff failure");
+        commit_fixture_membership_handoffs(
+            &connection,
+            &[first_handoff, second_handoff],
+        )
+        .expect("retry complete handoff batch");
+        for attempt_id in [first_attempt_id, second_attempt_id] {
+            assert_eq!(
+                load_fixture_attempt(&connection, attempt_id)
+                    .expect("retried attempt")
+                    .expect("attempt")
+                    .state,
+                FixtureAttemptState::Committed
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn membership_handoff_changed_destination_blocks_before_database_commit() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(
+            &connection,
+            b"membership handoff changed destination bytes",
+        );
+        let download_item_id = 7_151;
+        let file_id = attach_fixture_download_owner(&connection, &context, download_item_id);
+        let attempt_id = "attempt-membership-destination-changed";
+        let handoff = fixture_membership_handoff(
+            &context,
+            file_id,
+            download_item_id,
+            attempt_id,
+        );
+        let expected = match &handoff.action {
+            FixtureMembershipAction::Transition { expected, .. } => expected.clone(),
+            _ => unreachable!(),
+        };
+        release_fixture_attempt(&connection, &context, attempt_id);
+        fs::write(&context.destination_path, b"changed after verified release")
+            .expect("change fixture destination before membership handoff");
+
+        let error = commit_fixture_membership_handoffs(
+            &connection,
+            std::slice::from_ref(&handoff),
+        )
+        .expect_err("changed destination must block membership handoff");
+        assert!(error
+            .to_string()
+            .contains("destination bytes to match the durable attempt evidence"));
+        assert_eq!(
+            load_fixture_membership_state(&connection, file_id)
+                .expect("membership remains uncommitted"),
+            Some(expected)
+        );
+        assert_eq!(
+            load_fixture_attempt(&connection, attempt_id)
+                .expect("changed destination attempt")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::SourceReleaseCompleted
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn membership_handoff_stale_library_ownership_fails_closed_without_false_commit() {
+        let connection = memory_connection();
+        let context = setup_verified_backup_only_state(
+            &connection,
+            b"membership handoff stale ownership bytes",
+        );
+        let download_item_id = 7_201;
+        let file_id = attach_fixture_download_owner(&connection, &context, download_item_id);
+        let attempt_id = "attempt-membership-stale";
+        let handoff = fixture_membership_handoff(
+            &context,
+            file_id,
+            download_item_id,
+            attempt_id,
+        );
+        release_fixture_attempt(&connection, &context, attempt_id);
+
+        let newer_state = FixtureMembershipState {
+            file_id,
+            path: context
+                .fixture_root
+                .join("newer-owned.package")
+                .to_string_lossy()
+                .to_string(),
+            source_location: "tray".to_owned(),
+            download_item_id: None,
+        };
+        connection
+            .execute(
+                "UPDATE files
+                 SET path = ?1, source_location = ?2, download_item_id = ?3
+                 WHERE id = ?4",
+                params![
+                    newer_state.path,
+                    newer_state.source_location,
+                    newer_state.download_item_id,
+                    newer_state.file_id,
+                ],
+            )
+            .expect("simulate newer membership owner");
+
+        let error = commit_fixture_membership_handoffs(
+            &connection,
+            std::slice::from_ref(&handoff),
+        )
+        .expect_err("stale Library ownership must block handoff commit");
+        assert!(error.to_string().contains("changed before transition"));
+        assert_eq!(
+            load_fixture_membership_state(&connection, file_id).expect("newer ownership survives"),
+            Some(newer_state)
+        );
+        assert_eq!(
+            load_fixture_attempt(&connection, attempt_id)
+                .expect("stale attempt remains recoverable")
+                .expect("attempt")
+                .state,
+            FixtureAttemptState::SourceReleaseCompleted
+        );
+        assert!(!context.source_path.exists());
+        assert!(context.destination_path.exists());
+    }
+
     #[test]
     fn attempt_journal_prepares_exact_record_and_rejects_duplicate_active_attempt() {
         let connection = memory_connection();
@@ -3096,7 +3710,7 @@ mod tests {
     }
 
     #[test]
-    fn attempt_journal_enforces_monotonic_transitions_and_terminal_immutability() {
+    fn attempt_journal_enforces_monotonic_transitions_and_reserves_commit_for_membership_handoff() {
         let connection = memory_connection();
         let context = setup_verified_backup_only_state(&connection, b"state-machine bytes");
         let request = reconciliation_request(&context);
@@ -3126,7 +3740,6 @@ mod tests {
             FixtureAttemptState::DestinationClaimObserved,
             FixtureAttemptState::DestinationVerified,
             FixtureAttemptState::SourceReleaseCompleted,
-            FixtureAttemptState::Committed,
         ] {
             let record = transition_fixture_attempt(&connection, "attempt-state-1", next)
                 .expect("allowed monotonic transition");
@@ -3136,9 +3749,9 @@ mod tests {
         transition_fixture_attempt(
             &connection,
             "attempt-state-1",
-            FixtureAttemptState::RecoveryRequired,
+            FixtureAttemptState::Committed,
         )
-        .expect_err("committed attempt must be immutable");
+        .expect_err("generic state transition must not bypass the membership handoff");
         transition_fixture_attempt(
             &connection,
             "attempt-state-1",
@@ -3147,10 +3760,10 @@ mod tests {
         .expect_err("backward transition must fail");
         assert_eq!(
             load_fixture_attempt(&connection, "attempt-state-1")
-                .expect("load committed attempt")
+                .expect("load released attempt")
                 .expect("attempt")
                 .state,
-            FixtureAttemptState::Committed
+            FixtureAttemptState::SourceReleaseCompleted
         );
     }
 
