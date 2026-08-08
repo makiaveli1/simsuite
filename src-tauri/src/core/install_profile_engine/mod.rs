@@ -224,93 +224,199 @@ fn merge_file_insights(existing: &FileInsights, fresh: &FileInsights) -> FileIns
     }
 }
 
-fn persist_refreshed_file_insights(
+#[derive(Debug, Clone)]
+struct PreparedFileInsightsRefresh {
+    file_id: Option<i64>,
+    expected_insights_json: Option<String>,
+    merged_insights: FileInsights,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExistingInsightRefreshTarget {
+    Existing(usize),
+    Preserve(usize),
+}
+
+fn special_insights_changed(existing: &FileInsights, merged: &FileInsights) -> bool {
+    merged.version_hints != existing.version_hints
+        || merged.version_signals != existing.version_signals
+        || merged.family_hints != existing.family_hints
+        || merged.creator_hints != existing.creator_hints
+        || merged.script_namespaces != existing.script_namespaces
+        || merged.embedded_names != existing.embedded_names
+        || merged.resource_summary != existing.resource_summary
+        || merged.format != existing.format
+}
+
+fn prepare_file_insights_refresh(
     connection: &Connection,
-    file_id: i64,
-    insights: &FileInsights,
+    seed_pack: &SeedPack,
+    file_id: Option<i64>,
+    path: &str,
+    extension: &str,
+    current_insights: &FileInsights,
+) -> AppResult<Option<PreparedFileInsightsRefresh>> {
+    if !special_insights_need_refresh(extension, current_insights) {
+        return Ok(None);
+    }
+
+    let path = Path::new(path);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let Ok(outcome) = file_inspector::inspect_file(path, extension, seed_pack, false) else {
+        return Ok(None);
+    };
+    let merged = merge_file_insights(current_insights, &outcome.insights);
+    if !special_insights_changed(current_insights, &merged) {
+        return Ok(None);
+    }
+
+    let expected_insights_json = if let Some(file_id) = file_id {
+        let stored_json = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                AppError::Message(format!(
+                    "Indexed file {file_id} disappeared while preparing refreshed insights."
+                ))
+            })?;
+        let stored_insights: FileInsights = serde_json::from_str(&stored_json)?;
+        if serde_json::to_string(&stored_insights)? != serde_json::to_string(current_insights)? {
+            return Err(AppError::Message(format!(
+                "Indexed file {file_id} changed while preparing refreshed insights."
+            )));
+        }
+        Some(stored_json)
+    } else {
+        None
+    };
+
+    Ok(Some(PreparedFileInsightsRefresh {
+        file_id,
+        expected_insights_json,
+        merged_insights: merged,
+    }))
+}
+
+fn persist_prepared_file_insights_batch(
+    connection: &Connection,
+    updates: &[&PreparedFileInsightsRefresh],
 ) -> AppResult<()> {
-    let serialized = serde_json::to_string(insights)?;
-    let updated = connection.execute(
-        "UPDATE files SET insights = ?2 WHERE id = ?1",
-        params![file_id, serialized],
-    )?;
-    if updated != 1 {
-        return Err(AppError::Message(format!(
-            "Expected to persist refreshed insights for one indexed file, but file {file_id} updated {updated} rows."
-        )));
+    if !updates.iter().any(|update| update.file_id.is_some()) {
+        return Ok(());
+    }
+
+    let transaction = connection.unchecked_transaction()?;
+    for update in updates {
+        let Some(file_id) = update.file_id else {
+            continue;
+        };
+        let expected_insights_json = update.expected_insights_json.as_ref().ok_or_else(|| {
+            AppError::Message(format!(
+                "Indexed file {file_id} is missing expected insight evidence."
+            ))
+        })?;
+        let serialized = serde_json::to_string(&update.merged_insights)?;
+        let updated = transaction.execute(
+            "UPDATE files
+             SET insights = ?2
+             WHERE id = ?1
+               AND insights = ?3",
+            params![file_id, serialized, expected_insights_json],
+        )?;
+        if updated != 1 {
+            return Err(AppError::Message(format!(
+                "Indexed file {file_id} changed before the refreshed insight batch could commit."
+            )));
+        }
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn refresh_profile_files_insights_if_needed(
+    connection: &Connection,
+    seed_pack: &SeedPack,
+    files: &mut [ProfileFile],
+) -> AppResult<()> {
+    let mut prepared = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        if let Some(update) = prepare_file_insights_refresh(
+            connection,
+            seed_pack,
+            Some(file.file_id),
+            &file.path,
+            &file.extension,
+            &file.insights,
+        )? {
+            prepared.push((index, update));
+        }
+    }
+
+    let prepared_refs = prepared
+        .iter()
+        .map(|(_, update)| update)
+        .collect::<Vec<_>>();
+    persist_prepared_file_insights_batch(connection, &prepared_refs)?;
+    for (index, update) in prepared {
+        files[index].insights = update.merged_insights;
     }
     Ok(())
 }
 
-fn refresh_profile_file_insights_if_needed(
+fn refresh_existing_install_file_groups_insights_if_needed(
     connection: &Connection,
     seed_pack: &SeedPack,
-    file: &mut ProfileFile,
+    existing_files: &mut [ExistingInstallFile],
+    preserve_files: &mut [ExistingInstallFile],
 ) -> AppResult<()> {
-    if !special_insights_need_refresh(&file.extension, &file.insights) {
-        return Ok(());
+    let mut prepared = Vec::new();
+    for (index, file) in existing_files.iter().enumerate() {
+        if let Some(update) = prepare_file_insights_refresh(
+            connection,
+            seed_pack,
+            file.file_id,
+            &file.path,
+            &file.extension,
+            &file.insights,
+        )? {
+            prepared.push((ExistingInsightRefreshTarget::Existing(index), update));
+        }
+    }
+    for (index, file) in preserve_files.iter().enumerate() {
+        if let Some(update) = prepare_file_insights_refresh(
+            connection,
+            seed_pack,
+            file.file_id,
+            &file.path,
+            &file.extension,
+            &file.insights,
+        )? {
+            prepared.push((ExistingInsightRefreshTarget::Preserve(index), update));
+        }
     }
 
-    let path = Path::new(&file.path);
-    if !path.exists() {
-        return Ok(());
+    let prepared_refs = prepared
+        .iter()
+        .map(|(_, update)| update)
+        .collect::<Vec<_>>();
+    persist_prepared_file_insights_batch(connection, &prepared_refs)?;
+    for (target, update) in prepared {
+        match target {
+            ExistingInsightRefreshTarget::Existing(index) => {
+                existing_files[index].insights = update.merged_insights;
+            }
+            ExistingInsightRefreshTarget::Preserve(index) => {
+                preserve_files[index].insights = update.merged_insights;
+            }
+        }
     }
-
-    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
-        return Ok(());
-    };
-    let merged = merge_file_insights(&file.insights, &outcome.insights);
-    if merged.version_hints == file.insights.version_hints
-        && merged.version_signals == file.insights.version_signals
-        && merged.family_hints == file.insights.family_hints
-        && merged.creator_hints == file.insights.creator_hints
-        && merged.script_namespaces == file.insights.script_namespaces
-        && merged.embedded_names == file.insights.embedded_names
-        && merged.resource_summary == file.insights.resource_summary
-        && merged.format == file.insights.format
-    {
-        return Ok(());
-    }
-
-    persist_refreshed_file_insights(connection, file.file_id, &merged)?;
-    file.insights = merged;
-    Ok(())
-}
-
-fn refresh_existing_install_file_insights_if_needed(
-    connection: &Connection,
-    seed_pack: &SeedPack,
-    file: &mut ExistingInstallFile,
-) -> AppResult<()> {
-    if !special_insights_need_refresh(&file.extension, &file.insights) {
-        return Ok(());
-    }
-
-    let path = Path::new(&file.path);
-    if !path.exists() {
-        return Ok(());
-    }
-
-    let Ok(outcome) = file_inspector::inspect_file(path, &file.extension, seed_pack, false) else {
-        return Ok(());
-    };
-    let merged = merge_file_insights(&file.insights, &outcome.insights);
-    if merged.version_hints == file.insights.version_hints
-        && merged.version_signals == file.insights.version_signals
-        && merged.family_hints == file.insights.family_hints
-        && merged.creator_hints == file.insights.creator_hints
-        && merged.script_namespaces == file.insights.script_namespaces
-        && merged.embedded_names == file.insights.embedded_names
-        && merged.resource_summary == file.insights.resource_summary
-        && merged.format == file.insights.format
-    {
-        return Ok(());
-    }
-
-    if let Some(file_id) = file.file_id {
-        persist_refreshed_file_insights(connection, file_id, &merged)?;
-    }
-    file.insights = merged;
     Ok(())
 }
 
@@ -3853,12 +3959,12 @@ fn detect_existing_layout_with_inventory(
         }
     }
 
-    for file in &mut existing_candidates {
-        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file)?;
-    }
-    for file in &mut preserve_candidates {
-        refresh_existing_install_file_insights_if_needed(connection, seed_pack, file)?;
-    }
+    refresh_existing_install_file_groups_insights_if_needed(
+        connection,
+        seed_pack,
+        &mut existing_candidates,
+        &mut preserve_candidates,
+    )?;
 
     let target_folder = select_existing_target_folder(
         &mods_root,
@@ -4102,9 +4208,7 @@ fn load_profile_files(
         })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
-    for file in &mut rows {
-        refresh_profile_file_insights_if_needed(connection, seed_pack, file)?;
-    }
+    refresh_profile_files_insights_if_needed(connection, seed_pack, &mut rows)?;
     log_slow_install_profile_step("load_profile_files", started_at, || {
         format!(
             "for item {} loaded {} {} file(s)",
@@ -4870,8 +4974,9 @@ mod tests {
         assess_download_item, build_evidence_summary, build_guided_plan, build_review_plan,
         build_special_mod_decision, incoming_signature_for_profile,
         installed_signature_for_profile, load_profile_files, normalized,
-        reconcile_special_mod_family, refresh_existing_install_file_insights_if_needed,
-        refresh_profile_file_insights_if_needed, store_download_item_assessment,
+        persist_prepared_file_insights_batch, prepare_file_insights_refresh,
+        reconcile_special_mod_family, refresh_existing_install_file_groups_insights_if_needed,
+        refresh_profile_files_insights_if_needed, store_download_item_assessment,
         ExistingInstallFile, ExistingInstallLayout, ProfileFile,
     };
     use crate::{
@@ -7206,8 +7311,12 @@ mod tests {
             .expect("install insight write counter");
 
         let mut file = persistence_test_profile_file(file_id, &path);
-        refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
-            .expect("first insight refresh");
+        refresh_profile_files_insights_if_needed(
+            &connection,
+            &seed_pack,
+            std::slice::from_mut(&mut file),
+        )
+        .expect("first insight refresh");
         assert!(file
             .insights
             .version_hints
@@ -7224,8 +7333,12 @@ mod tests {
             1
         );
 
-        refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
-            .expect("unchanged repeat refresh");
+        refresh_profile_files_insights_if_needed(
+            &connection,
+            &seed_pack,
+            std::slice::from_mut(&mut file),
+        )
+        .expect("unchanged repeat refresh");
         assert_eq!(
             connection
                 .query_row(
@@ -7273,8 +7386,12 @@ mod tests {
             .expect("install forced persistence failure");
 
         let mut file = persistence_test_profile_file(file_id, &path);
-        let error = refresh_profile_file_insights_if_needed(&connection, &seed_pack, &mut file)
-            .expect_err("direct refresh must propagate database failure");
+        let error = refresh_profile_files_insights_if_needed(
+            &connection,
+            &seed_pack,
+            std::slice::from_mut(&mut file),
+        )
+        .expect_err("direct refresh must propagate database failure");
         assert!(error
             .to_string()
             .contains("forced insight persistence failure"));
@@ -7337,10 +7454,11 @@ mod tests {
             insights: FileInsights::default(),
             in_target_folder: true,
         };
-        let error = refresh_existing_install_file_insights_if_needed(
+        let error = refresh_existing_install_file_groups_insights_if_needed(
             &connection,
             &seed_pack,
-            &mut file,
+            std::slice::from_mut(&mut file),
+            &mut [],
         )
         .expect_err("installed refresh must propagate database failure");
         assert!(error
@@ -7357,6 +7475,361 @@ mod tests {
             )
             .expect("stored installed insights after failed refresh");
         let stored: FileInsights = serde_json::from_str(&stored_insights).expect("stored json");
+        assert!(stored.version_hints.is_empty());
+        assert!(stored.family_hints.is_empty());
+    }
+
+    #[test]
+    fn profile_insight_batch_commits_two_changed_rows_together() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let downloads = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let item_id = 912_i64;
+        let item_root = downloads.join(item_id.to_string());
+        fs::create_dir_all(&item_root).expect("item root");
+        let first_id = 91201_i64;
+        let second_id = 91202_i64;
+        let first_path = item_root.join("mc_cmd_center.ts4script");
+        let second_path = item_root.join("mc_woohoo.ts4script");
+        write_script_archive(
+            &first_path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0version 2026_4_0",
+        );
+        write_script_archive(
+            &second_path,
+            "deaderpool/mccc/mc_woohoo_version.pyc",
+            b"\0version 2026_4_1",
+        );
+        insert_download_item(&connection, item_id, "MCCC batch fixture", &item_root);
+        insert_download_file(
+            &connection,
+            item_id,
+            first_id,
+            &first_path,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        insert_download_file(
+            &connection,
+            item_id,
+            second_id,
+            &second_path,
+            "mc_woohoo.ts4script",
+            "Script Mods",
+        );
+        connection
+            .execute_batch(
+                "CREATE TABLE insight_batch_audit (file_id INTEGER NOT NULL);
+                 CREATE TRIGGER count_insight_batch_update
+                 AFTER UPDATE OF insights ON files
+                 BEGIN
+                    INSERT INTO insight_batch_audit(file_id) VALUES (NEW.id);
+                 END;",
+            )
+            .expect("install batch write counter");
+
+        let mut files = vec![
+            persistence_test_profile_file(first_id, &first_path),
+            persistence_test_profile_file(second_id, &second_path),
+        ];
+        refresh_profile_files_insights_if_needed(&connection, &seed_pack, &mut files)
+            .expect("commit two-file insight batch");
+
+        assert!(!files[0].insights.version_hints.is_empty());
+        assert!(!files[1].insights.version_hints.is_empty());
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM insight_batch_audit", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("batch write count"),
+            2
+        );
+        for file_id in [first_id, second_id] {
+            let stored_json: String = connection
+                .query_row(
+                    "SELECT insights FROM files WHERE id = ?1",
+                    params![file_id],
+                    |row| row.get(0),
+                )
+                .expect("stored batch insights");
+            let stored: FileInsights =
+                serde_json::from_str(&stored_json).expect("stored batch json");
+            assert!(!stored.version_hints.is_empty());
+        }
+    }
+
+    #[test]
+    fn profile_insight_batch_rolls_back_first_when_second_write_fails() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let downloads = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let item_id = 913_i64;
+        let item_root = downloads.join(item_id.to_string());
+        fs::create_dir_all(&item_root).expect("item root");
+        let first_id = 91301_i64;
+        let second_id = 91302_i64;
+        let first_path = item_root.join("mc_cmd_center.ts4script");
+        let second_path = item_root.join("mc_woohoo.ts4script");
+        write_script_archive(
+            &first_path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0version 2026_5_0",
+        );
+        write_script_archive(
+            &second_path,
+            "deaderpool/mccc/mc_woohoo_version.pyc",
+            b"\0version 2026_5_1",
+        );
+        insert_download_item(&connection, item_id, "MCCC rollback fixture", &item_root);
+        insert_download_file(
+            &connection,
+            item_id,
+            first_id,
+            &first_path,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        insert_download_file(
+            &connection,
+            item_id,
+            second_id,
+            &second_path,
+            "mc_woohoo.ts4script",
+            "Script Mods",
+        );
+        connection
+            .execute_batch(&format!(
+                "CREATE TRIGGER reject_second_insight_batch_update
+                 BEFORE UPDATE OF insights ON files
+                 WHEN OLD.id = {second_id}
+                 BEGIN
+                    SELECT RAISE(ABORT, 'forced second batch persistence failure');
+                 END;"
+            ))
+            .expect("install second-write failure");
+
+        let mut files = vec![
+            persistence_test_profile_file(first_id, &first_path),
+            persistence_test_profile_file(second_id, &second_path),
+        ];
+        let error = refresh_profile_files_insights_if_needed(&connection, &seed_pack, &mut files)
+            .expect_err("second write must roll back whole batch");
+        assert!(error
+            .to_string()
+            .contains("forced second batch persistence failure"));
+        assert!(files[0].insights.version_hints.is_empty());
+        assert!(files[1].insights.version_hints.is_empty());
+
+        for file_id in [first_id, second_id] {
+            let stored_json: String = connection
+                .query_row(
+                    "SELECT insights FROM files WHERE id = ?1",
+                    params![file_id],
+                    |row| row.get(0),
+                )
+                .expect("stored rolled-back insights");
+            let stored: FileInsights =
+                serde_json::from_str(&stored_json).expect("stored rollback json");
+            assert!(stored.version_hints.is_empty());
+            assert!(stored.family_hints.is_empty());
+        }
+    }
+
+    #[test]
+    fn prepared_insight_batch_rejects_stale_row_without_overwriting_newer_data() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let downloads = PathBuf::from(settings.downloads_path.clone().expect("downloads"));
+        let item_id = 914_i64;
+        let file_id = 91401_i64;
+        let item_root = downloads.join(item_id.to_string());
+        fs::create_dir_all(&item_root).expect("item root");
+        let path = item_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0version 2026_6_0",
+        );
+        insert_download_item(&connection, item_id, "MCCC stale fixture", &item_root);
+        insert_download_file(
+            &connection,
+            item_id,
+            file_id,
+            &path,
+            "mc_cmd_center.ts4script",
+            "Script Mods",
+        );
+        let file = persistence_test_profile_file(file_id, &path);
+        let prepared = prepare_file_insights_refresh(
+            &connection,
+            &seed_pack,
+            Some(file_id),
+            &file.path,
+            &file.extension,
+            &file.insights,
+        )
+        .expect("prepare stale-row fixture")
+        .expect("refresh should be prepared");
+
+        let newer_insights = FileInsights {
+            version_hints: vec!["newer-db-value".to_owned()],
+            family_hints: vec!["newer-family".to_owned()],
+            ..FileInsights::default()
+        };
+        connection
+            .execute(
+                "UPDATE files SET insights = ?2 WHERE id = ?1",
+                params![file_id, serde_json::to_string(&newer_insights).expect("newer json")],
+            )
+            .expect("simulate concurrent insight update");
+
+        let error = persist_prepared_file_insights_batch(&connection, &[&prepared])
+            .expect_err("stale expected insight evidence must fail closed");
+        assert!(error
+            .to_string()
+            .contains("changed before the refreshed insight batch could commit"));
+        let stored_json: String = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .expect("newer stored insights");
+        let stored: FileInsights = serde_json::from_str(&stored_json).expect("newer stored json");
+        assert_eq!(stored.version_hints, vec!["newer-db-value".to_owned()]);
+        assert_eq!(stored.family_hints, vec!["newer-family".to_owned()]);
+        assert!(file.insights.version_hints.is_empty());
+    }
+
+    #[test]
+    fn disk_only_installed_insight_refresh_remains_in_memory_only() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let mods = PathBuf::from(settings.mods_path.clone().expect("mods"));
+        let install_root = mods.join("MCCC-disk-only");
+        fs::create_dir_all(&install_root).expect("disk-only root");
+        let path = install_root.join("mc_cmd_center.ts4script");
+        write_script_archive(
+            &path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0version 2026_7_0",
+        );
+        let mut file = ExistingInstallFile {
+            file_id: None,
+            filename: "mc_cmd_center.ts4script".to_owned(),
+            path: path.to_string_lossy().to_string(),
+            extension: ".ts4script".to_owned(),
+            kind: "Script Mods".to_owned(),
+            subtype: None,
+            creator: None,
+            size: fs::metadata(&path).expect("disk-only metadata").len() as i64,
+            hash: None,
+            insights: FileInsights::default(),
+            in_target_folder: true,
+        };
+        let before_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .expect("file count before disk-only refresh");
+        refresh_existing_install_file_groups_insights_if_needed(
+            &connection,
+            &seed_pack,
+            std::slice::from_mut(&mut file),
+            &mut [],
+        )
+        .expect("disk-only refresh");
+        assert!(!file.insights.version_hints.is_empty());
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM files", [], |row| row.get::<_, i64>(0))
+                .expect("file count after disk-only refresh"),
+            before_count
+        );
+    }
+
+    #[test]
+    fn mixed_disk_only_and_indexed_batch_keeps_all_memory_old_when_indexed_write_fails() {
+        let (_temp, connection, seed_pack, settings) = setup_env();
+        let mods = PathBuf::from(settings.mods_path.clone().expect("mods"));
+        let install_root = mods.join("MCCC-mixed-batch");
+        fs::create_dir_all(&install_root).expect("mixed batch root");
+
+        let disk_only_path = install_root.join("mc_cmd_center.ts4script");
+        let indexed_path = install_root.join("mc_woohoo.ts4script");
+        write_script_archive(
+            &disk_only_path,
+            "deaderpool/mccc/mc_cmd_version.pyc",
+            b"\0version 2026_8_0",
+        );
+        write_script_archive(
+            &indexed_path,
+            "deaderpool/mccc/mc_woohoo_version.pyc",
+            b"\0version 2026_8_1",
+        );
+        insert_installed_file(&connection, &indexed_path, "Script Mods");
+        let indexed_id = connection.last_insert_rowid();
+        connection
+            .execute_batch(&format!(
+                "CREATE TRIGGER reject_mixed_batch_indexed_update
+                 BEFORE UPDATE OF insights ON files
+                 WHEN OLD.id = {indexed_id}
+                 BEGIN
+                    SELECT RAISE(ABORT, 'forced mixed batch persistence failure');
+                 END;"
+            ))
+            .expect("install mixed batch failure");
+
+        let mut files = vec![
+            ExistingInstallFile {
+                file_id: None,
+                filename: "mc_cmd_center.ts4script".to_owned(),
+                path: disk_only_path.to_string_lossy().to_string(),
+                extension: ".ts4script".to_owned(),
+                kind: "Script Mods".to_owned(),
+                subtype: None,
+                creator: None,
+                size: fs::metadata(&disk_only_path)
+                    .expect("disk-only mixed metadata")
+                    .len() as i64,
+                hash: None,
+                insights: FileInsights::default(),
+                in_target_folder: true,
+            },
+            ExistingInstallFile {
+                file_id: Some(indexed_id),
+                filename: "mc_woohoo.ts4script".to_owned(),
+                path: indexed_path.to_string_lossy().to_string(),
+                extension: ".ts4script".to_owned(),
+                kind: "Script Mods".to_owned(),
+                subtype: None,
+                creator: None,
+                size: fs::metadata(&indexed_path)
+                    .expect("indexed mixed metadata")
+                    .len() as i64,
+                hash: None,
+                insights: FileInsights::default(),
+                in_target_folder: true,
+            },
+        ];
+
+        let error = refresh_existing_install_file_groups_insights_if_needed(
+            &connection,
+            &seed_pack,
+            &mut files,
+            &mut [],
+        )
+        .expect_err("indexed failure must block disk-only memory advancement too");
+        assert!(error
+            .to_string()
+            .contains("forced mixed batch persistence failure"));
+        assert!(files[0].insights.version_hints.is_empty());
+        assert!(files[1].insights.version_hints.is_empty());
+
+        let stored_json: String = connection
+            .query_row(
+                "SELECT insights FROM files WHERE id = ?1",
+                params![indexed_id],
+                |row| row.get(0),
+            )
+            .expect("stored mixed indexed insights");
+        let stored: FileInsights = serde_json::from_str(&stored_json).expect("mixed stored json");
         assert!(stored.version_hints.is_empty());
         assert!(stored.family_hints.is_empty());
     }
