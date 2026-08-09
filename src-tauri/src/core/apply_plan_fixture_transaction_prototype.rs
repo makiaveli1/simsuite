@@ -2772,6 +2772,13 @@ mod tests {
         connection
     }
 
+    #[cfg(target_os = "macos")]
+    fn file_backed_fixture_connection(path: &Path) -> Connection {
+        let mut connection = Connection::open(path).expect("file-backed fixture db");
+        database::initialize(&mut connection).expect("file-backed fixture schema");
+        connection
+    }
+
     fn bytes_hash(bytes: &[u8]) -> String {
         hex::encode(Sha256::digest(bytes))
     }
@@ -4223,9 +4230,9 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn load_sorting_batch_receipt(
+    fn load_sorting_batch_receipt_for_run(
         connection: &Connection,
-        batch: &SortingBatchFixtureContext,
+        run_id: i64,
     ) -> AppResult<Option<FixtureSortingBatchReceipt>> {
         ensure_sorting_batch_receipt_schema(connection)?;
         let mut statement = connection.prepare(
@@ -4237,7 +4244,7 @@ mod tests {
              ORDER BY item_order ASC",
         )?;
         let rows = statement
-            .query_map(params![batch.run_id], |row| {
+            .query_map(params![run_id], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, i64>(1)?,
@@ -4303,12 +4310,196 @@ mod tests {
             });
         }
         Ok(Some(FixtureSortingBatchReceipt {
-            run_id: batch.run_id,
+            run_id,
             apply_plan_id: first_plan_id,
             plan_hash: first_plan_hash,
             batch_hash: first_batch_hash,
             items,
         }))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_sorting_batch_receipt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Option<FixtureSortingBatchReceipt>> {
+        load_sorting_batch_receipt_for_run(connection, batch.run_id)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn reconstruct_sorting_batch_after_reopen(
+        connection: &Connection,
+        temp: TempDir,
+        run_id: i64,
+    ) -> AppResult<SortingBatchFixtureContext> {
+        let fixture_root = temp.path().to_path_buf();
+        let mods_root = fixture_root.join("Mods");
+        let backup_root = fixture_root.join("backup");
+        let canonical_fixture_root =
+            canonicalize_existing_dir(&fixture_root, "sorting restart fixture root")?;
+        let canonical_mods_root =
+            canonicalize_existing_dir(&mods_root, "sorting restart Mods root")?;
+        let canonical_backup_root =
+            canonicalize_existing_dir(&backup_root, "sorting restart backup root")?;
+        ensure_under_root(
+            &canonical_mods_root,
+            &canonical_fixture_root,
+            "sorting restart Mods root",
+        )?;
+        ensure_under_root(
+            &canonical_backup_root,
+            &canonical_fixture_root,
+            "sorting restart backup root",
+        )?;
+
+        let run = apply_plan_results::get_apply_plan_run_log(connection, run_id)?
+            .ok_or_else(|| AppError::Message("Sorting restart run log disappeared.".to_owned()))?;
+        let receipt = load_sorting_batch_receipt_for_run(connection, run_id)?
+            .ok_or_else(|| AppError::Message("Sorting restart batch receipt disappeared.".to_owned()))?;
+        if run.run.apply_plan_id != receipt.apply_plan_id
+            || run.run.total_items != receipt.items.len() as i64
+            || receipt.items.is_empty()
+        {
+            return Err(AppError::Message(
+                "Sorting restart run and sealed batch receipt no longer describe the same batch."
+                    .to_owned(),
+            ));
+        }
+
+        let plan = apply_plan_persistence::get_apply_plan(connection, receipt.apply_plan_id)?
+            .ok_or_else(|| AppError::Message("Sorting restart ApplyPlan disappeared.".to_owned()))?;
+        if plan.items.len() != receipt.items.len() {
+            return Err(AppError::Message(
+                "Sorting restart ApplyPlan item count no longer matches the sealed batch receipt."
+                    .to_owned(),
+            ));
+        }
+
+        let first_destination_parent = receipt.items[0]
+            .destination_path
+            .parent()
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting restart receipt destination has no organization folder.".to_owned(),
+                )
+            })?
+            .to_path_buf();
+        let destination_parent_parent = first_destination_parent.parent().ok_or_else(|| {
+            AppError::Message(
+                "Sorting restart organization folder has no parent root.".to_owned(),
+            )
+        })?;
+        let canonical_destination_parent_parent = canonicalize_existing_dir(
+            destination_parent_parent,
+            "sorting restart destination root",
+        )?;
+        if canonical_destination_parent_parent != canonical_mods_root {
+            return Err(AppError::Message(
+                "Sorting restart receipt points outside the configured Mods root.".to_owned(),
+            ));
+        }
+
+        let mut items = Vec::with_capacity(receipt.items.len());
+        for (expected_order, recorded) in receipt.items.iter().enumerate() {
+            if recorded.item_order != expected_order
+                || recorded
+                    .destination_path
+                    .parent()
+                    .is_none_or(|parent| parent != first_destination_parent.as_path())
+            {
+                return Err(AppError::Message(
+                    "Sorting restart receipt item order or shared destination folder changed."
+                        .to_owned(),
+                ));
+            }
+            let persisted = load_plan_item_scope(
+                connection,
+                receipt.apply_plan_id,
+                recorded.apply_plan_item_id,
+            )?;
+            if persisted.file_id != recorded.file_id
+                || persisted.action_kind != "suggest_move"
+                || persisted.blocked
+                || persisted.review_only
+                || PathBuf::from(&persisted.current_path) != recorded.source_path
+                || PathBuf::from(&persisted.destination_path) != recorded.destination_path
+            {
+                return Err(AppError::Message(
+                    "Sorting restart persisted plan item no longer matches the sealed receipt."
+                        .to_owned(),
+                ));
+            }
+
+            let source_path = resolve_fixture_candidate(
+                &recorded.source_path,
+                "sorting restart source path",
+            )?;
+            let destination_path = resolve_fixture_candidate(
+                &recorded.destination_path,
+                "sorting restart destination path",
+            )?;
+            ensure_under_root(
+                &source_path,
+                &canonical_mods_root,
+                "sorting restart source path",
+            )?;
+            ensure_under_root(
+                &destination_path,
+                &canonical_mods_root,
+                "sorting restart destination path",
+            )?;
+            let backup_path = resolve_fixture_candidate(
+                &recorded.backup_path,
+                "sorting restart backup path",
+            )?;
+            ensure_under_root(
+                &backup_path,
+                &canonical_backup_root,
+                "sorting restart backup path",
+            )?;
+
+            let indexed = load_indexed_source_scope(connection, recorded.file_id)?;
+            if indexed.size < 0
+                || indexed.size as u64 != recorded.source_size
+                || indexed.hash.as_deref() != Some(recorded.source_hash.as_str())
+                || !matches!(
+                    PathBuf::from(indexed.path),
+                    path if path == recorded.source_path || path == recorded.destination_path
+                )
+            {
+                return Err(AppError::Message(
+                    "Sorting restart Library evidence is outside the sealed source/destination pair."
+                        .to_owned(),
+                ));
+            }
+
+            items.push(SortingBatchFixtureItem {
+                file_id: recorded.file_id,
+                item_id: recorded.apply_plan_item_id,
+                source_path: recorded.source_path.clone(),
+                destination_path: recorded.destination_path.clone(),
+                source_hash: recorded.source_hash.clone(),
+                source_size: recorded.source_size,
+            });
+        }
+
+        let batch = SortingBatchFixtureContext {
+            _temp: temp,
+            fixture_root,
+            mods_root,
+            backup_root,
+            destination_dir: first_destination_parent,
+            settings: LibrarySettings {
+                mods_path: Some(canonical_mods_root.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+            plan_id: receipt.apply_plan_id,
+            run_id,
+            items,
+        };
+        ensure_run_matches_plan(connection, batch.run_id, batch.plan_id)?;
+        validate_sorting_batch_receipt(connection, &batch, &receipt)?;
+        Ok(batch)
     }
 
     #[cfg(target_os = "macos")]
@@ -5989,6 +6180,289 @@ mod tests {
                 .expect("load absent stale batch folder record")
                 .is_none()
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_partial_prefix_survives_database_close_reopen_and_resumes() {
+        let database_temp = tempdir().expect("sorting restart database tempdir");
+        let database_path = database_temp.path().join("sorting-restart.sqlite3");
+        let mut connection = file_backed_fixture_connection(&database_path);
+        let batch = setup_sorting_batch_fixture(&mut connection);
+
+        let partial = run_sorting_batch_apply(&connection, &batch, Some(1))
+            .expect("complete one sorting item before restart");
+        assert_eq!(partial.completed_item_ids, vec![batch.items[0].item_id]);
+        assert_eq!(partial.pending_item_ids.len(), 2);
+        assert_eq!(partial.stopped_before_item_id, Some(batch.items[1].item_id));
+        let before_restart = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load sorting run before restart")
+            .expect("sorting run exists before restart");
+        let backup_ids_before = before_restart
+            .results
+            .iter()
+            .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+            .map(|result| result.id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_before.len(), 3);
+        let first_attempt_id = sorting_batch_attempt_id(&batch, &batch.items[0]);
+        let first_attempt_before = load_fixture_attempt(&connection, &first_attempt_id)
+            .expect("load committed first attempt before restart")
+            .expect("first attempt exists before restart");
+        assert_eq!(first_attempt_before.state, FixtureAttemptState::Committed);
+
+        let run_id = batch.run_id;
+        let fixture_temp = batch._temp;
+        drop(connection);
+
+        let reopened = file_backed_fixture_connection(&database_path);
+        let recovered = reconstruct_sorting_batch_after_reopen(&reopened, fixture_temp, run_id)
+            .expect("reconstruct sorting batch after database reopen");
+        assert_eq!(recovered.items.len(), 3);
+        let first_attempt_after_reopen = load_fixture_attempt(&reopened, &first_attempt_id)
+            .expect("reload first attempt after restart")
+            .expect("first attempt survives restart");
+        assert_eq!(first_attempt_after_reopen.attempt_id, first_attempt_before.attempt_id);
+        assert_eq!(first_attempt_after_reopen.state, FixtureAttemptState::Committed);
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[0].destination_path,
+                recovered.items[0].source_size,
+                &recovered.items[0].source_hash,
+            )
+            .expect("first destination survives restart"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[1].source_path,
+                recovered.items[1].source_size,
+                &recovered.items[1].source_hash,
+            )
+            .expect("second source remains pending after restart"),
+            ObservedFileState::Exact
+        );
+
+        let completed = run_sorting_batch_apply(&reopened, &recovered, None)
+            .expect("resume sorting batch after database reopen");
+        assert_eq!(completed.completed_item_ids.len(), 3);
+        assert!(completed.pending_item_ids.is_empty());
+        assert_eq!(completed.stopped_before_item_id, None);
+        let after_restart = apply_plan_results::get_apply_plan_run_log(&reopened, run_id)
+            .expect("load sorting run after restart")
+            .expect("sorting run exists after restart");
+        let backup_ids_after = after_restart
+            .results
+            .iter()
+            .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+            .map(|result| result.id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_after, backup_ids_before);
+        for item in &recovered.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("restarted batch source released"),
+                ObservedFileState::Missing
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("restarted batch destination exact"),
+                ObservedFileState::Exact
+            );
+            let membership = load_fixture_membership_state(&reopened, item.file_id)
+                .expect("load restarted batch membership")
+                .expect("restarted batch membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.destination_path);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_reopen_blocks_pending_source_changed_while_closed() {
+        let database_temp = tempdir().expect("sorting restart source-tamper database tempdir");
+        let database_path = database_temp.path().join("sorting-restart-source-tamper.sqlite3");
+        let mut connection = file_backed_fixture_connection(&database_path);
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        run_sorting_batch_apply(&connection, &batch, Some(1))
+            .expect("complete first item before offline source tamper");
+        let run_id = batch.run_id;
+        let pending_source_path = batch.items[1].source_path.clone();
+        let fixture_temp = batch._temp;
+        drop(connection);
+
+        fs::write(&pending_source_path, b"changed while SimSuite was closed")
+            .expect("tamper pending source while database is closed");
+        let reopened = file_backed_fixture_connection(&database_path);
+        let recovered = reconstruct_sorting_batch_after_reopen(&reopened, fixture_temp, run_id)
+            .expect("reconstruct batch before detecting offline source tamper");
+        let error = run_sorting_batch_apply(&reopened, &recovered, None)
+            .expect_err("offline source tamper must block resumed batch");
+        assert!(format!("{error:?}").contains("changed after authorization"));
+
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[0].destination_path,
+                recovered.items[0].source_size,
+                &recovered.items[0].source_hash,
+            )
+            .expect("completed item survives blocked restart"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[1].source_path,
+                recovered.items[1].source_size,
+                &recovered.items[1].source_hash,
+            )
+            .expect("tampered pending source remains changed"),
+            ObservedFileState::Different
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[1].destination_path,
+                recovered.items[1].source_size,
+                &recovered.items[1].source_hash,
+            )
+            .expect("tampered pending destination stays empty"),
+            ObservedFileState::Missing
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[2].source_path,
+                recovered.items[2].source_size,
+                &recovered.items[2].source_hash,
+            )
+            .expect("later pending source remains untouched"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[2].destination_path,
+                recovered.items[2].source_size,
+                &recovered.items[2].source_hash,
+            )
+            .expect("later pending destination remains empty"),
+            ObservedFileState::Missing
+        );
+        for item in &recovered.items[1..] {
+            let membership = load_fixture_membership_state(&reopened, item.file_id)
+                .expect("load blocked restart membership")
+                .expect("blocked restart membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+        let run = apply_plan_results::get_apply_plan_run_log(&reopened, run_id)
+            .expect("load blocked source-tamper run")
+            .expect("blocked source-tamper run exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            3
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_reopen_blocks_pending_destination_appearing_while_closed() {
+        let database_temp = tempdir().expect("sorting restart destination-tamper database tempdir");
+        let database_path = database_temp.path().join("sorting-restart-destination-tamper.sqlite3");
+        let mut connection = file_backed_fixture_connection(&database_path);
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        run_sorting_batch_apply(&connection, &batch, Some(1))
+            .expect("complete first item before offline destination tamper");
+        let run_id = batch.run_id;
+        let pending_destination_path = batch.items[1].destination_path.clone();
+        let fixture_temp = batch._temp;
+        drop(connection);
+
+        fs::write(&pending_destination_path, b"player file appeared while SimSuite was closed")
+            .expect("create pending destination collision while database is closed");
+        let reopened = file_backed_fixture_connection(&database_path);
+        let recovered = reconstruct_sorting_batch_after_reopen(&reopened, fixture_temp, run_id)
+            .expect("reconstruct batch before detecting offline destination collision");
+        let error = run_sorting_batch_apply(&reopened, &recovered, None)
+            .expect_err("offline destination collision must block resumed batch");
+        assert!(format!("{error:?}").contains("changed after authorization"));
+
+        assert_eq!(
+            fs::read(&pending_destination_path)
+                .expect("offline destination collision must remain untouched"),
+            b"player file appeared while SimSuite was closed"
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[1].source_path,
+                recovered.items[1].source_size,
+                &recovered.items[1].source_hash,
+            )
+            .expect("colliding pending source remains untouched"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(
+                &recovered.items[2].source_path,
+                recovered.items[2].source_size,
+                &recovered.items[2].source_hash,
+            )
+            .expect("later source remains untouched after collision"),
+            ObservedFileState::Exact
+        );
+        for item in &recovered.items[1..] {
+            let membership = load_fixture_membership_state(&reopened, item.file_id)
+                .expect("load collision restart membership")
+                .expect("collision restart membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_undo_from_fresh_database_reopen_restores_and_cleans_up() {
+        let database_temp = tempdir().expect("sorting restart Undo database tempdir");
+        let database_path = database_temp.path().join("sorting-restart-undo.sqlite3");
+        let mut connection = file_backed_fixture_connection(&database_path);
+        let batch = setup_sorting_batch_fixture(&mut connection);
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect("complete sorting batch before fresh-reopen Undo");
+        let run_id = batch.run_id;
+        let fixture_temp = batch._temp;
+        drop(connection);
+
+        let reopened = file_backed_fixture_connection(&database_path);
+        let recovered = reconstruct_sorting_batch_after_reopen(&reopened, fixture_temp, run_id)
+            .expect("reconstruct completed batch for fresh-reopen Undo");
+        assert_eq!(
+            run_sorting_batch_undo(&reopened, &recovered)
+                .expect("Undo completed batch from fresh database reopen"),
+            FixtureSortingDirectoryCleanupOutcome::Removed
+        );
+        assert!(!recovered.destination_dir.exists());
+        for item in &recovered.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("fresh-reopen Undo restored source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("fresh-reopen Undo removed moved copy"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&reopened, item.file_id)
+                .expect("load fresh-reopen Undo membership")
+                .expect("fresh-reopen Undo membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+            assert_eq!(membership.source_location, "mods");
+        }
     }
 
     #[cfg(target_os = "macos")]
