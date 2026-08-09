@@ -2848,6 +2848,21 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FixtureSortingBatchCrashPoint {
+        AfterDestinationClaim,
+        AfterDestinationVerification,
+        AfterSourceReleaseBeforeMembership,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct FixtureSortingBatchRecoveryOutcome {
+        stabilized_item_ids: Vec<i64>,
+        already_committed_item_ids: Vec<i64>,
+    }
+
+    #[cfg(target_os = "macos")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct FixtureSortingBatchDirectoryRecord {
         apply_plan_run_id: i64,
@@ -5297,6 +5312,414 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn validate_sorting_batch_interrupted_attempt(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+        item: &SortingBatchFixtureItem,
+        receipt_item: &FixtureSortingBatchReceiptItem,
+        attempt: &FixtureAttemptRecord,
+    ) -> AppResult<FixtureMembershipState> {
+        if attempt.apply_plan_run_id != batch.run_id
+            || attempt.apply_plan_id != batch.plan_id
+            || attempt.apply_plan_item_id != item.item_id
+            || attempt.expected_hash != item.source_hash
+            || attempt.expected_size != item.source_size
+            || attempt.backup_result_id != receipt_item.backup_result_id
+            || attempt.backup_restore_entry_id != receipt_item.backup_restore_entry_id
+            || !attempt.source_regular_file
+            || !attempt.source_entry_non_symlink
+            || !attempt.destination_entry_non_symlink
+        {
+            return Err(AppError::Message(
+                "Sorting crash recovery attempt metadata no longer matches the sealed batch receipt."
+                    .to_owned(),
+            ));
+        }
+        attempt.capability.validate_for_fixture_attempt()?;
+        ensure_sorting_batch_item_authorization(
+            connection,
+            batch,
+            receipt,
+            item,
+            receipt_item,
+        )?;
+        let attempt_source = resolve_fixture_candidate(
+            Path::new(&attempt.source_path),
+            "sorting crash recovery attempt source",
+        )?;
+        let expected_source = resolve_fixture_candidate(
+            &item.source_path,
+            "sorting crash recovery expected source",
+        )?;
+        let attempt_destination = resolve_fixture_candidate(
+            Path::new(&attempt.destination_path),
+            "sorting crash recovery attempt destination",
+        )?;
+        let expected_destination = resolve_fixture_candidate(
+            &item.destination_path,
+            "sorting crash recovery expected destination",
+        )?;
+        if attempt_source != expected_source || attempt_destination != expected_destination {
+            return Err(AppError::Message(
+                "Sorting crash recovery attempt paths no longer match the sealed batch receipt."
+                    .to_owned(),
+            ));
+        }
+        let backup = load_existing_sorting_batch_backup(connection, batch, item)?
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting crash recovery lost the verified backup sealed into the batch receipt."
+                        .to_owned(),
+                )
+            })?;
+        if backup.result_log_id != receipt_item.backup_result_id
+            || backup.restore_entry_id != receipt_item.backup_restore_entry_id
+            || backup.backup_path != receipt_item.backup_path
+        {
+            return Err(AppError::Message(
+                "Sorting crash recovery backup chain no longer matches the sealed batch receipt."
+                    .to_owned(),
+            ));
+        }
+        let membership = load_fixture_membership_state(connection, item.file_id)?
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting crash recovery cannot continue without exact Library membership evidence."
+                        .to_owned(),
+                )
+            })?;
+        if membership.file_id != item.file_id
+            || membership.source_location != "mods"
+            || membership.download_item_id.is_some()
+        {
+            return Err(AppError::Message(
+                "Sorting crash recovery Library ownership changed unexpectedly."
+                    .to_owned(),
+            ));
+        }
+        Ok(membership)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_source_membership(
+        membership: &FixtureMembershipState,
+        item: &SortingBatchFixtureItem,
+        label: &str,
+    ) -> AppResult<()> {
+        let membership_path = resolve_fixture_candidate(Path::new(&membership.path), label)?;
+        let source_path = resolve_fixture_candidate(&item.source_path, label)?;
+        if membership_path != source_path {
+            return Err(AppError::Message(
+                "Sorting crash recovery requires pending Library membership to remain at the authorized source."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_destination_membership(
+        membership: &FixtureMembershipState,
+        item: &SortingBatchFixtureItem,
+    ) -> AppResult<()> {
+        let membership_path = resolve_fixture_candidate(
+            Path::new(&membership.path),
+            "sorting crash recovery committed membership",
+        )?;
+        let destination_path = resolve_fixture_candidate(
+            &item.destination_path,
+            "sorting crash recovery committed destination",
+        )?;
+        if membership_path != destination_path {
+            return Err(AppError::Message(
+                "Sorting crash recovery committed Library membership is not at the authorized destination."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn recover_sorting_batch_interrupted_attempts(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<FixtureSortingBatchRecoveryOutcome> {
+        let receipt = ensure_sorting_batch_receipt(connection, batch)?;
+        ensure_sorting_batch_destination_directory(connection, batch, &receipt)?;
+        let mut stabilized_item_ids = Vec::new();
+        let mut already_committed_item_ids = Vec::new();
+
+        for (item, receipt_item) in batch.items.iter().zip(receipt.items.iter()) {
+            let attempt_id = sorting_batch_attempt_id(batch, item);
+            let Some(mut attempt) = load_fixture_attempt(connection, &attempt_id)? else {
+                continue;
+            };
+            let membership = validate_sorting_batch_interrupted_attempt(
+                connection,
+                batch,
+                &receipt,
+                item,
+                receipt_item,
+                &attempt,
+            )?;
+
+            match attempt.state {
+                FixtureAttemptState::Committed => {
+                    ensure_sorting_batch_destination_membership(&membership, item)?;
+                    if observe_expected_file(
+                        &item.source_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )? != ObservedFileState::Missing
+                        || observe_expected_file(
+                            &item.destination_path,
+                            item.source_size,
+                            &item.source_hash,
+                        )? != ObservedFileState::Exact
+                    {
+                        return Err(AppError::Message(
+                            "Sorting crash recovery committed item no longer matches its exact filesystem evidence."
+                                .to_owned(),
+                        ));
+                    }
+                    already_committed_item_ids.push(item.item_id);
+                    continue;
+                }
+                FixtureAttemptState::PreparedBeforeChange => {
+                    ensure_sorting_batch_source_membership(
+                        &membership,
+                        item,
+                        "sorting crash recovery prepared membership",
+                    )?;
+                    if observe_expected_file(
+                        &item.source_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )? != ObservedFileState::Exact
+                        || observe_expected_file(
+                            &item.destination_path,
+                            item.source_size,
+                            &item.source_hash,
+                        )? != ObservedFileState::Missing
+                    {
+                        return Err(AppError::Message(
+                            "Sorting crash recovery prepared attempt has unexpected file evidence."
+                                .to_owned(),
+                        ));
+                    }
+                    claim_fixture_destination_no_replace(
+                        &item.source_path,
+                        &item.destination_path,
+                    )?;
+                    attempt = transition_fixture_attempt(
+                        connection,
+                        &attempt_id,
+                        FixtureAttemptState::DestinationClaimObserved,
+                    )?;
+                }
+                FixtureAttemptState::DestinationClaimObserved
+                | FixtureAttemptState::DestinationVerified
+                | FixtureAttemptState::SourceReleaseCompleted => {
+                    ensure_sorting_batch_source_membership(
+                        &membership,
+                        item,
+                        "sorting crash recovery pending membership",
+                    )?;
+                }
+                FixtureAttemptState::RecoveryRequired
+                | FixtureAttemptState::BlockedBeforeChange
+                | FixtureAttemptState::FailedBeforeChange => {
+                    return Err(AppError::Message(format!(
+                        "Sorting crash recovery refuses frozen or terminal attempt state: {}",
+                        attempt.state.as_str()
+                    )));
+                }
+            }
+
+            if attempt.state == FixtureAttemptState::DestinationClaimObserved
+                || attempt.state == FixtureAttemptState::DestinationVerified
+            {
+                if observe_expected_file(
+                    &item.source_path,
+                    item.source_size,
+                    &item.source_hash,
+                )? != ObservedFileState::Exact
+                    || observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )? != ObservedFileState::Exact
+                    || same_physical_file_identity(
+                        &item.source_path,
+                        &item.destination_path,
+                    )? != Some(true)
+                {
+                    return Err(AppError::Message(
+                        "Sorting crash recovery cannot prove the exact source/destination hard-link pair."
+                            .to_owned(),
+                    ));
+                }
+                if attempt.state == FixtureAttemptState::DestinationClaimObserved {
+                    transition_fixture_attempt(
+                        connection,
+                        &attempt_id,
+                        FixtureAttemptState::DestinationVerified,
+                    )?;
+                }
+                if observe_expected_file(
+                    &item.source_path,
+                    item.source_size,
+                    &item.source_hash,
+                )? != ObservedFileState::Exact
+                    || observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )? != ObservedFileState::Exact
+                    || same_physical_file_identity(
+                        &item.source_path,
+                        &item.destination_path,
+                    )? != Some(true)
+                {
+                    return Err(AppError::Message(
+                        "Sorting crash recovery file identity changed immediately before source release."
+                            .to_owned(),
+                    ));
+                }
+                fs::remove_file(&item.source_path).map_err(|error| {
+                    AppError::Message(format!(
+                        "Sorting crash recovery verified the destination but could not release the source name: {error}"
+                    ))
+                })?;
+                attempt = transition_fixture_attempt(
+                    connection,
+                    &attempt_id,
+                    FixtureAttemptState::SourceReleaseCompleted,
+                )?;
+            }
+
+            if attempt.state == FixtureAttemptState::SourceReleaseCompleted {
+                if observe_expected_file(
+                    &item.source_path,
+                    item.source_size,
+                    &item.source_hash,
+                )? != ObservedFileState::Missing
+                    || observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )? != ObservedFileState::Exact
+                {
+                    return Err(AppError::Message(
+                        "Sorting crash recovery source-release state no longer matches the exact moved-file evidence."
+                            .to_owned(),
+                    ));
+                }
+                commit_fixture_membership_handoffs(
+                    connection,
+                    &[sorting_batch_forward_handoff(item, &attempt_id)],
+                )?;
+                let committed = load_fixture_attempt(connection, &attempt_id)?
+                    .ok_or_else(|| {
+                        AppError::Message(
+                            "Sorting crash recovery attempt disappeared after membership reconciliation."
+                                .to_owned(),
+                        )
+                    })?;
+                if committed.state != FixtureAttemptState::Committed {
+                    return Err(AppError::Message(
+                        "Sorting crash recovery did not reach committed state after membership reconciliation."
+                            .to_owned(),
+                    ));
+                }
+                stabilized_item_ids.push(item.item_id);
+            }
+        }
+
+        Ok(FixtureSortingBatchRecoveryOutcome {
+            stabilized_item_ids,
+            already_committed_item_ids,
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn interrupt_sorting_batch_item_at_crash_point(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        item_index: usize,
+        crash_point: FixtureSortingBatchCrashPoint,
+    ) -> AppResult<String> {
+        let receipt = ensure_sorting_batch_receipt(connection, batch)?;
+        ensure_sorting_batch_destination_directory(connection, batch, &receipt)?;
+        for (item, receipt_item) in batch.items.iter().zip(receipt.items.iter()) {
+            ensure_sorting_batch_item_authorization(
+                connection,
+                batch,
+                &receipt,
+                item,
+                receipt_item,
+            )?;
+        }
+        let item = batch.items.get(item_index).ok_or_else(|| {
+            AppError::Message("Sorting crash fixture item index is out of bounds.".to_owned())
+        })?;
+        let receipt_item = receipt.items.get(item_index).ok_or_else(|| {
+            AppError::Message("Sorting crash fixture receipt item index is out of bounds.".to_owned())
+        })?;
+        let attempt_id = sorting_batch_attempt_id(batch, item);
+        prepare_sorting_batch_attempt(
+            connection,
+            batch,
+            &receipt,
+            item,
+            receipt_item,
+            &attempt_id,
+            &fixture_attempt_capability_proof(),
+        )?;
+        claim_fixture_destination_no_replace(&item.source_path, &item.destination_path)?;
+        transition_fixture_attempt(
+            connection,
+            &attempt_id,
+            FixtureAttemptState::DestinationClaimObserved,
+        )?;
+        if crash_point == FixtureSortingBatchCrashPoint::AfterDestinationClaim {
+            return Ok(attempt_id);
+        }
+        if observe_expected_file(
+            &item.destination_path,
+            item.source_size,
+            &item.source_hash,
+        )? != ObservedFileState::Exact
+            || same_physical_file_identity(&item.source_path, &item.destination_path)? != Some(true)
+        {
+            return Err(AppError::Message(
+                "Sorting crash fixture could not verify its claimed destination before interruption."
+                    .to_owned(),
+            ));
+        }
+        transition_fixture_attempt(
+            connection,
+            &attempt_id,
+            FixtureAttemptState::DestinationVerified,
+        )?;
+        if crash_point == FixtureSortingBatchCrashPoint::AfterDestinationVerification {
+            return Ok(attempt_id);
+        }
+        fs::remove_file(&item.source_path).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting crash fixture could not release source before injected interruption: {error}"
+            ))
+        })?;
+        transition_fixture_attempt(
+            connection,
+            &attempt_id,
+            FixtureAttemptState::SourceReleaseCompleted,
+        )?;
+        Ok(attempt_id)
+    }
+
+    #[cfg(target_os = "macos")]
     fn sorting_batch_forward_handoff(
         item: &SortingBatchFixtureItem,
         attempt_id: &str,
@@ -6180,6 +6603,369 @@ mod tests {
                 .expect("load absent stale batch folder record")
                 .is_none()
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_crash_recovery_fails_closed_for_offline_tampering() {
+        #[derive(Debug, Clone, Copy)]
+        enum TamperCase {
+            SourceAfterRelease,
+            DestinationIdentityAfterClaim,
+            BackupBytes,
+            AttemptMetadata,
+            LibraryMembership,
+        }
+
+        for tamper_case in [
+            TamperCase::SourceAfterRelease,
+            TamperCase::DestinationIdentityAfterClaim,
+            TamperCase::BackupBytes,
+            TamperCase::AttemptMetadata,
+            TamperCase::LibraryMembership,
+        ] {
+            let database_temp = tempdir().expect("sorting crash tamper database tempdir");
+            let database_path = database_temp
+                .path()
+                .join(format!("sorting-crash-tamper-{tamper_case:?}.sqlite3"));
+            let mut connection = file_backed_fixture_connection(&database_path);
+            let batch = setup_sorting_batch_fixture(&mut connection);
+            let crash_point = match tamper_case {
+                TamperCase::DestinationIdentityAfterClaim => {
+                    FixtureSortingBatchCrashPoint::AfterDestinationClaim
+                }
+                _ => FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership,
+            };
+            let attempt_id = interrupt_sorting_batch_item_at_crash_point(
+                &connection,
+                &batch,
+                0,
+                crash_point,
+            )
+            .expect("interrupt first batch item before offline tamper");
+            let receipt = load_sorting_batch_receipt(&connection, &batch)
+                .expect("load crash tamper receipt")
+                .expect("crash tamper receipt exists");
+            let target = batch.items[0].clone();
+            let later_attempt_ids = batch.items[1..]
+                .iter()
+                .map(|item| sorting_batch_attempt_id(&batch, item))
+                .collect::<Vec<_>>();
+            let source_bytes = if matches!(tamper_case, TamperCase::DestinationIdentityAfterClaim) {
+                Some(fs::read(&target.source_path).expect("read source before identity replacement"))
+            } else {
+                None
+            };
+            let backup_path = receipt.items[0].backup_path.clone();
+            let rogue_membership_path = batch.mods_root.join("Rogue").join("alpha.package");
+            let run_id = batch.run_id;
+            let fixture_temp = batch._temp;
+            drop(connection);
+
+            match tamper_case {
+                TamperCase::SourceAfterRelease => {
+                    fs::write(&target.source_path, b"unexpected source recreated while closed")
+                        .expect("recreate wrong source while closed");
+                }
+                TamperCase::DestinationIdentityAfterClaim => {
+                    fs::remove_file(&target.destination_path)
+                        .expect("remove claimed hard link while closed");
+                    fs::write(
+                        &target.destination_path,
+                        source_bytes.as_deref().expect("saved source bytes"),
+                    )
+                    .expect("replace destination with same-byte independent file");
+                    assert_eq!(
+                        observe_expected_file(
+                            &target.destination_path,
+                            target.source_size,
+                            &target.source_hash,
+                        )
+                        .expect("replacement destination exact bytes"),
+                        ObservedFileState::Exact
+                    );
+                    assert_eq!(
+                        same_physical_file_identity(&target.source_path, &target.destination_path)
+                            .expect("compare replacement identity"),
+                        Some(false)
+                    );
+                }
+                TamperCase::BackupBytes => {
+                    fs::write(&backup_path, b"backup changed while closed")
+                        .expect("tamper verified backup while closed");
+                }
+                TamperCase::AttemptMetadata => {
+                    let offline = Connection::open(&database_path)
+                        .expect("open database for offline attempt metadata tamper");
+                    let changed = offline
+                        .execute(
+                            "UPDATE fixture_apply_plan_attempts
+                             SET expected_hash = 'tampered-attempt-hash'
+                             WHERE attempt_id = ?1",
+                            params![attempt_id],
+                        )
+                        .expect("tamper durable attempt metadata");
+                    assert_eq!(changed, 1);
+                }
+                TamperCase::LibraryMembership => {
+                    let offline = Connection::open(&database_path)
+                        .expect("open database for offline Library membership tamper");
+                    let changed = offline
+                        .execute(
+                            "UPDATE files SET path = ?1 WHERE id = ?2",
+                            params![
+                                rogue_membership_path.to_string_lossy().to_string(),
+                                target.file_id,
+                            ],
+                        )
+                        .expect("tamper Library membership while closed");
+                    assert_eq!(changed, 1);
+                }
+            }
+
+            let reopened = file_backed_fixture_connection(&database_path);
+            let reconstructed = reconstruct_sorting_batch_after_reopen(
+                &reopened,
+                fixture_temp,
+                run_id,
+            );
+            match tamper_case {
+                TamperCase::BackupBytes | TamperCase::LibraryMembership => {
+                    if reconstructed.is_ok() {
+                        panic!(
+                            "restart reconstruction itself must reject backup/Library tamper"
+                        );
+                    }
+                }
+                TamperCase::SourceAfterRelease
+                | TamperCase::DestinationIdentityAfterClaim
+                | TamperCase::AttemptMetadata => {
+                    let recovered = reconstructed
+                        .expect("reconstruct before per-attempt tamper rejection");
+                    recover_sorting_batch_interrupted_attempts(&reopened, &recovered)
+                        .expect_err("crash recovery must reject changed attempt/files");
+                    for later_attempt_id in &later_attempt_ids {
+                        assert!(
+                            load_fixture_attempt(&reopened, later_attempt_id)
+                                .expect("load later attempt after blocked crash recovery")
+                                .is_none(),
+                            "blocked crash recovery must not advance unrelated later items"
+                        );
+                    }
+                    for item in &recovered.items[1..] {
+                        assert_eq!(
+                            observe_expected_file(
+                                &item.source_path,
+                                item.source_size,
+                                &item.source_hash,
+                            )
+                            .expect("later source after blocked crash recovery"),
+                            ObservedFileState::Exact
+                        );
+                        assert_eq!(
+                            observe_expected_file(
+                                &item.destination_path,
+                                item.source_size,
+                                &item.source_hash,
+                            )
+                            .expect("later destination after blocked crash recovery"),
+                            ObservedFileState::Missing
+                        );
+                    }
+                }
+            }
+            for later_attempt_id in &later_attempt_ids {
+                assert!(
+                    load_fixture_attempt(&reopened, later_attempt_id)
+                        .expect("load unrelated attempt after tamper case")
+                        .is_none(),
+                    "offline tamper must not start later batch items"
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_crash_states_recover_after_reopen_without_advancing_later_items() {
+        for crash_point in [
+            FixtureSortingBatchCrashPoint::AfterDestinationClaim,
+            FixtureSortingBatchCrashPoint::AfterDestinationVerification,
+            FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership,
+        ] {
+            let database_temp = tempdir().expect("sorting crash database tempdir");
+            let database_path = database_temp
+                .path()
+                .join(format!("sorting-crash-{crash_point:?}.sqlite3"));
+            let mut connection = file_backed_fixture_connection(&database_path);
+            let batch = setup_sorting_batch_fixture(&mut connection);
+            let crashed_item_id = batch.items[0].item_id;
+            let attempt_id = interrupt_sorting_batch_item_at_crash_point(
+                &connection,
+                &batch,
+                0,
+                crash_point,
+            )
+            .expect("interrupt first batch item at durable crash point");
+            let expected_state = match crash_point {
+                FixtureSortingBatchCrashPoint::AfterDestinationClaim => {
+                    FixtureAttemptState::DestinationClaimObserved
+                }
+                FixtureSortingBatchCrashPoint::AfterDestinationVerification => {
+                    FixtureAttemptState::DestinationVerified
+                }
+                FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership => {
+                    FixtureAttemptState::SourceReleaseCompleted
+                }
+            };
+            assert_eq!(
+                load_fixture_attempt(&connection, &attempt_id)
+                    .expect("load interrupted crash attempt")
+                    .expect("interrupted crash attempt exists")
+                    .state,
+                expected_state
+            );
+            for item in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(
+                        &connection,
+                        &sorting_batch_attempt_id(&batch, item),
+                    )
+                    .expect("load untouched later crash attempt")
+                    .is_none(),
+                    "later batch items must not start before crash recovery"
+                );
+            }
+            let run_before = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+                .expect("load crash run before reopen")
+                .expect("crash run exists before reopen");
+            let backup_ids_before = run_before
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .map(|result| result.id)
+                .collect::<Vec<_>>();
+            assert_eq!(backup_ids_before.len(), 3);
+
+            let run_id = batch.run_id;
+            let fixture_temp = batch._temp;
+            drop(connection);
+
+            let reopened = file_backed_fixture_connection(&database_path);
+            let recovered = reconstruct_sorting_batch_after_reopen(&reopened, fixture_temp, run_id)
+                .expect("reconstruct interrupted batch after first reopen");
+            let recovery = recover_sorting_batch_interrupted_attempts(&reopened, &recovered)
+                .expect("stabilize interrupted batch item after reopen");
+            assert_eq!(recovery.stabilized_item_ids, vec![crashed_item_id]);
+            assert!(recovery.already_committed_item_ids.is_empty());
+            assert_eq!(
+                load_fixture_attempt(&reopened, &attempt_id)
+                    .expect("load recovered crash attempt")
+                    .expect("recovered crash attempt exists")
+                    .state,
+                FixtureAttemptState::Committed
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &recovered.items[0].source_path,
+                    recovered.items[0].source_size,
+                    &recovered.items[0].source_hash,
+                )
+                .expect("recovered crash source state"),
+                ObservedFileState::Missing
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &recovered.items[0].destination_path,
+                    recovered.items[0].source_size,
+                    &recovered.items[0].source_hash,
+                )
+                .expect("recovered crash destination state"),
+                ObservedFileState::Exact
+            );
+            let recovered_membership = load_fixture_membership_state(
+                &reopened,
+                recovered.items[0].file_id,
+            )
+            .expect("load recovered crash membership")
+            .expect("recovered crash membership exists");
+            assert_eq!(
+                PathBuf::from(recovered_membership.path),
+                recovered.items[0].destination_path
+            );
+            for item in &recovered.items[1..] {
+                assert!(
+                    load_fixture_attempt(
+                        &reopened,
+                        &sorting_batch_attempt_id(&recovered, item),
+                    )
+                    .expect("load later attempt after recovery")
+                    .is_none(),
+                    "crash recovery must not advance untouched later items"
+                );
+                assert_eq!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("later source after crash recovery"),
+                    ObservedFileState::Exact
+                );
+                assert_eq!(
+                    observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )
+                    .expect("later destination after crash recovery"),
+                    ObservedFileState::Missing
+                );
+            }
+
+            let fixture_temp = recovered._temp;
+            drop(reopened);
+            let reopened_again = file_backed_fixture_connection(&database_path);
+            let recovered_again = reconstruct_sorting_batch_after_reopen(
+                &reopened_again,
+                fixture_temp,
+                run_id,
+            )
+            .expect("reconstruct recovered batch after second reopen");
+            let repeated = recover_sorting_batch_interrupted_attempts(
+                &reopened_again,
+                &recovered_again,
+            )
+            .expect("repeat crash recovery safely");
+            assert!(repeated.stabilized_item_ids.is_empty());
+            assert_eq!(repeated.already_committed_item_ids, vec![crashed_item_id]);
+            for item in &recovered_again.items[1..] {
+                assert!(
+                    load_fixture_attempt(
+                        &reopened_again,
+                        &sorting_batch_attempt_id(&recovered_again, item),
+                    )
+                    .expect("load later attempt after repeated recovery")
+                    .is_none()
+                );
+            }
+
+            let completed = run_sorting_batch_apply(&reopened_again, &recovered_again, None)
+                .expect("continue untouched items only after crash recovery is stable");
+            assert_eq!(completed.completed_item_ids.len(), 3);
+            assert!(completed.pending_item_ids.is_empty());
+            let run_after = apply_plan_results::get_apply_plan_run_log(&reopened_again, run_id)
+                .expect("load crash run after completion")
+                .expect("crash run exists after completion");
+            let backup_ids_after = run_after
+                .results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .map(|result| result.id)
+                .collect::<Vec<_>>();
+            assert_eq!(backup_ids_after, backup_ids_before);
+            assert_eq!(
+                run_sorting_batch_undo(&reopened_again, &recovered_again)
+                    .expect("Undo batch after crash-state recovery"),
+                FixtureSortingDirectoryCleanupOutcome::Removed
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
