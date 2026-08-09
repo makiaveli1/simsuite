@@ -2803,7 +2803,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     struct SortingBatchFixtureContext {
-        _temp: TempDir,
+        _temp: Option<TempDir>,
         fixture_root: PathBuf,
         mods_root: PathBuf,
         backup_root: PathBuf,
@@ -2861,6 +2861,25 @@ mod tests {
         stabilized_item_ids: Vec<i64>,
         already_committed_item_ids: Vec<i64>,
     }
+
+    #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct FixtureSortingProcessManifest {
+        database_path: PathBuf,
+        fixture_root: PathBuf,
+        run_id: i64,
+    }
+
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_HELPER_ENV: &str = "SIMSUITE_SORTING_PROCESS_HELPER_MODE";
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_MANIFEST_ENV: &str = "SIMSUITE_SORTING_PROCESS_MANIFEST";
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_OUTER_ROOT_ENV: &str = "SIMSUITE_SORTING_PROCESS_OUTER_ROOT";
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_CRASH_POINT_ENV: &str = "SIMSUITE_SORTING_PROCESS_CRASH_POINT";
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_CRASH_EXIT_CODE: i32 = 73;
 
     #[cfg(target_os = "macos")]
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3735,7 +3754,21 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     fn setup_sorting_batch_fixture(connection: &mut Connection) -> SortingBatchFixtureContext {
-        let temp = tempdir().expect("sorting batch tempdir");
+        setup_sorting_batch_fixture_in(connection, None)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn setup_sorting_batch_fixture_in(
+        connection: &mut Connection,
+        parent: Option<&Path>,
+    ) -> SortingBatchFixtureContext {
+        let temp = match parent {
+            Some(parent) => tempfile::Builder::new()
+                .prefix("simsuite-sorting-process-")
+                .tempdir_in(parent)
+                .expect("sorting batch tempdir in parent"),
+            None => tempdir().expect("sorting batch tempdir"),
+        };
         let fixture_root = temp.path().to_path_buf();
         let mods_root = fixture_root.join("Mods");
         let source_dir = mods_root.join("Unsorted");
@@ -3861,7 +3894,7 @@ mod tests {
         .id;
 
         SortingBatchFixtureContext {
-            _temp: temp,
+            _temp: Some(temp),
             fixture_root,
             mods_root,
             backup_root,
@@ -4344,10 +4377,38 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn reconstruct_sorting_batch_after_reopen(
         connection: &Connection,
-        temp: TempDir,
+        temp: Option<TempDir>,
         run_id: i64,
     ) -> AppResult<SortingBatchFixtureContext> {
-        let fixture_root = temp.path().to_path_buf();
+        let fixture_root = temp
+            .as_ref()
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting restart in-process proof lost its temporary fixture lifetime."
+                        .to_owned(),
+                )
+            })?
+            .path()
+            .to_path_buf();
+        reconstruct_sorting_batch_from_root(connection, fixture_root, temp, run_id)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn reconstruct_sorting_batch_after_process_reopen(
+        connection: &Connection,
+        fixture_root: PathBuf,
+        run_id: i64,
+    ) -> AppResult<SortingBatchFixtureContext> {
+        reconstruct_sorting_batch_from_root(connection, fixture_root, None, run_id)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn reconstruct_sorting_batch_from_root(
+        connection: &Connection,
+        fixture_root: PathBuf,
+        temp: Option<TempDir>,
+        run_id: i64,
+    ) -> AppResult<SortingBatchFixtureContext> {
         let mods_root = fixture_root.join("Mods");
         let backup_root = fixture_root.join("backup");
         let canonical_fixture_root =
@@ -5720,6 +5781,194 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn persist_sorting_batch_fixture_for_process(
+        batch: &mut SortingBatchFixtureContext,
+    ) -> AppResult<()> {
+        let temp = batch._temp.take().ok_or_else(|| {
+            AppError::Message(
+                "Sorting process fixture was already persisted or lost its temporary owner."
+                    .to_owned(),
+            )
+        })?;
+        let kept_path = temp.keep();
+        let kept = canonicalize_existing_dir(&kept_path, "sorting process persisted fixture")?;
+        let expected =
+            canonicalize_existing_dir(&batch.fixture_root, "sorting process expected fixture")?;
+        if kept != expected {
+            return Err(AppError::Message(
+                "Sorting process persisted a different fixture directory than the batch owns."
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn write_sorting_process_manifest(
+        path: &Path,
+        manifest: &FixtureSortingProcessManifest,
+    ) -> AppResult<()> {
+        let parent = path.parent().ok_or_else(|| {
+            AppError::Message("Sorting process manifest path has no parent.".to_owned())
+        })?;
+        canonicalize_existing_dir(parent, "sorting process manifest parent")?;
+        let bytes = serde_json::to_vec_pretty(manifest)?;
+        fs::write(path, bytes).map_err(|error| {
+            AppError::Message(format!("Sorting process manifest write failed: {error}"))
+        })?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_sorting_process_manifest(path: &Path) -> AppResult<FixtureSortingProcessManifest> {
+        let manifest_parent = path.parent().ok_or_else(|| {
+            AppError::Message("Sorting process manifest path has no parent.".to_owned())
+        })?;
+        let canonical_manifest_parent = canonicalize_existing_dir(
+            manifest_parent,
+            "sorting process manifest parent",
+        )?;
+        let bytes = fs::read(path).map_err(|error| {
+            AppError::Message(format!("Sorting process manifest read failed: {error}"))
+        })?;
+        let manifest: FixtureSortingProcessManifest = serde_json::from_slice(&bytes)?;
+        if manifest.run_id <= 0 {
+            return Err(AppError::Message(
+                "Sorting process manifest contains an invalid run id.".to_owned(),
+            ));
+        }
+        let fixture_metadata = fs::symlink_metadata(&manifest.fixture_root).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting process fixture root could not be inspected: {error}"
+            ))
+        })?;
+        if !fixture_metadata.file_type().is_dir() || fixture_metadata.file_type().is_symlink() {
+            return Err(AppError::Message(
+                "Sorting process fixture root must remain a real directory.".to_owned(),
+            ));
+        }
+        let canonical_fixture_root = canonicalize_existing_dir(
+            &manifest.fixture_root,
+            "sorting process manifest fixture root",
+        )?;
+        let fixture_parent = canonical_fixture_root.parent().ok_or_else(|| {
+            AppError::Message("Sorting process fixture root has no parent.".to_owned())
+        })?;
+        if fixture_parent != canonical_manifest_parent.as_path() {
+            return Err(AppError::Message(
+                "Sorting process fixture root escaped the parent-owned restart directory."
+                    .to_owned(),
+            ));
+        }
+        let database_parent = manifest.database_path.parent().ok_or_else(|| {
+            AppError::Message("Sorting process database path has no parent.".to_owned())
+        })?;
+        let canonical_database_parent =
+            canonicalize_existing_dir(database_parent, "sorting process database parent")?;
+        if canonical_database_parent != canonical_manifest_parent {
+            return Err(AppError::Message(
+                "Sorting process database escaped the parent-owned restart directory."
+                    .to_owned(),
+            ));
+        }
+        let database_metadata = fs::symlink_metadata(&manifest.database_path).map_err(|error| {
+            AppError::Message(format!(
+                "Sorting process database could not be inspected: {error}"
+            ))
+        })?;
+        if !database_metadata.file_type().is_file() || database_metadata.file_type().is_symlink() {
+            return Err(AppError::Message(
+                "Sorting process database must remain a real file.".to_owned(),
+            ));
+        }
+        Ok(manifest)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_process_crash_point_name(point: FixtureSortingBatchCrashPoint) -> &'static str {
+        match point {
+            FixtureSortingBatchCrashPoint::AfterDestinationClaim => "after_destination_claim",
+            FixtureSortingBatchCrashPoint::AfterDestinationVerification => {
+                "after_destination_verification"
+            }
+            FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership => {
+                "after_source_release_before_membership"
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn parse_sorting_process_crash_point(value: &str) -> AppResult<FixtureSortingBatchCrashPoint> {
+        match value {
+            "after_destination_claim" => Ok(FixtureSortingBatchCrashPoint::AfterDestinationClaim),
+            "after_destination_verification" => {
+                Ok(FixtureSortingBatchCrashPoint::AfterDestinationVerification)
+            }
+            "after_source_release_before_membership" => {
+                Ok(FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership)
+            }
+            _ => Err(AppError::Message(format!(
+                "Unknown sorting process crash point: {value}"
+            ))),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_process_helper(
+        mode: &str,
+        manifest_path: &Path,
+        outer_root: Option<&Path>,
+        crash_point: Option<FixtureSortingBatchCrashPoint>,
+    ) -> std::process::Output {
+        let executable = std::env::current_exe().expect("current Rust test executable");
+        let mut command = std::process::Command::new(executable);
+        command
+            .arg("sorting_process_recovery_subprocess_helper")
+            .arg("--nocapture")
+            .env(SORTING_PROCESS_HELPER_ENV, mode)
+            .env(
+                SORTING_PROCESS_MANIFEST_ENV,
+                manifest_path.to_string_lossy().to_string(),
+            );
+        if let Some(root) = outer_root {
+            command.env(
+                SORTING_PROCESS_OUTER_ROOT_ENV,
+                root.to_string_lossy().to_string(),
+            );
+        }
+        if let Some(point) = crash_point {
+            command.env(
+                SORTING_PROCESS_CRASH_POINT_ENV,
+                sorting_process_crash_point_name(point),
+            );
+        }
+        command.output().expect("run sorting process helper")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sorting_process_output_text(output: &std::process::Output) -> String {
+        format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load_sorting_process_batch(
+        manifest_path: &Path,
+    ) -> AppResult<(Connection, SortingBatchFixtureContext, FixtureSortingProcessManifest)> {
+        let manifest = read_sorting_process_manifest(manifest_path)?;
+        let connection = file_backed_fixture_connection(&manifest.database_path);
+        let batch = reconstruct_sorting_batch_after_process_reopen(
+            &connection,
+            manifest.fixture_root.clone(),
+            manifest.run_id,
+        )?;
+        Ok((connection, batch, manifest))
+    }
+
+    #[cfg(target_os = "macos")]
     fn sorting_batch_forward_handoff(
         item: &SortingBatchFixtureItem,
         attempt_id: &str,
@@ -6603,6 +6852,509 @@ mod tests {
                 .expect("load absent stale batch folder record")
                 .is_none()
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_process_recovery_subprocess_helper() {
+        let Ok(mode) = std::env::var(SORTING_PROCESS_HELPER_ENV) else {
+            return;
+        };
+        let manifest_path = PathBuf::from(
+            std::env::var(SORTING_PROCESS_MANIFEST_ENV)
+                .expect("sorting subprocess manifest environment"),
+        );
+
+        match mode.as_str() {
+            "crash" => {
+                let outer_root = PathBuf::from(
+                    std::env::var(SORTING_PROCESS_OUTER_ROOT_ENV)
+                        .expect("sorting subprocess outer-root environment"),
+                );
+                let canonical_outer = canonicalize_existing_dir(
+                    &outer_root,
+                    "sorting subprocess outer root",
+                )
+                .expect("canonical sorting subprocess outer root");
+                let manifest_parent = manifest_path
+                    .parent()
+                    .expect("sorting subprocess manifest parent");
+                assert_eq!(
+                    canonicalize_existing_dir(
+                        manifest_parent,
+                        "sorting subprocess manifest parent",
+                    )
+                    .expect("canonical sorting subprocess manifest parent"),
+                    canonical_outer,
+                    "subprocess manifest must stay directly inside the parent-owned temp root"
+                );
+                let database_path = outer_root.join("sorting-process.sqlite3");
+                let mut connection = file_backed_fixture_connection(&database_path);
+                let mut batch = setup_sorting_batch_fixture_in(
+                    &mut connection,
+                    Some(&outer_root),
+                );
+                persist_sorting_batch_fixture_for_process(&mut batch)
+                    .expect("persist sorting subprocess fixture before forced exit");
+                write_sorting_process_manifest(
+                    &manifest_path,
+                    &FixtureSortingProcessManifest {
+                        database_path,
+                        fixture_root: batch.fixture_root.clone(),
+                        run_id: batch.run_id,
+                    },
+                )
+                .expect("write sorting subprocess restart manifest");
+                let crash_point = parse_sorting_process_crash_point(
+                    &std::env::var(SORTING_PROCESS_CRASH_POINT_ENV)
+                        .expect("sorting subprocess crash-point environment"),
+                )
+                .expect("parse sorting subprocess crash point");
+                let attempt_id = interrupt_sorting_batch_item_at_crash_point(
+                    &connection,
+                    &batch,
+                    0,
+                    crash_point,
+                )
+                .expect("reach requested durable sorting crash point");
+                let expected_state = match crash_point {
+                    FixtureSortingBatchCrashPoint::AfterDestinationClaim => {
+                        FixtureAttemptState::DestinationClaimObserved
+                    }
+                    FixtureSortingBatchCrashPoint::AfterDestinationVerification => {
+                        FixtureAttemptState::DestinationVerified
+                    }
+                    FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership => {
+                        FixtureAttemptState::SourceReleaseCompleted
+                    }
+                };
+                assert_eq!(
+                    load_fixture_attempt(&connection, &attempt_id)
+                        .expect("load subprocess interrupted attempt")
+                        .expect("subprocess interrupted attempt exists")
+                        .state,
+                    expected_state
+                );
+                // This is intentional: process::exit bypasses Rust destructors. The parent-owned
+                // outer TempDir is the cleanup boundary for the persisted throwaway fixture.
+                std::process::exit(SORTING_PROCESS_CRASH_EXIT_CODE);
+            }
+            "recover" => {
+                let (connection, batch, _) = load_sorting_process_batch(&manifest_path)
+                    .expect("load sorting subprocess batch for recovery");
+                let first_item_id = batch.items[0].item_id;
+                let recovery = recover_sorting_batch_interrupted_attempts(&connection, &batch)
+                    .expect("recover interrupted sorting item in fresh process");
+                let first_stabilized = recovery.stabilized_item_ids == vec![first_item_id];
+                let first_already = recovery.already_committed_item_ids == vec![first_item_id];
+                assert!(
+                    first_stabilized ^ first_already,
+                    "fresh recovery must either stabilize item one once or verify it as already committed"
+                );
+                for item in &batch.items[1..] {
+                    assert!(
+                        load_fixture_attempt(
+                            &connection,
+                            &sorting_batch_attempt_id(&batch, item),
+                        )
+                        .expect("load later subprocess attempt during recovery")
+                        .is_none(),
+                        "recovery process must not start untouched later items"
+                    );
+                    assert_eq!(
+                        observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                            .expect("later subprocess source during recovery"),
+                        ObservedFileState::Exact
+                    );
+                    assert_eq!(
+                        observe_expected_file(
+                            &item.destination_path,
+                            item.source_size,
+                            &item.source_hash,
+                        )
+                        .expect("later subprocess destination during recovery"),
+                        ObservedFileState::Missing
+                    );
+                }
+            }
+            "recover_blocked" => {
+                let (connection, batch, _) = load_sorting_process_batch(&manifest_path)
+                    .expect("load sorting subprocess batch for blocked recovery");
+                assert!(
+                    recover_sorting_batch_interrupted_attempts(&connection, &batch).is_err(),
+                    "tampered subprocess recovery must fail closed"
+                );
+                for item in &batch.items[1..] {
+                    assert!(
+                        load_fixture_attempt(
+                            &connection,
+                            &sorting_batch_attempt_id(&batch, item),
+                        )
+                        .expect("load later subprocess attempt after blocked recovery")
+                        .is_none(),
+                        "blocked recovery must not start later items"
+                    );
+                }
+            }
+            "complete" => {
+                let (connection, batch, _) = load_sorting_process_batch(&manifest_path)
+                    .expect("load sorting subprocess batch for completion");
+                recover_sorting_batch_interrupted_attempts(&connection, &batch)
+                    .expect("verify crash recovery is stable before continuing batch");
+                let completed = run_sorting_batch_apply(&connection, &batch, None)
+                    .expect("complete remaining sorting items in fresh process");
+                assert_eq!(completed.completed_item_ids.len(), batch.items.len());
+                assert!(completed.pending_item_ids.is_empty());
+                assert_eq!(completed.stopped_before_item_id, None);
+            }
+            "undo" => {
+                let (connection, batch, _) = load_sorting_process_batch(&manifest_path)
+                    .expect("load sorting subprocess batch for Undo");
+                recover_sorting_batch_interrupted_attempts(&connection, &batch)
+                    .expect("verify completed sorting attempts before fresh-process Undo");
+                assert_eq!(
+                    run_sorting_batch_undo(&connection, &batch)
+                        .expect("Undo sorting batch in fresh process"),
+                    FixtureSortingDirectoryCleanupOutcome::Removed
+                );
+            }
+            other => panic!("unknown sorting subprocess helper mode: {other}"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_independent_process_crash_recovery_round_trips_all_dangerous_states() {
+        for crash_point in [
+            FixtureSortingBatchCrashPoint::AfterDestinationClaim,
+            FixtureSortingBatchCrashPoint::AfterDestinationVerification,
+            FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership,
+        ] {
+            let outer = tempdir().expect("sorting subprocess parent tempdir");
+            let manifest_path = outer.path().join("restart.json");
+            let crash = run_sorting_process_helper(
+                "crash",
+                &manifest_path,
+                Some(outer.path()),
+                Some(crash_point),
+            );
+            assert_eq!(
+                crash.status.code(),
+                Some(SORTING_PROCESS_CRASH_EXIT_CODE),
+                "crash child did not exit at the requested durable boundary:\n{}",
+                sorting_process_output_text(&crash)
+            );
+            assert!(manifest_path.is_file());
+
+            let (inspection, batch, manifest) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect persisted sorting state after crash child exited");
+            let attempt_id = sorting_batch_attempt_id(&batch, &batch.items[0]);
+            let expected_state = match crash_point {
+                FixtureSortingBatchCrashPoint::AfterDestinationClaim => {
+                    FixtureAttemptState::DestinationClaimObserved
+                }
+                FixtureSortingBatchCrashPoint::AfterDestinationVerification => {
+                    FixtureAttemptState::DestinationVerified
+                }
+                FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership => {
+                    FixtureAttemptState::SourceReleaseCompleted
+                }
+            };
+            assert_eq!(
+                load_fixture_attempt(&inspection, &attempt_id)
+                    .expect("load persisted subprocess interrupted attempt")
+                    .expect("persisted subprocess interrupted attempt exists")
+                    .state,
+                expected_state
+            );
+            let receipt_before = load_sorting_batch_receipt_for_run(&inspection, manifest.run_id)
+                .expect("load subprocess batch receipt before recovery")
+                .expect("subprocess batch receipt exists before recovery");
+            let backup_ids_before = receipt_before
+                .items
+                .iter()
+                .map(|item| item.backup_result_id)
+                .collect::<Vec<_>>();
+            assert_eq!(backup_ids_before.len(), 3);
+            for item in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(&inspection, &sorting_batch_attempt_id(&batch, item))
+                        .expect("load later attempt after crash child")
+                        .is_none(),
+                    "crash child must not start later batch items"
+                );
+            }
+            drop(batch);
+            drop(inspection);
+
+            let recovery = run_sorting_process_helper("recover", &manifest_path, None, None);
+            assert!(
+                recovery.status.success(),
+                "fresh recovery child failed:\n{}",
+                sorting_process_output_text(&recovery)
+            );
+            let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect sorting state after fresh recovery child");
+            assert_eq!(
+                load_fixture_attempt(&inspection, &attempt_id)
+                    .expect("load subprocess attempt after recovery")
+                    .expect("subprocess attempt exists after recovery")
+                    .state,
+                FixtureAttemptState::Committed
+            );
+            let first_membership = load_fixture_membership_state(
+                &inspection,
+                batch.items[0].file_id,
+            )
+            .expect("load first subprocess membership after recovery")
+            .expect("first subprocess membership exists after recovery");
+            assert_eq!(
+                PathBuf::from(first_membership.path),
+                batch.items[0].destination_path
+            );
+            for item in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(&inspection, &sorting_batch_attempt_id(&batch, item))
+                        .expect("load later attempt after fresh recovery")
+                        .is_none()
+                );
+                assert_eq!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("later source after fresh recovery"),
+                    ObservedFileState::Exact
+                );
+                assert_eq!(
+                    observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )
+                    .expect("later destination after fresh recovery"),
+                    ObservedFileState::Missing
+                );
+            }
+            drop(batch);
+            drop(inspection);
+
+            let repeated = run_sorting_process_helper("recover", &manifest_path, None, None);
+            assert!(
+                repeated.status.success(),
+                "second fresh recovery child was not idempotent:\n{}",
+                sorting_process_output_text(&repeated)
+            );
+            let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect state after repeated process recovery");
+            for item in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(&inspection, &sorting_batch_attempt_id(&batch, item))
+                        .expect("load later attempt after repeated process recovery")
+                        .is_none(),
+                    "repeated recovery must still not start later items"
+                );
+            }
+            drop(batch);
+            drop(inspection);
+
+            let completion = run_sorting_process_helper("complete", &manifest_path, None, None);
+            assert!(
+                completion.status.success(),
+                "fresh completion child failed:\n{}",
+                sorting_process_output_text(&completion)
+            );
+            let (inspection, batch, manifest) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect completed subprocess batch");
+            let receipt_after = load_sorting_batch_receipt_for_run(&inspection, manifest.run_id)
+                .expect("load subprocess batch receipt after completion")
+                .expect("subprocess batch receipt exists after completion");
+            assert_eq!(
+                receipt_after
+                    .items
+                    .iter()
+                    .map(|item| item.backup_result_id)
+                    .collect::<Vec<_>>(),
+                backup_ids_before
+            );
+            for item in &batch.items {
+                assert_eq!(
+                    load_fixture_attempt(&inspection, &sorting_batch_attempt_id(&batch, item))
+                        .expect("load completed subprocess attempt")
+                        .expect("completed subprocess attempt exists")
+                        .state,
+                    FixtureAttemptState::Committed
+                );
+                assert_eq!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("completed subprocess source"),
+                    ObservedFileState::Missing
+                );
+                assert_eq!(
+                    observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )
+                    .expect("completed subprocess destination"),
+                    ObservedFileState::Exact
+                );
+            }
+            let saved_receipt = receipt_after;
+            drop(batch);
+            drop(inspection);
+
+            let undo = run_sorting_process_helper("undo", &manifest_path, None, None);
+            assert!(
+                undo.status.success(),
+                "fresh Undo child failed:\n{}",
+                sorting_process_output_text(&undo)
+            );
+            let manifest = read_sorting_process_manifest(&manifest_path)
+                .expect("read manifest after fresh-process Undo");
+            let inspection = file_backed_fixture_connection(&manifest.database_path);
+            for item in &saved_receipt.items {
+                assert_eq!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("process Undo restored source"),
+                    ObservedFileState::Exact
+                );
+                assert_eq!(
+                    observe_expected_file(
+                        &item.destination_path,
+                        item.source_size,
+                        &item.source_hash,
+                    )
+                    .expect("process Undo removed destination"),
+                    ObservedFileState::Missing
+                );
+                let membership = load_fixture_membership_state(&inspection, item.file_id)
+                    .expect("load process Undo membership")
+                    .expect("process Undo membership exists");
+                assert_eq!(PathBuf::from(membership.path), item.source_path);
+                assert_eq!(membership.source_location, "mods");
+            }
+            let destination_dir = saved_receipt.items[0]
+                .destination_path
+                .parent()
+                .expect("process Undo destination folder");
+            assert!(!destination_dir.exists());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_independent_process_recovery_rejects_same_byte_replacement() {
+        let outer = tempdir().expect("sorting subprocess tamper parent tempdir");
+        let manifest_path = outer.path().join("restart.json");
+        let crash = run_sorting_process_helper(
+            "crash",
+            &manifest_path,
+            Some(outer.path()),
+            Some(FixtureSortingBatchCrashPoint::AfterDestinationClaim),
+        );
+        assert_eq!(
+            crash.status.code(),
+            Some(SORTING_PROCESS_CRASH_EXIT_CODE),
+            "tamper crash child did not exit at destination claim:\n{}",
+            sorting_process_output_text(&crash)
+        );
+
+        let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+            .expect("inspect independent-process claim before tamper");
+        let item = batch.items[0].clone();
+        let attempt_id = sorting_batch_attempt_id(&batch, &item);
+        assert_eq!(
+            load_fixture_attempt(&inspection, &attempt_id)
+                .expect("load independent-process claim attempt")
+                .expect("independent-process claim attempt exists")
+                .state,
+            FixtureAttemptState::DestinationClaimObserved
+        );
+        assert_eq!(
+            same_physical_file_identity(&item.source_path, &item.destination_path)
+                .expect("compare claimed physical identity before tamper"),
+            Some(true)
+        );
+        let source_bytes = fs::read(&item.source_path).expect("read claimed source before tamper");
+        let later_attempt_ids = batch.items[1..]
+            .iter()
+            .map(|later| sorting_batch_attempt_id(&batch, later))
+            .collect::<Vec<_>>();
+        drop(batch);
+        drop(inspection);
+
+        fs::remove_file(&item.destination_path)
+            .expect("remove claimed destination name between processes");
+        fs::write(&item.destination_path, &source_bytes)
+            .expect("replace claimed destination with same-byte independent file");
+        assert_eq!(
+            observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)
+                .expect("same-byte replacement remains content-exact"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            same_physical_file_identity(&item.source_path, &item.destination_path)
+                .expect("compare same-byte replacement physical identity"),
+            Some(false)
+        );
+
+        let blocked = run_sorting_process_helper("recover_blocked", &manifest_path, None, None);
+        assert!(
+            blocked.status.success(),
+            "fresh recovery child did not fail closed for same-byte replacement:\n{}",
+            sorting_process_output_text(&blocked)
+        );
+        let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+            .expect("inspect state after blocked independent-process recovery");
+        assert_eq!(
+            load_fixture_attempt(&inspection, &attempt_id)
+                .expect("reload blocked independent-process attempt")
+                .expect("blocked independent-process attempt still exists")
+                .state,
+            FixtureAttemptState::DestinationClaimObserved
+        );
+        let membership = load_fixture_membership_state(&inspection, item.file_id)
+            .expect("load blocked independent-process membership")
+            .expect("blocked independent-process membership exists");
+        assert_eq!(PathBuf::from(membership.path), item.source_path);
+        assert_eq!(
+            observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                .expect("blocked independent-process source"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)
+                .expect("blocked independent-process destination"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            same_physical_file_identity(&item.source_path, &item.destination_path)
+                .expect("blocked independent-process physical identity"),
+            Some(false)
+        );
+        for (index, later) in batch.items[1..].iter().enumerate() {
+            assert!(
+                load_fixture_attempt(&inspection, &later_attempt_ids[index])
+                    .expect("load later attempt after independent-process tamper")
+                    .is_none()
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &later.source_path,
+                    later.source_size,
+                    &later.source_hash,
+                )
+                .expect("later source after independent-process tamper"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &later.destination_path,
+                    later.source_size,
+                    &later.source_hash,
+                )
+                .expect("later destination after independent-process tamper"),
+                ObservedFileState::Missing
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
