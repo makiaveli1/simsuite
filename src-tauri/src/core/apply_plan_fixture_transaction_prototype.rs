@@ -2815,6 +2815,30 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn sorting_batch_destination_directories(
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Vec<PathBuf>> {
+        let mut directories = Vec::new();
+        for item in &batch.items {
+            let directory = item.destination_path.parent().ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch item destination has no organization folder.".to_owned(),
+                )
+            })?;
+            let directory = directory.to_path_buf();
+            if !directories.contains(&directory) {
+                directories.push(directory);
+            }
+        }
+        if directories.is_empty() {
+            return Err(AppError::Message(
+                "Sorting batch has no destination organization folders.".to_owned(),
+            ));
+        }
+        Ok(directories)
+    }
+
+    #[cfg(target_os = "macos")]
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct FixtureSortingBatchReceiptItem {
         item_order: usize,
@@ -3918,6 +3942,186 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn setup_sorting_multi_folder_batch_fixture(
+        connection: &mut Connection,
+    ) -> SortingBatchFixtureContext {
+        let temp = tempdir().expect("sorting multi-folder tempdir");
+        let fixture_root = temp.path().to_path_buf();
+        let mods_root = fixture_root.join("Mods");
+        let source_dir = mods_root.join("Unsorted");
+        let gameplay_dir = mods_root.join("Gameplay");
+        let cas_dir = mods_root.join("CAS");
+        let backup_root = fixture_root.join("backup");
+        fs::create_dir_all(&source_dir).expect("sorting multi-folder source dir");
+        fs::create_dir_all(&backup_root).expect("sorting multi-folder backup dir");
+        fs::create_dir(&cas_dir).expect("sorting multi-folder pre-existing CAS dir");
+        assert!(!gameplay_dir.exists());
+
+        let fixtures: [(&str, &[u8], &str, &str); 3] = [
+            (
+                "alpha.package",
+                b"sorting multi-folder alpha gameplay package",
+                "Gameplay",
+                "Gameplay",
+            ),
+            (
+                "bravo.package",
+                b"sorting multi-folder bravo cas package",
+                "CAS",
+                "CAS",
+            ),
+            (
+                "charlie.package",
+                b"sorting multi-folder charlie gameplay package",
+                "Gameplay",
+                "Gameplay",
+            ),
+        ];
+        let mut source_rows = Vec::new();
+        for (filename, bytes, kind, destination_folder) in fixtures {
+            let source_path = source_dir.join(filename);
+            fs::write(&source_path, bytes).expect("sorting multi-folder source fixture");
+            let source_hash = bytes_hash(bytes);
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path, filename, extension, hash, size, modified_at, kind, confidence,
+                        source_location, relative_depth, safety_notes, parser_warnings, insights
+                     ) VALUES (?1, ?2, 'package', ?3, ?4, '2026-08-09T00:00:00Z',
+                        ?5, 0.95, 'mods', 1, '[]', '[]', '{}')",
+                    params![
+                        source_path.to_string_lossy().to_string(),
+                        filename,
+                        source_hash,
+                        bytes.len() as i64,
+                        kind,
+                    ],
+                )
+                .expect("insert sorting multi-folder source");
+            source_rows.push((
+                connection.last_insert_rowid(),
+                source_path,
+                source_hash,
+                bytes.len() as u64,
+                destination_folder.to_owned(),
+            ));
+        }
+
+        let settings = LibrarySettings {
+            mods_path: Some(mods_root.to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        let saved = apply_plan_persistence::build_apply_plan_from_staging_plan(
+            connection,
+            &settings,
+            BuildApplyPlanFromStagingPlanRequest {
+                preview_request: GenerateSortingPreviewPlanRequest {
+                    scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                        file_ids: source_rows.iter().map(|row| row.0).collect(),
+                    },
+                    folder_config: None,
+                    context_trail: Vec::new(),
+                },
+                source_plan_kind: None,
+                folder_config: None,
+                context_trail: Vec::new(),
+            },
+        )
+        .expect("build sorting multi-folder ApplyPlan");
+        let plan_id = saved.plan_id;
+        let hash_check = apply_plan_persistence::verify_apply_plan_hash(connection, plan_id)
+            .expect("verify sorting multi-folder plan hash");
+        assert!(hash_check.is_valid);
+
+        let item_ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id FROM apply_plan_items WHERE apply_plan_id = ?1 ORDER BY id ASC",
+                )
+                .expect("prepare sorting multi-folder item ids");
+            statement
+                .query_map(params![plan_id], |row| row.get::<_, i64>(0))
+                .expect("query sorting multi-folder item ids")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect sorting multi-folder item ids")
+        };
+        assert_eq!(item_ids.len(), source_rows.len());
+
+        let mut items = Vec::new();
+        for item_id in item_ids {
+            let item = load_plan_item_scope(connection, plan_id, item_id)
+                .expect("sorting multi-folder plan item scope");
+            assert_eq!(item.action_kind, "suggest_move");
+            assert!(!item.blocked);
+            assert!(!item.review_only);
+            let (file_id, source_path, source_hash, source_size, destination_folder) = source_rows
+                .iter()
+                .find(|row| row.0 == item.file_id)
+                .cloned()
+                .expect("sorting multi-folder plan item maps to fixture source");
+            assert_eq!(PathBuf::from(&item.current_path), source_path);
+            let filename = source_path.file_name().expect("sorting multi-folder filename");
+            let destination_path = mods_root.join(destination_folder).join(filename);
+            assert_eq!(PathBuf::from(&item.destination_path), destination_path);
+            items.push(SortingBatchFixtureItem {
+                file_id,
+                item_id,
+                source_path,
+                destination_path,
+                source_hash,
+                source_size,
+            });
+        }
+
+        let destination_dirs = {
+            let context = SortingBatchFixtureContext {
+                _temp: None,
+                fixture_root: fixture_root.clone(),
+                mods_root: mods_root.clone(),
+                backup_root: backup_root.clone(),
+                destination_dir: gameplay_dir.clone(),
+                settings: settings.clone(),
+                plan_id,
+                run_id: 0,
+                items: items.clone(),
+            };
+            sorting_batch_destination_directories(&context)
+                .expect("sorting multi-folder destination directories")
+        };
+        assert_eq!(destination_dirs.len(), 2);
+        assert!(destination_dirs.contains(&gameplay_dir));
+        assert!(destination_dirs.contains(&cas_dir));
+
+        let run_id = create_apply_plan_run_log(
+            connection,
+            CreateApplyPlanRunLogRequest {
+                apply_plan_id: plan_id,
+                status: None,
+                backup_strategy: None,
+                confirmation_token: None,
+                total_items: Some(items.len() as i64),
+                skipped_items: None,
+                failed_items: None,
+                summary: Some("Fixture-only multi-folder sorting safety proof.".to_owned()),
+            },
+        )
+        .expect("create sorting multi-folder run")
+        .id;
+
+        SortingBatchFixtureContext {
+            _temp: Some(temp),
+            fixture_root,
+            mods_root,
+            backup_root,
+            destination_dir: gameplay_dir,
+            settings,
+            plan_id,
+            run_id,
+            items,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn verify_sorting_batch_read_only_preflight(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
@@ -4006,31 +4210,57 @@ mod tests {
         }
 
         let canonical_mods_root = canonicalize_existing_dir(&batch.mods_root, "sorting batch Mods root")?;
-        let destination_parent = batch.destination_dir.parent().ok_or_else(|| {
-            AppError::Message(
-                "Sorting batch destination directory has no parent folder.".to_owned(),
-            )
-        })?;
-        let canonical_destination_parent =
-            canonicalize_existing_dir(destination_parent, "sorting batch destination parent")?;
-        if canonical_destination_parent != canonical_mods_root {
-            return Err(AppError::Message(
-                "Sorting batch proof only permits one immediate organization folder under Mods."
-                    .to_owned(),
-            ));
+        let destination_directories = sorting_batch_destination_directories(batch)?;
+        for directory in &destination_directories {
+            let destination_parent = directory.parent().ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch destination directory has no parent folder.".to_owned(),
+                )
+            })?;
+            let canonical_destination_parent =
+                canonicalize_existing_dir(destination_parent, "sorting batch destination parent")?;
+            if canonical_destination_parent != canonical_mods_root {
+                return Err(AppError::Message(
+                    "Sorting batch proof only permits immediate organization folders under Mods."
+                        .to_owned(),
+                ));
+            }
+            match fs::symlink_metadata(directory) {
+                Ok(metadata) => {
+                    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                        return Err(AppError::Message(
+                            "Sorting batch destination organization entry is not a safe real directory."
+                                .to_owned(),
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(AppError::Message(format!(
+                        "Sorting batch destination organization entry could not be inspected: {error}"
+                    )));
+                }
+            }
         }
 
         let mut source_paths = Vec::new();
         let mut destination_paths = Vec::new();
         for expected in &batch.items {
             let item = load_plan_item_scope(connection, batch.plan_id, expected.item_id)?;
+            let expected_destination_directory = expected.destination_path.parent().ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch saved item destination lost its organization folder.".to_owned(),
+                )
+            })?;
             if item.file_id != expected.file_id
                 || item.action_kind != "suggest_move"
                 || item.blocked
                 || item.review_only
                 || PathBuf::from(&item.current_path) != expected.source_path
                 || PathBuf::from(&item.destination_path) != expected.destination_path
-                || expected.destination_path.parent() != Some(batch.destination_dir.as_path())
+                || !destination_directories
+                    .iter()
+                    .any(|directory| directory.as_path() == expected_destination_directory)
             {
                 return Err(AppError::Message(
                     "Sorting batch saved item evidence changed before execution.".to_owned(),
@@ -4471,31 +4701,29 @@ mod tests {
                 )
             })?
             .to_path_buf();
-        let destination_parent_parent = first_destination_parent.parent().ok_or_else(|| {
-            AppError::Message(
-                "Sorting restart organization folder has no parent root.".to_owned(),
-            )
-        })?;
-        let canonical_destination_parent_parent = canonicalize_existing_dir(
-            destination_parent_parent,
-            "sorting restart destination root",
-        )?;
-        if canonical_destination_parent_parent != canonical_mods_root {
-            return Err(AppError::Message(
-                "Sorting restart receipt points outside the configured Mods root.".to_owned(),
-            ));
-        }
 
         let mut items = Vec::with_capacity(receipt.items.len());
         for (expected_order, recorded) in receipt.items.iter().enumerate() {
-            if recorded.item_order != expected_order
-                || recorded
-                    .destination_path
-                    .parent()
-                    .is_none_or(|parent| parent != first_destination_parent.as_path())
-            {
+            if recorded.item_order != expected_order {
                 return Err(AppError::Message(
-                    "Sorting restart receipt item order or shared destination folder changed."
+                    "Sorting restart receipt item order changed.".to_owned(),
+                ));
+            }
+            let destination_directory = recorded.destination_path.parent().ok_or_else(|| {
+                AppError::Message(
+                    "Sorting restart receipt destination lost its organization folder.".to_owned(),
+                )
+            })?;
+            let destination_root = destination_directory.parent().ok_or_else(|| {
+                AppError::Message(
+                    "Sorting restart organization folder has no parent root.".to_owned(),
+                )
+            })?;
+            let canonical_destination_root =
+                canonicalize_existing_dir(destination_root, "sorting restart destination root")?;
+            if canonical_destination_root != canonical_mods_root {
+                return Err(AppError::Message(
+                    "Sorting restart receipt points outside the configured Mods root."
                         .to_owned(),
                 ));
             }
@@ -4808,9 +5036,10 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn load_sorting_batch_directory_record(
+    fn load_sorting_batch_directory_record_for(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
+        directory: &Path,
     ) -> AppResult<Option<FixtureSortingBatchDirectoryRecord>> {
         ensure_sorting_batch_directory_schema(connection)?;
         let row = connection
@@ -4819,10 +5048,7 @@ mod tests {
                         parent_path, device_id, inode, state
                  FROM fixture_sorting_batch_directories
                  WHERE apply_plan_run_id = ?1 AND directory_path = ?2",
-                params![
-                    batch.run_id,
-                    batch.destination_dir.to_string_lossy().to_string(),
-                ],
+                params![batch.run_id, directory.to_string_lossy().to_string()],
                 |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
@@ -4858,9 +5084,18 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn update_sorting_batch_directory_state(
+    fn load_sorting_batch_directory_record(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Option<FixtureSortingBatchDirectoryRecord>> {
+        load_sorting_batch_directory_record_for(connection, batch, &batch.destination_dir)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn update_sorting_batch_directory_state_for(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        directory: &Path,
         expected: FixtureSortingDirectoryState,
         next: FixtureSortingDirectoryState,
     ) -> AppResult<()> {
@@ -4871,7 +5106,7 @@ mod tests {
             params![
                 next.as_str(),
                 batch.run_id,
-                batch.destination_dir.to_string_lossy().to_string(),
+                directory.to_string_lossy().to_string(),
                 expected.as_str(),
             ],
         )?;
@@ -4884,14 +5119,15 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn ensure_sorting_batch_destination_directory(
+    fn ensure_sorting_batch_destination_directory_for(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
         receipt: &FixtureSortingBatchReceipt,
+        directory: &Path,
     ) -> AppResult<FixtureSortingDirectoryCreateOutcome> {
         validate_sorting_batch_receipt(connection, batch, receipt)?;
         let parent = canonicalize_existing_dir(&batch.mods_root, "sorting batch Mods root")?;
-        let destination_parent = batch.destination_dir.parent().ok_or_else(|| {
+        let destination_parent = directory.parent().ok_or_else(|| {
             AppError::Message(
                 "Sorting batch destination directory has no parent folder.".to_owned(),
             )
@@ -4904,22 +5140,22 @@ mod tests {
                     .to_owned(),
             ));
         }
-        if receipt
+        if !receipt
             .items
             .iter()
-            .any(|item| item.destination_path.parent() != Some(batch.destination_dir.as_path()))
+            .any(|item| item.destination_path.parent() == Some(directory))
         {
             return Err(AppError::Message(
-                "Sorting batch receipt contains destinations outside its one shared folder."
+                "Sorting batch directory is not referenced by the sealed receipt."
                     .to_owned(),
             ));
         }
 
-        if let Some(record) = load_sorting_batch_directory_record(connection, batch)? {
+        if let Some(record) = load_sorting_batch_directory_record_for(connection, batch, directory)? {
             if record.apply_plan_run_id != batch.run_id
                 || record.apply_plan_id != batch.plan_id
                 || record.batch_hash != receipt.batch_hash
-                || record.directory_path != batch.destination_dir
+                || record.directory_path != directory
                 || record.parent_path != parent
             {
                 return Err(AppError::Message(
@@ -4929,10 +5165,11 @@ mod tests {
             }
             return match record.state {
                 FixtureSortingDirectoryState::PreparedBeforeCreate => {
-                    if batch.destination_dir.exists() {
-                        update_sorting_batch_directory_state(
+                    if directory.exists() {
+                        update_sorting_batch_directory_state_for(
                             connection,
                             batch,
+                            directory,
                             FixtureSortingDirectoryState::PreparedBeforeCreate,
                             FixtureSortingDirectoryState::OwnershipUnknownKeep,
                         )?;
@@ -4945,7 +5182,7 @@ mod tests {
                     }
                 }
                 FixtureSortingDirectoryState::CreatedVerified => {
-                    let (device_id, inode) = fixture_directory_identity(&batch.destination_dir)?;
+                    let (device_id, inode) = fixture_directory_identity(directory)?;
                     if device_id == record.device_id && inode == record.inode {
                         Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned)
                     } else {
@@ -4967,8 +5204,8 @@ mod tests {
             };
         }
 
-        if batch.destination_dir.exists() {
-            let metadata = fs::symlink_metadata(&batch.destination_dir).map_err(|error| {
+        if directory.exists() {
+            let metadata = fs::symlink_metadata(directory).map_err(|error| {
                 AppError::Message(format!(
                     "Sorting batch existing destination folder could not be inspected: {error}"
                 ))
@@ -4992,17 +5229,17 @@ mod tests {
                 batch.run_id,
                 batch.plan_id,
                 receipt.batch_hash,
-                batch.destination_dir.to_string_lossy().to_string(),
+                directory.to_string_lossy().to_string(),
                 parent.to_string_lossy().to_string(),
                 FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
             ],
         )?;
-        fs::create_dir(&batch.destination_dir).map_err(|error| {
+        fs::create_dir(directory).map_err(|error| {
             AppError::Message(format!(
                 "Sorting batch destination folder could not be created non-recursively: {error}"
             ))
         })?;
-        let (device_id, inode) = fixture_directory_identity(&batch.destination_dir)?;
+        let (device_id, inode) = fixture_directory_identity(directory)?;
         let changed = connection.execute(
             "UPDATE fixture_sorting_batch_directories
              SET device_id = ?1, inode = ?2, state = ?3, updated_at = CURRENT_TIMESTAMP
@@ -5012,7 +5249,7 @@ mod tests {
                 inode as i64,
                 FixtureSortingDirectoryState::CreatedVerified.as_str(),
                 batch.run_id,
-                batch.destination_dir.to_string_lossy().to_string(),
+                directory.to_string_lossy().to_string(),
                 FixtureSortingDirectoryState::PreparedBeforeCreate.as_str(),
             ],
         )?;
@@ -5023,6 +5260,39 @@ mod tests {
             ));
         }
         Ok(FixtureSortingDirectoryCreateOutcome::CreatedOwned)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_destination_directories(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<Vec<(PathBuf, FixtureSortingDirectoryCreateOutcome)>> {
+        let mut outcomes = Vec::new();
+        for directory in sorting_batch_destination_directories(batch)? {
+            let outcome = ensure_sorting_batch_destination_directory_for(
+                connection,
+                batch,
+                receipt,
+                &directory,
+            )?;
+            outcomes.push((directory, outcome));
+        }
+        Ok(outcomes)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ensure_sorting_batch_destination_directory(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<FixtureSortingDirectoryCreateOutcome> {
+        ensure_sorting_batch_destination_directory_for(
+            connection,
+            batch,
+            receipt,
+            &batch.destination_dir,
+        )
     }
 
     #[cfg(target_os = "macos")]
@@ -6122,7 +6392,7 @@ mod tests {
         stop_before_index: Option<usize>,
     ) -> AppResult<FixtureSortingBatchApplyOutcome> {
         let receipt = ensure_sorting_batch_receipt(connection, batch)?;
-        ensure_sorting_batch_destination_directory(connection, batch, &receipt)?;
+        ensure_sorting_batch_destination_directories(connection, batch, &receipt)?;
 
         for (item, receipt_item) in batch.items.iter().zip(receipt.items.iter()) {
             let attempt_id = sorting_batch_attempt_id(batch, item);
@@ -6303,12 +6573,13 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn cleanup_sorting_batch_destination_directory(
+    fn cleanup_sorting_batch_destination_directory_for(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
         receipt: &FixtureSortingBatchReceipt,
+        directory: &Path,
     ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
-        let Some(record) = load_sorting_batch_directory_record(connection, batch)? else {
+        let Some(record) = load_sorting_batch_directory_record_for(connection, batch, directory)? else {
             return Ok(FixtureSortingDirectoryCleanupOutcome::NotOwned);
         };
         if record.state != FixtureSortingDirectoryState::CreatedVerified {
@@ -6352,18 +6623,19 @@ mod tests {
             }
         }
 
-        let current_identity = fixture_directory_identity(&batch.destination_dir)?;
+        let current_identity = fixture_directory_identity(directory)?;
         if current_identity != (record.device_id, record.inode) {
-            update_sorting_batch_directory_state(
+            update_sorting_batch_directory_state_for(
                 connection,
                 batch,
+                directory,
                 FixtureSortingDirectoryState::CreatedVerified,
                 FixtureSortingDirectoryState::RetainedIdentityChanged,
             )?;
             return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
         }
-        if fixture_directory_has_indexed_children(connection, &batch.destination_dir)?
-            || fs::read_dir(&batch.destination_dir)
+        if fixture_directory_has_indexed_children(connection, directory)?
+            || fs::read_dir(directory)
                 .map_err(|error| {
                     AppError::Message(format!(
                         "Sorting batch destination folder could not be read for cleanup: {error}"
@@ -6372,31 +6644,34 @@ mod tests {
                 .next()
                 .is_some()
         {
-            update_sorting_batch_directory_state(
+            update_sorting_batch_directory_state_for(
                 connection,
                 batch,
+                directory,
                 FixtureSortingDirectoryState::CreatedVerified,
                 FixtureSortingDirectoryState::RetainedNonEmpty,
             )?;
             return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty);
         }
-        if fixture_directory_identity(&batch.destination_dir)? != current_identity {
-            update_sorting_batch_directory_state(
+        if fixture_directory_identity(directory)? != current_identity {
+            update_sorting_batch_directory_state_for(
                 connection,
                 batch,
+                directory,
                 FixtureSortingDirectoryState::CreatedVerified,
                 FixtureSortingDirectoryState::RetainedIdentityChanged,
             )?;
             return Ok(FixtureSortingDirectoryCleanupOutcome::RetainedIdentityChanged);
         }
-        fs::remove_dir(&batch.destination_dir).map_err(|error| {
+        fs::remove_dir(directory).map_err(|error| {
             AppError::Message(format!(
                 "Sorting batch destination folder could not be removed safely: {error}"
             ))
         })?;
-        update_sorting_batch_directory_state(
+        update_sorting_batch_directory_state_for(
             connection,
             batch,
+            directory,
             FixtureSortingDirectoryState::CreatedVerified,
             FixtureSortingDirectoryState::CleanupComplete,
         )?;
@@ -6404,10 +6679,29 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn run_sorting_batch_undo(
+    fn cleanup_sorting_batch_destination_directories(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
-    ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
+        receipt: &FixtureSortingBatchReceipt,
+    ) -> AppResult<Vec<(PathBuf, FixtureSortingDirectoryCleanupOutcome)>> {
+        let mut outcomes = Vec::new();
+        for directory in sorting_batch_destination_directories(batch)? {
+            let outcome = cleanup_sorting_batch_destination_directory_for(
+                connection,
+                batch,
+                receipt,
+                &directory,
+            )?;
+            outcomes.push((directory, outcome));
+        }
+        Ok(outcomes)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_batch_undo_with_directory_outcomes(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<Vec<(PathBuf, FixtureSortingDirectoryCleanupOutcome)>> {
         let receipt = ensure_sorting_batch_receipt(connection, batch)?;
         let mut reverse_handoffs = Vec::new();
 
@@ -6479,7 +6773,25 @@ mod tests {
         if !reverse_handoffs.is_empty() {
             commit_fixture_reverse_membership_handoffs(connection, &reverse_handoffs)?;
         }
-        cleanup_sorting_batch_destination_directory(connection, batch, &receipt)
+        cleanup_sorting_batch_destination_directories(connection, batch, &receipt)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_batch_undo(
+        connection: &Connection,
+        batch: &SortingBatchFixtureContext,
+    ) -> AppResult<FixtureSortingDirectoryCleanupOutcome> {
+        let outcomes = run_sorting_batch_undo_with_directory_outcomes(connection, batch)?;
+        outcomes
+            .into_iter()
+            .find(|(directory, _)| directory == &batch.destination_dir)
+            .map(|(_, outcome)| outcome)
+            .ok_or_else(|| {
+                AppError::Message(
+                    "Sorting batch Undo did not produce an outcome for its primary destination folder."
+                        .to_owned(),
+                )
+            })
     }
 
     fn setup_fixture(connection: &Connection, source_bytes: &[u8]) -> FixtureContext {
@@ -8640,6 +8952,367 @@ mod tests {
             assert_eq!(PathBuf::from(membership.path), item.destination_path);
         }
         assert!(batch.destination_dir.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_multiple_folders_unsafe_later_folder_blocks_before_any_side_effect() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_multi_folder_batch_fixture(&mut connection);
+        let gameplay_dir = batch.destination_dir.clone();
+        let cas_dir = batch.mods_root.join("CAS");
+        fs::remove_dir(&cas_dir).expect("remove pre-existing CAS directory for unsafe-entry test");
+        fs::write(&cas_dir, b"player-created entry occupying CAS category path")
+            .expect("replace CAS category directory with unsafe file entry");
+
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect_err("unsafe later category entry must block the entire batch before side effects");
+        assert!(!gameplay_dir.exists(), "preflight failure must not create Gameplay");
+        assert_eq!(
+            fs::read(&cas_dir).expect("unsafe CAS entry remains untouched"),
+            b"player-created entry occupying CAS category path"
+        );
+
+        let run = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load blocked multi-folder run")
+            .expect("blocked multi-folder run exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0,
+            "folder preflight must fail before any backup side effect"
+        );
+        assert!(
+            load_sorting_batch_directory_record_for(&connection, &batch, &gameplay_dir)
+                .expect("load Gameplay ownership after preflight block")
+                .is_none()
+        );
+        assert!(
+            load_sorting_batch_directory_record_for(&connection, &batch, &cas_dir)
+                .expect("load CAS ownership after preflight block")
+                .is_none()
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("blocked multi-folder source remains exact"),
+                ObservedFileState::Exact
+            );
+            assert!(
+                load_fixture_attempt(&connection, &sorting_batch_attempt_id(&batch, item))
+                    .expect("load attempt after multi-folder preflight block")
+                    .is_none(),
+                "preflight failure must not prepare a move attempt"
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load blocked multi-folder membership")
+                .expect("blocked multi-folder membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn backend_sorting_batch_multiple_folders_owns_only_created_folder_and_undoes_exactly() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_multi_folder_batch_fixture(&mut connection);
+        let gameplay_dir = batch.destination_dir.clone();
+        let cas_dir = batch.mods_root.join("CAS");
+        let cas_identity_before = fixture_directory_identity(&cas_dir)
+            .expect("capture pre-existing CAS directory identity");
+        let destination_directories = sorting_batch_destination_directories(&batch)
+            .expect("derive multi-folder destinations");
+        assert_eq!(destination_directories.len(), 2);
+        assert!(destination_directories.contains(&gameplay_dir));
+        assert!(destination_directories.contains(&cas_dir));
+        assert!(!gameplay_dir.exists());
+        assert!(cas_dir.is_dir());
+        assert_eq!(
+            batch
+                .items
+                .iter()
+                .filter(|item| item.destination_path.parent() == Some(gameplay_dir.as_path()))
+                .count(),
+            2
+        );
+        assert_eq!(
+            batch
+                .items
+                .iter()
+                .filter(|item| item.destination_path.parent() == Some(cas_dir.as_path()))
+                .count(),
+            1
+        );
+
+        verify_sorting_batch_read_only_preflight(&connection, &batch)
+            .expect("multi-folder batch read-only preflight");
+        let outcome = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply real multi-folder sorting batch");
+        assert_eq!(outcome.completed_item_ids.len(), 3);
+        assert!(outcome.pending_item_ids.is_empty());
+        assert_eq!(outcome.stopped_before_item_id, None);
+        assert!(gameplay_dir.is_dir());
+        assert!(cas_dir.is_dir());
+        assert_eq!(
+            fixture_directory_identity(&cas_dir).expect("CAS identity after Apply"),
+            cas_identity_before,
+            "pre-existing CAS folder must not be replaced"
+        );
+
+        let ownership_rows: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count multi-folder ownership rows");
+        assert_eq!(
+            ownership_rows, 1,
+            "two Gameplay files must share one ownership row and pre-existing CAS must stay unowned"
+        );
+        let gameplay_record = load_sorting_batch_directory_record_for(
+            &connection,
+            &batch,
+            &gameplay_dir,
+        )
+        .expect("load Gameplay ownership record")
+        .expect("Gameplay ownership record exists");
+        assert_eq!(
+            gameplay_record.state,
+            FixtureSortingDirectoryState::CreatedVerified
+        );
+        assert!(
+            load_sorting_batch_directory_record_for(&connection, &batch, &cas_dir)
+                .expect("load CAS ownership record")
+                .is_none(),
+            "pre-existing CAS folder must never be claimed as SimSuite-owned"
+        );
+
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("multi-folder moved source"),
+                ObservedFileState::Missing
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("multi-folder moved destination"),
+                ObservedFileState::Exact
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load multi-folder moved membership")
+                .expect("multi-folder moved membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.destination_path);
+        }
+
+        let cleanup = run_sorting_batch_undo_with_directory_outcomes(&connection, &batch)
+            .expect("Undo real multi-folder sorting batch");
+        assert_eq!(cleanup.len(), 2);
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &gameplay_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::Removed)
+        );
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &cas_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::NotOwned)
+        );
+        assert!(!gameplay_dir.exists());
+        assert!(cas_dir.is_dir());
+        assert_eq!(
+            fixture_directory_identity(&cas_dir).expect("CAS identity after Undo"),
+            cas_identity_before
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("multi-folder restored source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("multi-folder removed destination"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load multi-folder restored membership")
+                .expect("multi-folder restored membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_multiple_folders_partial_retry_reuses_backups_and_folder_ownership() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_multi_folder_batch_fixture(&mut connection);
+        let gameplay_dir = batch.destination_dir.clone();
+        let cas_dir = batch.mods_root.join("CAS");
+
+        let partial = run_sorting_batch_apply(&connection, &batch, Some(1))
+            .expect("apply first Gameplay item then stop before CAS item");
+        assert_eq!(partial.completed_item_ids, vec![batch.items[0].item_id]);
+        assert_eq!(partial.pending_item_ids.len(), 2);
+        assert_eq!(partial.stopped_before_item_id, Some(batch.items[1].item_id));
+        assert_eq!(batch.items[0].destination_path.parent(), Some(gameplay_dir.as_path()));
+        assert_eq!(batch.items[1].destination_path.parent(), Some(cas_dir.as_path()));
+        assert_eq!(batch.items[2].destination_path.parent(), Some(gameplay_dir.as_path()));
+
+        let receipt_before = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load multi-folder receipt before retry")
+            .expect("multi-folder receipt exists before retry");
+        let backup_ids_before = receipt_before
+            .items
+            .iter()
+            .map(|item| item.backup_result_id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_before.len(), 3);
+        let ownership_rows_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count ownership rows before retry");
+        assert_eq!(ownership_rows_before, 1);
+        let first_attempt_id = sorting_batch_attempt_id(&batch, &batch.items[0]);
+        let first_attempt_before = load_fixture_attempt(&connection, &first_attempt_id)
+            .expect("load first multi-folder attempt before retry")
+            .expect("first multi-folder attempt exists before retry");
+        assert_eq!(first_attempt_before.state, FixtureAttemptState::Committed);
+
+        let completed = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("retry multi-folder batch");
+        assert_eq!(completed.completed_item_ids.len(), 3);
+        assert!(completed.pending_item_ids.is_empty());
+        assert_eq!(completed.stopped_before_item_id, None);
+        let receipt_after = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load multi-folder receipt after retry")
+            .expect("multi-folder receipt exists after retry");
+        assert_eq!(
+            receipt_after
+                .items
+                .iter()
+                .map(|item| item.backup_result_id)
+                .collect::<Vec<_>>(),
+            backup_ids_before,
+            "retry must reuse the original three verified backups"
+        );
+        let ownership_rows_after: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count ownership rows after retry");
+        assert_eq!(ownership_rows_after, 1);
+        assert_eq!(
+            load_fixture_attempt(&connection, &first_attempt_id)
+                .expect("reload first multi-folder attempt after retry")
+                .expect("first multi-folder attempt remains")
+                .attempt_id,
+            first_attempt_before.attempt_id,
+            "retry must not create a second attempt for the completed first file"
+        );
+        assert!(
+            load_sorting_batch_directory_record_for(&connection, &batch, &cas_dir)
+                .expect("check CAS ownership after retry")
+                .is_none()
+        );
+
+        let cleanup = run_sorting_batch_undo_with_directory_outcomes(&connection, &batch)
+            .expect("Undo retried multi-folder batch");
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &gameplay_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::Removed)
+        );
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &cas_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::NotOwned)
+        );
+        assert!(!gameplay_dir.exists());
+        assert!(cas_dir.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_multiple_folders_undo_keeps_owned_folder_with_player_content() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_multi_folder_batch_fixture(&mut connection);
+        let gameplay_dir = batch.destination_dir.clone();
+        let cas_dir = batch.mods_root.join("CAS");
+        let cas_identity_before = fixture_directory_identity(&cas_dir)
+            .expect("capture CAS identity before player-content test");
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply multi-folder batch before player-content Undo");
+
+        let player_file = gameplay_dir.join("player-added.txt");
+        fs::write(&player_file, b"player-created content")
+            .expect("add player file to owned Gameplay folder");
+        let cleanup = run_sorting_batch_undo_with_directory_outcomes(&connection, &batch)
+            .expect("Undo multi-folder batch with player content");
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &gameplay_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::RetainedNonEmpty)
+        );
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &cas_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::NotOwned)
+        );
+        assert!(gameplay_dir.is_dir());
+        assert_eq!(fs::read(&player_file).expect("player file survives Undo"), b"player-created content");
+        assert!(cas_dir.is_dir());
+        assert_eq!(
+            fixture_directory_identity(&cas_dir).expect("CAS identity after player-content Undo"),
+            cas_identity_before
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("player-content multi-folder restored source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("player-content multi-folder removed destination"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load player-content multi-folder restored membership")
+                .expect("player-content multi-folder restored membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
     }
 
     #[cfg(target_os = "macos")]
