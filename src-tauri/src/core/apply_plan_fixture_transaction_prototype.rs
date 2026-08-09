@@ -4122,6 +4122,180 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    const REPRESENTATIVE_SORTING_BATCH_SIZE: usize = 36;
+
+    #[cfg(target_os = "macos")]
+    fn setup_sorting_representative_batch_fixture(
+        connection: &mut Connection,
+    ) -> SortingBatchFixtureContext {
+        let temp = tempdir().expect("sorting representative tempdir");
+        let fixture_root = temp.path().to_path_buf();
+        let mods_root = fixture_root.join("Mods");
+        let source_dir = mods_root.join("Unsorted");
+        let gameplay_dir = mods_root.join("Gameplay");
+        let cas_dir = mods_root.join("CAS");
+        let build_buy_dir = mods_root.join("BuildBuy");
+        let backup_root = fixture_root.join("backup");
+        fs::create_dir_all(&source_dir).expect("sorting representative source dir");
+        fs::create_dir_all(&backup_root).expect("sorting representative backup dir");
+        fs::create_dir(&cas_dir).expect("sorting representative pre-existing CAS dir");
+        assert!(!gameplay_dir.exists());
+        assert!(!build_buy_dir.exists());
+
+        let mut source_rows = Vec::with_capacity(REPRESENTATIVE_SORTING_BATCH_SIZE);
+        for index in 0..REPRESENTATIVE_SORTING_BATCH_SIZE {
+            let (kind, destination_folder, slug) = match index % 3 {
+                0 => ("Gameplay", "Gameplay", "gameplay"),
+                1 => ("CAS", "CAS", "cas"),
+                _ => ("BuildBuy", "BuildBuy", "buildbuy"),
+            };
+            let filename = format!("item-{index:03}-{slug}.package");
+            let source_path = source_dir.join(&filename);
+            let bytes = format!("sorting representative fixture {index:03} {kind}").into_bytes();
+            fs::write(&source_path, &bytes).expect("sorting representative source fixture");
+            let source_hash = bytes_hash(&bytes);
+            connection
+                .execute(
+                    "INSERT INTO files (
+                        path, filename, extension, hash, size, modified_at, kind, confidence,
+                        source_location, relative_depth, safety_notes, parser_warnings, insights
+                     ) VALUES (?1, ?2, 'package', ?3, ?4, '2026-08-09T00:00:00Z',
+                        ?5, 0.95, 'mods', 1, '[]', '[]', '{}')",
+                    params![
+                        source_path.to_string_lossy().to_string(),
+                        filename,
+                        source_hash,
+                        bytes.len() as i64,
+                        kind,
+                    ],
+                )
+                .expect("insert sorting representative source");
+            source_rows.push((
+                connection.last_insert_rowid(),
+                source_path,
+                source_hash,
+                bytes.len() as u64,
+                destination_folder.to_owned(),
+            ));
+        }
+
+        let settings = LibrarySettings {
+            mods_path: Some(mods_root.to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        let saved = apply_plan_persistence::build_apply_plan_from_staging_plan(
+            connection,
+            &settings,
+            BuildApplyPlanFromStagingPlanRequest {
+                preview_request: GenerateSortingPreviewPlanRequest {
+                    scope: GenerateSortingPreviewPlanScope::SelectedFiles {
+                        file_ids: source_rows.iter().map(|row| row.0).collect(),
+                    },
+                    folder_config: None,
+                    context_trail: Vec::new(),
+                },
+                source_plan_kind: None,
+                folder_config: None,
+                context_trail: Vec::new(),
+            },
+        )
+        .expect("build sorting representative ApplyPlan");
+        let plan_id = saved.plan_id;
+        assert!(
+            apply_plan_persistence::verify_apply_plan_hash(connection, plan_id)
+                .expect("verify sorting representative plan hash")
+                .is_valid
+        );
+
+        let item_ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id FROM apply_plan_items WHERE apply_plan_id = ?1 ORDER BY id ASC",
+                )
+                .expect("prepare sorting representative item ids");
+            statement
+                .query_map(params![plan_id], |row| row.get::<_, i64>(0))
+                .expect("query sorting representative item ids")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect sorting representative item ids")
+        };
+        assert_eq!(item_ids.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+
+        let mut items = Vec::with_capacity(REPRESENTATIVE_SORTING_BATCH_SIZE);
+        for item_id in item_ids {
+            let item = load_plan_item_scope(connection, plan_id, item_id)
+                .expect("sorting representative plan item scope");
+            assert_eq!(item.action_kind, "suggest_move");
+            assert!(!item.blocked);
+            assert!(!item.review_only);
+            let (file_id, source_path, source_hash, source_size, destination_folder) = source_rows
+                .iter()
+                .find(|row| row.0 == item.file_id)
+                .cloned()
+                .expect("sorting representative plan item maps to fixture source");
+            assert_eq!(PathBuf::from(&item.current_path), source_path);
+            let destination_path = mods_root
+                .join(destination_folder)
+                .join(source_path.file_name().expect("sorting representative filename"));
+            assert_eq!(PathBuf::from(&item.destination_path), destination_path);
+            items.push(SortingBatchFixtureItem {
+                file_id,
+                item_id,
+                source_path,
+                destination_path,
+                source_hash,
+                source_size,
+            });
+        }
+
+        let provisional = SortingBatchFixtureContext {
+            _temp: None,
+            fixture_root: fixture_root.clone(),
+            mods_root: mods_root.clone(),
+            backup_root: backup_root.clone(),
+            destination_dir: gameplay_dir.clone(),
+            settings: settings.clone(),
+            plan_id,
+            run_id: 0,
+            items: items.clone(),
+        };
+        let destination_dirs = sorting_batch_destination_directories(&provisional)
+            .expect("sorting representative destination directories");
+        assert_eq!(destination_dirs.len(), 3);
+        assert!(destination_dirs.contains(&gameplay_dir));
+        assert!(destination_dirs.contains(&cas_dir));
+        assert!(destination_dirs.contains(&build_buy_dir));
+
+        let run_id = create_apply_plan_run_log(
+            connection,
+            CreateApplyPlanRunLogRequest {
+                apply_plan_id: plan_id,
+                status: None,
+                backup_strategy: None,
+                confirmation_token: None,
+                total_items: Some(items.len() as i64),
+                skipped_items: None,
+                failed_items: None,
+                summary: Some("Fixture-only representative sorting batch proof.".to_owned()),
+            },
+        )
+        .expect("create sorting representative run")
+        .id;
+
+        SortingBatchFixtureContext {
+            _temp: Some(temp),
+            fixture_root,
+            mods_root,
+            backup_root,
+            destination_dir: gameplay_dir,
+            settings,
+            plan_id,
+            run_id,
+            items,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn verify_sorting_batch_read_only_preflight(
         connection: &Connection,
         batch: &SortingBatchFixtureContext,
@@ -8952,6 +9126,347 @@ mod tests {
             assert_eq!(PathBuf::from(membership.path), item.destination_path);
         }
         assert!(batch.destination_dir.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn representative_sorting_batch_full_apply_and_undo_preserve_folder_ownership_truth() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_representative_batch_fixture(&mut connection);
+        assert_eq!(batch.items.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+        let gameplay_dir = batch.mods_root.join("Gameplay");
+        let cas_dir = batch.mods_root.join("CAS");
+        let build_buy_dir = batch.mods_root.join("BuildBuy");
+        let cas_identity_before = fixture_directory_identity(&cas_dir)
+            .expect("capture representative pre-existing CAS identity");
+        let directories = sorting_batch_destination_directories(&batch)
+            .expect("representative destination directories");
+        assert_eq!(directories.len(), 3);
+        for directory in [&gameplay_dir, &cas_dir, &build_buy_dir] {
+            assert!(directories.contains(directory));
+        }
+        assert_eq!(
+            batch
+                .items
+                .iter()
+                .filter(|item| item.destination_path.parent() == Some(gameplay_dir.as_path()))
+                .count(),
+            REPRESENTATIVE_SORTING_BATCH_SIZE / 3
+        );
+        assert_eq!(
+            batch
+                .items
+                .iter()
+                .filter(|item| item.destination_path.parent() == Some(cas_dir.as_path()))
+                .count(),
+            REPRESENTATIVE_SORTING_BATCH_SIZE / 3
+        );
+        assert_eq!(
+            batch
+                .items
+                .iter()
+                .filter(|item| item.destination_path.parent() == Some(build_buy_dir.as_path()))
+                .count(),
+            REPRESENTATIVE_SORTING_BATCH_SIZE / 3
+        );
+
+        let preflight_started = std::time::Instant::now();
+        verify_sorting_batch_read_only_preflight(&connection, &batch)
+            .expect("representative sorting read-only preflight");
+        let preflight_elapsed = preflight_started.elapsed();
+        let apply_started = std::time::Instant::now();
+        let outcome = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("apply representative sorting batch");
+        let apply_elapsed = apply_started.elapsed();
+        assert_eq!(outcome.completed_item_ids.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+        assert!(outcome.pending_item_ids.is_empty());
+        assert_eq!(outcome.stopped_before_item_id, None);
+
+        let receipt = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load representative batch receipt")
+            .expect("representative batch receipt exists");
+        assert_eq!(receipt.items.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+        let run = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load representative run log")
+            .expect("representative run log exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            REPRESENTATIVE_SORTING_BATCH_SIZE,
+            "representative Apply must create exactly one verified backup result per item"
+        );
+        let ownership_rows: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count representative folder ownership rows");
+        assert_eq!(
+            ownership_rows, 2,
+            "Gameplay and BuildBuy are batch-owned once each; pre-existing CAS stays unowned"
+        );
+        for directory in [&gameplay_dir, &build_buy_dir] {
+            assert_eq!(
+                load_sorting_batch_directory_record_for(&connection, &batch, directory)
+                    .expect("load representative owned directory")
+                    .expect("representative owned directory row exists")
+                    .state,
+                FixtureSortingDirectoryState::CreatedVerified
+            );
+        }
+        assert!(
+            load_sorting_batch_directory_record_for(&connection, &batch, &cas_dir)
+                .expect("load representative CAS ownership")
+                .is_none()
+        );
+        assert_eq!(
+            fixture_directory_identity(&cas_dir).expect("CAS identity after representative Apply"),
+            cas_identity_before
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("representative moved source"),
+                ObservedFileState::Missing
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("representative moved destination"),
+                ObservedFileState::Exact
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load representative moved membership")
+                .expect("representative moved membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.destination_path);
+        }
+
+        let undo_started = std::time::Instant::now();
+        let cleanup = run_sorting_batch_undo_with_directory_outcomes(&connection, &batch)
+            .expect("Undo representative sorting batch");
+        let undo_elapsed = undo_started.elapsed();
+        assert_eq!(cleanup.len(), 3);
+        for owned in [&gameplay_dir, &build_buy_dir] {
+            assert_eq!(
+                cleanup
+                    .iter()
+                    .find(|(directory, _)| directory == owned)
+                    .map(|(_, outcome)| *outcome),
+                Some(FixtureSortingDirectoryCleanupOutcome::Removed)
+            );
+            assert!(!owned.exists());
+        }
+        assert_eq!(
+            cleanup
+                .iter()
+                .find(|(directory, _)| directory == &cas_dir)
+                .map(|(_, outcome)| *outcome),
+            Some(FixtureSortingDirectoryCleanupOutcome::NotOwned)
+        );
+        assert!(cas_dir.is_dir());
+        assert_eq!(
+            fixture_directory_identity(&cas_dir).expect("CAS identity after representative Undo"),
+            cas_identity_before
+        );
+        for item in &batch.items {
+            assert_eq!(
+                observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                    .expect("representative restored source"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &item.destination_path,
+                    item.source_size,
+                    &item.source_hash,
+                )
+                .expect("representative removed destination"),
+                ObservedFileState::Missing
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load representative restored membership")
+                .expect("representative restored membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+        }
+        println!(
+            "representative sorting batch ({} files): preflight={preflight_elapsed:?}, apply={apply_elapsed:?}, undo={undo_elapsed:?}",
+            REPRESENTATIVE_SORTING_BATCH_SIZE
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn representative_sorting_batch_partial_retry_reuses_all_durable_evidence() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_representative_batch_fixture(&mut connection);
+        let stop_before_index = 13usize;
+        let partial = run_sorting_batch_apply(&connection, &batch, Some(stop_before_index))
+            .expect("partially apply representative sorting batch");
+        assert_eq!(partial.completed_item_ids.len(), stop_before_index);
+        assert_eq!(
+            partial.pending_item_ids.len(),
+            REPRESENTATIVE_SORTING_BATCH_SIZE - stop_before_index
+        );
+        assert_eq!(
+            partial.stopped_before_item_id,
+            Some(batch.items[stop_before_index].item_id)
+        );
+
+        let receipt_before = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load representative receipt before retry")
+            .expect("representative receipt exists before retry");
+        let backup_ids_before = receipt_before
+            .items
+            .iter()
+            .map(|item| item.backup_result_id)
+            .collect::<Vec<_>>();
+        assert_eq!(backup_ids_before.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+        let ownership_rows_before: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count representative ownership rows before retry");
+        assert_eq!(ownership_rows_before, 2);
+        let completed_attempts_before = batch.items[..stop_before_index]
+            .iter()
+            .map(|item| {
+                let attempt_id = sorting_batch_attempt_id(&batch, item);
+                let attempt = load_fixture_attempt(&connection, &attempt_id)
+                    .expect("load representative completed attempt before retry")
+                    .expect("representative completed attempt exists before retry");
+                assert_eq!(attempt.state, FixtureAttemptState::Committed);
+                attempt.attempt_id
+            })
+            .collect::<Vec<_>>();
+
+        let retry = run_sorting_batch_apply(&connection, &batch, None)
+            .expect("retry representative sorting batch");
+        assert_eq!(retry.completed_item_ids.len(), REPRESENTATIVE_SORTING_BATCH_SIZE);
+        assert!(retry.pending_item_ids.is_empty());
+        assert_eq!(retry.stopped_before_item_id, None);
+        let receipt_after = load_sorting_batch_receipt(&connection, &batch)
+            .expect("load representative receipt after retry")
+            .expect("representative receipt exists after retry");
+        assert_eq!(
+            receipt_after
+                .items
+                .iter()
+                .map(|item| item.backup_result_id)
+                .collect::<Vec<_>>(),
+            backup_ids_before,
+            "representative retry must reuse all original backup result IDs"
+        );
+        let ownership_rows_after: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM fixture_sorting_batch_directories WHERE apply_plan_run_id = ?1",
+                params![batch.run_id],
+                |row| row.get(0),
+            )
+            .expect("count representative ownership rows after retry");
+        assert_eq!(ownership_rows_after, ownership_rows_before);
+        for (index, item) in batch.items[..stop_before_index].iter().enumerate() {
+            let attempt_id = sorting_batch_attempt_id(&batch, item);
+            assert_eq!(
+                load_fixture_attempt(&connection, &attempt_id)
+                    .expect("reload representative completed attempt after retry")
+                    .expect("representative completed attempt remains after retry")
+                    .attempt_id,
+                completed_attempts_before[index],
+                "retry must not replace an already committed attempt"
+            );
+        }
+        for item in &batch.items {
+            assert_eq!(
+                load_fixture_attempt(&connection, &sorting_batch_attempt_id(&batch, item))
+                    .expect("load representative final attempt")
+                    .expect("representative final attempt exists")
+                    .state,
+                FixtureAttemptState::Committed
+            );
+        }
+
+        let cleanup = run_sorting_batch_undo_with_directory_outcomes(&connection, &batch)
+            .expect("Undo retried representative sorting batch");
+        assert_eq!(cleanup.len(), 3);
+        assert!(!batch.mods_root.join("Gameplay").exists());
+        assert!(!batch.mods_root.join("BuildBuy").exists());
+        assert!(batch.mods_root.join("CAS").is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn representative_sorting_batch_late_source_change_blocks_every_side_effect() {
+        let mut connection = memory_connection();
+        let batch = setup_sorting_representative_batch_fixture(&mut connection);
+        let changed = batch.items.last().expect("representative late source");
+        fs::write(&changed.source_path, b"changed after representative preview")
+            .expect("change representative late source after preview");
+
+        run_sorting_batch_apply(&connection, &batch, None)
+            .expect_err("late representative source change must block whole batch");
+        assert!(!batch.mods_root.join("Gameplay").exists());
+        assert!(!batch.mods_root.join("BuildBuy").exists());
+        assert!(batch.mods_root.join("CAS").is_dir());
+        let run = apply_plan_results::get_apply_plan_run_log(&connection, batch.run_id)
+            .expect("load blocked representative run")
+            .expect("blocked representative run exists");
+        assert_eq!(
+            run.results
+                .iter()
+                .filter(|result| result.operation_kind == BACKUP_OPERATION_KIND)
+                .count(),
+            0,
+            "late source change must block before any representative backup"
+        );
+        for directory in [
+            batch.mods_root.join("Gameplay"),
+            batch.mods_root.join("CAS"),
+            batch.mods_root.join("BuildBuy"),
+        ] {
+            assert!(
+                load_sorting_batch_directory_record_for(&connection, &batch, &directory)
+                    .expect("load ownership after representative preflight block")
+                    .is_none()
+            );
+        }
+        for (index, item) in batch.items.iter().enumerate() {
+            assert!(
+                load_fixture_attempt(&connection, &sorting_batch_attempt_id(&batch, item))
+                    .expect("load attempt after representative preflight block")
+                    .is_none(),
+                "preflight failure must not prepare representative move attempts"
+            );
+            let membership = load_fixture_membership_state(&connection, item.file_id)
+                .expect("load blocked representative membership")
+                .expect("blocked representative membership exists");
+            assert_eq!(PathBuf::from(membership.path), item.source_path);
+            assert_eq!(
+                observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)
+                    .expect("blocked representative destination"),
+                ObservedFileState::Missing
+            );
+            if index + 1 == batch.items.len() {
+                assert_ne!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("changed representative source observation"),
+                    ObservedFileState::Exact
+                );
+            } else {
+                assert_eq!(
+                    observe_expected_file(&item.source_path, item.source_size, &item.source_hash)
+                        .expect("unchanged representative source observation"),
+                    ObservedFileState::Exact
+                );
+            }
+        }
     }
 
     #[cfg(target_os = "macos")]
