@@ -2871,6 +2871,15 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct FixtureSortingProcessReadySignal {
+        run_id: i64,
+        attempt_id: String,
+        state: String,
+        worker_pid: u32,
+    }
+
+    #[cfg(target_os = "macos")]
     const SORTING_PROCESS_HELPER_ENV: &str = "SIMSUITE_SORTING_PROCESS_HELPER_MODE";
     #[cfg(target_os = "macos")]
     const SORTING_PROCESS_MANIFEST_ENV: &str = "SIMSUITE_SORTING_PROCESS_MANIFEST";
@@ -2878,6 +2887,8 @@ mod tests {
     const SORTING_PROCESS_OUTER_ROOT_ENV: &str = "SIMSUITE_SORTING_PROCESS_OUTER_ROOT";
     #[cfg(target_os = "macos")]
     const SORTING_PROCESS_CRASH_POINT_ENV: &str = "SIMSUITE_SORTING_PROCESS_CRASH_POINT";
+    #[cfg(target_os = "macos")]
+    const SORTING_PROCESS_READY_ENV: &str = "SIMSUITE_SORTING_PROCESS_READY";
     #[cfg(target_os = "macos")]
     const SORTING_PROCESS_CRASH_EXIT_CODE: i32 = 73;
 
@@ -5885,6 +5896,81 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn write_sorting_process_ready_signal(
+        path: &Path,
+        signal: &FixtureSortingProcessReadySignal,
+    ) -> AppResult<()> {
+        use std::io::Write;
+
+        let parent = path.parent().ok_or_else(|| {
+            AppError::Message("Sorting process ready path has no parent.".to_owned())
+        })?;
+        canonicalize_existing_dir(parent, "sorting process ready parent")?;
+        if fs::symlink_metadata(path).is_ok() {
+            return Err(AppError::Message(
+                "Sorting process ready path already exists.".to_owned(),
+            ));
+        }
+        let bytes = serde_json::to_vec(signal)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|error| {
+                AppError::Message(format!("Sorting process ready create failed: {error}"))
+            })?;
+        file.write_all(&bytes).map_err(|error| {
+            AppError::Message(format!("Sorting process ready write failed: {error}"))
+        })?;
+        file.sync_all().map_err(|error| {
+            AppError::Message(format!("Sorting process ready sync failed: {error}"))
+        })?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_sorting_process_ready_signal(
+        path: &Path,
+    ) -> AppResult<FixtureSortingProcessReadySignal> {
+        let metadata = fs::symlink_metadata(path).map_err(|error| {
+            AppError::Message(format!("Sorting process ready signal is unavailable: {error}"))
+        })?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err(AppError::Message(
+                "Sorting process ready signal must remain a real file.".to_owned(),
+            ));
+        }
+        let bytes = fs::read(path).map_err(|error| {
+            AppError::Message(format!("Sorting process ready read failed: {error}"))
+        })?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn wait_for_sorting_process_ready_signal(
+        child: &mut std::process::Child,
+        path: &Path,
+    ) -> FixtureSortingProcessReadySignal {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Ok(signal) = read_sorting_process_ready_signal(path) {
+                return signal;
+            }
+            match child.try_wait().expect("poll sorting hold worker") {
+                Some(status) => panic!(
+                    "sorting hold worker exited before ready signal with status {status}"
+                ),
+                None => {}
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "sorting hold worker did not publish a ready signal"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn sorting_process_crash_point_name(point: FixtureSortingBatchCrashPoint) -> &'static str {
         match point {
             FixtureSortingBatchCrashPoint::AfterDestinationClaim => "after_destination_claim",
@@ -5914,12 +6000,13 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    fn run_sorting_process_helper(
+    fn build_sorting_process_helper_command(
         mode: &str,
         manifest_path: &Path,
         outer_root: Option<&Path>,
         crash_point: Option<FixtureSortingBatchCrashPoint>,
-    ) -> std::process::Output {
+        ready_path: Option<&Path>,
+    ) -> std::process::Command {
         let executable = std::env::current_exe().expect("current Rust test executable");
         let mut command = std::process::Command::new(executable);
         command
@@ -5942,7 +6029,43 @@ mod tests {
                 sorting_process_crash_point_name(point),
             );
         }
-        command.output().expect("run sorting process helper")
+        if let Some(path) = ready_path {
+            command.env(
+                SORTING_PROCESS_READY_ENV,
+                path.to_string_lossy().to_string(),
+            );
+        }
+        command
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_sorting_process_helper(
+        mode: &str,
+        manifest_path: &Path,
+        outer_root: Option<&Path>,
+        crash_point: Option<FixtureSortingBatchCrashPoint>,
+    ) -> std::process::Output {
+        build_sorting_process_helper_command(mode, manifest_path, outer_root, crash_point, None)
+            .output()
+            .expect("run sorting process helper")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn spawn_sorting_process_hold_helper(
+        manifest_path: &Path,
+        outer_root: &Path,
+        crash_point: FixtureSortingBatchCrashPoint,
+        ready_path: &Path,
+    ) -> std::process::Child {
+        build_sorting_process_helper_command(
+            "hold",
+            manifest_path,
+            Some(outer_root),
+            Some(crash_point),
+            Some(ready_path),
+        )
+        .spawn()
+        .expect("spawn sorting process hold helper")
     }
 
     #[cfg(target_os = "macos")]
@@ -6866,7 +6989,7 @@ mod tests {
         );
 
         match mode.as_str() {
-            "crash" => {
+            "crash" | "hold" => {
                 let outer_root = PathBuf::from(
                     std::env::var(SORTING_PROCESS_OUTER_ROOT_ENV)
                         .expect("sorting subprocess outer-root environment"),
@@ -6935,9 +7058,41 @@ mod tests {
                         .state,
                     expected_state
                 );
-                // This is intentional: process::exit bypasses Rust destructors. The parent-owned
-                // outer TempDir is the cleanup boundary for the persisted throwaway fixture.
-                std::process::exit(SORTING_PROCESS_CRASH_EXIT_CODE);
+                if mode == "crash" {
+                    // This is intentional: process::exit bypasses Rust destructors. The parent-owned
+                    // outer TempDir is the cleanup boundary for the persisted throwaway fixture.
+                    std::process::exit(SORTING_PROCESS_CRASH_EXIT_CODE);
+                }
+
+                let ready_path = PathBuf::from(
+                    std::env::var(SORTING_PROCESS_READY_ENV)
+                        .expect("sorting subprocess ready-signal environment"),
+                );
+                let ready_parent = ready_path
+                    .parent()
+                    .expect("sorting subprocess ready-signal parent");
+                assert_eq!(
+                    canonicalize_existing_dir(ready_parent, "sorting subprocess ready parent")
+                        .expect("canonical sorting subprocess ready parent"),
+                    canonical_outer,
+                    "subprocess ready signal must stay directly inside the parent-owned temp root"
+                );
+                write_sorting_process_ready_signal(
+                    &ready_path,
+                    &FixtureSortingProcessReadySignal {
+                        run_id: batch.run_id,
+                        attempt_id,
+                        state: expected_state.as_str().to_owned(),
+                        worker_pid: std::process::id(),
+                    },
+                )
+                .expect("publish sorting subprocess ready signal");
+
+                // The worker intentionally remains alive and idle. The parent test must terminate
+                // this process from the outside before any recovery process is launched.
+                loop {
+                    std::thread::park();
+                }
             }
             "recover" => {
                 let (connection, batch, _) = load_sorting_process_batch(&manifest_path)
@@ -7019,6 +7174,216 @@ mod tests {
                 );
             }
             other => panic!("unknown sorting subprocess helper mode: {other}"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_external_force_kill_recovery_round_trips_all_dangerous_states() {
+        use std::os::unix::process::ExitStatusExt;
+
+        for crash_point in [
+            FixtureSortingBatchCrashPoint::AfterDestinationClaim,
+            FixtureSortingBatchCrashPoint::AfterDestinationVerification,
+            FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership,
+        ] {
+            let outer = tempdir().expect("sorting force-kill parent tempdir");
+            let manifest_path = outer.path().join("restart.json");
+            let ready_path = outer.path().join("worker-ready.json");
+            let mut worker = spawn_sorting_process_hold_helper(
+                &manifest_path,
+                outer.path(),
+                crash_point,
+                &ready_path,
+            );
+            let ready = wait_for_sorting_process_ready_signal(&mut worker, &ready_path);
+            assert_eq!(ready.worker_pid, worker.id());
+            assert!(
+                worker
+                    .try_wait()
+                    .expect("check force-kill worker before inspection")
+                    .is_none(),
+                "force-kill worker must still be alive when the parent inspects durable state"
+            );
+
+            let (inspection, batch, manifest) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect durable sorting state while force-kill worker is alive");
+            assert_eq!(ready.run_id, manifest.run_id);
+            let item = &batch.items[0];
+            let attempt_id = sorting_batch_attempt_id(&batch, item);
+            assert_eq!(ready.attempt_id, attempt_id);
+            let expected_state = match crash_point {
+                FixtureSortingBatchCrashPoint::AfterDestinationClaim => {
+                    FixtureAttemptState::DestinationClaimObserved
+                }
+                FixtureSortingBatchCrashPoint::AfterDestinationVerification => {
+                    FixtureAttemptState::DestinationVerified
+                }
+                FixtureSortingBatchCrashPoint::AfterSourceReleaseBeforeMembership => {
+                    FixtureAttemptState::SourceReleaseCompleted
+                }
+            };
+            assert_eq!(ready.state, expected_state.as_str());
+            assert_eq!(
+                load_fixture_attempt(&inspection, &attempt_id)
+                    .expect("load force-kill interrupted attempt before kill")
+                    .expect("force-kill interrupted attempt exists before kill")
+                    .state,
+                expected_state
+            );
+            let receipt_before = load_sorting_batch_receipt_for_run(&inspection, manifest.run_id)
+                .expect("load force-kill batch receipt before kill")
+                .expect("force-kill batch receipt exists before kill");
+            let backup_ids_before = receipt_before
+                .items
+                .iter()
+                .map(|entry| entry.backup_result_id)
+                .collect::<Vec<_>>();
+            assert_eq!(backup_ids_before.len(), batch.items.len());
+            for later in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(
+                        &inspection,
+                        &sorting_batch_attempt_id(&batch, later),
+                    )
+                    .expect("load later attempt before force kill")
+                    .is_none(),
+                    "worker must not start later items before external termination"
+                );
+            }
+            drop(batch);
+            drop(inspection);
+
+            assert!(
+                worker
+                    .try_wait()
+                    .expect("check force-kill worker immediately before kill")
+                    .is_none(),
+                "worker exited on its own before the parent could terminate it"
+            );
+            worker.kill().expect("externally kill sorting worker");
+            let killed_status = worker.wait().expect("reap externally killed sorting worker");
+            assert!(!killed_status.success());
+            assert_eq!(
+                killed_status.signal(),
+                Some(9),
+                "macOS Child::kill must terminate the worker with SIGKILL"
+            );
+            assert!(
+                worker
+                    .try_wait()
+                    .expect("confirm force-kill worker is reaped")
+                    .is_some(),
+                "old worker must be gone before recovery starts"
+            );
+
+            let recovery = run_sorting_process_helper("recover", &manifest_path, None, None);
+            assert!(
+                recovery.status.success(),
+                "fresh recovery after external force kill failed:\n{}",
+                sorting_process_output_text(&recovery)
+            );
+            let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect sorting state after force-kill recovery");
+            assert_eq!(
+                load_fixture_attempt(&inspection, &attempt_id)
+                    .expect("load force-kill attempt after recovery")
+                    .expect("force-kill attempt exists after recovery")
+                    .state,
+                FixtureAttemptState::Committed
+            );
+            for later in &batch.items[1..] {
+                assert!(
+                    load_fixture_attempt(
+                        &inspection,
+                        &sorting_batch_attempt_id(&batch, later),
+                    )
+                    .expect("load later attempt after force-kill recovery")
+                    .is_none(),
+                    "recovery must not turn into permission to start later items"
+                );
+            }
+            drop(batch);
+            drop(inspection);
+
+            let repeated = run_sorting_process_helper("recover", &manifest_path, None, None);
+            assert!(
+                repeated.status.success(),
+                "second fresh recovery after force kill was not idempotent:\n{}",
+                sorting_process_output_text(&repeated)
+            );
+            let completion = run_sorting_process_helper("complete", &manifest_path, None, None);
+            assert!(
+                completion.status.success(),
+                "fresh completion after force-kill recovery failed:\n{}",
+                sorting_process_output_text(&completion)
+            );
+
+            let (inspection, batch, manifest) = load_sorting_process_batch(&manifest_path)
+                .expect("inspect completed force-kill batch");
+            let receipt_after = load_sorting_batch_receipt_for_run(&inspection, manifest.run_id)
+                .expect("load force-kill receipt after completion")
+                .expect("force-kill receipt exists after completion");
+            assert_eq!(
+                receipt_after
+                    .items
+                    .iter()
+                    .map(|entry| entry.backup_result_id)
+                    .collect::<Vec<_>>(),
+                backup_ids_before,
+                "recovery/completion must reuse the original verified backups"
+            );
+            for entry in &batch.items {
+                assert_eq!(
+                    load_fixture_attempt(&inspection, &sorting_batch_attempt_id(&batch, entry))
+                        .expect("load completed force-kill attempt")
+                        .expect("completed force-kill attempt exists")
+                        .state,
+                    FixtureAttemptState::Committed
+                );
+            }
+            let saved_receipt = receipt_after;
+            drop(batch);
+            drop(inspection);
+
+            let undo = run_sorting_process_helper("undo", &manifest_path, None, None);
+            assert!(
+                undo.status.success(),
+                "fresh Undo after force-kill recovery failed:\n{}",
+                sorting_process_output_text(&undo)
+            );
+            let manifest = read_sorting_process_manifest(&manifest_path)
+                .expect("read force-kill manifest after Undo");
+            let inspection = file_backed_fixture_connection(&manifest.database_path);
+            for entry in &saved_receipt.items {
+                assert_eq!(
+                    observe_expected_file(
+                        &entry.source_path,
+                        entry.source_size,
+                        &entry.source_hash,
+                    )
+                    .expect("force-kill Undo restored source"),
+                    ObservedFileState::Exact
+                );
+                assert_eq!(
+                    observe_expected_file(
+                        &entry.destination_path,
+                        entry.source_size,
+                        &entry.source_hash,
+                    )
+                    .expect("force-kill Undo removed destination"),
+                    ObservedFileState::Missing
+                );
+                let membership = load_fixture_membership_state(&inspection, entry.file_id)
+                    .expect("load force-kill Undo membership")
+                    .expect("force-kill Undo membership exists");
+                assert_eq!(PathBuf::from(membership.path), entry.source_path);
+            }
+            let destination_dir = saved_receipt.items[0]
+                .destination_path
+                .parent()
+                .expect("force-kill Undo destination folder");
+            assert!(!destination_dir.exists());
         }
     }
 
@@ -7236,6 +7601,128 @@ mod tests {
                 .parent()
                 .expect("process Undo destination folder");
             assert!(!destination_dir.exists());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sorting_batch_external_force_kill_recovery_rejects_same_byte_replacement() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let outer = tempdir().expect("sorting force-kill tamper parent tempdir");
+        let manifest_path = outer.path().join("restart.json");
+        let ready_path = outer.path().join("worker-ready.json");
+        let mut worker = spawn_sorting_process_hold_helper(
+            &manifest_path,
+            outer.path(),
+            FixtureSortingBatchCrashPoint::AfterDestinationClaim,
+            &ready_path,
+        );
+        let ready = wait_for_sorting_process_ready_signal(&mut worker, &ready_path);
+        assert_eq!(ready.worker_pid, worker.id());
+        assert_eq!(ready.state, FixtureAttemptState::DestinationClaimObserved.as_str());
+        assert!(
+            worker
+                .try_wait()
+                .expect("check tamper hold worker before kill")
+                .is_none()
+        );
+
+        let (inspection, batch, manifest) = load_sorting_process_batch(&manifest_path)
+            .expect("inspect force-kill destination claim before kill");
+        assert_eq!(ready.run_id, manifest.run_id);
+        let item = batch.items[0].clone();
+        let attempt_id = sorting_batch_attempt_id(&batch, &item);
+        assert_eq!(ready.attempt_id, attempt_id);
+        assert_eq!(
+            load_fixture_attempt(&inspection, &attempt_id)
+                .expect("load force-kill claim before tamper")
+                .expect("force-kill claim exists before tamper")
+                .state,
+            FixtureAttemptState::DestinationClaimObserved
+        );
+        assert_eq!(
+            same_physical_file_identity(&item.source_path, &item.destination_path)
+                .expect("compare force-kill claim identity before tamper"),
+            Some(true)
+        );
+        let later_attempt_ids = batch.items[1..]
+            .iter()
+            .map(|later| sorting_batch_attempt_id(&batch, later))
+            .collect::<Vec<_>>();
+        drop(batch);
+        drop(inspection);
+
+        worker.kill().expect("externally kill tamper sorting worker");
+        let killed_status = worker.wait().expect("reap tamper sorting worker");
+        assert_eq!(killed_status.signal(), Some(9));
+        assert!(
+            worker
+                .try_wait()
+                .expect("confirm tamper worker is gone")
+                .is_some()
+        );
+
+        let source_bytes = fs::read(&item.source_path).expect("read source after force kill");
+        fs::remove_file(&item.destination_path)
+            .expect("remove claimed destination after force kill");
+        fs::write(&item.destination_path, &source_bytes)
+            .expect("install same-byte independent destination after force kill");
+        assert_eq!(
+            observe_expected_file(&item.destination_path, item.source_size, &item.source_hash)
+                .expect("same-byte force-kill replacement remains content-exact"),
+            ObservedFileState::Exact
+        );
+        assert_eq!(
+            same_physical_file_identity(&item.source_path, &item.destination_path)
+                .expect("compare same-byte force-kill replacement identity"),
+            Some(false)
+        );
+
+        let blocked = run_sorting_process_helper("recover_blocked", &manifest_path, None, None);
+        assert!(
+            blocked.status.success(),
+            "fresh recovery did not fail closed after force-kill tamper:\n{}",
+            sorting_process_output_text(&blocked)
+        );
+        let (inspection, batch, _) = load_sorting_process_batch(&manifest_path)
+            .expect("inspect blocked force-kill recovery");
+        assert_eq!(
+            load_fixture_attempt(&inspection, &attempt_id)
+                .expect("reload blocked force-kill attempt")
+                .expect("blocked force-kill attempt still exists")
+                .state,
+            FixtureAttemptState::DestinationClaimObserved
+        );
+        let membership = load_fixture_membership_state(&inspection, item.file_id)
+            .expect("load force-kill blocked membership")
+            .expect("force-kill blocked membership exists");
+        assert_eq!(PathBuf::from(membership.path), item.source_path);
+        for (index, later) in batch.items[1..].iter().enumerate() {
+            assert!(
+                load_fixture_attempt(&inspection, &later_attempt_ids[index])
+                    .expect("load later attempt after force-kill tamper")
+                    .is_none(),
+                "blocked force-kill recovery must not start later items"
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &later.source_path,
+                    later.source_size,
+                    &later.source_hash,
+                )
+                .expect("later source after force-kill tamper"),
+                ObservedFileState::Exact
+            );
+            assert_eq!(
+                observe_expected_file(
+                    &later.destination_path,
+                    later.source_size,
+                    &later.source_hash,
+                )
+                .expect("later destination after force-kill tamper"),
+                ObservedFileState::Missing
+            );
         }
     }
 
