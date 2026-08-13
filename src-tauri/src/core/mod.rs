@@ -1,6 +1,8 @@
 pub mod ai_classifier;
 pub mod apply_plan_backup_prototype;
 #[cfg(test)]
+pub mod apply_plan_confirmation_prototype;
+#[cfg(test)]
 pub mod apply_plan_fixture_transaction_prototype;
 pub mod apply_plan_dry_run;
 pub mod apply_plan_persistence;
